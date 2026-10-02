@@ -49,13 +49,23 @@
 
 ## 快速开始
 
+前置：本机已安装 **Docker** 与 **Docker Compose v2**（Linux / macOS / Windows 需 WSL2）。密钥生成优先用 `openssl`，缺失时回退 `/dev/urandom`。
+
 ```bash
-# 一键安装：检测环境、生成密钥、构建并启动（API :3001，Web :3000）
-# 本机已有 PostgreSQL/Redis 时用 install.sh；否则用 Docker 一键起全栈：
+# 一键部署：检测 Docker、生成随机密钥、构建并启动
+# 默认档拉起 api + worker + web + PostgreSQL + Redis + MinIO（HTTP，http://localhost:3000）
 bash scripts/deploy.sh
+
+# 公网 + 自动 HTTPS（需域名 DNS 已指向本机）：
+# bash scripts/deploy.sh --domain sp.example.com --email you@example.com
+
+# 集群档（外部 PostgreSQL/Redis/对象存储）：
+# bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<digest>
 ```
 
-手动安装：
+首次构建需拉取基础镜像与依赖，耗时较长；完成后访问 `http://localhost:3000`。初始管理员：默认生成随机密码并打印在 `api` 容器日志中（若需固定，先在 `docker/.env` 设置 `STACKPANEL_BOOTSTRAP_EMAIL` / `STACKPANEL_BOOTSTRAP_PASSWORD`）。
+
+不用 Docker（本机已有 PostgreSQL/Redis，PM2 模式）：
 
 ```bash
 pnpm install

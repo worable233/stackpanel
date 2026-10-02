@@ -43,7 +43,15 @@ fi
 info "Node $(node -v) / pnpm $(pnpm -v) OK"
 
 # ---- 2. 生成 .env（根 + apps/api + apps/web，共享同一密钥） -----------------
-gen_secret() { openssl rand -base64 48 2>/dev/null | tr -d '=+/' | head -c 48 || true; }
+# Prefer openssl; fall back to /dev/urandom so the script also works on hosts
+# without openssl (all supported platforms provide /dev/urandom).
+gen_secret() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48 2>/dev/null | tr -d '=+/' | head -c 48 || true
+  else
+    LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48 || true
+  fi
+}
 
 # 根 .env 供脚本/迁移/备份使用；apps/api/.env 与 apps/web/.env 供 PM2 进程读取。
 # 三者必须共享同一 JWT_SECRET（Web BFF 用其校验 API 签发的 token）。
@@ -57,7 +65,7 @@ else
   JWT_SECRET="$(gen_secret)"
   SETTINGS_KEY="$(gen_secret)"
   if [[ -z "$JWT_SECRET" || -z "$SETTINGS_KEY" ]]; then
-    fail "无法生成随机密钥（需要 openssl）。请手动填写 .env 的 JWT_SECRET / SETTINGS_ENCRYPTION_KEY。"
+    fail "无法生成随机密钥（需要 openssl 或 /dev/urandom）。请手动填写 .env 的 JWT_SECRET / SETTINGS_ENCRYPTION_KEY。"
   fi
   cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
 fi

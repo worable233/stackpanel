@@ -56,13 +56,21 @@ if [[ -f "$DOCKER_ENV" ]]; then
   info "检测到 docker/.env，保留现有配置。"
 else
   info "生成 docker/.env（含随机密钥）…"
-  gen_secret() { openssl rand -base64 48 2>/dev/null | tr -d '=+/' | head -c 48 || true; }
+  # Prefer openssl; fall back to /dev/urandom so the script also works on
+  # hosts without openssl (all supported platforms provide /dev/urandom).
+  gen_secret() {
+    if command -v openssl >/dev/null 2>&1; then
+      openssl rand -base64 48 2>/dev/null | tr -d '=+/' | head -c 48 || true
+    else
+      LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48 || true
+    fi
+  }
   JWT_SECRET="$(gen_secret)"
   SETTINGS_KEY="$(gen_secret)"
   POSTGRES_PASSWORD="$(gen_secret)"
   MINIO_ROOT_PASSWORD="$(gen_secret)"
   [[ -n "$JWT_SECRET" && -n "$SETTINGS_KEY" && -n "$POSTGRES_PASSWORD" && -n "$MINIO_ROOT_PASSWORD" ]] \
-    || fail "无法生成随机密钥（需要 openssl）。"
+    || fail "无法生成随机密钥（需要 openssl 或 /dev/urandom）。"
   cp "$ROOT_DIR/docker/.env.example" "$DOCKER_ENV"
   sed -i.bak \
     -e "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" \
