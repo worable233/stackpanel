@@ -1,0 +1,192 @@
+# StackPanel 集群档：外部依赖 + 多副本 + Caddy 负载均衡。
+#
+# 与默认档 docker-compose.yml 二选一（不要叠加），适用于已有托管 PostgreSQL /
+# Redis / S3 兼容对象存储的场景。镜像与代码与默认档完全一致，仅指向不同的依赖。
+#
+#   docker compose -f docker-compose.cluster.yml --env-file docker/.env up -d
+#
+# 必填（docker/.env）：
+#   DATABASE_URL     postgresql://user:pass@host:5432/db
+#   REDIS_URL        redis://host:6379
+#   STORAGE_S3_*     对象存储（endpoint/bucket/access/secret）
+#   JWT_SECRET / SETTINGS_ENCRYPTION_KEY / MINIO_* 不再需要
+#
+# 说明：
+# - api/web 不发布宿主机端口，仅由 caddy 在内网负载均衡（api:3001 / web:3000）。
+# - 插件/主题前端产物仍走 STACKPANEL_DATA_DIR 共享卷；跨主机部署需等 S7 的解耦
+#   构建者落地，届时改为对象存储分发。
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    # 默认本地构建；发布版部署用 STACKPANEL_IMAGE 指向 GHCR 镜像（见 docker/README.md）。
+    image: ${STACKPANEL_IMAGE:-stackpanel-api:latest}
+    restart: unless-stopped
+    entrypoint: ['/usr/local/bin/entrypoint-api']
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: '3001'
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-}
+      API_COOKIE_SECURE: ${API_COOKIE_SECURE:-true}
+      # Trust X-Forwarded-For only from the compose network (Caddy reverse proxy
+      # / web BFF). External clients hitting the published API port are not in
+      # this CIDR, so they cannot spoof it. Must match the pinned `stackpanel`
+      # network subnet below.
+      API_TRUST_PROXY: ${API_TRUST_PROXY:-172.28.0.0/16}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      STORAGE_DRIVER: s3
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION:-us-east-1}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET}
+      STORAGE_S3_ACCESS_KEY_ID: ${STORAGE_S3_ACCESS_KEY_ID}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY}
+      STORAGE_S3_FORCE_PATH_STYLE: ${STORAGE_S3_FORCE_PATH_STYLE:-true}
+      JWT_SECRET: ${JWT_SECRET}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
+      STACKPANEL_BOOTSTRAP_EMAIL: ${STACKPANEL_BOOTSTRAP_EMAIL:-}
+      STACKPANEL_BOOTSTRAP_PASSWORD: ${STACKPANEL_BOOTSTRAP_PASSWORD:-}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
+      STACKPANEL_SIGNING_PUBLIC_KEY: ${STACKPANEL_SIGNING_PUBLIC_KEY:-}
+      PACKAGE_SIGNATURE_REQUIRED: ${PACKAGE_SIGNATURE_REQUIRED:-true}
+      STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
+      STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
+      STACKPANEL_DATA_DIR: /app/data
+      WOWID_MOCK: 'false'
+      WOWID_ISSUER: ${WOWID_ISSUER:-https://account.wowcraft.cn}
+      WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
+      WOWID_CLIENT_SECRET: ${WOWID_CLIENT_SECRET:-}
+      WOWID_REDIRECT_URI: ${WOWID_REDIRECT_URI:-}
+    volumes:
+      - stackpanel-data:/app/data
+    networks:
+      - stackpanel
+    deploy:
+      replicas: 2
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # 后台 worker（S6 / ADR-0013）：消费 BullMQ 队列、跑内核 sweep 与插件任务。
+  # 不发布端口、不跑迁移（迁移由 api 入口统一执行）；与 api 共用同一镜像与依赖。
+  # 集群档下 worker 需要 Redis 才有多副本去重语义，外部 REDIS_URL 已由环境变量注入。
+  worker:
+    build:
+      context: .
+      target: runtime
+    # 与 api 同镜像（worker 走 worker 入口）；发布版用 STACKPANEL_IMAGE。
+    image: ${STACKPANEL_IMAGE:-stackpanel-api:latest}
+    restart: unless-stopped
+    entrypoint: ['/usr/local/bin/entrypoint-worker']
+    environment:
+      NODE_ENV: production
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      STORAGE_DRIVER: s3
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION:-us-east-1}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET}
+      STORAGE_S3_ACCESS_KEY_ID: ${STORAGE_S3_ACCESS_KEY_ID}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY}
+      STORAGE_S3_FORCE_PATH_STYLE: ${STORAGE_S3_FORCE_PATH_STYLE:-true}
+      JWT_SECRET: ${JWT_SECRET}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
+      STACKPANEL_SIGNING_PUBLIC_KEY: ${STACKPANEL_SIGNING_PUBLIC_KEY:-}
+      PACKAGE_SIGNATURE_REQUIRED: ${PACKAGE_SIGNATURE_REQUIRED:-true}
+      STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
+      STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
+      STACKPANEL_DATA_DIR: /app/data
+      WOWID_MOCK: 'false'
+      WOWID_ISSUER: ${WOWID_ISSUER:-https://account.wowcraft.cn}
+      WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
+      WOWID_CLIENT_SECRET: ${WOWID_CLIENT_SECRET:-}
+      WOWID_REDIRECT_URI: ${WOWID_REDIRECT_URI:-}
+    volumes:
+      - stackpanel-data:/app/data
+      # Single-builder web bundle (S7); every web replica serves this.
+      - stackpanel-web-build:/app/apps/web/.next
+    networks:
+      - stackpanel
+    deploy:
+      # Exactly one builder per cluster: parallel builds would race.
+      replicas: 1
+
+  web:
+    build:
+      context: .
+      target: runtime
+      args:
+        API_BASE_URL: ${API_BASE_URL:-http://api:3001}
+    # 发布版与 api 同镜像（runtime target 一致，API_BASE_URL 运行期注入）。
+    image: ${STACKPANEL_IMAGE:-stackpanel-web:latest}
+    restart: unless-stopped
+    entrypoint: ['/usr/local/bin/entrypoint-web']
+    environment:
+      NODE_ENV: production
+      API_BASE_URL: ${API_BASE_URL:-http://api:3001}
+      WEB_PORT: '3000'
+      JWT_SECRET: ${JWT_SECRET}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
+      STACKPANEL_DATA_DIR: /app/data
+      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
+    volumes:
+      - stackpanel-data:/app/data
+      # Read-only: replicas never build; the worker writes this volume (S7).
+      - stackpanel-web-build:/app/apps/web/.next:ro
+    networks:
+      - stackpanel
+    deploy:
+      replicas: 2
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+    environment:
+      STACKPANEL_DOMAIN: ${STACKPANEL_DOMAIN:-localhost}
+      STACKPANEL_EMAIL: ${STACKPANEL_EMAIL:-}
+      WEB_UPSTREAM: web:3000
+      API_UPSTREAM: api:3001
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - stackpanel
+
+volumes:
+  stackpanel-data:
+  stackpanel-web-build:
+  caddy-data:
+  caddy-config:
+
+networks:
+  stackpanel:
+    # Fixed subnet so the kernel can trust forwarded client-IP headers from the
+    # in-network reverse proxy (Caddy) without trusting arbitrary peers. The
+    # `api` service defaults `API_TRUST_PROXY` to this CIDR; if you change the
+    # subnet here, update that variable to match.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

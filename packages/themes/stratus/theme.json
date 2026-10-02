@@ -1,0 +1,17 @@
+{
+  "$schema": "https://stackpanel.dev/schemas/theme.schema.json",
+  "id": "stratus",
+  "name": "Stratus Enterprise Cloud",
+  "description": "Enterprise-grade blue/white cloud theme. Inspired by modern global cloud platforms: gradient hero, product matrix, industry solutions, global infrastructure stats, partner logo wall and news feed. Built with Tailwind CSS 4.",
+  "version": "1.0.0",
+  "author": "Stratus Studio",
+  "layout": {
+    "user": { "shell": "default" },
+    "admin": { "shell": "sidebar" }
+  },
+  "supportsDarkMode": true,
+  "assets": {
+    "logo": "assets/logo.png",
+    "favicon": "assets/favicon.png"
+  }
+}

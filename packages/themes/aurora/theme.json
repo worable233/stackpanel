@@ -1,0 +1,17 @@
+{
+  "$schema": "https://stackpanel.dev/schemas/theme.schema.json",
+  "id": "aurora",
+  "name": "Aurora Night",
+  "description": "Deep-space dark-first theme with cyan/violet neon accents. Custom pages, layout and 404.",
+  "version": "1.0.0",
+  "author": "Aurora",
+  "layout": {
+    "user": { "shell": "default" },
+    "admin": { "shell": "sidebar" }
+  },
+  "supportsDarkMode": true,
+  "assets": {
+    "logo": "assets/logo.svg",
+    "favicon": "assets/favicon.svg"
+  }
+}

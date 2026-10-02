@@ -1,0 +1,39 @@
+{
+  "name": "@stackpanel/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared custom UI components (Tailwind + shadcn APIs only, no bespoke CSS).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "prepare": "pnpm build"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "motion": "^13"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.6.0",
+    "class-variance-authority": "^0.7.1",
+    "lucide-react": "^0.468.0",
+    "motion": "^13.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "react": "^19.2.4",
+    "typescript": "^6.0.3"
+  },
+  "license": "MIT"
+}

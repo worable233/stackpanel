@@ -1,0 +1,17 @@
+{
+  "$schema": "https://stackpanel.dev/schemas/theme.schema.json",
+  "id": "default",
+  "name": "StackPanel Default",
+  "description": "Built-in default theme. Cannot be removed; serves as the fallback when a theme is missing.",
+  "version": "0.0.1",
+  "author": "StackPanel",
+  "layout": {
+    "user": { "shell": "default" },
+    "admin": { "shell": "sidebar" }
+  },
+  "supportsDarkMode": true,
+  "assets": {
+    "logo": "assets/logo.svg",
+    "favicon": "assets/favicon.svg"
+  }
+}

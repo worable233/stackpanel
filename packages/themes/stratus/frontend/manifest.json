@@ -1,0 +1,376 @@
+{
+  "version": "1.0.0",
+  "revision": "718dd7eec2b0",
+  "entry": "frontend/dist/index.js",
+  "pages": [
+    {
+      "path": "/",
+      "component": "home",
+      "data": [
+        {
+          "finder": "catalog.categories",
+          "as": "categories"
+        },
+        {
+          "finder": "catalog.products",
+          "as": "catalogProducts",
+          "input": {
+            "page": 1,
+            "pageSize": 8,
+            "categoryId": ""
+          }
+        }
+      ],
+      "layout": "theme"
+    },
+    {
+      "path": "/about",
+      "component": "about",
+      "layout": "theme"
+    },
+    {
+      "path": "/blog",
+      "component": "blog",
+      "layout": "theme"
+    },
+    {
+      "path": "/blog/:slug",
+      "component": "post",
+      "layout": "theme"
+    },
+    {
+      "path": "/shop",
+      "component": "shop",
+      "data": [
+        {
+          "finder": "catalog.categories",
+          "as": "categories"
+        },
+        {
+          "finder": "catalog.products",
+          "as": "catalogProducts",
+          "input": {
+            "page": 1,
+            "pageSize": 60,
+            "categoryId": "",
+            "q": ""
+          }
+        }
+      ],
+      "layout": "theme"
+    },
+    {
+      "path": "/shop/:id",
+      "component": "product",
+      "data": [
+        {
+          "finder": "store.product",
+          "as": "product",
+          "input": {
+            "id": ":id"
+          }
+        },
+        {
+          "finder": "store.paymentMethods",
+          "as": "methods"
+        },
+        {
+          "finder": "store.viewer",
+          "as": "viewer"
+        }
+      ],
+      "layout": "theme"
+    },
+    {
+      "path": "/shop/cart",
+      "component": "cart",
+      "data": [
+        {
+          "finder": "store.cart",
+          "as": "cart"
+        },
+        {
+          "finder": "store.paymentMethods",
+          "as": "methods"
+        }
+      ],
+      "layout": "theme"
+    },
+    {
+      "path": "*",
+      "component": "notFound",
+      "layout": "theme"
+    }
+  ],
+  "layouts": ["theme"],
+  "finders": [],
+  "adminRoutes": [],
+  "adminActions": [],
+  "actions": [],
+  "accountRoutes": [],
+  "accountWidgets": [],
+  "files": ["frontend/dist/index.js", "frontend/dist/index.js.map"],
+  "settingsSchema": {
+    "groups": [
+      {
+        "id": "hero",
+        "label": "首屏 Hero",
+        "fields": [
+          {
+            "type": "text",
+            "name": "heroKicker",
+            "label": "徽标",
+            "default": "产业智变 · 云启未来"
+          },
+          {
+            "type": "text",
+            "name": "heroTitleLine",
+            "label": "主标题",
+            "default": "值得信赖的企业级云计算平台"
+          },
+          {
+            "type": "textarea",
+            "name": "heroSubtitle",
+            "label": "副标题",
+            "default": "为您提供值得信赖的一站式云计算平台，覆盖计算、存储、网络、安全与 AI 全栈服务，让每一次创新都更快落地。",
+            "help": "一句话说明定位"
+          },
+          {
+            "type": "text",
+            "name": "searchPlaceholder",
+            "label": "搜索占位符",
+            "default": "搜索云产品、解决方案及文档"
+          },
+          {
+            "type": "text",
+            "name": "hotKeywords",
+            "label": "热门搜索词（逗号分隔）",
+            "default": "轻量应用服务器,云服务器,云数据库,SSL证书"
+          }
+        ]
+      },
+      {
+        "id": "promo",
+        "label": "大促公告",
+        "fields": [
+          {
+            "type": "text",
+            "name": "promoTag",
+            "label": "公告标签",
+            "default": "新客特惠"
+          },
+          {
+            "type": "text",
+            "name": "promoTitle",
+            "label": "公告标题",
+            "default": "云服务器新客首月 1 折起"
+          },
+          {
+            "type": "text",
+            "name": "promoDesc",
+            "label": "公告说明",
+            "default": "新用户专享礼包，多款热门套餐限时直降"
+          },
+          {
+            "type": "text",
+            "name": "promoButton",
+            "label": "公告按钮",
+            "default": "立即选购"
+          }
+        ]
+      },
+      {
+        "id": "models",
+        "label": "全模态大模型",
+        "fields": [
+          {
+            "type": "text",
+            "name": "modelsKicker",
+            "label": "区块小标",
+            "default": "全模态大模型"
+          },
+          {
+            "type": "text",
+            "name": "modelsTitle",
+            "label": "区块标题",
+            "default": "大模型服务平台"
+          },
+          {
+            "type": "textarea",
+            "name": "modelsText",
+            "label": "区块说明",
+            "default": "开箱即用的大模型服务，汇聚主流优质模型，快速获取普惠的模型能力。"
+          }
+        ]
+      },
+      {
+        "id": "products",
+        "label": "产品体系",
+        "fields": [
+          {
+            "type": "text",
+            "name": "productsKicker",
+            "label": "区块小标",
+            "default": "云产品体系"
+          },
+          {
+            "type": "text",
+            "name": "productsTitle",
+            "label": "区块标题",
+            "default": "全栈产品体系，助力企业实现云化转型"
+          },
+          {
+            "type": "textarea",
+            "name": "productsText",
+            "label": "区块说明",
+            "default": "从底层算力到上层应用，覆盖全场景的云产品服务。"
+          },
+          {
+            "type": "text",
+            "name": "productsLink",
+            "label": "更多产品链接文字",
+            "default": "探索更多云产品"
+          }
+        ]
+      },
+      {
+        "id": "case",
+        "label": "客户案例",
+        "fields": [
+          {
+            "type": "text",
+            "name": "caseKicker",
+            "label": "区块小标",
+            "default": "客户案例"
+          },
+          {
+            "type": "text",
+            "name": "caseTitle",
+            "label": "区块标题",
+            "default": "行业领先的解决方案，助力企业安全高效上云"
+          },
+          {
+            "type": "text",
+            "name": "caseMetric1",
+            "label": "案例数字一",
+            "default": "10万+"
+          },
+          {
+            "type": "text",
+            "name": "caseMetric1Label",
+            "label": "案例数字一标签",
+            "default": "并发能力"
+          },
+          {
+            "type": "text",
+            "name": "caseMetric2",
+            "label": "案例数字二",
+            "default": "≤300"
+          },
+          {
+            "type": "text",
+            "name": "caseMetric2Label",
+            "label": "案例数字二标签",
+            "default": "ms 超低延迟"
+          }
+        ]
+      },
+      {
+        "id": "infra",
+        "label": "全球基础设施",
+        "fields": [
+          {
+            "type": "text",
+            "name": "infraKicker",
+            "label": "区块小标",
+            "default": "全球基础设施"
+          },
+          {
+            "type": "text",
+            "name": "infraTitle",
+            "label": "区块标题",
+            "default": "安全合规、高速稳定的基础设施建设"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric1",
+            "label": "数据一",
+            "default": "3200+"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric1Label",
+            "label": "数据一标签",
+            "default": "全球加速节点"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric2",
+            "label": "数据二",
+            "default": "66"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric2Label",
+            "label": "数据二标签",
+            "default": "可用区"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric3",
+            "label": "数据三",
+            "default": "22"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric3Label",
+            "label": "数据三标签",
+            "default": "地理区域"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric4",
+            "label": "数据四",
+            "default": "200T"
+          },
+          {
+            "type": "text",
+            "name": "infraMetric4Label",
+            "label": "数据四标签",
+            "default": "带宽储备"
+          }
+        ]
+      },
+      {
+        "id": "cta",
+        "label": "行动号召",
+        "fields": [
+          {
+            "type": "text",
+            "name": "ctaTitle",
+            "label": "标题",
+            "default": "开启你的上云之旅"
+          },
+          {
+            "type": "textarea",
+            "name": "ctaText",
+            "label": "说明",
+            "default": "注册即享新客礼包，专属架构师一对一支持。"
+          },
+          {
+            "type": "text",
+            "name": "ctaButton",
+            "label": "按钮",
+            "default": "免费注册"
+          },
+          {
+            "type": "text",
+            "name": "ctaAlt",
+            "label": "次按钮",
+            "default": "查看控制台"
+          }
+        ]
+      }
+    ]
+  }
+}

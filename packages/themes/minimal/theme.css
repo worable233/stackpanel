@@ -1,0 +1,73 @@
+/*
+ * Minimal StackPanel theme. Token-only CSS: themes are configuration, so this
+ * package deliberately contains no executable frontend templates.
+ */
+
+:root {
+  --background: oklch(0.985 0.008 90);
+  --foreground: oklch(0.22 0.025 90);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.025 90);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.025 90);
+  --primary: oklch(0.58 0.18 150);
+  --primary-foreground: oklch(0.985 0.01 90);
+  --secondary: oklch(0.955 0.015 90);
+  --secondary-foreground: oklch(0.22 0.025 90);
+  --muted: oklch(0.955 0.015 90);
+  --muted-foreground: oklch(0.55 0.025 90);
+  --accent: oklch(0.95 0.03 150);
+  --accent-foreground: oklch(0.2 0.035 150);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.91 0.015 90);
+  --input: oklch(0.91 0.015 90);
+  --ring: oklch(0.58 0.18 150);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.97 0.012 90);
+  --sidebar-foreground: oklch(0.22 0.025 90);
+  --sidebar-primary: oklch(0.58 0.18 150);
+  --sidebar-primary-foreground: oklch(0.985 0.01 90);
+  --sidebar-accent: oklch(0.94 0.035 150);
+  --sidebar-accent-foreground: oklch(0.2 0.035 150);
+  --sidebar-border: oklch(0.9 0.015 90);
+  --sidebar-ring: oklch(0.58 0.18 150);
+  --chart-1: oklch(0.58 0.18 150);
+  --chart-2: oklch(0.68 0.15 220);
+  --chart-3: oklch(0.72 0.13 70);
+  --chart-4: oklch(0.65 0.17 320);
+  --chart-5: oklch(0.7 0.13 190);
+}
+
+.dark {
+  --background: oklch(0.16 0.012 90);
+  --foreground: oklch(0.94 0.008 90);
+  --card: oklch(0.21 0.014 90);
+  --card-foreground: oklch(0.94 0.008 90);
+  --popover: oklch(0.21 0.014 90);
+  --popover-foreground: oklch(0.94 0.008 90);
+  --primary: oklch(0.7 0.16 150);
+  --primary-foreground: oklch(0.16 0.012 90);
+  --secondary: oklch(0.27 0.015 90);
+  --secondary-foreground: oklch(0.94 0.008 90);
+  --muted: oklch(0.27 0.015 90);
+  --muted-foreground: oklch(0.68 0.015 90);
+  --accent: oklch(0.28 0.04 150);
+  --accent-foreground: oklch(0.94 0.01 90);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.7 0.16 150);
+  --sidebar: oklch(0.19 0.013 90);
+  --sidebar-foreground: oklch(0.94 0.008 90);
+  --sidebar-primary: oklch(0.7 0.16 150);
+  --sidebar-primary-foreground: oklch(0.16 0.012 90);
+  --sidebar-accent: oklch(0.28 0.04 150);
+  --sidebar-accent-foreground: oklch(0.94 0.01 90);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.7 0.16 150);
+  --chart-1: oklch(0.7 0.16 150);
+  --chart-2: oklch(0.74 0.13 220);
+  --chart-3: oklch(0.78 0.11 70);
+  --chart-4: oklch(0.72 0.15 320);
+  --chart-5: oklch(0.75 0.11 190);
+}

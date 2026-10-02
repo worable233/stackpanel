@@ -1,0 +1,13 @@
+{
+  "name": "@stackpanel/plugin-store-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/index.tsx --format esm --out-dir dist --platform neutral --clean --external react --external react/jsx-runtime --external next/link --external @stackpanel/sdk --external zod --external lucide-react --jsx automatic"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "license": "MIT"
+}

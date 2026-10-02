@@ -1,0 +1,13 @@
+node_modules/
+.pnpm-store/
+.next/
+dist/
+build/
+coverage/
+logs/
+pnpm-lock.yaml
+**/src/generated/
+**/next-env.d.ts
+test-results/
+playwright-report/
+e2e/.runtime.json

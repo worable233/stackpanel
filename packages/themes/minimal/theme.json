@@ -1,0 +1,8 @@
+{
+  "id": "minimal",
+  "name": "Minimal Theme",
+  "description": "A minimal StackPanel theme: token-only CSS, no frontend templates.",
+  "version": "1.0.0",
+  "author": "StackPanel",
+  "supportsDarkMode": true
+}

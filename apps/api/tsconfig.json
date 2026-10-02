@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["node"],
+    // sharp@0.35 ships types at lib/index.d.ts but its `exports` map has no
+    // `types` condition, so neither bundler nor nodenext resolution can find
+    // them. Point TypeScript at the shipped declaration directly.
+    "paths": {
+      "sharp": ["./node_modules/sharp/lib/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "prisma.config.ts"]
+}

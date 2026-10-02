@@ -1,0 +1,274 @@
+# StackPanel 默认部署档：一条命令起全栈（api + web + PostgreSQL + Redis + MinIO）。
+#
+#   bash scripts/deploy.sh
+#
+# 依赖服务（postgres/redis/minio）只在 compose 内网可见，不对外暴露端口；
+# api/web 通过服务名连接它们。所有密钥由 scripts/deploy.sh 写入 docker/.env。
+#
+# 放大为真集群（外部 PG/Redis/对象存储 + 多副本 + LB）：见 docker-compose.cluster.yml。
+#
+# 手动：
+#   cp docker/.env.example docker/.env   # 填密钥
+#   docker compose --env-file docker/.env up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-stackpanel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-stackpanel}
+    volumes:
+      - stackpanel-postgres:/var/lib/postgresql/data
+    networks:
+      - stackpanel
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-stackpanel} -d ${POSTGRES_DB:-stackpanel}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - stackpanel-redis:/data
+    networks:
+      - stackpanel
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-stackpanel}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - stackpanel-minio:/data
+    networks:
+      - stackpanel
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # One-shot: create the object-storage bucket once MinIO is healthy. The API
+  # also ensures the bucket on boot; this makes it ready for first-run seeding.
+  minio-init:
+    image: minio/minio:latest
+    restart: 'no'
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" &&
+        mc mb --ignore-existing "local/$${STORAGE_S3_BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-stackpanel}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-stackpanel}
+    networks:
+      - stackpanel
+
+  api:
+    build:
+      context: .
+      target: runtime
+    # 默认本地构建；发布版部署用 STACKPANEL_IMAGE 指向 GHCR 镜像（见 docker/README.md）。
+    image: ${STACKPANEL_IMAGE:-stackpanel-api:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    entrypoint: ['/usr/local/bin/entrypoint-api']
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: '3001'
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-}
+      API_COOKIE_SECURE: ${API_COOKIE_SECURE:-true}
+      # Trust X-Forwarded-For only from the compose network (Caddy reverse proxy
+      # / web BFF). External clients hitting the published API port are not in
+      # this CIDR, so they cannot spoof it. Must match the pinned `stackpanel`
+      # network subnet below.
+      API_TRUST_PROXY: ${API_TRUST_PROXY:-172.28.0.0/16}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-stackpanel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stackpanel}
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: s3
+      STORAGE_S3_ENDPOINT: http://minio:9000
+      STORAGE_S3_REGION: us-east-1
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-stackpanel}
+      STORAGE_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-stackpanel}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      STORAGE_S3_FORCE_PATH_STYLE: 'true'
+      JWT_SECRET: ${JWT_SECRET}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
+      STACKPANEL_BOOTSTRAP_EMAIL: ${STACKPANEL_BOOTSTRAP_EMAIL:-}
+      STACKPANEL_BOOTSTRAP_PASSWORD: ${STACKPANEL_BOOTSTRAP_PASSWORD:-}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
+      STACKPANEL_SIGNING_PUBLIC_KEY: ${STACKPANEL_SIGNING_PUBLIC_KEY:-}
+      PACKAGE_SIGNATURE_REQUIRED: ${PACKAGE_SIGNATURE_REQUIRED:-true}
+      STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
+      STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
+      STACKPANEL_DATA_DIR: /app/data
+      WOWID_MOCK: 'false'
+      WOWID_ISSUER: ${WOWID_ISSUER:-https://account.wowcraft.cn}
+      WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
+      WOWID_CLIENT_SECRET: ${WOWID_CLIENT_SECRET:-}
+      WOWID_REDIRECT_URI: ${WOWID_REDIRECT_URI:-}
+    volumes:
+      # Shared with web for plugin/theme frontend artifacts + the apply signal.
+      - stackpanel-data:/app/data
+    ports:
+      - '3001:3001'
+    networks:
+      - stackpanel
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    # 与 api 同镜像（worker 走 worker 入口）；发布版用 STACKPANEL_IMAGE。
+    image: ${STACKPANEL_IMAGE:-stackpanel-api:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    entrypoint: ['/usr/local/bin/entrypoint-worker']
+    environment:
+      NODE_ENV: production
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-stackpanel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stackpanel}
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: s3
+      STORAGE_S3_ENDPOINT: http://minio:9000
+      STORAGE_S3_REGION: us-east-1
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-stackpanel}
+      STORAGE_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-stackpanel}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      STORAGE_S3_FORCE_PATH_STYLE: 'true'
+      JWT_SECRET: ${JWT_SECRET}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
+      STACKPANEL_SIGNING_PUBLIC_KEY: ${STACKPANEL_SIGNING_PUBLIC_KEY:-}
+      PACKAGE_SIGNATURE_REQUIRED: ${PACKAGE_SIGNATURE_REQUIRED:-true}
+      STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
+      STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
+      STACKPANEL_DATA_DIR: /app/data
+      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
+    volumes:
+      # Plugin/theme packages + the apply request/status files.
+      - stackpanel-data:/app/data
+      # Single-builder web bundle, shared read-only with every web replica.
+      - stackpanel-web-build:/app/apps/web/.next
+    networks:
+      - stackpanel
+    deploy:
+      # Exactly one builder: a second replica would race the same artifacts.
+      replicas: 1
+
+  web:
+    build:
+      context: .
+      target: runtime
+      args:
+        API_BASE_URL: ${API_BASE_URL:-http://api:3001}
+    # 发布版与 api 同镜像（runtime target 一致，API_BASE_URL 运行期注入）。
+    image: ${STACKPANEL_IMAGE:-stackpanel-web:latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint: ['/usr/local/bin/entrypoint-web']
+    environment:
+      NODE_ENV: production
+      API_BASE_URL: ${API_BASE_URL:-http://api:3001}
+      WEB_PORT: '3000'
+      JWT_SECRET: ${JWT_SECRET}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
+      STACKPANEL_DATA_DIR: /app/data
+      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
+    volumes:
+      - stackpanel-data:/app/data
+      # Serve the worker-built bundle (S7). Read-mostly: only the worker writes.
+      - stackpanel-web-build:/app/apps/web/.next
+    ports:
+      - '3000:3000'
+    networks:
+      - stackpanel
+
+  # Optional: automatic HTTPS reverse proxy. Enabled via `--profile https`
+  # (scripts/deploy.sh does this when --domain is given). Binds 80/443.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ['https']
+    depends_on:
+      - web
+    environment:
+      STACKPANEL_DOMAIN: ${STACKPANEL_DOMAIN:-localhost}
+      STACKPANEL_EMAIL: ${STACKPANEL_EMAIL:-}
+      WEB_UPSTREAM: web:3000
+      API_UPSTREAM: api:3001
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - stackpanel
+
+volumes:
+  stackpanel-data:
+  stackpanel-web-build:
+  stackpanel-postgres:
+  stackpanel-redis:
+  stackpanel-minio:
+  caddy-data:
+  caddy-config:
+
+networks:
+  stackpanel:
+    # Fixed subnet so the kernel can trust forwarded client-IP headers from the
+    # in-network reverse proxy (Caddy) without trusting arbitrary peers. The
+    # `api` service defaults `API_TRUST_PROXY` to this CIDR; if you change the
+    # subnet here, update that variable to match.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

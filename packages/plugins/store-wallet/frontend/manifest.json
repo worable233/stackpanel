@@ -1,0 +1,131 @@
+{
+  "version": "0.1.0",
+  "revision": "482b805dc4c4",
+  "entry": "frontend/dist/index.js",
+  "pages": [],
+  "layouts": [],
+  "finders": ["wallet.me", "wallet.adminAccounts"],
+  "adminRoutes": [
+    {
+      "path": "/wallets",
+      "component": "admin/wallets",
+      "permission": "store.admin",
+      "nav": {
+        "label": "钱包管理",
+        "group": "商店插件"
+      },
+      "data": [
+        {
+          "finder": "wallet.adminAccounts",
+          "as": "wallets"
+        }
+      ]
+    }
+  ],
+  "adminActions": [],
+  "actions": [
+    {
+      "id": "wallet.create-topup",
+      "method": "POST",
+      "path": "/wallet/topups",
+      "permission": "store.wallet",
+      "input": [
+        {
+          "name": "amount",
+          "type": "money",
+          "required": true,
+          "min": 100,
+          "max": 2000000000
+        },
+        {
+          "name": "providerId",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        {
+          "name": "paymentMethod",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        }
+      ],
+      "redirect": {
+        "responsePath": "topUp.paymentUrl",
+        "external": true
+      }
+    },
+    {
+      "id": "wallet.cancel-topup",
+      "method": "POST",
+      "path": "/wallet/topups/:id/cancel",
+      "permission": "store.wallet",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        }
+      ]
+    },
+    {
+      "id": "wallet.adjust-wallet",
+      "method": "POST",
+      "path": "/store/admin/wallets/adjustments",
+      "permission": "store.admin",
+      "input": [
+        {
+          "name": "email",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "amount",
+          "type": "integer",
+          "required": true,
+          "min": -2000000000,
+          "max": 2000000000
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        }
+      ]
+    }
+  ],
+  "accountRoutes": [
+    {
+      "path": "/balance",
+      "component": "account/balance",
+      "permission": "store.wallet",
+      "nav": {
+        "label": "余额充值",
+        "group": "费用"
+      },
+      "data": [
+        {
+          "finder": "wallet.me",
+          "as": "wallet"
+        }
+      ]
+    }
+  ],
+  "accountWidgets": [
+    {
+      "id": "wallet-balance",
+      "title": "余额",
+      "component": "account/balance",
+      "permission": "store.wallet"
+    }
+  ],
+  "files": [
+    "frontend/dist/admin.js",
+    "frontend/dist/admin.js.map",
+    "frontend/dist/index.js",
+    "frontend/dist/index.js.map"
+  ]
+}

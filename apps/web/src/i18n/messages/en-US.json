@@ -1,0 +1,1115 @@
+{
+  "common": {
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "close": "Close",
+    "search": "Search",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "actions": "Actions",
+    "status": "Status",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "yes": "Yes",
+    "no": "No",
+    "unknown": "Unknown",
+    "unknownError": "Unknown error",
+    "operationFailed": "Operation failed, please try again later",
+    "networkError": "Network error, please try again later",
+    "backHome": "Back to home",
+    "pagination": "{total} entries · page {page} / {pages}",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "reset": "Reset",
+    "statusActive": "Active",
+    "statusDisabled": "Disabled",
+    "notLoggedIn": "Not signed in",
+    "forbidden": "Forbidden",
+    "invalidRequest": "Invalid request"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "users": "Users",
+    "market": "App Market",
+    "settings": "System Settings",
+    "plugins": "Plugins",
+    "rbac": "Permission Templates",
+    "audit": "Audit Log",
+    "developer": "Developer Console",
+    "themes": "Themes",
+    "notifications": "Notifications",
+    "security": "Account Security",
+    "apiKeys": "API Keys",
+    "shop": "Browse Products",
+    "services": "Services",
+    "models": "Models",
+    "billing": "Billing",
+    "groupPlugins": "Plugins",
+    "switchToAccount": "Switch to customer workspace",
+    "switchToAdmin": "Switch to admin console",
+    "backToSite": "Back to site",
+    "logout": "Sign out",
+    "roleAdmin": "Administrator",
+    "roleUser": "User",
+    "homeAriaLabel": "Back to home"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Sign in to access your account center.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "or": "or",
+      "wowid": "Sign in with Wow ID",
+      "noAccount": "Don't have an account?",
+      "register": "Register"
+    },
+    "register": {
+      "title": "Register",
+      "subtitle": "Create your account.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Register",
+      "submitting": "Registering…",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "hasAccount": "Already have an account?",
+      "login": "Sign in"
+    },
+    "validation": {
+      "emailPasswordRequired": "Please enter your email and password",
+      "passwordMin": "Password must be at least 8 characters"
+    },
+    "error": {
+      "invalidCredentials": "Incorrect email or password",
+      "loginFailed": "Sign-in failed, please try again later",
+      "registerFailed": "Registration failed, please try again later"
+    }
+  },
+  "localeSwitcher": {
+    "label": "Language",
+    "ariaLabel": "Switch interface language"
+  },
+  "theme": {
+    "toggleAriaLabel": "Switch theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "uploadSelectZip": "Choose a theme ZIP to upload",
+    "uploadFailed": "Upload failed",
+    "uploadFailedStatus": "Upload failed ({status})"
+  },
+  "notification": {
+    "ariaLabel": "Notifications",
+    "title": "Notifications",
+    "markAllRead": "Mark all read",
+    "empty": "No notifications",
+    "viewAll": "View all",
+    "all": "All",
+    "unread": "Unread",
+    "serviceUnavailable": "Notification service unavailable: {error}",
+    "emptyAll": "No notifications",
+    "emptyUnread": "No unread notifications",
+    "markRead": "Mark as read",
+    "view": "View",
+    "loading": "Loading…",
+    "loadMore": "Load more",
+    "unknownError": "Unknown error"
+  },
+  "admin": {
+    "recentTickets": "Recent tickets",
+    "noTickets": "No tickets yet.",
+    "customerFallback": "User",
+    "ticketStatus": {
+      "OPEN": "Open",
+      "IN_PROGRESS": "In progress",
+      "RESOLVED": "Resolved",
+      "CLOSED": "Closed"
+    },
+    "userDetail": {
+      "basic": {
+        "title": "Basic information",
+        "description": "Email and account status."
+      },
+      "email": "Email",
+      "status": "Status",
+      "statusAria": "Account status",
+      "statusActive": "Active",
+      "statusDisabled": "Disabled",
+      "createdAt": "Created",
+      "lastLoginAt": "Last sign-in",
+      "groups": {
+        "title": "Permission groups",
+        "description": "Groups this user belongs to (effective permissions are the union of all groups)."
+      },
+      "wallet": {
+        "title": "Wallet balance",
+        "description": "Adjustments are recorded in the wallet ledger and audited.",
+        "adjust": "Adjust balance",
+        "current": "Current balance: {amount}",
+        "amount": "Amount (CNY, may be negative)",
+        "amountPlaceholder": "e.g. -50",
+        "note": "Note",
+        "notePlaceholder": "e.g. violation deduction",
+        "submitting": "Adjusting…",
+        "submit": "Confirm"
+      },
+      "ledger": {
+        "time": "Time",
+        "change": "Change",
+        "type": "Type",
+        "note": "Note"
+      },
+      "services": {
+        "title": "Purchased services",
+        "description": "Services the user bought or received; edit expiry or status, delete, or gift manually.",
+        "gift": "Gift service",
+        "giftDescription": "Pick a product to gift directly to this user, no order required.",
+        "product": "Product",
+        "quantity": "Quantity",
+        "expiry": "Expiry date (optional)",
+        "gifting": "Gifting…",
+        "giftSubmit": "Gift",
+        "empty": "This user has no services yet.",
+        "colProduct": "Product",
+        "colStatus": "Status",
+        "colAmount": "Amount",
+        "colExpiresAt": "Expires",
+        "colCreatedAt": "Created",
+        "colActions": "Actions",
+        "statusAria": "Service status",
+        "expiresAria": "Expiry",
+        "selectProduct": "Please select a product",
+        "confirmDelete": "Delete this service for the user? This cannot be undone."
+      },
+      "orders": {
+        "title": "Orders",
+        "description": "The 20 most recent orders.",
+        "empty": "No orders yet.",
+        "colId": "Order no.",
+        "colAmount": "Amount",
+        "colStatus": "Status",
+        "colCreatedAt": "Created"
+      },
+      "serviceStatus": {
+        "PENDING_PROVISION": "Pending",
+        "PROVISIONING": "Provisioning",
+        "ACTIVE": "Active",
+        "SUSPENDED": "Suspended",
+        "TERMINATED": "Terminated",
+        "FAILED": "Failed"
+      }
+    },
+    "audit": {
+      "title": "Audit log",
+      "description": "System and admin operation records; append-only.",
+      "filterAction": "Action",
+      "filterActionPlaceholder": "e.g. plugin.install",
+      "filterResource": "Resource",
+      "filterResourcePlaceholder": "e.g. plugin",
+      "filterActor": "Actor",
+      "filterActorPlaceholder": "First 12 chars of the user ID",
+      "search": "Search",
+      "reset": "Reset",
+      "serviceUnavailable": "Audit service unavailable: {error}",
+      "colTime": "Time",
+      "colAction": "Action",
+      "colResource": "Resource",
+      "colActor": "Actor",
+      "colSource": "Source",
+      "empty": "No records yet.",
+      "pagination": "{total} entries · page {page} / {pages}",
+      "prev": "Previous",
+      "next": "Next",
+      "systemActor": "System"
+    },
+    "developer": {
+      "title": "Developer Console",
+      "description": "Distribution side of the open platform: partners, webhook deliveries and SP v1 call audit.",
+      "serviceUnavailable": "Console data unavailable: {error}",
+      "empty": "No records yet.",
+      "pagination": "{total} entries · page {page} / {pages}",
+      "prev": "Previous",
+      "next": "Next",
+      "overview": {
+        "resellers": "Partners",
+        "resellersHint": "{total} total · {active} active",
+        "pendingDeliveries": "Pending deliveries",
+        "pendingDeliveriesHint": "Including delivering",
+        "failedDeliveries": "Failed deliveries",
+        "failedDeliveriesHint": "Needs attention",
+        "calls24h": "Calls (24h)",
+        "calls24hHint": "{total} total",
+        "sections": "Sections",
+        "channels": "Partners",
+        "channelsDesc": "SP v1 identities, scopes and rate limits.",
+        "webhooks": "Webhook deliveries",
+        "webhooksDesc": "Outbound callback status and retries.",
+        "calls": "Call audit",
+        "callsDesc": "Partner calls against /sp/v1.",
+        "open": "Open"
+      },
+      "resellers": {
+        "title": "Partners",
+        "description": "SP v1 channel identities; private keys never leave the server.",
+        "colName": "Name",
+        "colKeyId": "Key ID",
+        "colScopes": "Scopes",
+        "colRateLimit": "RPM",
+        "colLastUsed": "Last used",
+        "statusActive": "Active",
+        "statusDisabled": "Disabled",
+        "never": "Never",
+        "view": "Detail"
+      },
+      "detail": {
+        "backToList": "Back to partners",
+        "identity": "Identity and keys",
+        "keyId": "Key ID",
+        "publicKey": "Inbound public key",
+        "hasWebhookKey": "Callback signing key",
+        "yes": "Configured",
+        "no": "Not configured",
+        "webhookUrl": "Callback URL",
+        "scopes": "Scopes",
+        "rateLimit": "Requests per minute",
+        "lastUsed": "Last used",
+        "lastUsedIp": "Last used IP",
+        "createdAt": "Created",
+        "updatedAt": "Updated",
+        "recentDeliveries": "Recent deliveries",
+        "noDeliveries": "No deliveries yet."
+      },
+      "webhooks": {
+        "title": "Webhook deliveries",
+        "description": "At-least-once status of outbound callbacks.",
+        "filterStatus": "Status",
+        "filterAll": "All",
+        "filterReseller": "Partner ID",
+        "search": "Search",
+        "reset": "Reset",
+        "colTime": "Time",
+        "colReseller": "Partner",
+        "colEvent": "Event",
+        "colStatus": "Status",
+        "colAttempts": "Attempts",
+        "colCode": "Code",
+        "colError": "Error",
+        "statusPending": "Pending",
+        "statusDelivering": "Delivering",
+        "statusSucceeded": "Succeeded",
+        "statusFailed": "Failed"
+      },
+      "calls": {
+        "title": "Call audit",
+        "description": "Partner calls against /sp/v1 (append-only).",
+        "filterReseller": "Partner ID",
+        "search": "Search",
+        "reset": "Reset",
+        "colTime": "Time",
+        "colMethod": "Method",
+        "colPath": "Path",
+        "colReseller": "Partner",
+        "colStatus": "Status",
+        "colIp": "Source IP",
+        "anonymous": "Unauthenticated"
+      },
+      "write": {
+        "createTrigger": "New partner",
+        "createTitle": "New channel partner",
+        "createDescription": "The server generates an Ed25519 inbound key pair; the private key is returned only once.",
+        "name": "Name",
+        "namePlaceholder": "Partner name",
+        "webhookUrl": "Callback URL",
+        "webhookUrlPlaceholder": "https://partner.example.com/hook (optional)",
+        "rateLimit": "Requests per minute",
+        "rateLimitInvalid": "Rate limit must be an integer between 0 and 100000",
+        "scopes": "Scopes",
+        "scopesHint": "With no scope selected the partner cannot call any /sp/v1 endpoint.",
+        "creating": "Creating…",
+        "createSubmit": "Create",
+        "editTitle": "Edit partner",
+        "editDescription": "Change the name, status, scopes, rate limit and callback URL.",
+        "status": "Status",
+        "saving": "Saving…",
+        "rowEdit": "Edit",
+        "rowRotate": "Rotate key",
+        "rowDelete": "Delete",
+        "rotateTitle": "Rotate inbound key",
+        "rotateDescription": "Generate a new inbound key pair for \"{name}\"; the old public key stops working immediately.",
+        "rotating": "Rotating…",
+        "rotateConfirm": "Rotate",
+        "deleteTitle": "Delete partner",
+        "deleteDescription": "Delete \"{name}\" and all of its webhook deliveries. This cannot be undone.",
+        "deleting": "Deleting…",
+        "deleteConfirm": "Delete",
+        "keyTitle": "Partner key (shown once)",
+        "keyDescription": "Hand the inbound private key to the partner now; the platform stores only the public key and it cannot be viewed again.",
+        "keyWarning": "The private key is never shown again and cannot be recovered.",
+        "inboundPrivateKey": "Inbound private key",
+        "copy": "Copy private key",
+        "copied": "Copied",
+        "done": "Done"
+      }
+    },
+    "overview": {
+      "totalRevenue": "Total revenue",
+      "totalRevenueHint": "All paid orders",
+      "orderCount": "Orders",
+      "orderCountHint": "{count} awaiting payment",
+      "userCount": "Users",
+      "userCountHint": "All registered accounts",
+      "walletBalance": "Wallet balance",
+      "walletBalanceHint": "{count} wallet accounts",
+      "revenueOverview": "Revenue overview",
+      "vsLastMonth": "{pct}% vs last month",
+      "revenueAllTime": "Cumulative revenue from all paid orders",
+      "paid": "Paid",
+      "allOrders": "All orders",
+      "orderStatus": "Order status",
+      "to": "to",
+      "apply": "Apply",
+      "clearFilter": "Clear filter",
+      "productRevenue": "Revenue by product",
+      "weekSales": "Sales this week",
+      "topProducts": "Top products",
+      "noData": "No data",
+      "recentOrders": "Recent orders",
+      "colOrderId": "Order no.",
+      "colCustomer": "Customer",
+      "colProduct": "Product",
+      "colAmount": "Amount",
+      "colStatus": "Status",
+      "recentActivity": "Recent activity",
+      "noActivity": "No activity",
+      "salesCount": "{count} sold",
+      "customerFallback": "User",
+      "eventPaid": "Order {id} paid",
+      "eventCancelled": "Order {id} cancelled",
+      "eventPending": "New order {id} awaiting payment"
+    },
+    "rbac": {
+      "createTrigger": "New group",
+      "createTitle": "New permission group",
+      "createDescription": "After creating it you can assign permissions and an agent discount.",
+      "name": "Name",
+      "namePlaceholder": "e.g. Reseller",
+      "description": "Description",
+      "optional": "Optional",
+      "discount": "Agent discount (%)",
+      "discountPlaceholder": "e.g. 10 = 10% off; leave blank for none",
+      "creating": "Creating…",
+      "createSubmit": "Create group",
+      "nameRequired": "Enter a permission group name",
+      "discountInvalid": "Discount must be an integer 0-99; leave blank for none",
+      "noPermissions": "No assignable permissions.",
+      "discountCurrent": "Current: {label}; store checkout applies this group's discount.",
+      "discountNone": "No discount",
+      "discountPercent": "{discount}% off",
+      "editTitle": "Edit permission group",
+      "editDescription": "Edit the name, description, agent discount and permissions.",
+      "permissions": "Permissions",
+      "saving": "Saving…",
+      "deleteTrigger": "Delete",
+      "deleteTitle": "Delete permission group",
+      "deleteDescription": "This deletes “{name}” and removes it from all members. This cannot be undone. Confirm?",
+      "deleting": "Deleting…",
+      "deleteConfirm": "Confirm delete",
+      "permissionCount": "{count} permissions",
+      "empty": "No permission groups yet.",
+      "title": "Permission groups",
+      "pageDescription": "Manage permission groups and their permission sets.",
+      "serviceUnavailable": "Permission service unavailable: {error}"
+    },
+    "plugins": {
+      "detail": {
+        "back": "Back to plugins",
+        "title": "Plugin details",
+        "serviceUnavailable": "Plugin service unavailable: {error}",
+        "notFound": "Plugin not found",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "builtin": "Built-in",
+        "signed": "Signed",
+        "settings": "Settings",
+        "dependencies": "Dependencies",
+        "extensionPoints": "Extension points",
+        "consumes": "Consumes",
+        "provides": "Provides",
+        "permissions": "Permissions",
+        "frontendPages": "Front-end pages",
+        "none": "None.",
+        "depConflict": " (version mismatch)",
+        "depOptionalMissing": " (optional, not installed)",
+        "depMissing": " (missing dependency)",
+        "consumesMissing": " (missing)",
+        "roleAdmin": "Admin",
+        "roleUser": "User",
+        "noPages": "No pages declared.",
+        "noFrontend": "This plugin has no front-end bundle."
+      },
+      "installed": "Installed plugins",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "builtin": "Built-in",
+      "signed": "Signed",
+      "frontendPages": "{count} front-end pages",
+      "dependencies": "Dependencies:",
+      "extensionPoints": "Extension points:",
+      "provides": "Provides:",
+      "locales": "Languages: {locales}",
+      "detailTrigger": "Details",
+      "settings": "Settings",
+      "enable": "Enable",
+      "disable": "Disable",
+      "title": "Plugins",
+      "pageDescription": "Manage plugin installation, enablement and upgrades.",
+      "serviceUnavailable": "Plugin service unavailable: {error}"
+    },
+    "users": {
+      "title": "Users",
+      "description": "Search users; open a user to edit balance, groups and services.",
+      "searchPlaceholder": "Search email…",
+      "searchAria": "Search email",
+      "colEmail": "Email",
+      "colGroups": "Groups",
+      "colStatus": "Status",
+      "colLastLogin": "Last sign-in",
+      "empty": "No users yet.",
+      "emptyQuery": "No users match “{q}”."
+    },
+    "settings": {
+      "platform": {
+        "title": "Platform info",
+        "description": "Used for the site title, public pages and the platform shell.",
+        "name": "Platform name",
+        "intro": "Platform description",
+        "url": "Site URL",
+        "submit": "Save platform info"
+      },
+      "saving": "Saving…",
+      "brand": {
+        "title": "Platform brand",
+        "description": "Brand icon used in the back-end sidebar, browser tab and public site.",
+        "currentLogo": "Current logo",
+        "uploadLogo": "Upload logo",
+        "uploadFavicon": "Upload favicon",
+        "submit": "Save brand assets",
+        "resetting": "Restoring…",
+        "reset": "Restore default"
+      },
+      "signing": {
+        "title": "Package signing",
+        "envManaged": "Configured by STACKPANEL_SIGNING_PUBLIC_KEY.",
+        "configured": "Configured · fingerprint {fingerprint}",
+        "unconfigured": "Not configured; uploaded packages are not signature-checked.",
+        "publicKey": "Ed25519 public key (PEM)",
+        "submit": "Save signing key",
+        "clear": "Clear"
+      },
+      "title": "System settings",
+      "pageDescription": "Manage platform info and package signing.",
+      "serviceUnavailable": "Settings service unavailable: {error}"
+    },
+    "themes": {
+      "previewing": "Previewing: {name}",
+      "previewHint": "Previewing does not change the active theme.",
+      "exitPreview": "Exit preview",
+      "installed": "Installed themes",
+      "active": "Active",
+      "default": "Default",
+      "frontendPages": "Front-end pages: {count}",
+      "frontendNone": "Front end: none",
+      "locales": "Languages: {locales}",
+      "signed": "Signed",
+      "unsigned": "Unsigned",
+      "settings": "Settings",
+      "preview": "Preview",
+      "activate": "Activate",
+      "title": "Theme management",
+      "description": "Manage theme upload, preview and activation.",
+      "serviceUnavailable": "Theme service unavailable: {error}"
+    },
+    "fallbackUser": "Administrator",
+    "userDetailPage": {
+      "backToUsers": "Back to users",
+      "notFound": "User not found",
+      "description": "User details and back-office management.",
+      "impersonate": "Sign in as this user"
+    },
+    "market": {
+      "title": "Market",
+      "description": "Browse and one-click install official plugins and themes. Rebuild the front end afterward to refresh theme/plugin pages.",
+      "serviceUnavailable": "Market service unavailable: {error}",
+      "plugins": "Plugins",
+      "themes": "Themes"
+    },
+    "themeSettings": {
+      "back": "Back to themes",
+      "title": "Theme settings",
+      "noSettings": "This theme has no front-end settings."
+    },
+    "pluginSettings": {
+      "back": "Back to plugins",
+      "title": "Plugin settings",
+      "noSettings": "This plugin has no front-end settings."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "In-app notifications for the current administrator, sharing the user inbox."
+    },
+    "pluginActions": "Plugin actions"
+  },
+  "locale": {
+    "zh-CN": "简体中文",
+    "en-US": "English"
+  },
+  "action": {
+    "publicKeyRequired": "Please enter a public key",
+    "publicKeySaved": "Signing public key saved.",
+    "publicKeyCleared": "Signing public key cleared.",
+    "publicKeySaveFailed": "Failed to save the signing public key",
+    "platformInfoRequired": "Please complete all platform information",
+    "platformInfoSaved": "Platform information saved.",
+    "platformInfoSaveFailed": "Failed to save platform information",
+    "brandImageRequired": "Please choose a logo or favicon image to upload",
+    "brandImageTooLarge": "Image must be smaller than 1MB",
+    "brandImageSaved": "Brand icon saved.",
+    "brandImageCleared": "Brand icon restored to default.",
+    "brandImageUploadFailed": "Upload failed",
+    "brandImageUploadFailedStatus": "Upload failed ({status})",
+    "brandImageClearFailed": "Clear failed",
+    "settingsSaveFailed": "Failed to save settings",
+    "apiTokenNameRequired": "Please enter a key name",
+    "apiTokenIdRequired": "Missing key id",
+    "apiTokenCreateFailed": "Create failed",
+    "apiTokenRevokeFailed": "Revoke failed",
+    "apiTokenUpdateFailed": "Update failed",
+    "permissionGroupNameRequired": "Please enter a permission group name",
+    "permissionGroupCreated": "Permission group created.",
+    "permissionGroupUpdated": "Permission group updated.",
+    "permissionGroupDeleted": "Permission group deleted.",
+    "permissionGroupCreateFailed": "Failed to create the permission group",
+    "permissionGroupUpdateFailed": "Failed to update the permission group",
+    "permissionGroupDeleteFailed": "Failed to delete the permission group",
+    "pluginIdRequired": "Missing plugin ID",
+    "themeIdRequired": "Missing theme ID",
+    "marketInstallFailed": "Installation failed",
+    "pluginInstalled": "Plugin {id} v{version} installed.",
+    "pluginUpgraded": "Plugin {id} upgraded to v{version}.",
+    "themeInstalled": "Theme {id} v{version} installed.",
+    "themeUpgraded": "Theme {id} upgraded to v{version}.",
+    "pluginUnavailable": "This action is unavailable",
+    "pluginForbidden": "You do not have permission to perform this action",
+    "pluginLoginRequired": "Please sign in first",
+    "pluginInvalidDeclaration": "Invalid action declaration",
+    "pluginActionFailed": "The action did not complete, please try again later",
+    "developerResellerNameRequired": "Enter a partner name",
+    "developerResellerCreated": "Partner created.",
+    "developerResellerUpdated": "Partner updated.",
+    "developerResellerRotated": "Partner key rotated.",
+    "developerResellerDeleted": "Partner deleted.",
+    "developerResellerCreateFailed": "Failed to create the partner",
+    "developerResellerUpdateFailed": "Failed to update the partner",
+    "developerResellerRotateFailed": "Failed to rotate the partner key",
+    "developerResellerDeleteFailed": "Failed to delete the partner"
+  },
+  "user": {
+    "emailRequired": "Please enter an email",
+    "created": "User {email} created.",
+    "statusUpdated": "Status updated.",
+    "groupsUpdated": "Permission groups updated.",
+    "atLeastOneGroup": "Keep at least one permission group",
+    "amountRequired": "Enter a non-zero amount",
+    "balanceAdjusted": "Balance adjusted.",
+    "serviceGifted": "Service gifted.",
+    "serviceUpdated": "Service updated.",
+    "serviceDeleted": "Service deleted.",
+    "productRequired": "Please choose a product",
+    "createFailed": "Failed to create the user",
+    "statusUpdateFailed": "Failed to update the status",
+    "groupsUpdateFailed": "Failed to update permission groups",
+    "balanceAdjustFailed": "Failed to adjust the balance",
+    "giftFailed": "Failed to gift the service",
+    "serviceUpdateFailed": "Failed to update the service",
+    "serviceDeleteFailed": "Failed to delete the service",
+    "adminAdjustment": "Administrator adjustment"
+  },
+  "error": {
+    "auth": {
+      "invalid_credentials": "Incorrect email or password",
+      "email_taken": "This email is already registered",
+      "rate_limited": "Too many attempts, please try again later",
+      "register_failed": "Registration failed, please try again later",
+      "unauthenticated": "Your session has expired, please sign in again",
+      "forbidden": "You do not have permission to perform this action"
+    },
+    "validation": {
+      "invalid": "Invalid request parameters"
+    },
+    "request": {
+      "invalid": "Invalid request",
+      "not_found": "Resource not found",
+      "conflict": "Operation conflict, please refresh and retry",
+      "rate_limited": "Too many requests, please try again later",
+      "idempotency_key_required": "Write operations must carry an Idempotency-Key",
+      "concurrent_request": "The same request is being processed, please wait"
+    },
+    "internal": {
+      "unexpected": "Something went wrong, please try again later",
+      "unavailable": "Service temporarily unavailable, please try again later"
+    },
+    "store": {
+      "product": {
+        "not_found": "Product not found",
+        "config_unsupported": "This product does not support configuration options"
+      },
+      "checkout": {
+        "config_invalid": "Invalid checkout configuration",
+        "payment_method_required": "Please choose a payment method"
+      },
+      "cart": {
+        "empty": "Your cart is empty",
+        "item_not_found": "Cart item not found"
+      },
+      "stock": {
+        "insufficient": "Insufficient stock"
+      },
+      "order": {
+        "id_invalid": "Invalid order ID",
+        "not_cancellable": "The order cannot be cancelled",
+        "state_changed": "Order status changed, please refresh and retry",
+        "payment_processing": "Payment is still processing and cannot be cancelled",
+        "currency_mismatch": "Items in the order use different currencies, please order separately"
+      },
+      "upstream": {
+        "not_enabled": "Upstream does not exist or is disabled"
+      },
+      "channel": {
+        "not_enabled": "Sales channel does not exist or is disabled"
+      },
+      "service": {
+        "unsupported": "This service does not support this operation"
+      },
+      "pricing": {
+        "failed": "Failed to calculate the product price"
+      },
+      "not_ready": "Store service is temporarily unavailable, please try again later",
+      "payment": {
+        "error": "Payment failed, please try again later"
+      },
+      "request": {
+        "id_required": "Missing required parameters",
+        "params_required": "Missing required parameters"
+      },
+      "task": {
+        "not_retryable": "Task does not exist or cannot be retried"
+      },
+      "card": {
+        "empty_import": "No card codes to import",
+        "not_ready": "Card service is temporarily unavailable, please try again later"
+      }
+    },
+    "wallet": {
+      "amount_invalid": "Invalid amount",
+      "insufficient_balance": "Insufficient wallet balance",
+      "adjustment_invalid": "Invalid wallet adjustment parameters",
+      "balance_negative": "Wallet balance cannot be negative",
+      "topup": {
+        "params_invalid": "Invalid top-up parameters"
+      },
+      "adjustment": {
+        "params_invalid": "Invalid adjustment parameters"
+      },
+      "user_not_found": "User not found",
+      "not_ready": "Wallet service is temporarily unavailable, please try again later"
+    },
+    "payment": {
+      "method_unavailable": "The selected payment method is unavailable",
+      "not_found": "Payment record not found",
+      "already_settled": "Payment already processed",
+      "rejected": "The payment channel rejected the order",
+      "undetermined": "Payment status cannot be confirmed; the order is on hold for reconciliation",
+      "callback_config_invalid": "Invalid payment callback configuration",
+      "return_url_invalid": "The payment channel returned an invalid payment link",
+      "return_url_insecure": "The payment channel returned an insecure payment link",
+      "amount_invalid": "Invalid amount",
+      "settlement_amount_invalid": "Invalid settlement amount",
+      "settlement_mismatch": "Settlement information mismatch"
+    },
+    "catalog": {
+      "product": {
+        "id_required": "Missing product ID",
+        "not_found": "Product not found"
+      },
+      "category": {
+        "not_found": "Category not found",
+        "slug_taken": "Category slug already exists",
+        "has_children": "Please delete or move its subcategories first",
+        "move_into_self": "A category cannot be moved into itself",
+        "move_into_descendant": "A category cannot be moved under one of its subcategories",
+        "parent_missing": "Parent category is missing",
+        "params_invalid": "Invalid category parameters",
+        "id_required": "Missing category ID",
+        "corrupt": "Category data is corrupted, please contact an administrator"
+      },
+      "listing": {
+        "params_invalid": "Invalid listing parameters",
+        "corrupt": "Listing data is corrupted, please contact an administrator"
+      },
+      "sort": {
+        "params_invalid": "Invalid sort parameters",
+        "category_missing": "The sort list contains a nonexistent category"
+      },
+      "not_ready": "Catalog service is temporarily unavailable, please try again later",
+      "store_data_unavailable": "Store product data is unavailable",
+      "store_stock_unavailable": "Store stock service is unavailable"
+    },
+    "ticket": {
+      "not_found": "Ticket not found",
+      "forbidden": "You cannot access this ticket",
+      "query": {
+        "invalid": "Invalid query parameters"
+      },
+      "request": {
+        "invalid": "Invalid request parameters"
+      },
+      "id_required": "Missing ticket ID",
+      "not_ready": "Ticket service is temporarily unavailable, please try again later"
+    },
+    "notice": {
+      "not_found": "Announcement not found",
+      "params_invalid": "Invalid announcement parameters",
+      "id_required": "Missing announcement ID",
+      "not_ready": "Announcement service is temporarily unavailable, please try again later"
+    },
+    "llm_gateway": {
+      "params_invalid": "Invalid parameters",
+      "key_not_found": "Key not found",
+      "account_not_found": "Upstream account not found",
+      "key_limit_reached": "Key limit reached (50)",
+      "upstream_credentials_required": "Missing upstream Base URL or API Key",
+      "upstream_failed": "Upstream service returned an error, please try again later",
+      "models_fetch_failed": "Failed to fetch models, please try again later",
+      "not_ready": "API gateway service is temporarily unavailable, please try again later"
+    },
+    "zjmf": {
+      "upstream_not_found": "Upstream not found",
+      "sync_in_progress": "Upstream is syncing, please try again later",
+      "upstream_disabled": "Upstream is disabled",
+      "protocol_invalid": "Invalid upstream protocol",
+      "params_invalid": "Invalid upstream configuration parameters",
+      "upstream_id_invalid": "Invalid upstream ID",
+      "credentials_missing": "Upstream credentials are not configured",
+      "credentials_invalid": "Invalid upstream credentials",
+      "secrets_unavailable": "Secret storage is not configured",
+      "product_mapping_not_found": "Product mapping not found",
+      "product_already_linked": "The target upstream product is already linked",
+      "item_missing_id": "Upstream product is missing an instance identifier",
+      "item_missing_price": "Upstream product is missing a price",
+      "sync_failed": "Upstream sync failed, please try again later",
+      "not_ready": "Upstream service is temporarily unavailable, please try again later"
+    },
+    "epay": {
+      "amount_invalid": "Invalid payment amount",
+      "gateway_url_invalid": "Invalid gateway URL",
+      "gateway_url_insecure": "Gateway URL must be a public HTTPS address",
+      "gateway_unresolved": "Gateway hostname cannot be resolved",
+      "gateway_rejected": "The gateway rejected the payment request",
+      "gateway_incomplete": "The gateway returned an incomplete payment response",
+      "gateway_unreachable": "Cannot connect to the payment gateway",
+      "gateway_invalid_json": "The payment gateway returned an invalid response",
+      "gateway_invalid_response": "Invalid payment gateway response",
+      "gateway_http_error": "The payment gateway returned an error, please try again later",
+      "signature_invalid": "Payment signature verification failed",
+      "pid_invalid": "Invalid merchant PID",
+      "methods_required": "Select at least one payment method",
+      "methods_invalid": "Invalid payment method configuration",
+      "keys_invalid": "Invalid RSA key material",
+      "currency_unsupported": "Epay only supports CNY",
+      "secrets_unavailable": "Secret storage is not configured",
+      "config_invalid": "Invalid epay configuration parameters",
+      "not_configured": "Epay is not configured yet",
+      "not_ready": "Epay service is temporarily unavailable, please try again later",
+      "callback_signature_invalid": "Invalid callback signature",
+      "callback_params_invalid": "Invalid payment callback parameters",
+      "callback_params_incomplete": "Incomplete payment callback parameters"
+    },
+    "cms": {
+      "not_ready": "Content service is temporarily unavailable, please try again later"
+    }
+  },
+  "auditAction": {
+    "auth": {
+      "login": "Sign in"
+    },
+    "auth_login": "Sign in",
+    "auth_login_failed": "Sign-in failed",
+    "auth_logout": "Sign out",
+    "auth_forbidden": "Permission denied",
+    "auth_oauth_login": "OAuth sign-in",
+    "auth_oauth_failed": "OAuth sign-in failed",
+    "auth_oauth_conflict": "OAuth identity conflict",
+    "user_create": "Create user",
+    "user_update": "Update user",
+    "user_reset-password": "Reset password",
+    "plugin_install": "Install plugin",
+    "plugin_upgrade": "Upgrade plugin",
+    "plugin_activate": "Activate plugin",
+    "plugin_deactivate": "Deactivate plugin",
+    "plugin_uninstall": "Delete plugin",
+    "plugin_settings_update": "Update plugin settings",
+    "theme_install": "Install theme",
+    "theme_activate": "Activate theme",
+    "theme_preview_set": "Enter theme preview",
+    "theme_preview_clear": "Exit theme preview",
+    "theme_delete": "Delete theme",
+    "theme_settings_update": "Update theme settings",
+    "setting_set": "Update setting",
+    "secret_set": "Update secret",
+    "signing_key_set": "Configure signing key",
+    "signing_key_clear": "Clear signing key",
+    "platform_info_update": "Update platform info",
+    "frontend_permission_denied": "Front-end permission denied",
+    "frontend_finder_call": "Call Finder",
+    "frontend_admin_route_render": "Render plugin admin",
+    "frontend_account_route_render": "Render account page",
+    "frontend_action_execute": "Execute front-end action",
+    "bootstrap_create": "Bootstrap administrator"
+  },
+  "auditResource": {
+    "user": "User",
+    "plugin": "Plugin",
+    "theme": "Theme",
+    "setting": "Setting",
+    "secret": "Secret",
+    "platform": "Platform"
+  },
+  "orderStatus": {
+    "PENDING": "Pending",
+    "PAID": "Paid",
+    "CANCELLED": "Cancelled",
+    "EXPIRED": "Expired",
+    "REFUNDED": "Refunded"
+  },
+  "apiToken": {
+    "group": {
+      "llm-gateway": "API gateway",
+      "store": "Store",
+      "store-wallet": "Wallet",
+      "store-product-card": "Card keys",
+      "catalog": "Catalog",
+      "ticket": "Tickets",
+      "notice": "Notices",
+      "epay": "Payments",
+      "platform": "Platform",
+      "zjmf-upstream": "Upstream"
+    },
+    "scope": {
+      "store": {
+        "view": "View products",
+        "buy": "Place orders",
+        "admin": "Manage store",
+        "wallet": "Wallet account"
+      },
+      "ticket": {
+        "view": "View tickets",
+        "create": "Create tickets",
+        "admin": "Manage tickets"
+      },
+      "llm-gateway": {
+        "use": "Call models",
+        "admin": "Manage gateway"
+      },
+      "platform": {
+        "admin": "Platform administrator"
+      }
+    },
+    "never": "Never",
+    "new": "New key",
+    "empty": "No API keys yet. Click “New key” to get started.",
+    "statusActive": "Active",
+    "statusDisabled": "Disabled",
+    "scopeCount": "{count} scopes",
+    "noScopes": "No scopes",
+    "lastUsed": "Last used: {time}",
+    "revoke": "Revoke",
+    "createTitle": "New API key",
+    "createDescription": "The key calls platform APIs on your behalf; its effective permissions never exceed your own.",
+    "name": "Name",
+    "namePlaceholder": "e.g. CI deploy, local script",
+    "scopes": "Scopes",
+    "scopesHint": "Leave unchecked to create an identity with no permissions.",
+    "clearGroup": "Clear",
+    "selectAll": "Select all",
+    "cancel": "Cancel",
+    "creating": "Creating…",
+    "createSubmit": "Create key",
+    "issuedTitle": "Key created",
+    "issuedDescription": "This is the only time the full key is shown. Copy and store it now; it cannot be viewed again.",
+    "copied": "Copied",
+    "copy": "Copy",
+    "usageHint": "Identify it by the {prefix} prefix in the Authorization: Bearer header.",
+    "saved": "I have saved it",
+    "revokeTitle": "Revoke key",
+    "revokeDescription": "Revoke “{name}”? Calls using this key will fail immediately and this cannot be undone.",
+    "revoking": "Revoking…",
+    "revokeConfirm": "Confirm revoke"
+  },
+  "createUser": {
+    "trigger": "Add user",
+    "title": "Add user",
+    "description": "Create a back-end user; leave the password blank to auto-generate one shown only once.",
+    "email": "Email",
+    "password": "Password (optional)",
+    "passwordPlaceholder": "Leave blank to auto-generate",
+    "groups": "Permission groups",
+    "status": "Status",
+    "statusActive": "Active",
+    "statusDisabled": "Disabled",
+    "generatedPassword": "Initial password (shown once):",
+    "creating": "Creating…",
+    "submit": "Create user",
+    "emailRequired": "Enter an email address",
+    "passwordTooShort": "Password must be at least 8 characters, or leave it blank to auto-generate"
+  },
+  "settingsForm": {
+    "saved": "Settings saved.",
+    "saving": "Saving…",
+    "submit": "Save settings"
+  },
+  "market": {
+    "installed": "Installed",
+    "upgradableTo": "Upgradable to v{version}",
+    "installedDifferent": "Installed (different version)",
+    "notInstalled": "Not installed",
+    "upgradeTo": "Upgrade to v{version}",
+    "reinstall": "Reinstall",
+    "install": "Install",
+    "builtin": "Built-in",
+    "frontendPages": "{count} front-end pages",
+    "installing": "Installing…",
+    "empty": "No packages available."
+  },
+  "account": {
+    "security": {
+      "title": "Account security",
+      "description": "Review the signed-in account and linked identities.",
+      "loginAccount": "Signed-in account",
+      "email": "Email",
+      "accountStatus": "Account status",
+      "statusActive": "Active",
+      "boundIdentities": "Linked identities",
+      "boundFallback": "Linked",
+      "connected": "Connected",
+      "noIdentities": "No third-party identities linked yet."
+    },
+    "home": {
+      "greeting": "Hello, {email}",
+      "roleAdmin": "Administrator",
+      "roleUser": "User",
+      "balance": "Balance",
+      "activeServices": "Active services",
+      "security": "Security",
+      "protected": "Protected"
+    },
+    "permission": "Account permission",
+    "page": {
+      "notFound": "This account page was not found.",
+      "denied": "You do not have access to this page."
+    },
+    "apiKeys": {
+      "title": "API keys",
+      "description": "Create and manage credentials for the platform open API; keys act as you and never exceed your own permissions.",
+      "howTo": "How to use",
+      "usage": "Send the key in the request header to authenticate; effective permissions are the intersection of the key's scopes and your own.",
+      "placeholder": "<your key>"
+    },
+    "notifications": {
+      "title": "My notifications",
+      "description": "Order payments, fulfillment progress and system announcements appear here."
+    }
+  },
+  "apply": {
+    "queued": "Queued, waiting for the web tier",
+    "processing": "Processing",
+    "installed": "Plugin installed.",
+    "installingFrontend": "Plugin installed, applying front-end…",
+    "noun": {
+      "plugin": "plugin",
+      "theme": "theme"
+    },
+    "nounCap": {
+      "plugin": "Plugin",
+      "theme": "Theme"
+    },
+    "labeled": " \"{label}\"",
+    "install": {
+      "failed": "Failed to install {noun}{label}",
+      "succeeded": "{nounCap}{label} installed",
+      "inProgress": "Installing {noun}{label}"
+    },
+    "update": {
+      "failed": "Failed to upgrade {noun}{label}",
+      "succeeded": "{nounCap}{label} upgraded",
+      "inProgress": "Upgrading {noun}{label}"
+    },
+    "remove": {
+      "failed": "Failed to uninstall {noun}{label}",
+      "succeeded": "{nounCap}{label} uninstalled",
+      "inProgress": "Uninstalling {noun}{label}"
+    }
+  },
+  "upload": {
+    "pluginTrigger": "Upload plugin (ZIP)",
+    "pluginTitle": "Upload plugin",
+    "pluginDescription": "Upload a plugin ZIP to install; front-end changes are built automatically.",
+    "pluginFile": "Plugin ZIP file",
+    "uploading": "Uploading…",
+    "applying": "Applying…",
+    "submit": "Upload",
+    "themeTrigger": "Upload theme (ZIP)",
+    "themeTitle": "Upload theme",
+    "themeDescription": "Upload a theme ZIP to install; activate or preview it afterward.",
+    "themeFile": "Theme ZIP file",
+    "themeInstalled": "Theme installed."
+  },
+  "pluginPage": {
+    "notFound": "Plugin admin page not found.",
+    "denied": "Access denied: requires {permission}."
+  },
+  "plugin": {
+    "uploadSelectZip": "Choose a plugin ZIP to upload",
+    "zipTooLarge": "ZIP must be smaller than 2MB",
+    "uploadFailed": "Upload failed",
+    "uploadFailedStatus": "Upload failed ({status})",
+    "installedApplying": "Plugin installed, applying front-end…",
+    "installed": "Plugin installed."
+  },
+  "api": {
+    "upstreamModelsFailed": "Failed to fetch models",
+    "missingUpstreamProvider": "Missing upstream provider",
+    "upstreamProductsUnavailable": "Upstream product service unavailable",
+    "categorySaveFailed": "Failed to save categories",
+    "invalidBody": "Invalid request body",
+    "invalidParams": "Invalid parameters",
+    "notificationsUnavailable": "Notification service unavailable"
+  },
+  "frontend": {
+    "pageNotFound": "Page not found",
+    "backHome": "Back to home"
+  },
+  "frontendError": {
+    "title": "This page could not be displayed",
+    "description": "Please try again later, or return to the home page."
+  }
+}

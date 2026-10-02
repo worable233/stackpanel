@@ -1,0 +1,47 @@
+# StackPanel Caddyfile — automatic HTTPS for the web UI and the API.
+# Used by the optional `caddy` service in docker-compose*.yml (profile: https).
+# Environment variables are substituted by Caddy at startup.
+
+{
+	email {$STACKPANEL_EMAIL}
+}
+
+{$STACKPANEL_DOMAIN} {
+	# ------------------------------------------------------------------------
+	# API machine surface (external clients hit these directly, bypassing the
+	# web BFF): open platform, MCP, SP v1, ZJMF compat, payment callbacks, and
+	# API-served theme/plugin assets.
+	#
+	# Prefix-preserving reverse proxy: the upstream path must stay exactly as
+	# received (`/api/v1/platform` → api `/api/v1/platform`). Do NOT use
+	# `handle_path`, which strips the matched prefix and would turn it into
+	# `/v1/platform` (404). Web BFF routes live under `/api/notifications`,
+	# `/api/llm-gateway/*`, `/api/catalog/*`, `/api/store/*` — those match the
+	# `handle` fallback below, never this block.
+	#
+	# `flush_interval -1` disables response buffering so SSE / streaming
+	# passthrough (llm-gateway, backup download) reaches the client per write.
+	# `encode gzip` must NOT wrap these responses: compressing `text/event-stream`
+	# buffers events and breaks SSE clients.
+	# ------------------------------------------------------------------------
+	@api path /api/v1/* /api/product* /mcp /sp/v1/* /llm-gateway/* /callbacks/* \
+		/zjmf_api_login /cart/* /host/* /provision/* \
+		/themes/* /plugins/* /media/* /platform/* /health /ready
+	handle @api {
+		reverse_proxy {$API_UPSTREAM} {
+			flush_interval -1
+			# Keep in-flight streams alive across a Caddy config reload instead of
+			# dropping every SSE/proxy connection (matches the kernel's 30s drain).
+			stream_close_delay 30s
+		}
+	}
+
+	# ------------------------------------------------------------------------
+	# Web (Next.js): the UI plus the BFF `/api/*` routes. This is the fallback;
+	# the API matcher above must be checked first.
+	# ------------------------------------------------------------------------
+	handle {
+		encode gzip
+		reverse_proxy {$WEB_UPSTREAM}
+	}
+}

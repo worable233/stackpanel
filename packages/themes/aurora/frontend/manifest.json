@@ -1,0 +1,225 @@
+{
+  "version": "1.0.0",
+  "revision": "3ec9f042ac09",
+  "entry": "frontend/dist/index.js",
+  "pages": [
+    {
+      "path": "/",
+      "component": "home",
+      "layout": "theme"
+    },
+    {
+      "path": "/about",
+      "component": "about",
+      "layout": "theme"
+    },
+    {
+      "path": "/blog",
+      "component": "blog",
+      "layout": "theme"
+    },
+    {
+      "path": "/blog/:slug",
+      "component": "post",
+      "layout": "theme"
+    },
+    {
+      "path": "*",
+      "component": "notFound",
+      "layout": "theme"
+    }
+  ],
+  "layouts": ["theme"],
+  "finders": [],
+  "adminRoutes": [],
+  "adminActions": [],
+  "actions": [],
+  "accountRoutes": [],
+  "accountWidgets": [],
+  "files": ["frontend/dist/index.js", "frontend/dist/index.js.map"],
+  "settingsSchema": {
+    "groups": [
+      {
+        "id": "hero",
+        "label": "首屏",
+        "fields": [
+          {
+            "type": "text",
+            "name": "heroBadge",
+            "label": "首屏徽标",
+            "default": "AURORA CLOUD"
+          },
+          {
+            "type": "text",
+            "name": "heroTitle",
+            "label": "主标题",
+            "default": "在深空中，找到属于你的云"
+          },
+          {
+            "type": "textarea",
+            "name": "heroSubtitle",
+            "label": "副标题",
+            "default": "暗夜里的一束稳定光。实体运营、资质齐备、架构自主，从第一台服务器开始，可靠就是默认选项。",
+            "help": "一句话说明为什么选择我们"
+          }
+        ]
+      },
+      {
+        "id": "why",
+        "label": "为什么选择我们",
+        "fields": [
+          {
+            "type": "text",
+            "name": "whyKicker",
+            "label": "区块小标",
+            "default": "为什么选择我们"
+          },
+          {
+            "type": "text",
+            "name": "whyTitle",
+            "label": "区块标题",
+            "default": "稳定，看得见"
+          },
+          {
+            "type": "textarea",
+            "name": "whyText",
+            "label": "区块说明",
+            "default": "上云最该有的确定性，我们一次性交付。"
+          },
+          {
+            "type": "text",
+            "name": "feature1Title",
+            "label": "板块一标题",
+            "default": "实体企业"
+          },
+          {
+            "type": "textarea",
+            "name": "feature1Text",
+            "label": "板块一说明",
+            "default": "正规注册、真实经营，合作从头就看得清、查得到。"
+          },
+          {
+            "type": "text",
+            "name": "feature2Title",
+            "label": "板块二标题",
+            "default": "资质齐全"
+          },
+          {
+            "type": "textarea",
+            "name": "feature2Text",
+            "label": "板块二说明",
+            "default": "备案与服务资质齐备，合规不是加分项，是默认项。"
+          },
+          {
+            "type": "text",
+            "name": "feature3Title",
+            "label": "板块三标题",
+            "default": "技术独立"
+          },
+          {
+            "type": "textarea",
+            "name": "feature3Text",
+            "label": "板块三说明",
+            "default": "自研架构、资源自持，升级扩容不设卡，路线自己定。"
+          }
+        ]
+      },
+      {
+        "id": "stats",
+        "label": "数据",
+        "fields": [
+          {
+            "type": "text",
+            "name": "statsKicker",
+            "label": "区块小标",
+            "default": "用数据说话"
+          },
+          {
+            "type": "text",
+            "name": "statsTitle",
+            "label": "区块标题",
+            "default": "稳定，看得见"
+          },
+          {
+            "type": "text",
+            "name": "stat1Value",
+            "label": "统计值一",
+            "default": "99.9%"
+          },
+          {
+            "type": "text",
+            "name": "stat1Label",
+            "label": "统计标签一",
+            "default": "稳定在线"
+          },
+          {
+            "type": "text",
+            "name": "stat1Desc",
+            "label": "统计说明一",
+            "default": "自研架构持续守护，掉线不是选项。"
+          },
+          {
+            "type": "text",
+            "name": "stat2Value",
+            "label": "统计值二",
+            "default": "<5 min"
+          },
+          {
+            "type": "text",
+            "name": "stat2Label",
+            "label": "统计标签二",
+            "default": "响应速度"
+          },
+          {
+            "type": "text",
+            "name": "stat2Desc",
+            "label": "统计说明二",
+            "default": "任何时刻的问题，都有回音。"
+          },
+          {
+            "type": "text",
+            "name": "stat3Value",
+            "label": "统计值三",
+            "default": "100%"
+          },
+          {
+            "type": "text",
+            "name": "stat3Label",
+            "label": "统计标签三",
+            "default": "资质合规"
+          },
+          {
+            "type": "text",
+            "name": "stat3Desc",
+            "label": "统计说明三",
+            "default": "正规实体，每一单都合规可溯。"
+          }
+        ]
+      },
+      {
+        "id": "cta",
+        "label": "行动号召",
+        "fields": [
+          {
+            "type": "text",
+            "name": "ctaTitle",
+            "label": "标题",
+            "default": "上云，不该是件复杂的事"
+          },
+          {
+            "type": "textarea",
+            "name": "ctaText",
+            "label": "说明",
+            "default": "选配置、部署、上线，几步就能跑起来。"
+          },
+          {
+            "type": "text",
+            "name": "ctaButton",
+            "label": "按钮",
+            "default": "开始上云"
+          }
+        ]
+      }
+    ]
+  }
+}
