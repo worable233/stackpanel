@@ -1,0 +1,10 @@
+{
+  "name": "@stackpanel/theme-default-frontend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/index.tsx --format esm --out-dir dist --platform neutral --clean --external react --external react/jsx-runtime --external @stackpanel/sdk --external @stackpanel/ui --jsx automatic"
+  },
+  "license": "MIT"
+}

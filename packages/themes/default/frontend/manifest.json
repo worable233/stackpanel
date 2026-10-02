@@ -1,0 +1,222 @@
+{
+  "version": "0.0.1",
+  "revision": "aae92f155d28",
+  "entry": "frontend/dist/index.js",
+  "pages": [
+    {
+      "path": "/",
+      "component": "home",
+      "layout": "theme"
+    },
+    {
+      "path": "/about",
+      "component": "about",
+      "layout": "theme"
+    },
+    {
+      "path": "/blog",
+      "component": "blog",
+      "layout": "theme"
+    },
+    {
+      "path": "/blog/:slug",
+      "component": "post",
+      "layout": "theme"
+    },
+    {
+      "path": "*",
+      "component": "notFound",
+      "layout": "theme"
+    }
+  ],
+  "layouts": ["theme"],
+  "finders": [],
+  "adminRoutes": [],
+  "adminActions": [],
+  "actions": [],
+  "accountRoutes": [],
+  "accountWidgets": [],
+  "files": ["frontend/dist/index.js", "frontend/dist/index.js.map"],
+  "settingsSchema": {
+    "groups": [
+      {
+        "id": "hero",
+        "label": "首页首屏",
+        "fields": [
+          {
+            "type": "text",
+            "name": "heroTitle",
+            "label": "主标题",
+            "default": "你的业务，值得更稳的云"
+          },
+          {
+            "type": "textarea",
+            "name": "heroSubtitle",
+            "label": "副标题",
+            "default": "我们相信，稳定不是偶然，而是工程、运维与时间共同沉淀的结果。",
+            "help": "一句话说明为什么选择我们"
+          }
+        ]
+      },
+      {
+        "id": "whychoose",
+        "label": "为什么选择我们",
+        "fields": [
+          {
+            "type": "text",
+            "name": "whyKicker",
+            "label": "区块小标",
+            "default": "为什么选择我们"
+          },
+          {
+            "type": "text",
+            "name": "whyTitle",
+            "label": "区块标题",
+            "default": "稳定，不是一句口号"
+          },
+          {
+            "type": "textarea",
+            "name": "whyText",
+            "label": "区块说明",
+            "default": "我们相信，上云最需要的确定性，不应该建立在运气之上，而应该建立在可以被验证的工程结果之上。"
+          },
+          {
+            "type": "text",
+            "name": "feature1Title",
+            "label": "板块一标题",
+            "default": "技术自主"
+          },
+          {
+            "type": "textarea",
+            "name": "feature1Text",
+            "label": "板块一说明",
+            "default": "架构自研、资源自持。我们相信，业务的边界应该由你定义，而不是由平台的限制决定。"
+          },
+          {
+            "type": "text",
+            "name": "feature2Title",
+            "label": "板块二标题",
+            "default": "全程服务"
+          },
+          {
+            "type": "textarea",
+            "name": "feature2Text",
+            "label": "板块二说明",
+            "default": "从选购到运维，每一次沟通都有人回应。我们相信，好的服务不是口号，而是响应速度与解决问题的能力。"
+          },
+          {
+            "type": "text",
+            "name": "feature3Title",
+            "label": "板块三标题",
+            "default": "快速交付"
+          },
+          {
+            "type": "textarea",
+            "name": "feature3Text",
+            "label": "板块三说明",
+            "default": "下单即开通，升配即生效。我们相信，时间不应该浪费在等待上，而应该投入到业务本身。"
+          }
+        ]
+      },
+      {
+        "id": "trust",
+        "label": "信任与数字",
+        "fields": [
+          {
+            "type": "text",
+            "name": "trustKicker",
+            "label": "区块小标",
+            "default": "用数据说话"
+          },
+          {
+            "type": "text",
+            "name": "trustTitle",
+            "label": "区块标题",
+            "default": "稳定，看得见"
+          },
+          {
+            "type": "text",
+            "name": "stat1Value",
+            "label": "统计值一",
+            "default": "99.9%"
+          },
+          {
+            "type": "text",
+            "name": "stat1Label",
+            "label": "统计标签一",
+            "default": "稳定在线"
+          },
+          {
+            "type": "text",
+            "name": "stat1Desc",
+            "label": "统计说明一",
+            "default": "自研架构持续守护每一次请求，我们相信，掉线不应该成为选项。"
+          },
+          {
+            "type": "text",
+            "name": "stat2Value",
+            "label": "统计值二",
+            "default": "<5 min"
+          },
+          {
+            "type": "text",
+            "name": "stat2Label",
+            "label": "统计标签二",
+            "default": "响应速度"
+          },
+          {
+            "type": "text",
+            "name": "stat2Desc",
+            "label": "统计说明二",
+            "default": "无论何时提出问题，都会得到及时且真实的回应。"
+          },
+          {
+            "type": "text",
+            "name": "stat3Value",
+            "label": "统计值三",
+            "default": "7×24"
+          },
+          {
+            "type": "text",
+            "name": "stat3Label",
+            "label": "统计标签三",
+            "default": "全天值守"
+          },
+          {
+            "type": "text",
+            "name": "stat3Desc",
+            "label": "统计说明三",
+            "default": "工程师的响应跨越每一个时区，我们相信，问题应该在今天被解决。"
+          }
+        ]
+      },
+      {
+        "id": "cta",
+        "label": "行动号召",
+        "fields": [
+          {
+            "type": "text",
+            "name": "ctaTitle",
+            "label": "标题",
+            "default": "上云，本就可以足够简单"
+          },
+          {
+            "type": "textarea",
+            "name": "ctaText",
+            "label": "说明",
+            "default": "从选配到上线，我们让每一步都足够清晰。选好配置、一键部署、即刻上线。"
+          },
+          {
+            "type": "text",
+            "name": "ctaButton",
+            "label": "按钮",
+            "default": "开始上云"
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": {
+    "/shop": "shop"
+  }
+}

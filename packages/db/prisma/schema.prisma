@@ -1,0 +1,439 @@
+// StackPanel API schema. PostgreSQL (kernel + Extension tables).
+// Prisma 7: datasource URL is configured in prisma.config.ts, not here.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Core user. Credentials live on the platform (kernel); login/registration
+/// flows live in the login plugin. Users belong to one or more permission
+/// groups; effective permissions are the union of their groups' permissions.
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String?
+  status       UserStatus    @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  identities    UserIdentity[]
+  groups        UserGroup[]
+  notifications Notification[]
+  apiTokens     ApiToken[]
+
+  @@map("users")
+}
+
+/// External identity bound to a local user (e.g. WowID account).
+model UserIdentity {
+  id          String   @id @default(cuid())
+  userId      String
+  providerId  String
+  externalId  String
+  email       String?
+  displayName String?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("user_identities")
+  @@unique([providerId, externalId])
+  @@index([userId])
+}
+
+/// A named collection of permissions. Groups are additive: a user's effective
+/// permissions are the union of all their groups' permissions.
+model PermissionGroup {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  discount    Int?              // 代理折扣（%），0-99；商店结账按用户所在组最大折扣计价，null=无折扣
+  createdAt   DateTime          @default(now())
+  members     UserGroup[]
+  permissions GroupPermission[]
+
+  @@map("permission_groups")
+}
+
+/// A declared permission string (e.g. `store.admin`), contributed by plugins
+/// and owned by the platform. Granting to a group makes it effective.
+model Permission {
+  id    String            @id @default(cuid())
+  key   String            @unique
+  name  String
+  groups GroupPermission[]
+
+  @@map("permissions")
+}
+
+/// Many-to-many: user → permission group (additive roles).
+model UserGroup {
+  userId  String
+  groupId String
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   PermissionGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+  @@map("user_groups")
+  @@index([groupId])
+}
+
+/// Many-to-many: permission group → permission.
+model GroupPermission {
+  groupId      String
+  permissionId String
+  group        PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  permission   Permission      @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, permissionId])
+  @@index([permissionId])
+  @@map("group_permissions")
+}
+
+/// Append-only audit trail. No UPDATE/DELETE through the app or the DB.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  resource   String
+  resourceId String?
+  ip         String?
+  userAgent  String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@map("audit_logs")
+  @@index([createdAt])
+  @@index([actorId])
+}
+
+/// Public configuration (stored as JSON). Values are non-secret.
+model Setting {
+  key       String   @id
+  value     Json
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+/// Encrypted secret (AES-256-GCM: iv.tag.ciphertext base64). Never returned in cleartext.
+model Secret {
+  key        String   @id
+  ciphertext String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("secrets")
+}
+
+/// Installed plugins and their persisted enabled state.
+model Plugin {
+  id         String   @id
+  name       String
+  version    String
+  enabled    Boolean  @default(false)
+  installedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("plugins")
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  purpose         String   @default("ORDER")
+  userId          String
+  orderId         String?
+  methodId        String?  // → PaymentMethod
+  gateway         String
+  providerId      String?
+  paymentMethod   String?
+  merchantOrderNo String?  @unique
+  amount          Int      // 结算币种金额（网关实收）
+  currency        String   @default("CNY")
+  orderCurrency   String?  // 订单原币种
+  orderAmount     Int?     // 订单原币种金额
+  fxRate          Int?     // 冻结汇率快照
+  status          String   @default("PENDING")
+  externalId      String?
+  paymentUrl      String?
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  method          PaymentMethod? @relation(fields: [methodId], references: [id])
+
+  @@map("payments")
+  @@index([orderId])
+  @@index([userId, createdAt])
+  @@index([methodId])
+}
+
+/// 钱包账户：每用户每币种一个。本期仅使用 CNY 账户；结构为多币种预留。
+model WalletAccount {
+  id        String   @id @default(cuid())
+  userId    String
+  currency  String   @default("CNY")
+  balance   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("wallet_accounts")
+  @@unique([userId, currency])
+}
+
+/// 销售渠道：终端（PC/小程序/API）× 支付方式绑定，订单来源追踪。
+model SalesChannel {
+  id        String          @id @default(cuid())
+  code      String          @unique
+  name      String
+  terminal  String          @default("PC")
+  enabled   Boolean         @default(true)
+  sortOrder Int             @default(0)
+  methods   PaymentMethod[]
+  createdAt DateTime        @default(now())
+
+  @@map("sales_channels")
+}
+
+/// 支付方式实例：每行 = 一个可用收款配置（epay 商户/银行信息/收款码 URL）。
+model PaymentMethod {
+  id         String        @id @default(cuid())
+  channelId  String
+  providerId String        // epay | bank_transfer | qrcode | stripe(预留)
+  name       String
+  enabled    Boolean       @default(true)
+  scene      String        @default("PC")
+  config     Json          // 商户密钥 / 银行信息 / 收款码 URL
+  sortOrder  Int           @default(0)
+  channel    SalesChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  payments   Payment[]
+  createdAt  DateTime      @default(now())
+
+  @@map("payment_methods")
+  @@index([channelId])
+}
+
+/// 汇率：支持成对 (from→to)，本期仅维护 外币→结算币种 单向记录（无套利闭环）。
+/// rate 为整数缩放 ×1e6：结算金额 = round(原币种金额minor × rate / 1e6)。
+model FxRate {
+  id           String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String   @default("CNY")
+  rate         Int      // from→to，×1e6
+  source       String   @default("manual") // manual | api(预留)
+  updatedBy    String?
+  updatedAt    DateTime @updatedAt
+
+  @@map("fx_rates")
+  @@unique([fromCurrency, toCurrency])
+}
+
+/// Immutable wallet ledger. Each business reference can affect a wallet once.
+model WalletLedgerEntry {
+  id            String   @id @default(cuid())
+  userId        String
+  amount        Int
+  currency      String   @default("CNY")
+  type          String
+  referenceType String
+  referenceId   String
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@unique([referenceType, referenceId])
+  @@index([userId, createdAt])
+  @@map("wallet_ledger_entries")
+}
+
+/// Installed theme packages. Files live under data/themes/<id>/.
+model Theme {
+  id          String   @id
+  name        String
+  version     String
+  active      Boolean  @default(false)
+  isDefault   Boolean  @default(false)
+  installedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("themes")
+}
+
+/// Extension 引擎元表（ADR-0009 §6）。每个插件声明的模型一行：记录定义哈希
+/// （幂等建表/迁移的依据）与引擎生成的物理表名。`ext_*` 表由引擎迁移器管理，
+/// Prisma 只管理这张元表。
+model ExtensionSchema {
+  kind           String   @id
+  pluginId       String
+  definitionHash String
+  tableName      String
+  appliedAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("extension_schema")
+  @@index([pluginId])
+}
+
+/// 站内通知：按用户归属的收件箱消息（订单支付、履约失败、系统公告等）。
+/// 由内核 NotificationsService 写入，插件通过 ctx.notifications.create 接入。
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // 通知类型，如 order.paid / delivery.failed / announcement
+  title     String
+  body      String?
+  link      String?  // 前端深链，如 /account/orders/:id
+  data      Json?    // 插件自定义载荷
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+/// 平台通用 API 凭证（内核级身份能力）。明文只回显一次，库里只存哈希与前缀。
+/// 有效权限 = scopes ∩ 持有者当前权限（请求时求交集，降权即时生效）。
+model ApiToken {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  keyPrefix   String // 展示用打码前缀，如 sp_abcd…
+  keyHash     String    @unique // sha256(明文)
+  scopes      Json      @default("[]") // 授权范围 string[]；空 = 仅身份、无任何权限
+  ipAllowlist Json      @default("[]") // CIDR/单 IP；空 = 不限制
+  status      String    @default("ACTIVE") // ACTIVE|DISABLED
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  lastUsedIp  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usage       ApiTokenUsage[]
+
+  @@map("api_tokens")
+  @@index([userId])
+  @@index([status])
+}
+
+/// 开放平台逐请求用量审计（PLAN-open-platform P1）。
+/// 仅记录经 `ApiToken` 发起的调用（会话调用是内部面，不入此账）。
+model ApiTokenUsage {
+  id           String   @id @default(cuid())
+  apiTokenId   String
+  userId       String
+  method       String
+  path         String
+  /// 命中的能力项 id；非能力项调用（如发现接口）为空。
+  capabilityId String?
+  statusCode   Int
+  durationMs   Int      @default(0)
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+  token        ApiToken @relation(fields: [apiTokenId], references: [id], onDelete: Cascade)
+
+  @@map("api_token_usage")
+  @@index([apiTokenId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+/// 领域事件发件箱（Transactional Outbox，ADR-0013）。
+/// 业务事实与业务写同事务落库，relay 再投递到进程内总线与 Redis Pub/Sub，
+/// 保证「重启不丢、跨副本可达、at-least-once」。
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  topic       String
+  payload     Json
+  /// 发布来源节点，用于跨副本投递时避免回环重复。
+  origin      String?
+  createdAt   DateTime  @default(now())
+  /// relay 认领租约；过期可被其他副本重新认领（崩溃恢复）。
+  lockedAt    DateTime?
+  lockedBy    String?
+  publishedAt DateTime?
+  attempts    Int       @default(0)
+  lastError   String?
+
+  @@map("outbox_events")
+  @@index([publishedAt, createdAt])
+  @@index([publishedAt, lockedAt])
+}
+
+/// 内核附件域（ADR-0014 §2）。二进制在对象存储，元数据在主库。
+model Attachment {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  filename   String
+  mime       String
+  size       Int
+  width      Int?
+  height     Int?
+  ownerId    String?
+  visibility String   @default("private")
+  variants   Json     @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("attachments")
+  @@index([ownerId, createdAt])
+  @@index([createdAt])
+}
+
+/// 渠道伙伴（SP v1 上游面，P3）。持有一对 Ed25519 密钥：
+///   - publicKey：伙伴签名入站请求，内核用它验签（X-SP-Key-Id 定位）。
+///   - webhookPrivateKey/webhookPublicKey：内核向伙伴回调时用的密钥对；私钥加密存储。
+model Reseller {
+  id                String    @id @default(cuid())
+  name              String    @unique
+  status            String    @default("ACTIVE") // ACTIVE|DISABLED
+  keyId             String    @unique
+  publicKey         String
+  webhookPrivateKey String?
+  webhookPublicKey  String?
+  webhookUrl        String?
+  scopes            Json      @default("[]")
+  rateLimitRpm      Int       @default(240)
+  lastUsedAt        DateTime?
+  lastUsedIp        String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deliveries        WebhookDelivery[]
+
+  @@map("resellers")
+  @@index([status])
+}
+
+/// 签名 webhook 投递记录（出站回调，at-least-once + 退避重试 + 防重放）。
+model WebhookDelivery {
+  id            String    @id @default(cuid())
+  resellerId    String
+  event         String
+  url           String
+  payload       Json
+  status        String    @default("PENDING") // PENDING|DELIVERING|SUCCEEDED|FAILED
+  attempts      Int       @default(0)
+  maxAttempts   Int       @default(6)
+  responseCode  Int?
+  error         String?
+  nextAttemptAt DateTime?
+  deliveredAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  reseller      Reseller  @relation(fields: [resellerId], references: [id], onDelete: Cascade)
+
+  @@map("webhook_deliveries")
+  @@index([resellerId, createdAt])
+  @@index([status, nextAttemptAt])
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}

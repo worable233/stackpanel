@@ -1,0 +1,177 @@
+{
+  "formatVersion": 1,
+  "apiVersion": "v1",
+  "hash": "e0d1415f7654164969b7b31da6645eadf8471e32deae7a6148e39b2360b15b04",
+  "operations": {
+    "GET /api/v1/capabilities": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/me": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/platform": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/platform": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/users": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/users": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/users/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/users/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/users/:id/reset-password": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/users/:id/services": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/users/:id/wallet": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/wallet/accounts": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/wallet/balance": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/wallet/ledger": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    }
+  }
+}

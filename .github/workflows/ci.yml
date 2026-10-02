@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Install · License · Check · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # PostgreSQL + Redis are part of the runtime baseline (ADR-0017/0019).
+    # Tests recreate a `stackpanel_test` database on this server; Redis is
+    # unused at this stage but kept so later steps (S3+) need no workflow change.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stackpanel
+          POSTGRES_PASSWORD: stackpanel
+          POSTGRES_DB: stackpanel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stackpanel"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://stackpanel:stackpanel@127.0.0.1:5432/stackpanel
+      TEST_DATABASE_URL: postgresql://stackpanel:stackpanel@127.0.0.1:5432/stackpanel_test
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: ci_jwt_secret_at_least_32_characters_0123456789
+      SETTINGS_ENCRYPTION_KEY: ci_settings_key_at_least_32_characters_0123456789
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: License check (no copyleft)
+        run: |
+          # mariadb (LGPL-2.1) is a documented exception — required by the
+          # official Prisma MySQL adapter. See README "依赖与合规".
+          FAILON='GPL-1.0;GPL-1.0-or-later;GPL-2.0;GPL-2.0-only;GPL-2.0-or-later;GPL-3.0;GPL-3.0-only;GPL-3.0-or-later;LGPL-2.0;LGPL-2.1;LGPL-2.1-or-later;LGPL-3.0;LGPL-3.0-only;LGPL-3.0-or-later;AGPL-1.0;AGPL-3.0;AGPL-3.0-only;AGPL-3.0-or-later;MPL-1.0;MPL-1.1;MPL-2.0;EPL-1.0;EPL-2.0;CDDL-1.0;CDDL-1.1'
+          for pkg in . apps/api apps/web packages/sdk packages/spec packages/ui; do
+            echo "== $pkg =="
+            pnpm exec license-checker --start "$pkg" --production \
+              --excludePrivatePackages \
+              --excludePackages 'mariadb@3.4.5' \
+              --failOn "$FAILON"
+          done
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # G2: refuse OpenAPI changes that break the committed contract snapshot
+      # (removed routes/methods, newly required auth/params/body, dropped
+      # response codes). Pure function of the capability registry — no DB.
+      - name: Contract snapshot (breaking-change gate)
+        run: pnpm --filter @stackpanel/api contract:snapshot -- --check
+
+      # D13/D15: the publishable contract + SDK must actually pack, and their
+      # versions must stay in lock-step with KERNEL_API_VERSION.
+      - name: Package dry-run (spec + sdk)
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          pnpm --filter @stackpanel/spec --filter @stackpanel/sdk pack \
+            --pack-destination "$RUNNER_TEMP/pack"
+          ls -1 "$RUNNER_TEMP/pack"
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

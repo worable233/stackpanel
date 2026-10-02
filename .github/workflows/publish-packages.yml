@@ -1,0 +1,99 @@
+# 该文件由 SPEC-SDK 流维护：开放生态包发布（@stackpanel/spec、@stackpanel/sdk、
+# @stackpanel/mcp）。
+#
+# 目标（D13/D15）：第三方可 `pnpm add @stackpanel/sdk` / `@stackpanel/spec`，
+# 以及 `npx @stackpanel/mcp`。
+# - `sdk-v*` 标签：实际发布到 npm（需仓库 Secret `NPM_TOKEN`）。
+# - 手工触发：默认只打 tarball 做干跑校验，`publish=true` 才真正发布。
+#
+# 为什么不用 `v*`：`v*` 已由 IMG-DIST 的 release.yml 用于内核镜像；包发布是独立的
+# 消费者契约，用独立标签避免内核发版意外触发 npm 发布。
+#
+# 版本联动：`packages/spec/src/version.ts` 的 `KERNEL_API_VERSION` 是唯一来源，
+# 三个包的 `version` 必须与之一致（CI 的 `pnpm test` 已钉死；发版前这里再校验）。
+name: Publish Packages
+
+on:
+  push:
+    tags:
+      - 'sdk-v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '是否真正发布到 npm（默认只干跑打包）'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: 打包 · 校验 · 发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NPM_CONFIG_PROVENANCE: 'true'
+    steps:
+      - name: 检出
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 校验契约版本与包 version 联动
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const version = fs.readFileSync('packages/spec/src/version.ts', 'utf8')
+            .match(/KERNEL_API_VERSION\s*=\s*.([0-9]+\.[0-9]+\.[0-9]+)./)
+            ?.[1];
+          if (!version) { console.error('无法解析 KERNEL_API_VERSION'); process.exit(1); }
+          for (const pkg of [
+            'packages/sdk/package.json',
+            'packages/spec/package.json',
+            'packages/mcp/package.json',
+          ]) {
+            const json = JSON.parse(fs.readFileSync(pkg, 'utf8'));
+            if (json.version !== version) { console.error(`${pkg} version 与契约不一致`); process.exit(1); }
+            if (json.private === true) { console.error(`${pkg} 不得为 private`); process.exit(1); }
+          }
+          const ref = process.env.GITHUB_REF ?? '';
+          const tag = ref.startsWith('refs/tags/sdk-v') ? ref.slice('refs/tags/'.length) : '';
+          const tagVersion = tag.replace(/^sdk-v/, '');
+          if (tagVersion && !tagVersion.startsWith(version.split('.').slice(0, 2).join('.'))) {
+            console.error(`标签 ${tag} 与契约版本 ${version} 不在同一 minor`);
+            process.exit(1);
+          }
+          console.log(`契约版本联动校验通过：${version}`);
+          NODE
+
+      - name: 构建
+        run: pnpm --filter @stackpanel/spec --filter @stackpanel/sdk --filter @stackpanel/mcp build
+
+      - name: 打包干跑
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          pnpm --filter @stackpanel/spec --filter @stackpanel/sdk --filter @stackpanel/mcp pack \
+            --pack-destination "$RUNNER_TEMP/pack"
+          ls -1 "$RUNNER_TEMP/pack"
+
+      - name: 发布到 npm
+        if: github.event_name == 'push' || inputs.publish == 'true'
+        run: |
+          pnpm --filter @stackpanel/spec --filter @stackpanel/sdk --filter @stackpanel/mcp publish \
+            --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

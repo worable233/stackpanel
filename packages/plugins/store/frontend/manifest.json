@@ -1,0 +1,588 @@
+{
+  "version": "0.1.0",
+  "revision": "2bb59aadf5af",
+  "entry": "frontend/dist/index.js",
+  "pages": [
+    {
+      "path": "/shop",
+      "component": "shop",
+      "data": [
+        {
+          "finder": "store.products",
+          "as": "products",
+          "input": {
+            "page": 1,
+            "pageSize": 60
+          }
+        },
+        {
+          "finder": "catalog.categories",
+          "as": "categories"
+        },
+        {
+          "finder": "catalog.products",
+          "as": "catalogProducts",
+          "input": {
+            "page": 1,
+            "pageSize": 60,
+            "categoryId": "",
+            "showAll": ""
+          }
+        }
+      ]
+    },
+    {
+      "path": "/shop/:id",
+      "component": "product",
+      "data": [
+        {
+          "finder": "store.product",
+          "as": "product",
+          "input": {
+            "id": ":id"
+          }
+        },
+        {
+          "finder": "store.paymentMethods",
+          "as": "methods"
+        },
+        {
+          "finder": "store.viewer",
+          "as": "viewer"
+        },
+        {
+          "finder": "store.pricePreview",
+          "as": "pricePreview",
+          "input": {
+            "id": ":id",
+            "$query": "1",
+            "quantity": ""
+          }
+        }
+      ]
+    },
+    {
+      "path": "/shop/cart",
+      "component": "cart",
+      "data": [
+        {
+          "finder": "store.cart",
+          "as": "cart"
+        },
+        {
+          "finder": "store.paymentMethods",
+          "as": "methods"
+        }
+      ]
+    }
+  ],
+  "layouts": [],
+  "finders": [
+    "store.products",
+    "store.product",
+    "store.paymentMethods",
+    "store.pricePreview",
+    "store.myOrders",
+    "store.myServices",
+    "store.myService",
+    "store.myServiceMetrics",
+    "store.adminProducts",
+    "store.productTypes",
+    "store.upstreamSources",
+    "store.cart",
+    "store.viewer"
+  ],
+  "adminRoutes": [
+    {
+      "path": "/overview",
+      "component": "admin/overview",
+      "permission": "store.admin",
+      "nav": {
+        "label": "商店管理",
+        "group": "商店插件"
+      },
+      "data": [
+        {
+          "finder": "store.adminProducts",
+          "as": "products"
+        },
+        {
+          "finder": "store.productTypes",
+          "as": "productTypes"
+        },
+        {
+          "finder": "store.upstreamSources",
+          "as": "upstreamSources"
+        },
+        {
+          "finder": "catalog.adminCategories",
+          "as": "categories"
+        },
+        {
+          "finder": "catalog.adminProducts",
+          "as": "catalogProducts"
+        }
+      ]
+    }
+  ],
+  "adminActions": [],
+  "actions": [
+    {
+      "id": "store.create-order-wallet",
+      "method": "POST",
+      "path": "/orders",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "productId",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 100
+        },
+        {
+          "name": "paymentMode",
+          "type": "string",
+          "default": "wallet"
+        },
+        {
+          "name": "config",
+          "type": "string",
+          "maxLength": 40000
+        }
+      ],
+      "redirect": {
+        "responsePath": "nextPath"
+      }
+    },
+    {
+      "id": "store.create-order-external",
+      "method": "POST",
+      "path": "/orders",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "productId",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 100
+        },
+        {
+          "name": "paymentMode",
+          "type": "string",
+          "default": "external"
+        },
+        {
+          "name": "providerId",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        {
+          "name": "paymentMethod",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        {
+          "name": "config",
+          "type": "string",
+          "maxLength": 40000
+        }
+      ],
+      "redirect": {
+        "responsePath": "payment.paymentUrl",
+        "external": true
+      }
+    },
+    {
+      "id": "store.add-to-cart",
+      "method": "POST",
+      "path": "/cart/items",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "productId",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 100
+        },
+        {
+          "name": "config",
+          "type": "string",
+          "maxLength": 40000
+        }
+      ],
+      "redirect": {
+        "responsePath": "nextPath"
+      }
+    },
+    {
+      "id": "store.update-cart-item",
+      "method": "PATCH",
+      "path": "/cart/items/:id",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "required": true,
+          "min": 1,
+          "max": 100
+        }
+      ]
+    },
+    {
+      "id": "store.remove-cart-item",
+      "method": "DELETE",
+      "path": "/cart/items/:id",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        }
+      ]
+    },
+    {
+      "id": "store.checkout-wallet",
+      "method": "POST",
+      "path": "/cart/checkout",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "cartItemIds",
+          "type": "ids",
+          "required": true,
+          "max": 50,
+          "maxLength": 191
+        },
+        {
+          "name": "paymentMode",
+          "type": "string",
+          "default": "wallet"
+        }
+      ],
+      "redirect": {
+        "responsePath": "nextPath"
+      }
+    },
+    {
+      "id": "store.checkout-external",
+      "method": "POST",
+      "path": "/cart/checkout",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "cartItemIds",
+          "type": "ids",
+          "required": true,
+          "max": 50,
+          "maxLength": 191
+        },
+        {
+          "name": "paymentMode",
+          "type": "string",
+          "default": "external"
+        },
+        {
+          "name": "providerId",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        {
+          "name": "paymentMethod",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        }
+      ],
+      "redirect": {
+        "responsePath": "payment.paymentUrl",
+        "external": true
+      }
+    },
+    {
+      "id": "store.cancel-order",
+      "method": "POST",
+      "path": "/orders/:id/cancel",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        }
+      ]
+    },
+    {
+      "id": "store.service-action",
+      "method": "POST",
+      "path": "/services/:id/actions",
+      "permission": "store.view",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "actionId",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        }
+      ]
+    },
+    {
+      "id": "store.create-product",
+      "method": "POST",
+      "path": "/store/admin/products",
+      "permission": "store.admin",
+      "input": [
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "maxLength": 191
+        },
+        {
+          "name": "price",
+          "type": "integer",
+          "required": true,
+          "min": 1,
+          "max": 2000000000
+        },
+        {
+          "name": "stock",
+          "type": "integer",
+          "default": 0,
+          "min": 0,
+          "max": 1000000
+        },
+        {
+          "name": "cost",
+          "type": "integer",
+          "min": 0,
+          "max": 2000000000
+        },
+        {
+          "name": "categoryId",
+          "type": "string",
+          "maxLength": 191
+        },
+        {
+          "name": "fulfillmentType",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "providerId",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "providerProductId",
+          "type": "string",
+          "maxLength": 191
+        },
+        {
+          "name": "metadata",
+          "type": "string",
+          "maxLength": 40000
+        }
+      ]
+    },
+    {
+      "id": "store.update-product",
+      "method": "PATCH",
+      "path": "/store/admin/products/:id",
+      "permission": "store.admin",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "maxLength": 191
+        },
+        {
+          "name": "price",
+          "type": "integer",
+          "required": true,
+          "min": 1,
+          "max": 2000000000
+        },
+        {
+          "name": "stock",
+          "type": "integer",
+          "default": 0,
+          "min": 0,
+          "max": 1000000
+        },
+        {
+          "name": "cost",
+          "type": "integer",
+          "min": 0,
+          "max": 2000000000
+        },
+        {
+          "name": "categoryId",
+          "type": "string",
+          "maxLength": 191
+        },
+        {
+          "name": "fulfillmentType",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "providerId",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "providerProductId",
+          "type": "string",
+          "maxLength": 191
+        },
+        {
+          "name": "metadata",
+          "type": "string",
+          "maxLength": 40000
+        }
+      ]
+    }
+  ],
+  "accountRoutes": [
+    {
+      "path": "/services",
+      "component": "account/services",
+      "permission": "store.view",
+      "nav": {
+        "label": "我的云服务",
+        "group": "服务"
+      },
+      "data": [
+        {
+          "finder": "store.myServices",
+          "as": "services"
+        }
+      ]
+    },
+    {
+      "path": "/orders",
+      "component": "account/orders",
+      "permission": "store.view",
+      "nav": {
+        "label": "历史订单",
+        "group": "费用"
+      },
+      "data": [
+        {
+          "finder": "store.myOrders",
+          "as": "orders"
+        }
+      ]
+    },
+    {
+      "path": "/services/:id",
+      "component": "account/service-detail",
+      "permission": "store.view",
+      "data": [
+        {
+          "finder": "store.myService",
+          "as": "service",
+          "input": {
+            "id": ":id"
+          }
+        },
+        {
+          "finder": "store.myServiceMetrics",
+          "as": "metrics",
+          "input": {
+            "id": ":id"
+          }
+        }
+      ]
+    }
+  ],
+  "accountWidgets": [],
+  "files": [
+    "frontend/dist/admin.js",
+    "frontend/dist/admin.js.map",
+    "frontend/dist/index.js",
+    "frontend/dist/index.js.map"
+  ],
+  "settingsSchema": {
+    "groups": [
+      {
+        "id": "shop",
+        "label": "商店",
+        "fields": [
+          {
+            "type": "number",
+            "name": "productsPerPage",
+            "label": "每页商品数",
+            "default": 12,
+            "min": 1,
+            "max": 60
+          },
+          {
+            "type": "boolean",
+            "name": "showAllProducts",
+            "label": "前台展示全部服务",
+            "description": "开启后，前台除分类外还会显示「全部分类」，展示未分类商品。",
+            "default": false
+          }
+        ]
+      }
+    ]
+  }
+}

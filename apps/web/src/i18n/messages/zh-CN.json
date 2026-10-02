@@ -1,0 +1,1115 @@
+{
+  "common": {
+    "loading": "加载中…",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "新建",
+    "close": "关闭",
+    "search": "搜索",
+    "refresh": "刷新",
+    "retry": "重试",
+    "actions": "操作",
+    "status": "状态",
+    "enabled": "已启用",
+    "disabled": "已停用",
+    "yes": "是",
+    "no": "否",
+    "unknown": "未知",
+    "unknownError": "未知错误",
+    "operationFailed": "操作失败，请稍后再试",
+    "networkError": "网络异常，请稍后重试",
+    "backHome": "返回首页",
+    "pagination": "共 {total} 条 · 第 {page} / {pages} 页",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "reset": "重置",
+    "statusActive": "正常",
+    "statusDisabled": "停用",
+    "notLoggedIn": "未登录",
+    "forbidden": "无权限",
+    "invalidRequest": "请求参数无效"
+  },
+  "nav": {
+    "dashboard": "工作台",
+    "users": "用户管理",
+    "market": "应用市场",
+    "settings": "系统设置",
+    "plugins": "插件管理",
+    "rbac": "权限模板",
+    "audit": "审计日志",
+    "developer": "开发者控制台",
+    "themes": "主题管理",
+    "notifications": "通知",
+    "security": "账户安全",
+    "apiKeys": "API 密钥",
+    "shop": "选购产品",
+    "services": "服务",
+    "models": "大模型",
+    "billing": "费用",
+    "groupPlugins": "插件",
+    "switchToAccount": "切换到用户后台",
+    "switchToAdmin": "切换到管理后台",
+    "backToSite": "返回网站",
+    "logout": "退出登录",
+    "roleAdmin": "管理员",
+    "roleUser": "普通用户",
+    "homeAriaLabel": "回到首页"
+  },
+  "auth": {
+    "login": {
+      "title": "登录",
+      "subtitle": "登录后进入你的账户中心。",
+      "email": "邮箱",
+      "password": "密码",
+      "submit": "登录",
+      "submitting": "登录中…",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "or": "或",
+      "wowid": "使用 Wow ID 登录",
+      "noAccount": "还没有账户？",
+      "register": "注册"
+    },
+    "register": {
+      "title": "注册",
+      "subtitle": "创建你的账户。",
+      "email": "邮箱",
+      "password": "密码",
+      "submit": "注册",
+      "submitting": "注册中…",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "hasAccount": "已有账户？",
+      "login": "去登录"
+    },
+    "validation": {
+      "emailPasswordRequired": "请输入邮箱和密码",
+      "passwordMin": "密码至少需要 8 位"
+    },
+    "error": {
+      "invalidCredentials": "邮箱或密码错误",
+      "loginFailed": "登录失败，请稍后再试",
+      "registerFailed": "注册失败，请稍后再试"
+    }
+  },
+  "localeSwitcher": {
+    "label": "语言",
+    "ariaLabel": "切换界面语言"
+  },
+  "theme": {
+    "toggleAriaLabel": "切换主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
+    "uploadSelectZip": "请选择要上传的主题 ZIP",
+    "uploadFailed": "上传失败",
+    "uploadFailedStatus": "上传失败（{status}）"
+  },
+  "notification": {
+    "ariaLabel": "通知",
+    "title": "通知",
+    "markAllRead": "全部已读",
+    "empty": "暂无通知",
+    "viewAll": "查看全部",
+    "all": "全部",
+    "unread": "未读",
+    "serviceUnavailable": "通知服务不可用：{error}",
+    "emptyAll": "暂无通知",
+    "emptyUnread": "暂无未读通知",
+    "markRead": "标为已读",
+    "view": "查看",
+    "loading": "加载中…",
+    "loadMore": "加载更多",
+    "unknownError": "未知错误"
+  },
+  "admin": {
+    "recentTickets": "最近工单",
+    "noTickets": "暂无工单。",
+    "customerFallback": "用户",
+    "ticketStatus": {
+      "OPEN": "待处理",
+      "IN_PROGRESS": "处理中",
+      "RESOLVED": "已解决",
+      "CLOSED": "已关闭"
+    },
+    "userDetail": {
+      "basic": {
+        "title": "基本信息",
+        "description": "邮箱与账号状态。"
+      },
+      "email": "邮箱",
+      "status": "状态",
+      "statusAria": "账号状态",
+      "statusActive": "正常",
+      "statusDisabled": "停用",
+      "createdAt": "创建时间",
+      "lastLoginAt": "最后登录",
+      "groups": {
+        "title": "权限组",
+        "description": "该用户所属的权限组（生效权限为各组的并集）。"
+      },
+      "wallet": {
+        "title": "钱包余额",
+        "description": "调整会记入钱包流水并留下审计记录。",
+        "adjust": "调整余额",
+        "current": "当前余额：{amount}",
+        "amount": "金额（元，可为负数）",
+        "amountPlaceholder": "如 -50",
+        "note": "备注",
+        "notePlaceholder": "如 违规扣除",
+        "submitting": "调整中…",
+        "submit": "确认"
+      },
+      "ledger": {
+        "time": "时间",
+        "change": "变动",
+        "type": "类型",
+        "note": "备注"
+      },
+      "services": {
+        "title": "购买的服务",
+        "description": "列出该用户购买或获赠的服务；可改到期时间、改状态或删除，也可手动赠送。",
+        "gift": "赠送服务",
+        "giftDescription": "选择一个商品直接赠送给该用户，无需下单。",
+        "product": "商品",
+        "quantity": "数量",
+        "expiry": "到期日（可选）",
+        "gifting": "赠送中…",
+        "giftSubmit": "赠送",
+        "empty": "该用户暂无服务。",
+        "colProduct": "商品",
+        "colStatus": "状态",
+        "colAmount": "金额",
+        "colExpiresAt": "到期时间",
+        "colCreatedAt": "创建时间",
+        "colActions": "操作",
+        "statusAria": "服务状态",
+        "expiresAria": "到期时间",
+        "selectProduct": "请选择商品",
+        "confirmDelete": "确定删除该用户的这个服务？删除后不可恢复。"
+      },
+      "orders": {
+        "title": "订单",
+        "description": "最近 20 笔订单。",
+        "empty": "暂无订单。",
+        "colId": "订单号",
+        "colAmount": "金额",
+        "colStatus": "状态",
+        "colCreatedAt": "创建时间"
+      },
+      "serviceStatus": {
+        "PENDING_PROVISION": "待开通",
+        "PROVISIONING": "开通中",
+        "ACTIVE": "正常",
+        "SUSPENDED": "暂停",
+        "TERMINATED": "已终止",
+        "FAILED": "失败"
+      }
+    },
+    "audit": {
+      "title": "审计日志",
+      "description": "系统和管理操作记录，只增不改。",
+      "filterAction": "操作",
+      "filterActionPlaceholder": "如 plugin.install",
+      "filterResource": "对象",
+      "filterResourcePlaceholder": "如 plugin",
+      "filterActor": "操作者",
+      "filterActorPlaceholder": "用户 ID 前 12 位",
+      "search": "查询",
+      "reset": "重置",
+      "serviceUnavailable": "日志服务不可用：{error}",
+      "colTime": "时间",
+      "colAction": "操作",
+      "colResource": "对象",
+      "colActor": "操作者",
+      "colSource": "来源",
+      "empty": "暂无记录。",
+      "pagination": "共 {total} 条 · 第 {page} / {pages} 页",
+      "prev": "上一页",
+      "next": "下一页",
+      "systemActor": "系统"
+    },
+    "developer": {
+      "title": "开发者控制台",
+      "description": "开放平台分发侧：渠道伙伴、webhook 投递与 SP v1 调用审计。",
+      "serviceUnavailable": "控制台数据不可用：{error}",
+      "empty": "暂无记录。",
+      "pagination": "共 {total} 条 · 第 {page} / {pages} 页",
+      "prev": "上一页",
+      "next": "下一页",
+      "overview": {
+        "resellers": "渠道伙伴",
+        "resellersHint": "共 {total} 个 · {active} 个启用",
+        "pendingDeliveries": "待投递",
+        "pendingDeliveriesHint": "含投递中",
+        "failedDeliveries": "失败投递",
+        "failedDeliveriesHint": "需人工排查",
+        "calls24h": "24 小时调用",
+        "calls24hHint": "累计 {total} 次",
+        "sections": "功能入口",
+        "channels": "渠道伙伴",
+        "channelsDesc": "SP v1 入站身份、能力 scope 与限额。",
+        "webhooks": "Webhook 投递",
+        "webhooksDesc": "出站回调的投递状态与重试。",
+        "calls": "调用审计",
+        "callsDesc": "伙伴对 /sp/v1 的调用轨迹。",
+        "open": "进入"
+      },
+      "resellers": {
+        "title": "渠道伙伴",
+        "description": "SP v1 上游面的渠道身份；私钥不出圈。",
+        "colName": "名称",
+        "colKeyId": "Key ID",
+        "colScopes": "能力",
+        "colRateLimit": "RPM",
+        "colLastUsed": "最近调用",
+        "statusActive": "启用",
+        "statusDisabled": "停用",
+        "never": "从未",
+        "view": "详情"
+      },
+      "detail": {
+        "backToList": "返回渠道列表",
+        "identity": "身份与密钥",
+        "keyId": "Key ID",
+        "publicKey": "入站公钥",
+        "hasWebhookKey": "回调签名密钥",
+        "yes": "已配置",
+        "no": "未配置",
+        "webhookUrl": "回调地址",
+        "scopes": "能力 scope",
+        "rateLimit": "每分钟请求上限",
+        "lastUsed": "最近调用",
+        "lastUsedIp": "来源 IP",
+        "createdAt": "创建时间",
+        "updatedAt": "更新时间",
+        "recentDeliveries": "最近投递",
+        "noDeliveries": "暂无投递记录。"
+      },
+      "webhooks": {
+        "title": "Webhook 投递",
+        "description": "出站回调的 at-least-once 投递状态。",
+        "filterStatus": "状态",
+        "filterAll": "全部",
+        "filterReseller": "渠道 ID",
+        "search": "查询",
+        "reset": "重置",
+        "colTime": "时间",
+        "colReseller": "渠道",
+        "colEvent": "事件",
+        "colStatus": "状态",
+        "colAttempts": "尝试",
+        "colCode": "响应码",
+        "colError": "错误",
+        "statusPending": "待投递",
+        "statusDelivering": "投递中",
+        "statusSucceeded": "成功",
+        "statusFailed": "失败"
+      },
+      "calls": {
+        "title": "调用审计",
+        "description": "渠道伙伴对 /sp/v1 的调用轨迹（只增不改）。",
+        "filterReseller": "渠道 ID",
+        "search": "查询",
+        "reset": "重置",
+        "colTime": "时间",
+        "colMethod": "方法",
+        "colPath": "路径",
+        "colReseller": "渠道",
+        "colStatus": "状态",
+        "colIp": "来源 IP",
+        "anonymous": "未认证"
+      },
+      "write": {
+        "createTrigger": "新建渠道",
+        "createTitle": "新建渠道伙伴",
+        "createDescription": "服务端生成 Ed25519 入站密钥对；私钥仅在创建后一次性返回。",
+        "name": "名称",
+        "namePlaceholder": "渠道名称",
+        "webhookUrl": "回调地址",
+        "webhookUrlPlaceholder": "https://partner.example.com/hook（可选）",
+        "rateLimit": "每分钟请求上限",
+        "rateLimitInvalid": "限额须为 0 到 100000 之间的整数",
+        "scopes": "能力 scope",
+        "scopesHint": "未勾选则渠道无法调用任何 /sp/v1 接口。",
+        "creating": "创建中…",
+        "createSubmit": "创建",
+        "editTitle": "编辑渠道",
+        "editDescription": "修改名称、状态、能力、限额与回调地址。",
+        "status": "状态",
+        "saving": "保存中…",
+        "rowEdit": "编辑",
+        "rowRotate": "轮换密钥",
+        "rowDelete": "删除",
+        "rotateTitle": "轮换入站密钥",
+        "rotateDescription": "为「{name}」生成新的入站密钥对，旧公钥立即失效。",
+        "rotating": "轮换中…",
+        "rotateConfirm": "确认轮换",
+        "deleteTitle": "删除渠道",
+        "deleteDescription": "删除「{name}」及其全部回调投递记录，此操作不可撤销。",
+        "deleting": "删除中…",
+        "deleteConfirm": "确认删除",
+        "keyTitle": "渠道密钥（仅此一次）",
+        "keyDescription": "请立即将入站私钥交付伙伴；平台只保存公钥，关闭后无法再次查看。",
+        "keyWarning": "私钥不会再次显示，且不可恢复。",
+        "inboundPrivateKey": "入站私钥",
+        "copy": "复制私钥",
+        "copied": "已复制",
+        "done": "完成"
+      }
+    },
+    "overview": {
+      "totalRevenue": "总营收",
+      "totalRevenueHint": "全部已支付订单",
+      "orderCount": "订单数",
+      "orderCountHint": "{count} 笔待支付",
+      "userCount": "用户数",
+      "userCountHint": "全部注册账户",
+      "walletBalance": "钱包余额",
+      "walletBalanceHint": "{count} 个钱包账户",
+      "revenueOverview": "营收概览",
+      "vsLastMonth": "较上月 {pct}%",
+      "revenueAllTime": "全部已支付订单累计营收",
+      "paid": "已支付",
+      "allOrders": "全部订单",
+      "orderStatus": "订单状态",
+      "to": "至",
+      "apply": "应用",
+      "clearFilter": "清除筛选",
+      "productRevenue": "商品营收分布",
+      "weekSales": "本周销售",
+      "topProducts": "热销商品",
+      "noData": "暂无数据",
+      "recentOrders": "最近订单",
+      "colOrderId": "订单号",
+      "colCustomer": "客户",
+      "colProduct": "商品",
+      "colAmount": "金额",
+      "colStatus": "状态",
+      "recentActivity": "最近动态",
+      "noActivity": "暂无动态",
+      "salesCount": "{count} 件",
+      "customerFallback": "用户",
+      "eventPaid": "订单 {id} 支付成功",
+      "eventCancelled": "订单 {id} 已取消",
+      "eventPending": "新订单 {id} 待支付"
+    },
+    "rbac": {
+      "createTrigger": "新建权限组",
+      "createTitle": "新建权限组",
+      "createDescription": "创建后即可为组分配权限与代理折扣。",
+      "name": "名称",
+      "namePlaceholder": "如 代理组",
+      "description": "描述",
+      "optional": "可选",
+      "discount": "代理折扣（%）",
+      "discountPlaceholder": "如 10 = 打 9 折；留空无折扣",
+      "creating": "创建中…",
+      "createSubmit": "创建权限组",
+      "nameRequired": "请填写权限组名称",
+      "discountInvalid": "折扣需为 0-99 的整数，留空表示无折扣",
+      "noPermissions": "暂无可分配的权限。",
+      "discountCurrent": "当前：{label}，商店结账按该组折扣计价。",
+      "discountNone": "无折扣",
+      "discountPercent": "打 {fold} 折",
+      "editTitle": "编辑权限组",
+      "editDescription": "修改名称、描述、代理折扣与权限集合。",
+      "permissions": "权限",
+      "saving": "保存中…",
+      "deleteTrigger": "删除",
+      "deleteTitle": "删除权限组",
+      "deleteDescription": "将删除权限组「{name}」及其成员的该组关系，此操作不可撤销。确认删除？",
+      "deleting": "删除中…",
+      "deleteConfirm": "确认删除",
+      "permissionCount": "{count} 项权限",
+      "empty": "暂无权限组。",
+      "title": "权限组",
+      "pageDescription": "管理权限组及其权限集合。",
+      "serviceUnavailable": "权限服务不可用：{error}"
+    },
+    "plugins": {
+      "detail": {
+        "back": "返回插件管理",
+        "title": "插件详情",
+        "serviceUnavailable": "插件服务不可用：{error}",
+        "notFound": "插件不存在",
+        "enabled": "已启用",
+        "disabled": "已停用",
+        "builtin": "内置",
+        "signed": "已签名",
+        "settings": "设置",
+        "dependencies": "依赖",
+        "extensionPoints": "扩展点",
+        "consumes": "消费",
+        "provides": "提供",
+        "permissions": "权限",
+        "frontendPages": "前端页面",
+        "none": "无。",
+        "depConflict": "（版本不符）",
+        "depOptionalMissing": "（可选未装）",
+        "depMissing": "（缺依赖）",
+        "consumesMissing": "（缺失）",
+        "roleAdmin": "管理员",
+        "roleUser": "用户",
+        "noPages": "无页面声明。",
+        "noFrontend": "该插件没有前端包。"
+      },
+      "installed": "已安装插件",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "builtin": "内置",
+      "signed": "已签名",
+      "frontendPages": "前端页面 {count}",
+      "dependencies": "依赖：",
+      "extensionPoints": "扩展点：",
+      "provides": "提供：",
+      "locales": "语言：{locales}",
+      "detailTrigger": "详情",
+      "settings": "设置",
+      "enable": "启用",
+      "disable": "停用",
+      "title": "插件管理",
+      "pageDescription": "管理插件安装、启停与升级。",
+      "serviceUnavailable": "插件服务不可用：{error}"
+    },
+    "users": {
+      "title": "用户管理",
+      "description": "搜索用户，点击进入详情可编辑余额、权限组与服务。",
+      "searchPlaceholder": "搜索邮箱…",
+      "searchAria": "搜索邮箱",
+      "colEmail": "邮箱",
+      "colGroups": "权限组",
+      "colStatus": "状态",
+      "colLastLogin": "最后登录",
+      "empty": "暂无用户。",
+      "emptyQuery": "没有匹配「{q}」的用户。"
+    },
+    "settings": {
+      "platform": {
+        "title": "平台信息",
+        "description": "用于站点标题、公开页面与平台壳。",
+        "name": "平台名称",
+        "intro": "平台简介",
+        "url": "站点地址",
+        "submit": "保存平台信息"
+      },
+      "saving": "保存中…",
+      "brand": {
+        "title": "平台品牌",
+        "description": "用于后台侧边栏、浏览器标签页与公开站点的品牌图标。",
+        "currentLogo": "当前 logo",
+        "uploadLogo": "上传 Logo",
+        "uploadFavicon": "上传 Favicon",
+        "submit": "保存品牌图标",
+        "resetting": "恢复中…",
+        "reset": "恢复默认"
+      },
+      "signing": {
+        "title": "包签名",
+        "envManaged": "由 STACKPANEL_SIGNING_PUBLIC_KEY 配置。",
+        "configured": "已配置 · 指纹 {fingerprint}",
+        "unconfigured": "未配置，上传包不校验签名。",
+        "publicKey": "Ed25519 公钥（PEM）",
+        "submit": "保存签名公钥",
+        "clear": "清除"
+      },
+      "title": "系统设置",
+      "pageDescription": "管理平台信息与包签名配置。",
+      "serviceUnavailable": "设置服务不可用：{error}"
+    },
+    "themes": {
+      "previewing": "正在预览：{name}",
+      "previewHint": "预览不会改变当前生效主题。",
+      "exitPreview": "退出预览",
+      "installed": "已安装主题",
+      "active": "已启用",
+      "default": "默认",
+      "frontendPages": "前端页面：{count}",
+      "frontendNone": "前端：无",
+      "locales": "语言：{locales}",
+      "signed": "已签名",
+      "unsigned": "未签名",
+      "settings": "设置",
+      "preview": "预览",
+      "activate": "启用",
+      "title": "主题管理",
+      "description": "管理主题上传、预览与激活。",
+      "serviceUnavailable": "主题服务不可用：{error}"
+    },
+    "fallbackUser": "管理员",
+    "userDetailPage": {
+      "backToUsers": "返回用户列表",
+      "notFound": "用户不存在",
+      "description": "用户详情与后台管理。",
+      "impersonate": "以该用户身份进入"
+    },
+    "market": {
+      "title": "应用市场",
+      "description": "浏览并一键安装官方插件与主题。安装后需重新构建前端以刷新主题/插件页面。",
+      "serviceUnavailable": "市场服务不可用：{error}",
+      "plugins": "插件",
+      "themes": "主题"
+    },
+    "themeSettings": {
+      "back": "返回主题管理",
+      "title": "主题设置",
+      "noSettings": "该主题没有前端设置。"
+    },
+    "pluginSettings": {
+      "back": "返回插件管理",
+      "title": "插件设置",
+      "noSettings": "该插件没有前端设置。"
+    },
+    "notifications": {
+      "title": "通知中心",
+      "description": "面向当前管理员的站内通知，与用户收件箱同源。"
+    },
+    "pluginActions": "插件操作"
+  },
+  "locale": {
+    "zh-CN": "简体中文",
+    "en-US": "English"
+  },
+  "action": {
+    "publicKeyRequired": "请填写公钥",
+    "publicKeySaved": "签名公钥已保存。",
+    "publicKeyCleared": "签名公钥已清除。",
+    "publicKeySaveFailed": "保存签名公钥失败",
+    "platformInfoRequired": "请完整填写平台信息",
+    "platformInfoSaved": "平台信息已保存。",
+    "platformInfoSaveFailed": "保存平台信息失败",
+    "brandImageRequired": "请选择要上传的 logo 或 favicon 图片",
+    "brandImageTooLarge": "图片必须小于 1MB",
+    "brandImageSaved": "品牌图标已保存。",
+    "brandImageCleared": "品牌图标已恢复为默认。",
+    "brandImageUploadFailed": "上传失败",
+    "brandImageUploadFailedStatus": "上传失败（{status}）",
+    "brandImageClearFailed": "清除失败",
+    "settingsSaveFailed": "保存设置失败",
+    "apiTokenNameRequired": "请填写密钥名称",
+    "apiTokenIdRequired": "缺少密钥 id",
+    "apiTokenCreateFailed": "创建失败",
+    "apiTokenRevokeFailed": "吊销失败",
+    "apiTokenUpdateFailed": "更新失败",
+    "permissionGroupNameRequired": "请填写权限组名称",
+    "permissionGroupCreated": "权限组已创建。",
+    "permissionGroupUpdated": "权限组已更新。",
+    "permissionGroupDeleted": "权限组已删除。",
+    "permissionGroupCreateFailed": "创建权限组失败",
+    "permissionGroupUpdateFailed": "更新权限组失败",
+    "permissionGroupDeleteFailed": "删除权限组失败",
+    "pluginIdRequired": "缺少插件 ID",
+    "themeIdRequired": "缺少主题 ID",
+    "marketInstallFailed": "安装失败",
+    "pluginInstalled": "插件 {id} v{version} 已安装。",
+    "pluginUpgraded": "插件 {id} 已升级到 v{version}。",
+    "themeInstalled": "主题 {id} v{version} 已安装。",
+    "themeUpgraded": "主题 {id} 已升级到 v{version}。",
+    "pluginUnavailable": "操作不可用",
+    "pluginForbidden": "无权执行此操作",
+    "pluginLoginRequired": "请先登录",
+    "pluginInvalidDeclaration": "操作声明无效",
+    "pluginActionFailed": "操作未完成，请稍后重试",
+    "developerResellerNameRequired": "请填写渠道名称",
+    "developerResellerCreated": "渠道已创建。",
+    "developerResellerUpdated": "渠道已更新。",
+    "developerResellerRotated": "渠道密钥已轮换。",
+    "developerResellerDeleted": "渠道已删除。",
+    "developerResellerCreateFailed": "创建渠道失败",
+    "developerResellerUpdateFailed": "更新渠道失败",
+    "developerResellerRotateFailed": "轮换渠道密钥失败",
+    "developerResellerDeleteFailed": "删除渠道失败"
+  },
+  "user": {
+    "emailRequired": "请填写邮箱",
+    "created": "用户 {email} 已创建。",
+    "statusUpdated": "状态已更新。",
+    "groupsUpdated": "权限组已更新。",
+    "atLeastOneGroup": "至少保留一个权限组",
+    "amountRequired": "请输入非零金额",
+    "balanceAdjusted": "余额已调整。",
+    "serviceGifted": "服务已赠送。",
+    "serviceUpdated": "服务已更新。",
+    "serviceDeleted": "服务已删除。",
+    "productRequired": "请选择商品",
+    "createFailed": "创建用户失败",
+    "statusUpdateFailed": "更新状态失败",
+    "groupsUpdateFailed": "更新权限组失败",
+    "balanceAdjustFailed": "调整余额失败",
+    "giftFailed": "赠送服务失败",
+    "serviceUpdateFailed": "更新服务失败",
+    "serviceDeleteFailed": "删除服务失败",
+    "adminAdjustment": "管理员调整"
+  },
+  "error": {
+    "auth": {
+      "invalid_credentials": "邮箱或密码错误",
+      "email_taken": "该邮箱已被注册",
+      "rate_limited": "尝试太频繁，请稍后再试",
+      "register_failed": "注册失败，请稍后再试",
+      "unauthenticated": "登录已过期，请重新登录",
+      "forbidden": "没有权限执行此操作"
+    },
+    "validation": {
+      "invalid": "请求参数无效"
+    },
+    "request": {
+      "invalid": "请求无效",
+      "not_found": "资源不存在",
+      "conflict": "操作冲突，请刷新后重试",
+      "rate_limited": "操作太频繁，请稍后再试",
+      "idempotency_key_required": "写操作必须携带 Idempotency-Key",
+      "concurrent_request": "相同请求正在处理中，请稍候"
+    },
+    "internal": {
+      "unexpected": "服务器开小差了，请稍后重试",
+      "unavailable": "服务暂时不可用，请稍后重试"
+    },
+    "store": {
+      "product": {
+        "not_found": "商品不存在",
+        "config_unsupported": "该商品不支持配置选择"
+      },
+      "checkout": {
+        "config_invalid": "商品结账配置无效",
+        "payment_method_required": "请选择支付方式"
+      },
+      "cart": {
+        "empty": "购物车为空",
+        "item_not_found": "购物车项不存在"
+      },
+      "stock": {
+        "insufficient": "库存不足"
+      },
+      "order": {
+        "id_invalid": "订单 ID 无效",
+        "not_cancellable": "订单无法取消",
+        "state_changed": "订单状态已变更，请刷新后重试",
+        "payment_processing": "支付仍在处理中，无法取消",
+        "currency_mismatch": "订单商品币种不一致，请分开下单"
+      },
+      "upstream": {
+        "not_enabled": "上游不存在或未启用"
+      },
+      "channel": {
+        "not_enabled": "销售渠道不存在或未启用"
+      },
+      "service": {
+        "unsupported": "该服务不支持此操作"
+      },
+      "pricing": {
+        "failed": "商品价格计算失败"
+      },
+      "not_ready": "商店服务暂不可用，请稍后重试",
+      "payment": {
+        "error": "支付失败，请稍后重试"
+      },
+      "request": {
+        "id_required": "缺少必要参数",
+        "params_required": "缺少必要参数"
+      },
+      "task": {
+        "not_retryable": "任务不存在或不可重试"
+      },
+      "card": {
+        "empty_import": "没有可导入的卡密",
+        "not_ready": "发卡服务暂不可用，请稍后重试"
+      }
+    },
+    "wallet": {
+      "amount_invalid": "金额无效",
+      "insufficient_balance": "钱包余额不足",
+      "adjustment_invalid": "钱包调整参数无效",
+      "balance_negative": "钱包余额不能为负",
+      "topup": {
+        "params_invalid": "充值参数无效"
+      },
+      "adjustment": {
+        "params_invalid": "调整参数无效"
+      },
+      "user_not_found": "用户不存在",
+      "not_ready": "钱包服务暂不可用，请稍后重试"
+    },
+    "payment": {
+      "method_unavailable": "所选支付方式不可用",
+      "not_found": "支付记录不存在",
+      "already_settled": "支付已处理",
+      "rejected": "支付渠道拒绝了订单",
+      "undetermined": "支付状态无法确认，订单已挂起待对账",
+      "callback_config_invalid": "支付渠道回调配置无效",
+      "return_url_invalid": "支付渠道返回了无效的支付链接",
+      "return_url_insecure": "支付渠道返回了不安全的支付链接",
+      "amount_invalid": "金额无效",
+      "settlement_amount_invalid": "结算金额无效",
+      "settlement_mismatch": "结算信息不匹配"
+    },
+    "catalog": {
+      "product": {
+        "id_required": "缺少商品 ID",
+        "not_found": "商品不存在"
+      },
+      "category": {
+        "not_found": "分类不存在",
+        "slug_taken": "分类标识已存在",
+        "has_children": "请先删除或移动子分类",
+        "move_into_self": "分类不能移动到自身",
+        "move_into_descendant": "分类不能移动到其子分类下",
+        "parent_missing": "父分类缺失",
+        "params_invalid": "分类参数无效",
+        "id_required": "缺少分类 ID",
+        "corrupt": "分类数据异常，请联系管理员"
+      },
+      "listing": {
+        "params_invalid": "上架参数无效",
+        "corrupt": "上架数据异常，请联系管理员"
+      },
+      "sort": {
+        "params_invalid": "排序参数无效",
+        "category_missing": "排序列表包含不存在的分类"
+      },
+      "not_ready": "商品目录暂不可用，请稍后重试",
+      "store_data_unavailable": "商店商品数据不可用",
+      "store_stock_unavailable": "商店库存服务不可用"
+    },
+    "ticket": {
+      "not_found": "工单不存在",
+      "forbidden": "无权访问该工单",
+      "query": {
+        "invalid": "查询参数无效"
+      },
+      "request": {
+        "invalid": "请求参数无效"
+      },
+      "id_required": "缺少工单 ID",
+      "not_ready": "工单服务暂不可用，请稍后重试"
+    },
+    "notice": {
+      "not_found": "公告不存在",
+      "params_invalid": "公告参数无效",
+      "id_required": "缺少公告 ID",
+      "not_ready": "公告服务暂不可用，请稍后重试"
+    },
+    "llm_gateway": {
+      "params_invalid": "参数无效",
+      "key_not_found": "密钥不存在",
+      "account_not_found": "上游账号不存在",
+      "key_limit_reached": "密钥数量已达上限（50）",
+      "upstream_credentials_required": "缺少上游 Base URL 或 API Key",
+      "upstream_failed": "上游服务返回错误，请稍后重试",
+      "models_fetch_failed": "拉取模型失败，请稍后重试",
+      "not_ready": "API 中转服务暂不可用，请稍后重试"
+    },
+    "zjmf": {
+      "upstream_not_found": "上游不存在",
+      "sync_in_progress": "上游正在同步中，请稍后重试",
+      "upstream_disabled": "上游已停用",
+      "protocol_invalid": "上游协议无效",
+      "params_invalid": "上游配置参数无效",
+      "upstream_id_invalid": "上游 ID 无效",
+      "credentials_missing": "上游凭证未配置",
+      "credentials_invalid": "上游凭证无效",
+      "secrets_unavailable": "密钥存储未配置",
+      "product_mapping_not_found": "商品映射不存在",
+      "product_already_linked": "目标上游商品已关联其他商品",
+      "item_missing_id": "上游商品缺少实例标识",
+      "item_missing_price": "上游商品缺少价格",
+      "sync_failed": "上游同步失败，请稍后重试",
+      "not_ready": "魔方上游服务暂不可用，请稍后重试"
+    },
+    "epay": {
+      "amount_invalid": "支付金额无效",
+      "gateway_url_invalid": "网关 URL 无效",
+      "gateway_url_insecure": "网关 URL 必须为公网 HTTPS 地址",
+      "gateway_unresolved": "网关主机名无法解析",
+      "gateway_rejected": "网关拒绝了支付请求",
+      "gateway_incomplete": "网关返回了不完整的支付响应",
+      "gateway_unreachable": "无法连接支付网关",
+      "gateway_invalid_json": "支付网关返回了无效的响应",
+      "gateway_invalid_response": "支付网关响应无效",
+      "gateway_http_error": "支付网关返回错误，请稍后重试",
+      "signature_invalid": "支付签名校验失败",
+      "pid_invalid": "商户 PID 无效",
+      "methods_required": "至少选择一个支付方式",
+      "methods_invalid": "支付方式配置无效",
+      "keys_invalid": "RSA 密钥材料无效",
+      "currency_unsupported": "易支付仅支持 CNY 币种",
+      "secrets_unavailable": "密钥存储未配置",
+      "config_invalid": "易支付配置参数无效",
+      "not_configured": "易支付尚未配置",
+      "not_ready": "易支付服务暂不可用，请稍后重试",
+      "callback_signature_invalid": "回调签名无效",
+      "callback_params_invalid": "支付回调参数无效",
+      "callback_params_incomplete": "支付回调参数不完整"
+    },
+    "cms": {
+      "not_ready": "内容服务暂不可用，请稍后重试"
+    }
+  },
+  "auditAction": {
+    "auth": {
+      "login": "登录"
+    },
+    "auth_login": "登录",
+    "auth_login_failed": "登录失败",
+    "auth_logout": "登出",
+    "auth_forbidden": "权限拒绝",
+    "auth_oauth_login": "OAuth 登录",
+    "auth_oauth_failed": "OAuth 登录失败",
+    "auth_oauth_conflict": "OAuth 身份冲突",
+    "user_create": "创建用户",
+    "user_update": "更新用户",
+    "user_reset-password": "重置密码",
+    "plugin_install": "安装插件",
+    "plugin_upgrade": "升级插件",
+    "plugin_activate": "启用插件",
+    "plugin_deactivate": "停用插件",
+    "plugin_uninstall": "删除插件",
+    "plugin_settings_update": "更新插件设置",
+    "theme_install": "安装主题",
+    "theme_activate": "激活主题",
+    "theme_preview_set": "进入主题预览",
+    "theme_preview_clear": "退出主题预览",
+    "theme_delete": "删除主题",
+    "theme_settings_update": "更新主题设置",
+    "setting_set": "更新设置",
+    "secret_set": "更新密钥",
+    "signing_key_set": "配置签名公钥",
+    "signing_key_clear": "清除签名公钥",
+    "platform_info_update": "更新平台信息",
+    "frontend_permission_denied": "前台权限拒绝",
+    "frontend_finder_call": "调用 Finder",
+    "frontend_admin_route_render": "渲染插件后台",
+    "frontend_account_route_render": "渲染账户页面",
+    "frontend_action_execute": "执行前台操作",
+    "bootstrap_create": "初始化管理员"
+  },
+  "auditResource": {
+    "user": "用户",
+    "plugin": "插件",
+    "theme": "主题",
+    "setting": "设置",
+    "secret": "密钥",
+    "platform": "平台"
+  },
+  "orderStatus": {
+    "PENDING": "待支付",
+    "PAID": "已支付",
+    "CANCELLED": "已取消",
+    "EXPIRED": "已过期",
+    "REFUNDED": "已退款"
+  },
+  "apiToken": {
+    "group": {
+      "llm-gateway": "API 中转",
+      "store": "商店",
+      "store-wallet": "钱包",
+      "store-product-card": "卡密",
+      "catalog": "商品目录",
+      "ticket": "工单",
+      "notice": "公告",
+      "epay": "支付",
+      "platform": "平台管理",
+      "zjmf-upstream": "上游对接"
+    },
+    "scope": {
+      "store": {
+        "view": "查看商品",
+        "buy": "下单购买",
+        "admin": "商店管理",
+        "wallet": "钱包账户"
+      },
+      "ticket": {
+        "view": "查看工单",
+        "create": "提交工单",
+        "admin": "工单管理"
+      },
+      "llm-gateway": {
+        "use": "调用模型",
+        "admin": "中转管理"
+      },
+      "platform": {
+        "admin": "平台管理员"
+      }
+    },
+    "never": "从未",
+    "new": "新建密钥",
+    "empty": "还没有 API 密钥，点击「新建密钥」开始接入。",
+    "statusActive": "启用",
+    "statusDisabled": "已停用",
+    "scopeCount": "{count} 项权限",
+    "noScopes": "无权限",
+    "lastUsed": "最近使用：{time}",
+    "revoke": "吊销",
+    "createTitle": "新建 API 密钥",
+    "createDescription": "密钥以自己的身份代表你调用平台接口；有效权限永远不超过你当前拥有的权限。",
+    "name": "名称",
+    "namePlaceholder": "例如：CI 部署、本地脚本",
+    "scopes": "授权范围",
+    "scopesHint": "不勾选则只建立身份、不授予任何权限。",
+    "clearGroup": "清空",
+    "selectAll": "全选",
+    "cancel": "取消",
+    "creating": "创建中…",
+    "createSubmit": "创建密钥",
+    "issuedTitle": "密钥已创建",
+    "issuedDescription": "这是唯一一次显示完整密钥，请立即复制并妥善保存。关闭后将无法再次查看。",
+    "copied": "已复制",
+    "copy": "复制",
+    "usageHint": "调用时通过 {prefix} 前缀标识，放入 Authorization: Bearer 请求头。",
+    "saved": "我已保存",
+    "revokeTitle": "吊销密钥",
+    "revokeDescription": "确定吊销「{name}」？使用该密钥的调用将立即失败，且无法恢复。",
+    "revoking": "吊销中…",
+    "revokeConfirm": "确认吊销"
+  },
+  "createUser": {
+    "trigger": "添加用户",
+    "title": "添加用户",
+    "description": "创建后台用户；密码留空则自动生成并仅显示一次。",
+    "email": "邮箱",
+    "password": "密码（可选）",
+    "passwordPlaceholder": "留空自动生成",
+    "groups": "权限组",
+    "status": "状态",
+    "statusActive": "正常",
+    "statusDisabled": "停用",
+    "generatedPassword": "初始密码（仅显示一次）：",
+    "creating": "创建中…",
+    "submit": "创建用户",
+    "emailRequired": "请填写邮箱",
+    "passwordTooShort": "密码至少 8 位，或留空由系统生成"
+  },
+  "settingsForm": {
+    "saved": "设置已保存。",
+    "saving": "保存中…",
+    "submit": "保存设置"
+  },
+  "market": {
+    "installed": "已安装",
+    "upgradableTo": "可升级到 v{version}",
+    "installedDifferent": "已安装（版本不同）",
+    "notInstalled": "未安装",
+    "upgradeTo": "升级到 v{version}",
+    "reinstall": "重新安装",
+    "install": "安装",
+    "builtin": "内置",
+    "frontendPages": "前端页面 {count}",
+    "installing": "安装中…",
+    "empty": "暂无可用包。"
+  },
+  "account": {
+    "security": {
+      "title": "账户安全",
+      "description": "查看当前登录账户与已绑定的身份。",
+      "loginAccount": "登录账户",
+      "email": "邮箱",
+      "accountStatus": "账户状态",
+      "statusActive": "正常",
+      "boundIdentities": "已绑定身份",
+      "boundFallback": "已绑定",
+      "connected": "已连接",
+      "noIdentities": "暂无已绑定的第三方身份。"
+    },
+    "home": {
+      "greeting": "你好，{email}",
+      "roleAdmin": "管理员",
+      "roleUser": "用户",
+      "balance": "账户余额",
+      "activeServices": "已开通服务",
+      "security": "账户安全",
+      "protected": "已保护"
+    },
+    "permission": "账户权限",
+    "page": {
+      "notFound": "未找到这个账户页面。",
+      "denied": "你没有访问此页面的权限。"
+    },
+    "apiKeys": {
+      "title": "API 密钥",
+      "description": "创建并管理用于访问平台开放接口的凭证，密钥以你的身份调用，权限不超过你本人。",
+      "howTo": "如何使用",
+      "usage": "在请求头中携带密钥即可通过鉴权；有效权限为密钥授权范围与你当前权限的交集。",
+      "placeholder": "<你的密钥>"
+    },
+    "notifications": {
+      "title": "我的通知",
+      "description": "订单支付、履约进度和系统公告都会出现在这里。"
+    }
+  },
+  "apply": {
+    "queued": "已排队，等待 Web 处理",
+    "processing": "正在处理",
+    "installed": "插件已安装。",
+    "installingFrontend": "插件已安装，正在应用前端…",
+    "noun": {
+      "plugin": "插件",
+      "theme": "主题"
+    },
+    "nounCap": {
+      "plugin": "插件",
+      "theme": "主题"
+    },
+    "labeled": "「{label}」",
+    "install": {
+      "failed": "安装{noun}{label}失败",
+      "succeeded": "{noun}{label}安装完成",
+      "inProgress": "正在安装{noun}{label}"
+    },
+    "update": {
+      "failed": "升级{noun}{label}失败",
+      "succeeded": "{noun}{label}升级完成",
+      "inProgress": "正在升级{noun}{label}"
+    },
+    "remove": {
+      "failed": "卸载{noun}{label}失败",
+      "succeeded": "{noun}{label}卸载完成",
+      "inProgress": "正在卸载{noun}{label}"
+    }
+  },
+  "upload": {
+    "pluginTrigger": "上传插件（ZIP）",
+    "pluginTitle": "上传插件",
+    "pluginDescription": "上传插件 ZIP 包即可安装，前端变更会自动构建生效。",
+    "pluginFile": "插件 ZIP 文件",
+    "uploading": "上传中…",
+    "applying": "应用中…",
+    "submit": "上传",
+    "themeTrigger": "上传主题（ZIP）",
+    "themeTitle": "上传主题",
+    "themeDescription": "上传主题 ZIP 包即可安装，上传后可启用或预览。",
+    "themeFile": "主题 ZIP 文件",
+    "themeInstalled": "主题已安装。"
+  },
+  "pluginPage": {
+    "notFound": "未找到插件管理页面。",
+    "denied": "无权限访问：需要 {permission}。"
+  },
+  "plugin": {
+    "uploadSelectZip": "请选择要上传的插件 ZIP",
+    "zipTooLarge": "ZIP 必须小于 2MB",
+    "uploadFailed": "上传失败",
+    "uploadFailedStatus": "上传失败（{status}）",
+    "installedApplying": "插件已安装，正在应用前端…",
+    "installed": "插件已安装。"
+  },
+  "api": {
+    "upstreamModelsFailed": "拉取模型失败",
+    "missingUpstreamProvider": "缺少上游标识",
+    "upstreamProductsUnavailable": "上游商品服务不可用",
+    "categorySaveFailed": "分类保存失败",
+    "invalidBody": "请求体无效",
+    "invalidParams": "参数无效",
+    "notificationsUnavailable": "通知服务不可用"
+  },
+  "frontend": {
+    "pageNotFound": "页面不存在",
+    "backHome": "返回首页"
+  },
+  "frontendError": {
+    "title": "页面加载失败",
+    "description": "页面暂时无法显示，请稍后重试或返回首页。"
+  }
+}
