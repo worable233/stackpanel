@@ -90,7 +90,17 @@ StackPanel/
 
 ## 文档
 
-架构与开发文档在私有文档库中维护，不随本仓库发布。仓库内的接口契约以 [`packages/spec`](./packages/spec) 为单一来源（内核 API 版本 + OpenAPI 投影）。
+开发文档发布在 **[Wiki](https://github.com/worable233/stackpanel/wiki)**，涵盖核心开发、插件、主题、前端包与 RESTful API 五部分：
+
+| 分组 | 内容 |
+| --- | --- |
+| [核心开发](https://github.com/worable233/stackpanel/wiki/Core-Prepare) | 环境准备、运行、构建、架构、项目结构、站内通知 |
+| [插件开发](https://github.com/worable233/stackpanel/wiki/Plugin-Introduction) | 清单、生命周期、路由、扩展点、事件、密钥、依赖、权限、履约、打包 |
+| [主题开发](https://github.com/worable233/stackpanel/wiki/Theme-Introduction) | 主题结构、清单、CSS Token、设置、前端包、打包 |
+| [前端包开发](https://github.com/worable233/stackpanel/wiki/Frontend-Getting-Started) | 页面路由、布局、Finder、后台扩展、样式约定、排查 |
+| [RESTful API](https://github.com/worable233/stackpanel/wiki/Api-Introduction) | 认证、路由参考、SDK 客户端、错误处理 |
+
+仓库内的接口契约以 [`packages/spec`](./packages/spec) 为单一来源（内核 API 版本 + OpenAPI 投影）。
 
 ## 许可证
 
