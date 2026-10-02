@@ -49,13 +49,23 @@ Existing solutions tend to be closed panels, lock your data in someone else's cl
 
 ## Quick start
 
+Prerequisites: **Docker** and **Docker Compose v2** installed (Linux / macOS / Windows via WSL2). Secret generation prefers `openssl` and falls back to `/dev/urandom` when absent.
+
 ```bash
-# One-shot install: detect environment, generate secrets, build and start (API :3001, Web :3000)
-# Uses install.sh when PostgreSQL/Redis already exist locally; otherwise Docker brings up the full stack:
+# One-shot deploy: detect Docker, generate random secrets, build and start.
+# The default stack brings up api + worker + web + PostgreSQL + Redis + MinIO (HTTP, http://localhost:3000)
 bash scripts/deploy.sh
+
+# Public host with automatic HTTPS (domain DNS must already point here):
+# bash scripts/deploy.sh --domain sp.example.com --email you@example.com
+
+# Cluster stack (external PostgreSQL/Redis/object storage):
+# bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<digest>
 ```
 
-Manual install:
+The first build pulls base images and dependencies, so it takes a while; when it finishes, open `http://localhost:3000`. Initial admin: a random password is generated and printed in the `api` container log by default (to pin it, set `STACKPANEL_BOOTSTRAP_EMAIL` / `STACKPANEL_BOOTSTRAP_PASSWORD` in `docker/.env` first).
+
+Without Docker (existing local PostgreSQL/Redis, PM2 mode):
 
 ```bash
 pnpm install
