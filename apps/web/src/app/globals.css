@@ -8,6 +8,8 @@
 @source "../../../../packages/themes/stratus/frontend/src";
 @source "../../../../packages/plugins/store/frontend/src";
 @source "../../../../packages/plugins/store-wallet/frontend/src";
+/* 市场安装的插件产物（外部上传后落在 data/plugins/<id>/frontend/dist）。 */
+@source "../../../../data/plugins";
 
 @custom-variant dark (&:is(.dark *));
 
