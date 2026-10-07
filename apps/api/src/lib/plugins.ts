@@ -4,7 +4,7 @@ import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PluginDefinition, PluginDependency, PluginExtensionConsumer } from '@stackpanel/sdk';
-import type { PluginRoleTemplate } from '@stackpanel/sdk';
+import type { PluginPermission, PluginRoleTemplate } from '@stackpanel/sdk';
 import { KERNEL_API_VERSION, kernelApiVersionRange } from '@stackpanel/spec';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { unzipSync } from 'fflate';
@@ -13,6 +13,7 @@ import { FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './f
 import { env } from '../config/env.ts';
 import { SignatureError, verifyPackageSignature } from './signatures.ts';
 import { getPrisma } from '../plugins/prisma.ts';
+import { loadIsolatedPluginDefinition } from '../plugins/isolated/host.ts';
 
 export { KERNEL_API_VERSION };
 
@@ -64,8 +65,9 @@ export interface PluginManifestFile {
   requires?: Array<string | PluginDependency>;
   provides?: string[];
   consumes?: PluginExtensionConsumer[];
-  permissions?: string[];
+  permissions?: Array<string | PluginPermission>;
   roleTemplates?: PluginRoleTemplate[];
+  execution?: 'trusted' | 'isolated';
   /** Interface locales this plugin ships messages for (ADR-0016 §5). */
   locales?: string[];
   /**
@@ -226,6 +228,12 @@ export function validateManifest(manifest: PluginManifestFile, allowReserved = f
   if (!semver.valid(manifest.version)) {
     throw new PluginError(422, `插件版本号无效：${manifest.version}`);
   }
+  if (manifest.execution !== undefined && manifest.execution !== 'trusted' && manifest.execution !== 'isolated') {
+    throw new PluginError(422, 'execution 必须是 trusted 或 isolated');
+  }
+  if (!manifest.builtin && manifest.execution === 'trusted' && process.env.NODE_ENV === 'production') {
+    throw new PluginError(403, '生产环境第三方插件必须使用 isolated 执行模式');
+  }
   validateManifestSchemaVersion(manifest.schemaVersion);
   if (manifest.apiVersion !== undefined) {
     if (!semver.validRange(manifest.apiVersion)) {
@@ -341,14 +349,36 @@ function validateConsumes(manifest: PluginManifestFile): void {
   }
 }
 
-function validatePermissions(permissions: string[]): void {
-  if (
-    !Array.isArray(permissions) ||
-    permissions.some((permission) => typeof permission !== 'string' || permission.length === 0)
-  ) {
-    throw new PluginError(422, 'permissions 必须是非空字符串数组');
+function validatePermissions(permissions: Array<string | PluginPermission>): void {
+  if (!Array.isArray(permissions)) {
+    throw new PluginError(422, 'permissions 必须是数组');
   }
-  if (new Set(permissions).size !== permissions.length) {
+  const keys: string[] = [];
+  for (const permission of permissions) {
+    if (typeof permission === 'string') {
+      if (permission.length === 0) {
+        throw new PluginError(422, 'permissions 条目必须是非空字符串');
+      }
+      keys.push(permission);
+      continue;
+    }
+    if (
+      typeof permission !== 'object' ||
+      permission === null ||
+      typeof permission.key !== 'string' ||
+      permission.key.length === 0
+    ) {
+      throw new PluginError(422, 'permissions 条目必须是字符串或 { key } 对象');
+    }
+    if (permission.description !== undefined && typeof permission.description !== 'string') {
+      throw new PluginError(422, 'permissions 条目的 description 必须是字符串');
+    }
+    if (permission.name !== undefined && typeof permission.name !== 'string') {
+      throw new PluginError(422, 'permissions 条目的 name 必须是字符串');
+    }
+    keys.push(permission.key);
+  }
+  if (new Set(keys).size !== keys.length) {
     throw new PluginError(422, 'permissions 不能包含重复项');
   }
 }
@@ -625,6 +655,12 @@ export async function loadPluginDefinition(id: string): Promise<PluginDefinition
   const entry = pluginEntryPath(id, manifest);
   const entryData = await readFile(entry).catch(() => null);
   if (!entryData) throw new PluginError(422, `缺少插件入口文件：${id}`);
+  // Existing local development plugins predate the execution field. Keep them
+  // usable during development; production always takes the isolated path.
+  const execution = manifest.execution ?? (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted');
+  if (!manifest.builtin && execution !== 'trusted') {
+    return loadIsolatedPluginDefinition(id, entry, { ...manifest, execution });
+  }
   const url = `${pathToFileURL(entry).href}?v=${Date.now()}`;
   const mod = (await import(url)) as Record<string, unknown>;
   const exportName = manifest.export ?? 'default';
@@ -641,6 +677,7 @@ export async function loadPluginDefinition(id: string): Promise<PluginDefinition
       ...(manifest.roleTemplates ? { roleTemplates: manifest.roleTemplates } : {}),
       ...(manifest.locales ? { locales: manifest.locales } : {}),
       ...(manifest.builtin ? { builtin: true } : {}),
+      ...(execution ? { execution } : {}),
     },
   };
 }

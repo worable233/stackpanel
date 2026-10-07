@@ -1,12 +1,14 @@
 'use client';
 
-import { Check, ExternalLink } from 'lucide-react';
+import { Check, ExternalLink, CircleAlert, Loader } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import type { NotificationListResponse } from '@stackpanel/sdk';
+import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { mergeNotification, useNotificationStream } from '@/lib/use-notification-stream';
 import { useLocale, useTranslator } from '@/i18n/provider';
 import { formatDate } from '@/i18n/core';
 
@@ -62,6 +64,19 @@ export function NotificationInbox({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
+
+  // Fold streamed live notifications into the current page's items so an
+  // in-progress activity advances in place (its title/body/progress change).
+  const applyLive = useCallback((view: NotificationView) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      if (filter === 'unread' && view.readAt) {
+        return { ...prev, items: prev.items.filter((item) => item.id !== view.id) };
+      }
+      return { ...prev, items: mergeNotification(prev.items, view) };
+    });
+  }, [filter]);
+  useNotificationStream(applyLive);
 
   const markRead = async (id: string) => {
     try {
@@ -159,12 +174,7 @@ export function NotificationInbox({
         <ul className="divide-y rounded-lg border bg-card">
           {items.map((item) => (
             <li key={item.id} className="flex items-start gap-3 p-4">
-              <span
-                className={cn(
-                  'mt-1.5 size-2 shrink-0 rounded-full',
-                  item.readAt ? 'bg-transparent ring-1 ring-border' : 'bg-primary',
-                )}
-              />
+              <InboxGlyph item={item} />
               <div className="min-w-0 flex-1">
                 <p
                   className={cn(
@@ -176,6 +186,14 @@ export function NotificationInbox({
                 </p>
                 {item.body ? (
                   <p className="mt-1 text-sm text-muted-foreground">{item.body}</p>
+                ) : null}
+                {item.status === 'active' && item.progress !== null ? (
+                  <div className="mt-2 flex items-center gap-3">
+                    <Progress className="h-1.5 max-w-xs" value={item.progress} />
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {item.progress}%
+                    </span>
+                  </div>
                 ) : null}
                 <p className="mt-1 text-xs text-muted-foreground/70">
                   {formatDate(new Date(item.createdAt), locale, {
@@ -226,5 +244,26 @@ export function NotificationInbox({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Status glyph for an inbox row; a plain dot for one-shot notifications. */
+function InboxGlyph({ item }: { item: NotificationView }) {
+  if (item.status === 'active') {
+    return <Loader className="mt-1 size-4 shrink-0 animate-spin text-primary" />;
+  }
+  if (item.status === 'success') {
+    return <Check className="mt-1 size-4 shrink-0 text-emerald-500" />;
+  }
+  if (item.status === 'error') {
+    return <CircleAlert className="mt-1 size-4 shrink-0 text-destructive" />;
+  }
+  return (
+    <span
+      className={cn(
+        'mt-1.5 size-2 shrink-0 rounded-full',
+        item.readAt ? 'bg-transparent ring-1 ring-border' : 'bg-primary',
+      )}
+    />
   );
 }

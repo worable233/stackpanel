@@ -1,5 +1,6 @@
 import type { PaymentMethod, PaymentSettlement, PaymentSettlementHandler } from './plugin.js';
 import type { ManualPaymentInstructions } from './plugin.js';
+import { KernelError, brandSdkErrorClass, isSdkErrorClass } from './errors.js';
 
 /**
  * Kernel-owned payment orchestration contract.
@@ -19,43 +20,53 @@ export type PaymentPurpose = 'ORDER' | 'TOP_UP';
  * `undetermined` kind) to a code here centralises the vocabulary.
  */
 const PAYMENT_ERROR_CODES: Record<string, string> = {
-  '所选支付方式不可用': 'payment.method_unavailable',
-  '支付渠道回调配置无效': 'payment.callback_config_invalid',
-  '支付渠道返回了无效的支付链接': 'payment.return_url_invalid',
-  '支付渠道返回了不安全的支付链接': 'payment.return_url_insecure',
-  '金额无效': 'payment.amount_invalid',
-  '支付记录不存在': 'payment.not_found',
-  '支付已处理': 'payment.already_settled',
-  '支付渠道拒绝了订单': 'payment.rejected',
+  所选支付方式不可用: 'payment.method_unavailable',
+  支付渠道回调配置无效: 'payment.callback_config_invalid',
+  支付渠道返回了无效的支付链接: 'payment.return_url_invalid',
+  支付渠道返回了不安全的支付链接: 'payment.return_url_insecure',
+  金额无效: 'payment.amount_invalid',
+  支付记录不存在: 'payment.not_found',
+  支付已处理: 'payment.already_settled',
+  支付渠道拒绝了订单: 'payment.rejected',
   '支付状态无法确认；订单已挂起待对账': 'payment.undetermined',
-  '结算金额无效': 'payment.settlement_amount_invalid',
-  '结算信息不匹配': 'payment.settlement_mismatch',
+  结算金额无效: 'payment.settlement_amount_invalid',
+  结算信息不匹配: 'payment.settlement_mismatch',
 };
 
 /**
  * Error thrown by the kernel payment service. Carries an HTTP status and a
  * display message so plugins can relay it without duplicating protocol rules.
+ *
+ * `code` defaults to a stable value derived from `kind`/`message`; pass an
+ * explicit `code` to surface a provider's original reason as `message` while
+ * keeping the machine contract stable (e.g. `payment.rejected`).
  */
-export class PaymentError extends Error {
-  /** Stable error code (ADR-0012). */
-  readonly code: string;
+export class PaymentError extends KernelError {
+  /** 'definitive' = the provider refused; 'undetermined' = the session must be reconciled. */
+  readonly kind: 'definitive' | 'undetermined' | undefined;
 
   constructor(
-    readonly status: number,
+    status: number,
     message: string,
-    /** 'definitive' = the provider refused; 'undetermined' = the session must be reconciled. */
-    readonly kind?: 'definitive' | 'undetermined',
+    kind?: 'definitive' | 'undetermined',
+    code?: string,
   ) {
-    super(message);
-    this.name = 'PaymentError';
-    this.statusCode = status;
-    this.code =
-      kind === 'undetermined'
+    const resolved =
+      code ??
+      (kind === 'undetermined'
         ? 'payment.undetermined'
-        : (PAYMENT_ERROR_CODES[message] ?? 'payment.error');
+        : (PAYMENT_ERROR_CODES[message] ?? 'payment.error'));
+    super(resolved, status, message);
+    this.name = 'PaymentError';
+    this.kind = kind;
   }
-  /** Alias so Fastify's error handler maps the error to an HTTP status. */
-  readonly statusCode: number;
+}
+
+brandSdkErrorClass(PaymentError, 'PaymentError');
+
+/** True when `value` is a {@link PaymentError}, even across duplicated SDK modules. */
+export function isPaymentError(value: unknown): value is PaymentError {
+  return isSdkErrorClass(value, 'PaymentError');
 }
 
 /** External payment statuses that are still in flight and may settle/release. */
@@ -167,13 +178,11 @@ export interface PaymentSettleResult {
 
 /** Outcome of an admin manual-payment confirmation. */
 export type AdminPaymentConfirmResult =
-  | { confirmed: true }
-  | { confirmed: false; reason: 'NOT_FOUND' | 'NOT_MANUAL' | 'NOT_PENDING' };
+  { confirmed: true } | { confirmed: false; reason: 'NOT_FOUND' | 'NOT_MANUAL' | 'NOT_PENDING' };
 
 /** Outcome of an admin manual-payment cancellation. */
 export type AdminPaymentCancelResult =
-  | { cancelled: true }
-  | { cancelled: false; reason: 'NOT_FOUND' | 'NOT_MANUAL' | 'NOT_PENDING' };
+  { cancelled: true } | { cancelled: false; reason: 'NOT_FOUND' | 'NOT_MANUAL' | 'NOT_PENDING' };
 
 /** Outcome of a user-initiated external payment cancellation. */
 export type ExternalPaymentCancelResult =

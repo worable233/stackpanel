@@ -13,7 +13,11 @@ export interface FrontendPageProps<P extends Record<string, unknown> = Record<st
   settings: FrontendSettings;
   data: P;
   actions: FrontendActionExecutors;
-  /** API origin for resolving theme/plugin asset URLs at runtime. */
+  /**
+   * Same-origin BFF base for resolving theme/plugin asset URLs at runtime, e.g.
+   * `/api/plugins/themes/<id>/assets`. The browser must never receive the
+   * server-only API origin (see INTERFACES §3.4).
+   */
   assetsBaseUrl?: string;
 }
 
@@ -51,7 +55,7 @@ export interface FrontendLayoutProps {
     logoUrl: string | null;
     faviconUrl: string | null;
   };
-  /** API origin for resolving theme/plugin asset URLs at runtime. */
+  /** Same-origin BFF base for resolving theme/plugin asset URLs at runtime. */
   assetsBaseUrl?: string;
 }
 
@@ -223,8 +227,20 @@ export function resolveThemeOverride(
   return best?.component;
 }
 
+/** Scalar value accepted by the admin settings form for a single field. */
+export type FrontendSettingsScalar = string | number | boolean;
+
+/** A scalar field declaration (everything except the recursive `list` type). */
+export type FrontendSettingsScalarField = Exclude<FrontendSettingsField, { type: 'list' }>;
+
+/** A repeatable row inside a `list` settings field. */
+export type FrontendSettingsListItem = Record<string, FrontendSettingsScalar>;
+
+/** Stored value for one settings field: scalar, or an array of rows for `list`. */
+export type FrontendSettingsValue = FrontendSettingsScalar | FrontendSettingsListItem[];
+
 /** Non-secret settings stored per theme/plugin and passed into templates. */
-export type FrontendSettings = Record<string, Record<string, string | number | boolean>>;
+export type FrontendSettings = Record<string, Record<string, FrontendSettingsValue>>;
 
 /** A single field declaration accepted by the admin settings form. */
 export type FrontendSettingsField =
@@ -262,6 +278,18 @@ export type FrontendSettingsField =
       label: string;
       default?: string;
       options: Array<{ label: string; value: string }>;
+      help?: string;
+      required?: boolean;
+    }
+  | {
+      /** Repeatable group of sub-fields. Persists as an array of row objects. */
+      type: 'list';
+      name: string;
+      label: string;
+      fields: FrontendSettingsScalarField[];
+      default?: FrontendSettingsListItem[];
+      /** Sub-field used as the collapsed row title in the admin form. */
+      itemLabelField?: string;
       help?: string;
       required?: boolean;
     };
@@ -536,27 +564,40 @@ export function buildZodFromSettingsSchema(
   const groupShape: Record<string, z.ZodTypeAny> = {};
   for (const group of schema.groups) {
     const fieldShape: Record<string, z.ZodTypeAny> = {};
-    const groupDefaults: Record<string, string | number | boolean> = {};
+    const groupDefaults: Record<string, FrontendSettingsValue> = {};
     for (const field of group.fields) {
       fieldShape[field.name] = buildFieldSchema(field);
-      if ('default' in field && field.default !== undefined) {
-        groupDefaults[field.name] = field.default;
-      }
+      groupDefaults[field.name] = defaultForField(field);
     }
     groupShape[group.id] = z.object(fieldShape).default(groupDefaults);
   }
   return z.object(groupShape) as unknown as z.ZodType<FrontendSettings>;
 }
 
+/** Effective default value for a field, mirroring `buildFieldSchema`. */
+function defaultForField(field: FrontendSettingsField): FrontendSettingsValue {
+  switch (field.type) {
+    case 'number':
+      return field.default ?? 0;
+    case 'boolean':
+      return field.default ?? false;
+    case 'select':
+    case 'radio':
+      return field.default ?? field.options[0]?.value ?? '';
+    case 'list':
+      return field.default ?? [];
+    default:
+      return field.default ?? '';
+  }
+}
+
 /** Defaults for every declared field, used when no persisted value exists. */
 export function settingsDefaultsFromSchema(schema: FrontendSettingsSchema): FrontendSettings {
   const result: FrontendSettings = {};
   for (const group of schema.groups) {
-    const values: Record<string, string | number | boolean> = {};
+    const values: Record<string, FrontendSettingsValue> = {};
     for (const field of group.fields) {
-      if ('default' in field && field.default !== undefined) {
-        values[field.name] = field.default;
-      }
+      values[field.name] = defaultForField(field);
     }
     result[group.id] = values;
   }
@@ -581,13 +622,16 @@ export function mergeFrontendSettings(
 
 function buildFieldSchema(field: FrontendSettingsField): z.ZodTypeAny {
   switch (field.type) {
-    case 'number':
-      return z
-        .number()
-        .int()
+    case 'number': {
+      const base = z.number();
+      // Integer by default (counts, sizes); a fractional `step` opts into floats
+      // (e.g. latitude/longitude coordinates).
+      const numeric = field.step !== undefined && !Number.isInteger(field.step) ? base : base.int();
+      return numeric
         .min(field.min ?? Number.MIN_SAFE_INTEGER)
         .max(field.max ?? Number.MAX_SAFE_INTEGER)
         .default(field.default ?? 0);
+    }
     case 'boolean':
       return z.boolean().default(field.default ?? false);
     case 'select':
@@ -595,7 +639,21 @@ function buildFieldSchema(field: FrontendSettingsField): z.ZodTypeAny {
       const values = field.options.map((option) => option.value);
       return z.enum(values as [string, ...string[]]).default(field.default ?? values[0] ?? '');
     }
+    case 'list': {
+      const row = z.object(buildFieldShape(field.fields));
+      const base = z.array(row);
+      return (field.default ? base.default(field.default) : base.default([])) as z.ZodTypeAny;
+    }
     default:
       return z.string().default(field.default ?? '');
   }
+}
+
+/** Build the zod object shape for a set of fields (shared by groups and list rows). */
+function buildFieldShape(fields: FrontendSettingsField[]): Record<string, z.ZodTypeAny> {
+  const shape: Record<string, z.ZodTypeAny> = {};
+  for (const field of fields) {
+    shape[field.name] = buildFieldSchema(field);
+  }
+  return shape;
 }

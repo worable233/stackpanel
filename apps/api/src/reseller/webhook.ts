@@ -9,6 +9,9 @@
  * 伙伴侧按同一算法验签即可防伪造。投递 id 亦作为幂等键，伙伴可据此去重。
  */
 import { randomUUID } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import type { PrismaClient } from '@stackpanel/db';
 import { isPublicHttpUrl, resolvesToUnsafeAddress } from '@stackpanel/net-guard';
 import { bodyDigest, canonicalRequest, signCanonical } from './signing.ts';
@@ -19,6 +22,42 @@ export const WEBHOOK_JOBS = { deliver: 'webhook-deliver' } as const;
 
 const DEFAULT_MAX_ATTEMPTS = 6;
 const REQUEST_TIMEOUT_MS = 10_000;
+
+/** Fetch using the address that was checked for SSRF, preserving Host/SNI. */
+async function pinnedFetch(urlValue: string, init: RequestInit): Promise<Response> {
+  const url = new URL(urlValue);
+  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  if (addresses.length === 0) throw new Error('回调地址无法解析');
+  const address = addresses[0]?.address;
+  if (!address) throw new Error('回调地址无法解析');
+  const requestFn = url.protocol === 'https:' ? httpsRequest : httpRequest;
+  return new Promise((resolve, reject) => {
+    const req = requestFn({
+      protocol: url.protocol,
+      hostname: address,
+      port: url.port || undefined,
+      path: `${url.pathname}${url.search}`,
+      method: init.method ?? 'GET',
+      headers: { ...(init.headers as Record<string, string> | undefined), host: url.host },
+      ...(url.protocol === 'https:' ? { servername: url.hostname } : {}),
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      res.on('end', () => resolve(new Response(Buffer.concat(chunks), {
+        status: res.statusCode ?? 502,
+        headers: Object.fromEntries(Object.entries(res.headers).flatMap(([key, value]) =>
+          typeof value === 'string' ? [[key, value]] : value ? [[key, value.join(', ')]] : [],
+        )),
+      })));
+      res.on('error', reject);
+    });
+    const timer = setTimeout(() => req.destroy(new Error('请求超时')), REQUEST_TIMEOUT_MS);
+    req.on('close', () => clearTimeout(timer));
+    req.on('error', reject);
+    if (init.body !== undefined && init.body !== null) req.write(String(init.body));
+    req.end();
+  });
+}
 /** Deterministic backoff (attempt n → n × 30s), capped. */
 function backoffMs(attempts: number): number {
   return Math.min(Math.max(1, attempts), 6) * 30_000;
@@ -143,12 +182,15 @@ async function deliverOne(
 
   const attempt = delivery.attempts + 1;
   try {
-    const response = await fetchImpl(delivery.url, {
+    const requestInit: RequestInit = {
       method: 'POST',
       headers,
       body,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    };
+    const response = fetchImpl === fetch
+      ? await pinnedFetch(delivery.url, requestInit)
+      : await fetchImpl(delivery.url, requestInit);
     if (response.ok) {
       await repo.markDelivered(delivery.id, response.status);
       return;

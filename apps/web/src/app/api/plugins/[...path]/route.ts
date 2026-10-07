@@ -36,8 +36,38 @@ export const dynamic = 'force-dynamic';
  */
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
+/** HTTP statuses for which the `Response` constructor forbids a body. */
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
 /** 转发路径首段（插件命名空间）的形状；与内核 `PLUGIN_ID_PATTERN` 对齐。 */
 const PLUGIN_NAMESPACE_PATTERN = /^[a-z0-9_-]{1,64}$/;
+const THEME_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
+
+/**
+ * Public resources required before a user has a session. These are the only
+ * kernel paths that bypass plugin route discovery; mutations and all dynamic
+ * plugin routes still go through the authenticated action-target check below.
+ */
+function isPublicAssetRequest(method: string, segments: string[]): boolean {
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  if (segments[0] === 'platform' && segments.length === 3) {
+    return segments[1] === 'brand' && (segments[2] === 'logo' || segments[2] === 'favicon');
+  }
+  if (
+    segments[0] !== 'themes' ||
+    segments.length < 3 ||
+    !THEME_ID_PATTERN.test(segments[1] ?? '')
+  ) {
+    return false;
+  }
+  if (segments.length === 3 && segments[2] === 'theme.css') return true;
+  // Theme assets are served by the API's path-safe /themes/:id/assets/* route.
+  return (
+    segments[2] === 'assets' &&
+    segments.length > 3 &&
+    !segments.slice(3).some((part) => part === '..' || part === '')
+  );
+}
 
 /** 不转发到上游的逐跳请求头（RFC 9110 §7.6.1）。 */
 const HOP_BY_HOP_REQUEST_HEADERS = new Set([
@@ -70,6 +100,17 @@ interface RouteContext {
   params: Promise<{ path?: string[] }>;
 }
 
+function routeMatches(pattern: string, pathname: string): boolean {
+  const expected = pattern.split('/').filter(Boolean);
+  const actual = pathname.split('/').filter(Boolean);
+  const wildcard = expected.at(-1) === '*';
+  if (wildcard) expected.pop();
+  if (actual.length < expected.length || (!wildcard && actual.length !== expected.length)) {
+    return false;
+  }
+  return expected.every((segment, index) => segment.startsWith(':') || segment === actual[index]);
+}
+
 async function proxy(request: NextRequest, context: RouteContext): Promise<Response> {
   const t = createTranslator(await getLocale());
   const { path: segments } = await context.params;
@@ -77,6 +118,8 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
   if (!segments || segments.length === 0 || !PLUGIN_NAMESPACE_PATTERN.test(segments[0] ?? '')) {
     return NextResponse.json({ error: t('api.invalidParams') }, { status: 400 });
   }
+
+  const publicAsset = isPublicAssetRequest(request.method, segments);
 
   const upstreamPath = `/${segments.join('/')}`;
   const searchParams = request.nextUrl.searchParams.toString();
@@ -101,14 +144,48 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
   }
 
   try {
-    const api = await getBffPluginClient();
+    let apiToken: string | null = null;
+    if (!publicAsset) {
+      const api = await getBffPluginClient();
+      apiToken = api.token ?? null;
+      // Resolve the namespace against the kernel's active route table before
+      // forwarding. The BFF must never become a generic same-origin proxy.
+      const routeResponse = await fetch(
+        `${process.env.API_BASE_URL ?? 'http://127.0.0.1:3001'}/plugins/${encodeURIComponent(segments[0] ?? '')}/action-targets`,
+        {
+          method: 'GET',
+          headers: api.token ? { authorization: `Bearer ${api.token}` } : undefined,
+          cache: 'no-store',
+          signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+        },
+      );
+      if (!routeResponse.ok) {
+        return NextResponse.json(
+          { error: t('api.invalidParams') },
+          { status: routeResponse.status },
+        );
+      }
+      const routeBody = (await routeResponse.json()) as {
+        routes?: Array<{ method?: string; path?: string }>;
+      };
+      const candidatePath = `/${segments.join('/')}`;
+      const allowed = (routeBody.routes ?? []).some(
+        (route) =>
+          route.method === request.method &&
+          typeof route.path === 'string' &&
+          routeMatches(route.path, candidatePath),
+      );
+      if (!allowed) {
+        return NextResponse.json({ error: t('api.invalidParams') }, { status: 404 });
+      }
+    }
     const response = await fetch(target, {
       ...init,
-      ...(api.token
+      ...(apiToken
         ? {
             headers: {
               ...Object.fromEntries(headers),
-              authorization: `Bearer ${api.token}`,
+              authorization: `Bearer ${apiToken}`,
             },
           }
         : {}),
@@ -118,7 +195,11 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
     response.headers.forEach((value, key) => {
       if (!HOP_BY_HOP_RESPONSE_HEADERS.has(key.toLowerCase())) responseHeaders.set(key, value);
     });
-    return new Response(await response.arrayBuffer(), {
+    // Null-body statuses (204/205/304) must not carry a body: the `Response`
+    // constructor throws otherwise, which would surface a healthy upstream 204
+    // as a 502. Read the body only when the status permits one.
+    const body = NULL_BODY_STATUSES.has(response.status) ? null : await response.arrayBuffer();
+    return new Response(body, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,

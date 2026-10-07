@@ -1,4 +1,5 @@
 import type {
+  CommerceBindServiceInput,
   CommerceCatalogQuery,
   CommerceList,
   CommerceOperations,
@@ -19,10 +20,12 @@ import {
   createServiceInstance,
   deleteServiceInstance,
   findOrderForUser,
+  findServiceByProviderService,
   getProduct,
   getService,
   listActiveProductsPage,
   listOrdersForUserPage,
+  listServicesByProvider,
   listServicesByUser,
   replaceServiceInstance,
   reserveProductStock,
@@ -252,4 +255,53 @@ export const storeOperations: CommerceOperations = {
     await deleteServiceInstance(id);
     return true;
   },
+
+  async bindService(input: CommerceBindServiceInput): Promise<CommerceService> {
+    const existing = await findServiceByProviderService(input.providerId, input.providerServiceId);
+    if (existing) {
+      throw new CommerceError(
+        'service_already_bound',
+        existing.userId === input.userId ? '该上游服务已绑定到本账号' : '该上游服务已绑定到其他账号',
+      );
+    }
+    const service = await createServiceInstance({
+      userId: input.userId,
+      orderId: null,
+      productId: input.productId,
+      productName: input.productName,
+      fulfillmentType: input.fulfillmentType,
+      providerId: input.providerId,
+      providerServiceId: input.providerServiceId,
+      state: normalizeBoundStatus(input.status),
+      credentialsRef: null,
+      runtime: input.runtime ?? null,
+      amount: input.amount,
+      currency: input.currency,
+      provisionedAt: new Date().toISOString(),
+      expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null,
+    });
+    return toCommerceService(service);
+  },
+
+  async listBoundServices(providerId: string): Promise<CommerceService[]> {
+    const services = await listServicesByProvider(providerId);
+    return services
+      .filter((service) => service.providerServiceId !== null)
+      .slice(0, MAX_SERVICES)
+      .map(toCommerceService);
+  },
 };
+
+/** 把上游状态归一化为平台交付物状态；未知状态按 ACTIVE 处理。 */
+function normalizeBoundStatus(status: string): string {
+  const allowed = new Set([
+    'PENDING_PROVISION',
+    'PROVISIONING',
+    'ACTIVE',
+    'SUSPENDED',
+    'TERMINATED',
+    'FAILED',
+  ]);
+  const upper = status.toUpperCase();
+  return allowed.has(upper) ? upper : 'ACTIVE';
+}

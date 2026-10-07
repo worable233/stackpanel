@@ -98,6 +98,39 @@ describe('MemoryJobBackend', () => {
     await waitFor(() => seen.length === 1);
     expect((seen[0] ?? 0) - start).toBeGreaterThanOrEqual(50);
   });
+
+  it('coalesces duplicate memory jobs by jobId', async () => {
+    const backend = new MemoryJobBackend({ logger });
+    let runs = 0;
+    backend.handle('dedupe.run', async () => { runs += 1; });
+    await backend.enqueue('dedupe.run', null, { jobId: 'same-job' });
+    await backend.enqueue('dedupe.run', null, { jobId: 'same-job' });
+    await waitFor(() => runs === 1);
+    expect(runs).toBe(1);
+    await backend.stop();
+  });
+
+  it('removes a handler without installing undefined', async () => {
+    const backend = new MemoryJobBackend({ logger });
+    backend.handle('remove.run', async () => { throw new Error('should not run'); });
+    backend.unhandle('remove.run');
+    await backend.enqueue('remove.run', null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await backend.stop();
+  });
+
+  it('removes only the deactivated owner queued jobs', async () => {
+    const backend = new MemoryJobBackend({ logger });
+    const runs: string[] = [];
+    backend.handle('alpha.run', () => void runs.push('alpha'));
+    backend.handle('beta.run', () => void runs.push('beta'));
+    await backend.enqueue('alpha.run', null, { delayMs: 80, jobId: 'alpha-job' });
+    await backend.enqueue('beta.run', null, { delayMs: 80, jobId: 'beta-job' });
+    await backend.removeByOwner('alpha');
+    await waitFor(() => runs.length === 1, 500);
+    expect(runs).toEqual(['beta']);
+    await backend.stop();
+  });
 });
 
 describe.skipIf(!redisAvailable)('BullMqJobBackend (redis)', () => {

@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
-  AdminProductItem,
+  AdminUpstreamServiceItem,
   AdminUserDetailResponse,
   PermissionGroupView,
 } from '@stackpanel/sdk';
@@ -21,8 +21,10 @@ import {
 } from '@/components/ui/dialog';
 import {
   adjustUserWalletAction,
+  bindUpstreamServiceAction,
   deleteServiceAction,
-  giftServiceAction,
+  listUpstreamServicesAction,
+  unbindUpstreamServiceAction,
   updateServiceAction,
   updateUserGroupsAction,
   updateUserStatusAction,
@@ -381,11 +383,9 @@ function WalletSection({
 function ServicesSection({
   userId,
   services,
-  products,
 }: {
   userId: string;
   services: AdminUserDetailResponse['services'];
-  products: AdminProductItem[];
 }) {
   const router = useRouter();
   const t = useTranslator();
@@ -393,10 +393,11 @@ function ServicesSection({
   const [isPending, startTransition] = useTransition();
   const [state, setState] = useState<UserActionResult | null>(null);
 
-  const [giftProductId, setGiftProductId] = useState(products[0]?.id ?? '');
-  const [giftQuantity, setGiftQuantity] = useState('1');
-  const [giftExpiresAt, setGiftExpiresAt] = useState('');
-  const [giftOpen, setGiftOpen] = useState(false);
+  const [bindOpen, setBindOpen] = useState(false);
+  const [bindLoading, setBindLoading] = useState(false);
+  const [bindError, setBindError] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<AdminUpstreamServiceItem[]>([]);
+  const [selected, setSelected] = useState<string>('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editExpiresAt, setEditExpiresAt] = useState('');
@@ -409,24 +410,44 @@ function ServicesSection({
       setState(result);
       if (result.ok) {
         setEditingId(null);
-        setGiftOpen(false);
-        setGiftQuantity('1');
-        setGiftExpiresAt('');
+        setBindOpen(false);
         router.refresh();
       }
     });
   }
 
-  function gift() {
-    if (!giftProductId) {
-      setState({ error: t('admin.userDetail.services.selectProduct') });
+  function openBind(next: boolean) {
+    setBindOpen(next);
+    setState(null);
+    if (!next) return;
+    setBindError(null);
+    setSelected('');
+    setCandidates([]);
+    setBindLoading(true);
+    void listUpstreamServicesAction(userId).then((result) => {
+      if (result.error || !result.data) {
+        setBindError(result.error ?? t('admin.userDetail.services.bindLoadFailed'));
+      } else {
+        setCandidates(result.data.services);
+        const first = result.data.services.find(
+          (item) => !item.boundServiceId && !item.boundUserId,
+        );
+        if (first) setSelected(`${first.sourceId}:${first.id}`);
+      }
+      setBindLoading(false);
+    });
+  }
+
+  function bind() {
+    const item = candidates.find((candidate) => `${candidate.sourceId}:${candidate.id}` === selected);
+    if (!item) {
+      setState({ error: t('admin.userDetail.services.selectUpstream') });
       return;
     }
     run(() =>
-      giftServiceAction(userId, {
-        productId: giftProductId,
-        quantity: Number(giftQuantity) || 1,
-        ...(giftExpiresAt ? { expiresAt: `${giftExpiresAt}T00:00:00.000Z` } : {}),
+      bindUpstreamServiceAction(userId, {
+        sourceId: item.sourceId,
+        providerServiceId: item.id,
       }),
     );
   }
@@ -449,8 +470,23 @@ function ServicesSection({
   }
 
   function remove(serviceId: string) {
-    if (!window.confirm(t('admin.userDetail.services.confirmDelete'))) return;
-    run(() => deleteServiceAction(userId, serviceId));
+    const bound = boundServiceIds(services).has(serviceId);
+    if (
+      !window.confirm(
+        t(
+          bound
+            ? 'admin.userDetail.services.confirmUnbind'
+            : 'admin.userDetail.services.confirmDelete',
+        ),
+      )
+    ) {
+      return;
+    }
+    run(() =>
+      bound
+        ? unbindUpstreamServiceAction(userId, serviceId)
+        : deleteServiceAction(userId, serviceId),
+    );
   }
 
   return (
@@ -458,67 +494,70 @@ function ServicesSection({
       title={t('admin.userDetail.services.title')}
       description={t('admin.userDetail.services.description')}
       action={
-        <Dialog
-          open={giftOpen}
-          onOpenChange={(next) => {
-            setGiftOpen(next);
-            if (!next) {
-              setState(null);
-              setGiftQuantity('1');
-              setGiftExpiresAt('');
-            }
-          }}
-        >
+        <Dialog open={bindOpen} onOpenChange={openBind}>
           <DialogTrigger render={<Button size="sm" variant="outline" />}>
-            {t('admin.userDetail.services.gift')}
+            {t('admin.userDetail.services.bind')}
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>{t('admin.userDetail.services.gift')}</DialogTitle>
-              <DialogDescription>{t('admin.userDetail.services.giftDescription')}</DialogDescription>
+              <DialogTitle>{t('admin.userDetail.services.bind')}</DialogTitle>
+              <DialogDescription>
+                {t('admin.userDetail.services.bindDescription')}
+              </DialogDescription>
             </DialogHeader>
             <div className="mt-4 flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="gift-product">{t('admin.userDetail.services.product')}</Label>
-                <select
-                  id="gift-product"
-                  value={giftProductId}
-                  onChange={(e) => setGiftProductId(e.target.value)}
-                  className="h-9 rounded-md border bg-background px-2 text-sm"
-                >
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name}（{money(product.price, product.currency, locale)}）
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="gift-qty">{t('admin.userDetail.services.quantity')}</Label>
-                <Input
-                  id="gift-qty"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={giftQuantity}
-                  onChange={(e) => setGiftQuantity(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="gift-expiry">{t('admin.userDetail.services.expiry')}</Label>
-                <Input
-                  id="gift-expiry"
-                  type="date"
-                  value={giftExpiresAt}
-                  onChange={(e) => setGiftExpiresAt(e.target.value)}
-                />
-              </div>
-              {state?.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+              {bindLoading ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('admin.userDetail.services.bindLoading')}
+                </p>
+              ) : bindError ? (
+                <p className="text-sm text-destructive">{bindError}</p>
+              ) : candidates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('admin.userDetail.services.bindEmpty')}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="bind-service">
+                    {t('admin.userDetail.services.upstreamService')}
+                  </Label>
+                  <select
+                    id="bind-service"
+                    value={selected}
+                    onChange={(e) => setSelected(e.target.value)}
+                    className="h-9 rounded-md border bg-background px-2 text-sm"
+                  >
+                    {candidates.map((item) => {
+                      const boundMine = Boolean(item.boundServiceId);
+                      const boundOther = Boolean(item.boundUserId);
+                      const suffix = boundMine
+                        ? ` · ${t('admin.userDetail.services.alreadyBound')}`
+                        : boundOther
+                          ? ` · ${t('admin.userDetail.services.boundElsewhere')}`
+                          : '';
+                      return (
+                        <option
+                          key={`${item.sourceId}:${item.id}`}
+                          value={`${item.sourceId}:${item.id}`}
+                          disabled={boundMine || boundOther}
+                        >
+                          {item.name}
+                          {item.host ? ` · ${item.host}` : ''}
+                          {suffix}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
               <DialogFooter>
-                <Button onClick={() => void gift()} disabled={isPending}>
+                <Button
+                  onClick={() => void bind()}
+                  disabled={isPending || bindLoading || !selected}
+                >
                   {isPending
-                    ? t('admin.userDetail.services.gifting')
-                    : t('admin.userDetail.services.giftSubmit')}
+                    ? t('admin.userDetail.services.binding')
+                    : t('admin.userDetail.services.bindSubmit')}
                 </Button>
               </DialogFooter>
             </div>
@@ -556,11 +595,16 @@ function ServicesSection({
             <tbody>
               {services.map((service) => {
                 const editing = editingId === service.id;
+                const bound = Boolean(service.providerId && service.providerServiceId);
                 return (
                   <tr key={service.id} className="border-t align-top">
                     <td className="px-3 py-2">
                       <div className="font-medium">{service.productName}</div>
-                      <div className="text-xs text-muted-foreground">{service.fulfillmentType}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {bound
+                          ? t('admin.userDetail.services.sourceUpstream')
+                          : service.fulfillmentType}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       {editing ? (
@@ -618,7 +662,9 @@ function ServicesSection({
                             onClick={() => void remove(service.id)}
                             disabled={isPending}
                           >
-                            {t('common.delete')}
+                            {bound
+                              ? t('admin.userDetail.services.unbind')
+                              : t('common.delete')}
                           </Button>
                         </div>
                       )}
@@ -631,6 +677,15 @@ function ServicesSection({
         </div>
       )}
     </SectionCard>
+  );
+}
+
+/** Ids of locally bound upstream services (so `remove` knows to unbind). */
+function boundServiceIds(services: AdminUserDetailResponse['services']): Set<string> {
+  return new Set(
+    services
+      .filter((service) => service.providerId && service.providerServiceId)
+      .map((service) => service.id),
   );
 }
 
@@ -682,12 +737,10 @@ export function AdminUserDetail({
   userId,
   initial,
   groups,
-  products,
 }: {
   userId: string;
   initial: AdminUserDetailResponse;
   groups: PermissionGroupView[];
-  products: AdminProductItem[];
 }) {
   return (
     <div className="grid gap-5">
@@ -698,7 +751,7 @@ export function AdminUserDetail({
         groups={groups}
       />
       <WalletSection userId={userId} wallet={initial.wallet} ledger={initial.ledger} />
-      <ServicesSection userId={userId} services={initial.services} products={products} />
+      <ServicesSection userId={userId} services={initial.services} />
       <OrdersSection orders={initial.orders} />
     </div>
   );

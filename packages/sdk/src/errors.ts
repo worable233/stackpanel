@@ -130,3 +130,57 @@ export function isPluginError(value: unknown): value is PluginError {
     (value as Record<PropertyKey, unknown>)[PLUGIN_ERROR_BRAND] === true
   );
 }
+
+/**
+ * Base class for deterministic errors thrown by the kernel-owned domain
+ * services (payments, wallet, FX, commerce). Extending {@link PluginError} ties
+ * them into the same brand contract: the kernel error boundary renders their
+ * `status`/`code`/`detail` instead of collapsing to a generic 500, even when
+ * the class object was duplicated by the plugin loader's cache-busted import.
+ *
+ * `message` and `detail` both carry the human-readable reason (the provider's
+ * original text where one exists); `code` and `status` are the machine contract.
+ */
+export class KernelError extends PluginError {
+  /** Alias so Fastify's error handler maps the error to an HTTP status. */
+  readonly statusCode: number;
+
+  constructor(code: string, status: number, displayMessage: string) {
+    super(code, status, displayMessage);
+    this.name = 'KernelError';
+    // `PluginError` sets `message = code`; keep the display text instead.
+    this.message = displayMessage;
+    this.statusCode = status;
+  }
+}
+
+/**
+ * Non-enumerable brand recording the SDK error class that minted a value.
+ *
+ * `instanceof` is unreliable across module instances (the kernel loads plugin
+ * bundles through a cache-busted URL, so a plugin's `@stackpanel/sdk` can be a
+ * distinct copy). This brand stores a stable class *name* on the prototype, so
+ * {@link isSdkErrorClass} narrows correctly regardless of class identity. It is
+ * separate from {@link PLUGIN_ERROR_BRAND}, which marks the whole deterministic
+ * error family.
+ */
+const SDK_ERROR_BRAND = '__stackpanelSdkError';
+
+/** Tag `cls` with a stable, cross-module identity. Call once, at class definition. */
+export function brandSdkErrorClass(cls: { prototype: object }, name: string): void {
+  Object.defineProperty(cls.prototype, SDK_ERROR_BRAND, {
+    value: name,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+}
+
+/** True when `value` was minted by the class tagged `name`, module-identity agnostic. */
+export function isSdkErrorClass(value: unknown, name: string): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<PropertyKey, unknown>)[SDK_ERROR_BRAND] === name
+  );
+}

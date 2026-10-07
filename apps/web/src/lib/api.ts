@@ -32,11 +32,25 @@ const transport = resilience.enabled
     })
   : undefined;
 
-/** Resolve an API-relative asset path (e.g. `/themes/x/assets/logo.svg`) to an absolute URL. */
+/**
+ * The single browser-facing egress into the kernel: the web BFF route
+ * `app/api/plugins/[...path]/route.ts` forwards `/api/plugins/<kernel-path>` to
+ * `{API_BASE_URL}/<kernel-path>` (same-origin, binary-safe, session-aware).
+ */
+const KERNEL_BFF_PREFIX = '/api/plugins';
+
+/**
+ * Resolve a kernel-relative resource path (e.g. `/themes/x/assets/logo.svg`) to a
+ * same-origin URL served by the web BFF.
+ *
+ * Browser-facing URLs must never embed `API_BASE_URL`: it is a server-only,
+ * host-local address, so any browser (not on the server host) would try to reach
+ * its own machine. The BFF is the only way the browser reaches kernel resources.
+ */
 export function apiAssetUrl(assetPath: string): string {
   if (!assetPath) return '';
   if (/^https?:\/\//.test(assetPath)) return assetPath;
-  return `${baseUrl()}${assetPath.startsWith('/') ? '' : '/'}${assetPath}`;
+  return `${KERNEL_BFF_PREFIX}${assetPath.startsWith('/') ? '' : '/'}${assetPath}`;
 }
 
 /**
@@ -49,6 +63,17 @@ export function getApiClient(): ApiClient {
     timeoutMs: aggregateTimeoutMs,
     ...(transport ? { fetchImpl: transport } : {}),
   });
+}
+
+/**
+ * Public API origin for external API clients — used only in copy-paste
+ * documentation (e.g. the account API-keys curl example). This is NOT the
+ * server-to-server `API_BASE_URL` and NOT the same-origin BFF used for browser
+ * assets: external clients call the kernel directly, so they need its
+ * browser-reachable origin. Falls back to the internal base when unset.
+ */
+export function publicApiBaseUrl(): string {
+  return (process.env.PUBLIC_API_BASE_URL ?? baseUrl()).replace(/\/+$/, '');
 }
 
 /** BFF client that attaches the current session token for protected calls. */

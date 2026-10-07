@@ -14,7 +14,12 @@ import type {
   PluginRoute,
   WalletService,
 } from '@stackpanel/sdk';
-import { DisposableList, normalizePluginDependencies, runEffect } from '@stackpanel/sdk';
+import {
+  DisposableList,
+  normalizePluginDependencies,
+  normalizePluginPermissions,
+  runEffect,
+} from '@stackpanel/sdk';
 import type { ExtensionTransaction } from '@stackpanel/sdk';
 import { ExtensionValidationError } from '@stackpanel/sdk';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -25,13 +30,16 @@ import { createKernelJobContext } from '../jobs/kernel-jobs.ts';
 import type { JobRuntime } from '../jobs/types.ts';
 import type { PluginExtensionRuntime } from '../extensions/service.ts';
 import type { RawDatabase } from '../extensions/client.ts';
+import type { MediaReferenceService } from '@stackpanel/sdk';
 import {
   type Capability,
   type PluginCapabilityEntry,
 } from '../lib/capability-registry.ts';
+import { restartIsolatedPlugin, setIsolatedWorkerExitHandler, stopIsolatedPlugin } from './isolated/host.ts';
 
 /** Tracks an in-flight `ctx.tx` so nested calls fail with a clear error. */
 const txContext = new AsyncLocalStorage<true>();
+const ISOLATED_WORKER_FAILURE_THRESHOLD = 3;
 
 export interface PluginRuntimeOptions {
   events: EventBus;
@@ -45,7 +53,11 @@ export interface PluginRuntimeOptions {
   ) => () => void;
   /** Remove every dispatched route contributed by a plugin id. */
   removeRoutes: (pluginId: string) => void;
-  /** Kernel-provided database handle exposed to plugins via ctx.db. */
+  /**
+   * Kernel database client used internally (permission seeding and `ctx.tx`
+   * transactions). Never exposed to plugins: `PluginContext` has no `db` slot
+   * (ADR-0008 §1).
+   */
   db: unknown;
   /** Kernel-owned payment orchestration exposed to plugins via ctx.payments. */
   payments: PaymentService;
@@ -63,9 +75,11 @@ export interface PluginRuntimeOptions {
   jobs: JobRuntime;
   /** Extension engine: owns plugin model tables, clients and finalizers. */
   extensions: PluginExtensionRuntime;
+  /** Kernel-owned attachment reference index. */
+  media?: MediaReferenceService;
 }
 
-export type PluginState = 'registered' | 'active';
+export type PluginState = 'registered' | 'active' | 'failed';
 
 interface ManagedPlugin {
   definition: PluginDefinition;
@@ -83,6 +97,11 @@ interface ManagedPlugin {
    * plugin leaves nothing live behind.
    */
   effects: DisposableList;
+  inFlight: number;
+  drainWaiters: Array<() => void>;
+  workerFailures: number;
+  workerCircuitOpen: boolean;
+  activating: boolean;
 }
 
 /**
@@ -104,7 +123,24 @@ export class PluginRuntime {
   private readonly capabilityEntries = new Map<string, PluginCapabilityEntry>();
   private readonly lifecycleLocks = new Map<string, Promise<void>>();
 
-  constructor(private readonly options: PluginRuntimeOptions) {}
+  constructor(private readonly options: PluginRuntimeOptions) {
+    setIsolatedWorkerExitHandler((id) => { void this.handleWorkerExit(id); });
+  }
+
+  private async handleWorkerExit(id: string): Promise<void> {
+    const plugin = this.plugins.get(id);
+    if (!plugin || (plugin.state === 'registered' && !plugin.activating)) return;
+    plugin.state = 'failed';
+    plugin.workerFailures += 1;
+    if (plugin.workerFailures >= ISOLATED_WORKER_FAILURE_THRESHOLD) {
+      plugin.workerCircuitOpen = true;
+      this.options.logger.error(`Plugin worker circuit opened after ${plugin.workerFailures} failures: ${id}`);
+    }
+    plugin.effects.dispose();
+    await this.options.jobs.removeByOwner(id).catch((error) => this.options.logger.error(`Plugin ${id} cleanup after worker exit failed: ${String(error)}`));
+    this.options.extensions.unregisterModels(id);
+    this.options.logger.error(`Plugin worker exited; plugin quarantined: ${id}`);
+  }
 
   /**
    * Serialize lifecycle transitions per plugin id so concurrent activate/
@@ -125,6 +161,28 @@ export class PluginRuntime {
     } finally {
       if (this.lifecycleLocks.get(id) === tail) this.lifecycleLocks.delete(id);
     }
+  }
+
+  private wrapRoute(plugin: ManagedPlugin, route: PluginRoute): PluginRoute {
+    const handler = route.handler as (...args: unknown[]) => unknown;
+    return {
+      ...route,
+      handler: (async (...args: unknown[]) => {
+        plugin.inFlight += 1;
+        try { return await handler(...args); }
+        finally {
+          plugin.inFlight -= 1;
+          if (plugin.inFlight === 0) {
+            for (const resolve of plugin.drainWaiters.splice(0)) resolve();
+          }
+        }
+      }) as never,
+    } as PluginRoute;
+  }
+
+  private waitForDrain(plugin: ManagedPlugin): Promise<void> {
+    if (plugin.inFlight === 0) return Promise.resolve();
+    return new Promise((resolve) => plugin.drainWaiters.push(resolve));
   }
 
   has(id: string): boolean {
@@ -157,7 +215,9 @@ export class PluginRuntime {
       requires: normalizePluginDependencies(p.definition.manifest.requires),
       provides: p.definition.manifest.provides ?? [],
       consumes: p.definition.manifest.consumes ?? [],
-      permissions: p.definition.manifest.permissions ?? [],
+      permissions: normalizePluginPermissions(p.definition.manifest.permissions).map(
+        (permission) => permission.key,
+      ),
       roleTemplates: p.definition.manifest.roleTemplates ?? [],
       locales: p.definition.manifest.locales ?? [],
     }));
@@ -176,6 +236,11 @@ export class PluginRuntime {
       state: 'registered',
       registrations: new DisposableList(),
       effects: new DisposableList(),
+      inFlight: 0,
+      drainWaiters: [],
+      workerFailures: 0,
+      workerCircuitOpen: false,
+      activating: false,
     };
     this.plugins.set(id, plugin);
     try {
@@ -184,7 +249,7 @@ export class PluginRuntime {
       // registered lifetime, so they outlive deactivate/reactivate cycles.
       const routes = definition.routes ?? [];
       for (const route of routes) {
-        const dispose = this.options.registerRoute(id, route, () => plugin.state === 'active');
+        const dispose = this.options.registerRoute(id, this.wrapRoute(plugin, route), () => plugin.state === 'active');
         plugin.registrations.push(dispose);
       }
       // Open-platform aliases derived from `manifest.capabilities`: the same
@@ -206,6 +271,7 @@ export class PluginRuntime {
       this.options.removeRoutes(id);
       plugin.registrations.dispose();
       plugin.effects.dispose();
+      stopIsolatedPlugin(id);
       this.plugins.delete(id);
       throw err;
     }
@@ -257,7 +323,7 @@ export class PluginRuntime {
         ...(!capability.scope && route.permission ? { permission: route.permission } : {}),
         handler: route.handler,
       };
-      const dispose = this.options.registerRoute(id, alias, () => plugin.state === 'active', {
+      const dispose = this.options.registerRoute(id, this.wrapRoute(plugin, alias), () => plugin.state === 'active', {
         capabilityId: capability.id,
         mutating: capability.mutating ?? capability.method !== 'GET',
         ...(capability.scope ? { scope: capability.scope } : {}),
@@ -286,9 +352,18 @@ export class PluginRuntime {
 
   /**
    * Remove a plugin entirely: deactivate if active, drop its dispatched routes
-   * and extensions, then forget it. Used by hot upgrade/uninstall.
+   * and extensions, then forget it.
+   *
+   * `retainData` distinguishes the two callers this serves:
+   *   - **Upgrade / reload** (`retainData: true`): the plugin is being replaced
+   *     in place. Its custom-model tables must survive so content authored under
+   *     the previous version is not destroyed by a redeploy. The tables are
+   *     re-adopted by `registerModels` on the next activation.
+   *   - **Uninstall** (default): the plugin is leaving for good, so each model's
+   *     `retention` policy is honoured (`delete` drops the table, `retain`
+   *     keeps it).
    */
-  async unregister(id: string): Promise<void> {
+  async unregister(id: string, options: { retainData?: boolean } = {}): Promise<void> {
     const plugin = this.plugins.get(id);
     if (!plugin) return;
     if (plugin.state === 'active') {
@@ -304,7 +379,14 @@ export class PluginRuntime {
       this.capabilityPaths.delete(`${capability.method} ${capability.path}`);
     }
     this.plugins.delete(id);
-    await this.options.extensions.applyRetention(id, plugin.definition.customModels);
+    stopIsolatedPlugin(id);
+    if (options.retainData) {
+      // Keep the physical tables; only forget the in-memory registry entries so
+      // a stale model kind cannot be queried between unregister and re-register.
+      this.options.extensions.unregisterModels(id);
+    } else {
+      await this.options.extensions.applyRetention(id, plugin.definition.customModels);
+    }
     this.options.logger.info(`Plugin unregistered: ${id}`);
   }
 
@@ -340,6 +422,21 @@ export class PluginRuntime {
     if (plugin.state === 'active') {
       return;
     }
+    if (plugin.state === 'failed') {
+      if (plugin.workerCircuitOpen) {
+        throw new Error(`插件 ${id} worker 已熔断，请重新注册插件或部署修复版本后再试`);
+      }
+      plugin.activating = true;
+      try {
+        await restartIsolatedPlugin(id);
+        plugin.state = 'registered';
+      } catch (error) {
+        plugin.activating = false;
+        throw error;
+      }
+    } else {
+      plugin.activating = true;
+    }
     // Activation effects are scoped to this activation: start from a fresh
     // list so a deactivate/reactivate cycle never reads a disposed list (which
     // would silently drop every registration) or accumulates stale ones.
@@ -352,16 +449,21 @@ export class PluginRuntime {
         const unsubscribe = this.options.events.subscribe(listener.topic, listener.handler);
         plugin.effects.push(unsubscribe);
       }
-      plugin.state = 'active';
       if (plugin.definition.onActivate) {
         await plugin.definition.onActivate(this.context(plugin.definition));
       }
+      if ((plugin as ManagedPlugin).state === 'failed') {
+        throw new Error(`插件 ${id} worker 在激活过程中退出`);
+      }
+      plugin.state = 'active';
     } catch (err) {
       plugin.effects.dispose();
-      plugin.state = 'registered';
+      if ((plugin as ManagedPlugin).state !== 'failed') plugin.state = 'registered';
+      plugin.activating = false;
       this.options.extensions.unregisterModels(id);
       throw err;
     }
+    plugin.activating = false;
     this.options.events.publish('plugin.activated', { pluginId: id });
     await this.registerPluginPermissions(plugin.definition);
     this.options.logger.info(`Plugin activated: ${id}`);
@@ -386,8 +488,9 @@ export class PluginRuntime {
     if (plugin.definition.onDeactivate) {
       await plugin.definition.onDeactivate(this.context(plugin.definition));
     }
-    plugin.effects.dispose();
     plugin.state = 'registered';
+    await this.waitForDrain(plugin);
+    plugin.effects.dispose();
     this.options.events.publish('plugin.deactivated', { pluginId: id });
     this.options.extensions.unregisterModels(id);
     // Jobs are owned per plugin; drop handlers, schedules and recurring work so
@@ -493,15 +596,24 @@ export class PluginRuntime {
 
   /** Upsert a plugin's declared permissions and grant them to the admin group. */
   private async registerPluginPermissions(definition: PluginDefinition): Promise<void> {
-    const permissions = definition.manifest.permissions ?? [];
+    const declared = normalizePluginPermissions(definition.manifest.permissions);
     const db = this.options.db as PrismaClient;
 
     // 1) Upsert every declared permission and grant it to the admin group.
-    for (const key of permissions) {
+    for (const { key, name, description } of declared) {
       const permission = await db.permission.upsert({
         where: { key },
-        create: { key, name: `${definition.manifest.id}.${key}` },
-        update: {},
+        create: {
+          key,
+          name: name ?? `${definition.manifest.id}.${key}`,
+          description: description ?? null,
+        },
+        // Refresh metadata whenever the plugin declares a label/description; leave
+        // the row untouched when it does not (e.g. an auto-granted roleTemplate key).
+        update: {
+          ...(name ? { name } : {}),
+          ...(description ? { description } : {}),
+        },
       });
       await db.groupPermission.upsert({
         where: {
@@ -556,7 +668,6 @@ export class PluginRuntime {
       manifest: definition.manifest,
       logger,
       events: this.options.events,
-      db: this.options.db,
       extensions: this.options.extensions.client(pluginId, null),
       tx: <T>(fn: (tx: ExtensionTransaction) => Promise<T>): Promise<T> => {
         if (txContext.getStore()) {
@@ -593,6 +704,18 @@ export class PluginRuntime {
       notifications: this.options.notifications,
       state: this.options.state,
       jobs: createKernelJobContext(pluginId, this.options.jobs),
+      media: this.options.media ? (() => {
+        const media = this.options.media as MediaReferenceService;
+        return {
+        register: (input: Parameters<MediaReferenceService['register']>[0]) => media.register({ ...input, ownerPluginId: pluginId }),
+        unregister: (input: Parameters<MediaReferenceService['unregister']>[0]) => media.unregister({ ...input, ownerPluginId: pluginId }),
+        unregisterResource: (resourceType: string, resourceId: string) => media.unregisterResource(resourceType, resourceId, pluginId),
+        };
+      })() : {
+        register: async () => undefined,
+        unregister: async () => undefined,
+        unregisterResource: async () => undefined,
+      },
       secrets: pluginSecrets(this.options.db as PrismaClient, pluginId),
       effect: (fn) => {
         const dispose = runEffect(fn);

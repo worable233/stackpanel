@@ -5,7 +5,12 @@ import {
   frontendManifestSchema,
   settingsDefaultsFromSchema,
 } from '@stackpanel/sdk';
-import type { FrontendManifest, FrontendPageDefinition, FrontendSummary } from '@stackpanel/sdk';
+import type {
+  FrontendManifest,
+  FrontendPageDefinition,
+  FrontendSettingsField,
+  FrontendSummary,
+} from '@stackpanel/sdk';
 
 export const FRONTEND_MANIFEST_FILE = 'frontend/manifest.json';
 
@@ -282,22 +287,32 @@ function validateSettingsSchema(schema: FrontendManifest['settingsSchema']): voi
   for (const group of schema.groups) {
     if (groups.has(group.id)) throw new FrontendError(422, `重复的设置分组：${group.id}`);
     groups.add(group.id);
-    const fields = new Set<string>();
-    for (const field of group.fields) {
-      if (fields.has(field.name)) {
-        throw new FrontendError(422, `重复的设置字段：${group.id}.${field.name}`);
-      }
-      fields.add(field.name);
-      if (field.type === 'select' || field.type === 'radio') {
-        if (field.options.length === 0) {
-          throw new FrontendError(422, `设置字段需要提供选项：${field.name}`);
-        }
-      }
-    }
+    validateSettingsFields(group.fields, group.id);
   }
   const zod = buildZodFromSettingsSchema(schema);
   const defaults = settingsDefaultsFromSchema(schema);
   if (!zod.safeParse(defaults).success) {
     throw new FrontendError(422, '设置 schema 的默认值无效');
+  }
+}
+
+function validateSettingsFields(fields: FrontendSettingsField[], scope: string): void {
+  const names = new Set<string>();
+  for (const field of fields) {
+    if (names.has(field.name)) {
+      throw new FrontendError(422, `重复的设置字段：${scope}.${field.name}`);
+    }
+    names.add(field.name);
+    if (field.type === 'select' || field.type === 'radio') {
+      if (field.options.length === 0) {
+        throw new FrontendError(422, `设置字段需要提供选项：${field.name}`);
+      }
+    }
+    if (field.type === 'list') {
+      if (field.fields.length === 0) {
+        throw new FrontendError(422, `列表字段需要提供子字段：${field.name}`);
+      }
+      validateSettingsFields(field.fields, `${scope}.${field.name}`);
+    }
   }
 }

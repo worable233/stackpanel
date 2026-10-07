@@ -22,6 +22,7 @@ import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence
 import { FrontendBuilder } from './lib/frontend-build.ts';
 import { startTracing, stopTracing } from './observability/index.ts';
 import { peekRedis } from '@stackpanel/db';
+import { stopAllIsolatedPlugins } from './plugins/isolated/host.ts';
 
 const logger = {
   info: (message: string) => console.info(message),
@@ -65,6 +66,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   logger.info(`[worker] 收到 ${signal}，正在停止`);
   try {
+    stopAllIsolatedPlugins();
     await builder?.stop();
     await stopRuntimeCoherence();
     await getJobRuntime().stop();

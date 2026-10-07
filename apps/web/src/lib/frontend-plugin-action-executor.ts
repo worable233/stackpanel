@@ -75,7 +75,13 @@ export async function executePluginAction(
     .recordFrontendAudit('frontend.action.execute', pluginId, actionId, { method: action.method })
     .catch(() => undefined);
   revalidatePath(returnPath);
-  redirect(destination ?? returnPath);
+  // Only redirect when the action declares an explicit destination. A bare
+  // `redirect(returnPath)` on success would reject the server-action promise
+  // (Next's reducer rejects on redirect), which plugin frontends that `await`
+  // the action mistake for a failure — even though the mutation persisted.
+  // `revalidatePath` above already refreshes the current route's data.
+  // See INTERFACES.md §3.4「前端 action 执行语义」.
+  if (destination) redirect(destination);
 }
 
 /** Resolve declared `:id` path parameters from already validated form fields. */

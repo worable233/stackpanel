@@ -149,7 +149,9 @@ export class RuntimeCoherence {
   private async reloadUnlocked(pluginId: string): Promise<void> {
     const { runtime } = this.options;
     if (runtime.has(pluginId)) {
-      await runtime.unregister(pluginId);
+      // Reload replaces a live plugin with its on-disk definition; custom-model
+      // tables must persist across the swap so a converge never drops content.
+      await runtime.unregister(pluginId, { retainData: true });
     }
     let definition: PluginDefinition;
     try {

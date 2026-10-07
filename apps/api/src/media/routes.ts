@@ -22,12 +22,14 @@ import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { env } from '../config/env.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { contentDisposition, MediaError } from './service.ts';
+import { isActiveContent } from './disposition.ts';
 import { AttachmentService, type MediaActor, type VariantQueue } from './service.ts';
 import { PrismaAttachmentRepository } from './prisma-attachment-repository.ts';
 import { DEFAULT_MEDIA_POLICY } from './policy.ts';
 import { createSharpTransformer } from './sharp-transformer.ts';
 import { tryBuildVariantQueue } from './jobs.ts';
-import type { AttachmentReferences, AttachmentVisibility } from './attachments.ts';
+import type { AttachmentVisibility } from './attachments.ts';
+import { AttachmentReferenceService } from './references.ts';
 
 const uploadQuerySchema = z.object({
   filename: z.string().trim().min(1).max(191).optional(),
@@ -73,15 +75,6 @@ function isAdmin(user: AuthUser): boolean {
   return user.permissions.has('platform.admin');
 }
 
-/**
- * Media types that can execute code when rendered inline. SVG is XML and may
- * carry `<script>`; HTML obviously so. These are always sent as downloads
- * (`Content-Disposition: attachment`) so the browser never executes them.
- */
-function isActiveContent(mime: string): boolean {
-  return mime === 'image/svg+xml' || mime === 'text/html' || mime === 'application/xhtml+xml';
-}
-
 function actorFor(user: AuthUser | undefined): MediaActor {
   return user ? { userId: user.id, canManage: isAdmin(user) } : { canManage: false };
 }
@@ -112,12 +105,12 @@ function variantQueue(): VariantQueue | null {
 /**
  * Reference-integrity port (ADR-0014 §2). Attachment references used to live in
  * the legacy `custom_resources` JSON payload; business-domain rows now live in
- * per-plugin `ext_*` tables whose shape the kernel must not know. There is
- * therefore no kernel-wide reference index to query, and deletion is unguarded
- * — plugins own their own referential integrity.
+ * per-plugin `ext_*` tables whose shape the kernel must not know. Plugins use
+ * the SDK media capability to maintain this kernel-owned reference index, so
+ * deletion can enforce referential integrity without inspecting plugin tables.
  */
-function attachmentReferences(): AttachmentReferences {
-  return { isReferenced: async () => false };
+function attachmentReferences(): AttachmentReferenceService {
+  return new AttachmentReferenceService(getPrisma());
 }
 
 /** Actor for routes that may be anonymous (public attachment reads). */
@@ -208,7 +201,21 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.get('/media/:id/content', async (request, reply) => {
+  app.get('/media/:id/references', { preHandler: requireAuth }, async (request, reply) => {
+    if (!request.user || !isAdmin(request.user)) {
+      return reply.code(403).send({ error: '无权查看附件引用', code: 'media.forbidden' });
+    }
+    const { id } = request.params as { id: string };
+    try {
+      await buildService().getRecord(id, actorFor(request.user));
+      const references = await attachmentReferences().list(id);
+      return { references };
+    } catch (err) {
+      return sendMediaError(reply, err);
+    }
+  });
+
+  app.get('/media/:id/content', { ...rateLimitConfig('publicRead') }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const variant = (request.query as { variant?: string }).variant;
     try {

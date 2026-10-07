@@ -54,6 +54,12 @@ docker compose version >/dev/null 2>&1 || fail "需要 docker compose v2（docke
 DOCKER_ENV="$ROOT_DIR/docker/.env"
 if [[ -f "$DOCKER_ENV" ]]; then
   info "检测到 docker/.env，保留现有配置。"
+  # I-2 guard: the encrypted-settings store is silently disabled without this
+  # key, which would strand payment keys / signing keys in plaintext. Refuse to
+  # deploy an existing env that forgot it rather than degrade invisibly.
+  if ! grep -qE '^SETTINGS_ENCRYPTION_KEY=.+' "$DOCKER_ENV"; then
+    fail "docker/.env 存在但 SETTINGS_ENCRYPTION_KEY 为空。请设置 >=32 字符的随机值（openssl rand -base64 48 | tr -d '=+/' | head -c 48）后重试。"
+  fi
 else
   info "生成 docker/.env（含随机密钥）…"
   # Prefer openssl; fall back to /dev/urandom so the script also works on

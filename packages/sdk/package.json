@@ -23,6 +23,11 @@
       "types": "./dist/paths.d.ts",
       "import": "./dist/paths.js",
       "default": "./dist/paths.js"
+    },
+    "./sanitize": {
+      "types": "./dist/sanitize.d.ts",
+      "import": "./dist/sanitize.js",
+      "default": "./dist/sanitize.js"
     }
   },
   "files": [
@@ -42,10 +47,12 @@
   "devDependencies": {
     "@types/node": "^22.20.1",
     "@types/react": "^19",
+    "@types/sanitize-html": "^2.16.2",
     "typescript": "^6.0.3",
     "vitest": "^4"
   },
   "dependencies": {
+    "sanitize-html": "^2.18.0",
     "zod": "^4.4.3"
   },
   "license": "MIT"

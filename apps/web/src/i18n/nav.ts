@@ -15,7 +15,6 @@ const NAV_KEYS: Record<string, string> = {
   '/admin/plugins': 'nav.plugins',
   '/admin/rbac': 'nav.rbac',
   '/admin/audit': 'nav.audit',
-  '/admin/developer': 'nav.developer',
   '/admin/themes': 'nav.themes',
   '/admin/notifications': 'nav.notifications',
   '/account': 'nav.dashboard',

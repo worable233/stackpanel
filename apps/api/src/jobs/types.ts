@@ -31,6 +31,7 @@ export interface RegisteredSchedule {
  */
 export interface JobRuntime {
   handle(fullName: string, handler: JobHandler): void;
+  unhandle(fullName: string): void;
   schedule(entry: RegisteredSchedule): Promise<void>;
   enqueue(fullName: string, payload: unknown, options?: JobOptions): Promise<string>;
   removeByOwner(prefix: string): Promise<void>;
@@ -40,6 +41,8 @@ export interface JobRuntime {
 export interface JobBackend {
   /** Register/override the handler for a fully-qualified job name. */
   handle(fullName: string, handler: JobHandler): void;
+  /** Remove a handler without registering an invalid placeholder. */
+  unhandle(fullName: string): void;
   /** Register/override a recurring job. Idempotent for the same scheduler id. */
   schedule(entry: RegisteredSchedule): Promise<void>;
   /** Remove a recurring job. */

@@ -16,7 +16,7 @@ import {
   resolveThemeOverride,
   selectFrontendPageDefinition,
 } from '@stackpanel/sdk';
-import { getApiClient, getAuthedApiClient } from './api';
+import { apiAssetUrl, getAuthedApiClient } from './api';
 import { getSessionUser } from './auth';
 import {
   activeThemeCandidate,
@@ -109,7 +109,7 @@ export async function resolveFrontendRoute(
         // storefront using store.* cart/checkout actions). Bind them all so
         // the theme page keeps interactivity while owning the visual shell.
         actions: bindAllPluginActions(pluginCandidates, path),
-        assetsBaseUrl: `${getApiClient().baseUrl}/themes/${theme.id}/assets`,
+        assetsBaseUrl: apiAssetUrl(`/themes/${theme.id}/assets`),
       };
     }
   }
@@ -215,7 +215,7 @@ export async function resolveFallbackRoute(path = '/'): Promise<PageResolution |
         source: 'theme',
         fallback: true,
         actions: bindAllPluginActions(pluginCandidates, path),
-        assetsBaseUrl: `${getApiClient().baseUrl}/themes/${theme.id}/assets`,
+        assetsBaseUrl: apiAssetUrl(`/themes/${theme.id}/assets`),
       };
     }
   }

@@ -42,8 +42,8 @@ describe('formatMessage', () => {
 
 describe('translate', () => {
   it('resolves a shipped message for the requested locale', () => {
-    expect(translate('zh-CN', 'auth.login.title')).toBe('登录');
-    expect(translate('en-US', 'auth.login.title')).toBe('Sign in');
+    expect(translate('zh-CN', 'auth.login.title')).toBe('登录你的账户');
+    expect(translate('en-US', 'auth.login.title')).toBe('Login to your account');
   });
 
   it('falls back to the default locale for a missing locale key', () => {
@@ -51,7 +51,7 @@ describe('translate', () => {
     // Override the en-US `auth` namespace with an empty object so the key is
     // missing there and the default (zh-CN) catalog must supply it.
     const value = translate('en-US', 'auth.login.title', undefined, { 'en-US': { auth: {} } });
-    expect(value).toBe('登录');
+    expect(value).toBe('登录你的账户');
     warn.mockRestore();
   });
 

@@ -1,5 +1,5 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
-import { PaymentError, PluginError, WalletError, definePlugin } from '@stackpanel/sdk';
+import { PluginError, definePlugin } from '@stackpanel/sdk';
 import { z } from 'zod';
 import { bindContext, context, resetContext } from './context';
 import { WalletPluginError } from './errors';
@@ -25,13 +25,11 @@ function handle(handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown
     try {
       return await handler(req, reply);
     } catch (error) {
-      if (
-        error instanceof WalletPluginError ||
-        error instanceof PaymentError ||
-        error instanceof WalletError
-      ) {
+      if (error instanceof WalletPluginError) {
         throw new PluginError(error.code, error.status, error.message);
       }
+      // Kernel-domain errors (PaymentError/WalletError) are already branded
+      // deterministic errors; the kernel boundary renders them directly.
       throw error;
     }
   };
@@ -117,7 +115,11 @@ export const storeWalletPlugin = definePlugin({
     version: '0.1.0',
     description: '余额、充值与管理。',
     requires: [{ id: 'store', range: '^0.3.0' }],
-    permissions: ['store.wallet', 'store.admin'],
+    permissions: [
+      { key: 'store.wallet', name: '钱包余额', description: '查看钱包余额、充值并用于支付。' },
+      // store.admin 由商店插件声明并附带说明；此处仅引用以免覆盖其说明。
+      'store.admin',
+    ],
     roleTemplates: [
       { role: 'USER', permissions: ['store.wallet'] },
       { role: 'ADMIN', permissions: ['store.admin'] },

@@ -1,6 +1,6 @@
 {
   "name": "stackpanel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "API-first, microkernel plugin-based digital goods / hosting business management system.",
   "packageManager": "pnpm@11.5.1",
@@ -60,9 +60,10 @@
     "@stackpanel/ui": "workspace:*",
     "emoji-picker-react": "^4.19.1",
     "lucide-react": "^1.31.0",
-    "next": "16.2.12",
+    "next": "16.3.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "sonner": "^2.0.8",
     "zod": "^4.4.3"
   },
   "license": "MIT"

@@ -202,8 +202,8 @@ export function isPublicHttpUrl(value: string, options: PublicUrlOptions = {}): 
 }
 
 /**
- * 主机名解析后是否包含内网地址（防 DNS rebinding）。解析失败返回 `false`，交由
- * 传输层暴露不可达；调用方如需「解析失败即拒绝」可自行处理。
+ * 主机名解析后是否包含内网地址（防 DNS rebinding）。解析失败按不安全处理，
+ * 避免出站调用在 DNS 故障时 fail-open。
  */
 export async function resolvesToUnsafeAddress(hostname: string): Promise<boolean> {
   if (isUnsafeHostname(hostname)) return true;
@@ -220,6 +220,6 @@ export async function resolvesToUnsafeAddress(hostname: string): Promise<boolean
     if (addresses.length === 0) return true;
     return addresses.some((entry) => isUnsafeIpAddress(entry.address));
   } catch {
-    return false;
+    return true;
   }
 }

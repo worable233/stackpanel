@@ -13,6 +13,7 @@ import {
   type SeoSitemapEntry,
 } from '@stackpanel/sdk';
 import { getPlatformInfo } from '../lib/platform-info.ts';
+import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 
 /**
  * SEO 输送端点（ADR-0011 §3）。
@@ -122,7 +123,7 @@ export async function seoRoutes(app: FastifyInstance): Promise<void> {
       .map((entry) => entry.implementation)
       .filter(isSeoProvider);
 
-  app.get('/seo/sitemap', async (request, reply) => {
+  app.get('/seo/sitemap', { ...rateLimitConfig('publicRead') }, async (request, reply) => {
     cache(reply);
     const pagination = parsePagination(request.query as Record<string, unknown>);
     const providerList = providers();
@@ -136,7 +137,7 @@ export async function seoRoutes(app: FastifyInstance): Promise<void> {
     return { entries: items, total, page: pagination.page, pageSize: pagination.pageSize };
   });
 
-  app.get('/seo/feed', async (request, reply) => {
+  app.get('/seo/feed', { ...rateLimitConfig('publicRead') }, async (request, reply) => {
     cache(reply);
     const pagination = parsePagination(request.query as Record<string, unknown>);
     const providerList = providers();

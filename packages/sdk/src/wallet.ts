@@ -10,6 +10,8 @@
  * constraint: the same business reference can affect a wallet exactly once.
  */
 
+import { KernelError, brandSdkErrorClass, isSdkErrorClass } from './errors.js';
+
 /** Identifies the business reason for a ledger entry. */
 export interface WalletLedgerRef {
   type: string;
@@ -31,21 +33,18 @@ const WALLET_ERROR_CODES: Record<string, string> = {
 };
 
 /** Error thrown by the kernel wallet service. Carries an HTTP status + display message. */
-export class WalletError extends Error {
-  /** Stable error code (ADR-0012). */
-  readonly code: string;
-
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
+export class WalletError extends KernelError {
+  constructor(status: number, message: string) {
+    super(WALLET_ERROR_CODES[message] ?? 'wallet.error', status, message);
     this.name = 'WalletError';
-    this.statusCode = status;
-    this.code = WALLET_ERROR_CODES[message] ?? 'wallet.error';
   }
-  /** Alias so Fastify's error handler maps the error to an HTTP status. */
-  readonly statusCode: number;
+}
+
+brandSdkErrorClass(WalletError, 'WalletError');
+
+/** True when `value` is a {@link WalletError}, even across duplicated SDK modules. */
+export function isWalletError(value: unknown): value is WalletError {
+  return isSdkErrorClass(value, 'WalletError');
 }
 
 export interface WalletAccount {

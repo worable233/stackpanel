@@ -99,7 +99,9 @@ describe.skipIf(!dbAvailable)('store-wallet plugin wallet integration (real DB)'
       payload: { email: userEmail, amount: 9900, note: 'integration credit' },
     });
     expect(res.statusCode).toBe(200);
-    const wallet = await getPrisma().walletAccount.findUniqueOrThrow({ where: { userId_currency: { userId, currency: 'CNY' } } });
+    const wallet = await getPrisma().walletAccount.findUniqueOrThrow({
+      where: { userId_currency: { userId, currency: 'CNY' } },
+    });
     expect(wallet.balance).toBe(9900);
     expect(
       await getPrisma().walletLedgerEntry.count({ where: { userId, type: 'ADMIN_ADJUST' } }),
@@ -153,6 +155,72 @@ describe.skipIf(!dbAvailable)('store-wallet plugin wallet integration (real DB)'
     const record = await getPrisma().payment.findUniqueOrThrow({ where: { id: topUp.id } });
     expect(record.purpose).toBe('TOP_UP');
     expect(record.userId).toBe(userId);
+    unregister();
+  });
+
+  it('surfaces a definitive provider rejection with its own reason and stable code', async () => {
+    const rejection = Object.assign(new Error('当前商户未完成实名认证，无法收款'), {
+      status: 502,
+      definitive: true,
+    });
+    const mockProvider: PaymentProvider = {
+      id: 'mockpay_reject',
+      name: 'Mock Reject',
+      mode: 'gateway',
+      callbackPath: '/callbacks/mockpay_reject',
+      getMethods: () => [{ id: 'mock', label: 'Mock', topUpAmounts: [5000] }],
+      createPayment: async () => {
+        throw rejection;
+      },
+      closePayment: vi.fn(async () => true),
+    };
+    const unregister = app.pluginRuntime.registerExtension(
+      EXTENSION_POINTS.paymentProvider,
+      mockProvider,
+      'mockpay_reject',
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/wallet/topups',
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { amount: 5000, providerId: 'mockpay_reject', paymentMethod: 'mock' },
+    });
+    // The provider's own reason must reach the client under a stable code,
+    // rather than being swallowed into a generic 500 / "支付渠道拒绝了订单".
+    expect(res.statusCode).toBe(502);
+    const body = res.json() as { code: string; detail?: string };
+    expect(body.code).toBe('payment.rejected');
+    expect(body.detail).toBe('当前商户未完成实名认证，无法收款');
+    unregister();
+  });
+
+  it('surfaces an undetermined provider failure as review-pending', async () => {
+    const mockProvider: PaymentProvider = {
+      id: 'mockpay_unknown',
+      name: 'Mock Unknown',
+      mode: 'gateway',
+      callbackPath: '/callbacks/mockpay_unknown',
+      getMethods: () => [{ id: 'mock', label: 'Mock', topUpAmounts: [5000] }],
+      createPayment: async () => {
+        throw new Error('网关连接超时');
+      },
+      closePayment: vi.fn(async () => true),
+    };
+    const unregister = app.pluginRuntime.registerExtension(
+      EXTENSION_POINTS.paymentProvider,
+      mockProvider,
+      'mockpay_unknown',
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/wallet/topups',
+      headers: { authorization: `Bearer ${userToken}` },
+      payload: { amount: 5000, providerId: 'mockpay_unknown', paymentMethod: 'mock' },
+    });
+    expect(res.statusCode).toBe(502);
+    const body = res.json() as { code: string; detail?: string };
+    expect(body.code).toBe('payment.undetermined');
+    expect(body.detail).toBe('网关连接超时');
     unregister();
   });
 
@@ -228,9 +296,13 @@ describe.skipIf(!dbAvailable)('store-wallet plugin wallet integration (real DB)'
     };
     expect((await app.payments.settle(settled)).applied).toBe(true);
     expect((await app.payments.settle(settled)).applied).toBe(false);
-    expect((await prisma.walletAccount.findUniqueOrThrow({ where: { userId_currency: { userId, currency: 'CNY' } } })).balance).toBe(
-      14900,
-    );
+    expect(
+      (
+        await prisma.walletAccount.findUniqueOrThrow({
+          where: { userId_currency: { userId, currency: 'CNY' } },
+        })
+      ).balance,
+    ).toBe(14900);
     expect(
       await prisma.walletLedgerEntry.count({
         where: { userId, type: 'TOP_UP', referenceId: payment.id },
@@ -240,19 +312,29 @@ describe.skipIf(!dbAvailable)('store-wallet plugin wallet integration (real DB)'
 
   it('keeps per-currency wallet accounts separate', async () => {
     const prisma = getPrisma();
-    const cnyBefore = (await prisma.walletAccount.findUniqueOrThrow({ where: { userId_currency: { userId, currency: 'CNY' } } })).balance;
+    const cnyBefore = (
+      await prisma.walletAccount.findUniqueOrThrow({
+        where: { userId_currency: { userId, currency: 'CNY' } },
+      })
+    ).balance;
     // A USD credit opens a separate USD account and does not touch CNY.
     await app.wallet.credit(userId, 100, 'USD', {
       type: 'TOP_UP',
       referenceType: 'TOP_UP',
       referenceId: `usd_credit_${Date.now()}`,
     });
-    const usd = await prisma.walletAccount.findUniqueOrThrow({ where: { userId_currency: { userId, currency: 'USD' } } });
+    const usd = await prisma.walletAccount.findUniqueOrThrow({
+      where: { userId_currency: { userId, currency: 'USD' } },
+    });
     expect(usd.balance).toBe(100);
     // CNY balance unchanged.
-    expect((await prisma.walletAccount.findUniqueOrThrow({ where: { userId_currency: { userId, currency: 'CNY' } } })).balance).toBe(
-      cnyBefore,
-    );
+    expect(
+      (
+        await prisma.walletAccount.findUniqueOrThrow({
+          where: { userId_currency: { userId, currency: 'CNY' } },
+        })
+      ).balance,
+    ).toBe(cnyBefore);
     // A USD debit exceeding the USD balance fails (insufficient), CNY unaffected.
     await expect(
       app.wallet.debit(userId, 1000, 'USD', {
@@ -261,9 +343,13 @@ describe.skipIf(!dbAvailable)('store-wallet plugin wallet integration (real DB)'
         referenceId: `usd_debit_${Date.now()}`,
       }),
     ).rejects.toMatchObject({ status: 409 });
-    expect((await prisma.walletAccount.findUniqueOrThrow({ where: { userId_currency: { userId, currency: 'CNY' } } })).balance).toBe(
-      cnyBefore,
-    );
+    expect(
+      (
+        await prisma.walletAccount.findUniqueOrThrow({
+          where: { userId_currency: { userId, currency: 'CNY' } },
+        })
+      ).balance,
+    ).toBe(cnyBefore);
   });
 
   it('sweeps expired top-ups to CANCELLED', async () => {

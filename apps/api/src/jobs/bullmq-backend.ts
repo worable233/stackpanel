@@ -71,6 +71,10 @@ export class BullMqJobBackend implements JobBackend {
     this.handlers.set(fullName, handler);
   }
 
+  unhandle(fullName: string): void {
+    this.handlers.delete(fullName);
+  }
+
   async schedule(entry: RegisteredSchedule): Promise<void> {
     this.schedules.set(entry.fullName, entry);
     if (!this.started) return;
@@ -118,6 +122,17 @@ export class BullMqJobBackend implements JobBackend {
         await this.unschedule(fullName);
       }
     }
+    if (!this.started || !this.queue) return;
+    const matches = (name: string): boolean => name === prefix || name.startsWith(`${prefix}.`);
+    // A deactivated plugin must not leave already queued work to be retried by
+    // every replica. Active jobs are allowed to finish; waiting/delayed jobs are
+    // removed best-effort because BullMQ owns their Redis state.
+    const queued = await this.queue.getJobs(['waiting', 'delayed', 'prioritized', 'waiting-children'], 0, -1);
+    await Promise.all(queued
+      .filter((job) => matches(job.data.fullName))
+      .map((job) => job.remove().catch((err: unknown) => {
+        this.options.logger.warn(`[jobs] remove queued job ${job.id ?? '?'} failed: ${String(err)}`);
+      })));
   }
 
   async start(): Promise<void> {

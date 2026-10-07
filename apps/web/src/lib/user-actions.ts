@@ -2,6 +2,7 @@
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import type { AdminUserUpstreamServicesResponse } from '@stackpanel/sdk';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
 import { getAuthedApiClient } from './api';
@@ -107,27 +108,6 @@ export async function adjustUserWalletAction(
   }
 }
 
-/** Gift a service (product) to the user. */
-export async function giftServiceAction(
-  userId: string,
-  input: { productId: string; quantity?: number; expiresAt?: string },
-): Promise<UserActionResult> {
-  const locale = await getLocale();
-  if (!input.productId) return { error: translate(locale, 'user.productRequired') };
-  try {
-    const api = await getAuthedApiClient();
-    await api.giftUserService(userId, {
-      productId: input.productId,
-      ...(input.quantity ? { quantity: input.quantity } : {}),
-      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
-    });
-    revalidateUser(userId);
-    return { ok: true, message: translate(locale, 'user.serviceGifted') };
-  } catch (error) {
-    return { error: await apiErrorMessage(error, translate(locale, 'user.giftFailed')) };
-  }
-}
-
 /** Update a user's service (expiry time / status). */
 export async function updateServiceAction(
   userId: string,
@@ -161,6 +141,56 @@ export async function deleteServiceAction(
     return { ok: true, message: translate(locale, 'user.serviceDeleted') };
   } catch (error) {
     return { error: await apiErrorMessage(error, translate(locale, 'user.serviceDeleteFailed')) };
+  }
+}
+
+/** Fetch the upstream already-purchased services available to bind to a user. */
+export async function listUpstreamServicesAction(
+  userId: string,
+): Promise<{ error?: string; data?: AdminUserUpstreamServicesResponse }> {
+  const locale = await getLocale();
+  try {
+    const api = await getAuthedApiClient();
+    return { data: await api.getAdminUserUpstreamServices(userId) };
+  } catch (error) {
+    return {
+      error: await apiErrorMessage(error, translate(locale, 'user.upstreamLoadFailed')),
+    };
+  }
+}
+
+/** Bind an upstream already-purchased service to the user. */
+export async function bindUpstreamServiceAction(
+  userId: string,
+  input: { sourceId: string; providerServiceId: string },
+): Promise<UserActionResult> {
+  const locale = await getLocale();
+  if (!input.sourceId || !input.providerServiceId) {
+    return { error: translate(locale, 'user.upstreamServiceRequired') };
+  }
+  try {
+    const api = await getAuthedApiClient();
+    await api.bindAdminUserUpstreamService(userId, input);
+    revalidateUser(userId);
+    return { ok: true, message: translate(locale, 'user.serviceBound') };
+  } catch (error) {
+    return { error: await apiErrorMessage(error, translate(locale, 'user.bindFailed')) };
+  }
+}
+
+/** Unbind an upstream service from the user (removes the local binding only). */
+export async function unbindUpstreamServiceAction(
+  userId: string,
+  serviceId: string,
+): Promise<UserActionResult> {
+  const locale = await getLocale();
+  try {
+    const api = await getAuthedApiClient();
+    await api.unbindAdminUserUpstreamService(userId, serviceId);
+    revalidateUser(userId);
+    return { ok: true, message: translate(locale, 'user.serviceUnbound') };
+  } catch (error) {
+    return { error: await apiErrorMessage(error, translate(locale, 'user.unbindFailed')) };
   }
 }
 

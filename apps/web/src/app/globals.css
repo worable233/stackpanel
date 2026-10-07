@@ -339,3 +339,19 @@
     @apply font-sans;
   }
 }
+
+/* Sonner toast surface follows the theme tokens (no inline style needed). */
+@utility cn-toast {
+  --normal-bg: var(--popover);
+  --normal-text: var(--popover-foreground);
+  --normal-border: var(--border);
+  --border-radius: var(--radius);
+}
+
+/* Hide the scrollbar while keeping the element scrollable (shell nav, tables). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

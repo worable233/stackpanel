@@ -183,13 +183,19 @@ export class ResellerRepository {
     // `webhookUrl` uses an explicit-presence switch: COALESCE alone cannot tell
     // "clear the URL" (null) from "leave unchanged" (absent).
     const setWebhookUrl = Object.prototype.hasOwnProperty.call(patch, 'webhookUrl');
+    const setWebhookPrivateKey = Object.prototype.hasOwnProperty.call(patch, 'webhookPrivateKey');
+    const setWebhookPublicKey = Object.prototype.hasOwnProperty.call(patch, 'webhookPublicKey');
     const rows = await this.prisma.$queryRaw<ResellerRow[]>`
       UPDATE "resellers" SET
         "name" = COALESCE(${patch.name ?? null}, "name"),
         "status" = COALESCE(${patch.status ?? null}, "status"),
         "publicKey" = COALESCE(${patch.publicKey ?? null}, "publicKey"),
-        "webhookPrivateKey" = COALESCE(${patch.webhookPrivateKey ?? null}, "webhookPrivateKey"),
-        "webhookPublicKey" = COALESCE(${patch.webhookPublicKey ?? null}, "webhookPublicKey"),
+        "webhookPrivateKey" = CASE WHEN ${setWebhookPrivateKey}::boolean
+                                    THEN ${patch.webhookPrivateKey ?? null}
+                                    ELSE "webhookPrivateKey" END,
+        "webhookPublicKey" = CASE WHEN ${setWebhookPublicKey}::boolean
+                                   THEN ${patch.webhookPublicKey ?? null}
+                                   ELSE "webhookPublicKey" END,
         "webhookUrl" = CASE WHEN ${setWebhookUrl}::boolean
                             THEN ${patch.webhookUrl ?? null} ELSE "webhookUrl" END,
         "scopes" = COALESCE(${patch.scopes ? JSON.stringify(patch.scopes) : null}::jsonb, "scopes"),

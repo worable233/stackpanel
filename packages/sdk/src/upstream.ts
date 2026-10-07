@@ -29,6 +29,46 @@ export interface UpstreamProductItem {
   sourceRef?: string | undefined;
 }
 
+/**
+ * 上游侧一个「已购服务 / 主机」条目。用于管理端把上游已经购买的服务
+ * **绑定**到某个平台账号，使其在平台侧显示为该账号已购（不重新开通）。
+ */
+export interface UpstreamServiceItem {
+  /** 上游服务 id（绑定后写入本地交付物的 `providerServiceId`）。 */
+  id: string;
+  /** 展示名（主机名 / 域名，回退到商品名）。 */
+  name: string;
+  /** 上游商品名（可空）。 */
+  productName?: string | null | undefined;
+  /** 上游原始状态码。 */
+  status?: string | null | undefined;
+  /** 上游状态文案。 */
+  statusLabel?: string | null | undefined;
+  /** 主机 / IP（可空）。 */
+  host?: string | null | undefined;
+  /** 到期时间（ISO，可空）。 */
+  expiresAt?: string | null | undefined;
+  /** 上游金额（分单位，可空）。 */
+  amount?: number | null | undefined;
+  currency?: string | null | undefined;
+  /** 上游实例标识（同一插件配置多个实例/账号时用于定位）。 */
+  sourceRef?: string | null | undefined;
+}
+
+/**
+ * 上游「已购服务」数据源（由上游插件注册）。
+ *
+ * 与 {@link UpstreamProductSource} 平行：商品源负责商品关联，本接口负责
+ * 「这个上游账号下已经买了哪些服务」。store 聚合所有活跃 source，管理端据此
+ * 提供「绑定上游已购服务到账号」；未安装上游插件时不显示该入口。
+ */
+export interface UpstreamServiceSource {
+  readonly id: string;
+  readonly name: string;
+  /** 列出上游已购服务（实时拉取）。 */
+  list(options?: { limit?: number }): Promise<UpstreamServiceItem[]>;
+}
+
 /** 一个上游平台的商品数据源（由上游插件注册）。 */
 export interface UpstreamProductSource {
   readonly id: string;

@@ -7,6 +7,8 @@ import type { MarketPackage } from '@stackpanel/sdk';
 import type { PluginManifestFile } from './plugins.ts';
 import { readFrontendManifest } from './frontend.ts';
 import { getPrisma } from '../plugins/prisma.ts';
+import { env } from '../config/env.ts';
+import { verifyPackageSignature } from './signatures.ts';
 
 /** Local market sources: the kernel ships official plugins/themes in packages/. */
 const PLUGINS_SOURCE = path.resolve(process.cwd(), '..', '..', 'packages', 'plugins');
@@ -22,6 +24,28 @@ function pluginDataDir(id: string): string {
 
 function themeDataDir(id: string): string {
   return path.join(dataDir(), 'themes', id);
+}
+
+async function verifyMarketPackage(sourceDir: string, kind: 'plugin' | 'theme'): Promise<void> {
+  if (!env.PACKAGE_SIGNATURE_REQUIRED) return;
+  const files = new Map<string, Uint8Array>();
+  const walk = async (dir: string, prefix = ''): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const name = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full, name);
+      else if (entry.isFile()) files.set(name, await readFile(full));
+    }
+  };
+  await walk(sourceDir);
+  try {
+    verifyPackageSignature(files, env.STACKPANEL_SIGNING_PUBLIC_KEY);
+  } catch (error) {
+    throw new Error(
+      `市场${kind === 'plugin' ? '插件' : '主题'}签名校验失败：${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 }
 
 export interface MarketSourcePackage {
@@ -175,6 +199,7 @@ export async function installMarketPlugin(id: string): Promise<{ id: string; ver
   const sources = await listMarketPlugins();
   const source = sources.find((p) => p.id === id);
   if (!source) throw new Error(`市场中没有插件：${id}`);
+  await verifyMarketPackage(source.sourceDir, 'plugin');
   const distDir = path.join(source.sourceDir, 'dist');
   if (!existsSync(distDir)) {
     throw new Error(
@@ -271,6 +296,7 @@ export async function installMarketTheme(id: string): Promise<{ id: string; vers
   const sources = await listMarketThemes();
   const source = sources.find((t) => t.id === id);
   if (!source) throw new Error(`市场中没有主题：${id}`);
+  await verifyMarketPackage(source.sourceDir, 'theme');
   const target = themeDataDir(id);
   const tmp = path.join(dataDir(), 'themes', `.market-${id}-${process.pid}`);
   await rm(tmp, { recursive: true, force: true });

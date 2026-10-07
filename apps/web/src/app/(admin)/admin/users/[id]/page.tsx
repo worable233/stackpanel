@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ArrowLeft, UserRoundCog } from 'lucide-react';
-import type { AdminUserDetailResponse, AdminProductsResponse, PermissionGroupListResponse } from '@stackpanel/sdk';
+import type { AdminUserDetailResponse, PermissionGroupListResponse } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
@@ -23,14 +23,12 @@ export default async function AdminUserDetailPage({
 
   let detail: AdminUserDetailResponse | null = null;
   let groups: PermissionGroupListResponse | null = null;
-  let products: AdminProductsResponse | null = null;
   let error: string | null = null;
 
   try {
-    [detail, groups, products] = await Promise.all([
+    [detail, groups] = await Promise.all([
       client.getAdminUser(id),
       client.getPermissionGroups(),
-      client.getAdminProducts(),
     ]);
   } catch (err) {
     error = await apiErrorMessage(err);
@@ -80,7 +78,6 @@ export default async function AdminUserDetailPage({
         userId={id}
         initial={detail}
         groups={groups?.groups ?? []}
-        products={products?.products ?? []}
       />
     </main>
   );

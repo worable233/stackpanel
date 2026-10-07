@@ -23,7 +23,7 @@ import type {
   SalesChannelView,
   WalletTopUpView,
 } from '@stackpanel/sdk';
-import { PaymentError } from '@stackpanel/sdk';
+import { PaymentError, isPaymentError } from '@stackpanel/sdk';
 import type { WalletService } from '../wallet/wallet-service.ts';
 
 const MAX_MINOR_AMOUNT = 2_000_000_000;
@@ -156,6 +156,22 @@ export class PaymentsService implements PaymentServiceContract {
     );
   }
 
+  /**
+   * The provider's own reason for refusing/failing, surfaced to the buyer
+   * instead of a generic sentence. Provider plugins (e.g. `epay`) put the
+   * gateway's business message on `error.message`; a network fault is already
+   * normalised by the provider, so this only lifts curated text.
+   */
+  private providerReason(error: unknown, fallback: string): string {
+    if (typeof error === 'object' && error !== null) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string' && message.trim().length > 0) {
+        return message.trim().slice(0, 500);
+      }
+    }
+    return fallback;
+  }
+
   // ---------------------------------------------------------------------------
   // Public contract
   // ---------------------------------------------------------------------------
@@ -172,7 +188,11 @@ export class PaymentsService implements PaymentServiceContract {
   }
 
   async createRecord(input: ExternalPaymentCreateInput, tx?: Tx): Promise<ExternalPaymentRecord> {
-    if (!Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > MAX_MINOR_AMOUNT) {
+    if (
+      !Number.isSafeInteger(input.amount) ||
+      input.amount <= 0 ||
+      input.amount > MAX_MINOR_AMOUNT
+    ) {
       throw new PaymentError(400, '金额无效');
     }
     const provider = this.providerFor(input.providerId, input.paymentMethod);
@@ -212,7 +232,10 @@ export class PaymentsService implements PaymentServiceContract {
     const payment = await this.options.db.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new PaymentError(404, '支付记录不存在');
     if (payment.status !== 'PENDING') throw new PaymentError(409, '支付已处理');
-    const provider = this.providerFor(payment.providerId as string, payment.paymentMethod as string);
+    const provider = this.providerFor(
+      payment.providerId as string,
+      payment.paymentMethod as string,
+    );
     const urls = this.providerUrls(provider, options.returnPath);
     const method = payment.methodId
       ? await this.options.db.paymentMethod.findUnique({ where: { id: payment.methodId } })
@@ -265,13 +288,26 @@ export class PaymentsService implements PaymentServiceContract {
         // Restore merchant side-effects (order cancel + stock) through the same
         // release dispatch used by the expiry sweep.
         await this.dispatchRelease(payment);
-        throw new PaymentError(502, '支付渠道拒绝了订单', 'definitive');
+        throw new PaymentError(
+          502,
+          this.providerReason(error, '支付渠道拒绝了订单'),
+          'definitive',
+          'payment.rejected',
+        );
       }
       await this.options.db.payment.updateMany({
         where: { id: payment.id, status: 'PENDING' },
         data: { status: 'REVIEW' },
       });
-      throw new PaymentError(502, '支付状态无法确认；订单已挂起待对账', 'undetermined');
+      // Our own post-call validation (e.g. an unsafe payment URL) already
+      // carries a specific code/message; keep it after flagging for review
+      // instead of overwriting it with a generic provider-failure sentence.
+      if (isPaymentError(error)) throw error;
+      throw new PaymentError(
+        502,
+        this.providerReason(error, '支付状态无法确认；订单已挂起待对账'),
+        'undetermined',
+      );
     }
   }
 
@@ -285,7 +321,11 @@ export class PaymentsService implements PaymentServiceContract {
   }
 
   async settle(input: PaymentSettlement): Promise<PaymentSettleResult> {
-    if (!Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > MAX_MINOR_AMOUNT) {
+    if (
+      !Number.isSafeInteger(input.amount) ||
+      input.amount <= 0 ||
+      input.amount > MAX_MINOR_AMOUNT
+    ) {
       throw new PaymentError(400, '结算金额无效');
     }
     const payment = await this.options.db.payment.findUnique({
@@ -357,7 +397,10 @@ export class PaymentsService implements PaymentServiceContract {
       });
       return { applied: false, purpose: 'ORDER' };
     }
-    this.options.events.publish('payment.settled', { orderId: payment.orderId, paymentId: payment.id });
+    this.options.events.publish('payment.settled', {
+      orderId: payment.orderId,
+      paymentId: payment.id,
+    });
     return { applied: true, purpose: 'ORDER' };
   }
 
@@ -416,7 +459,12 @@ export class PaymentsService implements PaymentServiceContract {
 
   async cancelTopUp(paymentId: string, userId: string): Promise<ExternalTopUpCancelResult> {
     const payment = await this.options.db.payment.findFirst({
-      where: { id: paymentId, userId, purpose: 'TOP_UP', status: { in: [...EXTERNAL_PAYMENT_STATUSES] } },
+      where: {
+        id: paymentId,
+        userId,
+        purpose: 'TOP_UP',
+        status: { in: [...EXTERNAL_PAYMENT_STATUSES] },
+      },
     });
     if (!payment?.providerId || !payment.paymentMethod || !payment.merchantOrderNo) {
       return { cancelled: false, reason: 'NOT_CANCELLABLE' };
@@ -606,7 +654,10 @@ export class PaymentsService implements PaymentServiceContract {
         return true;
       });
       if (!applied) return { confirmed: false, reason: 'NOT_PENDING' };
-      this.options.events.publish('payment.settled', { orderId: payment.orderId, paymentId: payment.id });
+      this.options.events.publish('payment.settled', {
+        orderId: payment.orderId,
+        paymentId: payment.id,
+      });
       return { confirmed: true };
     }
 
@@ -638,7 +689,10 @@ export class PaymentsService implements PaymentServiceContract {
       });
       return { confirmed: false, reason: 'NOT_PENDING' };
     }
-    this.options.events.publish('payment.settled', { orderId: payment.orderId, paymentId: payment.id });
+    this.options.events.publish('payment.settled', {
+      orderId: payment.orderId,
+      paymentId: payment.id,
+    });
     return { confirmed: true };
   }
 

@@ -20,10 +20,12 @@ import {
   toStringArray,
 } from '../lib/api-tokens.ts';
 import { env } from '../config/env.ts';
+import { resolveCookieSecure } from '../lib/cookie-security.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
 import { toPublicUser } from '../lib/user.ts';
 import { permissionsOf } from '../plugins/auth.ts';
 import { getSessionStore } from './session-store.ts';
+import { isFirstUser } from './first-user.ts';
 import { writeAudit } from '../plugins/audit.ts';
 
 export interface AuthServiceOptions {
@@ -68,13 +70,18 @@ export class KernelAuthService implements AuthService {
     }
     const exists = await this.options.db.user.findUnique({ where: { email } });
     if (exists) throw new Error('邮箱已被使用');
-    const isFirst = (await this.options.db.user.count()) === 0;
+    // Hash outside the transaction: scrypt is deliberately slow and would
+    // otherwise be computed while holding the first-user advisory lock.
+    const passwordHash = await hashPassword(input.password);
     try {
       const user = await this.options.db.$transaction(async (tx) => {
+        // Elect the first admin *inside* the transaction under an advisory lock
+        // so concurrent registrations cannot both win (SECURITY-AUDIT L-4).
+        const isFirst = await isFirstUser(tx);
         const created = await tx.user.create({
           data: {
             email,
-            passwordHash: await hashPassword(input.password),
+            passwordHash,
             status: 'ACTIVE',
             groups: {
               create: { groupId: isFirst ? 'group_admin' : 'group_user' },
@@ -115,7 +122,8 @@ export class KernelAuthService implements AuthService {
     return {
       name: env.SESSION_COOKIE_NAME,
       maxAge: env.SESSION_TTL_SECONDS,
-      secure: env.API_COOKIE_SECURE,
+      // Second guard on top of the env default (SECURITY-AUDIT-2026-10-04 M-1).
+      secure: resolveCookieSecure(env.API_COOKIE_SECURE),
     };
   }
 
@@ -286,19 +294,45 @@ export class KernelAuthService implements AuthService {
 
   /** Seed platform-owned permissions and grant them to the admin group. */
   async seedPlatformPermissions(): Promise<void> {
-    const platformPermissions = [
-      'platform.admin',
-      'platform.manage.users',
-      'platform.manage.groups',
-      'platform.manage.permissions',
-      'platform.manage.plugins',
-      'platform.manage.settings',
+    // Kernel-owned permissions carry a display name and an optional explanation
+    // used by the admin permission picker. Plugins declare theirs in the manifest.
+    const platformPermissions: Array<{ key: string; name: string; description?: string }> = [
+      {
+        key: 'platform.admin',
+        name: '平台管理员',
+        description: '平台最高权限：可管理用户、权限组、权限、插件与系统设置。',
+      },
+      {
+        key: 'platform.manage.users',
+        name: '管理用户',
+        description: '查看、创建、禁用用户并重置其密码。',
+      },
+      {
+        key: 'platform.manage.groups',
+        name: '管理权限组',
+        description: '创建、修改、删除权限组并调整成员归属。',
+      },
+      {
+        key: 'platform.manage.permissions',
+        name: '管理权限',
+        description: '查看全部权限并把权限授予权限组。',
+      },
+      {
+        key: 'platform.manage.plugins',
+        name: '管理插件',
+        description: '安装、启用、停用、升级与卸载插件。',
+      },
+      {
+        key: 'platform.manage.settings',
+        name: '管理站点设置',
+        description: '修改站点名称、对外信息与系统级配置。',
+      },
     ];
-    for (const key of platformPermissions) {
+    for (const { key, name, description } of platformPermissions) {
       const permission = await this.options.db.permission.upsert({
         where: { key },
-        create: { key, name: key },
-        update: {},
+        create: { key, name, description: description ?? null },
+        update: { name, description: description ?? null },
       });
       await this.options.db.groupPermission.upsert({
         where: {

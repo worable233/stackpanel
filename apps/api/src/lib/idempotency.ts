@@ -65,8 +65,8 @@ export async function runIdempotent(
     await reply.code(replayed.status).send(replayed.body);
     return;
   }
-  const acquired = await store.acquire(`${key}:lock`, LOCK_TTL_MS);
-  if (!acquired) {
+  const lockToken = await store.acquire(`${key}:lock`, LOCK_TTL_MS);
+  if (!lockToken) {
     await reply.code(409).send(
       buildProblem({
         status: 409,
@@ -88,6 +88,6 @@ export async function runIdempotent(
     await store.set(key, JSON.stringify(result), REPLAY_TTL_MS);
     await reply.send(body);
   } finally {
-    await store.release(`${key}:lock`);
+    await store.release(`${key}:lock`, lockToken);
   }
 }

@@ -1,5 +1,5 @@
 import type { AdminDashboardWidgetMeta, HttpReply, HttpRequest, NavItem } from '@stackpanel/sdk';
-import { EXTENSION_POINTS, definePlugin, PaymentError, PluginError, WalletError } from '@stackpanel/sdk';
+import { EXTENSION_POINTS, definePlugin, PluginError } from '@stackpanel/sdk';
 import { bindContext, context, resetContext } from './context';
 import { StoreError } from './errors';
 import {
@@ -72,9 +72,9 @@ function handle(handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown
       if (error instanceof StoreError) {
         throw new PluginError(error.code, error.status, error.message);
       }
-      if (error instanceof PaymentError || error instanceof WalletError) {
-        throw new PluginError('store.payment.error', error.status, error.message);
-      }
+      // Kernel-domain errors (PaymentError/WalletError/…) are already branded
+      // deterministic errors, so the boundary renders their code + provider
+      // reason directly. Do not rewrite them into a generic store code.
       throw error;
     }
   };
@@ -104,8 +104,21 @@ export const storePlugin = definePlugin({
     name: '商店插件',
     version: '0.3.0',
     description: '商品、购物车与订单。',
-    provides: [EXTENSION_POINTS.paymentSettlement, EXTENSION_POINTS.commerce, STORE_PRODUCT_READ, STORE_PRODUCT_UPDATE],
-    permissions: ['store.view', 'store.buy', 'store.admin'],
+    provides: [
+      EXTENSION_POINTS.paymentSettlement,
+      EXTENSION_POINTS.commerce,
+      STORE_PRODUCT_READ,
+      STORE_PRODUCT_UPDATE,
+    ],
+    permissions: [
+      { key: 'store.view', name: '浏览商店', description: '浏览商品与分类等商店前台内容。' },
+      { key: 'store.buy', name: '购买商品', description: '下单购买商品并完成支付。' },
+      {
+        key: 'store.admin',
+        name: '管理商店',
+        description: '管理商品、订单与支付渠道等商店后台。',
+      },
+    ],
     roleTemplates: [
       { role: 'USER', permissions: ['store.view', 'store.buy'] },
       { role: 'ADMIN', permissions: ['store.admin'] },

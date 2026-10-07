@@ -59,6 +59,20 @@ function pluginIds(): string[] {
 }
 
 describe('边界守护（ADR-0008）', () => {
+  it('PluginContext 不再暴露内核 DB 句柄（ADR-0008 §1）', () => {
+    // E2 删除 `ctx.db` 后，SDK 契约层不得再出现该字段。防止以「临时兼容」
+    // 名义把全库钥匙加回来——这是边界的最外层，比插件源码扫描更根本。
+    const sdkPlugin = readFileSync(
+      path.join(repoRoot, 'packages', 'sdk', 'src', 'plugin.ts'),
+      'utf8',
+    );
+    const block = sdkPlugin.slice(
+      sdkPlugin.indexOf('export interface PluginContext'),
+      sdkPlugin.indexOf('export interface PluginDefinition'),
+    );
+    expect(block, 'PluginContext 接口不应包含 db 字段').not.toMatch(/^\s*readonly\s+db\b/m);
+  });
+
   it('插件不得 import 内核（apps/api / @stackpanel/api）', () => {
     const offenders: string[] = [];
     for (const id of pluginIds()) {

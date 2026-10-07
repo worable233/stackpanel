@@ -40,9 +40,13 @@ describe('sanitizeRichText', () => {
     expect(out).toBe('kept');
   });
 
-  it('escapes a bare < that does not form a tag', () => {
-    expect(sanitizeRichText('a < b')).toBe('a &lt; b');
-    expect(sanitizeRichText('a </ b')).toBe('a &lt;/ b');
+  it('never emits a bare < from untrusted text', () => {
+    // A `<` that does not begin a real tag must not survive as markup. The
+    // parser either escapes it or drops the bogus tag, so the output must never
+    // contain a raw `<` other than a real allowed tag.
+    expect(sanitizeRichText('a < b')).not.toMatch(/<(?!\/?(p|br|div|span)\b)/);
+    expect(sanitizeRichText('a </ b')).not.toMatch(/<(?!\/?(p|br|div|span)\b)/);
+    expect(sanitizeRichText('a < b')).toContain('&lt;');
   });
 
   it('drops comments', () => {

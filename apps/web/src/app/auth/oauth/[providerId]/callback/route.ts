@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
-import { getApiClient } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +13,7 @@ function clearFlowCookies(response: NextResponse): void {
   response.cookies.delete({ name: STATE_COOKIE, path: '/auth/oauth' });
   response.cookies.delete({ name: VERIFIER_COOKIE, path: '/auth/oauth' });
   response.cookies.delete({ name: NONCE_COOKIE, path: '/auth/oauth' });
+  response.cookies.delete({ name: 'sp_oauth_state_api', path: '/auth/oauth' });
 }
 
 /**
@@ -35,10 +35,21 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ provide
     if (!code || !state || !expectedState || !codeVerifier || !nonce || state !== expectedState) {
       throw new Error('OAuth state mismatch');
     }
-    const result = await getApiClient().completeOAuthLogin(providerId, code, state, {
-      codeVerifier,
-      nonce,
-    });
+    const apiResponse = await fetch(
+      `${process.env.API_BASE_URL ?? 'http://127.0.0.1:3001'}/auth/oauth/${encodeURIComponent(providerId)}/callback`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: `sp_oauth_state_api=${encodeURIComponent(expectedState as string)}`,
+        },
+        body: JSON.stringify({ code, state, codeVerifier, nonce }),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!apiResponse.ok) throw new Error('OAuth callback failed');
+    const result = (await apiResponse.json()) as { token: string; user: { role: string } };
     const destination = result.user.role === 'ADMIN' ? '/admin' : '/account';
     const response = NextResponse.redirect(new URL(destination, request.url));
     response.cookies.set(SESSION_COOKIE, result.token, {

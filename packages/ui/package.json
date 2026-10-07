@@ -1,6 +1,6 @@
 {
   "name": "@stackpanel/ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Shared custom UI components (Tailwind + shadcn APIs only, no bespoke CSS).",
   "type": "module",

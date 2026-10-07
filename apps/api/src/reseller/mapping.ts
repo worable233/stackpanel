@@ -22,7 +22,7 @@ import type {
   CommerceProduct,
   CommerceService,
 } from '@stackpanel/sdk';
-import { CommerceError } from '@stackpanel/sdk';
+import { isCommerceError } from '@stackpanel/sdk';
 import type { ResellerRecord } from './repository.ts';
 
 export class MappingError extends Error {
@@ -68,7 +68,7 @@ export async function resolveResellerUser(
 
 /** Map a commerce-domain rejection to the SP v1 stable problem contract. */
 function mapCommerceError(error: unknown): never {
-  if (error instanceof CommerceError) {
+  if (isCommerceError(error)) {
     switch (error.failure) {
       case 'product_unavailable':
         throw new MappingError(409, 'sp_v1.product_unavailable', '商品不可用或库存不足');

@@ -33,6 +33,14 @@ export const RATE_LIMIT = {
   userWrite: { max: 120, timeWindow: '1 minute' },
   /** Resource uploads (plugins, themes, media) — heavier ceilings. */
   upload: { max: 20, timeWindow: '1 minute' },
+  /**
+   * Anonymous read endpoints that are heavy enough to be worth a DoS ceiling:
+   * media bytes/derivatives, theme & plugin asset files, SEO feeds. The ceiling
+   * is deliberately generous — a single page load fans out into many asset
+   * requests — so it stops abuse without throttling real browsing
+   * (SECURITY-AUDIT-2026-10-04 L-1).
+   */
+  publicRead: { max: 600, timeWindow: '1 minute' },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitPreset = keyof typeof RATE_LIMIT;
@@ -74,4 +82,5 @@ export const RATE_LIMIT_COVERAGE: ReadonlyArray<{
   { surface: 'API Token 签发 / 轮换 / 撤销', preset: 'credentialWrite' },
   { surface: '管理端密钥 / 签名 / 平台身份写入', preset: 'adminWrite' },
   { surface: '插件 / 主题 / 媒体上传', preset: 'upload' },
+  { surface: '匿名重读端点（媒体内容 / 主题与插件资源 / SEO 订阅）', preset: 'publicRead' },
 ];

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ExtensionValidationError, PluginError, isPluginError } from '../src/index.js';
+import {
+  ExtensionValidationError,
+  PluginError,
+  isExtensionNotFound,
+  isExtensionVersionConflict,
+  isPluginError,
+} from '../src/index.js';
 
 /**
  * The kernel loads plugin bundles through a cache-busted URL
@@ -44,5 +50,22 @@ describe('isPluginError', () => {
     expect(foreign instanceof PluginError).toBe(false); // the bug: instanceof fails
     expect(isPluginError(foreign)).toBe(true); // the guard: brand succeeds
     expect(isPluginError(foreign) && foreign.status).toBe(401);
+  });
+
+  it('narrows extension subclasses across a duplicated class identity', () => {
+    class ForeignExtensionNotFound extends Error {
+      readonly code = 'extension.not_found';
+      readonly status = 404;
+    }
+    Object.defineProperty(ForeignExtensionNotFound.prototype, '__stackpanelPluginError', {
+      value: true,
+    });
+    Object.defineProperty(ForeignExtensionNotFound.prototype, '__stackpanelSdkError', {
+      value: 'ExtensionNotFound',
+    });
+
+    const foreign = new ForeignExtensionNotFound();
+    expect(isExtensionNotFound(foreign)).toBe(true);
+    expect(isExtensionVersionConflict(foreign)).toBe(false);
   });
 });

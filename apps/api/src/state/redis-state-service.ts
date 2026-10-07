@@ -44,6 +44,21 @@ end
 return 0
 `;
 
+const CONSUME_SCRIPT = `
+local value = redis.call('GET', KEYS[1])
+if value then redis.call('DEL', KEYS[1]) end
+return value
+`;
+
+/** Increment a counter and attach its window TTL in one Redis transaction. */
+const INCR_WITH_TTL_SCRIPT = `
+local value = redis.call('INCR', KEYS[1])
+if value == 1 and tonumber(ARGV[1]) ~= nil and tonumber(ARGV[1]) > 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return value
+`;
+
 export class RedisStateService implements StateService {
   constructor(private readonly redis: RedisClient) {}
 
@@ -53,6 +68,11 @@ export class RedisStateService implements StateService {
 
   async get(key: string): Promise<string | null> {
     return this.redis.get(this.key(key));
+  }
+
+  async consume(key: string): Promise<string | null> {
+    const value = await this.redis.eval(CONSUME_SCRIPT, 1, this.key(key));
+    return typeof value === 'string' ? value : null;
   }
 
   async set(key: string, value: string, ttlMs?: number): Promise<void> {
@@ -71,13 +91,14 @@ export class RedisStateService implements StateService {
   async incr(key: string, ttlMs?: number): Promise<number> {
     const redisKey = this.key(key);
     const ttl = toTtlMs(ttlMs);
-    // INCR is atomic across replicas. Seed the first counter with the TTL only
-    // when absent (`SET NX PX`): a counter that already exists keeps its
-    // original expiry, matching the in-process contract.
-    if (ttl !== undefined) {
-      await this.redis.set(redisKey, '0', 'PX', ttl, 'NX');
-    }
-    return this.redis.incr(redisKey);
+    // INCR and the first-window expiry must be one operation. Otherwise a key
+    // can expire between SET NX and INCR and be recreated without a TTL.
+    return (await this.redis.eval(
+      INCR_WITH_TTL_SCRIPT,
+      1,
+      redisKey,
+      String(ttl ?? 0),
+    )) as number;
   }
 
   async decr(key: string): Promise<number> {
@@ -85,19 +106,20 @@ export class RedisStateService implements StateService {
     return result;
   }
 
-  async acquire(key: string, ttlMs: number): Promise<boolean> {
+  async acquire(key: string, ttlMs: number): Promise<string | null> {
+    const token = randomUUID();
     const result = await this.redis.set(
       this.key(key),
-      randomUUID(),
+      token,
       'PX',
       toTtlMs(ttlMs) ?? 1,
       'NX',
     );
-    return result === 'OK';
+    return result === 'OK' ? token : null;
   }
 
-  async release(key: string): Promise<void> {
-    await this.redis.del(this.key(key));
+  async release(key: string, token: string): Promise<boolean> {
+    return Number(await this.redis.eval(RELEASE_SCRIPT, 1, this.key(key), token)) === 1;
   }
 
   async withLock(key: string, ttlMs: number, fn: () => Promise<void>): Promise<boolean> {

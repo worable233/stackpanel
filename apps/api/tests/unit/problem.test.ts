@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { CommerceError, PaymentError } from '@stackpanel/sdk';
 import { buildApp } from '../../src/app.ts';
 
 /**
@@ -14,6 +15,20 @@ describe('problem details (ADR-0012)', () => {
 
   beforeAll(async () => {
     app = buildApp();
+    // Probe routes for kernel-domain errors: the boundary must render the
+    // error's status/code/detail through the deterministic-error brand rather
+    // than collapsing a provider failure to a generic 500.
+    app.get('/__test/payment-error', async () => {
+      throw new PaymentError(
+        502,
+        '当前商户未完成实名认证，无法收款',
+        'definitive',
+        'payment.rejected',
+      );
+    });
+    app.get('/__test/commerce-error', async () => {
+      throw new CommerceError('product_not_found', '商品不存在');
+    });
     await app.ready();
   });
 
@@ -54,5 +69,23 @@ describe('problem details (ADR-0012)', () => {
     expect(typeof body.code).toBe('string');
     expect(body.code.length).toBeGreaterThan(0);
     expect(body.error).toBeUndefined();
+  });
+
+  it('renders a kernel-domain provider failure with its code and reason', async () => {
+    const res = await app.inject({ method: 'GET', url: '/__test/payment-error' });
+    expect(res.statusCode).toBe(502);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    const body = res.json() as { status: number; code: string; detail?: string };
+    expect(body.status).toBe(502);
+    expect(body.code).toBe('payment.rejected');
+    expect(body.detail).toBe('当前商户未完成实名认证，无法收款');
+  });
+
+  it('renders a commerce-domain rejection with its mapped status', async () => {
+    const res = await app.inject({ method: 'GET', url: '/__test/commerce-error' });
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as { code: string; detail?: string };
+    expect(body.code).toBe('commerce.product_not_found');
+    expect(body.detail).toBe('商品不存在');
   });
 });

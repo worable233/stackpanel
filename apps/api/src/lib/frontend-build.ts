@@ -26,8 +26,19 @@
  * `frontend-apply.status.json` fields the old supervisor wrote.
  */
 import { spawn } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { REDIS_KEY_PREFIX } from '@stackpanel/sdk';
+import { findRepoRoot } from '@stackpanel/sdk/paths';
 import type { RedisClient } from '@stackpanel/db';
+import { getEventBus } from '../plugins/events.ts';
+import { getPrisma } from '../plugins/prisma.ts';
+import { KernelNotificationsService } from '../notifications/notifications-service.ts';
+import {
+  createFrontendApplyNotifier,
+  type FrontendApplyNotifier,
+  type FrontendApplyStatusInput,
+} from '../notifications/frontend-apply-notifications.ts';
 import {
   readFrontendApplyRequest,
   writeFrontendApplyStatus,
@@ -35,6 +46,8 @@ import {
   clearFrontendApplyRequest,
   computeFrontendSignature,
   readFrontendAppliedSignature,
+  isFrontendDevBuild,
+  frontendApplySteps,
   type FrontendApplyRequest,
 } from './frontend-apply.ts';
 
@@ -48,14 +61,30 @@ export function frontendBuildChannel(): string {
   return `${REDIS_KEY_PREFIX.runtime}frontend-build`;
 }
 
-/** Repo root (the process working directory in dev and in the container). */
+/**
+ * Repo root, discovered from this module's location rather than `process.cwd()`.
+ *
+ * In dev each workspace runs with its own cwd (`apps/api`, `apps/web`, ...), so
+ * `process.cwd()` is not the monorepo root and `pnpm build:frontend` would not
+ * resolve. Discovery walks up to `pnpm-workspace.yaml`, matching `@stackpanel/sdk`.
+ * In the container the module lives at `/app/apps/api/dist`, whose repo root is
+ * `/app` too, so this is correct there as well.
+ */
 function repoRoot(): string {
-  return process.cwd();
+  return findRepoRoot(path.dirname(fileURLToPath(import.meta.url))) ?? process.cwd();
 }
 
 interface StreamingResult {
   code: number;
 }
+
+/** Command runner seam so the build steps can be unit-tested without spawning. */
+export type FrontendCommandRunner = (
+  command: string,
+  args: string[],
+  label: string,
+  onLine?: (line: string) => void,
+) => Promise<StreamingResult>;
 
 /** Run a command, forwarding output and reporting each line to `onLine`. */
 function runStreaming(
@@ -106,17 +135,53 @@ export async function nudgeFrontendBuild(redis: RedisClient | null): Promise<voi
  */
 let building = false;
 
-export async function runFrontendBuild(request: FrontendApplyRequest): Promise<void> {
+export interface FrontendBuildDeps {
+  /** Command runner seam (tests). Defaults to {@link runStreaming}. */
+  runCommand?: FrontendCommandRunner;
+  /** Override dev detection (tests). Defaults to {@link isFrontendDevBuild}. */
+  dev?: boolean;
+  /**
+   * Live-notification sink. Defaults to a kernel notification writer, but only
+   * when the request has an actor (`requestedBy`); a null actor (boot reconcile)
+   * or an injected notifier (tests) skips it. Failures never fail the build.
+   */
+  notifier?: FrontendApplyNotifier;
+}
+
+/** Build the default notifier from the kernel DB/event singletons. */
+function defaultFrontendApplyNotifier(): FrontendApplyNotifier {
+  return createFrontendApplyNotifier({
+    notifications: new KernelNotificationsService({
+      db: getPrisma(),
+      events: getEventBus(),
+    }),
+  });
+}
+
+export async function runFrontendBuild(
+  request: FrontendApplyRequest,
+  deps: FrontendBuildDeps = {},
+): Promise<void> {
   if (building) return;
   building = true;
   try {
-    await runFrontendBuildUnsafe(request);
+    await runFrontendBuildUnsafe(request, deps);
   } finally {
     building = false;
   }
 }
 
-async function runFrontendBuildUnsafe(request: FrontendApplyRequest): Promise<void> {
+async function runFrontendBuildUnsafe(
+  request: FrontendApplyRequest,
+  deps: FrontendBuildDeps,
+): Promise<void> {
+  const runCommand = deps.runCommand ?? runStreaming;
+  const dev = deps.dev ?? isFrontendDevBuild();
+  // Only a request with a known actor produces a live notification; the boot
+  // reconcile (requestedBy null) and actor-less requests stay silent, and tests
+  // without an injected notifier never touch the DB.
+  const notifier =
+    deps.notifier ?? (request.requestedBy ? defaultFrontendApplyNotifier() : null);
   const steps = request.steps ?? [
     '停止当前服务',
     request.action === 'remove' ? '移除前端资源' : '编译前端资源',
@@ -126,8 +191,15 @@ async function runFrontendBuildUnsafe(request: FrontendApplyRequest): Promise<vo
   const total = steps.length;
   const subject = request.label ? `「${request.label}」` : '';
 
+  // Write both the on-disk status (admin progress card) and the live
+  // notification (cross-page bell). Both are best-effort by contract.
+  const emit = async (status: Omit<FrontendApplyStatusInput, 'at'>): Promise<void> => {
+    await writeFrontendApplyStatus(status);
+    if (notifier) await notifier(request, status);
+  };
+
   const progress = (step: number, detail: string): Promise<void> =>
-    writeFrontendApplyStatus({
+    emit({
       state: 'building',
       requestedAt: request.requestedAt,
       ...(request.label ? { label: request.label } : {}),
@@ -140,16 +212,23 @@ async function runFrontendBuildUnsafe(request: FrontendApplyRequest): Promise<vo
 
   let failed: string | null = null;
   if (request.rebuild) {
-    await progress(2, steps[1] ?? '编译前端资源');
-    const registry = await runStreaming('pnpm', ['build:frontend'], 'build:frontend', (line) => {
+    // Step numbers follow the plan: prod is [stop, compile, artifacts, restart]
+    // (compile=2); dev is [compile, artifacts] (compile=1, no service steps).
+    const compileStep = dev ? 1 : 2;
+    const artifactsStep = compileStep + 1;
+    await progress(compileStep, steps[compileStep - 1] ?? '编译前端资源');
+    const registry = await runCommand('pnpm', ['build:frontend'], 'build:frontend', (line) => {
       const buildingMatch = /^Building frontend (.+?)(?:…|\.\.\.)?\s*$/.exec(line);
-      if (buildingMatch) void progress(2, `正在编译 ${buildingMatch[1]}`);
+      if (buildingMatch) void progress(compileStep, `正在编译 ${buildingMatch[1]}`);
     });
     if (registry.code !== 0) {
       failed = '前端资源编译失败';
-    } else {
-      await progress(3, steps[2] ?? '生成前端产物');
-      const web = await runStreaming('pnpm', ['--filter', '@stackpanel/web', 'build'], 'next build');
+    } else if (!dev) {
+      // Production: build the Next bundle the web replicas serve. In dev the
+      // running `next dev` hot-reloads the regenerated registry on its own, and
+      // `next build` would collide with it over `.next`.
+      await progress(artifactsStep, steps[artifactsStep - 1] ?? '生成前端产物');
+      const web = await runCommand('pnpm', ['--filter', '@stackpanel/web', 'build'], 'next build');
       if (web.code !== 0) failed = 'Web 构建失败';
     }
   }
@@ -166,7 +245,7 @@ async function runFrontendBuildUnsafe(request: FrontendApplyRequest): Promise<vo
 
   await clearFrontendApplyRequest();
 
-  await writeFrontendApplyStatus({
+  await emit({
     state: failed ? 'failed' : 'succeeded',
     requestedAt: request.requestedAt,
     ...(request.label ? { label: request.label } : {}),
@@ -249,7 +328,7 @@ export class FrontendBuilder {
       target: 'plugin',
       action: 'update',
       rebuild: true,
-      steps: ['停止当前服务', '编译前端资源', '生成前端产物', '重启服务'],
+      steps: frontendApplySteps({ target: 'plugin', action: 'update', rebuild: true }),
     });
   }
 

@@ -64,6 +64,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Production dependency vulnerability audit
+        run: pnpm audit --prod --registry=https://registry.npmjs.org --audit-level high
+
+      - name: Generate dependency SBOM
+        run: pnpm exec license-checker --production --json --out "$RUNNER_TEMP/stackpanel-sbom.json"
+
       - name: License check (no copyleft)
         run: |
           # mariadb (LGPL-2.1) is a documented exception — required by the

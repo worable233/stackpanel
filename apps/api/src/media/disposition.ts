@@ -28,3 +28,15 @@ export function sanitizeAsciiFallback(filename: string): string {
     .trim();
   return ascii.length > 0 ? ascii : 'file';
 }
+
+/**
+ * Media types that can execute code when rendered inline. SVG is XML and may
+ * carry `<script>`; HTML obviously so. Callers must send these as downloads
+ * (`Content-Disposition: attachment`) so the browser never executes them.
+ *
+ * Shared by the attachment routes and the theme/plugin asset servers so the
+ * "active content" policy cannot drift between them.
+ */
+export function isActiveContent(mime: string): boolean {
+  return mime === 'image/svg+xml' || mime === 'text/html' || mime === 'application/xhtml+xml';
+}

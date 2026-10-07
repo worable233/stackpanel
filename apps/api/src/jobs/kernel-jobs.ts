@@ -64,6 +64,11 @@ class CanonicalJobRuntime implements JobRuntime {
     this.backend?.handle(fullName, handler);
   }
 
+  unhandle(fullName: string): void {
+    this.handlers.delete(fullName);
+    this.backend?.unhandle(fullName);
+  }
+
   async schedule(entry: RegisteredSchedule): Promise<void> {
     this.schedules.set(entry.fullName, entry);
     await this.backend?.schedule(entry);
@@ -140,7 +145,7 @@ export function createKernelJobContext(owner: string, jobs: JobRuntime): JobCont
       jobs.handle(fullName, handler as JobHandler);
       return () => {
         // Removal is by owner on deactivation; handler overrides are rare.
-        jobs.handle(fullName, undefined as unknown as JobHandler);
+        jobs.unhandle(fullName);
       };
     },
   };

@@ -1,41 +1,61 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
+import { AuthShell, type AuthProvider } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LocaleSwitcher } from '@/components/locale-switcher';
-import { localeOptions } from '@/i18n/core';
-import { useLocale, useTranslator } from '@/i18n/provider';
+import { useTranslator } from '@/i18n/provider';
 import { registerAction } from '@/lib/actions';
 
-export function RegisterForm() {
+export function RegisterForm({
+  providers = [],
+  platformName,
+  platformDescription,
+  logoSrc,
+}: {
+  providers?: AuthProvider[];
+  platformName: string;
+  platformDescription?: string;
+  logoSrc?: string | null;
+}) {
   const [state, action, pending] = useActionState(registerAction, {});
   const [showPassword, setShowPassword] = useState(false);
-  const locale = useLocale();
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const t = useTranslator();
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
+    const password = (form.elements.namedItem('password') as HTMLInputElement | null)?.value;
+    const confirm = (form.elements.namedItem('confirmPassword') as HTMLInputElement | null)?.value;
+    if (password !== confirm) {
+      event.preventDefault();
+      setConfirmError(t('auth.validation.passwordMismatch'));
+      return;
+    }
+    setConfirmError(null);
+  }
+
   return (
-    <main className="flex flex-1 items-center justify-center p-8">
-      <form
-        action={action}
-        className="w-full max-w-sm space-y-5 rounded-lg border bg-card p-6 text-card-foreground shadow-sm"
-      >
-        <div className="flex justify-end">
-          <LocaleSwitcher
-            locale={locale}
-            items={localeOptions()}
-            ariaLabel={t('localeSwitcher.ariaLabel')}
-          />
-        </div>
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{t('auth.register.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('auth.register.subtitle')}</p>
-        </div>
+    <AuthShell
+      mode="register"
+      platformName={platformName}
+      platformDescription={platformDescription}
+      logoSrc={logoSrc}
+      providers={providers}
+    >
+      <form action={action} onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
           <Label htmlFor="email">{t('auth.register.email')}</Label>
-          <Input id="email" name="email" type="email" autoComplete="email" required />
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            className="py-2.5"
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">{t('auth.register.password')}</Label>
@@ -46,7 +66,8 @@ export function RegisterForm() {
               type={showPassword ? 'text' : 'password'}
               autoComplete="new-password"
               required
-              className="pr-9"
+              minLength={8}
+              className="py-2.5 pr-9"
             />
             <button
               type="button"
@@ -60,17 +81,24 @@ export function RegisterForm() {
             </button>
           </div>
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="confirmPassword">{t('auth.register.confirmPassword')}</Label>
+          <Input
+            id="confirmPassword"
+            name="confirmPassword"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="new-password"
+            required
+            className="py-2.5"
+            aria-invalid={confirmError ? true : undefined}
+          />
+        </div>
+        {confirmError ? <p className="text-sm text-destructive">{confirmError}</p> : null}
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        <Button type="submit" disabled={pending} className="w-full">
+        <Button type="submit" disabled={pending} className="h-10 w-full text-base">
           {pending ? t('auth.register.submitting') : t('auth.register.submit')}
         </Button>
-        <p className="text-center text-sm text-muted-foreground">
-          {t('auth.register.hasAccount')}
-          <Link className="text-foreground underline underline-offset-4" href="/login">
-            {t('auth.register.login')}
-          </Link>
-        </p>
       </form>
-    </main>
+    </AuthShell>
   );
 }

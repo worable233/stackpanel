@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { NotificationBell } from '@/components/notification-bell';
+import { NotificationToaster } from '@/components/notification-toaster';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { localeOptions } from '@/i18n/core';
 import { navMessageKey } from '@/i18n/nav';
@@ -305,6 +306,7 @@ export function BackendShell({
 
   return (
     <div className="flex min-h-dvh flex-col bg-muted/30">
+      <NotificationToaster />
       <header className="h-16 border-b bg-background/85 backdrop-blur">
         <div className={cn('mx-auto flex h-full w-full items-center justify-between gap-4 px-4 sm:px-6 lg:px-10', contentMaxWidth)}>
           <Link
@@ -336,7 +338,12 @@ export function BackendShell({
       </header>
 
       <nav className="border-b bg-background">
-        <div className={cn('mx-auto flex h-12 w-full items-center gap-1 overflow-x-auto px-4 sm:px-6 lg:px-10', contentMaxWidth)}>
+        <div
+          className={cn(
+            'scrollbar-none mx-auto flex h-12 w-full items-center gap-1 overflow-x-auto px-4 sm:px-6 lg:px-10',
+            contentMaxWidth,
+          )}
+        >
           {directItems.map((item) => (
             <NavButton
               key={item.href}

@@ -13,6 +13,8 @@
  */
 export interface StateService {
   get(key: string): Promise<string | null>;
+  /** Read and remove a value atomically when the backend supports it. */
+  consume(key: string): Promise<string | null>;
   set(key: string, value: string, ttlMs?: number): Promise<void>;
   del(key: string): Promise<void>;
   /** Increment a counter, setting `ttlMs` on the first increment. Returns the new value. */
@@ -20,9 +22,9 @@ export interface StateService {
   /** Decrement a counter (floored at 0). */
   decr(key: string): Promise<number>;
   /** Acquire a lock keyed by `key`. Returns false if already held. */
-  acquire(key: string, ttlMs: number): Promise<boolean>;
-  /** Release a previously acquired lock. */
-  release(key: string): Promise<void>;
+  acquire(key: string, ttlMs: number): Promise<string | null>;
+  /** Release a lock only when `token` is still its owner. */
+  release(key: string, token: string): Promise<boolean>;
   /**
    * Run `fn` while holding the lock. Returns true if the lock was acquired and
    * `fn` ran; false if it was busy (fn is skipped).

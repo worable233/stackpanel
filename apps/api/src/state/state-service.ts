@@ -5,6 +5,7 @@
  * keeps memory bounded.
  */
 import type { StateService } from '@stackpanel/sdk';
+import { randomUUID } from 'node:crypto';
 
 interface Entry {
   value: string;
@@ -27,6 +28,12 @@ export class MemoryStateService implements StateService {
 
   async get(key: string): Promise<string | null> {
     return this.live(key)?.value ?? null;
+  }
+
+  async consume(key: string): Promise<string | null> {
+    const value = this.live(key)?.value ?? null;
+    this.entries.delete(key);
+    return value;
   }
 
   async set(key: string, value: string, ttlMs?: number): Promise<void> {
@@ -61,26 +68,31 @@ export class MemoryStateService implements StateService {
     return next;
   }
 
-  async acquire(key: string, ttlMs: number): Promise<boolean> {
-    if (this.live(key)) return false;
+  async acquire(key: string, ttlMs: number): Promise<string | null> {
+    if (this.live(key)) return null;
+    const token = randomUUID();
     this.entries.set(key, {
-      value: '1',
+      value: token,
       expiresAt: ttlMs && ttlMs > 0 ? Date.now() + ttlMs : null,
     });
+    return token;
+  }
+
+  async release(key: string, token: string): Promise<boolean> {
+    const entry = this.live(key);
+    if (!entry || entry.value !== token) return false;
+    this.entries.delete(key);
     return true;
   }
 
-  async release(key: string): Promise<void> {
-    this.entries.delete(key);
-  }
-
   async withLock(key: string, ttlMs: number, fn: () => Promise<void>): Promise<boolean> {
-    if (!(await this.acquire(key, ttlMs))) return false;
+    const token = await this.acquire(key, ttlMs);
+    if (!token) return false;
     try {
       await fn();
       return true;
     } finally {
-      await this.release(key);
+      await this.release(key, token);
     }
   }
 

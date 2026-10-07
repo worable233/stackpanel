@@ -6,7 +6,6 @@ import type {
   PluginContext,
   ResolvedPaymentSettlement,
 } from '@stackpanel/sdk';
-import { PaymentError } from '@stackpanel/sdk';
 import { bus, context, logger, runTransaction } from './context';
 import { stockItems, StoreError } from './errors';
 import { removePurchasedCartItems } from './cart';
@@ -183,7 +182,8 @@ async function removeCartInTx(
   });
   if (cart.cartItemIds?.length) {
     const wanted = new Set(cart.cartItemIds);
-    for (const item of all) if (wanted.has(item.name)) await tx.extensions.delete(cartItemModel, item.name);
+    for (const item of all)
+      if (wanted.has(item.name)) await tx.extensions.delete(cartItemModel, item.name);
   } else if (cart.productIds?.length) {
     const wanted = new Set(cart.productIds);
     for (const item of all)
@@ -254,25 +254,16 @@ async function placeOrder(
     });
     return { orderId, payment, subject: resolved.map((line) => line.name).join('、') };
   });
-  try {
-    const payment = await ctx.payments.initiate(reserved.payment.id, {
-      returnPath: '/account/orders',
-      subject: reserved.subject,
-      ...(req.ip ? { clientIp: req.ip } : {}),
-    });
-    await removePurchasedCartItems(userId, cart).catch((error) => {
-      logger().warn(`store: cart cleanup failed for order ${reserved.orderId}: ${String(error)}`);
-    });
-    const order = await getOrder(reserved.orderId);
-    return { order, payment };
-  } catch (error) {
-    if (error instanceof PaymentError) {
-      // The kernel already finalised the payment (CANCELLED on definitive
-      // failure, REVIEW otherwise) and dispatched merchant release handlers.
-      throw new StoreError(error.status, error.message);
-    }
-    throw error;
-  }
+  const payment = await ctx.payments.initiate(reserved.payment.id, {
+    returnPath: '/account/orders',
+    subject: reserved.subject,
+    ...(req.ip ? { clientIp: req.ip } : {}),
+  });
+  await removePurchasedCartItems(userId, cart).catch((error) => {
+    logger().warn(`store: cart cleanup failed for order ${reserved.orderId}: ${String(error)}`);
+  });
+  const order = await getOrder(reserved.orderId);
+  return { order, payment };
 }
 
 export async function createOrder(ctx: PluginContext, req: HttpRequest): Promise<unknown> {
@@ -433,7 +424,10 @@ export const settlementHandler: PaymentSettlementHandler = {
     if (payment.purpose !== 'ORDER' || !payment.orderId) return { applied: false };
     try {
       const applied = await runTransaction(async (tx) => {
-        const record = await tx.extensions.get<StoreOrderData>(orderModel, payment.orderId as string);
+        const record = await tx.extensions.get<StoreOrderData>(
+          orderModel,
+          payment.orderId as string,
+        );
         if (!record || record.spec.state !== 'PENDING') return false;
         const { updated } = await tx.extensions.updateWhere(
           orderModel,

@@ -80,6 +80,67 @@ describe('frontend settings schema', () => {
   });
 });
 
+describe('frontend settings list field', () => {
+  const listSchema: FrontendSettingsSchema = {
+    groups: [
+      {
+        id: 'regions',
+        label: '服务区域',
+        fields: [
+          {
+            type: 'list',
+            name: 'items',
+            label: '机房',
+            itemLabelField: 'city',
+            fields: [
+              { type: 'text', name: 'city', label: '城市' },
+              { type: 'number', name: 'lat', label: '纬度', default: 0, step: 0.0001 },
+            ],
+            default: [{ city: '上海', lat: 31.23 }],
+          },
+        ],
+      },
+    ],
+  };
+
+  it('produces list defaults', () => {
+    expect(settingsDefaultsFromSchema(listSchema)).toEqual({
+      regions: { items: [{ city: '上海', lat: 31.23 }] },
+    });
+  });
+
+  it('validates rows and rejects unknown scalar types', () => {
+    const zod = buildZodFromSettingsSchema(listSchema);
+    expect(zod.parse({}).regions?.items).toEqual([{ city: '上海', lat: 31.23 }]);
+    expect(
+      zod.safeParse({ regions: { items: [{ city: '北京', lat: 39.9 }] } }).success,
+    ).toBe(true);
+    expect(zod.safeParse({ regions: { items: [{ city: '北京', lat: 'x' }] } }).success).toBe(
+      false,
+    );
+  });
+
+  it('defaults a missing list to an empty array', () => {
+    const noDefault: FrontendSettingsSchema = {
+      groups: [
+        {
+          id: 'regions',
+          label: '服务区域',
+          fields: [
+            {
+              type: 'list',
+              name: 'items',
+              label: '机房',
+              fields: [{ type: 'text', name: 'city', label: '城市' }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(buildZodFromSettingsSchema(noDefault).parse({}).regions?.items).toEqual([]);
+  });
+});
+
 describe('frontend page priority', () => {
   const themePages: FrontendPageDefinition[] = [
     { path: '/', component: 'home' },

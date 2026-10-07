@@ -9,7 +9,7 @@
  * exactly as before (same body limit, same 400/413/415 outcomes).
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { Readable } from 'node:stream';
+import { Transform, type Readable } from 'node:stream';
 import type { MatchResult, PluginDispatcher } from './dispatcher.ts';
 
 const RAW_BODY = Symbol('stackpanel.rawBody');
@@ -19,6 +19,25 @@ const DEFAULT_BODY_LIMIT = 1_048_576;
 export function rawBodyStream(request: FastifyRequest): Readable {
   const stream = (request as unknown as Record<symbol, unknown>)[RAW_BODY];
   return (stream as Readable | undefined) ?? request.raw;
+}
+
+/** Bound raw plugin uploads even though they bypass Fastify's body parser. */
+export function limitedRawBodyStream(request: FastifyRequest, limit: number): Readable {
+  const source = rawBodyStream(request);
+  let size = 0;
+  const limiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      size += chunk.length;
+      if (size > limit) {
+        callback(Object.assign(new Error('请求体过大'), { code: 'FST_ERR_CTP_BODY_TOO_LARGE' }));
+        source.destroy();
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+  source.pipe(limiter);
+  return limiter;
 }
 
 function matchRoute(dispatcher: PluginDispatcher, request: FastifyRequest): MatchResult | null {

@@ -73,10 +73,11 @@ describe.skipIf(!available)('RedisStateService', () => {
   it('acquires a lock exclusively and releases it', async () => {
     const state = svc();
     const key = `${prefix}lock`;
-    expect(await state.acquire(key, 1000)).toBe(true);
-    expect(await state.acquire(key, 1000)).toBe(false);
-    await state.release(key);
-    expect(await state.acquire(key, 1000)).toBe(true);
+    const token = await state.acquire(key, 1000);
+    expect(token).toEqual(expect.any(String));
+    expect(await state.acquire(key, 1000)).toBeNull();
+    expect(await state.release(key, token as string)).toBe(true);
+    expect(await state.acquire(key, 1000)).toEqual(expect.any(String));
   });
 
   it('runs withLock only when the lock is free', async () => {
@@ -102,7 +103,7 @@ describe.skipIf(!available)('RedisStateService', () => {
     const key = `${prefix}shared`;
     await a.set(key, 'from-a');
     expect(await b.get(key)).toBe('from-a');
-    expect(await b.acquire(`${prefix}shared-lock`, 1000)).toBe(true);
+    expect(await b.acquire(`${prefix}shared-lock`, 1000)).toEqual(expect.any(String));
     expect(await a.acquire(`${prefix}shared-lock`, 1000)).toBe(false);
   });
 });

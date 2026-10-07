@@ -1,5 +1,5 @@
 import { FrontendRoute } from '@/components/frontend-route';
-import { getAuthedApiClient } from '@/lib/api';
+import { apiAssetUrl, getAuthedApiClient } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,7 @@ export default async function PreviewPage({
       {themeId ? (
         <link
           rel="stylesheet"
-          href={`${process.env.API_BASE_URL ?? 'http://127.0.0.1:3001'}/themes/${encodeURIComponent(themeId)}/theme.css`}
+          href={apiAssetUrl(`/themes/${encodeURIComponent(themeId)}/theme.css`)}
         />
       ) : null}
       <FrontendRoute path={routePath} themeId={themeId ?? undefined} />

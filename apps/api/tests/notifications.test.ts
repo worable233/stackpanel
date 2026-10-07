@@ -8,17 +8,48 @@ function createFakeDb() {
   const rows: Array<Record<string, unknown>> = [];
   let seq = 0;
 
+  const matchesWhere = (row: Record<string, unknown>, where: Record<string, unknown> | undefined): boolean => {
+    if (!where) return true;
+    if (where.userId !== undefined && row.userId !== where.userId) return false;
+    if (where.id !== undefined && row.id !== where.id) return false;
+    if (where.readAt !== undefined && where.readAt === null && row.readAt !== null) return false;
+    if ('userId_dedupeKey' in where) {
+      const key = where.userId_dedupeKey as { userId?: string; dedupeKey?: string };
+      if (key.userId !== undefined && row.userId !== key.userId) return false;
+      if (key.dedupeKey !== undefined && row.dedupeKey !== key.dedupeKey) return false;
+    }
+    return true;
+  };
+
+  const stamp = (row: Record<string, unknown>): Record<string, unknown> => {
+    const now = new Date();
+    return { id: `ntf-${++seq}`, readAt: null, status: 'info', progress: null, createdAt: now, updatedAt: now, ...row };
+  };
+
   const api = {
     notification: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        const row = {
-          id: `ntf-${++seq}`,
-          readAt: null,
-          createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, seq)),
-          ...data,
-        };
+        const row = stamp(data);
         rows.push(row);
         return row;
+      }),
+      update: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: Record<string, unknown>;
+          data: Record<string, unknown>;
+        }) => {
+          const row = rows.find((candidate) => matchesWhere(candidate, where));
+          if (!row) throw new Error('not found');
+          for (const [key, value] of Object.entries(data)) row[key] = value;
+          row.updatedAt = new Date(row.updatedAt as Date);
+          return row;
+        },
+      ),
+      findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        return rows.find((candidate) => matchesWhere(candidate, where)) ?? null;
       }),
       findMany: vi.fn(
         async ({
@@ -32,19 +63,11 @@ function createFakeDb() {
           cursor?: string | { id: string };
           skip?: number;
         }) => {
-          let list = rows
-            .filter((row) => {
-              if (where.userId !== undefined && row.userId !== where.userId) return false;
-              if (where.readAt !== undefined && where.readAt === null && row.readAt !== null) {
-                return false;
-              }
-              return true;
-            })
-            .sort((a, b) => {
-              const created = Number(b.createdAt) - Number(a.createdAt);
-              if (created !== 0) return created;
-              return String(b.id).localeCompare(String(a.id));
-            });
+          let list = rows.filter((row) => matchesWhere(row, where)).sort((a, b) => {
+            const created = Number(b.createdAt) - Number(a.createdAt);
+            if (created !== 0) return created;
+            return String(b.id).localeCompare(String(a.id));
+          });
           const cursorId = typeof cursor === 'string' ? cursor : (cursor as { id?: string })?.id;
           if (cursorId) {
             const index = list.findIndex((row) => row.id === cursorId);
@@ -58,11 +81,7 @@ function createFakeDb() {
       ),
       count: vi.fn(
         async ({ where }: { where?: Record<string, unknown> }) =>
-          rows.filter(
-            (row) =>
-              (where?.userId === undefined || row.userId === where.userId) &&
-              (where?.readAt === undefined || (where.readAt === null && row.readAt === null)),
-          ).length,
+          rows.filter((row) => matchesWhere(row, where)).length,
       ),
       updateMany: vi.fn(
         async ({
@@ -72,16 +91,11 @@ function createFakeDb() {
           where: Record<string, unknown>;
           data: Record<string, unknown>;
         }) => {
-          const matches = rows.filter(
-            (row) =>
-              (where.userId === undefined || row.userId === where.userId) &&
-              (where.id === undefined || row.id === where.id) &&
-              (where.readAt === undefined || (where.readAt === null && row.readAt === null)),
-          );
-          for (const row of matches) {
+          const matched = rows.filter((row) => matchesWhere(row, where));
+          for (const row of matched) {
             for (const [key, value] of Object.entries(data)) row[key] = value;
           }
-          return { count: matches.length };
+          return { count: matched.length };
         },
       ),
     },
@@ -128,6 +142,80 @@ describe('KernelNotificationsService', () => {
     expect(typeof view.createdAt).toBe('string');
     expect(seen).toHaveLength(1);
     expect((seen[0] as { notification: unknown }).notification).toEqual(view);
+  });
+
+  it('upserting a live notification advances the same row in place', async () => {
+    const created = await service.upsert({
+      userId: 'user-1',
+      dedupeKey: 'frontend-apply',
+      type: 'system.frontend-apply',
+      title: '安装中：插件「A」',
+      body: '第 1/4 步',
+      status: 'active',
+      progress: 25,
+    });
+    expect(created.status).toBe('active');
+    expect(created.progress).toBe(25);
+    expect(db.rows).toHaveLength(1);
+
+    const updated = await service.upsert({
+      userId: 'user-1',
+      dedupeKey: 'frontend-apply',
+      type: 'system.frontend-apply',
+      title: '插件「A」安装完成',
+      status: 'success',
+      progress: 100,
+    });
+    // Same row, rewritten.
+    expect(updated.id).toBe(created.id);
+    expect(db.rows).toHaveLength(1);
+    expect(updated.title).toBe('插件「A」安装完成');
+    expect(updated.status).toBe('success');
+    expect(updated.progress).toBe(100);
+  });
+
+  it('upserting re-surfaces a read activity as unread and publishes updated', async () => {
+    const events_: unknown[] = [];
+    events.subscribe('notification.updated', (payload) => events_.push(payload));
+    const created = await service.upsert({
+      userId: 'user-1',
+      dedupeKey: 'job',
+      type: 'system.job',
+      title: '进行中',
+      status: 'active',
+      progress: 10,
+    });
+    await service.markRead('user-1', created.id);
+    expect(await service.unreadCount('user-1')).toBe(0);
+
+    const advanced = await service.upsert({
+      userId: 'user-1',
+      dedupeKey: 'job',
+      type: 'system.job',
+      title: '进行中',
+      status: 'active',
+      progress: 50,
+    });
+    expect(advanced.readAt).toBeNull();
+    expect(await service.unreadCount('user-1')).toBe(1);
+    expect(events_).toHaveLength(1);
+  });
+
+  it('upsert is scoped per user for the same dedupe key', async () => {
+    const a = await service.upsert({
+      userId: 'user-1',
+      dedupeKey: 'k',
+      type: 't',
+      title: '甲',
+    });
+    const b = await service.upsert({
+      userId: 'user-2',
+      dedupeKey: 'k',
+      type: 't',
+      title: '乙',
+    });
+    expect(a.id).not.toBe(b.id);
+    expect(db.rows).toHaveLength(2);
   });
 
   it('lists newest first with an unread count', async () => {

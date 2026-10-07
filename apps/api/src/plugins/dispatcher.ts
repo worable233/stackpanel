@@ -10,7 +10,7 @@ import type {
   RouteHandler,
 } from '@stackpanel/sdk';
 import { requireAuth, requirePermission, requireOpenScope } from './auth.ts';
-import { rawBodyStream } from './body.ts';
+import { limitedRawBodyStream } from './body.ts';
 import { normalizeErrorBody } from '../lib/problem.ts';
 import { runIdempotent } from '../lib/idempotency.ts';
 import { enforceTokenQuota } from '../lib/open-api-guard.ts';
@@ -239,6 +239,8 @@ async function dispatchRaw(
   }
   if (typeof route.timeout === 'number' && route.timeout > 0) {
     response.setTimeout(route.timeout, () => response.destroy());
+  } else {
+    response.setTimeout(60_000, () => response.destroy());
   }
 
   const clientCloseListeners: Array<() => void> = [];
@@ -275,7 +277,7 @@ async function dispatchRaw(
     params,
     query: new URLSearchParams(queryIndex >= 0 ? request.url.slice(queryIndex + 1) : ''),
     headers: request.headers,
-    body: rawBodyStream(request),
+    body: limitedRawBodyStream(request, route.bodyLimit ?? 10 * 1024 * 1024),
     ip: request.ip,
     ...(request.user
       ? {
@@ -308,11 +310,16 @@ async function dispatchRaw(
   } catch (error) {
     request.log.error(error);
     if (!response.headersSent) {
-      response.statusCode = 500;
+      const statusCode =
+        typeof error === 'object' && error !== null &&
+        (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
+          ? 413
+          : 500;
+      response.statusCode = statusCode;
       response.setHeader('content-type', 'application/problem+json; charset=utf-8');
       response.end(
         JSON.stringify(
-          normalizeErrorBody(500, { error: '服务器内部错误' }, {
+          normalizeErrorBody(statusCode, { error: statusCode === 413 ? '请求体过大' : '服务器内部错误' }, {
             instance: request.url,
             requestId: request.id,
           }),

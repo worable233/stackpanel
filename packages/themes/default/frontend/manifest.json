@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
-  "revision": "aae92f155d28",
+  "revision": "b797e6526f26",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -187,6 +187,84 @@
             "name": "stat3Desc",
             "label": "统计说明三",
             "default": "工程师的响应跨越每一个时区，我们相信，问题应该在今天被解决。"
+          }
+        ]
+      },
+      {
+        "id": "regions",
+        "label": "服务区域",
+        "fields": [
+          {
+            "type": "text",
+            "name": "regionKicker",
+            "label": "区块小标",
+            "default": "服务区域"
+          },
+          {
+            "type": "text",
+            "name": "regionTitle",
+            "label": "区块标题",
+            "default": "一张网络，覆盖你的每一个用户"
+          },
+          {
+            "type": "textarea",
+            "name": "regionText",
+            "label": "区块说明",
+            "default": "我们把节点部署在离用户最近的地方。标记的每一处，都是真实运行中的服务区域。"
+          },
+          {
+            "type": "list",
+            "name": "regionItems",
+            "label": "区域列表",
+            "itemLabelField": "city",
+            "help": "名称、城市、纬度、经度、状态（online / building / planned）。请填写真实机房信息。",
+            "default": [],
+            "fields": [
+              {
+                "type": "text",
+                "name": "name",
+                "label": "区域名称"
+              },
+              {
+                "type": "text",
+                "name": "city",
+                "label": "城市"
+              },
+              {
+                "type": "number",
+                "name": "lat",
+                "label": "纬度",
+                "step": 0.0001,
+                "default": 0
+              },
+              {
+                "type": "number",
+                "name": "lng",
+                "label": "经度",
+                "step": 0.0001,
+                "default": 0
+              },
+              {
+                "type": "select",
+                "name": "status",
+                "label": "状态",
+                "default": "online",
+                "options": [
+                  {
+                    "label": "运行中",
+                    "value": "online"
+                  },
+                  {
+                    "label": "建设中",
+                    "value": "building"
+                  },
+                  {
+                    "label": "规划中",
+                    "value": "planned"
+                  }
+                ]
+              }
+            ]
           }
         ]
       },

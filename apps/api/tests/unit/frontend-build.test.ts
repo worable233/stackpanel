@@ -1,10 +1,15 @@
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { closeRedis, getRedis, pingRedis } from '@stackpanel/db';
-import { FrontendBuilder, frontendBuildChannel } from '../../src/lib/frontend-build.ts';
-
+import {
+  FrontendBuilder,
+  frontendBuildChannel,
+  runFrontendBuild,
+  type FrontendCommandRunner,
+} from '../../src/lib/frontend-build.ts';
+import { frontendApplySteps } from '../../src/lib/frontend-apply.ts';
 /**
  * Frontend build orchestration (S7 / ADR-0017 §5).
  *
@@ -166,3 +171,96 @@ describe.skipIf(!redis)('FrontendBuilder (redis nudge)', () => {
     }
   });
 });
+
+describe('runFrontendBuild', () => {
+  it('dev apply steps omit service stop/restart', () => {
+    expect(frontendApplySteps({ target: 'plugin', action: 'remove', rebuild: true, dev: true })).toEqual([
+      '移除插件前端资源',
+      '生成前端产物',
+    ]);
+    expect(frontendApplySteps({ target: 'plugin', action: 'remove', rebuild: true, dev: false })).toEqual([
+      '停止当前服务',
+      '移除插件前端资源',
+      '生成前端产物',
+      '重启服务',
+    ]);
+  });
+
+  it('in dev only regenerates the frontend registry (no next build)', async () => {
+    const dir = await makeDataDir();
+    const commands: string[] = [];
+    const runner: FrontendCommandRunner = async (command, args) => {
+      commands.push([command, ...args].join(' '));
+      return { code: 0 };
+    };
+    await runFrontendBuild(
+      {
+        requestedAt: new Date().toISOString(),
+        requestedBy: null,
+        reason: 'plugin.install',
+        target: 'plugin',
+        action: 'install',
+        rebuild: true,
+      },
+      { runCommand: runner, dev: true },
+    );
+    expect(commands).toEqual(['pnpm build:frontend']);
+    // The request is consumed so the admin banner clears.
+    await expect(
+      readFileSafe(path.join(dir, 'frontend-apply.request.json')),
+    ).resolves.toBeNull();
+  });
+
+  it('in production also builds the Next bundle', async () => {
+    await makeDataDir();
+    const commands: string[] = [];
+    const runner: FrontendCommandRunner = async (command, args) => {
+      commands.push([command, ...args].join(' '));
+      return { code: 0 };
+    };
+    await runFrontendBuild(
+      {
+        requestedAt: new Date().toISOString(),
+        requestedBy: null,
+        reason: 'plugin.install',
+        target: 'plugin',
+        action: 'install',
+        rebuild: true,
+      },
+      { runCommand: runner, dev: false },
+    );
+    expect(commands).toEqual([
+      'pnpm build:frontend',
+      'pnpm --filter @stackpanel/web build',
+    ]);
+  });
+
+  it('reports failure and keeps the request cleared without a signature', async () => {
+    const dir = await makeDataDir();
+    const runner: FrontendCommandRunner = async () => ({ code: 1 });
+    await runFrontendBuild(
+      {
+        requestedAt: new Date().toISOString(),
+        requestedBy: null,
+        reason: 'plugin.install',
+        target: 'plugin',
+        action: 'install',
+        rebuild: true,
+      },
+      { runCommand: runner, dev: true },
+    );
+    const status = JSON.parse(
+      (await readFileSafe(path.join(dir, 'frontend-apply.status.json'))) ?? '{}',
+    ) as { state?: string; message?: string };
+    expect(status.state).toBe('failed');
+    expect(status.message).toContain('前端资源编译失败');
+  });
+});
+
+async function readFileSafe(file: string): Promise<string | null> {
+  try {
+    return await readFile(file, 'utf8');
+  } catch {
+    return null;
+  }
+}

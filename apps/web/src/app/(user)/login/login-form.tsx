@@ -1,48 +1,50 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
+import { AuthShell, type AuthProvider } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LocaleSwitcher } from '@/components/locale-switcher';
-import { localeOptions } from '@/i18n/core';
-import { useLocale, useTranslator } from '@/i18n/provider';
+import { useTranslator } from '@/i18n/provider';
 import { loginAction } from '@/lib/actions';
 
 export function LoginForm({
   nextPath,
-  hasWowId = false,
+  providers = [],
+  platformName,
+  platformDescription,
+  logoSrc,
 }: {
   nextPath?: string;
-  hasWowId?: boolean;
+  providers?: AuthProvider[];
+  platformName: string;
+  platformDescription?: string;
+  logoSrc?: string | null;
 }) {
   const [state, action, pending] = useActionState(loginAction, {});
   const [showPassword, setShowPassword] = useState(false);
-  const locale = useLocale();
   const t = useTranslator();
   return (
-    <main className="flex flex-1 items-center justify-center p-8">
-      <form
-        action={action}
-        className="w-full max-w-sm space-y-5 rounded-lg border bg-card p-6 text-card-foreground shadow-sm"
-      >
-        <div className="flex justify-end">
-          <LocaleSwitcher
-            locale={locale}
-            items={localeOptions()}
-            ariaLabel={t('localeSwitcher.ariaLabel')}
-          />
-        </div>
+    <AuthShell
+      mode="login"
+      platformName={platformName}
+      platformDescription={platformDescription}
+      logoSrc={logoSrc}
+      providers={providers}
+    >
+      <form action={action} className="space-y-5">
         <input type="hidden" name="next" value={nextPath ?? ''} />
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{t('auth.login.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('auth.login.subtitle')}</p>
-        </div>
         <div className="space-y-2">
           <Label htmlFor="email">{t('auth.login.email')}</Label>
-          <Input id="email" name="email" type="email" autoComplete="email" required />
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            className="py-2.5"
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">{t('auth.login.password')}</Label>
@@ -53,7 +55,7 @@ export function LoginForm({
               type={showPassword ? 'text' : 'password'}
               autoComplete="current-password"
               required
-              className="pr-9"
+              className="py-2.5 pr-9"
             />
             <button
               type="button"
@@ -66,32 +68,10 @@ export function LoginForm({
           </div>
         </div>
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        <Button type="submit" disabled={pending} className="w-full">
+        <Button type="submit" disabled={pending} className="h-10 w-full text-base">
           {pending ? t('auth.login.submitting') : t('auth.login.submit')}
         </Button>
-        {hasWowId ? (
-          <>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="h-px flex-1 bg-border" />
-              {t('auth.login.or')}
-              <span className="h-px flex-1 bg-border" />
-            </div>
-            <Button
-              variant="outline"
-              className="w-full"
-              render={<Link href="/auth/oauth/wowid/start" />}
-            >
-              {t('auth.login.wowid')}
-            </Button>
-          </>
-        ) : null}
-        <p className="text-center text-sm text-muted-foreground">
-          {t('auth.login.noAccount')}
-          <Link className="text-foreground underline underline-offset-4" href="/register">
-            {t('auth.login.register')}
-          </Link>
-        </p>
       </form>
-    </main>
+    </AuthShell>
   );
 }

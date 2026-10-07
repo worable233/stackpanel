@@ -24,6 +24,9 @@ class RoutedStateService implements StateService {
   get(key: string): Promise<string | null> {
     return this.active.get(key);
   }
+  consume(key: string): Promise<string | null> {
+    return this.active.consume(key);
+  }
   set(key: string, value: string, ttlMs?: number): Promise<void> {
     return this.active.set(key, value, ttlMs);
   }
@@ -36,11 +39,11 @@ class RoutedStateService implements StateService {
   decr(key: string): Promise<number> {
     return this.active.decr(key);
   }
-  acquire(key: string, ttlMs: number): Promise<boolean> {
+  acquire(key: string, ttlMs: number): Promise<string | null> {
     return this.active.acquire(key, ttlMs);
   }
-  release(key: string): Promise<void> {
-    return this.active.release(key);
+  release(key: string, token: string): Promise<boolean> {
+    return this.active.release(key, token);
   }
   withLock(key: string, ttlMs: number, fn: () => Promise<void>): Promise<boolean> {
     return this.active.withLock(key, ttlMs, fn);

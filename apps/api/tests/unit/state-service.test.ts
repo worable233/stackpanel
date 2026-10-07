@@ -22,10 +22,19 @@ describe('MemoryStateService', () => {
 
   it('exposes a mutual-exclusion lock', async () => {
     const state = new MemoryStateService();
-    expect(await state.acquire('lock', 1000)).toBe(true);
-    expect(await state.acquire('lock', 1000)).toBe(false);
-    await state.release('lock');
-    expect(await state.acquire('lock', 1000)).toBe(true);
+    const token = await state.acquire('lock', 1000);
+    expect(token).toEqual(expect.any(String));
+    expect(await state.acquire('lock', 1000)).toBeNull();
+    expect(await state.release('lock', token as string)).toBe(true);
+    expect(await state.acquire('lock', 1000)).toEqual(expect.any(String));
+  });
+
+  it('cannot release another owner lock', async () => {
+    const state = new MemoryStateService();
+    const token = await state.acquire('owned', 1000);
+    expect(await state.release('owned', 'wrong-token')).toBe(false);
+    expect(await state.get('owned')).toBe(token);
+    expect(await state.release('owned', token as string)).toBe(true);
   });
 
   it('skips withLock when the lock is busy and releases afterwards', async () => {

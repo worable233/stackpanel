@@ -5,7 +5,6 @@ import {
   Bell,
   Blocks,
   Box,
-  Code2,
   LayoutDashboard,
   Palette,
   ScrollText,
@@ -26,7 +25,6 @@ const NAVIGATION_ICONS: Record<string, LucideIcon> = {
   '/admin/plugins': Blocks,
   '/admin/rbac': ShieldCheck,
   '/admin/audit': ScrollText,
-  '/admin/developer': Code2,
   '/admin/themes': Palette,
   '/admin/notifications': Bell,
 };
@@ -46,6 +44,7 @@ export function AdminShell({ user, items, children, brandLogoUrl }: AdminShellPr
       rootHref="/admin"
       navigationIcons={NAVIGATION_ICONS}
       defaultIcon={Box}
+      contentMaxWidth="max-w-6xl"
       backLink={{ label: '', href: '/', messageKey: 'nav.backToSite' }}
       brandLogoUrl={brandLogoUrl}
     >
