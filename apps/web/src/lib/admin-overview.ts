@@ -64,53 +64,12 @@ const productsResponseSchema = z.object({
       currency: z.string(),
       stock: z.number(),
       status: z.string(),
+      fulfillmentType: z.string(),
       createdAt: z.string(),
     }),
   ),
   total: z.number(),
 });
-
-const adminTicketsSchema = z.object({
-  tickets: z.array(
-    z.object({
-      id: z.string(),
-      subject: z.string(),
-      status: z.string(),
-      priority: z.string(),
-      userEmail: z.string().nullable().optional(),
-      createdAt: z.string(),
-      updatedAt: z.string(),
-    }),
-  ),
-  total: z.number(),
-});
-
-export interface RecentTicket {
-  id: string;
-  subject: string;
-  status: string;
-  priority: string;
-  userEmail: string | null;
-  createdAt: string;
-}
-
-/** Recent support tickets for the admin dashboard (empty when the ticket plugin is off). */
-export async function loadRecentTickets(): Promise<RecentTicket[]> {
-  try {
-    const api = await getAuthedApiClient();
-    const result = await api.get('/ticket/admin/tickets?page=1&pageSize=6', adminTicketsSchema);
-    return (result.tickets ?? []).map((ticket) => ({
-      id: ticket.id,
-      subject: ticket.subject,
-      status: ticket.status,
-      priority: ticket.priority,
-      userEmail: ticket.userEmail ?? null,
-      createdAt: ticket.createdAt,
-    }));
-  } catch {
-    return [];
-  }
-}
 
 const MONTH_KEYS = Array.from({ length: 12 }, (_, i) => {
   const d = new Date();
@@ -193,7 +152,6 @@ export async function loadAdminOverview(
   ]);
 
   const paid = orders.filter((o) => o.status === 'PAID');
-  const pending = orders.filter((o) => o.status === 'PENDING');
 
   const revenue = paid.reduce((sum, o) => sum + o.total, 0);
 
@@ -220,18 +178,12 @@ export async function loadAdminOverview(
   const weekSeries = rangeDays.map((key) => ({
     day: key,
     revenue: rangePaid.filter((o) => dayKey(o.createdAt) === key).reduce((s, o) => s + o.total, 0),
+    pipeline: rangeOrders
+      .filter((o) => dayKey(o.createdAt) === key && o.status !== 'CANCELLED')
+      .reduce((s, o) => s + o.total, 0),
   }));
 
-  const sourceCounts = new Map<string, number>();
-  for (const o of rangePaid) {
-    for (const item of extractItems(o.items)) {
-      sourceCounts.set(item.name, (sourceCounts.get(item.name) ?? 0) + item.price * item.quantity);
-    }
-  }
-  const sourceBreakdown = Array.from(sourceCounts.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5);
+  const paidRevenue = rangePaid.reduce((s, o) => s + o.total, 0);
 
   const productStats = new Map<string, { sales: number; revenue: number }>();
   for (const o of rangePaid) {
@@ -243,9 +195,20 @@ export async function loadAdminOverview(
     }
   }
   const topProducts = Array.from(productStats.entries())
-    .map(([name, v]) => ({ name, ...v }))
+    .map(([name, v]) => ({
+      name,
+      ...v,
+      pct: paidRevenue > 0 ? Math.round((v.revenue / paidRevenue) * 100) : 0,
+    }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 5);
+
+  const walletBalance = walletsRes.accounts.reduce((s, a) => s + a.balance, 0);
+
+  const recentUsers = [...usersRes.users]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 5)
+    .map((u) => ({ id: u.id, email: u.email, createdAt: u.createdAt }));
 
   const emailById = new Map(usersRes.users.map((u) => [u.id, u.email]));
 
@@ -267,40 +230,58 @@ export async function loadAdminOverview(
     return ((current - previous) / previous) * 100;
   };
 
-  const recentOrders = rangeOrders.slice(0, 8).map((o) => {
-    const items = extractItems(o.items);
-    return {
-      id: o.id.slice(-6).toUpperCase(),
+  const recentOrders = [...rangeOrders]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 6)
+    .map((o) => {
+      const items = extractItems(o.items);
+      return {
+        id: o.id.slice(-6).toUpperCase(),
+        customer: emailById.get(o.userId) ?? '',
+        product: items.map((it) => it.name).join('、') || '-',
+        total: o.total,
+        status: o.status,
+        createdAt: o.createdAt,
+      };
+    });
+
+  const monthOrders = orders.filter((o) => monthKey(o.createdAt) === thisMonthKey);
+
+  const orderRows = [...orders]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((o) => ({
+      id: o.id,
       customer: emailById.get(o.userId) ?? '',
-      product: items.map((it) => it.name).join('、') || '-',
+      itemCount: extractItems(o.items).reduce((s, it) => s + it.quantity, 0),
       total: o.total,
       status: o.status,
       createdAt: o.createdAt,
-    };
-  });
+    }));
 
-  const recentEvents = rangeOrders.slice(0, 6).map((o) => ({
-    time: new Date(o.createdAt).toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
-    orderId: o.id.slice(-6).toUpperCase(),
-    status: o.status,
+  const productRows = productsRes.products.map((p) => ({
+    id: p.id,
+    name: p.name,
+    price: p.price,
+    currency: p.currency,
+    stock: p.stock,
+    status: p.status,
+    fulfillmentType: p.fulfillmentType,
+    createdAt: p.createdAt,
   }));
-
-  const walletBalance = walletsRes.accounts.reduce((s, a) => s + a.balance, 0);
 
   return {
     range: { from: range.from, to: range.to },
     totals: {
       revenue,
       orderCount: orders.length,
-      pendingCount: pending.length,
       userCount: usersRes.total,
       walletBalance,
       productCount: productsRes.total,
       activeProductCount: productsRes.products.filter((p) => p.status === 'ACTIVE').length,
       walletAccountCount: walletsRes.accounts.length,
+      monthOrderCount: monthOrders.length,
+      monthOrderAmount: monthOrders.reduce((s, o) => s + o.total, 0),
+      paidOrderCount: paid.length,
     },
     deltas: {
       revenuePct: pct(thisMonthRevenue, lastMonthRevenue),
@@ -311,9 +292,10 @@ export async function loadAdminOverview(
     revenueSeries,
     weekSeries,
     statusBreakdown,
-    sourceBreakdown,
     topProducts,
     recentOrders,
-    recentEvents,
+    recentUsers,
+    orderRows,
+    productRows,
   };
 }

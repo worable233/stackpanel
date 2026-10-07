@@ -248,6 +248,30 @@ export interface UpstreamProductResponse {
   item: UpstreamProductItem | null;
 }
 
+/** One upstream already-purchased service shown in the admin bind dialog. */
+export interface AdminUpstreamServiceItem {
+  id: string;
+  name: string;
+  productName: string | null;
+  status: string | null;
+  statusLabel: string | null;
+  host: string | null;
+  expiresAt: string | null;
+  amount: number | null;
+  currency: string | null;
+  sourceId: string;
+  /** Local service id when this upstream service is already bound to this user. */
+  boundServiceId: string | null;
+  /** User id when this upstream service is bound to a different account. */
+  boundUserId: string | null;
+}
+
+/** Response of GET /admin/users/:id/upstream-services. */
+export interface AdminUserUpstreamServicesResponse {
+  sources: UpstreamSourceInfo[];
+  services: AdminUpstreamServiceItem[];
+}
+
 /** Append-only security and operations audit entry. */
 export interface AuditLogEntry {
   id: string;
@@ -551,6 +575,8 @@ export interface PermissionInfo {
   id: string;
   key: string;
   name: string;
+  /** Optional human-readable explanation supplied by the declaring plugin. */
+  description: string | null;
 }
 
 /** Response of GET /admin/permissions. */
@@ -569,7 +595,11 @@ export interface PermissionGroupInfo {
 
 /** A permission group including its granted permissions. */
 export interface PermissionGroupView extends PermissionGroupInfo {
-  permissions: Array<Pick<PermissionInfo, 'key' | 'name'>>;
+  /** Number of users assigned to this group. */
+  memberCount: number;
+  /** Built-in admin/user groups: load-bearing and cannot be deleted. */
+  structural: boolean;
+  permissions: Array<Pick<PermissionInfo, 'key' | 'name' | 'description'>>;
 }
 
 /** Response of GET /admin/permission-groups. */

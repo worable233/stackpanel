@@ -4,7 +4,8 @@
 #
 #   docker build --target runtime -t stackpanel .
 
-FROM node:22-bookworm-slim AS base
+ARG NODE_BASE_IMAGE=node:22-bookworm-slim
+FROM ${NODE_BASE_IMAGE} AS base
 ENV PNPM_HOME=/opt/pnpm
 ENV PATH="${PATH}:${PNPM_HOME}"
 RUN corepack enable && corepack prepare pnpm@11.5.1 --activate

@@ -4,10 +4,9 @@
 > `routes.ts` 的 `buildService()` 注入；阶段 B 异步化已由 `media/{variants,worker,jobs}.ts` 落地
 > （BullMQ 任务 + 失败重试 + 回填清扫，见 §5）。本文档保留为设计记录。
 
-本文档给出「补齐 `ImageTransformer` 真实编码器」的落地方案。当前实现只做**规划**
-（`planImageVariants`）与**尽力而为的写盘**，唯一的 `ImageTransformer` 实现是
-`unavailableImageTransformer`（`supports()` 恒为 `false`），因此**永远不会产出变体字节**。
-这是本域唯一的功能性缺口。规划与策略已稳定，本方案只补「产生字节」这一格，不动其余契约。
+本文档现在是实现记录，不再是待执行方案。`sharp-transformer.ts` 已接入
+`routes.ts`，阶段 A 同步兜底和阶段 B BullMQ 异步管线均已落地；本文件保留接口、策略和
+回滚约束，供后续替换编码器时参考。
 
 ## 1. 现状
 
@@ -16,8 +15,8 @@
 - 写入：`service.ts` 的 `generateVariants()` 逐条调用 `transform.transform(...)`，把结果
   经 `StorageDriver.put` 落到 `media/<yyyy>/<mm>/<id>/<name>.<ext>`，并写进附件
   `variants` 字段；任一变体失败只 `logger.warn`，**不阻断上传**（ADR-0014 §4 的约束）。
-- 缺的：一个能解码原图、按 `spec.width x spec.height` 重编码为 `webp`/`jpeg`/`png`
-  的实现，以及在 `buildService()` 里把它注入 `transform`。
+- 已实现：`createSharpTransformer()` 解码 PNG/JPEG/GIF/WebP，按
+  `spec.width x spec.height` 生成 WebP/JPEG/PNG，并在 `buildService()` 注入 `transform`。
 
 `ImageTransformer` 的端口签名已经定型，接入是纯加法：
 
@@ -28,9 +27,9 @@ interface ImageTransformer {
 }
 ```
 
-## 2. 选型
+## 2. 已采用的实现
 
-推荐 **`sharp`**（libvips 绑定）：
+采用 **`sharp`**（libvips 绑定）：
 
 - 原生实现，prebuilt 二进制通过 `@img/sharp-<platform>` 可选依赖分发，**无需**在安装期
   编译；锁文件已因其它依赖解析出 `@img/sharp-*`，容器内 `pnpm install` 会按构建平台拉齐。
@@ -40,21 +39,16 @@ interface ImageTransformer {
 备选：`@napi-rs/image` 或把编码放到对象存储服务的服务端变换。若日后托管对象存储自带
 变换，可只替换 `ImageTransformer` 实现，`service.ts` 不动——这正是该端口存在的理由。
 
-## 3. 依赖接入步骤（KERNEL/集成流执行）
+## 3. 已完成的接线
 
-1. `apps/api/package.json` 的 `dependencies` 增加 `"sharp": "^0.34.0"`（版本以当时最新稳定为准）。
-2. `pnpm install`。确认 `apps/api/node_modules/sharp` 存在且 `@img/sharp-<平台>` 被解析。
-3. `apps/api/tsup.config.ts` 的 `external` 数组追加 `'sharp'`（原生模块必须 external，禁止打进
-   bundle；与现有 `pg`/`@aws-sdk/*` 同类）。
-   注：`ImageTransformer` 实现文件走 `await import('sharp')` 惰性载入，即使某平台缺二进制，
-   也只是变体退化，不影响 API 启动。
-4. 运行期镜像（`scripts/deploy.sh` 的单镜像）需保证 `sharp` 及其平台可选依赖随
-   `node_modules` 一起进入运行镜像；pnpm 的部署产物默认已包含。Linux 目标需含
-   `@img/sharp-linux-x64`（glibc）或 `@img/sharp-linuxmusl-x64`（musl）。
+1. `apps/api/package.json` 已声明 `sharp`，锁文件包含平台可选二进制。
+2. `sharp` 通过惰性 `import()` 加载并保持为外部原生模块；缺少原生二进制时只跳过变体，
+   不阻断 API 启动或原图上传。
+3. runtime 镜像随生产平台安装对应的 `@img/sharp-*`；部署仍需使用与目标平台匹配的镜像。
 
 ## 4. 代码接入
 
-新增 `apps/api/src/media/sharp-transformer.ts`（本域所有权）：
+实现位于 `apps/api/src/media/sharp-transformer.ts`：
 
 ```ts
 import type { ImageTransformer, VariantSpec } from './image.ts';
@@ -130,19 +124,19 @@ transform: createSharpTransformer(),
   明确只输出位图。
 - 失败即跳过：任何 `transform` 返回 `null` 或抛错都只记日志，附件仍可用原图，符合 §4。
 
-## 7. 测试
+## 7. 已有测试
 
-- 单元：`sharp-transformer.test.ts` 用内联的极小 PNG（真实可解码），断言 `supports()` 的
+- 单元：`apps/api/tests/unit/media-sharp-transformer.test.ts` 用真实可解码 PNG，断言 `supports()` 的
   类型集合、`transform()` 返回非空且用 `sharp(meta).metadata()` 校验宽高与 `format === 'webp'`；
   再断言损坏字节返回 `null` 而非抛错。
-- 集成：现有 `apps/api/tests/integration/media.test.ts` 上传大图后，断言返回的
+- 集成：`apps/api/tests/integration/media.test.ts` 上传图片后，断言返回的
   `attachment.variants` 非空、`GET /media/:id/content?variant=thumb` 返回 `image/webp`。
-  注意当前测试用的是「仅 IHDR 头」的伪 PNG，sharp 无法解码；补一个真实小 PNG fixture。
-- 缺二进制退化：模拟 `import('sharp')` 失败，断言上传仍 201、`variants` 为空——守护
+  测试使用真实可解码的 PNG fixture。
+- 缺二进制退化：单元测试模拟 `import('sharp')` 失败，断言上传仍成功、`variants` 为空——守护
   「变体不阻断上传」的契约。
-- 阶段 B：`tests/unit/media-variants.test.ts` 覆盖计划/编码/幂等/重试与终态/软失败；
-  `tests/integration/media-async.test.ts` 用真实 Redis 队列验证「上传入队 → worker 产出可读 webp」
-  与回填查询；`tests/unit/media-service.test.ts` 覆盖异步模式下 `pending` 与 409。
+- 阶段 B：`apps/api/tests/unit/media-variants.test.ts` 覆盖计划、编码、幂等、重试与终态；
+  `apps/api/tests/integration/media-async.test.ts` 在 DB/Redis 可用时验证入队和可读 webp（无环境时
+  跳过）；`media-service.test.ts` 覆盖 `pending` 与 409。
 
 ## 8. 回滚
 

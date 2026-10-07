@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
-import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { unzipSync } from 'fflate';
+import * as csstree from 'css-tree';
+import type { CssNode } from 'css-tree';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './frontend.ts';
 import { env } from '../config/env.ts';
@@ -71,35 +73,62 @@ function isForbiddenFile(name: string): boolean {
   return base === '.htaccess' || base.startsWith('.git');
 }
 
-function validateTokenBlock(inner: string): boolean {
-  const declarations = inner
-    .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  for (const declaration of declarations) {
-    if (!/^--[a-zA-Z0-9_-]+\s*:/.test(declaration)) return false;
-    // Reject backslash escapes (e.g. `\75rl(`) that can hide url()/@ injections.
-    if (/url\(|@|expression\(|<\//i.test(declaration) || declaration.includes('\\')) return false;
-  }
-  return true;
-}
-
 /**
  * Validate a theme CSS file: only `:root` and `.dark` blocks are allowed, each
  * containing token-only `--*` custom property declarations. Anything else
  * (at-rules, selectors, url()) is rejected — themes are configuration, not code.
+ *
+ * Parsed with `css-tree` (SECURITY-AUDIT-2026-10-04 I-1) so malformed or
+ * obfuscated input cannot slip past a hand-rolled regex: the AST is walked and
+ * every node is checked against the allowlist.
  */
 export function validateThemeCss(css: string): boolean {
-  const cleaned = css.replace(/\/\*[\s\S]*?\*\//g, '').trim();
-  let result = cleaned
-    .replace(/:root\s*\{([\s\S]*?)\}/gi, (_m, inner: string) =>
-      validateTokenBlock(inner) ? '' : 'INVALID',
-    )
-    .replace(/\.dark\s*\{([\s\S]*?)\}/gi, (_m, inner: string) =>
-      validateTokenBlock(inner) ? '' : 'INVALID',
-    );
-  result = result.replace(/\s+/g, '');
-  return result.length === 0 && !result.includes('INVALID');
+  // Any parse error (unclosed block, stray token, …) fails the whole file rather
+  // than being silently patched into a valid-looking AST.
+  let parseError = false;
+  let ast: CssNode;
+  try {
+    ast = csstree.parse(css, {
+      parseCustomProperty: true,
+      onParseError: () => {
+        parseError = true;
+      },
+    });
+  } catch {
+    return false;
+  }
+  if (parseError) return false;
+  if (ast.type !== 'StyleSheet') return false;
+
+  // The top level may only contain rules; walk the stylesheet's own children so
+  // descendant nodes (selectors, values, functions) are not mistaken for
+  // top-level constructs.
+  return listToArray(ast.children).every((node) => isAllowedThemeRule(node));
+}
+
+/** css-tree's `List` is not an Array; materialise it for `every`. */
+function listToArray(list: csstree.List<CssNode>): CssNode[] {
+  const nodes: CssNode[] = [];
+  list.forEach((node) => nodes.push(node));
+  return nodes;
+}
+
+/** A top-level rule must be `:root`/`.dark` and only declare `--*` tokens. */
+function isAllowedThemeRule(node: CssNode): boolean {
+  if (node.type !== 'Rule') return false;
+  const selector = csstree.generate(node.prelude).trim();
+  if (selector !== ':root' && selector !== '.dark') return false;
+
+  return listToArray(node.block.children).every((child) => {
+    if (child.type !== 'Declaration') return false;
+    if (!child.property.startsWith('--')) return false;
+    const value = csstree.generate(child.value).trim();
+    // A token with no value is meaningless (and often the residue of an
+    // unclosed block), so reject it rather than storing `--x:`.
+    if (value.length === 0) return false;
+    // Reject backslash escapes (e.g. `\75rl(`) that can hide url()/@ injections.
+    return !(/url\(|@|expression\(|<\//i.test(value) || value.includes('\\'));
+  });
 }
 
 /** Parse and validate an uploaded theme ZIP; return files to write on success. */
@@ -252,14 +281,15 @@ export async function seedDefaultTheme(): Promise<void> {
         await cp(frontendDist, path.join(frontendTarget, 'dist'), { recursive: true });
       }
     }
+    // Copy brand assets recursively so nested asset folders are preserved; the
+    // previous non-recursive copy silently broke when any asset subdirectory was
+    // present. Remove the target first so assets deleted upstream do not linger
+    // in the seeded package.
     const assetsSource = path.join(sourceRoot, 'assets');
-    const assetEntries = await readdir(assetsSource).catch(() => []);
-    for (const entry of assetEntries) {
-      await mkdir(path.join(dir, 'assets'), { recursive: true });
-      await writeAtomic(
-        path.join(dir, 'assets', entry),
-        await readFile(path.join(assetsSource, entry)),
-      );
+    if (existsSync(assetsSource)) {
+      const assetsTarget = path.join(dir, 'assets');
+      await rm(assetsTarget, { recursive: true, force: true });
+      await cp(assetsSource, assetsTarget, { recursive: true });
     }
   } catch {
     // No default theme package available at runtime; callers fall back gracefully.

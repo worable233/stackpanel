@@ -35,7 +35,10 @@ export async function adminPermissionGroupRoutes(app: FastifyInstance): Promise<
   app.get('/admin/permission-groups', { preHandler: adminOnly }, async () => {
     const prisma = getPrisma();
     const groups = await prisma.permissionGroup.findMany({
-      include: { permissions: { include: { permission: true } } },
+      include: {
+        permissions: { include: { permission: true } },
+        _count: { select: { members: true } },
+      },
       orderBy: { createdAt: 'asc' },
     });
     return {
@@ -44,9 +47,12 @@ export async function adminPermissionGroupRoutes(app: FastifyInstance): Promise<
         name: group.name,
         description: group.description,
         discount: group.discount,
+        memberCount: group._count.members,
+        structural: STRUCTURAL_GROUP_IDS.includes(group.id),
         permissions: group.permissions.map((gp) => ({
           key: gp.permission.key,
           name: gp.permission.name,
+          description: gp.permission.description,
         })),
       })),
     };

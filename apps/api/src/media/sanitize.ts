@@ -9,4 +9,5 @@
  * HTML with `sanitizeRichText` before persisting it, and renderers may then
  * trust the stored value. Plugins must not bypass this.
  */
-export { isSafeUrl, sanitizeRichText, type SanitizeOptions } from '@stackpanel/sdk';
+export { isSafeUrl } from '@stackpanel/sdk';
+export { sanitizeRichText, type SanitizeOptions } from '@stackpanel/sdk/sanitize';

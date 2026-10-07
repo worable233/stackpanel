@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { PlatformInfo, SigningStatus } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ export function SettingsManager({
       <PlatformInfoSettings platform={platform} />
       <BrandSettings brand={brand} />
       <SigningSettings signing={signing} />
+      <AdvancedSettings />
     </div>
   );
 }
@@ -239,19 +241,34 @@ function SigningSettings({ signing }: { signing: SigningStatus | null }) {
           <Button type="submit" disabled={pending || isMutating || envManaged} className="w-fit">
             {pending || isMutating ? t('admin.settings.saving') : t('admin.settings.signing.submit')}
           </Button>
-          {signing?.configured ? (
-            <Button
-              type="submit"
-              name="clear"
-              value="true"
-              variant="outline"
-              disabled={pending || isMutating || envManaged}
-            >
-              {t('admin.settings.signing.clear')}
-            </Button>
-          ) : null}
         </div>
       </form>
+    </section>
+  );
+}
+
+function AdvancedSettings() {
+  const t = useTranslator();
+
+  return (
+    <section className="flex flex-col gap-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-lg font-semibold">{t('admin.settings.advanced.title')}</h2>
+        <p className="text-sm text-muted-foreground">{t('admin.settings.advanced.description')}</p>
+      </div>
+      <div className="flex items-start justify-between gap-4 rounded-md border bg-muted/30 p-4">
+        <div className="flex flex-col gap-1">
+          <h3 className="text-sm font-medium">
+            {t('admin.settings.advanced.developerConsoleTitle')}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {t('admin.settings.advanced.developerConsoleDescription')}
+          </p>
+        </div>
+        <Button render={<Link href="/admin/developer" />} variant="outline" size="sm" className="shrink-0">
+          {t('admin.settings.advanced.developerConsoleOpen')}
+        </Button>
+      </div>
     </section>
   );
 }

@@ -17,6 +17,7 @@ import { recordTokenUsage } from './lib/open-api-guard.ts';
 import { seedDefaultBrand } from './lib/platform-brand.ts';
 import { PluginDispatcher } from './plugins/dispatcher.ts';
 import { installBodyRouting } from './plugins/body.ts';
+import { extractSession } from './plugins/auth.ts';
 import { ExtensionService } from './extensions/service.ts';
 import { installExtensionRoutes } from './extensions/routes.ts';
 import { installObservability } from './observability/index.ts';
@@ -47,6 +48,7 @@ import { registerMediaRoutes } from './media/index.ts';
 import { mcpRoutes } from './mcp/index.ts';
 import { navRoutes } from './routes/nav.ts';
 import { notificationRoutes } from './routes/notifications.ts';
+import { notificationStreamRoutes } from './routes/notifications-stream.ts';
 import { platformRoutes } from './routes/platform.ts';
 import { seoRoutes } from './routes/seo.ts';
 import { openApiV1Routes } from './routes/open-api-v1.ts';
@@ -80,9 +82,7 @@ function trustProxyOption(): boolean | string[] {
 /** Build a configured Fastify instance. Register all plugins/routes here. */
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (process.env.NODE_ENV === 'production' && !options.redis) {
-    throw new InfraConfigError(
-      '生产环境必须配置 Redis：多副本的限流、会话与状态依赖共享存储。',
-    );
+    throw new InfraConfigError('生产环境必须配置 Redis：多副本的限流、会话与状态依赖共享存储。');
   }
   const app = Fastify({
     // HEAD routes are registered explicitly by the plugin dispatcher.
@@ -105,9 +105,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    // HSTS (SECURITY-AUDIT-2026-10-04 M-2). Safe to send unconditionally:
+    // browsers ignore it on plaintext responses, so it only takes effect once
+    // the site is reached over HTTPS. No `preload` (irreversible opt-in).
+    reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // CSP. The API serves machine surfaces (JSON, assets, streams) that never
+    // run scripts, so `script-src 'self'` is enough there — `'unsafe-inline'`
+    // was only needed by the Swagger UI, which is now an admin-gated island
+    // (SECURITY-AUDIT-2026-10-04 M-3 / L-2) and keeps its own relaxed policy.
+    const isDocs =
+      request.url === '/docs' ||
+      request.url.startsWith('/docs/') ||
+      request.url.startsWith('/docs?');
     reply.header(
       'Content-Security-Policy',
-      "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
+      isDocs
+        ? "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'"
+        : "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'",
     );
     // RFC 7807: normalise every error response to `application/problem+json` in
     // one place (ADR-0012). Success bodies pass through untouched. Legacy
@@ -221,9 +235,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // Multi-replica: share counters through Redis so the limit holds across
     // nodes. Production always has Redis (enforced by readInfraConfig); the
     // in-process store is a development/test fallback.
-    ...(options.redis
-      ? { redis: options.redis, nameSpace: REDIS_KEY_PREFIX.rateLimit }
-      : {}),
+    ...(options.redis ? { redis: options.redis, nameSpace: REDIS_KEY_PREFIX.rateLimit } : {}),
   });
   void app.register(multipart, {
     limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 4 },
@@ -243,55 +255,74 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const dispatcher = new PluginDispatcher();
   app.decorate('pluginDispatcher', dispatcher);
   const extensions = new ExtensionService(getPrisma());
-  void app.register(swaggerUi, {
-    routePrefix: '/docs',
-    transformSpecification: (spec: { paths?: Record<string, unknown> }) => {
-      const paths = (spec.paths ??= {});
-      // Open platform v1 (PLAN-open-platform P1): the public surface is derived
-      // from the capability registry so docs and discovery never drift. Plugin
-      // capabilities contribute once their plugin registers; they are merged
-      // from the dispatcher's alias entries to avoid walking runtime internals.
-      for (const capability of [
-        ...CAPABILITIES,
-        ...dispatcher.listOpenApiRoutes().map((route) => ({
-          method: route.method,
-          path: route.path,
-          summary: `Plugin capability (${route.openApi?.capabilityId ?? route.pluginId})`,
-          scope: route.openApi?.scope ?? route.permission ?? null,
-          mutating: route.openApi?.mutating ?? route.method !== 'GET',
-        })),
-      ]) {
-        const pathItem = (paths[capability.path] ?? {}) as Record<string, unknown>;
-        pathItem[capability.method.toLowerCase()] = toOpenApiOperation({
-          method: capability.method,
-          path: capability.path,
-          summary: capability.summary,
-          scope: capability.scope,
-          mutating: capability.mutating,
-        });
-        paths[capability.path] = pathItem;
+  // Swagger UI exposes every route, permission and internal schema — an ideal
+  // recon target (SECURITY-AUDIT-2026-10-04 M-3). Mount it in an encapsulated
+  // scope whose `onRequest` guard requires `platform.admin`; unauthorized
+  // callers get a plain 404 so the endpoint's existence is not disclosed.
+  void app.register(async (docsScope) => {
+    docsScope.addHook('onRequest', async (request, reply) => {
+      const user = await extractSession(request, reply);
+      if (!user?.permissions.has('platform.admin')) {
+        return reply.code(404).send(
+          buildProblem({
+            status: 404,
+            code: 'request.not_found',
+            instance: request.url,
+            requestId: request.id,
+          }),
+        );
       }
-      for (const entry of dispatcher.list()) {
-        if (entry.kind === 'raw') continue;
-        // Open-platform aliases are already documented from the capability
-        // registry (tag `open-api`); don't overwrite them as plugin routes.
-        if (entry.openApi) continue;
-        const openApiPath = toOpenApiPath(entry.path);
-        const pathItem = (paths[openApiPath] ?? {}) as Record<string, unknown>;
-        pathItem[entry.method.toLowerCase()] = {
-          tags: ['plugins'],
-          summary: `Plugin route (auth: ${entry.auth ?? 'public'})`,
-          ...(entry.auth !== 'public' ? { security: [{ bearerAuth: [] }] } : {}),
-          responses: {
-            200: { description: 'OK' },
-            401: { description: 'Unauthorized' },
-            404: { description: 'Not found (plugin inactive)' },
-          },
-        };
-        paths[openApiPath] = pathItem;
-      }
-      return spec;
-    },
+    });
+    await docsScope.register(swaggerUi, {
+      routePrefix: '/docs',
+      transformSpecification: (spec: { paths?: Record<string, unknown> }) => {
+        const paths = (spec.paths ??= {});
+        // Open platform v1 (PLAN-open-platform P1): the public surface is derived
+        // from the capability registry so docs and discovery never drift. Plugin
+        // capabilities contribute once their plugin registers; they are merged
+        // from the dispatcher's alias entries to avoid walking runtime internals.
+        for (const capability of [
+          ...CAPABILITIES,
+          ...dispatcher.listOpenApiRoutes().map((route) => ({
+            method: route.method,
+            path: route.path,
+            summary: `Plugin capability (${route.openApi?.capabilityId ?? route.pluginId})`,
+            scope: route.openApi?.scope ?? route.permission ?? null,
+            mutating: route.openApi?.mutating ?? route.method !== 'GET',
+          })),
+        ]) {
+          const pathItem = (paths[capability.path] ?? {}) as Record<string, unknown>;
+          pathItem[capability.method.toLowerCase()] = toOpenApiOperation({
+            method: capability.method,
+            path: capability.path,
+            summary: capability.summary,
+            scope: capability.scope,
+            mutating: capability.mutating,
+          });
+          paths[capability.path] = pathItem;
+        }
+        for (const entry of dispatcher.list()) {
+          if (entry.kind === 'raw') continue;
+          // Open-platform aliases are already documented from the capability
+          // registry (tag `open-api`); don't overwrite them as plugin routes.
+          if (entry.openApi) continue;
+          const openApiPath = toOpenApiPath(entry.path);
+          const pathItem = (paths[openApiPath] ?? {}) as Record<string, unknown>;
+          pathItem[entry.method.toLowerCase()] = {
+            tags: ['plugins'],
+            summary: `Plugin route (auth: ${entry.auth ?? 'public'})`,
+            ...(entry.auth !== 'public' ? { security: [{ bearerAuth: [] }] } : {}),
+            responses: {
+              200: { description: 'OK' },
+              401: { description: 'Unauthorized' },
+              404: { description: 'Not found (plugin inactive)' },
+            },
+          };
+          paths[openApiPath] = pathItem;
+        }
+        return spec;
+      },
+    });
   });
 
   // Shared kernel services + plugin runtime. Assembled by the same factory the
@@ -345,6 +376,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(authOAuthRoutes);
   void app.register(navRoutes);
   void app.register(notificationRoutes);
+  // Live notification stream (SSE): same inbox, pushed instead of polled. Kept
+  // a separate module so the frozen REST handlers above stay untouched.
+  void app.register(notificationStreamRoutes);
   // SEO 输送（ADR-0011）：聚合各插件的 `seo.provider`，公开只读。插件负责内容、
   // 平台负责输送；站点源（apps/web）拉取这些端点输出 sitemap/robots/feed。
   void app.register(seoRoutes);

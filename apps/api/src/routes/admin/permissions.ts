@@ -10,7 +10,12 @@ export async function adminPermissionsRoutes(app: FastifyInstance): Promise<void
     const prisma = getPrisma();
     const permissions = await prisma.permission.findMany({ orderBy: { key: 'asc' } });
     return {
-      permissions: permissions.map((p) => ({ id: p.id, key: p.key, name: p.name })),
+      permissions: permissions.map((p) => ({
+        id: p.id,
+        key: p.key,
+        name: p.name,
+        description: p.description,
+      })),
     };
   });
 }

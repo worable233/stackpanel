@@ -310,7 +310,26 @@ export async function adminDeveloperRoutes(app: FastifyInstance): Promise<void> 
     if (data.status !== undefined) patch.status = data.status;
     if (data.scopes !== undefined) patch.scopes = data.scopes;
     if (data.rateLimitRpm !== undefined) patch.rateLimitRpm = data.rateLimitRpm;
-    if (data.webhookUrl !== undefined) patch.webhookUrl = data.webhookUrl;
+    if (data.webhookUrl !== undefined) {
+      patch.webhookUrl = data.webhookUrl;
+      if (data.webhookUrl === null) {
+        // Removing the endpoint also removes the stored signing material.
+        patch.webhookPrivateKey = null;
+        patch.webhookPublicKey = null;
+      } else {
+        // Every endpoint change gets a fresh key so a previous receiver cannot
+        // continue authenticating events sent to the new endpoint.
+        const webhook = generateEd25519KeyPair();
+        try {
+          patch.webhookPrivateKey = protectPrivateKey(webhook.privateKey);
+        } catch {
+          return reply
+            .code(409)
+            .send({ error: '未配置 SETTINGS_ENCRYPTION_KEY，无法安全保存回调签名私钥' });
+        }
+        patch.webhookPublicKey = webhook.publicKey;
+      }
+    }
 
     const updated = await repo.update(params.data.id, patch).catch(() => null);
     if (!updated) return reply.code(404).send({ error: '渠道不存在' });

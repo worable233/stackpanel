@@ -62,10 +62,12 @@ model PermissionGroup {
 /// A declared permission string (e.g. `store.admin`), contributed by plugins
 /// and owned by the platform. Granting to a group makes it effective.
 model Permission {
-  id    String            @id @default(cuid())
-  key   String            @unique
-  name  String
-  groups GroupPermission[]
+  id          String            @id @default(cuid())
+  key         String            @unique
+  name        String
+  /// Optional human-readable explanation, declared by the owning plugin.
+  description String?
+  groups      GroupPermission[]
 
   @@map("permissions")
 }
@@ -280,6 +282,8 @@ model ExtensionSchema {
 
 /// 站内通知：按用户归属的收件箱消息（订单支付、履约失败、系统公告等）。
 /// 由内核 NotificationsService 写入，插件通过 ctx.notifications.create 接入。
+/// `status`/`progress`/`dedupeKey` 支撑「实况通知」：同一条 active 通知按
+/// dedupeKey 原地更新标题/进度，直至 success/error，而非每次追加新行。
 model Notification {
   id        String   @id @default(cuid())
   userId    String
@@ -288,10 +292,15 @@ model Notification {
   body      String?
   link      String?  // 前端深链，如 /account/orders/:id
   data      Json?    // 插件自定义载荷
+  status    String   @default("info") // info | active | success | error
+  progress  Int? // 0–100，仅 active 有意义
+  dedupeKey String? // 实况通知的稳定标识；与 userId 唯一
   readAt    DateTime?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, dedupeKey])
   @@map("notifications")
   @@index([userId, createdAt])
   @@index([userId, readAt])

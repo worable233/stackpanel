@@ -53,7 +53,7 @@ export class FxService implements FxServiceContract {
 
   async quote(from: string, to: string, amountMinor: number): Promise<FxQuote> {
     if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) {
-      throw new FxError(400, '金额无效');
+      throw new FxError(400, '金额无效', 'fx.amount_invalid');
     }
     if (from === to) {
       return {
@@ -66,14 +66,14 @@ export class FxService implements FxServiceContract {
     }
     const rate = await this.getRate(from, to);
     if (!rate) {
-      throw new FxError(409, `未配置 ${from} → ${to} 的汇率`);
+      throw new FxError(409, `未配置 ${from} → ${to} 的汇率`, 'fx.rate_missing');
     }
     // Use BigInt to avoid float precision loss when amount×rate exceeds 2^53.
     const scaled = (BigInt(amountMinor) * BigInt(rate.rate)) / BigInt(RATE_SCALE);
     const remainder = (BigInt(amountMinor) * BigInt(rate.rate)) % BigInt(RATE_SCALE);
     const settlementAmount = Number(scaled) + (remainder * 2n >= BigInt(RATE_SCALE) ? 1 : 0);
     if (settlementAmount <= 0) {
-      throw new FxError(409, `换算金额无效（${from} → ${to}）`);
+      throw new FxError(409, `换算金额无效（${from} → ${to}）`, 'fx.amount_conversion_invalid');
     }
     return {
       fromCurrency: from,

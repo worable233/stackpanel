@@ -89,6 +89,14 @@ services:
     # 默认本地构建；发布版部署用 STACKPANEL_IMAGE 指向 GHCR 镜像（见 docker/README.md）。
     image: ${STACKPANEL_IMAGE:-stackpanel-api:latest}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 256
+    mem_limit: ${API_MEM_LIMIT:-768m}
+    cpus: ${API_CPU_LIMIT:-1.5}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,6 +134,7 @@ services:
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       STACKPANEL_SIGNING_PUBLIC_KEY: ${STACKPANEL_SIGNING_PUBLIC_KEY:-}
       PACKAGE_SIGNATURE_REQUIRED: ${PACKAGE_SIGNATURE_REQUIRED:-true}
+      STACKPANEL_PLUGIN_MAX_OLD_SPACE_MB: ${STACKPANEL_PLUGIN_MAX_OLD_SPACE_MB:-256}
       STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
       STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
       STACKPANEL_DATA_DIR: /app/data
@@ -161,6 +170,14 @@ services:
     # 与 api 同镜像（worker 走 worker 入口）；发布版用 STACKPANEL_IMAGE。
     image: ${STACKPANEL_IMAGE:-stackpanel-api:latest}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 256
+    mem_limit: ${WORKER_MEM_LIMIT:-768m}
+    cpus: ${WORKER_CPU_LIMIT:-1.5}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
     depends_on:
       postgres:
         condition: service_healthy

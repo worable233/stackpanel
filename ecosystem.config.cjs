@@ -10,6 +10,10 @@
 const path = require('node:path');
 
 const DATA_DIR = process.env.STACKPANEL_DATA_DIR || path.join(__dirname, 'data');
+// PM2 must not silently run production as `development`: that would disable the
+// Secure cookie default (SECURITY-AUDIT-2026-10-04 M-1) and other prod-only
+// guards. Respect an explicit NODE_ENV, otherwise assume production.
+const NODE_ENV = process.env.NODE_ENV || 'production';
 
 module.exports = {
   apps: [
@@ -21,7 +25,7 @@ module.exports = {
       autorestart: true,
       max_memory_restart: '512M',
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV,
         STACKPANEL_DATA_DIR: DATA_DIR,
       },
       out_file: '../../logs/api-out.log',
@@ -38,7 +42,7 @@ module.exports = {
       autorestart: true,
       max_memory_restart: '512M',
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV,
         STACKPANEL_DATA_DIR: DATA_DIR,
         STACKPANEL_FRONTEND_AUTOBUILD: process.env.STACKPANEL_FRONTEND_AUTOBUILD || '1',
       },

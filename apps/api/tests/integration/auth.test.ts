@@ -45,7 +45,12 @@ describe.skipIf(!dbAvailable)('auth integration (real DB)', () => {
     const body = res.json() as { token: string; user: { email: string } };
     expect(typeof body.token).toBe('string');
     expect(body.user.email).toBe(email);
-    expect(res.cookies.some((c) => c.name === 'sp_session' && c.httpOnly)).toBe(true);
+    const session = res.cookies.find((c) => c.name === 'sp_session');
+    expect(session?.httpOnly).toBe(true);
+    expect(session?.sameSite?.toLowerCase()).toBe('lax');
+    // The `Secure` flag is forced on in production by `resolveCookieSecure`
+    // (SECURITY-AUDIT-2026-10-04 M-1); it is asserted at the unit level in
+    // `tests/unit/cookie-security.test.ts` because the suite runs as `test`.
   });
 
   it('rejects a wrong password with 401', async () => {

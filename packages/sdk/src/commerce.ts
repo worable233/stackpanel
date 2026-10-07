@@ -7,6 +7,8 @@
  * 与 `store.product.read` / `store.product.update` 同源。
  */
 
+import { KernelError, brandSdkErrorClass, isSdkErrorClass } from './errors.js';
+
 /** 面向调用方的商品视图（售中公开子集 + 管理所需字段）。 */
 export interface CommerceProduct {
   id: string;
@@ -67,17 +69,33 @@ export interface CommerceList<T> {
 export type CommerceServiceAction = 'suspend' | 'resume' | 'terminate';
 
 /** 领域拒绝原因，由调用方（内核）映射为自己的稳定错误码。 */
-export type CommerceFailure = 'product_unavailable' | 'amount_invalid' | 'product_not_found';
+export type CommerceFailure =
+  'product_unavailable' | 'amount_invalid' | 'product_not_found' | 'service_already_bound';
+
+/** HTTP status the kernel error boundary renders for each domain failure. */
+const COMMERCE_FAILURE_STATUS: Record<CommerceFailure, number> = {
+  product_unavailable: 409,
+  amount_invalid: 400,
+  product_not_found: 404,
+  service_already_bound: 409,
+};
 
 /** A deterministic business rejection from the commerce domain. */
-export class CommerceError extends Error {
+export class CommerceError extends KernelError {
   constructor(
     readonly failure: CommerceFailure,
     message: string,
   ) {
-    super(message);
+    super(`commerce.${failure}`, COMMERCE_FAILURE_STATUS[failure] ?? 409, message);
     this.name = 'CommerceError';
   }
+}
+
+brandSdkErrorClass(CommerceError, 'CommerceError');
+
+/** True when `value` is a {@link CommerceError}, even across duplicated SDK modules. */
+export function isCommerceError(value: unknown): value is CommerceError {
+  return isSdkErrorClass(value, 'CommerceError');
 }
 
 export interface CommerceCatalogQuery {
@@ -104,6 +122,32 @@ export interface CommerceServiceInput {
 export interface CommerceServicePatch {
   status?: string | undefined;
   expiresAt?: Date | null | undefined;
+}
+
+/**
+ * 管理端「绑定上游已购服务」入参。
+ *
+ * 与 {@link CommerceServiceInput}（为某用户开通/赠送本地商品）不同：这里不调用
+ * 履约提供方 `provision`，而是把一个**已经存在于上游**的服务登记为本平台某用户
+ * 的交付物（写入 `providerId` + `providerServiceId`）。此后详情/监控/生命周期
+ * 动作仍由对应履约提供方从上游实时读取。
+ */
+export interface CommerceBindServiceInput {
+  userId: string;
+  /** 本地商品 id（上游商品已映射时传入；未映射时用上游商品/占位标识）。 */
+  productId: string;
+  productName: string;
+  fulfillmentType: string;
+  /** 上游提供方 id（与 {@link FulfillmentProvider.id} 一致）。 */
+  providerId: string;
+  /** 上游服务 id（存到交付物 `providerServiceId`）。 */
+  providerServiceId: string;
+  status: string;
+  amount: number;
+  currency: string;
+  expiresAt?: Date | null | undefined;
+  /** 履约提供方解析上游实例所需的运行时数据（如 `{ upstreamId }`）。 */
+  runtime?: unknown;
 }
 
 /**
@@ -136,4 +180,11 @@ export interface CommerceOperations {
   updateService(id: string, patch: CommerceServicePatch): Promise<CommerceService | null>;
   /** 管理端：删除交付物。返回是否命中。 */
   deleteService(id: string): Promise<boolean>;
+  /**
+   * 管理端：把上游已有服务绑定为某用户的交付物（不重新开通上游）。
+   * 同一上游服务已绑定其它账号时抛出领域错误。
+   */
+  bindService(input: CommerceBindServiceInput): Promise<CommerceService>;
+  /** 管理端：列出某上游提供方下所有已绑定的交付物（用于标记「已绑定」）。 */
+  listBoundServices(providerId: string): Promise<CommerceService[]>;
 }

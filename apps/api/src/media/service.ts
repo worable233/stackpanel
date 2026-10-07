@@ -261,13 +261,26 @@ export class AttachmentService {
     if (references && (await references.isReferenced(id))) {
       throw new MediaError(409, 'media.in_use', '附件仍被内容引用，无法删除');
     }
-    // Remove bytes first; a failed metadata delete then leaves an orphan row
-    // (recoverable) rather than an orphan blob (invisible).
+    // Delete metadata first. The attachment_references foreign key is the
+    // final concurrency guard: a reference registered after the read above
+    // makes this delete fail instead of allowing a dangling reference.
+    try {
+      await this.repository.delete(id);
+    } catch (error) {
+      const code = (error as { code?: unknown })?.code;
+      const message = String(error instanceof Error ? error.message : error);
+      if (code === '23503' || message.includes('attachment_references')) {
+        throw new MediaError(409, 'media.in_use', '附件仍被内容引用，无法删除');
+      }
+      throw error;
+    }
+    // Object cleanup is deliberately after metadata deletion. A failed object
+    // delete leaves an orphan blob that the media cleanup job can recover,
+    // while no live database row can point at missing content.
     await this.storage.delete(record.key);
     for (const variant of record.variants) {
       await this.storage.delete(variant.key);
     }
-    await this.repository.delete(id);
   }
 
   /** Resolve the API content URL for a stored key; public and private alike. */

@@ -54,7 +54,8 @@ export async function runSpIdempotent(
     await reply.code(replayed.status).send(replayed.body);
     return;
   }
-  if (!(await store.acquire(`${key}:lock`, LOCK_TTL_MS))) {
+  const lockToken = await store.acquire(`${key}:lock`, LOCK_TTL_MS);
+  if (!lockToken) {
     await reply.code(409).send(
       buildProblem({
         status: 409,
@@ -72,6 +73,6 @@ export async function runSpIdempotent(
     await store.set(key, JSON.stringify({ status: reply.statusCode, body }), REPLAY_TTL_MS);
     await reply.send(body);
   } finally {
-    await store.release(`${key}:lock`);
+    await store.release(`${key}:lock`, lockToken);
   }
 }

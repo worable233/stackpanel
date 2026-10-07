@@ -1,10 +1,5 @@
-import { definePlugin, PluginError } from '@stackpanel/sdk';
-import type {
-  AuthUser,
-  HttpReply,
-  HttpRequest,
-  PluginContext,
-} from '@stackpanel/sdk';
+import { definePlugin, isPluginError, PluginError } from '@stackpanel/sdk';
+import type { AuthUser, HttpReply, HttpRequest, PluginContext } from '@stackpanel/sdk';
 import { z } from 'zod';
 
 const loginSchema = z.object({
@@ -46,16 +41,15 @@ async function allow(kind: 'ip' | 'user', identifier: string, limit: number): Pr
   return count <= limit;
 }
 
-function handle(
-  handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown>,
-) {
+function handle(handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown>) {
   return async (req: HttpRequest, reply: HttpReply): Promise<unknown> => {
     try {
       return await handler(req, reply);
     } catch (error) {
       // Deterministic contract: let the kernel error boundary render the code
-      // (ADR-0012). Anything else stays a generic legacy-shaped error.
-      if (error instanceof PluginError) throw error;
+      // (ADR-0012). Brand check, not `instanceof`, so it holds across the
+      // plugin loader's cache-busted SDK copy too.
+      if (isPluginError(error)) throw error;
       const status = (error as { statusCode?: number }).statusCode ?? 400;
       return reply.code(status).send({ error: (error as Error).message ?? '请求失败' });
     }

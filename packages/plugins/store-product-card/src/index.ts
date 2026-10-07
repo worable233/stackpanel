@@ -10,9 +10,15 @@ import type {
   ProviderServiceContext,
   ServiceDetail,
 } from '@stackpanel/sdk';
-import { ExtensionNotFound, ExtensionVersionConflict } from '@stackpanel/sdk';
+import { isExtensionNotFound, isExtensionVersionConflict } from '@stackpanel/sdk';
 import { z } from 'zod';
-import { bindExtensions, CardError, clearExtensions, extensions, runTransaction } from './context.js';
+import {
+  bindExtensions,
+  CardError,
+  clearExtensions,
+  extensions,
+  runTransaction,
+} from './context.js';
 import { cardCodeModel, type CardCodeData } from './data.js';
 
 /**
@@ -90,7 +96,7 @@ const cardProvider: FulfillmentProvider = {
       } catch (error) {
         // Lost the optimistic-lock race (another buyer claimed it) or the row
         // vanished: try the next available code.
-        if (error instanceof ExtensionVersionConflict || error instanceof ExtensionNotFound) {
+        if (isExtensionVersionConflict(error) || isExtensionNotFound(error)) {
           continue;
         }
         throw error;
@@ -142,7 +148,13 @@ export const storeProductCardPlugin = definePlugin({
     version: '0.2.0',
     description: '发卡/兑换码商品类型：码池管理 + 付款发卡履约。',
     requires: ['store'],
-    permissions: ['store-product-card.admin'],
+    permissions: [
+      {
+        key: 'store-product-card.admin',
+        name: '管理发卡',
+        description: '管理卡密码池并发卡履约（发卡/兑换码商品）。',
+      },
+    ],
     roleTemplates: [{ role: 'ADMIN', permissions: ['store-product-card.admin'] }],
   },
   customModels: [cardCodeModel],
@@ -204,7 +216,7 @@ export const storeProductCardPlugin = definePlugin({
         try {
           await extensions().delete(cardCodeModel, params.data.id);
         } catch (error) {
-          if (error instanceof ExtensionNotFound) throw new CardError(404, '卡密不存在');
+          if (isExtensionNotFound(error)) throw new CardError(404, '卡密不存在');
           throw error;
         }
         return reply.code(204).send();

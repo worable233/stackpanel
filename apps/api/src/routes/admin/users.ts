@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { userListResponseSchema, userResponseSchema } from '../../lib/openapi.ts';
 import { UserAdminService } from '../../lib/user-admin.ts';
 import type { UserAdminActor } from '../../lib/user-admin.ts';
-import { resolveCommerce } from '../../lib/commerce.ts';
+import { resolveCommerce, resolveUpstreamServiceSources } from '../../lib/commerce.ts';
 import { auditContext } from '../../plugins/audit.ts';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
 import { getPrisma } from '../../plugins/prisma.ts';
@@ -27,6 +27,8 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   q: z.string().trim().max(64).optional(),
+  status: z.enum(['ACTIVE', 'DISABLED']).optional(),
+  groupId: z.string().min(1).optional(),
 });
 
 const createUserSchema = z.object({
@@ -60,6 +62,7 @@ function service(request: FastifyRequest): UserAdminService {
     wallet: request.server.wallet,
     auth: request.server.auth,
     commerce: resolveCommerce(request.server.pluginRuntime),
+    upstreamServiceSources: resolveUpstreamServiceSources(request.server.pluginRuntime),
   });
 }
 
@@ -77,7 +80,13 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
         security: [{ bearerAuth: [] }],
         querystring: {
           type: 'object',
-          properties: { page: { type: 'number' }, pageSize: { type: 'number' } },
+          properties: {
+            page: { type: 'number' },
+            pageSize: { type: 'number' },
+            q: { type: 'string' },
+            status: { type: 'string' },
+            groupId: { type: 'string' },
+          },
         },
         response: {
           200: userListResponseSchema,
@@ -257,6 +266,54 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
       const params = serviceParamSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: '请求参数无效' });
       await service(request).deleteService(
+        params.data.id,
+        params.data.serviceId,
+        auditContext(request),
+      );
+      return reply.code(204).send();
+    },
+  );
+
+  // --- Upstream already-purchased services: bind / unbind ------------------
+
+  app.get(
+    '/admin/users/:id/upstream-services',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const params = idParamSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: '请求参数无效' });
+      return service(request).listUpstreamServices(params.data.id);
+    },
+  );
+
+  app.post(
+    '/admin/users/:id/upstream-services',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const params = idParamSchema.safeParse(request.params);
+      const body = z
+        .object({
+          sourceId: z.string().min(1),
+          providerServiceId: z.string().min(1),
+        })
+        .safeParse(request.body);
+      if (!params.success || !body.success) return reply.code(400).send({ error: '请求参数无效' });
+      const result = await service(request).bindUpstreamService(
+        params.data.id,
+        body.data,
+        auditContext(request),
+      );
+      return reply.code(201).send(result);
+    },
+  );
+
+  app.delete(
+    '/admin/users/:id/upstream-services/:serviceId',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const params = serviceParamSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: '请求参数无效' });
+      await service(request).unbindUpstreamService(
         params.data.id,
         params.data.serviceId,
         auditContext(request),

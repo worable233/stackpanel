@@ -1,6 +1,6 @@
 {
   "name": "@stackpanel/net-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "StackPanel 内部网络防护：公网地址校验与 SSRF 过滤（IP 字面量、保留网段、内网主机名）。",
   "private": true,
   "type": "module",

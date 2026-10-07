@@ -17,6 +17,7 @@ import {
 } from '../../lib/frontend-apply.ts';
 import { resolvedFrontendSettings, updateFrontendSettings } from '../../lib/frontend-service.ts';
 import { settingsErrorToMessage } from '../../lib/frontend-settings.ts';
+import { notifyLifecycle } from '../../notifications/lifecycle-notifications.ts';
 import {
   BUILTIN_PLUGIN_IDS,
   loadPluginDefinition,
@@ -202,8 +203,11 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
       } catch {
         return reply.code(413).send({ error: '文件过大或不是有效的 multipart 表单' });
       }
+      let manifestInfo: { id: string; name: string; version: string } | null = null;
+      let wasUpgrade = false;
       try {
         const { manifest, files } = parsePluginZip(data, await readSigningPublicKey());
+        manifestInfo = { id: manifest.id, name: manifest.name, version: manifest.version };
         const runtime = app.pluginRuntime;
         const dependencies = normalizePluginDependencies(manifest.requires);
         const missingDependencies = dependencies.filter(
@@ -233,6 +237,7 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
         const enabled = existing?.enabled ?? true;
 
         const upgraded = runtime.has(manifest.id);
+        wasUpgrade = upgraded;
         const previousDefinition = upgraded ? await loadPluginDefinition(manifest.id) : null;
         const wasActive = upgraded && runtime.isActive(manifest.id);
         const previousHadFrontend = upgraded
@@ -246,7 +251,7 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           // broken module can then be rolled back without taking routes down.
           const definition = await loadPluginDefinition(manifest.id);
           if (upgraded) {
-            await runtime.unregister(manifest.id);
+            await runtime.unregister(manifest.id, { retainData: true });
             oldUnregistered = true;
           }
           await runtime.register(definition);
@@ -267,7 +272,10 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           });
           await fileWrite.commit();
         } catch (err) {
-          if (newRegistered) await runtime.unregister(manifest.id);
+          // Roll back to the previous definition on a failed upgrade; the
+          // candidate never applied a schema diff, so the existing tables must
+          // survive for the restored plugin to re-adopt.
+          if (newRegistered) await runtime.unregister(manifest.id, { retainData: true });
           await fileWrite.rollback();
           if (oldUnregistered && previousDefinition) {
             await runtime.register(previousDefinition);
@@ -298,6 +306,16 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
             rebuild: true,
           });
           frontendApply = { requestedAt: applyRequest.requestedAt };
+        } else {
+          // 无前端产物：不会有实况构建通知，补一条一次性生命周期通知。
+          await notifyLifecycle(request.user?.id, {
+            target: 'plugin',
+            action: upgraded ? 'update' : 'install',
+            label: manifest.name,
+            id: manifest.id,
+            version: manifest.version,
+            ok: true,
+          });
         }
         return reply.code(201).send({
           installed: true,
@@ -308,9 +326,27 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         if (err instanceof PluginError) {
+          await notifyLifecycle(request.user?.id, {
+            target: 'plugin',
+            action: wasUpgrade ? 'update' : 'install',
+            label: manifestInfo?.name ?? '未知插件',
+            id: manifestInfo?.id ?? 'unknown',
+            ...(manifestInfo?.version ? { version: manifestInfo.version } : {}),
+            ok: false,
+            error: err.message,
+          });
           return reply.code(err.status).send({ error: err.message });
         }
         request.log.error({ err }, '插件安装失败');
+        await notifyLifecycle(request.user?.id, {
+          target: 'plugin',
+          action: wasUpgrade ? 'update' : 'install',
+          label: manifestInfo?.name ?? '未知插件',
+          id: manifestInfo?.id ?? 'unknown',
+          ...(manifestInfo?.version ? { version: manifestInfo.version } : {}),
+          ok: false,
+          error: '插件安装失败，请检查插件包是否完整有效',
+        });
         return reply.code(409).send({ error: '插件安装失败，请检查插件包是否完整有效' });
       }
     },
@@ -344,12 +380,30 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           await runtime.activate(id);
           await persistDependencyEnabledState(prisma, runtime, id);
         } catch (err) {
+          await notifyLifecycle(request.user?.id, {
+            target: 'plugin',
+            action: 'enable',
+            label: meta.name,
+            id,
+            version: meta.version,
+            ok: false,
+            error: (err as Error).message,
+          });
           return reply.code(409).send({ error: (err as Error).message });
         }
       } else {
         try {
           await runtime.deactivate(id);
         } catch (err) {
+          await notifyLifecycle(request.user?.id, {
+            target: 'plugin',
+            action: 'disable',
+            label: meta.name,
+            id,
+            version: meta.version,
+            ok: false,
+            error: (err as Error).message,
+          });
           return reply.code(409).send({ error: (err as Error).message });
         }
       }
@@ -382,6 +436,15 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
       });
       // No frontend rebuild here: `/plugins/frontends` filters by active state,
       // so enable/disable takes effect on the next request without a rebuild.
+      // 启用/停用不会触发前端构建，故始终补一条一次性生命周期通知。
+      await notifyLifecycle(request.user?.id, {
+        target: 'plugin',
+        action: enabled ? 'enable' : 'disable',
+        label: meta.name,
+        id,
+        version: meta.version,
+        ok: true,
+      });
       return { id, enabled };
     },
   );
@@ -423,6 +486,15 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           action: 'remove',
           label: removedName,
           rebuild: true,
+        });
+      } else {
+        // 无前端产物：补一条一次性卸载通知。
+        await notifyLifecycle(request.user?.id, {
+          target: 'plugin',
+          action: 'uninstall',
+          label: removedName,
+          id,
+          ok: true,
         });
       }
       return reply.code(204).send();

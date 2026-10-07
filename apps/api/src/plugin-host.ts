@@ -32,6 +32,7 @@ import { getJobRuntime, registerKernelSweeps, createKernelJobContext } from './j
 import { registerBackupJobs } from './backup/jobs.ts';
 import { registerResellerJobs } from './reseller/jobs.ts';
 import { registerMediaJobs } from './media/jobs.ts';
+import { AttachmentReferenceService } from './media/references.ts';
 
 export interface PluginHostLogger {
   info: (message: string) => void;
@@ -65,6 +66,8 @@ export interface PluginHost {
   state: ReturnType<typeof getStateService>;
   /** Extension engine instance (tables, clients, finalizers). */
   extensions: ExtensionService;
+  /** Shared attachment reference index used by plugin contexts and media routes. */
+  media: AttachmentReferenceService;
   /** Cross-replica runtime invalidation (S8). */
   coherence: RuntimeCoherence;
   /** Seed built-ins, scan installed packages and register their definitions. */
@@ -114,6 +117,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
   });
 
   const extensions = options.extensions ?? new ExtensionService(getPrisma());
+  const media = new AttachmentReferenceService(getPrisma());
   const runtime = new PluginRuntime({
     events: getEventBus(),
     db: getPrisma(),
@@ -125,6 +129,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     notifications: notificationsService,
     state: stateService,
     jobs: getJobRuntime(),
+    media,
     logger,
     registerRoute: options.registerRoute ?? (() => () => undefined),
     removeRoutes: options.removeRoutes ?? (() => undefined),
@@ -155,6 +160,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     notifications: notificationsService,
     state: stateService,
     extensions,
+    media,
     coherence,
     async registerPlugins(): Promise<void> {
       await seedBuiltinPlugins();

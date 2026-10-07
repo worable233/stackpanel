@@ -144,10 +144,19 @@ export function installExtensionRoutes(app: FastifyInstance, service: ExtensionS
     const body = createBodySchema.safeParse(request.body);
     if (!body.success) throw new PluginError('request.invalid', 400, '请求体无效');
 
-    const client = service.client(registered.pluginId, request.user?.id ?? null);
+    const callerId = request.user?.id ?? null;
+    if (
+      registered.definition.scoped &&
+      body.data.ownerId !== undefined &&
+      body.data.ownerId !== callerId
+    ) {
+      throw new PluginError('auth.forbidden', 403, '只能为当前用户创建记录');
+    }
+
+    const client = service.client(registered.pluginId, callerId);
     const options: ExtensionCreateOptions = {};
     if (registered.definition.scoped || body.data.ownerId) {
-      options.ownerId = body.data.ownerId ?? request.user?.id ?? null;
+      options.ownerId = body.data.ownerId ?? callerId;
     }
     const instance = await client.create<Record<string, unknown>>(
       registered.definition,

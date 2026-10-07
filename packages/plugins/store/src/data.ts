@@ -126,6 +126,8 @@ export const serviceInstanceModel = defineModel({
     { fields: ['orderId'], types: { orderId: 'string' } },
     { fields: ['productId'], types: { productId: 'string' } },
     { fields: ['state'], types: { state: 'string' } },
+    { fields: ['providerId'], types: { providerId: 'string' } },
+    { fields: ['providerServiceId'], types: { providerServiceId: 'string' } },
   ],
 });
 

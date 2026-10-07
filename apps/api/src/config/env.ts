@@ -20,9 +20,12 @@ const envSchema = z.object({
           .filter((origin) => origin.length > 0)
       : [],
   ),
+  // Session-cookie `Secure` flag. Defaults to on in production so a missing
+  // variable can never ship cookies over plaintext (SECURITY-AUDIT-2026-10-04
+  // M-1). `resolveCookieSecure` adds a second, independent guard at set time.
   API_COOKIE_SECURE: z
     .enum(['true', 'false'])
-    .default('false')
+    .default(process.env.NODE_ENV === 'production' ? 'true' : 'false')
     .transform((v) => v === 'true'),
   // Reverse-proxy trust for client IP resolution (`req.ip`). `true` trusts the
   // immediate peer; a comma-separated list trusts only those proxy addresses/
@@ -117,6 +120,14 @@ if (process.env.NODE_ENV === 'production') {
     console.warn(
       '[env] PACKAGE_SIGNATURE_REQUIRED=true 但未配置签名公钥：' +
         '上传插件/主题将被拒绝，可在后台「签名策略」中上传公钥后恢复。',
+    );
+  }
+  if (!env.SETTINGS_ENCRYPTION_KEY) {
+    // I-2: the key is optional, but silently disabling the encrypted-secret
+    // store in production is a footgun — surface it loudly at boot.
+    console.warn(
+      '[env] 未配置 SETTINGS_ENCRYPTION_KEY：密钥存储（AES-256-GCM）将保持禁用，' +
+        '支付密钥、签名私钥等敏感配置无法保存。生产环境请设置强随机值（≥32 字符）。',
     );
   }
 }

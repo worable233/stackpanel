@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PluginError } from '@stackpanel/sdk';
 import { env } from '../config/env.ts';
+import { resolveCookieSecure } from '../lib/cookie-security.ts';
 import { looksLikeApiToken, resolveApiToken } from '../lib/api-tokens.ts';
 import { verifySession } from '../lib/jwt.ts';
 import { getSessionStore } from '../auth/session-store.ts';
@@ -159,7 +160,8 @@ function setSessionCookie(reply: FastifyReply, token: string): void {
   reply.setCookie(env.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: env.API_COOKIE_SECURE,
+    // Second guard on top of the env default (SECURITY-AUDIT-2026-10-04 M-1).
+    secure: resolveCookieSecure(env.API_COOKIE_SECURE),
     path: '/',
     maxAge: env.SESSION_TTL_SECONDS,
   });

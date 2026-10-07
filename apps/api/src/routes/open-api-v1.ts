@@ -31,7 +31,7 @@ import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { enforceTokenQuota } from '../lib/open-api-guard.ts';
 import { UserAdminService } from '../lib/user-admin.ts';
 import type { UserAdminActor } from '../lib/user-admin.ts';
-import { resolveCommerce } from '../lib/commerce.ts';
+import { resolveCommerce, resolveUpstreamServiceSources } from '../lib/commerce.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 
 const platformInfoSchema = z
@@ -73,6 +73,8 @@ const userListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   q: z.string().trim().max(64).optional(),
+  status: z.enum(['ACTIVE', 'DISABLED']).optional(),
+  groupId: z.string().min(1).optional(),
 });
 
 const createUserSchema = z.object({
@@ -200,6 +202,7 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
       wallet: request.server.wallet,
       auth: request.server.auth,
       commerce: resolveCommerce(request.server.pluginRuntime),
+      upstreamServiceSources: resolveUpstreamServiceSources(request.server.pluginRuntime),
     });
 
   /** The acting principal; `platform.admin` gates escalation (audit H-1). */

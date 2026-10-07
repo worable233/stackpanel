@@ -24,12 +24,17 @@ export class MemoryJobBackend implements JobBackend {
     string,
     { timer: ReturnType<typeof setInterval>; entry: RegisteredSchedule }
   >();
-  private readonly timers = new Set<ReturnType<typeof setTimeout>>();
+  private readonly timers = new Map<ReturnType<typeof setTimeout>, { fullName: string; jobId?: string }>();
+  private readonly queuedIds = new Map<string, string>();
 
   constructor(private readonly options: MemoryJobBackendOptions) {}
 
   handle(fullName: string, handler: JobHandler): void {
     this.handlers.set(fullName, handler);
+  }
+
+  unhandle(fullName: string): void {
+    this.handlers.delete(fullName);
   }
 
   async schedule(entry: RegisteredSchedule): Promise<void> {
@@ -57,13 +62,16 @@ export class MemoryJobBackend implements JobBackend {
 
   async enqueue(fullName: string, payload: unknown, options?: JobOptions): Promise<string> {
     const id = options?.jobId ?? randomUUID();
+    if (options?.jobId && this.queuedIds.has(options.jobId)) return id;
+    if (options?.jobId) this.queuedIds.set(options.jobId, fullName);
     const delay = options?.delayMs ?? 0;
     const timer = setTimeout(() => {
       this.timers.delete(timer);
+      if (options?.jobId && this.queuedIds.get(options.jobId) === fullName) this.queuedIds.delete(options.jobId);
       void this.run(fullName, payload, options);
     }, delay);
     timer.unref?.();
-    this.timers.add(timer);
+    this.timers.set(timer, { fullName, ...(options?.jobId ? { jobId: options.jobId } : {}) });
     return id;
   }
 
@@ -75,6 +83,13 @@ export class MemoryJobBackend implements JobBackend {
     for (const [fullName] of [...this.schedules]) {
       if (matches(fullName)) await this.unschedule(fullName);
     }
+    for (const [timer, queued] of this.timers) {
+      if (matches(queued.fullName)) {
+        clearTimeout(timer);
+        this.timers.delete(timer);
+        if (queued.jobId && this.queuedIds.get(queued.jobId) === queued.fullName) this.queuedIds.delete(queued.jobId);
+      }
+    }
   }
 
   async start(): Promise<void> {
@@ -83,7 +98,7 @@ export class MemoryJobBackend implements JobBackend {
 
   async stop(): Promise<void> {
     for (const name of [...this.schedules.keys()]) await this.unschedule(name);
-    for (const timer of this.timers) clearTimeout(timer);
+    for (const timer of this.timers.keys()) clearTimeout(timer);
     this.timers.clear();
   }
 

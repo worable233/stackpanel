@@ -1,11 +1,19 @@
 export { ApiClient } from './client.js';
 export type { ApiClientOptions } from './client.js';
-export { ApiError, PluginError, isPluginError, type BrandedPluginError } from './errors.js';
+export {
+  ApiError,
+  KernelError,
+  PluginError,
+  isPluginError,
+  type BrandedPluginError,
+} from './errors.js';
 export type { FieldError, ProblemDetails } from './errors.js';
-export { isSafeUrl, sanitizeRichText } from './sanitize.js';
-export type { SanitizeOptions } from './sanitize.js';
+// `isSafeUrl` is pure and safe for client bundles. The full rich-text sanitizer
+// lives behind the `@stackpanel/sdk/sanitize` subpath because it depends on the
+// server-only `sanitize-html` parser (SECURITY-AUDIT-2026-10-04 I-1).
+export { isSafeUrl } from './url-safety.js';
 export { definePlugin } from './plugin.js';
-export { normalizePluginDependencies } from './plugin.js';
+export { normalizePluginDependencies, normalizePluginPermissions } from './plugin.js';
 export { DisposableList, disposeAll, runEffect } from './effect.js';
 export type { Disposable, EffectResult } from './effect.js';
 export type {
@@ -33,12 +41,19 @@ export type {
   CheckoutSelection,
 } from './fulfillment.js';
 export { computeCheckoutPrice, readCheckoutConfig } from './fulfillment.js';
-export type { UpstreamProductItem, UpstreamProductSource } from './upstream.js';
+export type {
+  UpstreamProductItem,
+  UpstreamProductSource,
+  UpstreamServiceItem,
+  UpstreamServiceSource,
+} from './upstream.js';
 export type {
   CreateNotificationInput,
   NotificationListResult,
+  NotificationStatus,
   NotificationView,
   NotificationsService,
+  UpsertNotificationInput,
 } from './notifications.js';
 export {
   buildZodFromSettingsSchema,
@@ -89,7 +104,11 @@ export type {
   FrontendSettings,
   FrontendSettingsField,
   FrontendSettingsGroup,
+  FrontendSettingsListItem,
+  FrontendSettingsScalar,
+  FrontendSettingsScalarField,
   FrontendSettingsSchema,
+  FrontendSettingsValue,
   FrontendSummary,
   PluginActionDefinition,
   PluginActionInputField,
@@ -122,6 +141,7 @@ export type {
   PluginEventListener,
   PluginLogger,
   PluginManifest,
+  PluginPermission,
   PluginCapability,
   PluginSecrets,
   PluginRoleName,
@@ -159,8 +179,8 @@ export type {
   SalesChannelView,
   WalletTopUpView,
 } from './payments.js';
-export { PaymentError } from './payments.js';
-export { FxError } from './fx.js';
+export { PaymentError, isPaymentError } from './payments.js';
+export { FxError, isFxError } from './fx.js';
 export type {
   AuthService,
   AuthUser,
@@ -168,7 +188,6 @@ export type {
   CreatedPlatformToken,
   CreatePlatformTokenInput,
   PermissionGroup,
-  PermissionInfo,
   PlatformTokenView,
   PlatformTokenInspection,
   RegisterUserInput,
@@ -178,12 +197,12 @@ export type {
 } from './auth.js';
 export type { FxQuote, FxRate, FxService } from './fx.js';
 export type { StateService } from './state.js';
+export type { MediaReferenceService } from './media.js';
 export type { JobContext, JobHandler, JobOptions, JobSchedule } from './jobs.js';
 export type { ChannelTerminal, PaymentMethodInstance, SalesChannel } from './sales.js';
-export {
-  CommerceError,
-} from './commerce.js';
+export { CommerceError, isCommerceError } from './commerce.js';
 export type {
+  CommerceBindServiceInput,
   CommerceCatalogQuery,
   CommerceFailure,
   CommerceList,
@@ -203,7 +222,7 @@ export type {
   WalletLedgerRef,
   WalletService,
 } from './wallet.js';
-export { WalletError } from './wallet.js';
+export { WalletError, isWalletError } from './wallet.js';
 export { EXTENSION_POINTS } from './plugin.js';
 export { REDIS_KEY_PREFIX, redisKey } from './key-prefixes.js';
 export type { RedisKeyNamespace } from './key-prefixes.js';
@@ -256,6 +275,8 @@ export {
   ExtensionUniqueViolation,
   ExtensionValidationError,
   ExtensionVersionConflict,
+  isExtensionNotFound,
+  isExtensionVersionConflict,
 } from './extensions.js';
 export type {
   ExtensionClient,

@@ -7,6 +7,14 @@
  * depending on any specific plugin being active.
  */
 
+/**
+ * Lifecycle of a notification. `info` is a plain one-shot message (the
+ * historical behaviour). `active` marks an *ongoing activity* whose
+ * title/body/progress are updated in place until it settles as `success` or
+ * `error` — the "live notification" model (e.g. a front-end apply).
+ */
+export type NotificationStatus = 'info' | 'active' | 'success' | 'error';
+
 /** A single in-app notification row as exposed to clients and plugins. */
 export interface NotificationView {
   id: string;
@@ -15,8 +23,12 @@ export interface NotificationView {
   body: string | null;
   link: string | null;
   data: Record<string, unknown> | null;
+  status: NotificationStatus;
+  /** 0–100 while `active`; `null` when the notification carries no progress. */
+  progress: number | null;
   readAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 /** Input to create a notification for a user. */
@@ -31,6 +43,24 @@ export interface CreateNotificationInput {
   link?: string;
   /** Plugin-defined payload; never contains secrets. */
   data?: Record<string, unknown>;
+  /** Defaults to `info`. Use `active` for an ongoing activity. */
+  status?: NotificationStatus;
+  /** 0–100 progress for an `active` activity. */
+  progress?: number;
+  /**
+   * Stable identity for an updatable notification. When set, `upsert` finds the
+   * user's notification with the same key and rewrites it in place instead of
+   * appending a new row. Ignored by `create`.
+   */
+  dedupeKey?: string;
+}
+
+/**
+ * Input to {@link NotificationsService.upsert}. `dedupeKey` is required: it is
+ * the identity that turns a sequence of progress updates into one live row.
+ */
+export interface UpsertNotificationInput extends CreateNotificationInput {
+  dedupeKey: string;
 }
 
 /** Paginated result of listing a user's notifications. */
@@ -47,6 +77,13 @@ export interface NotificationListResult {
  */
 export interface NotificationsService {
   create(input: CreateNotificationInput): Promise<NotificationView>;
+  /**
+   * Create, or rewrite in place, the notification identified by
+   * `(userId, dedupeKey)`. Used for live activities: the same row advances
+   * through `active` → `success`/`error`. An update clears `readAt` so the
+   * activity re-surfaces while it is in progress.
+   */
+  upsert(input: UpsertNotificationInput): Promise<NotificationView>;
   listForUser(
     userId: string,
     options?: { limit?: number; cursor?: string; unreadOnly?: boolean },

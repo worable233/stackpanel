@@ -21,6 +21,18 @@
       "command": ["npx", "-y", "@magicuidesign/mcp@latest"],
       "enabled": true,
       "timeout": 30000
+    },
+    "servers": {
+      "shadcn": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "shadcn@latest",
+          "mcp"
+        ],
+        "cwd": "apps/web"
+      }
     }
   }
 }

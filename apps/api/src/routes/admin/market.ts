@@ -56,7 +56,7 @@ export async function adminMarketRoutes(app: FastifyInstance): Promise<void> {
         // takes effect without a restart (same live behavior as ZIP upload).
         const runtime = app.pluginRuntime;
         const upgraded = runtime.has(id);
-        if (upgraded) await runtime.unregister(id);
+        if (upgraded) await runtime.unregister(id, { retainData: true });
         const definition = await loadPluginDefinition(id);
         await runtime.register(definition);
         await runtime.activate(id);

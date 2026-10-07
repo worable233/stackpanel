@@ -9,6 +9,7 @@ import type {
   FrontendPageDefinition,
   FrontendPageManifestEntry,
   FrontendSettings,
+  FrontendSettingsField,
   FrontendSummary,
   SettingsResponse,
   SettingsSchemaResponse,
@@ -86,6 +87,8 @@ import type {
   AdminUserServicesResponse,
   AdminProductItem,
   AdminProductsResponse,
+  AdminUpstreamServiceItem,
+  AdminUserUpstreamServicesResponse,
   ImpersonateResponse,
   StoreProductTypeInfo,
   StoreProductTypeListResponse,
@@ -316,6 +319,26 @@ export const upstreamProductResponseSchema = z.object({
   item: upstreamProductItemSchema.nullable(),
 }) satisfies z.ZodType<UpstreamProductResponse>;
 
+export const adminUpstreamServiceItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  productName: z.string().nullable(),
+  status: z.string().nullable(),
+  statusLabel: z.string().nullable(),
+  host: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  amount: z.number().int().nullable(),
+  currency: z.string().nullable(),
+  sourceId: z.string(),
+  boundServiceId: z.string().nullable(),
+  boundUserId: z.string().nullable(),
+}) satisfies z.ZodType<AdminUpstreamServiceItem>;
+
+export const adminUserUpstreamServicesResponseSchema = z.object({
+  sources: z.array(upstreamSourceInfoSchema),
+  services: z.array(adminUpstreamServiceItemSchema),
+}) satisfies z.ZodType<AdminUserUpstreamServicesResponse>;
+
 export const auditLogEntrySchema = z.object({
   id: z.string(),
   actorId: z.string().nullable(),
@@ -342,8 +365,11 @@ export const notificationViewSchema = z.object({
   body: z.string().nullable(),
   link: z.string().nullable(),
   data: z.record(z.string(), z.unknown()).nullable(),
+  status: z.enum(['info', 'active', 'success', 'error']),
+  progress: z.number().int().min(0).max(100).nullable(),
   readAt: z.string().nullable(),
   createdAt: z.string(),
+  updatedAt: z.string(),
 }) satisfies z.ZodType<NotificationView>;
 
 export const notificationListResponseSchema = z.object({
@@ -495,14 +521,32 @@ const optionFieldSchema = z.object({
   required: z.boolean().optional(),
 });
 
-export const frontendSettingsFieldSchema = z.discriminatedUnion('type', [
-  textFieldSchema,
-  textareaFieldSchema,
-  colorFieldSchema,
-  numberFieldSchema,
-  booleanFieldSchema,
-  optionFieldSchema,
-]);
+const settingsScalarSchema = z.union([z.string(), z.number(), z.boolean()]);
+
+const listFieldSchema = z.lazy(() =>
+  z.object({
+    type: z.literal('list'),
+    name: z.string(),
+    label: z.string(),
+    fields: z.array(frontendSettingsFieldSchema).min(1),
+    default: z.array(z.record(z.string(), settingsScalarSchema)).optional(),
+    itemLabelField: z.string().optional(),
+    help: z.string().optional(),
+    required: z.boolean().optional(),
+  }),
+);
+
+export const frontendSettingsFieldSchema = z.lazy(() =>
+  z.union([
+    textFieldSchema,
+    textareaFieldSchema,
+    colorFieldSchema,
+    numberFieldSchema,
+    booleanFieldSchema,
+    optionFieldSchema,
+    listFieldSchema,
+  ]),
+) as unknown as z.ZodType<FrontendSettingsField>;
 
 export const frontendSettingsGroupSchema = z.object({
   id: z.string().min(1),
@@ -632,7 +676,15 @@ export const settingsSchemaResponseSchema = z.object({
 
 export const frontendSettingsValueSchema = z.record(
   z.string(),
-  z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+  z.record(
+    z.string(),
+    z.union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.array(z.record(z.string(), settingsScalarSchema)),
+    ]),
+  ),
 ) satisfies z.ZodType<FrontendSettings>;
 
 export const settingsResponseSchema = z.object({
@@ -827,6 +879,7 @@ export const permissionInfoSchema = z.object({
   id: z.string(),
   key: z.string(),
   name: z.string(),
+  description: z.string().nullable(),
 }) satisfies z.ZodType<PermissionInfo>;
 
 export const permissionListSchema = z.object({
@@ -841,7 +894,9 @@ export const permissionGroupInfoSchema = z.object({
 }) satisfies z.ZodType<PermissionGroupInfo>;
 
 export const permissionGroupViewSchema = permissionGroupInfoSchema.extend({
-  permissions: z.array(z.object({ key: z.string(), name: z.string() })),
+  permissions: z.array(z.object({ key: z.string(), name: z.string(), description: z.string().nullable() })),
+  memberCount: z.number(),
+  structural: z.boolean(),
 });
 
 export const permissionGroupListSchema = z.object({

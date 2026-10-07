@@ -33,7 +33,7 @@ export const KERNEL_API_VERSION = '0.4.0';
  * `packages/{db,ui,net-guard}`）必须与本值一致，由
  * `packages/spec/tests/spec.test.ts` 钉死。
  */
-export const KERNEL_VERSION = '0.1.0';
+export const KERNEL_VERSION = '0.2.0';
 
 /** 人类可读的开放平台版本，用于文档与响应头。 */
 export const API_VERSION = 'v1';

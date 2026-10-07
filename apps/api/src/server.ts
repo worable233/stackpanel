@@ -4,7 +4,10 @@ import { ensureBootstrapAdmin } from './lib/bootstrap.ts';
 import { initInfra } from './infra.ts';
 import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence.ts';
 import { startTracing, stopTracing } from './observability/index.ts';
+import { FrontendBuilder } from './lib/frontend-build.ts';
+import { isFrontendDevBuild } from './lib/frontend-apply.ts';
 import { peekRedis } from '@stackpanel/db';
+import { stopAllIsolatedPlugins } from './plugins/isolated/host.ts';
 
 /**
  * Start tracing before anything else so HTTP instrumentation is installed
@@ -26,6 +29,24 @@ try {
 
 const app = buildApp({ redis: peekRedis() });
 
+/**
+ * Frontend build ownership (S7 / ADR-0017 §5).
+ *
+ * Production runs a dedicated worker process as the single builder; the API
+ * has no Redis-free way to consume jobs, and the worker owns it. In a
+ * single-process development stack (no Redis) there is no worker at all, so
+ * the API process itself becomes the builder — otherwise plugin/theme frontend
+ * changes would sit in `frontend-apply.request.json` forever. Exactly one
+ * process ever builds: worker when Redis is present, API otherwise.
+ */
+let frontendBuilder: FrontendBuilder | null = null;
+
+function startFrontendBuilderIfSoleProcess(): void {
+  if (!isFrontendDevBuild()) return;
+  frontendBuilder = new FrontendBuilder({ redis: null, logger: app.log });
+  frontendBuilder.start();
+}
+
 async function start(): Promise<void> {
   try {
     const bootstrap = await ensureBootstrapAdmin();
@@ -43,6 +64,7 @@ async function start(): Promise<void> {
     // registered all installed plugins (after ready/plugin discovery).
     await startRuntimeCoherence();
     await app.listen({ host: env.API_HOST, port: env.API_PORT });
+    startFrontendBuilderIfSoleProcess();
   } catch (err) {
     app.log.error(err);
     process.exit(1);
@@ -58,6 +80,7 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
+    stopAllIsolatedPlugins();
     // Stop accepting new connections; let long-lived raw streams (SSE / upstream
     // proxies) finish within a grace window, then force-close the rest.
     const grace = new Promise<void>((resolve) => setTimeout(resolve, DRAIN_GRACE_MS));
@@ -77,6 +100,7 @@ async function shutdown(): Promise<void> {
   } catch (err) {
     app.log.error(err);
   } finally {
+    await frontendBuilder?.stop().catch(() => undefined);
     await stopRuntimeCoherence().catch(() => undefined);
     await stopTracing().catch(() => undefined);
     process.exit(0);

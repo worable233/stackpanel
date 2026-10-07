@@ -1,5 +1,5 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
-import { ExtensionNotFound } from '@stackpanel/sdk';
+import { isExtensionNotFound } from '@stackpanel/sdk';
 import { z } from 'zod';
 import { StoreError } from './errors';
 import {
@@ -122,7 +122,7 @@ export async function updateCategory(req: HttpRequest): Promise<unknown> {
     const category = await replaceCategory(id, next);
     return { category: serialize(category) };
   } catch (error) {
-    if (error instanceof ExtensionNotFound) throw new StoreError(404, '分类不存在');
+    if (isExtensionNotFound(error)) throw new StoreError(404, '分类不存在');
     throw error;
   }
 }
@@ -134,7 +134,7 @@ export async function deleteCategory(req: HttpRequest, reply: HttpReply): Promis
     await deleteCategoryInstance(id);
     return reply.code(204).send();
   } catch (error) {
-    if (error instanceof ExtensionNotFound) throw new StoreError(404, '分类不存在');
+    if (isExtensionNotFound(error)) throw new StoreError(404, '分类不存在');
     throw error;
   }
 }

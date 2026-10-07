@@ -6,8 +6,10 @@ import type {
   FulfillmentProvider,
   PluginContext,
 } from '@stackpanel/sdk';
+import { CommerceError } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
 import { enqueueOrderFulfillment, getMyService, listMyServices, processDue } from './fulfillment';
+import { storeOperations } from './operations';
 
 interface Stored {
   name: string;
@@ -148,7 +150,6 @@ function makeCtx(
       intercept: () => () => {},
       waterfall: <T>(_topic: string, value: T, _terminal: (value: T) => T): T => value,
     },
-    db: {} as never,
     extensions: fake.client,
     tx: (async () => {
       throw new Error('no tx in this test');
@@ -161,6 +162,7 @@ function makeCtx(
     notifications: {} as never,
     state: {} as never,
     jobs: {} as never,
+    media: { register: async () => {}, unregister: async () => {}, unregisterResource: async () => {} },
     effect: () => () => {},
     provide: () => () => {},
     getService: () => undefined,
@@ -301,6 +303,63 @@ describe('store fulfillment dispatcher', () => {
       services: unknown[];
     };
     expect(result.services).toHaveLength(1);
+  });
+
+  it('binds an upstream service once and rejects a second bind globally', async () => {
+    const fake = createFakeExtensions();
+    const { provider } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+
+    const created = await storeOperations.bindService({
+      userId: 'user-1',
+      productId: 'up-prod-1',
+      productName: '云服务器',
+      fulfillmentType: 'upstream_service',
+      providerId: 'zjmf',
+      providerServiceId: 'svc-x',
+      status: 'active',
+      amount: 9900,
+      currency: 'CNY',
+      runtime: { upstreamId: 'up-1', host: 'node-1' },
+    });
+    expect(created.userId).toBe('user-1');
+    expect(created.providerId).toBe('zjmf');
+    expect(created.providerServiceId).toBe('svc-x');
+    expect(created.status).toBe('ACTIVE');
+
+    // 同账号重复绑定
+    await expect(
+      storeOperations.bindService({
+        userId: 'user-1',
+        productId: 'up-prod-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-x',
+        status: 'ACTIVE',
+        amount: 9900,
+        currency: 'CNY',
+      }),
+    ).rejects.toMatchObject({ name: 'CommerceError', failure: 'service_already_bound' });
+
+    // 跨账号重复绑定同样被拒绝（上游服务全局唯一）
+    await expect(
+      storeOperations.bindService({
+        userId: 'user-2',
+        productId: 'up-prod-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-x',
+        status: 'ACTIVE',
+        amount: 9900,
+        currency: 'CNY',
+      }),
+    ).rejects.toBeInstanceOf(CommerceError);
+
+    const bound = await storeOperations.listBoundServices('zjmf');
+    expect(bound).toHaveLength(1);
+    expect(bound[0]!.providerServiceId).toBe('svc-x');
   });
 
   it('defaults a missing provider statusLabel to null in the service detail', async () => {

@@ -15,6 +15,20 @@ import type { NotificationView } from './notifications.js';
 import type { PaymentService } from './payments.js';
 import type { StateService } from './state.js';
 import type { WalletService } from './wallet.js';
+import type { MediaReferenceService } from './media.js';
+
+/**
+ * A permission declared by a plugin. The bare string form (`'store.admin'`) is
+ * shorthand for `{ key: 'store.admin' }`; the object form lets a plugin attach a
+ * human-readable description surfaced in the admin permission picker.
+ */
+export interface PluginPermission {
+  key: string;
+  /** Optional human-readable label shown in the admin UI (defaults to the key). */
+  name?: string;
+  /** Optional explanation shown next to the permission in the admin UI. */
+  description?: string;
+}
 
 export interface PluginManifest {
   id: string;
@@ -28,7 +42,7 @@ export interface PluginManifest {
   /** Extension points this plugin consumes from other active plugins. */
   consumes?: PluginExtensionConsumer[];
   /** Permissions this plugin declares and may enforce on its routes. */
-  permissions?: string[];
+  permissions?: Array<string | PluginPermission>;
   /** Default permissions granted to built-in roles while the plugin is active. */
   roleTemplates?: PluginRoleTemplate[];
   /**
@@ -52,6 +66,8 @@ export interface PluginManifest {
    * (ADR-0001). See {@link PluginCapability}.
    */
   capabilities?: PluginCapability[];
+  /** Execution boundary. Third-party packages default to isolated. */
+  execution?: 'trusted' | 'isolated';
 }
 
 /**
@@ -110,6 +126,15 @@ export function normalizePluginDependencies(
   );
 }
 
+/** Expand mixed permission declarations into their descriptor form. */
+export function normalizePluginPermissions(
+  permissions: Array<string | PluginPermission> | undefined,
+): PluginPermission[] {
+  return (permissions ?? []).map((permission) =>
+    typeof permission === 'string' ? { key: permission } : permission,
+  );
+}
+
 /** A role permission template contributed by an active plugin. */
 export interface PluginRoleTemplate {
   role: PluginRoleName;
@@ -143,7 +168,8 @@ export interface PluginSecrets {
 export interface PlatformEvents {
   'plugin.activated': { pluginId: string };
   'plugin.deactivated': { pluginId: string };
-  'notification.created': { notification: NotificationView };
+  'notification.created': { notification: NotificationView; userId: string };
+  'notification.updated': { notification: NotificationView; userId: string };
   'payment.settled': { orderId: string | null; paymentId: string };
   'order.paid': {
     orderId: string;
@@ -366,6 +392,8 @@ export const EXTENSION_POINTS = {
   commerce: 'commerce.operations',
   /** 上游商品数据源：为商品表单提供「可关联的上游商品」。 */
   upstreamProductSource: 'upstream.product.source',
+  /** 上游已购服务数据源：为管理端提供「可绑定到账号的上游已购服务」。 */
+  upstreamServiceSource: 'upstream.service.source',
   /** External notification channels (email/webhook/push) subscribed to `notification.created`. */
   notificationChannel: 'notification.channel',
   eventListener: 'event.listener',
@@ -506,12 +534,6 @@ export interface PluginContext {
   readonly logger: PluginLogger;
   readonly events: EventBus;
   /**
-   * Kernel-provided database handle (concrete client in @stackpanel/db).
-   * Deprecated: plugin-owned data must go through `ctx.extensions`. Kept until
-   * the strangler migration (E2) removes it for every plugin.
-   */
-  readonly db: unknown;
-  /**
    * Typed access to this plugin's own declared models. Only kinds listed in
    * `customModels` are reachable; queries run against real indexed columns and
    * never touch another plugin's data.
@@ -535,6 +557,8 @@ export interface PluginContext {
   readonly auth: AuthService;
   /** Kernel-owned in-app notification service (create/list/mark-read for users). */
   readonly notifications: NotificationsService;
+  /** Register durable references from plugin records to kernel attachments. */
+  readonly media: MediaReferenceService;
   /**
    * Kernel-owned shared state for cross-request coordination: counters, TTL
    * keys, and locks (concurrency caps, rate windows, sticky routing, scheduling

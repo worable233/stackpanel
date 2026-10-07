@@ -15,7 +15,7 @@
  * caller genuinely needs everything.
  */
 
-import { PluginError } from './errors.js';
+import { PluginError, brandSdkErrorClass, isSdkErrorClass } from './errors.js';
 import type { CustomModelDefinition } from './models.js';
 import type { PaymentService } from './payments.js';
 import type { WalletService } from './wallet.js';
@@ -92,10 +92,7 @@ export interface ExtensionUpdateOptions {
 }
 
 /** Atomic patch operator: set a scalar or apply an arithmetic step. */
-export type ExtensionPatch = Record<
-  string,
-  { set: unknown } | { inc: number } | { dec: number }
->;
+export type ExtensionPatch = Record<string, { set: unknown } | { inc: number } | { dec: number }>;
 
 /** A named handler run (in order) before an instance is physically deleted. */
 export type ExtensionFinalizer = (instance: ExtensionInstance<unknown>) => Promise<void>;
@@ -132,11 +129,7 @@ export interface ExtensionClient {
   /** Run finalizers (if any) then delete, or delete directly. */
   delete(model: CustomModelDefinition, name: string): Promise<void>;
   /** Register a finalizer referenced by name in the model's `finalizers`. */
-  registerFinalizer(
-    model: CustomModelDefinition,
-    name: string,
-    handler: ExtensionFinalizer,
-  ): void;
+  registerFinalizer(model: CustomModelDefinition, name: string, handler: ExtensionFinalizer): void;
 }
 
 /**
@@ -212,4 +205,20 @@ export class ExtensionUnsupportedMigration extends ExtensionError {
     super('extension.unsupported_migration', 500, detail);
     this.name = 'ExtensionUnsupportedMigration';
   }
+}
+
+// Cross-module guards for the subclasses consumers narrow on. `isPluginError`
+// proves a value is *some* deterministic error; these prove *which* one even
+// when the plugin loader produced a duplicate class object (see errors.ts).
+brandSdkErrorClass(ExtensionNotFound, 'ExtensionNotFound');
+brandSdkErrorClass(ExtensionVersionConflict, 'ExtensionVersionConflict');
+
+/** True when `value` is an {@link ExtensionNotFound}, across duplicated SDK modules. */
+export function isExtensionNotFound(value: unknown): value is ExtensionNotFound {
+  return isSdkErrorClass(value, 'ExtensionNotFound');
+}
+
+/** True when `value` is an {@link ExtensionVersionConflict}, across duplicated SDK modules. */
+export function isExtensionVersionConflict(value: unknown): value is ExtensionVersionConflict {
+  return isSdkErrorClass(value, 'ExtensionVersionConflict');
 }

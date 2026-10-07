@@ -13,7 +13,6 @@ const FALLBACK_NAV: BackendNavigationItem[] = [
   { label: 'nav.plugins', href: '/admin/plugins' },
   { label: 'nav.rbac', href: '/admin/rbac' },
   { label: 'nav.audit', href: '/admin/audit' },
-  { label: 'nav.developer', href: '/admin/developer' },
   { label: 'nav.themes', href: '/admin/themes' },
 ];
 /**

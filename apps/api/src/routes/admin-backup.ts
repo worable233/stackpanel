@@ -32,6 +32,11 @@ import { EXPORT_DOMAINS, isExportDomain } from '../backup/domains.ts';
 import { inspectArchive } from '../backup/archive.ts';
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
+// JSON/base64 transport is retained for compatibility, but must have a finite
+// edge limit. Larger archives should use object storage instead of buffering a
+// gigabyte request in every API replica.
+const MAX_ARCHIVE_BASE64_BYTES = 64 * 1024 * 1024;
+const BACKUP_BODY_LIMIT = MAX_ARCHIVE_BASE64_BYTES + 2 * 1024 * 1024;
 
 const exportBody = z
   .object({
@@ -44,12 +49,12 @@ const exportBody = z
 
 const importBody = z.object({
   /** Base64 of a `.tar.gz` archive produced by export. */
-  archiveBase64: z.string().min(1).max(1024 * 1024 * 1024),
+  archiveBase64: z.string().min(1).max(MAX_ARCHIVE_BASE64_BYTES),
   /** Explicit confirmation that the current instance will be replaced. */
   confirm: z.literal(true),
 });
 
-const inspectBody = z.object({ archiveBase64: z.string().min(1).max(1024 * 1024 * 1024) });
+const inspectBody = z.object({ archiveBase64: z.string().min(1).max(MAX_ARCHIVE_BASE64_BYTES) });
 
 export async function adminBackupRoutes(app: FastifyInstance): Promise<void> {
   app.get('/admin/backup', { preHandler: adminOnly }, async () => {
@@ -107,7 +112,10 @@ export async function adminBackupRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(202).send({ status: await getBackupStatus() });
   });
 
-  app.post('/admin/backup/import', { preHandler: adminOnly }, async (request, reply) => {
+  app.post(
+    '/admin/backup/import',
+    { preHandler: adminOnly, bodyLimit: BACKUP_BODY_LIMIT },
+    async (request, reply) => {
     if (!pgToolsStatus().available) {
       return reply.code(501).send({ error: '服务器未安装 pg_dump/pg_restore，无法导入' });
     }
@@ -150,10 +158,14 @@ export async function adminBackupRoutes(app: FastifyInstance): Promise<void> {
     return reply
       .code(202)
       .send({ status: await getBackupStatus(), ...(warning ? { warning } : {}) });
-  });
+    },
+  );
 
   /** Validate an archive without importing it (operator pre-flight). */
-  app.post('/admin/backup/inspect', { preHandler: adminOnly }, async (request, reply) => {
+  app.post(
+    '/admin/backup/inspect',
+    { preHandler: adminOnly, bodyLimit: BACKUP_BODY_LIMIT },
+    async (request, reply) => {
     const body = inspectBody.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: '请求参数无效' });
     try {
@@ -174,7 +186,8 @@ export async function adminBackupRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       return reply.code(422).send({ error: err instanceof Error ? err.message : '归档校验失败' });
     }
-  });
+    },
+  );
 
   /** Stream a produced archive for download. */
   app.get('/admin/backup/download', { preHandler: adminOnly }, async (request, reply) => {

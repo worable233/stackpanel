@@ -232,6 +232,14 @@ describe.skipIf(!dbAvailable)('theme engine integration (real DB)', () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it('forces active-content theme assets to download (L-3)', async () => {
+    // SVG is XML and may carry <script>; serving it inline same-origin would be
+    // stored XSS. It must arrive as an attachment, while binary assets are
+    // unaffected.
+    const svg = await app.inject({ method: 'GET', url: '/themes/ocean/assets/logo.svg' });
+    expect(svg.headers['content-disposition']).toContain('attachment');
+  });
+
   it('protects the default and active themes from deletion', async () => {
     const def = await app.inject({
       method: 'DELETE',

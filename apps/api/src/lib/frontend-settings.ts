@@ -4,7 +4,11 @@ import {
   mergeFrontendSettings,
   settingsDefaultsFromSchema,
 } from '@stackpanel/sdk';
-import type { FrontendSettings, FrontendSettingsSchema } from '@stackpanel/sdk';
+import type {
+  FrontendSettings,
+  FrontendSettingsSchema,
+  FrontendSettingsValue,
+} from '@stackpanel/sdk';
 
 export type FrontendKind = 'theme' | 'plugin';
 
@@ -58,19 +62,28 @@ function normalizeSettings(value: unknown): FrontendSettings | undefined {
   const result: FrontendSettings = {};
   for (const [group, values] of Object.entries(value)) {
     if (!isRecord(values)) continue;
-    const normalized: Record<string, string | number | boolean> = {};
+    const normalized: Record<string, FrontendSettingsValue> = {};
     for (const [name, fieldValue] of Object.entries(values)) {
-      if (
-        typeof fieldValue === 'string' ||
-        typeof fieldValue === 'number' ||
-        typeof fieldValue === 'boolean'
-      ) {
+      if (isScalar(fieldValue)) {
         normalized[name] = fieldValue;
+      } else if (Array.isArray(fieldValue)) {
+        const rows = fieldValue.filter(isScalarRecord);
+        if (rows.length === fieldValue.length) normalized[name] = rows;
       }
     }
     result[group] = normalized;
   }
   return result;
+}
+
+function isScalar(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+  );
+}
+
+function isScalarRecord(value: unknown): value is Record<string, string | number | boolean> {
+  return isRecord(value) && Object.values(value).every(isScalar);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

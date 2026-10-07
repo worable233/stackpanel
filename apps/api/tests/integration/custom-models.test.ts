@@ -157,4 +157,40 @@ describe.skipIf(!dbAvailable)('custom models (real DB)', () => {
     });
     expect(read.statusCode).toBe(404);
   });
+
+  it('retains rows across an in-place upgrade (retainData)', async () => {
+    const create = await app.inject({
+      method: 'POST',
+      url: '/custom/test/note',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { data: { title: 'survives upgrade', body: 'keep me' } },
+    });
+    const id = (create.json() as { id: string }).id;
+
+    // A hot upgrade unregisters with `retainData: true` so the physical table
+    // (and its rows) must outlive the swap. Originally `unregister` applied the
+    // default `delete` retention here, silently destroying all plugin data on
+    // every upgrade.
+    await app.pluginRuntime.unregister('cm-test', { retainData: true });
+    await app.pluginRuntime.register(
+      definePlugin({
+        manifest: {
+          id: 'cm-test',
+          name: 'CM Test',
+          version: '0.2.0',
+          permissions: ['custom.test/note.read', 'custom.test/note.write'],
+        },
+        customModels: [noteModel],
+      }),
+    );
+    await app.pluginRuntime.activate('cm-test');
+
+    const read = await app.inject({
+      method: 'GET',
+      url: `/custom/test/note/${id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(read.statusCode).toBe(200);
+    expect((read.json() as { data: { title: string } }).data.title).toBe('survives upgrade');
+  });
 });

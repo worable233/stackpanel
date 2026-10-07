@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Glass cloud control center</title>
+  <desc id="desc">A glassmorphism cloud product dashboard with service cards, traffic chart, and region status.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b9e8ff"/>
+      <stop offset=".48" stop-color="#e6ddff"/>
+      <stop offset="1" stop-color="#ffe4cf"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".74"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".3"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#2f8ff4"/>
+      <stop offset="1" stop-color="#5b6ff5"/>
+    </linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="42"/></filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#4963a0" flood-opacity=".22"/></filter>
+  </defs>
+  <rect width="1440" height="900" rx="36" fill="url(#bg)"/>
+  <circle cx="190" cy="160" r="180" fill="#74cfff" opacity=".46" filter="url(#blur)"/>
+  <circle cx="1220" cy="160" r="210" fill="#ffc9a3" opacity=".43" filter="url(#blur)"/>
+  <circle cx="760" cy="820" r="260" fill="#a991ff" opacity=".27" filter="url(#blur)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="120" y="92" width="1200" height="716" rx="30" fill="url(#glass)" stroke="#fff" stroke-opacity=".62" stroke-width="2"/>
+    <rect x="120" y="92" width="1200" height="76" rx="30" fill="#ffffff" fill-opacity=".4"/>
+    <circle cx="160" cy="130" r="8" fill="#ff6b61"/><circle cx="188" cy="130" r="8" fill="#ffc24f"/><circle cx="216" cy="130" r="8" fill="#49c66d"/>
+    <rect x="592" y="116" width="256" height="28" rx="14" fill="#fff" fill-opacity=".58"/>
+    <text x="720" y="135" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#7b86a3">cloud.stackpanel.local</text>
+
+    <rect x="156" y="204" width="250" height="560" rx="20" fill="#fff" fill-opacity=".48" stroke="#fff" stroke-opacity=".65"/>
+    <text x="188" y="250" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#17233d">控制中心</text>
+    <text x="188" y="278" font-family="Arial, sans-serif" font-size="12" fill="#71809f">业务资源概览</text>
+    <rect x="180" y="320" width="202" height="48" rx="14" fill="url(#blue)"/>
+    <text x="204" y="350" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#fff">总览</text>
+    <text x="188" y="414" font-family="Arial, sans-serif" font-size="13" fill="#53617e">云服务器</text>
+    <text x="188" y="458" font-family="Arial, sans-serif" font-size="13" fill="#53617e">存储与备份</text>
+    <text x="188" y="502" font-family="Arial, sans-serif" font-size="13" fill="#53617e">网络与安全</text>
+    <text x="188" y="546" font-family="Arial, sans-serif" font-size="13" fill="#53617e">监控告警</text>
+    <rect x="180" y="684" width="202" height="1" fill="#fff" fill-opacity=".8"/>
+    <text x="188" y="724" font-family="Arial, sans-serif" font-size="12" fill="#8793ad">7×24 服务中</text>
+
+    <text x="454" y="250" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#17233d">业务运行良好</text>
+    <text x="454" y="280" font-family="Arial, sans-serif" font-size="13" fill="#71809f">实时资源和服务状态</text>
+    <rect x="454" y="320" width="252" height="132" rx="18" fill="#fff" fill-opacity=".56" stroke="#fff" stroke-opacity=".66"/>
+    <text x="478" y="354" font-family="Arial, sans-serif" font-size="12" fill="#71809f">稳定在线</text>
+    <text x="478" y="405" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#17233d">99.99%</text>
+    <text x="604" y="405" font-family="Arial, sans-serif" font-size="12" fill="#18a66a">↑ 0.8%</text>
+    <rect x="730" y="320" width="252" height="132" rx="18" fill="#fff" fill-opacity=".56" stroke="#fff" stroke-opacity=".66"/>
+    <text x="754" y="354" font-family="Arial, sans-serif" font-size="12" fill="#71809f">运行实例</text>
+    <text x="754" y="405" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#17233d">128</text>
+    <text x="754" y="429" font-family="Arial, sans-serif" font-size="12" fill="#71809f">跨 6 个区域</text>
+    <rect x="1006" y="320" width="276" height="132" rx="18" fill="url(#blue)"/>
+    <text x="1030" y="354" font-family="Arial, sans-serif" font-size="12" fill="#dfe9ff">本月用量</text>
+    <text x="1030" y="405" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#fff">¥ 2,480</text>
+    <text x="1030" y="429" font-family="Arial, sans-serif" font-size="12" fill="#dfe9ff">按需计费，透明可控</text>
+
+    <rect x="454" y="488" width="552" height="276" rx="20" fill="#fff" fill-opacity=".5" stroke="#fff" stroke-opacity=".66"/>
+    <text x="482" y="528" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#17233d">流量趋势</text>
+    <text x="482" y="552" font-family="Arial, sans-serif" font-size="12" fill="#71809f">过去 24 小时</text>
+    <path d="M486 700 C540 670 566 686 610 638 S690 674 738 600 S810 632 858 570 S926 610 972 548" fill="none" stroke="#3a8ff5" stroke-width="5" stroke-linecap="round"/>
+    <path d="M486 700 C540 670 566 686 610 638 S690 674 738 600 S810 632 858 570 S926 610 972 548 L972 730 L486 730Z" fill="#3a8ff5" fill-opacity=".12"/>
+    <path d="M486 590H972M486 640H972M486 690H972" stroke="#7c8baa" stroke-opacity=".17"/>
+
+    <rect x="1030" y="488" width="252" height="276" rx="20" fill="#fff" fill-opacity=".5" stroke="#fff" stroke-opacity=".66"/>
+    <text x="1056" y="528" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#17233d">服务区域</text>
+    <circle cx="1062" cy="580" r="6" fill="#19b36b"/><text x="1080" y="585" font-family="Arial, sans-serif" font-size="13" fill="#53617e">华东 · 运行中</text>
+    <circle cx="1062" cy="622" r="6" fill="#19b36b"/><text x="1080" y="627" font-family="Arial, sans-serif" font-size="13" fill="#53617e">华北 · 运行中</text>
+    <circle cx="1062" cy="664" r="6" fill="#f2a735"/><text x="1080" y="669" font-family="Arial, sans-serif" font-size="13" fill="#53617e">华南 · 扩容中</text>
+    <rect x="1056" y="708" width="174" height="30" rx="10" fill="#eaf3ff"/><text x="1143" y="728" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="700" fill="#2879dc">查看全部区域</text>
+  </g>
+</svg>

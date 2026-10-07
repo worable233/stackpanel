@@ -1,5 +1,5 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
-import { EXTENSION_POINTS, ExtensionNotFound } from '@stackpanel/sdk';
+import { EXTENSION_POINTS, isExtensionNotFound } from '@stackpanel/sdk';
 import type { UpstreamProductSource } from '@stackpanel/sdk';
 import { context } from './context';
 import { StoreError } from './errors';
@@ -79,7 +79,8 @@ const toSummary = (record: ProductRecord): StoreProductSummary => ({ ...record }
 
 export async function listProducts(req: HttpRequest): Promise<unknown> {
   const { page, pageSize } = parsePagination(req.query);
-  const categoryId = typeof req.query['categoryId'] === 'string' ? req.query['categoryId'] : undefined;
+  const categoryId =
+    typeof req.query['categoryId'] === 'string' ? req.query['categoryId'] : undefined;
   const { items, total } = await listActiveProductsPage(page, pageSize, categoryId);
   return { products: items.map(toSummary), total, page, pageSize };
 }
@@ -122,7 +123,9 @@ export async function updateProductStock(productId: string, stock: number): Prom
 }
 
 /** Upstream sync: create a product through the store domain (no raw DB). */
-export async function createProductForSync(input: StoreProductMutation): Promise<StoreProductSummary> {
+export async function createProductForSync(
+  input: StoreProductMutation,
+): Promise<StoreProductSummary> {
   const product = await createProductInstance({
     name: input.name,
     description: input.description ?? null,
@@ -248,7 +251,7 @@ export async function updateProduct(req: HttpRequest): Promise<unknown> {
     );
     return { product: toSummary(product) };
   } catch (error) {
-    if (error instanceof ExtensionNotFound) throw new StoreError(404, '商品不存在');
+    if (isExtensionNotFound(error)) throw new StoreError(404, '商品不存在');
     throw error;
   }
 }
@@ -284,7 +287,8 @@ async function syncUpstreamAssociation(
  * 这里把字符串解析回对象后再走 schema 校验。
  */
 function coerceMetadataBody(body: unknown): Record<string, unknown> {
-  if (body === null || typeof body !== 'object' || Array.isArray(body)) return body as Record<string, unknown>;
+  if (body === null || typeof body !== 'object' || Array.isArray(body))
+    return body as Record<string, unknown>;
   const record = body as Record<string, unknown>;
   if (typeof record.metadata === 'string') {
     try {
@@ -304,7 +308,11 @@ function validateTypeConfig(
   const typeProvider = productTypeById(fulfillmentType);
   if (!typeProvider?.configSchema) return;
   const result = typeProvider.configSchema.safeParse(metadata ?? {});
-  if (!result.success) throw new StoreError(400, `商品配置无效：${result.error.issues[0]?.message ?? '配置不符合类型要求'}`);
+  if (!result.success)
+    throw new StoreError(
+      400,
+      `商品配置无效：${result.error.issues[0]?.message ?? '配置不符合类型要求'}`,
+    );
 }
 
 export async function deleteProduct(req: HttpRequest, reply: HttpReply): Promise<unknown> {
@@ -314,7 +322,7 @@ export async function deleteProduct(req: HttpRequest, reply: HttpReply): Promise
     await deleteProductInstance(id);
     return reply.code(204).send();
   } catch (error) {
-    if (error instanceof ExtensionNotFound) throw new StoreError(404, '商品不存在');
+    if (isExtensionNotFound(error)) throw new StoreError(404, '商品不存在');
     throw error;
   }
 }

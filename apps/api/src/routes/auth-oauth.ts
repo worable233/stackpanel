@@ -5,12 +5,16 @@ import type { AuthIdentity, AuthProvider } from '@stackpanel/sdk';
 import { z } from 'zod';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { toPublicUser } from '../lib/user.ts';
+import { isFirstUser } from '../auth/first-user.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { getPrisma } from '../plugins/prisma.ts';
+import { getStateService } from '../state/index.ts';
 
 // H2: OAuth endpoints are public and credential-adjacent; the ceiling comes
 // from the central rate-limit policy so all sensitive surfaces stay auditable.
 const oauthLimit = rateLimitConfig('oauth');
+const OAUTH_STATE_TTL_MS = 5 * 60_000;
+const oauthStateKey = (state: string): string => `oauth:state:${state}`;
 
 const callbackBodySchema = z.object({
   code: z.string().min(1),
@@ -76,6 +80,22 @@ export async function authOAuthRoutes(app: FastifyInstance): Promise<void> {
       const query = authorizeQuerySchema.safeParse(request.query);
       if (!query.success) return reply.code(400).send({ error: '非法的授权请求' });
       const state = query.data.state ?? randomUUID();
+      await getStateService().set(
+        oauthStateKey(state),
+        JSON.stringify({
+          providerId: provider.id,
+          nonce: query.data.nonce ?? null,
+          createdAt: Date.now(),
+        }),
+        OAUTH_STATE_TTL_MS,
+      );
+      reply.setCookie('sp_oauth_state_api', state, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/auth/oauth',
+        maxAge: 300,
+      });
       const authorizeUrl = provider.authorizeUrl?.(state, {
         ...(query.data.codeChallenge ? { codeChallenge: query.data.codeChallenge } : {}),
         ...(query.data.nonce ? { nonce: query.data.nonce } : {}),
@@ -98,6 +118,23 @@ export async function authOAuthRoutes(app: FastifyInstance): Promise<void> {
       }
       const provider = findProvider(app, params.data.providerId);
       if (!provider) return reply.code(404).send({ error: '未知的认证服务' });
+
+      const stateKey = oauthStateKey(body.data.state);
+      if (request.cookies?.sp_oauth_state_api !== body.data.state) {
+        return reply.code(401).send({ error: 'OAuth 浏览器状态不匹配' });
+      }
+      reply.clearCookie('sp_oauth_state_api', { path: '/auth/oauth' });
+      // Consume the state atomically so concurrent callbacks cannot reuse it.
+      const storedState = await getStateService().consume(stateKey);
+      if (!storedState) return reply.code(401).send({ error: 'OAuth 状态已过期或无效' });
+      try {
+        const parsed = JSON.parse(storedState) as { providerId?: string; nonce?: string | null };
+        if (parsed.providerId !== provider.id || (parsed.nonce && parsed.nonce !== body.data.nonce)) {
+          return reply.code(401).send({ error: 'OAuth 状态校验失败' });
+        }
+      } catch {
+        return reply.code(401).send({ error: 'OAuth 状态无效' });
+      }
 
       const identity = await provider.authenticate({
         code: body.data.code,
@@ -144,7 +181,9 @@ export async function authOAuthRoutes(app: FastifyInstance): Promise<void> {
           return reply.code(409).send({ error: '该邮箱已在本平台注册' });
         }
         const created = await prisma.$transaction(async (tx) => {
-          const isFirst = (await tx.user.count()) === 0;
+          // Serialize the first-admin election against concurrent sign-ups
+          // (SECURITY-AUDIT-2026-10-04 L-4).
+          const isFirst = await isFirstUser(tx);
           const user = await tx.user.create({
             data: {
               email,

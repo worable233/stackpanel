@@ -52,4 +52,5 @@ const locale = useLocale();
 
 - 不做内容多语言（文章/商品翻译表与工作流）。
 - 不做 URL 语言前缀、hreflang、多语言 sitemap。
-- 主题 / 插件前端自带的界面文案暂不接管；待 manifest `locales`（ADR-0016 §5）落地后再接入。
+- 主题 / 插件前端自带的界面文案暂不并入内核 catalog。manifest `locales` 已用于能力声明与管理界面展示，
+  但不会自动接管插件自己的翻译资源。

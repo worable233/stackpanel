@@ -49,6 +49,7 @@ import {
   adminUserDetailResponseSchema,
   adminUserMutationResponseSchema,
   adminUserServicesResponseSchema,
+  adminUserUpstreamServicesResponseSchema,
   storeProductTypeListResponseSchema,
   upstreamSourceListResponseSchema,
   upstreamProductsResponseSchema,
@@ -89,6 +90,7 @@ import type {
   AdminUserDetailResponse,
   AdminUserMutationResponse,
   AdminUserServicesResponse,
+  AdminUserUpstreamServicesResponse,
   ImpersonateResponse,
   StoreProductTypeListResponse,
   UpstreamProductResponse,
@@ -470,16 +472,20 @@ export class ApiClient {
     );
   }
 
-  /** List admin users, optionally filtered by a search query (email contains). */
+  /** List admin users, optionally filtered by search query, status or group. */
   listAdminUsers(options?: {
     page?: number;
     pageSize?: number;
     q?: string;
+    status?: 'ACTIVE' | 'DISABLED';
+    groupId?: string;
   }): Promise<UserListResponse> {
     const query = new URLSearchParams();
     if (options?.page !== undefined) query.set('page', String(options.page));
     if (options?.pageSize !== undefined) query.set('pageSize', String(options.pageSize));
     if (options?.q) query.set('q', options.q);
+    if (options?.status) query.set('status', options.status);
+    if (options?.groupId) query.set('groupId', options.groupId);
     const qs = query.toString();
     return this.get(`/admin/users${qs ? `?${qs}` : ''}`, userListResponseSchema);
   }
@@ -576,6 +582,34 @@ export class ApiClient {
   deleteAdminUserService(userId: string, serviceId: string): Promise<void> {
     return this.del(
       `/admin/users/${encodeURIComponent(userId)}/services/${encodeURIComponent(serviceId)}`,
+      z.void(),
+    );
+  }
+
+  /** List upstream already-purchased services available to bind to a user. */
+  getAdminUserUpstreamServices(id: string): Promise<AdminUserUpstreamServicesResponse> {
+    return this.get(
+      `/admin/users/${encodeURIComponent(id)}/upstream-services`,
+      adminUserUpstreamServicesResponseSchema,
+    );
+  }
+
+  /** Bind an upstream already-purchased service to a user. */
+  bindAdminUserUpstreamService(
+    id: string,
+    input: { sourceId: string; providerServiceId: string },
+  ): Promise<AdminUserServicesResponse> {
+    return this.post(
+      `/admin/users/${encodeURIComponent(id)}/upstream-services`,
+      input,
+      adminUserServicesResponseSchema,
+    );
+  }
+
+  /** Unbind an upstream service from a user (removes the local binding only). */
+  unbindAdminUserUpstreamService(userId: string, serviceId: string): Promise<void> {
+    return this.del(
+      `/admin/users/${encodeURIComponent(userId)}/upstream-services/${encodeURIComponent(serviceId)}`,
       z.void(),
     );
   }

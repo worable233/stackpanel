@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="auto" viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title desc">
+  <title id="title">Glass cloud infrastructure object</title>
+  <desc id="desc">Premium 3D glass cloud infrastructure module with blue light, rings and soft shadows.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f7fbff"/>
+      <stop offset=".45" stop-color="#dff2ff"/>
+      <stop offset="1" stop-color="#f4edff"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffffff" stop-opacity=".92"/>
+      <stop offset=".35" stop-color="#cceaff" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#91bfff" stop-opacity=".22"/>
+    </linearGradient>
+    <linearGradient id="glassDark" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#11356f" stop-opacity=".92"/>
+      <stop offset=".5" stop-color="#2b79ed" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#9de8ff" stop-opacity=".45"/>
+    </linearGradient>
+    <linearGradient id="light" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ffffff" stop-opacity=".98"/>
+      <stop offset=".25" stop-color="#8fe6ff" stop-opacity=".92"/>
+      <stop offset="1" stop-color="#2876ef" stop-opacity=".92"/>
+    </linearGradient>
+    <radialGradient id="halo"><stop stop-color="#6bd8ff" stop-opacity=".55"/><stop offset="1" stop-color="#8b9dff" stop-opacity="0"/></radialGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="38"/></filter>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="180%"><feDropShadow dx="0" dy="34" stdDeviation="28" flood-color="#5473b3" flood-opacity=".28"/></filter>
+    <filter id="glow"><feGaussianBlur stdDeviation="12"/></filter>
+    <filter id="smallGlow"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+
+  <rect width="1400" height="900" rx="42" fill="url(#bg)"/>
+  <circle cx="1070" cy="170" r="270" fill="#86d9ff" opacity=".34" filter="url(#blur)"/>
+  <circle cx="360" cy="730" r="250" fill="#c8a7ff" opacity=".2" filter="url(#blur)"/>
+  <ellipse cx="700" cy="775" rx="470" ry="70" fill="#4565a8" opacity=".18" filter="url(#blur)"/>
+
+  <g transform="translate(700 440) scale(1.35)" filter="url(#softShadow)">
+    <!-- floating blue energy halo -->
+    <ellipse cx="0" cy="52" rx="300" ry="178" fill="url(#halo)" opacity=".5" filter="url(#glow)"/>
+    <ellipse cx="0" cy="52" rx="292" ry="168" fill="none" stroke="#fff" stroke-opacity=".88" stroke-width="4" transform="rotate(-12)"/>
+    <ellipse cx="0" cy="52" rx="314" ry="182" fill="none" stroke="#8bdcff" stroke-opacity=".78" stroke-width="3" transform="rotate(18)"/>
+
+    <!-- translucent base pedestal -->
+    <path d="M-260 120 L-185 180 L185 180 L260 120 L185 64 L-185 64 Z" fill="url(#glass)" stroke="#fff" stroke-opacity=".88" stroke-width="4"/>
+    <ellipse cx="0" cy="122" rx="188" ry="58" fill="#7cc8ff" fill-opacity=".28" stroke="#fff" stroke-opacity=".86" stroke-width="4"/>
+    <ellipse cx="0" cy="112" rx="132" ry="33" fill="#1b5cdf" fill-opacity=".38" filter="url(#smallGlow)"/>
+
+    <!-- central server prism -->
+    <path d="M-158-164 L8-218 L174-157 L8-104 Z" fill="#b9e9ff" fill-opacity=".82" stroke="#fff" stroke-opacity=".9" stroke-width="4"/>
+    <path d="M-158-164 L8-104 L8 84 L-158 22 Z" fill="url(#glass)" stroke="#fff" stroke-opacity=".8" stroke-width="4"/>
+    <path d="M8-104 L174-157 L174 28 L8 84 Z" fill="url(#glassDark)" stroke="#fff" stroke-opacity=".7" stroke-width="4"/>
+    <path d="M-112-141 L8-180 L127-143 L8-123 Z" fill="#fff" fill-opacity=".65"/>
+    <path d="M35-78 L144-112 L144-93 L35-58 Z" fill="#b4f2ff" fill-opacity=".9"/>
+    <path d="M35-37 L144-70 L144-53 L35-18 Z" fill="#7ecbff" fill-opacity=".76"/>
+    <path d="M35 5 L106-17 L106-2 L35 21 Z" fill="#fff" fill-opacity=".8"/>
+    <circle cx="127" cy="-70" r="7" fill="#fff"/><circle cx="127" cy="-70" r="17" fill="#7de4ff" opacity=".45" filter="url(#smallGlow)"/>
+
+    <!-- hovering data capsules -->
+    <g transform="translate(264 -118) rotate(12)">
+      <rect x="-8" y="-8" width="118" height="74" rx="22" fill="url(#glass)" stroke="#fff" stroke-opacity=".88" stroke-width="3"/>
+      <rect x="8" y="8" width="118" height="74" rx="22" fill="url(#glass)" stroke="#fff" stroke-opacity=".65" stroke-width="3"/>
+      <path d="M24 37 H94" stroke="#5aa4ff" stroke-width="7" stroke-linecap="round"/>
+      <path d="M24 57 H70" stroke="#fff" stroke-opacity=".86" stroke-width="6" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(-340 -40) rotate(-18)">
+      <rect x="0" y="0" width="100" height="56" rx="18" fill="url(#glass)" stroke="#fff" stroke-opacity=".86" stroke-width="3"/>
+      <circle cx="27" cy="28" r="10" fill="#4c9eff"/><path d="M48 21 H78 M48 34 H68" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    </g>
+
+    <!-- specular highlights -->
+    <path d="M-127-151 L-4-191" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-opacity=".78"/>
+    <path d="M-185 82 C-120 112 -65 125 0 125" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-opacity=".72" fill="none"/>
+    <path d="M-292 44 C-214 4 -135-4 -60 11" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-opacity=".62" fill="none"/>
+  </g>
+
+  <g fill="#fff" opacity=".8">
+    <circle cx="260" cy="220" r="5"/><circle cx="300" cy="190" r="3"/><circle cx="1120" cy="600" r="5"/><circle cx="1160" cy="570" r="3"/>
+  </g>
+</svg>

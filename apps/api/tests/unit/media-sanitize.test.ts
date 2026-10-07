@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isSafeUrl, sanitizeRichText } from '../../src/media/sanitize.ts';
-import { sanitizeRichText as sdkSanitize } from '@stackpanel/sdk';
+import { sanitizeRichText as sdkSanitize } from '@stackpanel/sdk/sanitize';
 
 /**
  * The kernel's `media/sanitize` module is a thin re-export of the canonical SDK

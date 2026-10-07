@@ -120,11 +120,7 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
     }
     const routes = app.pluginDispatcher
       .list()
-      .filter(
-        (route) =>
-          route.pluginId === id &&
-          (route.method === 'POST' || route.method === 'PATCH' || route.method === 'DELETE'),
-      )
+      .filter((route) => route.pluginId === id)
       .map((route) => ({
         method: route.method,
         path: route.path,
@@ -133,19 +129,23 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
     return { routes };
   });
 
-  app.get('/plugins/:id/frontend/*', async (request, reply) => {
-    const params = pluginIdSchema.safeParse(request.params);
-    const asset = (request.params as { '*': string })['*'];
-    if (!params.success || !asset) return reply.code(400).send({ error: '请求参数无效' });
-    if (asset.includes('..') || asset.includes('\\')) {
-      return reply.code(400).send({ error: '非法的前端路径' });
-    }
-    const { id } = params.data;
-    if (!app.pluginRuntime.isActive(id) || !existsSync(pluginPackageDir(id))) {
-      return reply.code(404).send({ error: '插件不存在' });
-    }
-    return serveFrontendFile(reply, pluginPackageDir(id), asset);
-  });
+  app.get(
+    '/plugins/:id/frontend/*',
+    { ...rateLimitConfig('publicRead') },
+    async (request, reply) => {
+      const params = pluginIdSchema.safeParse(request.params);
+      const asset = (request.params as { '*': string })['*'];
+      if (!params.success || !asset) return reply.code(400).send({ error: '请求参数无效' });
+      if (asset.includes('..') || asset.includes('\\')) {
+        return reply.code(400).send({ error: '非法的前端路径' });
+      }
+      const { id } = params.data;
+      if (!app.pluginRuntime.isActive(id) || !existsSync(pluginPackageDir(id))) {
+        return reply.code(404).send({ error: '插件不存在' });
+      }
+      return serveFrontendFile(reply, pluginPackageDir(id), asset);
+    },
+  );
 
   app.get('/plugins/:id/settings-schema', async (request, reply) => {
     const params = pluginIdSchema.safeParse(request.params);

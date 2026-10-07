@@ -20,13 +20,6 @@ export interface PermissionGroup {
   discount?: number | null;
 }
 
-/** A declared permission string. */
-export interface PermissionInfo {
-  id: string;
-  key: string;
-  name: string;
-}
-
 /** Authenticated user surface exposed to plugins and the frontend. */
 export interface AuthUser {
   id: string;

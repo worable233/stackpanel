@@ -1,7 +1,7 @@
 # MEDIA 模块（媒体与存储，ADR-0014）
 
-面向内核的附件域、图片管线与富文本清洗实现。**本模块只新增文件**，不改共享文件；
-内核在 `apps/api/src/app.ts` 追加一行接线（INTERFACES §6）。
+面向内核的附件域、图片管线、引用索引与富文本安全边界。二进制存储在
+`StorageDriver`，PostgreSQL 保存附件元数据、变体状态和 `attachment_references` 引用关系。
 
 ## 目录
 
@@ -11,7 +11,7 @@
 | `policy.ts`                       | 上传白名单与大小上限（默认 25MB，仅 image/document/archive）  |
 | `keys.ts`                         | 对象存储 key 方案：`media/<yyyy>/<mm>/<id>/<name>.<ext>`      |
 | `image.ts`                        | 变体阶梯规划（thumb/medium/large）+ 可注入 `ImageTransformer` |
-| `variants.ts`                     | 阶段 B 计划：把变体阶梯落成 `pending` 行 + 任务载荷（纯逻辑） |
+| `variants.ts`                     | 阶段 B 计划与重试状态：把变体阶梯落成 `pending` 行 + 任务载荷 |
 | `sharp-transformer.ts`            | `sharp` 编码器实现（注入 `routes.ts` 的 `buildService`）      |
 | `worker.ts`                       | 阶段 B 编码 worker：`runVariantJob` / `processPendingVariants` |
 | `jobs.ts`                         | 阶段 B 内核任务接线：`registerMediaJobs` + 队列装配           |
@@ -19,7 +19,8 @@
 | `disposition.ts`                  | RFC 6266/5987 `Content-Disposition`（防响应头注入）           |
 | `attachments.ts`                  | 附件域类型 + 仓储端口 + 引用完整性辅助                        |
 | `service.ts`                      | `AttachmentService`：入库 / 读取 / 列表 / 改名 / 删除         |
-| `prisma-attachment-repository.ts` | 仓储的 Prisma 适配（原始 SQL，容忍迁移未落地的空表）          |
+| `prisma-attachment-repository.ts` | 仓储的 Prisma 适配 |
+| `references.ts`                   | `attachment_references` 引用索引、查询与删除保护             |
 | `routes.ts`                       | HTTP 面：`registerMediaRoutes(app)`                           |
 
 ## 图片管线：阶段 A / 阶段 B（ADR-0014 §4）
@@ -33,18 +34,20 @@
   `kernel.media.variants-backfill`）把崩溃遗留的 `pending` 行重新入队。key 确定，重跑幂等。
 - 详细设计见 `ENCODER-PLAN.md` §5。
 
-## 内核接线（KERNEL 执行）
+## 内核接线（已落地）
 
-1. `app.ts` 顶部追加：`import { registerMediaRoutes } from './media/index.ts';`
-2. 在 `healthRoutes` 附近追加一行：`void app.register(registerMediaRoutes);`
-3. `plugin-host.ts` 的 `registerKernelJobs()` 追加一行：`registerMediaJobs(kernelJobs);`
-   （API 与 worker 的共同注册点，保证变体任务在任一消费副本可执行）。
-4. 富文本清洗原语已上收至 `@stackpanel/sdk`（`sanitizeRichText` / `isSafeUrl`），插件在写入前
+`app.ts` 已注册 `registerMediaRoutes()`；`plugin-host.ts` 的 `registerKernelJobs()` 已在 API
+与 worker 的共同注册点接入 `registerMediaJobs`，保证变体任务在任一消费副本可执行。
+富文本清洗原语已上收至 `@stackpanel/sdk`（`sanitizeRichText` / `isSafeUrl`），插件在写入前
    调用同实现，不得绕过；本模块 `sanitize.ts` 只是重导出。
 
-## 附件表（KERNEL 迁移，槽位待 E1 让出后取）
+## 附件表与引用索引（已落地）
 
-schema.prisma 追加：
+`packages/db/prisma/schema.prisma` 已包含 `Attachment` 模型；迁移
+`packages/db/prisma/migrations/20261006000000_attachment_references/` 创建引用索引表，
+后续迁移 `20261006010000_attachment_reference_ownership` 增加 owner scope、索引并把附件
+外键改为 `ON DELETE RESTRICT`。
+附件表结构为：
 
 ```prisma
 /// 内核附件域（ADR-0014 §2）。二进制在对象存储，元数据在主库。
@@ -68,31 +71,9 @@ model Attachment {
 }
 ```
 
-对应手写迁移 `prisma/migrations/<next>_attachment/migration.sql`：
-
-```sql
-CREATE TABLE "attachments" (
-    "id" TEXT NOT NULL,
-    "key" TEXT NOT NULL,
-    "filename" TEXT NOT NULL,
-    "mime" TEXT NOT NULL,
-    "size" INTEGER NOT NULL,
-    "width" INTEGER,
-    "height" INTEGER,
-    "ownerId" TEXT,
-    "visibility" TEXT NOT NULL DEFAULT 'private',
-    "variants" JSONB NOT NULL DEFAULT '[]',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "attachments_pkey" PRIMARY KEY ("id")
-);
-CREATE UNIQUE INDEX "attachments_key_key" ON "attachments"("key");
-CREATE INDEX "attachments_ownerId_createdAt_idx" ON "attachments"("ownerId", "createdAt");
-CREATE INDEX "attachments_createdAt_idx" ON "attachments"("createdAt");
-```
-
-`PrismaAttachmentRepository` 用原始 SQL，故在 `prisma generate` 前也能通过类型检查与构建；
-表缺席时读操作返回空、写操作报错，可先接线后迁移。
+插件通过 SDK 的 `ctx.media` 注册和删除引用；引用表使用 `ON DELETE RESTRICT`，删除检查与数据库约束共同保证并发安全，仍有引用时返回冲突并保留对象和元数据。引用带有插件 owner scope，插件只能移除自己的引用。资源删除时应调用
+`ctx.media.unregisterResource(resourceType, resourceId)`。管理员可通过
+`GET /media/:id/references` 查看引用。
 
 ## HTTP 契约
 
@@ -108,9 +89,9 @@ CREATE INDEX "attachments_createdAt_idx" ON "attachments"("createdAt");
 上传用 raw body 而非 multipart：内核全局 multipart 限制为 2MB，低于媒体策略；
 本模块按内容类型注册了带 `bodyLimit` 的解析器，两者互不打架。
 
-主动内容（`image/svg+xml` 等）一律 `Content-Disposition: attachment`：SVG 是 XML 且可携带
-`<script>`，而全局 CSP 含 `script-src 'unsafe-inline'`，内联渲染即存储型 XSS。位图与 PDF 仍
-内联。
+主动内容（`image/svg+xml`、HTML、XHTML 等）一律 `Content-Disposition: attachment`：SVG 是 XML
+且可携带 `<script>`，不应在同源页面内联执行。位图与 PDF 仍可内联；API 文档页单独使用
+宽松的 Swagger CSP，普通 API 响应使用 `script-src 'self'`。
 
 ## 环境变量（已登记 `config/env.ts`）
 

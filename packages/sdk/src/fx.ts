@@ -13,6 +13,8 @@
  * consumers.
  */
 
+import { KernelError, brandSdkErrorClass, isSdkErrorClass } from './errors.js';
+
 /**
  * A frozen exchange quote for an order. Rate is an integer scaled by 1e6:
  * `settlementAmount = round(nativeAmountMinor * rate / 1_000_000)`.
@@ -44,17 +46,18 @@ export interface FxRate {
 }
 
 /** Error thrown by the kernel FX service. Carries an HTTP status + display message. */
-export class FxError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
+export class FxError extends KernelError {
+  constructor(status: number, message: string, code = 'fx.error') {
+    super(code, status, message);
     this.name = 'FxError';
-    this.statusCode = status;
   }
-  /** Alias so Fastify's error handler maps the error to an HTTP status. */
-  readonly statusCode: number;
+}
+
+brandSdkErrorClass(FxError, 'FxError');
+
+/** True when `value` is an {@link FxError}, even across duplicated SDK modules. */
+export function isFxError(value: unknown): value is FxError {
+  return isSdkErrorClass(value, 'FxError');
 }
 
 /** Kernel FX service exposed to plugins via `ctx.fx`. */

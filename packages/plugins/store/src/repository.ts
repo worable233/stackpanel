@@ -422,6 +422,32 @@ export async function getService(id: string): Promise<ServiceInstanceRecord | nu
   return instance ? toService(instance) : null;
 }
 
+/** 按上游服务标识查找已绑定的交付物（任意用户；上游服务全局唯一绑定）。 */
+export async function findServiceByProviderService(
+  providerId: string,
+  providerServiceId: string,
+): Promise<ServiceInstanceRecord | null> {
+  const page = await extensions().list<StoreServiceInstanceData>(serviceInstanceModel, {
+    where: {
+      providerId: { eq: providerId },
+      providerServiceId: { eq: providerServiceId },
+    },
+    page: 1,
+    pageSize: 1,
+  });
+  const item = page.items[0];
+  return item ? toService(item) : null;
+}
+
+/** 列出某上游提供方下所有已绑定的交付物（用于「已绑定」标记）。 */
+export async function listServicesByProvider(providerId: string): Promise<ServiceInstanceRecord[]> {
+  const rows = await extensions().listAll<StoreServiceInstanceData>(serviceInstanceModel, {
+    where: { providerId: { eq: providerId } },
+    orderBy: { field: 'createdAt', desc: true },
+  });
+  return rows.map(toService);
+}
+
 export async function listServicesPage(
   page: number,
   pageSize: number,

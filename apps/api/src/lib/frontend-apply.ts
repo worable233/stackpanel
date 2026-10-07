@@ -4,6 +4,7 @@ import path from 'node:path';
 import { peekRedis } from '@stackpanel/db';
 import { REDIS_KEY_PREFIX } from '@stackpanel/sdk';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
+import { notifyFrontendApplyQueued } from '../notifications/frontend-apply-notifications.ts';
 
 /**
  * 插件/主题前端「应用」信号（kernel → web 容器）。
@@ -49,18 +50,44 @@ export interface FrontendApplyRequest {
 export type FrontendApplyAction = 'install' | 'update' | 'remove';
 
 /**
+ * Whether this is a single-process development stack.
+ *
+ * The frontend builder's ownership already turns on Redis: with Redis a
+ * dedicated worker is the single builder (S7 / ADR-0017 §5); without Redis
+ * there is no worker and the API process itself is the sole job owner, so it
+ * also owns the builder. The same signal decides the *build shape*: a
+ * single-process stack serves the app with `next dev`, which hot-reloads the
+ * regenerated registry, so no `next build` / restart is needed (and `next
+ * build` would fight the live dev server over `.next`). Production (Redis
+ * present, `next start` behind the supervisor) runs the full build.
+ *
+ * `NODE_ENV` is deliberately not used: the PM2 deployment serves built
+ * artifacts while running with `NODE_ENV=development`, so it must still build.
+ */
+export function isFrontendDevBuild(): boolean {
+  return peekRedis() === null;
+}
+
+/**
  * Progress plan for a user-triggered apply. Owned here so the API can surface
- * the same steps to the UI while the request is still queued; the web
- * supervisor reads them from the request file and reports against them.
+ * the same steps to the UI while the request is still queued; the builder reads
+ * them from the request file and reports against them.
  */
 export function frontendApplySteps(input: {
   target: 'plugin' | 'theme';
   action: FrontendApplyAction;
   rebuild: boolean;
+  /** Override dev detection (tests). Defaults to {@link isFrontendDevBuild}. */
+  dev?: boolean;
 }): string[] {
   if (!input.rebuild) return ['停止当前服务', '重启服务'];
   const noun = input.target === 'theme' ? '主题' : '插件';
   const second = input.action === 'remove' ? `移除${noun}前端资源` : `编译${noun}前端资源`;
+  // Single-process dev: only the registry is regenerated; the dev server
+  // hot-reloads. No service stop/restart steps apply.
+  if (input.dev ?? isFrontendDevBuild()) {
+    return [second, '生成前端产物'];
+  }
   return ['停止当前服务', second, '生成前端产物', '重启服务'];
 }
 
@@ -142,7 +169,7 @@ export async function computeFrontendSignature(): Promise<{
   }
   entries.sort();
   return {
-    signature: createHash('sha1').update(entries.join('\n')).digest('hex'),
+    signature: createHash('sha256').update(entries.join('\n')).digest('hex'),
     count: entries.length,
   };
 }
@@ -214,6 +241,13 @@ export async function requestFrontendApply(input: {
   const tmp = `${target}.${process.pid}.tmp`;
   await writeFile(tmp, `${JSON.stringify(request, null, 2)}\n`, 'utf8');
   await rename(tmp, target);
+  // Surface the activity in the bell immediately, before the builder's first
+  // `building` update. Best-effort: a notification must never break the apply.
+  try {
+    await notifyFrontendApplyQueued(request);
+  } catch {
+    // The builder's progress updates will create the live notification anyway.
+  }
   // Nudge the worker (single builder) for low latency; the durable request file
   // is the fallback trigger, so this is best-effort (no Redis in dev).
   const redis = peekRedis();

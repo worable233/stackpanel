@@ -11,8 +11,15 @@
  * error handler renders the RFC 7807 problem (ADR-0012).
  */
 import type { PrismaClient } from '@stackpanel/db';
-import { CommerceError, PluginError } from '@stackpanel/sdk';
-import type { CommerceOperations, CommerceOrder, CommerceService, WalletService } from '@stackpanel/sdk';
+import { isCommerceError, PluginError } from '@stackpanel/sdk';
+import type {
+  CommerceOperations,
+  CommerceOrder,
+  CommerceService,
+  UpstreamServiceItem,
+  UpstreamServiceSource,
+  WalletService,
+} from '@stackpanel/sdk';
 import { generatePassword } from './generate.ts';
 import { hashPassword } from './password.ts';
 import { ADMIN_GROUP_ID, isLastAdmin, toPublicUser } from './user.ts';
@@ -50,12 +57,18 @@ export interface UserAdminDeps {
   auth: UserAdminAuth;
   /** Commerce domain outlet (store plugin); absent when the plugin is inactive. */
   commerce?: CommerceOperations | null | undefined;
+  /** Registered upstream service sources (upstream plugins); empty when none. */
+  upstreamServiceSources?: UpstreamServiceSource[] | undefined;
 }
 
 export interface ListUsersInput {
   page: number;
   pageSize: number;
   q?: string | undefined;
+  /** Filter by account status. */
+  status?: 'ACTIVE' | 'DISABLED' | undefined;
+  /** Filter to users that belong to this permission group. */
+  groupId?: string | undefined;
 }
 
 export interface CreateUserInput {
@@ -181,8 +194,12 @@ export class UserAdminService {
   }
 
   async listUsers(input: ListUsersInput) {
-    const { page, pageSize, q } = input;
-    const where = q ? { email: { contains: q.toLowerCase() } } : {};
+    const { page, pageSize, q, status, groupId } = input;
+    const where = {
+      ...(q ? { email: { contains: q.toLowerCase() } } : {}),
+      ...(status ? { status } : {}),
+      ...(groupId ? { groups: { some: { groupId } } } : {}),
+    };
     const [users, total] = await Promise.all([
       this.db.user.findMany({
         where,
@@ -411,7 +428,7 @@ export class UserAdminService {
         expiresAt: expiresAt ? new Date(expiresAt) : null,
       });
     } catch (error) {
-      if (error instanceof CommerceError) {
+      if (isCommerceError(error)) {
         if (error.failure === 'product_not_found') {
           throw new PluginError('product.not_found', 404, '商品不存在');
         }
@@ -477,6 +494,146 @@ export class UserAdminService {
       resource: 'user',
       resourceId: id,
       meta: { serviceId, productName: existing.productName },
+      ...audit,
+    });
+  }
+
+  /** 已注册的上游「已购服务」数据源（未安装上游插件时为空）。 */
+  private upstreamSources(): UpstreamServiceSource[] {
+    return this.deps.upstreamServiceSources ?? [];
+  }
+
+  /**
+   * 实时聚合各上游已购服务，并标注每条在本平台的绑定归属。
+   *
+   * 上游服务若已绑定到**本账号**，`boundServiceId` 有值；若绑定到其它账号，
+   * 则 `boundUserId` 有值（前端据此禁用选择）。
+   */
+  async listUpstreamServices(id: string) {
+    const sources = this.upstreamSources();
+    if (sources.length === 0) {
+      return { sources: [], services: [] };
+    }
+    const commerce = this.commerce;
+    const boundByProvider = new Map<string, CommerceService[]>();
+    for (const source of sources) {
+      if (commerce) {
+        boundByProvider.set(source.id, await commerce.listBoundServices(source.id));
+      }
+    }
+    const services = [];
+    for (const source of sources) {
+      const items = await source.list({ limit: 100 }).catch(() => []);
+      const bound = new Map(
+        (boundByProvider.get(source.id) ?? [])
+          .filter((service) => service.providerServiceId)
+          .map((service) => [service.providerServiceId as string, service]),
+      );
+      for (const item of items) {
+        services.push(this.toAdminUpstreamService(source.id, item, bound.get(item.id), id));
+      }
+    }
+    return {
+      sources: sources.map((source) => ({ id: source.id, name: source.name })),
+      services,
+    };
+  }
+
+  private toAdminUpstreamService(
+    sourceId: string,
+    item: UpstreamServiceItem,
+    bound: CommerceService | undefined,
+    targetUserId: string,
+  ) {
+    const mine = bound?.userId === targetUserId;
+    return {
+      id: item.id,
+      name: item.name,
+      productName: item.productName ?? null,
+      status: item.status ?? null,
+      statusLabel: item.statusLabel ?? null,
+      host: item.host ?? null,
+      expiresAt: item.expiresAt ?? null,
+      amount: item.amount ?? null,
+      currency: item.currency ?? null,
+      sourceId,
+      boundServiceId: mine && bound ? bound.id : null,
+      boundUserId: bound && !mine ? bound.userId : null,
+    };
+  }
+
+  /**
+   * 把某个上游已购服务绑定为 `id` 账号的交付物。
+   *
+   * 不调用上游 `provision`（服务已存在），只落一条本地交付物并写入
+   * `providerId` / `providerServiceId` / `runtime.upstreamId`，此后详情、
+   * 监控与生命周期动作仍从上游实时读取。
+   */
+  async bindUpstreamService(
+    id: string,
+    input: { sourceId: string; providerServiceId: string },
+    audit: UserAdminAudit,
+  ) {
+    const source = this.upstreamSources().find((candidate) => candidate.id === input.sourceId);
+    if (!source) throw new PluginError('upstream.not_found', 404, '上游不存在或未启用');
+    const commerce = this.requireCommerce();
+    const items = await source.list({ limit: 200 });
+    const item = items.find((candidate) => candidate.id === input.providerServiceId);
+    if (!item) throw new PluginError('upstream.service_not_found', 404, '上游服务不存在');
+
+    let created: CommerceService;
+    try {
+      created = await commerce.bindService({
+        userId: id,
+        productId: item.id,
+        productName: item.productName ?? item.name,
+        fulfillmentType: 'upstream_service',
+        providerId: source.id,
+        providerServiceId: item.id,
+        status: item.status ?? 'ACTIVE',
+        amount: item.amount ?? 0,
+        currency: item.currency ?? 'CNY',
+        expiresAt: item.expiresAt ? new Date(item.expiresAt) : null,
+        runtime: { upstreamId: item.sourceRef ?? null, host: item.host ?? null },
+      });
+    } catch (error) {
+      if (isCommerceError(error) && error.failure === 'service_already_bound') {
+        throw new PluginError('service.already_bound', 409, error.message);
+      }
+      throw error;
+    }
+    await writeAudit({
+      action: 'user.service.bind',
+      resource: 'user',
+      resourceId: id,
+      meta: {
+        sourceId: source.id,
+        providerServiceId: item.id,
+        productName: item.productName ?? item.name,
+        serviceId: created.id,
+      },
+      ...audit,
+    });
+    const services = await commerce.listServices(id);
+    return { services: services.map(toAdminService), created: [created.id] };
+  }
+
+  /** 解除绑定：仅删除本地交付物，不影响上游已购服务本身。 */
+  async unbindUpstreamService(id: string, serviceId: string, audit: UserAdminAudit) {
+    const commerce = this.requireCommerce();
+    const existing = await commerce.getService(id, serviceId);
+    if (!existing) throw new PluginError('service.not_found', 404, '服务不存在');
+    await commerce.deleteService(serviceId);
+    await writeAudit({
+      action: 'user.service.unbind',
+      resource: 'user',
+      resourceId: id,
+      meta: {
+        serviceId,
+        providerId: existing.providerId,
+        providerServiceId: existing.providerServiceId,
+        productName: existing.productName,
+      },
       ...audit,
     });
   }

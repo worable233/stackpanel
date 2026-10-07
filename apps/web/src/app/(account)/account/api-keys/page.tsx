@@ -1,6 +1,6 @@
 import { PageHeader } from '@stackpanel/ui';
 import { ApiTokenManager } from '@/components/api-token-manager';
-import { getAuthedApiClient } from '@/lib/api';
+import { getAuthedApiClient, publicApiBaseUrl } from '@/lib/api';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 
@@ -30,7 +30,7 @@ export default async function AccountApiKeysPage() {
         <p className="text-sm font-medium">{t('account.apiKeys.howTo')}</p>
         <p className="text-sm text-muted-foreground">{t('account.apiKeys.usage')}</p>
         <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs text-muted-foreground">
-          {`curl ${process.env.API_BASE_URL ?? 'http://127.0.0.1:3001'}/notifications \\\n  -H "Authorization: Bearer ${t('account.apiKeys.placeholder')}"`}
+          {`curl ${publicApiBaseUrl()}/notifications \\\n  -H "Authorization: Bearer ${t('account.apiKeys.placeholder')}"`}
         </pre>
       </section>
     </main>

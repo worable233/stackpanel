@@ -1,10 +1,11 @@
 'use client';
 
-import { Bell } from 'lucide-react';
+import { Bell, Check, CircleAlert, Loader } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import type { NotificationListResponse } from '@stackpanel/sdk';
+import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatDate } from '@/i18n/core';
+import { mergeNotification, useNotificationStream } from '@/lib/use-notification-stream';
 import { cn } from '@/lib/utils';
 
 const POLL_INTERVAL_MS = 30_000;
@@ -25,15 +27,29 @@ export interface NotificationBellProps {
 
 /**
  * Top-bar notification bell shown in both the account and admin shells.
- * Polls the unread count through the BFF proxy (30s + on window focus) and
- * shows the latest notifications in a dropdown. External channel push
- * (SSE/WebSocket/email) can replace the polling later without changing this UI.
+ *
+ * The unread count and the recent list come from REST polling (30s + on window
+ * focus). A live SSE stream folds in `notification.created`/`updated` frames on
+ * top, so an active activity's progress bar advances in place between polls.
+ * External channel push can replace the polling later without changing this UI.
  */
 export function NotificationBell({ inboxHref }: NotificationBellProps) {
   const t = useTranslator();
   const locale = useLocale();
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<NotificationListResponse['items']>([]);
+
+  // Apply streamed notifications on top of the polled list. A brand-new live
+  // row also bumps the unread badge (an activity rewrite clears `readAt`, so an
+  // in-progress apply keeps the badge lit until the admin opens it).
+  const applyLive = useCallback((view: NotificationView) => {
+    setItems((prev) => {
+      const known = prev.some((item) => item.id === view.id);
+      if (!known && !view.readAt) setUnreadCount((count) => count + 1);
+      return mergeNotification(prev, view).slice(0, 8);
+    });
+  }, []);
+  useNotificationStream(applyLive);
 
   const refreshCount = useCallback(async () => {
     try {
@@ -72,6 +88,8 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
     };
   }, [refreshCount]);
 
+  // Fold streamed live notifications into the list so an in-progress activity
+  // advances without waiting for the next poll.
   const handleOpenChange = (open: boolean) => {
     if (open) void loadRecent();
   };
@@ -147,12 +165,7 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
                   )}
                 >
                   <div className="flex items-start gap-2">
-                    <span
-                      className={cn(
-                        'mt-1.5 size-1.5 shrink-0 rounded-full',
-                        item.readAt ? 'bg-transparent' : 'bg-primary',
-                      )}
-                    />
+                    <NotificationGlyph item={item} />
                     <div className="min-w-0 flex-1">
                       <p
                         className={cn(
@@ -168,6 +181,9 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
                         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {item.body}
                         </p>
+                      ) : null}
+                      {item.status === 'active' && item.progress !== null ? (
+                        <Progress className="mt-1.5 h-1" value={item.progress} />
                       ) : null}
                       <p className="mt-0.5 text-[11px] text-muted-foreground/60">
                         {formatDate(new Date(item.createdAt), locale, {
@@ -195,5 +211,23 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Status glyph for an activity row; a plain dot for one-shot notifications. */
+function NotificationGlyph({ item }: { item: NotificationView }) {
+  if (item.status === 'active') {
+    return <Loader className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary" />;
+  }
+  if (item.status === 'success') {
+    return <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />;
+  }
+  if (item.status === 'error') {
+    return <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-destructive" />;
+  }
+  return (
+    <span
+      className={cn('mt-1.5 size-1.5 shrink-0 rounded-full', item.readAt ? 'bg-transparent' : 'bg-primary')}
+    />
   );
 }

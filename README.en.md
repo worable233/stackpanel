@@ -10,7 +10,7 @@ It is not another control panel, and not SaaS. It is closer to what WordPress is
 
 Existing solutions tend to be closed panels, lock your data in someone else's cloud, or force an unchangeable business logic on you. StackPanel takes the opposite approach:
 
-- **Thin kernel, fat plugins.** The kernel does only six things—users & RBAC, plugin runtime, theme engine, event bus, settings & secrets, audit log—and injects cross-cutting capabilities (payment orchestration, wallet ledger, FX rates, in-app notifications) into plugins as kernel services. Everything else is a plugin, including business domains such as store, tickets, and gateway; the kernel ships only the minimal set of plugins required to run, and installs the rest on demand.
+- **Thin kernel, fat plugins.** The kernel does only six things—users & RBAC, plugin runtime, theme engine, event bus, settings & secrets, audit log—and injects cross-cutting capabilities (payment orchestration, wallet ledger, FX rates, in-app notifications) into plugins as kernel services. Everything else is a plugin, including business domains such as store, tickets, and gateway; the kernel ships only the minimal set of plugins required to run, and installs the rest on demand. In production, third-party plugins run in a dedicated worker process and use `PluginContext` through restricted RPC; built-in plugins may use the trusted in-process mode.
 - **API first, always.** The admin console is not a privileged client—it is the first consumer of this API. Anything you can do in the UI, a script can do too.
 - **Your data is yours.** Self-hosted, PostgreSQL as the single storage engine, and backup is just `pg_dump` plus asset packaging. Migrate away whenever you want.
 
@@ -46,6 +46,15 @@ Existing solutions tend to be closed panels, lock your data in someone else's cl
                    |              |              |
               Web console      Open API        Third-party clients
 ```
+
+## Security & trust model
+
+Plugin execution is selected by the manifest's `execution` field:
+
+- **`isolated` (the production default for third-party packages)**: the entrypoint runs in a dedicated Node child process. The API process keeps only the manifest, route proxy, and an RPC bridge. `ctx.media`, `ctx.jobs`, `ctx.events.publish/subscribe`, `ctx.state`, payments, wallet, FX, auth, notifications, secrets, transactions, and Extension CRUD cross the boundary through versioned, identity-checked RPC with message-size, concurrency, and timeout limits. Injected services are declared by the plugin definition's `inject`; consumed extensions are declared by the manifest's `consumes`. Worker exit cleans up requests, transactions, and disposers.
+- **`trusted` (built-in packages, or development outside production)**: the plugin runs inside the API process and has that process's permissions. Third-party production packages cannot request this mode.
+
+The manifest `permissions` and route `permission` fields remain **route-admission and frontend-visibility** controls; they are not an OS sandbox. After three consecutive worker exits, the isolated runtime opens a circuit and requires re-registering a repaired package. An isolated worker is also not a complete container or Node Permission Model boundary, so install packages from trusted sources. Synchronous `ctx.events.intercept()` and `ctx.events.waterfall()` cannot be represented safely over asynchronous IPC and therefore fail explicitly in isolated mode. Raw streaming routes and custom model schemas that cannot be represented as JSON Schema are rejected at worker startup. `PluginContext` exposes no database handle: plugins read and write only their own declared models through the Extension engine. See the [developer guide · trust model](https://github.com/worable233/stackpanel/wiki/Plugin-Security).
 
 ## Quick start
 
