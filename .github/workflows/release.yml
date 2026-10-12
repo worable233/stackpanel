@@ -56,7 +56,7 @@ jobs:
       # 版本标签由 semver 派生：1.2.3 / 1.2 / 1（v 标签）；latest 只给正式版。
       - name: 计算镜像元数据
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ steps.ns.outputs.owner }}/${{ env.IMAGE_NAME }}
           tags: |
