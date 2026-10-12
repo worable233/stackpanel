@@ -85,6 +85,6 @@ apps/api/src/plugins/isolated/RPC-PROTOCOL.md
 apps/api/src/media/README.md
 apps/api/src/media/ENCODER-PLAN.md
 apps/web/src/i18n/README.md
-security/SECURITY-AUDIT-*.md
+security/
 design/glass-cloud-object.svg
 design/glass-cloud-showcase.svg
