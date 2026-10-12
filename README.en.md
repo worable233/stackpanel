@@ -2,34 +2,72 @@
 
 [简体中文](./README.md) · **English**
 
-**A self-hosted platform for digital goods and hosting businesses.** Put products, orders, payments, wallets, tickets, and access control into one self-hosted system—with the data staying on your own servers.
+A self-hosted system for digital-goods and hosting businesses. Products, orders, payments, wallets, tickets, and access control all run on your own servers, and the data stays with you.
 
-It is not another control panel, and not SaaS. It is closer to what WordPress is for content or Halo is for blogs—except it is built for running a digital-goods and hosting business. Install only the plugins you need, or write your own.
+The kernel does six things — users & RBAC, plugin runtime, theme engine, event bus, settings & secrets, audit log — and injects cross-cutting capabilities (payment orchestration, wallet ledger, FX rates, in-app notifications) into plugins as kernel services. Business domains such as store, tickets, and payment gateways are plugins: only the minimal set required to run ships with the kernel, and the rest install on demand.
 
-## Why StackPanel
+## Features
 
-Existing solutions tend to be closed panels, lock your data in someone else's cloud, or force an unchangeable business logic on you. StackPanel takes the opposite approach:
+- **Business domains as plugins.** A plugin can declare its own routes, permissions, admin pages, account pages, event listeners, and data models, and can extend other plugins. Install, upgrade, enable, disable, and uninstall take effect without restarting the API process.
+- **API first.** The admin console and the open API share one set of endpoints; anything the UI can do, a script can do.
+- **Plugin frontends build automatically.** After a change, the worker runs `build:frontend` and `next build` for a plugin's bundled UI, and each web replica restarts on its own; manual `pnpm build` is only needed when `STACKPANEL_FRONTEND_AUTOBUILD` is off.
+- **Themes are ZIPs.** A theme is a configuration-driven ZIP package. Plugin frontends are type-safe React components sharing the same React runtime as the kernel. Page routes, named layouts, and typed finders are declared by the frontend package and rendered by the platform.
+- **Credentials never exceed their owner.** Users can self-issue scoped API credentials; a credential's effective permissions are always a subset of the holder's current permissions. Downgrade a user and every credential they hold narrows with them.
+- **Self-hosted and portable.** Production and development both use PostgreSQL; clustering relies on Redis and S3-compatible object storage. Backup is `pg_dump` plus asset packaging.
 
-- **Thin kernel, fat plugins.** The kernel does only six things—users & RBAC, plugin runtime, theme engine, event bus, settings & secrets, audit log—and injects cross-cutting capabilities (payment orchestration, wallet ledger, FX rates, in-app notifications) into plugins as kernel services. Everything else is a plugin, including business domains such as store, tickets, and gateway; the kernel ships only the minimal set of plugins required to run, and installs the rest on demand. In production, third-party plugins run in a dedicated worker process and use `PluginContext` through restricted RPC; built-in plugins may use the trusted in-process mode.
-- **API first, always.** The admin console is not a privileged client—it is the first consumer of this API. Anything you can do in the UI, a script can do too.
-- **Your data is yours.** Self-hosted, PostgreSQL as the single storage engine, and backup is just `pg_dump` plus asset packaging. Migrate away whenever you want.
+## Quick start
 
-## Capabilities
+Prerequisites: **Docker** and **Docker Compose v2** (Linux / macOS / Windows via WSL2). Secret generation prefers `openssl` and falls back to `/dev/urandom`.
 
-**Plugins install and run without restarting.** Install, upgrade, enable, disable, and uninstall all take effect immediately—the API process does not need to restart. Plugins can declare their own routes, permissions, admin pages, account pages, and event listeners, and can even extend other plugins. A plugin's bundled frontend is built automatically by the worker (ADR-0007): after a change it runs `build:frontend` + `next build`, and each web replica restarts on its own; manual `pnpm build` is only needed when `STACKPANEL_FRONTEND_AUTOBUILD` is off.
+```bash
+# One-shot deploy: detect Docker, generate random secrets, build and start.
+# The default stack brings up api + worker + web + PostgreSQL + Redis + MinIO (HTTP, http://localhost:3000)
+bash scripts/deploy.sh
 
-**A credential's permissions never exceed its owner's.** Users can self-issue API credentials with a scoped grant; the effective permissions of a credential are always a subset of the holder's current permissions. Downgrade a user and every credential they hold narrows with them—there is no parallel authorization system.
+# Public host with automatic HTTPS (domain DNS must already point here):
+# bash scripts/deploy.sh --domain sp.example.com --email you@example.com
 
-**Themes and frontends are first-class.** A theme is a ZIP; a plugin frontend is a type-safe React component sharing the same React runtime as the kernel. Page routes, named layouts, and typed data finders are all declared by the frontend package, and the platform renders them.
+# Cluster stack (external PostgreSQL / Redis / object storage):
+# bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<digest>
+```
 
-**Plugins can carry their own data model.** There is no need to bend to the kernel's schema—plugins can define new business objects and their UIs.
+The first build pulls base images and dependencies, so it takes a while. When it finishes, open `http://localhost:3000`. The initial admin password is generated randomly and printed in the `api` container log; to pin it, set `STACKPANEL_BOOTSTRAP_EMAIL` and `STACKPANEL_BOOTSTRAP_PASSWORD` in `docker/.env` first.
 
-**PostgreSQL by default.** Production and development both use PostgreSQL (ADR-0019); clustering relies on Redis and S3-compatible object storage (ADR-0017). Bring up the whole stack with one command: `bash scripts/deploy.sh` starts api + worker + web + PostgreSQL + Redis + MinIO, initializes automatically, and is ready to use right after install.
+Without Docker (existing local PostgreSQL and Redis, PM2 mode):
+
+```bash
+pnpm install
+pnpm build
+cp .env.example .env && cp apps/api/.env.example apps/api/.env && cp apps/web/.env.example apps/web/.env
+pnpm --filter @stackpanel/db migrate:deploy
+pnpm pm2:start
+```
+
+Development mode runs each app on its own with hot reload:
+
+```bash
+pnpm --filter @stackpanel/api dev   # Fastify
+pnpm --filter @stackpanel/web dev   # Next.js
+```
+
+## Documentation
+
+Developer documentation lives in the **[Wiki](https://github.com/worable233/stackpanel/wiki)**, in five parts:
+
+| Section | Contents |
+| --- | --- |
+| [Core](https://github.com/worable233/stackpanel/wiki/Core-Prepare) | Environment prep, run, build, architecture, project structure, notifications |
+| [Plugins](https://github.com/worable233/stackpanel/wiki/Plugin-Introduction) | Manifest, lifecycle, routes, extension points, events, secrets, dependencies, permissions, fulfillment, packaging |
+| [Themes](https://github.com/worable233/stackpanel/wiki/Theme-Introduction) | Theme structure, manifest, CSS tokens, settings, frontend package, packaging |
+| [Frontend packages](https://github.com/worable233/stackpanel/wiki/Frontend-Getting-Started) | Pages, layouts, finders, admin extensions, UI conventions, troubleshooting |
+| [RESTful API](https://github.com/worable233/stackpanel/wiki/Api-Introduction) | Authentication, route reference, SDK client, error handling |
+
+Interface contracts use [`packages/spec`](./packages/spec) as the single source of truth (kernel API version + OpenAPI projection).
 
 ## Architecture
 
 ```
-                            Kernel
+                          Kernel
    Six things: Users & RBAC · Plugin runtime · Theme engine
                Event bus · Settings & secrets · Audit log
    Capability services: Payment orchestration · Wallet ledger · FX · Notifications
@@ -47,49 +85,16 @@ Existing solutions tend to be closed panels, lock your data in someone else's cl
               Web console      Open API        Third-party clients
 ```
 
-## Security & trust model
+## Plugin execution and trust model
 
-Plugin execution is selected by the manifest's `execution` field:
+The manifest's `execution` field selects how a plugin runs:
 
-- **`isolated` (the production default for third-party packages)**: the entrypoint runs in a dedicated Node child process. The API process keeps only the manifest, route proxy, and an RPC bridge. `ctx.media`, `ctx.jobs`, `ctx.events.publish/subscribe`, `ctx.state`, payments, wallet, FX, auth, notifications, secrets, transactions, and Extension CRUD cross the boundary through versioned, identity-checked RPC with message-size, concurrency, and timeout limits. Injected services are declared by the plugin definition's `inject`; consumed extensions are declared by the manifest's `consumes`. Worker exit cleans up requests, transactions, and disposers.
-- **`trusted` (built-in packages, or development outside production)**: the plugin runs inside the API process and has that process's permissions. Third-party production packages cannot request this mode.
+- **`isolated`**: the production default for third-party packages. The entrypoint runs in a dedicated Node child process; the API process keeps only the manifest, the route proxy, and an RPC bridge. `ctx.*` crosses the boundary over IPC RPC with a protocol version, plugin identity checks, a 1 MiB message cap, 64 concurrent calls, and a 10-second bidirectional timeout. A worker exit marks the plugin `failed` and clears its routes, models, and jobs; three exits in total trip a circuit that requires re-registering a repaired package.
+- **`trusted`**: available to built-in packages in every environment and to any plugin outside production. The plugin runs inside the API process with that process's permissions; third-party production packages may not request this mode.
 
-The manifest `permissions` and route `permission` fields remain **route-admission and frontend-visibility** controls; they are not an OS sandbox. After three consecutive worker exits, the isolated runtime opens a circuit and requires re-registering a repaired package. An isolated worker is also not a complete container or Node Permission Model boundary, so install packages from trusted sources. Synchronous `ctx.events.intercept()` and `ctx.events.waterfall()` cannot be represented safely over asynchronous IPC and therefore fail explicitly in isolated mode. Raw streaming routes and custom model schemas that cannot be represented as JSON Schema are rejected at worker startup. `PluginContext` exposes no database handle: plugins read and write only their own declared models through the Extension engine. See the [developer guide · trust model](https://github.com/worable233/stackpanel/wiki/Plugin-Security).
+The manifest `permissions` and route `permission` fields are **route-admission and frontend-visibility** controls, not an OS sandbox, and `isolated` is not a full container. `ctx.events.intercept()` and `ctx.events.waterfall()` require synchronous return values and cannot be expressed across processes, so they fail explicitly in isolated mode; raw streaming routes and custom models that cannot be represented as JSON Schema are rejected at worker startup. `PluginContext` exposes no database handle: plugins read and write only their own declared models through the Extension engine.
 
-## Quick start
-
-Prerequisites: **Docker** and **Docker Compose v2** installed (Linux / macOS / Windows via WSL2). Secret generation prefers `openssl` and falls back to `/dev/urandom` when absent.
-
-```bash
-# One-shot deploy: detect Docker, generate random secrets, build and start.
-# The default stack brings up api + worker + web + PostgreSQL + Redis + MinIO (HTTP, http://localhost:3000)
-bash scripts/deploy.sh
-
-# Public host with automatic HTTPS (domain DNS must already point here):
-# bash scripts/deploy.sh --domain sp.example.com --email you@example.com
-
-# Cluster stack (external PostgreSQL/Redis/object storage):
-# bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<digest>
-```
-
-The first build pulls base images and dependencies, so it takes a while; when it finishes, open `http://localhost:3000`. Initial admin: a random password is generated and printed in the `api` container log by default (to pin it, set `STACKPANEL_BOOTSTRAP_EMAIL` / `STACKPANEL_BOOTSTRAP_PASSWORD` in `docker/.env` first).
-
-Without Docker (existing local PostgreSQL/Redis, PM2 mode):
-
-```bash
-pnpm install
-pnpm build
-cp .env.example .env && cp apps/api/.env.example apps/api/.env && cp apps/web/.env.example apps/web/.env
-pnpm --filter @stackpanel/db migrate:deploy
-pnpm pm2:start
-```
-
-Development mode:
-
-```bash
-pnpm --filter @stackpanel/api dev   # Fastify, hot reload
-pnpm --filter @stackpanel/web dev   # Next.js, hot reload
-```
+See [plugin security and the trust model](https://github.com/worable233/stackpanel/wiki/Plugin-Security).
 
 ## Project structure
 
@@ -109,19 +114,33 @@ StackPanel/
     └── mcp/            # MCP Server (stdio / HTTP)
 ```
 
-## Documentation
+## Development
 
-Developer documentation is published in the **[Wiki](https://github.com/worable233/stackpanel/wiki)**, covering five parts: core, plugins, themes, frontend packages, and the RESTful API.
-
-| Section | Contents |
+| Requirement | Version |
 | --- | --- |
-| [Core](https://github.com/worable233/stackpanel/wiki/Core-Prepare) | Environment prep, run, build, architecture, project structure, notifications |
-| [Plugins](https://github.com/worable233/stackpanel/wiki/Plugin-Introduction) | Manifest, lifecycle, routes, extension points, events, secrets, dependencies, permissions, fulfillment, packaging |
-| [Themes](https://github.com/worable233/stackpanel/wiki/Theme-Introduction) | Theme structure, manifest, CSS tokens, settings, frontend package, packaging |
-| [Frontend packages](https://github.com/worable233/stackpanel/wiki/Frontend-Getting-Started) | Pages, layouts, finders, admin extensions, UI conventions, troubleshooting |
-| [RESTful API](https://github.com/worable233/stackpanel/wiki/Api-Introduction) | Authentication, route reference, SDK client, error handling |
+| Node.js | >= 22 (see [`.nvmrc`](./.nvmrc)) |
+| pnpm | 11.5.1 (pinned by the `packageManager` field) |
+| PostgreSQL | 16 |
+| Redis | 7 |
 
-In-repo interface contracts use [`packages/spec`](./packages/spec) as the single source of truth (kernel API version + OpenAPI projection).
+Run the same checks as CI before pushing:
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
+
+Local setup, coding standards, and the review flow are in [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Security
+
+Report vulnerabilities through GitHub's private vulnerability reporting channel rather than a public issue. Process and scope are in [SECURITY.md](./SECURITY.md).
+
+## Contributing
+
+Issues and pull requests are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md) first. Release notes are in [CHANGELOG.md](./CHANGELOG.md).
 
 ## License
 
