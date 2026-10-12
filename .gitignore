@@ -63,3 +63,15 @@ packages/db/src/generated/
 
 # Playwright MCP page snapshots (local debug noise)
 .playwright-mcp/
+
+# Local generation workspace & tool state (never tracked)
+output/
+.workbuddy/
+.agents/
+skills-lock.json
+opencode.json
+
+# Local working hero assets (not part of the committed theme)
+packages/themes/default/assets/cloud-console-hero.png
+packages/themes/default/assets/cloud-glass-hero.png
+packages/themes/default/assets/已移除背景的cloud-glass-hero.png
