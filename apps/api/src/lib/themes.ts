@@ -78,7 +78,7 @@ function isForbiddenFile(name: string): boolean {
  * containing token-only `--*` custom property declarations. Anything else
  * (at-rules, selectors, url()) is rejected — themes are configuration, not code.
  *
- * Parsed with `css-tree` (SECURITY-AUDIT-2026-10-04 I-1) so malformed or
+ * Parsed with `css-tree` (security audit I-1) so malformed or
  * obfuscated input cannot slip past a hand-rolled regex: the AST is walked and
  * every node is checked against the allowlist.
  */

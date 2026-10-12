@@ -38,7 +38,7 @@ export const RATE_LIMIT = {
    * media bytes/derivatives, theme & plugin asset files, SEO feeds. The ceiling
    * is deliberately generous — a single page load fans out into many asset
    * requests — so it stops abuse without throttling real browsing
-   * (SECURITY-AUDIT-2026-10-04 L-1).
+   * (security audit L-1).
    */
   publicRead: { max: 600, timeWindow: '1 minute' },
 } as const satisfies Record<string, RateLimitRule>;

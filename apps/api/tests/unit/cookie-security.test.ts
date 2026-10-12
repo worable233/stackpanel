@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * SECURITY-AUDIT-2026-10-04 M-1: the session cookie's `Secure` flag has two
+ * security audit M-1: the session cookie's `Secure` flag has two
  * independent guards — the env default and a `NODE_ENV==='production'` override
  * applied at set time — so a mis-set variable can never ship cookies over HTTP.
  */

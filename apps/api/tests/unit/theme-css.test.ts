@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateThemeCss } from '../../src/lib/themes.ts';
 
 /**
- * SECURITY-AUDIT-2026-10-04 I-1: theme CSS is validated by parsing the file with
+ * security audit I-1: theme CSS is validated by parsing the file with
  * `css-tree` instead of matching hand-rolled regexes. These tests pin the
  * allowlist (only `:root`/`.dark`, only `--*` declarations) and the rejection of
  * constructs that could smuggle code (`@` rules, `url()`, backslash escapes).

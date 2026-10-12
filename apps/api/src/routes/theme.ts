@@ -171,7 +171,7 @@ async function serveFile(
   try {
     const data = await readFile(fullPath);
     // Active content (SVG/HTML) is served as a download so a browser never
-    // executes an uploaded theme asset same-origin (SECURITY-AUDIT-2026-10-04
+    // executes an uploaded theme asset same-origin (security audit
     // L-3), matching the attachment policy in `media/routes.ts`.
     if (!inline) {
       reply.header('Content-Disposition', contentDisposition(path.basename(fullPath), false));

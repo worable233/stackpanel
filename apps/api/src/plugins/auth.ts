@@ -160,7 +160,7 @@ function setSessionCookie(reply: FastifyReply, token: string): void {
   reply.setCookie(env.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    // Second guard on top of the env default (SECURITY-AUDIT-2026-10-04 M-1).
+    // Second guard on top of the env default (security audit M-1).
     secure: resolveCookieSecure(env.API_COOKIE_SECURE),
     path: '/',
     maxAge: env.SESSION_TTL_SECONDS,

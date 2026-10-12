@@ -49,7 +49,7 @@ describe.skipIf(!dbAvailable)('auth integration (real DB)', () => {
     expect(session?.httpOnly).toBe(true);
     expect(session?.sameSite?.toLowerCase()).toBe('lax');
     // The `Secure` flag is forced on in production by `resolveCookieSecure`
-    // (SECURITY-AUDIT-2026-10-04 M-1); it is asserted at the unit level in
+    // (security audit M-1); it is asserted at the unit level in
     // `tests/unit/cookie-security.test.ts` because the suite runs as `test`.
   });
 

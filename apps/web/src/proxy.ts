@@ -17,7 +17,7 @@ function apiStyleOrigin(): string {
 const API_ORIGIN = apiStyleOrigin();
 
 /**
- * Build the per-request Content-Security-Policy (SECURITY-AUDIT-2026-10-04 L-2).
+ * Build the per-request Content-Security-Policy (security audit L-2).
  *
  * Inline scripts are allowed only via a fresh per-request nonce plus
  * `'strict-dynamic'` — the `script-src 'unsafe-inline'` fallback is gone. Next.js

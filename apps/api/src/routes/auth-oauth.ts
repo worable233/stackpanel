@@ -182,7 +182,7 @@ export async function authOAuthRoutes(app: FastifyInstance): Promise<void> {
         }
         const created = await prisma.$transaction(async (tx) => {
           // Serialize the first-admin election against concurrent sign-ups
-          // (SECURITY-AUDIT-2026-10-04 L-4).
+          // (security audit L-4).
           const isFirst = await isFirstUser(tx);
           const user = await tx.user.create({
             data: {

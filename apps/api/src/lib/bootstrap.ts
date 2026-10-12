@@ -17,7 +17,7 @@ export interface BootstrapResult {
  * (caller logs it exactly once).
  *
  * The "is the DB empty?" check runs *inside* the transaction under the shared
- * first-user advisory lock (SECURITY-AUDIT-2026-10-04 L-4), so two replicas
+ * first-user advisory lock (security audit L-4), so two replicas
  * booting simultaneously serialize: one creates the admin, the other observes
  * the new user and returns `created: false` instead of crashing on a unique
  * email violation or creating a duplicate admin.

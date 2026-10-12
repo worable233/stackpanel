@@ -76,7 +76,7 @@ export class KernelAuthService implements AuthService {
     try {
       const user = await this.options.db.$transaction(async (tx) => {
         // Elect the first admin *inside* the transaction under an advisory lock
-        // so concurrent registrations cannot both win (SECURITY-AUDIT L-4).
+        // so concurrent registrations cannot both win (security audit L-4).
         const isFirst = await isFirstUser(tx);
         const created = await tx.user.create({
           data: {
@@ -122,7 +122,7 @@ export class KernelAuthService implements AuthService {
     return {
       name: env.SESSION_COOKIE_NAME,
       maxAge: env.SESSION_TTL_SECONDS,
-      // Second guard on top of the env default (SECURITY-AUDIT-2026-10-04 M-1).
+      // Second guard on top of the env default (security audit M-1).
       secure: resolveCookieSecure(env.API_COOKIE_SECURE),
     };
   }

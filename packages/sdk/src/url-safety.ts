@@ -4,7 +4,7 @@
  *
  * Kept dependency-free and in its own module so the SDK barrel can re-export it
  * without dragging the server-only `sanitize-html` parser into client bundles
- * (SECURITY-AUDIT-2026-10-04 I-1).
+ * (security audit I-1).
  */
 
 /** URL allowlist: same-origin paths, fragments, and a few safe schemes. */

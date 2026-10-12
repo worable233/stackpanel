@@ -6,7 +6,7 @@ import { checkDbAvailable } from '../helpers.ts';
 const dbAvailable = await checkDbAvailable();
 
 /**
- * SECURITY-AUDIT-2026-10-04 L-4: the "first user becomes admin" election must be
+ * security audit L-4: the "first user becomes admin" election must be
  * evaluated *inside* the transaction under a Postgres advisory lock. These tests
  * exercise the real SQL (a bad cast or lock id would throw) and prove the lock
  * serialises concurrent elections.

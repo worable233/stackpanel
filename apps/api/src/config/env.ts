@@ -21,7 +21,7 @@ const envSchema = z.object({
       : [],
   ),
   // Session-cookie `Secure` flag. Defaults to on in production so a missing
-  // variable can never ship cookies over plaintext (SECURITY-AUDIT-2026-10-04
+  // variable can never ship cookies over plaintext (security audit
   // M-1). `resolveCookieSecure` adds a second, independent guard at set time.
   API_COOKIE_SECURE: z
     .enum(['true', 'false'])

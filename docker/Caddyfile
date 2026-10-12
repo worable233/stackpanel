@@ -7,7 +7,7 @@
 }
 
 {$STACKPANEL_DOMAIN} {
-	# HSTS (SECURITY-AUDIT-2026-10-04 M-2). Caddy already adds this by default on
+	# HSTS (security audit M-2). Caddy already adds this by default on
 	# HTTPS, but pinning it here makes the policy explicit and keeps it in sync
 	# with the API/web header values even if Caddy's defaults change.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"

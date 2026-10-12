@@ -1,5 +1,5 @@
 /**
- * Session-cookie security policy (SECURITY-AUDIT-2026-10-04 M-1).
+ * Session-cookie security policy (security audit M-1).
  *
  * `env.API_COOKIE_SECURE` already defaults to on in production, but the flag is
  * derived from configuration an operator can silently omit or mis-set. This

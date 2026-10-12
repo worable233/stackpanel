@@ -7,7 +7,7 @@ import { createAdminUser, createTestUser } from '../auth-helpers.ts';
 const dbAvailable = await checkDbAvailable();
 
 /**
- * SECURITY-AUDIT-2026-10-04 hardening, end to end:
+ * security audit hardening, end to end:
  *  - M-2: security headers (notably HSTS) are present on every response.
  *  - M-3: the Swagger UI at `/docs` is not reachable without `platform.admin`.
  *  - L-2: the machine surface no longer advertises `script-src 'unsafe-inline'`.

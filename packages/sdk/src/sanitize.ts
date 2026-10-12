@@ -8,7 +8,7 @@
  * shares one implementation and the kernel never re-implements the policy.
  *
  * The allowlist policy is expressed as configuration for the battle-tested
- * `sanitize-html` parser (SECURITY-AUDIT-2026-10-04 I-1). Anything not
+ * `sanitize-html` parser (security audit I-1). Anything not
  * allowlisted has its tag markers removed but its text content preserved, so a
  * stray `<custom-widget>` never breaks the surrounding prose; `<script>`,
  * `<style>` and friends are dropped with their content; event handlers and

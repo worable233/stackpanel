@@ -105,14 +105,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    // HSTS (SECURITY-AUDIT-2026-10-04 M-2). Safe to send unconditionally:
+    // HSTS (security audit M-2). Safe to send unconditionally:
     // browsers ignore it on plaintext responses, so it only takes effect once
     // the site is reached over HTTPS. No `preload` (irreversible opt-in).
     reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     // CSP. The API serves machine surfaces (JSON, assets, streams) that never
     // run scripts, so `script-src 'self'` is enough there — `'unsafe-inline'`
     // was only needed by the Swagger UI, which is now an admin-gated island
-    // (SECURITY-AUDIT-2026-10-04 M-3 / L-2) and keeps its own relaxed policy.
+    // (security audit M-3 / L-2) and keeps its own relaxed policy.
     const isDocs =
       request.url === '/docs' ||
       request.url.startsWith('/docs/') ||
@@ -256,7 +256,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.decorate('pluginDispatcher', dispatcher);
   const extensions = new ExtensionService(getPrisma());
   // Swagger UI exposes every route, permission and internal schema — an ideal
-  // recon target (SECURITY-AUDIT-2026-10-04 M-3). Mount it in an encapsulated
+  // recon target (security audit M-3). Mount it in an encapsulated
   // scope whose `onRequest` guard requires `platform.admin`; unauthorized
   // callers get a plain 404 so the endpoint's existence is not disclosed.
   void app.register(async (docsScope) => {

@@ -11,7 +11,7 @@ const path = require('node:path');
 
 const DATA_DIR = process.env.STACKPANEL_DATA_DIR || path.join(__dirname, 'data');
 // PM2 must not silently run production as `development`: that would disable the
-// Secure cookie default (SECURITY-AUDIT-2026-10-04 M-1) and other prod-only
+// Secure cookie default (security audit M-1) and other prod-only
 // guards. Respect an explicit NODE_ENV, otherwise assume production.
 const NODE_ENV = process.env.NODE_ENV || 'production';
 

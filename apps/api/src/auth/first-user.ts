@@ -1,7 +1,7 @@
 import type { Prisma } from '@stackpanel/db';
 
 /**
- * "First user becomes admin" bootstrap election (SECURITY-AUDIT-2026-10-04 L-4).
+ * "First user becomes admin" bootstrap election (security audit L-4).
  *
  * The old check (`count() === 0`) ran outside the write, so two concurrent
  * registrations on an empty instance could both observe zero users and both be

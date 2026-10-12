@@ -75,3 +75,16 @@ opencode.json
 packages/themes/default/assets/cloud-console-hero.png
 packages/themes/default/assets/cloud-glass-hero.png
 packages/themes/default/assets/已移除背景的cloud-glass-hero.png
+
+# Internal engineering notes (implementation plans, protocols, audits, design
+# source). Kept on the maintainer's machine; the public docs live in the wiki.
+AGENTS.md
+docs/agents/
+apps/api/src/plugins/isolated/README.md
+apps/api/src/plugins/isolated/RPC-PROTOCOL.md
+apps/api/src/media/README.md
+apps/api/src/media/ENCODER-PLAN.md
+apps/web/src/i18n/README.md
+security/SECURITY-AUDIT-*.md
+design/glass-cloud-object.svg
+design/glass-cloud-showcase.svg

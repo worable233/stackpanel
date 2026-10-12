@@ -10,7 +10,7 @@ export {
 export type { FieldError, ProblemDetails } from './errors.js';
 // `isSafeUrl` is pure and safe for client bundles. The full rich-text sanitizer
 // lives behind the `@stackpanel/sdk/sanitize` subpath because it depends on the
-// server-only `sanitize-html` parser (SECURITY-AUDIT-2026-10-04 I-1).
+// server-only `sanitize-html` parser (security audit I-1).
 export { isSafeUrl } from './url-safety.js';
 export { definePlugin } from './plugin.js';
 export { normalizePluginDependencies, normalizePluginPermissions } from './plugin.js';
