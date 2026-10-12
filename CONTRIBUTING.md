@@ -72,7 +72,7 @@ pnpm build
 - `node_modules/`、`dist/`、`.next/`、构建产物与打包出的 `*.zip` / `*.tgz`
 - 任何密钥、token、真实域名与个人路径；只提交 `.env.example`
 - 本机运行时数据：`data/`、`var/`、日志、测试数据库文件
-- 面向 AI 代理的内部开发笔记与工具配置（见仓库 `.gitignore` 的 "Local generation workspace & tool state" 段）
+- 内部开发笔记、实现计划与本地工具配置
 
 `pnpm-lock.yaml` 必须提交：CI 使用 `--frozen-lockfile`，锁文件缺失或不一致会直接失败。
 
