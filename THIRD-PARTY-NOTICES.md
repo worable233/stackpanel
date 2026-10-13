@@ -12,7 +12,7 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | 容器镜像 | `ghcr.io/worable233/stackpanel`（api / web / worker 共用同一镜像） |
 | 插件与主题 ZIP | 由 `pnpm plugin:pack` 打包或后台上传产生 |
 
-容器镜像在构建时执行 `pnpm install --prod`，只保留运行期需要的组件。运行期确实需要少量构建工具：API 容器的 `prisma migrate deploy` 使用 Prisma CLI，worker 在插件/主题前端变更时执行 `pnpm build:frontend` 与 `next build`。这些工具因此声明在 `dependencies` 中而非 `devDependencies`：Prisma CLI、Next、Tailwind、TypeScript、esbuild、Prettier。ESLint、Vitest、Playwright、PM2、license-checker 等开发期工具不随镜像分发。
+容器镜像在构建时先清空 `node_modules` 再执行生产安装（`pnpm install --prod --ignore-scripts`），只保留运行期需要的组件。运行期确实需要少量构建工具：API 容器的 `prisma migrate deploy` 使用 Prisma CLI，worker 在插件/主题前端变更时执行 `pnpm build:frontend` 与 `next build`。这些工具因此声明在 `dependencies` 中而非 `devDependencies`：Prisma CLI、Next、Tailwind、TypeScript、esbuild、Prettier。ESLint、Vitest、Playwright、PM2、license-checker 等开发期工具不随镜像分发；`shadcn` 命令行工具同样只在开发期使用，其样式表 `shadcn/dist/tailwind.css` 已按 MIT 许可复制到 `apps/web/src/styles/shadcn-tailwind.css`，因此镜像内不需要安装该工具链（连同它的 200 多个传递依赖）。
 
 ## 一、运行期依赖
 
@@ -91,7 +91,7 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | `caniuse-lite` | 1.0.30001806 / 1.0.30001814 | CC-BY-4.0 | `next` / `browserslist` | 数据来自 https://caniuse.com ；随附 [`licenses/CC-BY-4.0.txt`](licenses/CC-BY-4.0.txt) |
 | `mariadb` | 未安装 | LGPL-2.1-only | 官方 Prisma MySQL 适配器 | 仅作为 [`scripts/check-licenses.mjs`](scripts/check-licenses.mjs) 中的已备案例外保留 |
 
-只存在于开发环境的组件不属于分发物：`pm2`（AGPL-3.0，仅供 `scripts/install.sh` 在宿主机拉起进程）、`axe-core`（MPL-2.0）与 `language-subtag-registry`（ODC-By-1.0，经 `eslint-config-next`）、`spdx-exceptions` / `spdx-ranges`（经 `license-checker`）都不随镜像或 npm 包发布。
+只存在于开发环境的组件不属于分发物：`pm2`（AGPL-3.0，仅供 `scripts/install.sh` 在宿主机拉起进程）、`axe-core`（MPL-2.0）与 `language-subtag-registry`（ODC-By-1.0，经 `eslint-config-next`）、`spdx-exceptions` / `spdx-ranges`（经 `license-checker`）、`shadcn` 及其传递依赖都不随镜像或 npm 包发布。唯一被复制进源码树的是 `shadcn/dist/tailwind.css`（MIT），见 `apps/web/src/styles/shadcn-tailwind.css`。
 
 ## 三、字体
 

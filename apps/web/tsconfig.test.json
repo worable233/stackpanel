@@ -1,0 +1,20 @@
+{
+  // Tests and the Vitest config are checked here rather than by `next build`.
+  // `next build` runs `tsc` with tsconfig.json, which would otherwise pull in
+  // `tests/**` and `vitest.config.mts`; those import `vitest`, a devDependency
+  // that is absent from the production image where the worker executes
+  // `next build` (see the `prod-deps` stage in Dockerfile). Keeping them out of
+  // tsconfig.json lets that rebuild succeed, while `pnpm typecheck` still checks
+  // them in CI through this config.
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "vitest.config.mts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

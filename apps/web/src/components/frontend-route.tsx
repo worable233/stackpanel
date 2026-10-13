@@ -71,7 +71,7 @@ async function renderResolution(
     data: resolved.data,
     actions: resolved.actions,
     assetsBaseUrl: resolved.assetsBaseUrl ?? getApiClient().baseUrl,
-  } as never) as ReactElement;
+  } as never) as unknown as ReactElement;
   const page = actionError ? (
     <>
       <p
@@ -118,7 +118,7 @@ async function renderResolution(
           faviconUrl: brand.favicon ? apiAssetUrl(brand.favicon) : null,
         }
       : undefined,
-  } as never) as ReactElement;
+  } as never) as unknown as ReactElement;
 }
 
 /** Platform default 404 panel, shown when no theme declares a fallback page. */

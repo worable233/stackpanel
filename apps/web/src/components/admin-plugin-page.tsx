@@ -62,7 +62,7 @@ export function AdminPluginPage({
           {actionError}
         </p>
       ) : null}
-      {createElement(Component, props as never) as ReactElement}
+      {createElement(Component, props as never) as unknown as ReactElement}
     </div>
   );
 }

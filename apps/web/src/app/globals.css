@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import 'shadcn/tailwind.css';
+@import '../styles/shadcn-tailwind.css';
 
 @source "../../../../packages/ui/src";
 @source "../../../../packages/themes/default/frontend/src";
