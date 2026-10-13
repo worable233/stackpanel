@@ -25,14 +25,14 @@
     "motion": "^13"
   },
   "dependencies": {
-    "@base-ui/react": "^1.6.0",
+    "@base-ui/react": "^1.9.0",
     "class-variance-authority": "^0.7.1",
-    "lucide-react": "^0.468.0",
-    "motion": "^13.1.0"
+    "lucide-react": "^0.577.0",
+    "motion": "^13.5.1"
   },
   "devDependencies": {
     "@types/react": "^19",
-    "react": "^19.2.4",
+    "react": "^19.3.0",
     "typescript": "^6.0.3"
   },
   "license": "MIT"
