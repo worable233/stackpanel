@@ -29,10 +29,25 @@ ENV API_BASE_URL="${API_BASE_URL}"
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
+# ---- prod-deps ----------------------------------------------------------
+# Strip devDependencies from the built tree before it is shipped. The runtime
+# roles only need the handful of tools that run in production — the Prisma CLI
+# behind `pnpm --filter @stackpanel/db migrate:deploy`, and the frontend builder
+# the worker drives (`pnpm build:frontend` plus `next build`) — so those are
+# declared as regular dependencies and survive this step. Everything else
+# (eslint, vitest, playwright, pm2, license-checker, …) stays out of the image.
+FROM build AS prod-deps
+# Remove the dev-only packages from the modules directory the build stage already
+# populated. `pnpm prune --prod` is deliberately NOT used: it rebuilds that
+# directory from the lockfile in a way that drops the workspace links and `.bin`
+# shims the runtime needs (`prisma` and `next` both became unresolvable), while a
+# production install keeps them intact and still removes the dev tree.
+# Lifecycle scripts are skipped on purpose: the workspace `prepare` hooks need
+# dev-only compilers (tsc/tsup) that are absent in this mode, and everything they
+# emit is already in place from the build stage.
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
+
 # ---- runtime ------------------------------------------------------------
-# Ships the full workspace incl. dev tooling on purpose: `prisma migrate
-# deploy` (Prisma CLI) runs in the API entrypoint. Prune node_modules for a
-# smaller image only if you keep `prisma` available some other way.
 FROM base AS runtime
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -49,7 +64,7 @@ RUN apt-get update \
  && apt-get update \
  && apt-get install -y --no-install-recommends postgresql-client-16 \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /app /app
+COPY --from=prod-deps /app /app
 COPY docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY docker/entrypoint-web.sh /usr/local/bin/entrypoint-web
 COPY docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker

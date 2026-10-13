@@ -12,7 +12,7 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | 容器镜像 | `ghcr.io/worable233/stackpanel`（api / web / worker 共用同一镜像） |
 | 插件与主题 ZIP | 由 `pnpm plugin:pack` 打包或后台上传产生 |
 
-容器镜像保留完整的 `node_modules`（含开发依赖）：容器启动时执行 `prisma migrate deploy`，运行期还会执行 `next build`，二者依赖通常只装在开发环境的包。镜像内的组件范围因此大于 npm 包。
+容器镜像在构建时执行 `pnpm install --prod`，只保留运行期需要的组件。运行期确实需要少量构建工具：API 容器的 `prisma migrate deploy` 使用 Prisma CLI，worker 在插件/主题前端变更时执行 `pnpm build:frontend` 与 `next build`。这些工具因此声明在 `dependencies` 中而非 `devDependencies`：Prisma CLI、Next、Tailwind、TypeScript、esbuild、Prettier。ESLint、Vitest、Playwright、PM2、license-checker 等开发期工具不随镜像分发。
 
 ## 一、运行期依赖
 
@@ -31,8 +31,10 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | [@prisma/adapter-pg](https://github.com/prisma/prisma) | 7.9.1 | Apache-2.0 |
 | [@prisma/client](https://github.com/prisma/prisma) | 7.9.1 | Apache-2.0 |
 | [class-variance-authority](https://github.com/joe-bell/cva) | 0.7.1 | Apache-2.0 |
+| [prisma](https://github.com/prisma/prisma) | 7.9.1 | Apache-2.0 |
 | [prom-client](https://github.com/siimon/prom-client) | 15.1.3 | Apache-2.0 |
 | [sharp](https://github.com/lovell/sharp) | 0.35.5 | Apache-2.0 |
+| [typescript](https://github.com/microsoft/TypeScript) | 5.9.3 / 6.0.3 | Apache-2.0 |
 | [dotenv](https://github.com/motdotla/dotenv) | 17.4.2 | BSD-2-Clause |
 | [lucide-react](https://github.com/lucide-icons/lucide) | 0.468.0 | ISC |
 | [lucide-react](https://github.com/lucide-icons/lucide) | 1.31.0 | ISC |
@@ -51,11 +53,13 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | @stackpanel/mcp | 0.4.0 | MIT |
 | @stackpanel/sdk | 0.4.0 | MIT |
 | @stackpanel/spec | 0.4.0 | MIT |
+| [@tailwindcss/postcss](https://github.com/tailwindlabs/tailwindcss) | 4.3.3 | MIT |
 | [bullmq](https://github.com/taskforcesh/bullmq) | 6.3.10 | MIT |
 | [clsx](https://github.com/lukeed/clsx) | 2.1.1 | MIT |
 | [cn](https://github.com/shadcn-ui/cn) | 0.4.0 | MIT |
 | [css-tree](https://github.com/csstree/csstree) | 3.2.1 | MIT |
 | [emoji-picker-react](https://github.com/ealush/emoji-picker-react) | 4.22.3 | MIT |
+| [esbuild](https://github.com/evanw/esbuild) | 0.27.7 | MIT |
 | [fastify](https://github.com/fastify/fastify) | 5.12.5 | MIT |
 | [fflate](https://github.com/101arrowz/fflate) | 0.8.3 | MIT |
 | [ioredis](https://github.com/redis/ioredis) | 6.0.0 | MIT |
@@ -63,6 +67,7 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | [motion](https://github.com/motiondivision/motion) | 13.1.0 | MIT |
 | [next](https://github.com/vercel/next.js) | 16.3.8 | MIT |
 | [pg](https://github.com/brianc/node-postgres) | 8.23.0 | MIT |
+| [prettier](https://github.com/prettier/prettier) | 3.9.6 | MIT |
 | [react](https://github.com/facebook/react) | 19.2.4 | MIT |
 | [react-dom](https://github.com/facebook/react) | 19.2.4 | MIT |
 | [recharts](https://github.com/recharts/recharts) | 3.10.1 | MIT |
@@ -70,6 +75,7 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | server-only | 0.0.1 | MIT |
 | [sonner](https://github.com/emilkowalski/sonner) | 2.0.8 | MIT |
 | [tailwind-merge](https://github.com/dcastil/tailwind-merge) | 3.6.0 | MIT |
+| [tailwindcss](https://github.com/tailwindlabs/tailwindcss) | 4.3.3 | MIT |
 | [tw-animate-css](https://github.com/wombosvideo/tw-animate-css) | 1.4.0 | MIT |
 | [zod](https://github.com/colinhacks/zod) | 4.4.3 | MIT |
 
@@ -81,14 +87,11 @@ StackPanel 的分发物中包含第三方开源组件。本文件列出这些组
 | --- | --- | --- | --- | --- |
 | `@img/sharp-libvips-linux-x64` / `-linux-arm64` / `-darwin-arm64` 等平台包 | 1.3.4 | LGPL-3.0-or-later | `sharp` → `apps/api` | 作为独立原生库在运行时动态加载，可单独替换；随附 [`licenses/LGPL-3.0-or-later.txt`](licenses/LGPL-3.0-or-later.txt)，源码见 https://github.com/lovell/sharp-libvips |
 | `lightningcss`、`lightningcss-*` | 1.32.0 / 1.33.0 | MPL-2.0 | `@tailwindcss/postcss` → `apps/web`；worker 执行 `next build` 时运行 | 随附 [`licenses/MPL-2.0.txt`](licenses/MPL-2.0.txt)；未修改上游源码 |
-| `axe-core` | 4.12.1 | MPL-2.0 | `eslint-config-next` → `apps/web` | 随附 [`licenses/MPL-2.0.txt`](licenses/MPL-2.0.txt) |
 | `elkjs` | 0.11.1 | EPL-2.0 | `@prisma/studio-core` → `prisma` → `packages/db` | 随附 [`licenses/EPL-2.0.txt`](licenses/EPL-2.0.txt) |
-| `pm2` | 7.0.3 | AGPL-3.0 | 根 `devDependencies`，由 `scripts/install.sh` 启动 | 以独立进程运行，未修改、未链接进应用代码；随附 [`licenses/AGPL-3.0.txt`](licenses/AGPL-3.0.txt) |
 | `caniuse-lite` | 1.0.30001806 / 1.0.30001814 | CC-BY-4.0 | `next` / `browserslist` | 数据来自 https://caniuse.com ；随附 [`licenses/CC-BY-4.0.txt`](licenses/CC-BY-4.0.txt) |
-| `spdx-exceptions` | 2.5.0 | CC-BY-3.0 | `license-checker` | 随附 [`licenses/CC-BY-3.0.txt`](licenses/CC-BY-3.0.txt) |
-| `spdx-ranges` | 2.1.1 | MIT AND CC-BY-3.0 | `license-checker` | 同上 |
-| `language-subtag-registry` | 0.3.20 | ODC-By-1.0 | `eslint-config-next` | 数据来自 IANA 语言子标签注册表；随附 [`licenses/ODC-By-1.0.txt`](licenses/ODC-By-1.0.txt) |
-| `mariadb` | 未安装 | LGPL-2.1-only | 官方 Prisma MySQL 适配器 | 仅作为 `scripts/licenses.sh` 中的已备案例外保留 |
+| `mariadb` | 未安装 | LGPL-2.1-only | 官方 Prisma MySQL 适配器 | 仅作为 [`scripts/check-licenses.mjs`](scripts/check-licenses.mjs) 中的已备案例外保留 |
+
+只存在于开发环境的组件不属于分发物：`pm2`（AGPL-3.0，仅供 `scripts/install.sh` 在宿主机拉起进程）、`axe-core`（MPL-2.0）与 `language-subtag-registry`（ODC-By-1.0，经 `eslint-config-next`）、`spdx-exceptions` / `spdx-ranges`（经 `license-checker`）都不随镜像或 npm 包发布。
 
 ## 三、字体
 
@@ -102,6 +105,7 @@ StackPanel 以 MIT 许可证发布，见 [LICENSE](LICENSE)。`@stackpanel/sdk`�
 
 - 平台原生包按运行环境选择安装：常规 macOS 开发机只安装 `@img/sharp-libvips-darwin-arm64`，容器镜像安装 `@img/sharp-libvips-linux-*`。二者许可证相同，均为 LGPL-3.0-or-later。
 - 通用许可证工具不遍历 `optionalDependencies`，因此 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 的许可证检查除遍历已安装依赖外，还会扫描 `pnpm-lock.yaml`，以便在任意平台上都能看到未安装的平台原生包。
+- `next` 把 `@playwright/test` 声明为可选 peer，锁文件据此固定了带 peer 后缀的版本，因此 `@playwright/test`（Apache-2.0）仍会随镜像安装，即使它只用于测试。
 - 少数历史包没有声明许可证字段，只能从 `LICENSE` 文件判断（例如仅经开发依赖链引入的 `abbrev@1.0.3`）。
 - 仓库内的主题与图标均为自制资源。第三方商标、认证标识与客户标识不随仓库分发。
 

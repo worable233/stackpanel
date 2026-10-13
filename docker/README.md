@@ -22,7 +22,8 @@ docker compose --env-file docker/.env up -d --build
 | `base`    | Node 22 + corepack + pnpm 11.5.1                                                              |
 | `deps`    | `pnpm install --frozen-lockfile`（含各包 `prepare`：prisma generate / sdk / ui / 插件 build） |
 | `build`   | `pnpm build`（含 `build:frontend` + `next build`）；`ARG API_BASE_URL` 影响构建期 CSP         |
-| `runtime` | 安装 `postgresql-client-16`（自助导出/导入），复制 `build` 产物与入口脚本           |
+| `prod-deps` | `pnpm install --prod --frozen-lockfile --ignore-scripts`（剔除开发期依赖，保留 Prisma CLI / Next / Tailwind / TypeScript / esbuild / Prettier 等运行期工具） |
+| `runtime` | 安装 `postgresql-client-16`（自助导出/导入），复制 `prod-deps` 产物与入口脚本           |
 
 `.dockerignore` 已排除 `node_modules`、`data/`、`.env*`、`.git` 等，构建上下文干净。
 
