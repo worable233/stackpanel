@@ -372,21 +372,6 @@ function categoryIcon(name: string): string {
   return 'layers';
 }
 
-/** Resolve an asset path relative to the active theme's asset root. */
-function themeAsset(base: string | undefined, path: string): string | null {
-  if (!base) return null;
-  return `${base.replace(/\/+$/, '')}/${path}`;
-}
-
-const COMPLIANCE_BADGES = [
-  '等保三级',
-  'ISO 27001',
-  'CSA STAR',
-  '可信云认证',
-  'PCI DSS',
-  'SOC 鉴证审计',
-];
-
 /** Shared enterprise layout: topbar, search header, mega nav, rich footer. */
 function StratusLayout({
   children,
@@ -395,9 +380,7 @@ function StratusLayout({
   platform,
   categories = [],
   brand,
-  assetsBaseUrl,
 }: FrontendLayoutProps): ReactElement {
-  const asset = (path: string): string | null => themeAsset(assetsBaseUrl, `img/${path}`);
   const primaryNav = [
     { label: '首页', href: '/' },
     ...navigation,
@@ -657,26 +640,13 @@ function StratusLayout({
               <p className="mt-4 text-sm leading-6 text-ink-soft">
                 值得信赖的一站式云计算平台，覆盖计算、存储、网络、安全与 AI 全栈服务。
               </p>
-              <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2">
-                {[
-                  { label: 'ISO 27001', file: 'cert-iso27001.png' },
-                  { label: 'CSA STAR', file: 'cert-csa.png' },
-                  { label: 'PCI DSS', file: 'cert-pci.png' },
-                  { label: 'SOC 鉴证审计', file: 'cert-soc.png' },
-                  { label: 'ISO 22301', file: 'cert-iso22301.png' },
-                ].map((cert) => (
-                  <span key={cert.label} className="flex items-center gap-1">
-                    {asset(cert.file) ? (
-                      <img
-                        src={asset(cert.file) ?? undefined}
-                        alt={cert.label}
-                        className="h-7 w-auto"
-                      />
-                    ) : (
-                      <span className="text-primary">
-                        <Icon name="check" />
-                      </span>
-                    )}
+              <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-ink-soft">
+                {['数据自托管', '权限分级', '传输加密', '操作审计', '备份恢复'].map((item) => (
+                  <span key={item} className="flex items-center gap-1.5">
+                    <span className="text-primary">
+                      <Icon name="check" />
+                    </span>
+                    {item}
                   </span>
                 ))}
               </div>
@@ -874,7 +844,6 @@ function HomePage(props: FrontendPageProps): ReactElement {
   const cs = props.settings.case ?? {};
   const inf = props.settings.infra ?? {};
   const c = props.settings.cta ?? {};
-  const asset = (path: string): string | null => themeAsset(props.assetsBaseUrl, `img/${path}`);
   const hotKeywords = ((s.hotKeywords as string) || '轻量应用服务器,云服务器,云数据库,SSL证书')
     .split(',')
     .map((k) => k.trim())
@@ -914,49 +883,24 @@ function HomePage(props: FrontendPageProps): ReactElement {
       icon: 'building',
       name: '金融云',
       desc: '高可用、强合规的金融级架构',
-      img: 'solution-finance.jpg',
     },
     {
       icon: 'globe',
       name: '电商云',
       desc: '大促高峰弹性扩容，零宕机',
-      img: 'solution-ecommerce.jpg',
     },
-    { icon: 'rocket', name: '游戏云', desc: '全球低延迟，防 DDoS 攻击', img: 'solution-game.jpg' },
+    { icon: 'rocket', name: '游戏云', desc: '全球低延迟，防 DDoS 攻击' },
     {
       icon: 'doc',
       name: '政企云',
       desc: '专属集群，本地化合规部署',
-      img: 'solution-government.jpg',
     },
-    { icon: 'waves', name: '音视频', desc: '低延迟直播与点播解决方案', img: 'solution-media.jpg' },
+    { icon: 'waves', name: '音视频', desc: '低延迟直播与点播解决方案' },
     {
       icon: 'code',
       name: 'AI 应用',
       desc: '从推理到训练的完整闭环',
-      img: 'solution-education.jpg',
     },
-  ];
-
-  const customers = [
-    '58同城',
-    '微众银行',
-    '大众点评',
-    '滴滴出行',
-    '斗鱼',
-    '广发证券',
-    '快手',
-    '迷你世界',
-    '蘑菇街',
-    '人民日报',
-    '人民网',
-    '腾讯课堂',
-    '腾讯游戏',
-    '同程旅游',
-    '新东方',
-    '永辉超市',
-    'Bilibili',
-    '绝地求生',
   ];
 
   const regions = [
@@ -978,13 +922,6 @@ function HomePage(props: FrontendPageProps): ReactElement {
           className="pointer-events-none absolute inset-0 [mask-image:linear-gradient(90deg,transparent,#000_10%,#000_90%,transparent)]"
           aria-hidden="true"
         >
-          {asset('hero-banner.jpg') && (
-            <img
-              src={asset('hero-banner.jpg') ?? undefined}
-              alt=""
-              className="absolute inset-0 size-full object-cover object-center opacity-30"
-            />
-          )}
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_120%_90%_at_50%_-10%,rgba(94,146,255,0.35),transparent_60%)]" />
         </div>
         <div className="relative mx-auto flex w-full max-w-[1680px] items-center px-4 py-16 sm:px-6 sm:py-20 lg:px-12">
@@ -1044,24 +981,12 @@ function HomePage(props: FrontendPageProps): ReactElement {
             )}
 
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-hero-foreground/80">
-              {[
-                { label: 'ISO 27001', file: 'cert-iso27001.png' },
-                { label: 'CSA STAR', file: 'cert-csa.png' },
-                { label: 'PCI DSS', file: 'cert-pci.png' },
-                { label: 'SOC 鉴证审计', file: 'cert-soc.png' },
-              ].map((cert) => (
-                <span key={cert.label} className="flex items-center gap-1.5">
-                  {asset(cert.file) ? (
-                    <img
-                      src={asset(cert.file) ?? undefined}
-                      alt={cert.label}
-                      className="h-10 w-auto"
-                    />
-                  ) : (
-                    <span className="text-white">
-                      <Icon name="check" />
-                    </span>
-                  )}
+              {['数据自托管', '权限分级', '传输加密', '操作审计'].map((item) => (
+                <span key={item} className="flex items-center gap-1.5">
+                  <span className="text-white">
+                    <Icon name="check" />
+                  </span>
+                  {item}
                 </span>
               ))}
             </div>
@@ -1288,16 +1213,6 @@ function HomePage(props: FrontendPageProps): ReactElement {
                 href="/about"
                 className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
               >
-                <div className="relative h-32 overflow-hidden">
-                  {asset(item.img) && (
-                    <img
-                      src={asset(item.img) ?? undefined}
-                      alt=""
-                      className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-                </div>
                 <div className="flex items-start gap-3 p-5 pt-4">
                   <span className="mt-0.5 text-primary">
                     <Icon name={item.icon} />
@@ -1363,32 +1278,12 @@ function HomePage(props: FrontendPageProps): ReactElement {
                 </div>
               </div>
             </div>
-            <div className="overflow-hidden border-y border-border py-6 [mask-image:linear-gradient(to_right,transparent,#000_10%,#000_90%,transparent)]">
-              <div className="flex w-max gap-10 animate-marquee">
-                {[...customers, ...customers].map((name, index) => (
-                  <span
-                    key={`${name}-${index}`}
-                    className="flex shrink-0 items-center gap-1.5 text-sm text-ink-faint"
-                  >
-                    <span className="size-1 rounded-full bg-ink-faint" />
-                    {name}
-                  </span>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </section>
 
       {/* Infra */}
       <section className="relative overflow-hidden border-t border-border bg-surface">
-        {asset('infra-map.png') && (
-          <img
-            src={asset('infra-map.png') ?? undefined}
-            alt=""
-            className="pointer-events-none absolute right-0 top-1/2 hidden h-[110%] -translate-y-1/2 object-contain opacity-15 lg:block"
-          />
-        )}
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 sm:px-6 lg:px-12">
           <div className="mb-10">
             <p className="text-xs leading-5 text-ink-faint">
@@ -1446,27 +1341,14 @@ function HomePage(props: FrontendPageProps): ReactElement {
           <div className="mt-8 border-t border-border pt-6">
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
               <span className="flex items-center gap-1.5 text-xs font-medium text-ink">
-                权威认证
+                平台保障
               </span>
-              {[
-                { label: 'ISO 27001', file: 'cert-iso27001.png' },
-                { label: 'CSA STAR', file: 'cert-csa.png' },
-                { label: 'PCI DSS', file: 'cert-pci.png' },
-                { label: 'SOC 鉴证审计', file: 'cert-soc.png' },
-                { label: 'ISO 22301', file: 'cert-iso22301.png' },
-              ].map((cert) => (
-                <span key={cert.label} className="flex items-center gap-1.5 text-xs text-ink-soft">
-                  {asset(cert.file) ? (
-                    <img
-                      src={asset(cert.file) ?? undefined}
-                      alt={cert.label}
-                      className="h-8 w-auto"
-                    />
-                  ) : (
-                    <span className="text-primary">
-                      <Icon name="check" />
-                    </span>
-                  )}
+              {['数据自托管', '权限分级', '传输加密', '操作审计', '备份恢复'].map((item) => (
+                <span key={item} className="flex items-center gap-1.5 text-xs text-ink-soft">
+                  <span className="text-primary">
+                    <Icon name="check" />
+                  </span>
+                  {item}
                 </span>
               ))}
             </div>

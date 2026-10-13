@@ -138,6 +138,10 @@ Local setup, coding standards, and the review flow are in [CONTRIBUTING.md](./CO
 
 Report vulnerabilities through GitHub's private vulnerability reporting channel rather than a public issue. Process and scope are in [SECURITY.md](./SECURITY.md).
 
+## Dependencies and licensing
+
+Third-party components and their licenses are listed in [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md), with full license texts in [`licenses/`](./licenses/). `pnpm license:check` fails CI on any copyleft dependency that is not documented there.
+
 ## Contributing
 
 Issues and pull requests are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md) first. Release notes are in [CHANGELOG.md](./CHANGELOG.md).

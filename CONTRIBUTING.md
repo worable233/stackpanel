@@ -65,7 +65,8 @@ pnpm build
 - 格式与静态检查由 Prettier + ESLint 统一，提交前跑 `pnpm format`。
 - 提交信息遵循 Conventional Commits：`feat` / `fix` / `docs` / `refactor` / `perf` / `test` / `build` / `ci` / `chore`，并带 scope，例如 `fix(plugin-runtime): ...`。
 - 新增行为必须带测试。测试放在对应包的 `tests/` 目录，命名 `*.test.ts`。
-- 不引入 copyleft 许可的依赖：CI 的 `pnpm license:check` 会拒绝。
+- 不引入 copyleft 许可的依赖：CI 的 `pnpm license:check` 会拒绝。确需引入时，必须同时更新 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) 与 `scripts/check-licenses.mjs` 中的已备案例外。
+- 图片、字体、图标等资源必须确认来源与许可证，并在 THIRD-PARTY-NOTICES.md 中登记；不要提交来源不明的素材或第三方商标。
 
 ## 不要提交的内容
 

@@ -68,20 +68,19 @@ jobs:
         run: pnpm audit --prod --registry=https://registry.npmjs.org --audit-level high
 
       - name: Generate dependency SBOM
-        run: pnpm exec license-checker --production --json --out "$RUNNER_TEMP/stackpanel-sbom.json"
+        run: pnpm sbom --sbom-format cyclonedx > "$RUNNER_TEMP/stackpanel-sbom.json"
 
-      - name: License check (no copyleft)
-        run: |
-          # mariadb (LGPL-2.1) is a documented exception — required by the
-          # official Prisma MySQL adapter. See README "依赖与合规".
-          FAILON='GPL-1.0;GPL-1.0-or-later;GPL-2.0;GPL-2.0-only;GPL-2.0-or-later;GPL-3.0;GPL-3.0-only;GPL-3.0-or-later;LGPL-2.0;LGPL-2.1;LGPL-2.1-or-later;LGPL-3.0;LGPL-3.0-only;LGPL-3.0-or-later;AGPL-1.0;AGPL-3.0;AGPL-3.0-only;AGPL-3.0-or-later;MPL-1.0;MPL-1.1;MPL-2.0;EPL-1.0;EPL-2.0;CDDL-1.0;CDDL-1.1'
-          for pkg in . apps/api apps/web packages/sdk packages/spec packages/ui; do
-            echo "== $pkg =="
-            pnpm exec license-checker --start "$pkg" --production \
-              --excludePrivatePackages \
-              --excludePackages 'mariadb@3.4.5' \
-              --failOn "$FAILON"
-          done
+      - name: Upload dependency SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: stackpanel-sbom
+          path: ${{ runner.temp }}/stackpanel-sbom.json
+          retention-days: 90
+
+      # Any copyleft-family license must be documented in
+      # scripts/check-licenses.mjs and THIRD-PARTY-NOTICES.md, or the build fails.
+      - name: License check
+        run: pnpm license:check
 
       - name: Typecheck
         run: pnpm typecheck

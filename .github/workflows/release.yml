@@ -71,7 +71,7 @@ jobs:
             org.opencontainers.image.description=自托管的数字商品与主机业务系统（api / web / worker 同一镜像，靠入口脚本区分）
             org.opencontainers.image.url=https://github.com/${{ github.repository }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=MIT AND LGPL-3.0-or-later AND MPL-2.0 AND EPL-2.0 AND AGPL-3.0 AND CC-BY-4.0 AND CC-BY-3.0 AND ODC-By-1.0
 
       - name: 构建并推送镜像
         id: build

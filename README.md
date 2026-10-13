@@ -138,6 +138,10 @@ pnpm build
 
 漏洞请通过 GitHub 私密漏洞报告通道提交，不要开公开 issue。流程与范围见 [SECURITY.md](./SECURITY.md)。
 
+## 依赖与合规
+
+第三方组件及其许可证见 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)，许可证全文位于 [`licenses/`](./licenses/)。CI 的 `pnpm license:check` 会拒绝任何未在其中备案的 copyleft 依赖。
+
 ## 参与贡献
 
 欢迎 issue 与 PR。请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md) 与[行为准则](./CODE_OF_CONDUCT.md)。版本变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
