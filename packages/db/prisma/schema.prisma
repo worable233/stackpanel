@@ -324,10 +324,173 @@ model ApiToken {
   updatedAt   DateTime  @updatedAt
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   usage       ApiTokenUsage[]
+  agentProfile AgentProfile?
+  agentRuns   AgentRun[]
 
   @@map("api_tokens")
   @@index([userId])
   @@index([status])
+}
+
+/// Agent 画像（PLAN-agent-in-kernel §2.2）：挂在唯一凭据 `ApiToken` 上的一对一策略。
+///
+/// 三条铁律在数据层的落点：
+/// ① 有效权限恒为 `token.scopes ∩ 主人当前权限`；`autonomy` 只在既有权限范围内放宽
+///    「是否需要人点一下」，**不引入新权限** —— 所以本表没有任何权限字段。
+/// ② 模型不持令牌：本表不存任何模型密钥，模型密钥只在插件/站点设置里。
+/// ③ 冒用会话（`AuthUser.impersonatorId`）不得派生 Agent 运行 —— 该规则在服务层强制。
+model AgentProfile {
+  id               String        @id @default(cuid())
+  apiTokenId       String        @unique
+  /// read = 只读；propose = 写操作转待审批；act = 范围内直接执行。默认 read（§2.2）。
+  autonomy         AgentAutonomy @default(read)
+  /// 按自然日滚动的额度（元/分）。null = 不限。
+  dailyBudgetMinor Int?
+  /// 按自然日滚动的步数额度。null = 不限。超限当日不再开新运行（§4.3）。
+  dailySteps       Int?
+  /// 单次运行的累计花费上限（元/分），超限即停。null = 不限。
+  budgetMinor      Int?
+  /// 单次运行预算的计量窗口（§2.2）。取值域：'daily'（自然日滚动）| 'monthly'（自然月滚动）。
+  /// 与 AgentBudgetWindow 联合类型（packages/sdk/src/agent.ts）保持一致；Prisma 侧按
+  /// 仓库既有 status 字段的风格用 String 而非 enum。
+  budgetWindow     String?
+  /// 单次运行最大步数，防失控循环。
+  maxSteps         Int           @default(50)
+  /// 单次运行墙钟上限（秒）。
+  maxRunSeconds    Int           @default(600)
+  /// 允许调用的模型白名单 string[]（映射 llm-gateway 对外模型名）。空 = 不限。
+  allowedModels    Json          @default("[]")
+  /// 待审批推给谁（复用 NotificationsService）。null = 不推。
+  approvalNotify   String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  token            ApiToken      @relation(fields: [apiTokenId], references: [id], onDelete: Cascade)
+
+  @@map("agent_profiles")
+}
+
+/// 一次 Agent 运行的头（PLAN-agent-in-kernel §3.3）。
+/// 逐步骤落在 `AgentStep`，因此运行天然可恢复、崩溃点可见（§3.4）。
+model AgentRun {
+  id         String         @id @default(cuid())
+  /// 触发本次运行的身份（User.id）。与 ApiTokenUsage.userId 同口径：不建 FK，保审计。
+  actorId    String
+  /// 本次运行使用的唯一凭据。凭据删除即级联清理运行（与 ApiTokenUsage 同口径）。
+  tokenId    String
+  objective  String
+  status     AgentRunStatus @default(QUEUED)
+  model      String?
+  /// 已推进步数（= 该运行已有 AgentStep 数）。
+  steps      Int            @default(0)
+  spendMinor Int            @default(0)
+  tokensIn   Int            @default(0)
+  tokensOut  Int            @default(0)
+  error      String?
+  /// Set when the run leaves QUEUED for RUNNING; null while still queued.
+  startedAt  DateTime?
+  endedAt    DateTime?
+  createdAt  DateTime       @default(now())
+  token      ApiToken       @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  stepRows   AgentStep[]
+  approvals  AgentApproval[]
+
+  @@map("agent_runs")
+  @@index([actorId, startedAt])
+  @@index([tokenId, startedAt])
+  @@index([status])
+}
+
+/// 逐步骤回放/审计载体（PLAN-agent-in-kernel §3.3）。
+/// `(runId, index)` 唯一：重放或重试同一步不会写出第二条。
+model AgentStep {
+  id         String        @id @default(cuid())
+  runId      String
+  /// 步序号，从 0 起。
+  index      Int
+  kind       AgentStepKind
+  toolName   String?
+  args       Json?
+  result     Json?
+  isError    Boolean       @default(false)
+  tokensIn   Int           @default(0)
+  tokensOut  Int           @default(0)
+  costMinor  Int           @default(0)
+  latencyMs  Int           @default(0)
+  /// 本步对应的待审批记录（若有）。反向指针，避免与 AgentApproval.stepId 形成循环外键。
+  approvalId String?
+  /// 落库时刻。`(runId, index)` 已保证运行内顺序，此列用于跨运行回放/排障。
+  createdAt  DateTime      @default(now())
+  run        AgentRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  approvals  AgentApproval[]
+
+  @@map("agent_steps")
+  @@unique([runId, index])
+  @@index([approvalId])
+}
+
+/// 待人决策的写动作（PLAN-agent-in-kernel §3.3、§4.2）。
+/// `idempotencyKey` 在**提出审批时**生成并持久化，批准后执行时原样使用（§4.2）。
+model AgentApproval {
+  id             String              @id @default(cuid())
+  runId          String
+  /// The step that proposed this action. Required per §3.3; `AgentStep.approvalId`
+  /// is only the optional reverse pointer, kept as a plain scalar to avoid a
+  /// circular foreign key between the two tables.
+  stepId         String
+  capabilityId   String
+  /// 该动作将发送的参数。null = 该能力本身无需参数 —— 与 AgentStep.args 同口径，
+  /// 刻意不用 @default("{}")，以免把「无参数」与「参数为空对象」混为一谈。
+  args           Json?
+  /// 全文唯一：批准接口被重复调用、或执行中途重试，都不会二次扣款/二次退款。
+  idempotencyKey String              @unique
+  status         AgentApprovalStatus @default(PENDING)
+  /// 决策人（User.id）。管理面高危能力要求其具备该能力所需权限（§5）。
+  decidedBy      String?
+  decidedAt      DateTime?
+  expiresAt      DateTime?
+  reason         String?
+  /// 提出时刻。用于「按时间取某步最新一次审批」，也是审批列表的稳定排序键。
+  createdAt      DateTime            @default(now())
+  run            AgentRun             @relation(fields: [runId], references: [id], onDelete: Cascade)
+  step           AgentStep            @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@map("agent_approvals")
+  @@index([runId])
+  @@index([stepId])
+  @@index([status, expiresAt])
+}
+
+/// Agent 自主度（§2.2）。
+enum AgentAutonomy {
+  read
+  propose
+  act
+}
+
+/// 运行状态（§3.3）。
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  WAITING_APPROVAL
+  DONE
+  FAILED
+  CANCELLED
+}
+
+/// 步骤种类（§3.3）。
+enum AgentStepKind {
+  assistant
+  tool_call
+  tool_result
+  approval
+}
+
+/// 审批状态（§3.3）。
+enum AgentApprovalStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
 }
 
 /// 开放平台逐请求用量审计（PLAN-open-platform P1）。
@@ -393,53 +556,6 @@ model Attachment {
   @@map("attachments")
   @@index([ownerId, createdAt])
   @@index([createdAt])
-}
-
-/// 渠道伙伴（SP v1 上游面，P3）。持有一对 Ed25519 密钥：
-///   - publicKey：伙伴签名入站请求，内核用它验签（X-SP-Key-Id 定位）。
-///   - webhookPrivateKey/webhookPublicKey：内核向伙伴回调时用的密钥对；私钥加密存储。
-model Reseller {
-  id                String    @id @default(cuid())
-  name              String    @unique
-  status            String    @default("ACTIVE") // ACTIVE|DISABLED
-  keyId             String    @unique
-  publicKey         String
-  webhookPrivateKey String?
-  webhookPublicKey  String?
-  webhookUrl        String?
-  scopes            Json      @default("[]")
-  rateLimitRpm      Int       @default(240)
-  lastUsedAt        DateTime?
-  lastUsedIp        String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  deliveries        WebhookDelivery[]
-
-  @@map("resellers")
-  @@index([status])
-}
-
-/// 签名 webhook 投递记录（出站回调，at-least-once + 退避重试 + 防重放）。
-model WebhookDelivery {
-  id            String    @id @default(cuid())
-  resellerId    String
-  event         String
-  url           String
-  payload       Json
-  status        String    @default("PENDING") // PENDING|DELIVERING|SUCCEEDED|FAILED
-  attempts      Int       @default(0)
-  maxAttempts   Int       @default(6)
-  responseCode  Int?
-  error         String?
-  nextAttemptAt DateTime?
-  deliveredAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  reseller      Reseller  @relation(fields: [resellerId], references: [id], onDelete: Cascade)
-
-  @@map("webhook_deliveries")
-  @@index([resellerId, createdAt])
-  @@index([status, nextAttemptAt])
 }
 
 enum UserStatus {

@@ -49,6 +49,11 @@ export interface UserAdminActor {
 export interface UserAdminAuth {
   revokeAllSessions(userId: string): Promise<void>;
   issueSession(userId: string): Promise<string>;
+  /**
+   * Mint a session presenting as `targetUserId` but attributed to the
+   * administrator `impersonatorId` (audit AZ-4).
+   */
+  issueImpersonationSession(targetUserId: string, impersonatorId: string): Promise<string>;
 }
 
 export interface UserAdminDeps {
@@ -136,7 +141,7 @@ export class UserAdminService {
 
   private requireCommerce(): CommerceOperations {
     const commerce = this.commerce;
-    if (!commerce) throw new PluginError('store.unavailable', 503, '商店能力暂不可用');
+    if (!commerce) throw new PluginError('commerce.unavailable', 503, '商店能力暂不可用');
     return commerce;
   }
 
@@ -400,12 +405,15 @@ export class UserAdminService {
     if (user.status !== 'ACTIVE') {
       throw new PluginError('user.disabled', 400, '该账号已停用，无法进入');
     }
-    const token = await this.deps.auth.issueSession(id);
+    // Only the caller's own, verified id may be recorded as the impersonator; a
+    // missing actor id would silently produce an untraceable session, so refuse.
+    if (!actor.id) throw new PluginError('auth.unauthenticated', 401, '未登录或会话已过期');
+    const token = await this.deps.auth.issueImpersonationSession(id, actor.id);
     await writeAudit({
       action: 'user.impersonate',
       resource: 'user',
       resourceId: id,
-      meta: { impersonatedEmail: user.email },
+      meta: { impersonatedEmail: user.email, impersonatedUserId: id },
       ...audit,
     });
     return { token };

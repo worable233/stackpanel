@@ -16,6 +16,7 @@ import { registerApiVersioning } from './lib/api-version.ts';
 import { recordTokenUsage } from './lib/open-api-guard.ts';
 import { seedDefaultBrand } from './lib/platform-brand.ts';
 import { PluginDispatcher } from './plugins/dispatcher.ts';
+import { getDataCache } from './cache/index.ts';
 import { installBodyRouting } from './plugins/body.ts';
 import { extractSession } from './plugins/auth.ts';
 import { ExtensionService } from './extensions/service.ts';
@@ -26,10 +27,10 @@ import { getPrisma } from './plugins/prisma.ts';
 import { createPluginHost } from './plugin-host.ts';
 import { adminAuditRoutes } from './routes/admin/audit.ts';
 import { adminBackupRoutes } from './routes/admin-backup.ts';
-import { adminDeveloperRoutes } from './routes/admin/developer.ts';
 import { adminJobsRoutes } from './routes/admin/jobs.ts';
 import { adminMarketRoutes } from './routes/admin/market.ts';
 import { adminPluginRoutes } from './routes/admin/plugins.ts';
+import { adminAgentModelRoutes } from './routes/admin/agent-model.ts';
 import { adminSecretsRoutes } from './routes/admin/secrets.ts';
 import { adminSettingsRoutes } from './routes/admin/settings.ts';
 import { adminCurrencyRoutes } from './routes/admin/currency-rates.ts';
@@ -52,7 +53,7 @@ import { notificationStreamRoutes } from './routes/notifications-stream.ts';
 import { platformRoutes } from './routes/platform.ts';
 import { seoRoutes } from './routes/seo.ts';
 import { openApiV1Routes } from './routes/open-api-v1.ts';
-import { spV1Routes } from './routes/sp-v1.ts';
+import { agentRoutes } from './routes/agent.ts';
 import { pluginRoutes } from './routes/plugin.ts';
 import { initThemes, themeRoutes } from './routes/theme.ts';
 
@@ -254,7 +255,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   const dispatcher = new PluginDispatcher();
   app.decorate('pluginDispatcher', dispatcher);
-  const extensions = new ExtensionService(getPrisma());
+  const extensions = new ExtensionService(getPrisma(), getDataCache());
   // Swagger UI exposes every route, permission and internal schema — an ideal
   // recon target (security audit M-3). Mount it in an encapsulated
   // scope whose `onRequest` guard requires `platform.admin`; unauthorized
@@ -385,8 +386,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(apiTokenRoutes);
   void app.register(platformRoutes);
   void app.register(openApiV1Routes);
-  // SP-V1（P3）：渠道伙伴签名入口。独立作用域（preParsing 仅作用于 /sp/v1/*）。
-  void app.register(spV1Routes);
+  // Kernel Agent (PLAN-agent-in-kernel §3.4): request-driven, credential-carrying.
+  // Registered before MCP because the agent loop *is* an MCP-shaped consumer of
+  // the same capability registry; keeping it adjacent makes that pairing obvious.
+  void app.register(agentRoutes);
   // MCP (PLAN-open-platform P2): a transport adapter over the same capability
   // registry and /api/v1 handlers. Registered last among kernel HTTP routes so
   // its `/mcp` paths never collide with plugin dispatcher catch-alls below.
@@ -409,6 +412,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminMarketRoutes);
   void app.register(adminSettingsRoutes);
   void app.register(adminSecretsRoutes);
+  void app.register(adminAgentModelRoutes);
   void app.register(adminSigningRoutes);
   void app.register(adminPluginRoutes);
   void app.register(adminUiRoutes);
@@ -418,7 +422,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminPermissionGroupRoutes);
   void app.register(adminPermissionsRoutes);
   void app.register(adminBackupRoutes);
-  void app.register(adminDeveloperRoutes);
 
   // 契约治理（CONTRACT-SEC / G1）：API 版本与弃用响应头（RFC 8594）。登记表为空时为空操作。
   registerApiVersioning(app);

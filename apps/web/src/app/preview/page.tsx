@@ -29,7 +29,7 @@ export default async function PreviewPage({
           href={apiAssetUrl(`/themes/${encodeURIComponent(themeId)}/theme.css`)}
         />
       ) : null}
-      <FrontendRoute path={routePath} themeId={themeId ?? undefined} />
+      <FrontendRoute standalone path={routePath} themeId={themeId ?? undefined} />
     </>
   );
 }

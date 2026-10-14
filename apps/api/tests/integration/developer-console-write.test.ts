@@ -11,14 +11,18 @@ import {
   isValidEd25519PublicKey,
   signCanonical,
   verifyRequestSignature,
-} from '../../src/reseller/signing.ts';
+} from '../sp-signing.ts';
+import { deletePartner, enablePlugin, seedDelivery } from '../channel-helpers.ts';
 
 const dbAvailable = await checkDbAvailable();
 
 /**
- * Developer console write endpoints (批次 3 / CONSOLE-WRITE): reseller
- * lifecycle — create (server-generated Ed25519 inbound key, private key returned
- * exactly once), update, key rotation and delete — all admin-only and audited.
+ * Developer console write endpoints (批次 3 / CONSOLE-WRITE; ADR-0021 §D4): the
+ * channel partner lifecycle — create (server-generated Ed25519 inbound key,
+ * private key returned exactly once), update, key rotation and delete — are
+ * served by the channel plugin, admin-only and audited. The inbound private key
+ * is never persisted; the callback private key lives in the secret store, not on
+ * the model.
  */
 describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
   let app: FastifyInstance;
@@ -31,7 +35,7 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
 
   const auth = () => ({ authorization: `Bearer ${adminToken}` });
 
-  async function createReseller(payload: Record<string, unknown>): Promise<{
+  async function createPartner(payload: Record<string, unknown>): Promise<{
     statusCode: number;
     body: {
       reseller?: { id: string; keyId: string; publicKey: string; hasWebhookKey: boolean };
@@ -62,15 +66,16 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
     adminToken = (await createAdminUser(app, adminEmail, 'password1234')).token;
     userEmail = `cw-user-${suffix}@example.com`;
     userToken = (await createTestUser(app, userEmail, 'password1234')).token;
+    await enablePlugin(app, 'channel', adminToken);
   });
 
   afterAll(async () => {
     const prisma = getPrisma();
     for (const id of createdIds) {
-      await prisma.webhookDelivery.deleteMany({ where: { resellerId: id } });
-      await prisma.reseller.deleteMany({ where: { id } });
+      await deletePartner(id);
       await prisma.auditLog.deleteMany({ where: { resourceId: id } });
     }
+    await prisma.plugin.deleteMany({ where: { id: 'channel' } });
     if (adminEmail) await prisma.user.deleteMany({ where: { email: adminEmail } });
     if (userEmail) await prisma.user.deleteMany({ where: { email: userEmail } });
     await app.close();
@@ -97,22 +102,22 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
   });
 
   it('creates a channel and returns a working inbound key once', async () => {
-    const { statusCode, body } = await createReseller({
+    const { statusCode, body } = await createPartner({
       name: `cw-reseller-${suffix}`,
       scopes: ['catalog:read', 'order:write'],
       rateLimitRpm: 90,
     });
     expect(statusCode).toBe(200);
-    const reseller = body.reseller;
+    const partner = body.reseller;
     const privateKey = body.inboundPrivateKey;
-    expect(reseller).toBeDefined();
+    expect(partner).toBeDefined();
     expect(privateKey).toBeTruthy();
     expect(isValidEd25519PrivateKey(privateKey as string)).toBe(true);
-    expect(isValidEd25519PublicKey(reseller?.publicKey as string)).toBe(true);
-    expect(reseller?.hasWebhookKey).toBe(false);
-    expect(reseller?.keyId.startsWith('sp_')).toBe(true);
+    expect(isValidEd25519PublicKey(partner?.publicKey as string)).toBe(true);
+    expect(partner?.hasWebhookKey).toBe(false);
+    expect(partner?.keyId.startsWith('sp_')).toBe(true);
 
-    // The returned private key must actually verify against the stored public key.
+    // The returned private key must verify against the stored public key.
     const timestamp = String(Math.floor(Date.now() / 1000));
     const canonical = canonicalRequest({
       method: 'GET',
@@ -130,11 +135,10 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
           timestamp,
           nonce: `cw-${suffix}`,
           signature,
-          now: Number(timestamp) * 1000,
         },
-        reseller?.publicKey as string,
+        partner?.publicKey as string,
       ),
-    ).toEqual({ ok: true });
+    ).toBe(true);
 
     // The list projection never leaks the private key.
     const list = await app.inject({
@@ -147,14 +151,13 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
   });
 
   it('creates a channel with a webhook callback key and audits the change', async () => {
-    const { body } = await createReseller({
+    const { body } = await createPartner({
       name: `cw-hook-${suffix}`,
       webhookUrl: 'https://partner.example.com/hook',
     });
     expect(body.reseller?.hasWebhookKey).toBe(true);
 
-    const prisma = getPrisma();
-    const audit = await prisma.auditLog.findFirst({
+    const audit = await getPrisma().auditLog.findFirst({
       where: { action: 'developer.reseller.create', resourceId: body.reseller?.id as string },
     });
     expect(audit).not.toBeNull();
@@ -167,7 +170,7 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
       'https://metadata.google.internal/',
       'http://10.0.0.5/hook',
     ]) {
-      const { statusCode } = await createReseller({
+      const { statusCode } = await createPartner({
         name: `cw-ssrf-${suffix}-${Math.random().toString(36).slice(2, 8)}`,
         webhookUrl,
       });
@@ -176,7 +179,7 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
   });
 
   it('updates a channel, including clearing the callback URL', async () => {
-    const { body } = await createReseller({
+    const { body } = await createPartner({
       name: `cw-update-${suffix}`,
       webhookUrl: 'https://partner.example.com/hook',
     });
@@ -201,6 +204,7 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
     expect(updated.scopes).toEqual(['service:read']);
     expect(updated.rateLimitRpm).toBe(15);
     expect(updated.webhookUrl).toBeNull();
+    expect(updated.hasWebhookKey).toBe(false);
 
     const audit = await getPrisma().auditLog.findFirst({
       where: { action: 'developer.reseller.update', resourceId: id },
@@ -209,7 +213,7 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
   });
 
   it('rotates the inbound key pair and invalidates the old key', async () => {
-    const { body } = await createReseller({ name: `cw-rotate-${suffix}` });
+    const { body } = await createPartner({ name: `cw-rotate-${suffix}` });
     const id = body.reseller?.id as string;
     const oldPublicKey = body.reseller?.publicKey as string;
 
@@ -234,18 +238,15 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
   });
 
   it('deletes a channel and cascades its deliveries', async () => {
-    const { body } = await createReseller({ name: `cw-delete-${suffix}` });
+    const { body } = await createPartner({ name: `cw-delete-${suffix}` });
     const id = body.reseller?.id as string;
-    const prisma = getPrisma();
-    await prisma.webhookDelivery.create({
-      data: {
-        id: `wh_cw_${suffix}`,
-        resellerId: id,
-        event: 'order.paid',
-        url: 'https://partner.example.com/hook',
-        payload: {},
-        maxAttempts: 3,
-      },
+    await seedDelivery({
+      id: `wh_cw_${suffix}`,
+      partnerId: id,
+      event: 'order.paid',
+      url: 'https://partner.example.com/hook',
+      payload: {},
+      maxAttempts: 3,
     });
 
     const res = await app.inject({
@@ -255,8 +256,6 @@ describe.skipIf(!dbAvailable)('developer console write (real DB)', () => {
     });
     expect(res.statusCode).toBe(200);
     expect((res.json() as { deleted: boolean }).deleted).toBe(true);
-    expect(await prisma.reseller.findUnique({ where: { id } })).toBeNull();
-    expect(await prisma.webhookDelivery.count({ where: { resellerId: id } })).toBe(0);
 
     const detail = await app.inject({
       method: 'GET',

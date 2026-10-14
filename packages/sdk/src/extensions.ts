@@ -26,6 +26,9 @@ export const EXTENSION_MAX_PAGE_SIZE = 200;
 /** Max rows `listAll` will accumulate before refusing (runaway-query guard). */
 export const MAX_LIST_ALL = 5000;
 
+/** Max keys accepted by {@link ExtensionClient.getMany} in one call. */
+export const EXTENSION_MAX_BATCH_KEYS = 200;
+
 /** One field predicate. At most one operator per field. */
 export interface ExtensionCondition {
   eq?: unknown;
@@ -78,6 +81,32 @@ export interface ExtensionListResult<T> {
   pageSize: number;
 }
 
+/**
+ * A bounded read that carries no total-count query.
+ *
+ * Hot paths (per-request lookups) must not pay for `COUNT(*)` over the whole
+ * predicate; they need to know whether *more* rows exist, not *how many*. Set a
+ * `limit` and read {@link ExtensionPage.hasMore} instead of {@link
+ * ExtensionClient.list}, and resume from `cursor` (the last item's `name`) when
+ * draining a large set page by page.
+ */
+export interface ExtensionPageQuery {
+  where?: ExtensionWhere;
+  orderBy?: { field: string; desc?: boolean };
+  /** 1–{@link EXTENSION_MAX_PAGE_SIZE}. */
+  limit: number;
+  /** `name` of the last item of the previous page; omit for the first page. */
+  cursor?: string;
+}
+
+export interface ExtensionPage<T> {
+  items: ExtensionInstance<T>[];
+  /** True when at least one further row matches beyond this page. */
+  hasMore: boolean;
+  /** The last item's `name`, for the next page; `null` when the page is empty. */
+  nextCursor: string | null;
+}
+
 export interface ExtensionCreateOptions {
   /** Explicit id; defaults to a generated cuid. */
   name?: string;
@@ -107,6 +136,24 @@ export interface ExtensionClient {
     model: CustomModelDefinition,
     query?: Omit<ExtensionQuery, 'page' | 'pageSize'>,
   ): Promise<ExtensionInstance<T>[]>;
+  /**
+   * Bounded read with **no `COUNT(*)`**; reports only whether more rows exist.
+   * Prefer this on request hot paths. Stable ordering (id tiebreaker) makes the
+   * cursor safe to resume from.
+   */
+  page<T>(
+    model: CustomModelDefinition,
+    query: ExtensionPageQuery,
+  ): Promise<ExtensionPage<T>>;
+  /**
+   * Read several instances by id in one call, keyed by `name`. Missing ids are
+   * simply absent from the map (no error), so callers can fan out cheaply.
+   * Rejects beyond {@link EXTENSION_MAX_BATCH_KEYS} keys.
+   */
+  getMany<T>(
+    model: CustomModelDefinition,
+    names: readonly string[],
+  ): Promise<Map<string, ExtensionInstance<T>>>;
   /** Create one instance (payload validated by the model schema). */
   create<T>(
     model: CustomModelDefinition,

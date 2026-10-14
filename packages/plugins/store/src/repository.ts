@@ -68,6 +68,10 @@ export interface ServiceInstanceRecord {
   amount: number;
   currency: string;
   expiresAt: Date | null;
+  /** epoch 毫秒镜像（索引列，供范围扫描）。 */
+  expiresAtMs: number | null;
+  /** 到期处理阶段：reminded | suspended | terminated。 */
+  expiryStage: string | null;
   provisionedAt: Date | null;
   terminatedAt: Date | null;
   createdAt: Date;
@@ -126,15 +130,41 @@ export function toOrder(instance: ExtensionInstance<StoreOrderData>): OrderRecor
 }
 
 export function toService(instance: ExtensionInstance<StoreServiceInstanceData>): ServiceInstanceRecord {
-  const { state, expiresAt, provisionedAt, terminatedAt, ...rest } = instance.spec;
+  const { state, expiresAt, expiresAtMs, expiryStage, provisionedAt, terminatedAt, ...rest } =
+    instance.spec;
   return {
     id: instance.name,
     ...rest,
     status: state,
     expiresAt: parseDate(expiresAt),
+    expiresAtMs: expiresAtMs ?? null,
+    expiryStage: expiryStage ?? null,
     provisionedAt: parseDate(provisionedAt),
     terminatedAt: parseDate(terminatedAt),
     createdAt: instance.createdAt,
+  };
+}
+
+/** 领域记录 → 载荷（唯一规范来源，供 create/replace/续费共用）。 */
+export function toServiceInstanceData(service: ServiceInstanceRecord): StoreServiceInstanceData {
+  return {
+    userId: service.userId,
+    orderId: service.orderId,
+    productId: service.productId,
+    productName: service.productName,
+    fulfillmentType: service.fulfillmentType,
+    providerId: service.providerId,
+    providerServiceId: service.providerServiceId,
+    state: service.status,
+    credentialsRef: service.credentialsRef,
+    runtime: service.runtime,
+    amount: service.amount,
+    currency: service.currency,
+    expiresAt: isoOrNull(service.expiresAt),
+    expiresAtMs: service.expiresAtMs ?? toEpochMs(isoOrNull(service.expiresAt)),
+    expiryStage: service.expiryStage,
+    provisionedAt: isoOrNull(service.provisionedAt),
+    terminatedAt: isoOrNull(service.terminatedAt),
   };
 }
 
@@ -463,7 +493,7 @@ export async function listServicesPage(
 }
 
 export async function createServiceInstance(
-  data: Omit<StoreServiceInstanceData, 'state' | 'expiresAt' | 'terminatedAt'> & {
+  data: Omit<StoreServiceInstanceData, 'state' | 'expiresAt' | 'expiresAtMs' | 'expiryStage' | 'terminatedAt'> & {
     state: string;
     expiresAt?: string | null;
     terminatedAt?: string | null;
@@ -471,8 +501,11 @@ export async function createServiceInstance(
 ): Promise<ServiceInstanceRecord> {
   const created = await extensions().create<StoreServiceInstanceData>(serviceInstanceModel, {
     expiresAt: null,
+    expiryStage: null,
     terminatedAt: null,
     ...data,
+    // 派生过期毫秒列：以 expiresAt 为唯一真源，避免两处漂移。
+    expiresAtMs: toEpochMs(data.expiresAt ?? null),
   });
   return toService(created);
 }
@@ -481,7 +514,84 @@ export async function replaceServiceInstance(
   id: string,
   data: StoreServiceInstanceData,
 ): Promise<void> {
-  await extensions().update<StoreServiceInstanceData>(serviceInstanceModel, id, data);
+  await extensions().update<StoreServiceInstanceData>(serviceInstanceModel, id, {
+    ...data,
+    expiresAtMs: toEpochMs(data.expiresAt),
+  });
+}
+
+/**
+ * 仅更新交付物的少量字段（按 `name` + `expiryStage` 条件原子落库），避免用早先读到的
+ * 整行快照覆盖并发写入的其它字段（如运维动作改动的 runtime）。用于到期扫描推进状态。
+ */
+export async function patchServiceInstance(
+  id: string,
+  expectedStage: string,
+  patch: Partial<Record<'state' | 'terminatedAt' | 'expiryStage', { set: unknown }>>,
+): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    serviceInstanceModel,
+    { name: { eq: id }, expiryStage: { eq: expectedStage } },
+    patch,
+  );
+  return updated > 0;
+}
+
+/** ISO 时间 → epoch 毫秒；空值或非法值返回 null。 */
+export function toEpochMs(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * 原子推进到期阶段：仅当当前阶段匹配 `from` 时置为 `to`，返回是否命中。
+ * 用于让周期扫描对同一服务在每个阶段只动作一次（并发下由 DB 保证幂等）。
+ */
+export async function claimExpiryStage(
+  id: string,
+  from: string | null,
+  to: string,
+): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    serviceInstanceModel,
+    // `eq: null` 编译为 `IS NULL`（见 extensions/query.ts），语义上精确表示「尚未
+    // 进入任何阶段」，而非匹配任意阶段。
+    { name: { eq: id }, expiryStage: { eq: from } },
+    { expiryStage: { set: to } },
+  );
+  return updated > 0;
+}
+
+/** 列出「已到期／临近到期」的活跃服务（按 expiresAtMs 升序，上限 take）。 */
+export async function listExpiringServices(
+  nowMs: number,
+  take: number,
+): Promise<ServiceInstanceRecord[]> {
+  const rows = await extensions().listAll<StoreServiceInstanceData>(serviceInstanceModel, {
+    where: {
+      state: { in: ['ACTIVE', 'SUSPENDED'] },
+      expiresAtMs: { lte: nowMs },
+    },
+    orderBy: { field: 'expiresAtMs', desc: false },
+  });
+  return rows.slice(0, take).map(toService);
+}
+
+/** 列出「即将到期（尚未到期）」的服务，供到期提醒（窗口内、未提醒过）。 */
+export async function listDueExpiryReminders(
+  fromMs: number,
+  toMs: number,
+  take: number,
+): Promise<ServiceInstanceRecord[]> {
+  const rows = await extensions().listAll<StoreServiceInstanceData>(serviceInstanceModel, {
+    where: {
+      state: { eq: 'ACTIVE' },
+      expiresAtMs: { gte: fromMs, lte: toMs },
+    },
+    orderBy: { field: 'expiresAtMs', desc: false },
+  });
+  return rows.slice(0, take).map(toService);
 }
 
 export async function deleteServiceInstance(id: string): Promise<void> {

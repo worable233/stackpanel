@@ -14,6 +14,7 @@ import type {
   ProvisionContext,
   ProvisionResult,
   ProviderServiceContext,
+  ServiceActionResult,
   ServiceDetail,
 } from '@stackpanel/sdk';
 import { z } from 'zod';
@@ -111,9 +112,16 @@ const localProvider: FulfillmentProvider = {
 
   async getDetail(service: ProviderServiceContext): Promise<ServiceDetail> {
     const runtime = (service.service.runtime ?? {}) as Record<string, unknown>;
+    const powerState = typeof runtime.powerState === 'string' ? runtime.powerState : 'running';
+    const status = powerState === 'stopped' ? 'SUSPENDED' : 'ACTIVE';
     const fields: ServiceDetail['fields'] = [
-      { label: '状态', value: '正常' },
+      { label: '电源状态', value: powerState === 'stopped' ? '已关机' : '运行中' },
+      ...(typeof runtime.os === 'string' ? [{ label: '操作系统', value: runtime.os }] : []),
       ...(typeof runtime.region === 'string' ? [{ label: '区域', value: runtime.region }] : []),
+      // VNC 控制台地址（点开控制台后写入 runtime，刷新后仍可见）。
+      ...(typeof runtime.consoleUrl === 'string'
+        ? [{ label: '控制台地址', value: runtime.consoleUrl, copyable: true }]
+        : []),
     ];
     const specs = runtime.specs as Record<string, unknown> | undefined;
     if (specs) {
@@ -127,7 +135,107 @@ const localProvider: FulfillmentProvider = {
     if (config?.summary) {
       fields.push({ label: '配置', value: config.summary });
     }
-    return { title: '云服务器', status: 'ACTIVE', fields };
+    return {
+      title: '云服务器',
+      status,
+      fields,
+      actions: [
+        { id: 'power_on', label: '开机' },
+        { id: 'power_off', label: '关机' },
+        { id: 'reboot', label: '重启', confirm: true },
+        {
+          id: 'reinstall',
+          label: '重装系统',
+          danger: true,
+          confirm: true,
+          params: [
+            {
+              name: 'os',
+              label: '操作系统',
+              type: 'select',
+              required: true,
+              options: [
+                { label: 'Ubuntu 22.04', value: 'ubuntu-22.04' },
+                { label: 'Debian 12', value: 'debian-12' },
+                { label: 'CentOS 7', value: 'centos-7' },
+                { label: 'Windows Server 2022', value: 'windows-2022' },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'reset_password',
+          label: '重置密码',
+          confirm: true,
+          params: [
+            {
+              name: 'password',
+              label: '新密码',
+              type: 'password',
+              required: true,
+              min: 8,
+              maxLength: 64,
+              placeholder: '至少 8 位，含大小写字母与数字',
+            },
+          ],
+        },
+        { id: 'vnc', label: '打开控制台（VNC）' },
+      ],
+    };
+  },
+
+  /**
+   * 本平台托管的云服务器运维动作。
+   *
+   * 由于「本平台即上游」，动作只更新服务 runtime 的模拟状态（电源、系统、密码），
+   * 不调用任何外部系统；返回 {@link ServiceActionResult} 供 store 合并 runtime 并透传
+   * 展示字段（如重置后的密码）。外部上游（如 zjmf）由对应上游插件覆盖这些动作。
+   */
+  async executeAction(
+    actionId: string,
+    ctx: ProviderServiceContext,
+    params?: Record<string, string>,
+  ): Promise<ServiceActionResult> {
+    const runtime = (ctx.service.runtime ?? {}) as Record<string, unknown>;
+    switch (actionId) {
+      case 'power_on':
+        return { message: '已开机', runtime: { ...runtime, powerState: 'running' } };
+      case 'power_off':
+        return { message: '已关机', runtime: { ...runtime, powerState: 'stopped' } };
+      case 'reboot':
+        return { message: '已重启', runtime: { ...runtime, powerState: 'running' } };
+      case 'reinstall': {
+        const os = params?.['os'];
+        if (!os) throw new PluginError('store.product.action_param_invalid', 400, '请选择操作系统');
+        return {
+          message: '系统重装已提交',
+          runtime: { ...runtime, os, powerState: 'running' },
+          fields: [{ label: '操作系统', value: os }],
+        };
+      }
+      case 'reset_password': {
+        const password = params?.['password'];
+        if (!password || password.length < 8) {
+          throw new PluginError('store.product.action_param_invalid', 400, '新密码至少 8 位');
+        }
+        return {
+          message: '密码已重置',
+          runtime: { ...runtime, passwordUpdatedAt: new Date().toISOString() },
+          fields: [{ label: '新密码', value: password, secret: true, copyable: true }],
+        };
+      }
+      case 'vnc': {
+        // 平台前端 action 无回传通道，故把控制台地址落到 runtime，刷新后仍可在详情展示。
+        const consoleUrl = 'about:blank#vnc-console';
+        return {
+          message: '控制台会话已就绪',
+          url: consoleUrl,
+          runtime: { ...runtime, consoleUrl },
+        };
+      }
+      default:
+        throw new PluginError('store.product.action_unsupported', 400, '不支持的运维动作');
+    }
   },
 };
 

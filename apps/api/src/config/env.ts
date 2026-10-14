@@ -6,6 +6,15 @@ const emptyToUndefined = (v: unknown): unknown =>
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  // Connection-pool budget for this process (ADR-0022 D3/P3). `pg`'s silent
+  // default of 10 with no acquisition timeout meant a saturated pool hung
+  // forever; these make the budget explicit and failure fast. `DATABASE_POOL_MAX`
+  // is per replica, so replicas × max must stay under Postgres max_connections.
+  DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
+  DATABASE_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(0).default(10_000),
+  DATABASE_POOL_IDLE_TIMEOUT_MS: z.coerce.number().int().min(0).default(30_000),
+  // Server-side per-statement ceiling. 0 disables it (not recommended).
+  DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(30_000),
   STACKPANEL_DATA_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
   API_HOST: z.string().default('127.0.0.1'),
   API_PORT: z.coerce.number().int().positive().default(3001),

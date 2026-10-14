@@ -237,10 +237,20 @@ async function dispatchRaw(
   if (route.cors) {
     writeCorsHeaders(route.cors, request, (name, value) => response.setHeader(name, value));
   }
+  // Honour the documented contract (`PluginRouteBase.timeout`): a positive
+  // number is a hard per-stream deadline. `0`, `false` or *omitted* means no
+  // limit — SSE and LLM upstream proxies legitimately stay open for minutes,
+  // and the previous fallback of a silent 60s `response.destroy()` truncated
+  // long streaming responses mid-body (ADR-0022 D4 / P2).
+  //
+  // We must not "disable" the timeout with `response.setTimeout(0, cb)`: passing
+  // a callback with `0` still arms a timeout listener, and on a hijacked reply
+  // that fired eagerly and killed the response (caught by raw-routes tests).
+  // Leaving the socket's existing timeout untouched is the correct no-limit
+  // path; half-open clients are still reaped by the server's
+  // `requestTimeout` / `keepAliveTimeout`.
   if (typeof route.timeout === 'number' && route.timeout > 0) {
     response.setTimeout(route.timeout, () => response.destroy());
-  } else {
-    response.setTimeout(60_000, () => response.destroy());
   }
 
   const clientCloseListeners: Array<() => void> = [];
@@ -258,6 +268,24 @@ async function dispatchRaw(
     },
     write(chunk) {
       return response.write(chunk);
+    },
+    drain() {
+      // `ServerResponse` signals backpressure through the `drain` event. If the
+      // socket is already writable (or closed) there is nothing to wait for, so
+      // resolve immediately rather than hanging on an event that never fires.
+      if (response.writableEnded || response.destroyed) return Promise.resolve();
+      if (response.writableNeedDrain !== true) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const done = (): void => {
+          response.off('drain', done);
+          response.off('close', done);
+          response.off('error', done);
+          resolve();
+        };
+        response.once('drain', done);
+        response.once('close', done);
+        response.once('error', done);
+      });
     },
     end(body) {
       response.end(body);
@@ -303,7 +331,17 @@ async function dispatchRaw(
       }
     }
   };
-  request.raw.once('close', onClientClose);
+  // `IncomingMessage` emits 'close' as soon as the *request* stream ends, which
+  // for a POST is long before the response is produced — and the isolated bridge
+  // deliberately drains that body early. Treating it as a client disconnect made
+  // the gateway abort every isolated relay mid-flight, so no response was ever
+  // written (ADR-0022 P0). Only the *response* closing before it finished means
+  // the client actually went away.
+  const onResponseClose = (): void => {
+    if (response.writableFinished) return;
+    onClientClose();
+  };
+  response.once('close', onResponseClose);
 
   try {
     await (route.handler as RawRouteHandler)(requestView, replyView);
@@ -329,7 +367,7 @@ async function dispatchRaw(
       response.destroy(error instanceof Error ? error : undefined);
     }
   } finally {
-    request.raw.removeListener('close', onClientClose);
+    response.removeListener('close', onResponseClose);
     dispatcherRef.trackRawEnd();
   }
 }

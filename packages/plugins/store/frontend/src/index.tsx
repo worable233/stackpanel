@@ -260,6 +260,7 @@ const serviceSummarySchema = z.object({
   runtime: z.unknown().nullable(),
   amount: z.number(),
   currency: z.string(),
+  expiresAt: z.string().nullable(),
   provisionedAt: z.string().nullable(),
   createdAt: z.string(),
 });
@@ -275,6 +276,22 @@ const serviceActionSchema = z.object({
   label: z.string(),
   danger: z.boolean().optional(),
   confirm: z.boolean().optional(),
+  params: z
+    .array(
+      z.object({
+        name: z.string(),
+        label: z.string(),
+        type: z.enum(['text', 'password', 'number', 'select', 'textarea']),
+        required: z.boolean().optional(),
+        default: z.union([z.string(), z.number()]).optional(),
+        options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+        min: z.number().optional(),
+        max: z.number().optional(),
+        maxLength: z.number().optional(),
+        placeholder: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 const serviceDetailSchema = z.object({
   title: z.string().optional(),
@@ -296,6 +313,7 @@ const serviceSchema = z.object({
     runtime: z.unknown().nullable(),
     amount: z.number(),
     currency: z.string(),
+    expiresAt: z.string().nullable(),
     provisionedAt: z.string().nullable(),
     createdAt: z.string(),
     detail: serviceDetailSchema,
@@ -1508,9 +1526,11 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
         }>
       | undefined) ?? [];
   const runAction = props.actions?.['store.service-action'];
+  const renewAction = props.actions?.['store.renew-service-wallet'];
   if (!service) return <Empty text="服务不存在" />;
   const fields = service.detail?.fields ?? [];
   const actions = service.detail?.actions ?? [];
+  const renewable = service.status === 'ACTIVE' || service.status === 'SUSPENDED';
   return (
     <main className="space-y-6">
       <PageHeader
@@ -1523,6 +1543,11 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
           label={service.detail?.statusLabel}
         />
         <span className="font-mono text-xs text-muted-foreground">{service.id}</span>
+        {service.expiresAt ? (
+          <span className="text-xs text-muted-foreground">
+            到期：{service.expiresAt.slice(0, 10)}
+          </span>
+        ) : null}
       </div>
 
       {fields.length ? (
@@ -1531,7 +1556,20 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
             <div key={field.label} className="bg-card p-4">
               <dt className="text-xs text-muted-foreground">{field.label}</dt>
               <dd className="mt-1 break-all font-mono text-sm">
-                {field.secret ? '••••••••' : field.value}
+                {field.secret ? (
+                  '••••••••'
+                ) : isHttpUrl(field.value) ? (
+                  <a
+                    href={field.value}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary underline underline-offset-2"
+                  >
+                    {field.value}
+                  </a>
+                ) : (
+                  field.value
+                )}
               </dd>
             </div>
           ))}
@@ -1540,23 +1578,142 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
 
       {actions.length && runAction ? (
         <div className="flex flex-wrap gap-3">
-          {actions.map((action) => (
-            <form key={action.id} action={runAction}>
-              <input type="hidden" name="id" value={service.id} />
-              <input type="hidden" name="actionId" value={action.id} />
-              <button
-                type="submit"
-                className={
-                  action.danger
-                    ? 'h-10 rounded-xl border border-destructive/40 px-4 text-sm font-semibold text-destructive hover:bg-destructive/10'
-                    : 'h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background'
-                }
+          {actions.map((action) => {
+            const extraParams = (action.params ?? []).filter(
+              (param) => !STATIC_ACTION_FIELDS.has(param.name),
+            );
+            return (
+              <form
+                key={action.id}
+                action={runAction}
+                className="flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-4"
               >
-                {action.label}
-              </button>
-            </form>
-          ))}
+                <input type="hidden" name="id" value={service.id} />
+                <input type="hidden" name="actionId" value={action.id} />
+                {(action.params ?? [])
+                  .filter((param) => STATIC_ACTION_FIELDS.has(param.name))
+                  .map((param) => (
+                    <div key={param.name} className="flex flex-col gap-1">
+                      <label
+                        htmlFor={`action-${action.id}-${param.name}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {param.label}
+                        {param.required ? ' *' : ''}
+                      </label>
+                      {param.type === 'select' ? (
+                        <select
+                          id={`action-${action.id}-${param.name}`}
+                          name={param.name}
+                          required={param.required}
+                          defaultValue={param.default != null ? String(param.default) : ''}
+                          className="h-10 rounded-xl border bg-background px-3 text-sm"
+                        >
+                          <option value="">请选择</option>
+                          {(param.options ?? []).map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : param.type === 'textarea' ? (
+                        <textarea
+                          id={`action-${action.id}-${param.name}`}
+                          name={param.name}
+                          required={param.required}
+                          defaultValue={param.default != null ? String(param.default) : ''}
+                          maxLength={param.maxLength}
+                          placeholder={param.placeholder}
+                          rows={3}
+                          className="rounded-xl border bg-background px-3 py-2 text-sm"
+                        />
+                      ) : (
+                        <input
+                          id={`action-${action.id}-${param.name}`}
+                          name={param.name}
+                          type={
+                            param.type === 'password'
+                              ? 'password'
+                              : param.type === 'number'
+                                ? 'number'
+                                : 'text'
+                          }
+                          required={param.required}
+                          defaultValue={param.default != null ? String(param.default) : ''}
+                          min={param.min}
+                          max={param.max}
+                          maxLength={param.maxLength}
+                          placeholder={param.placeholder}
+                          className="h-10 rounded-xl border bg-background px-3 text-sm"
+                        />
+                      )}
+                    </div>
+                  ))}
+                {extraParams.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor={`action-${action.id}-params`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      附加参数（JSON）
+                    </label>
+                    <textarea
+                      id={`action-${action.id}-params`}
+                      name="params"
+                      rows={2}
+                      maxLength={4000}
+                      placeholder={`{"${extraParams[0]!.name}": "…"}`}
+                      className="rounded-xl border bg-background px-3 py-2 font-mono text-sm"
+                    />
+                    <span className="text-[11px] text-muted-foreground">
+                      可用键：{extraParams.map((param) => param.name).join('、')}
+                    </span>
+                  </div>
+                ) : null}
+                <button
+                  type="submit"
+                  className={
+                    action.danger
+                      ? 'h-10 rounded-xl border border-destructive/40 px-4 text-sm font-semibold text-destructive hover:bg-destructive/10'
+                      : 'h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background'
+                  }
+                >
+                  {action.label}
+                </button>
+              </form>
+            );
+          })}
         </div>
+      ) : null}
+
+      {renewable && renewAction ? (
+        <form
+          action={renewAction}
+          className="flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-4"
+        >
+          <input type="hidden" name="id" value={service.id} />
+          <input type="hidden" name="paymentMode" value="wallet" />
+          <div>
+            <label htmlFor="renew-months" className="mb-1 block text-xs text-muted-foreground">
+              续费时长（月）
+            </label>
+            <input
+              id="renew-months"
+              name="months"
+              type="number"
+              min={1}
+              max={120}
+              defaultValue={1}
+              className="h-10 w-28 rounded-xl border bg-background px-3 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            className="h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background"
+          >
+            续费（余额支付）
+          </button>
+        </form>
       ) : null}
 
       <div>
@@ -1567,6 +1724,14 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
   );
 }
 
+/** 平台 `store.service-action` 静态声明的字段名（其余动作参数走 `params` JSON 袋）。 */
+const STATIC_ACTION_FIELDS = new Set(['os', 'password']);
+
+/** 判断字段值是否为可点击的 http(s) 链接（如控制台地址）。 */
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
 function OrderStatus({ status }: { status: string }): ReactElement {
   const tone =
     status === 'PENDING'
@@ -1575,7 +1740,9 @@ function OrderStatus({ status }: { status: string }): ReactElement {
         ? 'bg-success/10 text-success'
         : status === 'CANCELLED' || status === 'FAILED'
           ? 'bg-destructive/10 text-destructive'
-          : 'bg-muted text-muted-foreground';
+          : status === 'REFUNDED'
+            ? 'bg-warning/10 text-warning'
+            : 'bg-muted text-muted-foreground';
   return (
     <span
       className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}
@@ -1693,7 +1860,7 @@ export const frontend: FrontendPackage = {
         {
           finder: 'catalog.products',
           as: 'catalogProducts',
-          input: { page: 1, pageSize: 60, categoryId: '', showAll: '' },
+          input: { page: 1, pageSize: 60, categoryId: '', showAll: '', q: '' },
         },
       ],
     },
@@ -1823,6 +1990,34 @@ export const frontend: FrontendPackage = {
         input: [
           { name: 'id', type: 'string', required: true, maxLength: 191 },
           { name: 'actionId', type: 'string', required: true, maxLength: 64 },
+          // 具体参数名由动作声明决定（如重装的 os、重置密码的 password）。
+          { name: 'os', type: 'string', maxLength: 64 },
+          { name: 'password', type: 'string', maxLength: 128 },
+          // 通用参数袋（JSON 对象字符串）：动作声明了 os/password 之外的参数时使用。
+          { name: 'params', type: 'string', maxLength: 4000 },
+        ],
+      },
+      {
+        id: 'store.renew-service-wallet',
+        method: 'POST',
+        path: '/services/:id/renew',
+        permission: 'store.buy',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'paymentMode', type: 'string', default: 'wallet' },
+          { name: 'months', type: 'integer', default: 1, min: 1, max: 120 },
+        ],
+        redirect: { responsePath: 'nextPath' },
+      },
+      {
+        id: 'store.admin-refund-order',
+        method: 'POST',
+        path: '/store/admin/orders/:id/refund',
+        permission: 'store.admin',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'amount', type: 'integer', min: 1, max: 2000000000 },
+          { name: 'reason', type: 'string', maxLength: 191 },
         ],
       },
       {

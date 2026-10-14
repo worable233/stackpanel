@@ -1,5 +1,6 @@
 import type {
   AuthService,
+  CacheService,
   EventBus,
   FxService,
   NotificationsService,
@@ -26,14 +27,18 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import semver from 'semver';
 import type { PrismaClient } from '@stackpanel/db';
 import { pluginSecrets } from '../lib/crypto.ts';
+import type { KernelAuth } from '../auth/auth-service.ts';
 import { createKernelJobContext } from '../jobs/kernel-jobs.ts';
 import type { JobRuntime } from '../jobs/types.ts';
 import type { PluginExtensionRuntime } from '../extensions/service.ts';
 import type { RawDatabase } from '../extensions/client.ts';
 import type { MediaReferenceService } from '@stackpanel/sdk';
+import { getCacheService } from '../cache/index.ts';
 import {
+  aggregateScopeGovernance,
   type Capability,
   type PluginCapabilityEntry,
+  type ScopeGovernance,
 } from '../lib/capability-registry.ts';
 import { restartIsolatedPlugin, setIsolatedWorkerExitHandler, stopIsolatedPlugin } from './isolated/host.ts';
 
@@ -71,6 +76,16 @@ export interface PluginRuntimeOptions {
   notifications: NotificationsService;
   /** Kernel-owned shared state (counters, TTL keys, locks) via ctx.state. */
   state: StateService;
+  /**
+   * Kernel-owned bounded read cache for read-mostly configuration data
+   * (ADR-0022 D3). Plugins declare which custom-model kinds a value derives
+   * from; the kernel invalidates every replica when those kinds are written.
+   *
+   * Optional so unit tests can construct a runtime without the whole host; the
+   * process-wide {@link getCacheService} singleton is used when omitted, which
+   * keeps `ctx.cache` non-null for every plugin.
+   */
+  cache?: CacheService;
   /** Kernel-owned background jobs (enqueue/schedule/handle) via ctx.jobs. */
   jobs: JobRuntime;
   /** Extension engine: owns plugin model tables, clients and finalizers. */
@@ -78,6 +93,35 @@ export interface PluginRuntimeOptions {
   /** Kernel-owned attachment reference index. */
   media?: MediaReferenceService;
 }
+
+/**
+ * Kernel capability services offered to plugins as discoverable, non-hijackable
+ * entries in the shared service registry (ADR-0021 §D3, minimal form). A plugin
+ * resolves e.g. `ctx.getService('kernel.payments')`; the kernel registers these
+ * before any plugin, so `provideService` rejects a plugin trying to squat the
+ * name. The convenient `ctx.payments` / `ctx.wallet` / … accessors keep their
+ * exact signatures — only the source became uniform.
+ *
+ * `ctx.jobs` and `ctx.media` are intentionally excluded: their kernel wrappers
+ * inject per-plugin namespacing (job owner, attachment owner), which a shared
+ * raw handle would bypass.
+ */
+const KERNEL_SERVICE_ACCESSORS = [
+  'payments',
+  'wallet',
+  'fx',
+  'auth',
+  'notifications',
+  'state',
+  'cache',
+] as const;
+
+const KERNEL_SERVICE_OWNER = 'kernel';
+
+/** Kernel service names a plugin may resolve but never override. */
+export const KERNEL_SERVICE_IDS: readonly string[] = Object.freeze(
+  KERNEL_SERVICE_ACCESSORS.map((name) => `${KERNEL_SERVICE_OWNER}.${name}`),
+);
 
 export type PluginState = 'registered' | 'active' | 'failed';
 
@@ -125,6 +169,16 @@ export class PluginRuntime {
 
   constructor(private readonly options: PluginRuntimeOptions) {
     setIsolatedWorkerExitHandler((id) => { void this.handleWorkerExit(id); });
+    // ADR-0021 §D3 (minimal): publish the kernel capability services under the
+    // reserved `kernel.*` namespace so plugins can resolve them uniformly and
+    // cannot squat the names. Registered first, so `provideService` rejects any
+    // plugin attempt to override.
+    for (const name of KERNEL_SERVICE_ACCESSORS) {
+      this.services.set(`${KERNEL_SERVICE_OWNER}.${name}`, {
+        pluginId: KERNEL_SERVICE_OWNER,
+        implementation: options[name],
+      });
+    }
   }
 
   private async handleWorkerExit(id: string): Promise<void> {
@@ -348,6 +402,24 @@ export class PluginRuntime {
   /** Open-platform capabilities contributed by this runtime's plugins. */
   listCapabilities(): Capability[] {
     return [...this.capabilityEntries.values()].filter((entry) => this.isActive(entry.pluginId));
+  }
+
+  /**
+   * Runtime-aggregated refined-scope governance (ADR-0021 §D1): the resource →
+   * coarse-permission table merged from every registered plugin's
+   * `PluginPermission.scope`, on top of the kernel's own resources. Consumers
+   * (`auth.ts`, `api-tokens.ts`, open API, MCP) read this instead of a kernel
+   * hardcoded map, so the kernel never names a business plugin's permissions.
+   *
+   * A registered-but-inactive plugin still contributes: its declared
+   * permissions are seeded into the DB regardless of activation, and dropping
+   * them on deactivate would silently invalidate existing token scopes.
+   */
+  scopeGovernance(): ScopeGovernance {
+    const declared = [...this.plugins.values()].map((plugin) =>
+      normalizePluginPermissions(plugin.definition.manifest.permissions),
+    );
+    return aggregateScopeGovernance(declared);
   }
 
   /**
@@ -703,6 +775,7 @@ export class PluginRuntime {
       auth: this.options.auth,
       notifications: this.options.notifications,
       state: this.options.state,
+      cache: this.options.cache ?? getCacheService(),
       jobs: createKernelJobContext(pluginId, this.options.jobs),
       media: this.options.media ? (() => {
         const media = this.options.media as MediaReferenceService;
@@ -760,6 +833,6 @@ declare module 'fastify' {
     payments: PaymentService;
     wallet: WalletService;
     fx: FxService;
-    auth: AuthService;
+    auth: KernelAuth;
   }
 }

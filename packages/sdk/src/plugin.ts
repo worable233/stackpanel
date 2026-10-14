@@ -6,6 +6,7 @@
 import type { CustomModelDefinition } from './models.js';
 import type { Readable } from 'node:stream';
 import type { AuthService } from './auth.js';
+import type { CacheService } from './cache.js';
 import type { EffectResult, Disposable } from './effect.js';
 import type { ExtensionClient, ExtensionTransaction } from './extensions.js';
 import type { FxService } from './fx.js';
@@ -28,6 +29,14 @@ export interface PluginPermission {
   name?: string;
   /** Optional explanation shown next to the permission in the admin UI. */
   description?: string;
+  /**
+   * Refined-scope resource this permission governs (ADR-0021). Declaring
+   * `scope: 'gateway'` on `llm-gateway.use` means "holding this permission
+   * admits the refined `gateway:read|write` scopes" — the kernel aggregates
+   * these at runtime instead of hardcoding plugin permission names. The
+   * resource part must match `^[a-z][a-z0-9-]*$`.
+   */
+  scope?: string;
 }
 
 export interface PluginManifest {
@@ -298,7 +307,19 @@ export interface RawHttpRequest {
 export interface RawHttpReply {
   status(code: number): RawHttpReply;
   header(name: string, value: string | string[]): RawHttpReply;
+  /**
+   * Queue a chunk. Returns `false` when the consumer is behind — the same
+   * backpressure signal as Node's `ServerResponse.write`. A caller streaming an
+   * upstream body must stop reading and `await drain()` until it resolves, or
+   * the buffer between the plugin and the client grows without bound.
+   */
   write(chunk: string | Uint8Array): boolean;
+  /**
+   * Resolves once the reply can accept more data without buffering
+   * unboundedly. Safe to await unconditionally: on a healthy connection it
+   * resolves immediately. Only meaningful after `write()` returned `false`.
+   */
+  drain(): Promise<void>;
   end(body?: string | Uint8Array): void;
   /** Take over the socket; the kernel will not send a response. */
   hijack(): void;
@@ -404,6 +425,11 @@ export const EXTENSION_POINTS = {
    * `/sitemap.xml`、`/robots.txt`、`/feed.xml` 与页面级 metadata。
    */
   seoProvider: 'seo.provider',
+  /**
+   * 模型供给（PLAN-agent-in-kernel §3.1/§3.6）：任何「能提供模型推理」的插件都可实现
+   * `LlmProvider` 并注册到此处；内核只消费接口，不绑定 llm-gateway 或任何厂商协议。
+   */
+  llmProvider: 'llm.provider',
 } as const;
 
 export type ExtensionPointId = (typeof EXTENSION_POINTS)[keyof typeof EXTENSION_POINTS];
@@ -565,6 +591,19 @@ export interface PluginContext {
    * locks). In-process today; the same contract is Redis-ready.
    */
   readonly state: StateService;
+  /**
+   * Kernel-owned read cache for **read-mostly configuration data** (ADR-0022 D3).
+   *
+   * The kernel — not the plugin — owns storage, bounds and cross-replica
+   * invalidation, so there is no second data path around the kernel
+   * (ADR-0001/ADR-0021). Declare which custom-model kinds a value derives from
+   * and the kernel drops it automatically when those kinds are written to.
+   *
+   * Never put balances, quotas, rate counters or sessions here: those must stay
+   * authoritative per request and belong in {@link state} or kernel services
+   * (ADR-0017 §2).
+   */
+  readonly cache: CacheService;
   /**
    * Kernel-owned background jobs: enqueue, schedule and handle named tasks on a
    * single worker pool so recurring work runs once across the cluster (ADR-0013).

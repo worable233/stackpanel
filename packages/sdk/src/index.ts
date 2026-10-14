@@ -27,6 +27,8 @@ export type {
   ProvisionResult,
   ProviderServiceContext,
   ServiceAction,
+  ServiceActionParam,
+  ServiceActionResult,
   ServiceDetail,
   ServiceDetailField,
   ServiceStatus,
@@ -185,6 +187,10 @@ export type {
   AuthService,
   AuthUser,
   AuthAuditInput,
+  AuthAuditEntry,
+  AuthAuditQuery,
+  AuthAuditPage,
+  EnsureSystemUserInput,
   CreatedPlatformToken,
   CreatePlatformTokenInput,
   PermissionGroup,
@@ -196,7 +202,8 @@ export type {
   SessionResult,
 } from './auth.js';
 export type { FxQuote, FxRate, FxService } from './fx.js';
-export type { StateService } from './state.js';
+export type { StateCandidate, StateLease, StateService } from './state.js';
+export type { CacheReadOptions, CacheService } from './cache.js';
 export type { MediaReferenceService } from './media.js';
 export type { JobContext, JobHandler, JobOptions, JobSchedule } from './jobs.js';
 export type { ChannelTerminal, PaymentMethodInstance, SalesChannel } from './sales.js';
@@ -265,6 +272,7 @@ export type {
   ModelIndex,
 } from './models.js';
 export {
+  EXTENSION_MAX_BATCH_KEYS,
   EXTENSION_MAX_PAGE_SIZE,
   MAX_LIST_ALL,
   ExtensionError,
@@ -285,6 +293,8 @@ export type {
   ExtensionFinalizer,
   ExtensionInstance,
   ExtensionListResult,
+  ExtensionPage,
+  ExtensionPageQuery,
   ExtensionPatch,
   ExtensionQuery,
   ExtensionTransaction,
@@ -317,3 +327,42 @@ export type {
   McpToolResult,
   McpToolResultContent,
 } from './mcp.js';
+export {
+  LLM_PROVIDER_CONTENT_FILTERED,
+  LLM_PROVIDER_ERROR_CODES,
+  LLM_PROVIDER_INVALID_REQUEST,
+  LLM_PROVIDER_MODEL_NOT_ALLOWED,
+  LLM_PROVIDER_MODEL_NOT_FOUND,
+  LLM_PROVIDER_RATE_LIMITED,
+  LLM_PROVIDER_TERMINAL_ERROR_CODES,
+  LLM_PROVIDER_TIMEOUT,
+  LLM_PROVIDER_UNAVAILABLE,
+  LLM_PROVIDER_UPSTREAM_ERROR,
+  LlmProviderError,
+  isLlmProviderError,
+  isLlmProviderErrorCode,
+} from './llm.js';
+export type {
+  LlmCallOptions,
+  LlmCompletionRequest,
+  LlmCompletionResult,
+  LlmMessage,
+  LlmModelInfo,
+  LlmPart,
+  LlmProvider,
+  LlmProviderErrorCode,
+  LlmRole,
+  LlmStreamEvent,
+  LlmTool,
+} from './llm.js';
+export type {
+  AgentApprovalStatus,
+  AgentApprovalView,
+  AgentAutonomy,
+  AgentBudgetWindow,
+  AgentProfileView,
+  AgentRunStatus,
+  AgentRunView,
+  AgentStepKind,
+  AgentStepView,
+} from './agent.js';

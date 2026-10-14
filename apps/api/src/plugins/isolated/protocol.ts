@@ -2,6 +2,19 @@ export const RPC_PROTOCOL = 1 as const;
 export const RPC_TIMEOUT_MS = 10_000;
 export const RPC_MAX_BYTES = 1024 * 1024;
 export const RPC_MAX_IN_FLIGHT = 64;
+/** Max raw bytes per streamed request/response chunk (before base64). */
+export const RAW_CHUNK_BYTES = 64 * 1024;
+/** Max unacknowledged response bytes before `RawHttpReply.write` reports backpressure. */
+export const RAW_WINDOW_BYTES = 1024 * 1024;
+/**
+ * Hard ceiling on bytes a single raw stream may hold in the worker's outbound
+ * queue (beyond {@link RAW_WINDOW_BYTES}, which bounds bytes already handed to
+ * IPC but not yet acknowledged). Without this the queue grew without bound when
+ * the client read slower than the upstream produced (ADR-0022 P1).
+ */
+export const RAW_MAX_QUEUE_BYTES = 4 * 1024 * 1024;
+/** Max concurrent raw streams per isolated worker. */
+export const RPC_MAX_RAW_STREAMS = 256;
 
 /** Convert values that JSON IPC cannot represent without silently changing them. */
 export function encodeWire(value: unknown, seen = new WeakSet<object>()): unknown {

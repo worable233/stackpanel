@@ -22,10 +22,25 @@ docker compose --env-file docker/.env up -d --build
 | `base`    | Node 22 + corepack + pnpm 11.5.1                                                              |
 | `deps`    | `pnpm install --frozen-lockfile`（含各包 `prepare`：prisma generate / sdk / ui / 插件 build） |
 | `build`   | `pnpm build`（含 `build:frontend` + `next build`）；`ARG API_BASE_URL` 影响构建期 CSP         |
-| `prod-deps` | 先删除各层 `node_modules` 再 `pnpm install --prod --frozen-lockfile --ignore-scripts`（剔除开发期依赖，保留 Prisma CLI / Next / Tailwind / TypeScript / esbuild / Prettier 等运行期工具） |
+| `prod-deps` | `pnpm install --prod --frozen-lockfile --ignore-scripts`（剔除开发期依赖，保留 Prisma CLI / Next / Tailwind / TypeScript / esbuild / Prettier 等运行期工具） |
 | `runtime` | 安装 `postgresql-client-16`（自助导出/导入），复制 `prod-deps` 产物与入口脚本           |
 
 `.dockerignore` 已排除 `node_modules`、`data/`、`.env*`、`.git` 等，构建上下文干净。
+
+### 运行用户（非特权，安全审计 M-3）
+
+`runtime` 阶段以基础镜像自带的 `node` 用户（uid/gid 1000）运行，不再以 root 启动。
+`/app` 通过 `COPY --chown=node:node` 归属该用户，`/app/data` 与 `/opt/pnpm` 也已 chown。
+新建的命名卷（`stackpanel-data`、`stackpanel-web-build`）会继承镜像中挂载点的属主，因此
+全新部署开箱即用。
+
+> **升级注意**：若你从旧的 root 镜像升级，既有命名卷仍是 `root:root`，非特权进程无法写入。
+> 升级时先对卷执行一次 chown，例如：
+>
+> ```bash
+> docker run --rm -u 0 -v stackpanel-data:/data -v stackpanel-web-build:/next \
+>   --entrypoint sh stackpanel:local -c 'chown -R 1000:1000 /data /next'
+> ```
 
 ## 2. 发布（GHCR + tag + Release Notes + cosign）
 

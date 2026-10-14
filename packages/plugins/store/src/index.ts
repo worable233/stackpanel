@@ -41,6 +41,9 @@ import {
 } from './fulfillment';
 import { createCategory, deleteCategory, listCategories, updateCategory } from './categories';
 import { storeOperations } from './operations';
+import { renewService } from './renewal';
+import { refundOrder } from './refund';
+import { runExpirySweep, EXPIRY_SWEEP_INTERVAL_MS } from './expiry';
 import {
   getUpstreamProduct,
   listProductTypes,
@@ -263,6 +266,14 @@ export const storePlugin = definePlugin({
       permission: 'store.admin',
       handler: handle(listAdminOrders),
     },
+    // 退款：已支付订单退回用户钱包（管理端）
+    {
+      method: 'POST',
+      path: '/store/admin/orders/:id/refund',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(refundOrder),
+    },
     // 分类
     { method: 'GET', path: '/categories', auth: 'public', handler: handle(listCategories) },
     {
@@ -314,6 +325,14 @@ export const storePlugin = definePlugin({
       auth: 'user',
       permission: 'store.view',
       handler: handle(runMyServiceAction),
+    },
+    // 续费：针对已购服务再下一单（支付成功后顺延到期时间）
+    {
+      method: 'POST',
+      path: '/services/:id/renew',
+      auth: 'user',
+      permission: 'store.buy',
+      handler: handle((req) => renewService(context(), req)),
     },
     // 商品类型 + 上游关联（商品表单用）
     {
@@ -410,6 +429,11 @@ export const storePlugin = definePlugin({
       await processDue();
     });
     ctx.jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
+    // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。
+    ctx.jobs.handle('expiry-sweep', async () => {
+      await runExpirySweep();
+    });
+    ctx.jobs.schedule('expiry-sweep', { everyMs: EXPIRY_SWEEP_INTERVAL_MS });
     ctx.logger.info('store: activated');
   },
   onDeactivate: (ctx) => {

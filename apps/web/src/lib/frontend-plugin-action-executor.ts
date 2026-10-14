@@ -6,19 +6,10 @@ import { redirect } from 'next/navigation';
 import type { PluginActionDefinition } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
 import { apiErrorMessage } from './api-errors';
+import { actionTargetsSchema } from './frontend-plugin-action-targets';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
 import { listPluginFrontendCandidates } from './slots';
-
-const actionTargetsSchema = z.object({
-  routes: z.array(
-    z.object({
-      method: z.enum(['POST', 'PATCH', 'DELETE']),
-      path: z.string(),
-      permission: z.string().optional(),
-    }),
-  ),
-});
 
 /** The only mutation bridge exposed to plugin frontend packages. */
 export async function executePluginAction(
@@ -55,7 +46,11 @@ export async function executePluginAction(
       (route) => route.method === action.method && route.path === action.path,
     );
     if (!target || (target.permission ?? undefined) !== (action.permission ?? undefined)) {
-      return actionFailure(returnPath, actionId, translate(locale, 'action.pluginInvalidDeclaration'));
+      return actionFailure(
+        returnPath,
+        actionId,
+        translate(locale, 'action.pluginInvalidDeclaration'),
+      );
     }
     const body = coerceActionInput(action, formData);
     const path = resolveActionPath(action.path, body);
@@ -113,11 +108,7 @@ function coerceActionInput(
       if (field.required) throw new Error(`Missing ${field.name}`);
       continue;
     }
-    if (
-      typeof value !== 'string' &&
-      typeof value !== 'number' &&
-      typeof value !== 'boolean'
-    ) {
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
       throw new Error(`Invalid ${field.name}`);
     }
     body[field.name] = coerceField(field, value);

@@ -3,12 +3,23 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PluginError } from '@stackpanel/sdk';
 import { env } from '../config/env.ts';
 import { resolveCookieSecure } from '../lib/cookie-security.ts';
-import { looksLikeApiToken, resolveApiToken } from '../lib/api-tokens.ts';
+import { looksLikeApiToken, resolveApiTokenWithOwner } from '../lib/api-tokens.ts';
 import { verifySession } from '../lib/jwt.ts';
 import { getSessionStore } from '../auth/session-store.ts';
-import { scopeSatisfied } from '../lib/capability-registry.ts';
+import { scopeSatisfied, type ScopeGovernance } from '../lib/capability-registry.ts';
+import type { FastifyInstance } from 'fastify';
 import { auditContext, writeAudit } from './audit.ts';
 import { getPrisma } from './prisma.ts';
+
+/**
+ * Runtime-aggregated refined-scope governance for this request (ADR-0021).
+ * Returns `undefined` when the request has no runtime (isolated unit callers),
+ * letting `scopeSatisfied` fall back to the kernel baseline — fail-closed.
+ */
+function requestScopeGovernance(request: FastifyRequest): ScopeGovernance | undefined {
+  const server = request.server as FastifyInstance | undefined;
+  return server?.pluginRuntime?.scopeGovernance();
+}
 
 export interface AuthUser {
   id: string;
@@ -22,6 +33,12 @@ export interface AuthUser {
   tokenId?: string;
   /** Scopes declared on the API token (before intersecting with permissions). */
   tokenScopes?: string[];
+  /**
+   * When set, this session presents as the user but was established by an
+   * administrator impersonating them (audit AZ-4). The value is the real
+   * administrator's user id; audit entries are attributed to it.
+   */
+  impersonatorId?: string;
   /**
    * For token callers: the declared scopes the owner still holds, at the
    * refined `资源:read|write` granularity. Used to enforce refinement so a read
@@ -115,34 +132,41 @@ function rejectedKey(token: string, clientIp: string | undefined): string {
  * Effective permissions = token.scopes ∩ user's current permissions, so a
  * demotion of the owner immediately narrows every token they issued. Distinct
  * from the JWT session path, which grants the owner's full permission set.
+ *
+ * This runs on the hot path of every token-authenticated request (the LLM
+ * gateway relays through here), so it uses `resolveApiTokenWithOwner`, which
+ * fetches the token, its owner and the owner's whole permission set in **one**
+ * nested query instead of three sequential ones. The M-1 invariant is intact:
+ * status/expiry/IP allowlist are still judged per request on freshly read rows.
  */
-async function apiTokenUser(token: string, clientIp?: string): Promise<AuthUser | null> {
+async function apiTokenUser(
+  token: string,
+  clientIp?: string,
+  governance?: ScopeGovernance,
+): Promise<AuthUser | null> {
   if (!looksLikeApiToken(token)) return null;
   const cacheKey = rejectedKey(token, clientIp);
   if (rejectedTokens.has(cacheKey)) return null;
-  const resolved = await resolveApiToken(getPrisma(), token, clientIp).catch(() => null);
+  const resolved = await resolveApiTokenWithOwner(getPrisma(), token, clientIp).catch(() => null);
   if (!resolved) {
     rejectedTokens.add(cacheKey);
     return null;
   }
-  const userId = resolved.userId;
-  const tokenId = resolved.tokenId;
-  const scopes = resolved.scopes;
-  const user = await getPrisma().user.findUnique({ where: { id: userId } });
-  if (!user || user.status !== 'ACTIVE') return null;
-  const owned = await permissionsOf(user.id);
+  const { owner, scopes } = resolved;
+  if (owner.status !== 'ACTIVE') return null;
+  const owned = owner.permissions;
   const effective = new Set(scopes.filter((scope) => owned.has(scope)));
   return {
-    id: user.id,
-    email: user.email,
-    status: user.status,
+    id: owner.id,
+    email: owner.email,
+    status: owner.status,
     permissions: effective,
     viaApiToken: true,
-    ...(tokenId ? { tokenId } : {}),
+    ...(resolved.tokenId ? { tokenId: resolved.tokenId } : {}),
     tokenScopes: scopes,
     // Refined scopes the owner still holds (coarse keys pass through as-is).
     // Delegation for refined scopes must go through canGrantScope at issuance.
-    effectiveScopes: scopes.filter((scope) => scopeSatisfied(scope, owned)),
+    effectiveScopes: scopes.filter((scope) => scopeSatisfied(scope, owned, governance)),
   };
 }
 
@@ -184,22 +208,49 @@ export async function extractSession(
   const cookie = request.cookies?.[env.SESSION_COOKIE_NAME];
   const token = bearer ?? cookie;
   if (!token) return null;
+  const governance = requestScopeGovernance(request);
   // Platform API tokens (default `sp_` prefix, legacy `sk-sp-`) are checked first.
-  const viaToken = await apiTokenUser(token, request.ip);
+  const viaToken = await apiTokenUser(token, request.ip, governance);
   if (viaToken) return viaToken;
 
   const prisma = getPrisma();
-  const buildUser = async (userId: string): Promise<AuthUser | null> => {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+  const buildUser = async (userId: string, impersonatorId?: string): Promise<AuthUser | null> => {
+    // One nested read instead of `user.findUnique` + `permissionsOf`: the
+    // session path also sits on every cookie-authenticated request, and the two
+    // facts always come from the same user row.
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        groups: {
+          select: {
+            group: {
+              select: { permissions: { select: { permission: { select: { key: true } } } } },
+            },
+          },
+        },
+      },
+    });
     if (!user || user.status !== 'ACTIVE') return null;
-    const permissions = await permissionsOf(user.id);
-    return { id: user.id, email: user.email, status: user.status, permissions };
+    const permissions = new Set<string>();
+    for (const row of user.groups) {
+      for (const gp of row.group.permissions) permissions.add(gp.permission.key);
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      status: user.status,
+      permissions,
+      ...(impersonatorId ? { impersonatorId } : {}),
+    };
   };
 
   // 1. Server-side session (the normal path).
   const session = await getSessionStore().get(token);
   if (session) {
-    const user = await buildUser(session.userId);
+    const user = await buildUser(session.userId, session.impersonatorId);
     if (!user) {
       // User disappeared or was disabled: drop the dangling session.
       await getSessionStore().revoke(token);
@@ -289,10 +340,11 @@ export function requireOpenScope(scope: string) {
     reply: FastifyReply,
   ): Promise<void> {
     const user = request.user;
+    const governance = requestScopeGovernance(request);
     const allowed = user
       ? user.viaApiToken
         ? (user.effectiveScopes ?? []).includes(scope)
-        : scopeSatisfied(scope, user.permissions)
+        : scopeSatisfied(scope, user.permissions, governance)
       : false;
     if (allowed) return;
     await writeAudit({

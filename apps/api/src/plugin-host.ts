@@ -28,9 +28,9 @@ import { FxService } from './fx/fx-service.ts';
 import { KernelAuthService } from './auth/auth-service.ts';
 import { KernelNotificationsService } from './notifications/notifications-service.ts';
 import { getStateService } from './state/index.ts';
+import { getCacheService, getDataCache } from './cache/index.ts';
 import { getJobRuntime, registerKernelSweeps, createKernelJobContext } from './jobs/index.ts';
 import { registerBackupJobs } from './backup/jobs.ts';
-import { registerResellerJobs } from './reseller/jobs.ts';
 import { registerMediaJobs } from './media/jobs.ts';
 import { AttachmentReferenceService } from './media/references.ts';
 
@@ -64,6 +64,7 @@ export interface PluginHost {
   auth: KernelAuthService;
   notifications: KernelNotificationsService;
   state: ReturnType<typeof getStateService>;
+  cache: ReturnType<typeof getCacheService>;
   /** Extension engine instance (tables, clients, finalizers). */
   extensions: ExtensionService;
   /** Shared attachment reference index used by plugin contexts and media routes. */
@@ -103,6 +104,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     events: getEventBus(),
   });
   const stateService = getStateService();
+  const cacheService = getCacheService();
   const paymentsService = new PaymentsService({
     db: getPrisma(),
     events: getEventBus(),
@@ -116,7 +118,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     logger,
   });
 
-  const extensions = options.extensions ?? new ExtensionService(getPrisma());
+  const extensions = options.extensions ?? new ExtensionService(getPrisma(), getDataCache());
   const media = new AttachmentReferenceService(getPrisma());
   const runtime = new PluginRuntime({
     events: getEventBus(),
@@ -128,6 +130,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     auth: authService,
     notifications: notificationsService,
     state: stateService,
+    cache: cacheService,
     jobs: getJobRuntime(),
     media,
     logger,
@@ -159,6 +162,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     auth: authService,
     notifications: notificationsService,
     state: stateService,
+    cache: cacheService,
     extensions,
     media,
     coherence,
@@ -210,8 +214,6 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       // not worker-only, so a queued backup never waits on a bounded retry to
       // reach a process that holds the handler.
       registerBackupJobs(kernelJobs);
-      // SP-V1（P3）：签名 webhook 派发（API 与 worker 的共同注册点）。
-      registerResellerJobs(kernelJobs);
       // MEDIA-ASYNC（ADR-0014 §4 阶段 B）：变体编码任务 + 回填清扫（API 与 worker 共同注册点）。
       registerMediaJobs(kernelJobs);
     },

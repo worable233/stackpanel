@@ -84,3 +84,64 @@
   --chart-4: #a78bfa;
   --chart-5: #fbbf24;
 }
+
+.clarity-route-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 99999;
+  height: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.clarity-route-progress[data-visible='true'] {
+  opacity: 1;
+}
+
+.clarity-route-progress__bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--clarity-primary, var(--primary));
+  transition: width 180ms ease-out;
+}
+
+.clarity-route-progress__peg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: block;
+  width: 100px;
+  height: 100%;
+  opacity: 1;
+  transform: rotate(3deg) translateY(-4px);
+  box-shadow: 0 0 10px var(--clarity-primary, var(--primary)), 0 0 5px var(--clarity-primary, var(--primary));
+  transition: width 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clarity-route-progress,
+  .clarity-route-progress__bar,
+  .clarity-route-progress__peg {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* Homepage palette scoped by the Clarity layout; admin tokens stay independent. */
+:root,
+.dark {
+  --clarity-background: #090909;
+  --clarity-foreground: #f5f5f5;
+  --clarity-muted: #262626;
+  --clarity-muted-foreground: #999999;
+  --clarity-border: #262626;
+  --clarity-primary: #0065fc;
+  --clarity-primary-foreground: #ffffff;
+  --clarity-border-highlight: #6ea8ff;
+  --clarity-hover-surface: #151418;
+  --clarity-scroll-thumb: #484848;
+  --clarity-scroll-thumb-hover: #737373;
+  --clarity-glass: rgba(255, 255, 255, 0.035);
+  --clarity-grid: #222222;
+  --clarity-glow: rgba(0, 101, 252, 0.12);
+}

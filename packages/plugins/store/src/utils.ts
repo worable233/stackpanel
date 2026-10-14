@@ -4,6 +4,76 @@ import { StoreError } from './errors';
 
 export const MAX_MINOR_AMOUNT = 2_000_000_000;
 
+/** 周期 id → 时长（月）；未知周期按 1 个月。 */
+export function monthsForCycle(cycleId: string | undefined): number {
+  switch (cycleId) {
+    case 'yearly':
+    case 'annual':
+      return 12;
+    case 'quarterly':
+      return 3;
+    case 'halfyearly':
+    case 'semiannual':
+      return 6;
+    default:
+      return 1;
+  }
+}
+
+/** 从 metadata 的 checkoutConfig 读取 cycles（宽松，仅供时长/取价）。 */
+export function readCycles(
+  metadata: unknown,
+): Array<{ id: string; price?: number; renewPrice?: number; months?: number }> | null {
+  if (metadata === null || typeof metadata !== 'object') return null;
+  const config = (metadata as Record<string, unknown>)['checkoutConfig'];
+  if (config === null || typeof config !== 'object') return null;
+  const cycles = (config as Record<string, unknown>)['cycles'];
+  if (!Array.isArray(cycles)) return null;
+  return cycles.filter(
+    (cycle): cycle is { id: string; price?: number; renewPrice?: number; months?: number } =>
+      cycle !== null &&
+      typeof cycle === 'object' &&
+      typeof (cycle as { id?: unknown }).id === 'string',
+  );
+}
+
+/** 指定周期的时长（月）：优先显式 `months`，否则按 id 推断。 */
+export function cycleMonths(metadata: unknown, cycleId: string | undefined): number | null {
+  const cycles = readCycles(metadata);
+  if (!cycles || cycles.length === 0) return null;
+  const cycle = cycleId ? cycles.find((candidate) => candidate.id === cycleId) : cycles[0];
+  if (!cycle) return null;
+  if (cycle.months && Number.isInteger(cycle.months) && cycle.months > 0) return cycle.months;
+  return monthsForCycle(cycle.id);
+}
+
+/** 从 metadata 读取顶层 `billingCycle`（原生云服务器商品用它声明周期）。 */
+function readBillingCycle(metadata: unknown): string | null {
+  if (metadata === null || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>)['billingCycle'];
+  return typeof value === 'string' && value ? value : null;
+}
+
+/**
+ * 开通时的初始到期时间：按结账周期（`config.cycle`，缺省取第一个周期）从 `now`
+ * 起算。周期来源依次为 `checkoutConfig.cycles`、商品 `metadata.billingCycle`、
+ * 结账选择的 `cycle`。商品未配置任何周期（非周期商品/一次性）时返回 null（永久有效）。
+ */
+export function initialExpiryAt(
+  metadata: unknown,
+  cycleId: string | undefined,
+  now: Date,
+): Date | null {
+  const months =
+    cycleMonths(metadata, cycleId) ??
+    (readBillingCycle(metadata) ? monthsForCycle(readBillingCycle(metadata)!) : null) ??
+    (cycleId ? monthsForCycle(cycleId) : null);
+  if (!months) return null;
+  const next = new Date(now.getTime());
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
 /** 商品 metadata 里可配置商品的结账配置（checkoutConfig）shape 校验。 */
 export const checkoutConfigZod = z.object({
   cycles: z
@@ -13,6 +83,8 @@ export const checkoutConfigZod = z.object({
         label: z.string().min(1).max(64),
         price: z.number().int().min(0).max(MAX_MINOR_AMOUNT),
         renewPrice: z.number().int().min(0).max(MAX_MINOR_AMOUNT).optional(),
+        // 周期时长（月），供续费推算新到期时间；缺省按 id 推断。
+        months: z.number().int().positive().max(120).optional(),
       }),
     )
     .min(1),
@@ -54,9 +126,7 @@ export function validateCheckoutConfig(metadata: Record<string, unknown> | null 
 }
 
 /** 结账配置选择（来自订单/购物车请求的 JSON 字符串或对象）。 */
-export function parseCheckoutSelection(
-  value: unknown,
-): CheckoutSelection | undefined {
+export function parseCheckoutSelection(value: unknown): CheckoutSelection | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value === 'string') {
     try {
@@ -123,10 +193,9 @@ const productUpdateBase = productSchema.extend({
   fulfillmentType: z.string().min(1).max(64).optional(),
 });
 
-export const productUpdateSchema = productUpdateBase.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  { message: '至少需要一个更新字段' },
-);
+export const productUpdateSchema = productUpdateBase
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, { message: '至少需要一个更新字段' });
 
 export const createOrderSchema = z.object({
   productId: z.string().min(1).max(191),
@@ -149,6 +218,24 @@ export const checkoutSchema = z.object({
   methodId: z.string().min(1).max(191).optional(),
 });
 
+/** 续费下单入参。`months` 显式指定时长；否则按 `cycle` 推断（缺省 1 个月）。 */
+export const renewOrderSchema = z.object({
+  serviceId: z.string().min(1).max(191).optional(),
+  paymentMode: z.enum(['wallet', 'external']).default('wallet'),
+  channelCode: z.string().min(1).max(64).default('MALL_PC'),
+  cycle: z.string().min(1).max(64).optional(),
+  months: z.number().int().positive().max(120).optional(),
+  providerId: z.string().min(1).max(64).optional(),
+  paymentMethod: z.string().min(1).max(64).optional(),
+  methodId: z.string().min(1).max(191).optional(),
+});
+
+/** 退款入参：`amount` 为最小货币单位；缺省全额退款。 */
+export const refundOrderSchema = z.object({
+  amount: z.number().int().positive().max(MAX_MINOR_AMOUNT).optional(),
+  reason: z.string().trim().max(191).optional(),
+});
+
 export const addToCartSchema = z.object({
   productId: z.string().min(1).max(191),
   quantity: z.number().int().positive().max(100).default(1),
@@ -162,7 +249,10 @@ export const updateCartQuantitySchema = z.object({
 
 export const idSchema = z.object({ id: z.string().min(1).max(191) });
 
-export function parsePagination(query: Record<string, unknown>): { page: number; pageSize: number } {
+export function parsePagination(query: Record<string, unknown>): {
+  page: number;
+  pageSize: number;
+} {
   const parsed = z
     .object({
       page: z.coerce.number().int().positive().default(1),
@@ -178,8 +268,12 @@ export function orderOptions(
   providerId: string | undefined,
   paymentMethod: string | undefined,
 ): { channelCode?: string; methodId?: string; providerId?: string; paymentMethod?: string } {
-  const options: { channelCode?: string; methodId?: string; providerId?: string; paymentMethod?: string } =
-    {};
+  const options: {
+    channelCode?: string;
+    methodId?: string;
+    providerId?: string;
+    paymentMethod?: string;
+  } = {};
   if (channelCode) options.channelCode = channelCode;
   if (methodId) options.methodId = methodId;
   if (providerId && paymentMethod) {

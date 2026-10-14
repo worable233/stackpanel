@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import type { RedisClient } from '@stackpanel/db';
 import { REDIS_KEY_PREFIX } from '@stackpanel/sdk';
-import type { StateService } from '@stackpanel/sdk';
+import type { StateCandidate, StateLease, StateService } from '@stackpanel/sdk';
 
 /** Redis `PX` only accepts whole-millisecond TTLs; non-positive means "no TTL". */
 function toTtlMs(ttlMs: number | undefined): number | undefined {
@@ -57,6 +57,56 @@ if value == 1 and tonumber(ARGV[1]) ~= nil and tonumber(ARGV[1]) > 0 then
   redis.call('PEXPIRE', KEYS[1], ARGV[1])
 end
 return value
+`;
+
+/**
+ * Take the first free seat among ordered lease pools, in one round trip.
+ *
+ * `KEYS[i]` is pool `i`'s ZSET; `ARGV[4+i]` its limit (0 = unlimited).
+ * `ARGV[1]` is now (ms), `ARGV[2]` the caller's unique token, `ARGV[3]` the TTL
+ * in ms (0 = none). A pool at/over its limit is skipped **without** being
+ * modified. Returns the index (1-based) of the seat taken, or 0 when full.
+ */
+const LEASE_ACQUIRE_SCRIPT = `
+local now = tonumber(ARGV[1])
+local token = ARGV[2]
+local ttl = tonumber(ARGV[3]) or 0
+-- A 0 TTL means "no expiry"; store it far in the future so the expired-entry
+-- prune below never reclaims a live seat.
+local expires = now + 315360000000
+if ttl > 0 then expires = now + ttl end
+for i = 1, #KEYS do
+  redis.call('ZREMRANGEBYSCORE', KEYS[i], '-inf', now)
+  local limit = tonumber(ARGV[3 + i]) or 0
+  local size = redis.call('ZCARD', KEYS[i])
+  if limit <= 0 or size < limit then
+    redis.call('ZADD', KEYS[i], expires, token)
+    if ttl > 0 then redis.call('PEXPIRE', KEYS[i], ttl) end
+    return i
+  end
+end
+return 0
+`;
+
+/** Extend this holder's seat; 1 when it still held one, 0 when it had expired. */
+const LEASE_RENEW_SCRIPT = `
+local now = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2]) or 0
+local expires = now + 315360000000
+if ttl > 0 then expires = now + ttl end
+if not redis.call('ZSCORE', KEYS[1], ARGV[3]) then return 0 end
+redis.call('ZADD', KEYS[1], expires, ARGV[3])
+if ttl > 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
+return 1
+`;
+
+/** Release only this holder's seat; returns 1 (released), 0 (nothing to do). */
+const LEASE_RELEASE_SCRIPT = `
+local removed = redis.call('ZREM', KEYS[1], ARGV[1])
+local now = tonumber(ARGV[2])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+if redis.call('ZCARD', KEYS[1]) == 0 then redis.call('DEL', KEYS[1]) end
+return removed
 `;
 
 export class RedisStateService implements StateService {
@@ -136,5 +186,56 @@ export class RedisStateService implements StateService {
     } finally {
       await this.redis.eval(RELEASE_SCRIPT, 1, redisKey, token).catch(() => undefined);
     }
+  }
+
+  async acquireLease(
+    candidates: ReadonlyArray<StateCandidate>,
+    ttlMs?: number,
+  ): Promise<StateLease | null> {
+    if (candidates.length === 0) return null;
+    const token = randomUUID();
+    const keys = candidates.map((candidate) => this.key(candidate.key));
+    const limits = candidates.map((candidate) => String(Math.max(0, Math.trunc(candidate.limit))));
+    const ttl = toTtlMs(ttlMs) ?? 0;
+    const seat = Number(
+      await this.redis.eval(
+        LEASE_ACQUIRE_SCRIPT,
+        keys.length,
+        ...keys,
+        String(Date.now()),
+        token,
+        String(ttl),
+        ...limits,
+      ),
+    );
+    return seat > 0 ? { key: candidates[seat - 1]!.key, token } : null;
+  }
+
+  async renewLease(lease: StateLease, ttlMs?: number): Promise<boolean> {
+    const ttl = toTtlMs(ttlMs) ?? 0;
+    const renewed = Number(
+      await this.redis.eval(
+        LEASE_RENEW_SCRIPT,
+        1,
+        this.key(lease.key),
+        String(Date.now()),
+        String(ttl),
+        lease.token,
+      ),
+    );
+    return renewed === 1;
+  }
+
+  async releaseLease(lease: StateLease): Promise<boolean> {
+    const removed = Number(
+      await this.redis.eval(
+        LEASE_RELEASE_SCRIPT,
+        1,
+        this.key(lease.key),
+        lease.token,
+        String(Date.now()),
+      ),
+    );
+    return removed > 0;
   }
 }

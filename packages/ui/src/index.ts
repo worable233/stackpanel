@@ -46,3 +46,27 @@ export { GlyphMatrix } from './magicui/glyph-matrix.js';
 export { Particles } from './magicui/particles.js';
 export { TextAnimate } from './magicui/text-animate.js';
 export type { TextAnimateProps } from './magicui/text-animate.js';
+
+export { Reveal, RevealText } from './reveal.js';
+export { MobileNavigation } from './mobile-navigation.js';
+export { Spotlight } from './spotlight.js';
+
+export { GlassNavigation } from './glass-navigation.js';
+
+export { DocumentScrollbar } from './document-scrollbar.js';
+
+export { HeroRays } from './hero-rays.js';
+
+export { SmoothDocument } from './smooth-document.js';
+
+export { PlatformStories } from './platform-stories.js';
+
+export { PricingInfo } from './pricing-info.js';
+
+export { getClarityMotionBootstrapScript } from './early-motion.js';
+
+export { CommerceCart } from './commerce-cart.js';
+export { Stepper } from './stepper.js';
+export { SidebarMenu, SidebarMenuLink } from './sidebar-menu.js';
+export type { StepperProps } from './stepper.js';
+export type { CommerceCartItem, CommerceCartPayment, CommerceCartProps } from './commerce-cart.js';

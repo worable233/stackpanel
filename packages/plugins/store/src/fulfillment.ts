@@ -12,6 +12,7 @@ import { bus, context, logger } from './context';
 import { StoreError } from './errors';
 import { stockItems } from './errors';
 import { productTypeById } from './product-types';
+import { initialExpiryAt } from './utils';
 import {
   claimTask,
   createServiceInstance,
@@ -27,10 +28,11 @@ import {
   replaceServiceInstance,
   replaceTask,
   retryFailedTask,
+  toServiceInstanceData,
   type DeliveryTaskRecord,
   type ServiceInstanceRecord,
 } from './repository';
-import type { StoreDeliveryTaskData, StoreServiceInstanceData } from './data';
+import type { StoreDeliveryTaskData } from './data';
 
 const FULFILLMENT_POINT = EXTENSION_POINTS.fulfillmentProvider;
 export const FULFILLMENT_POLL_INTERVAL_MS = 5_000;
@@ -70,9 +72,6 @@ interface TaskProductSnapshot {
   config?: unknown;
 }
 
-const isoOrNull = (value: Date | null | undefined): string | null =>
-  value ? value.toISOString() : null;
-
 /**
  * 为已支付订单的每一行创建异步履约任务，并立即触发一轮处理。
  * 由 `order.paid` 事件驱动（钱包即时支付与外部结算回调都会发布该事件）。
@@ -80,7 +79,14 @@ const isoOrNull = (value: Date | null | undefined): string | null =>
 export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
   const order = await getOrder(orderId);
   if (!order) return;
+  // 续费行不产生交付任务（服务已存在），改由 renewal 模块顺延到期时间。
+  const { applyRenewalOrder } = await import('./renewal');
+  let hasRenewal = false;
   for (const line of stockItems(order)) {
+    if (line.renewalServiceId) {
+      hasRenewal = true;
+      continue;
+    }
     const product = await getProduct(line.productId);
     if (!product) continue;
     const snapshot: TaskProductSnapshot = {
@@ -106,6 +112,11 @@ export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
       payload: snapshot,
       serviceId: null,
       nextAttemptAtMs: 0,
+    });
+  }
+  if (hasRenewal) {
+    await applyRenewalOrder(orderId).catch((error) => {
+      logger().error(`store: renewal apply failed for ${orderId}: ${messageOf(error)}`);
     });
   }
   await processDue().catch((error) => {
@@ -161,6 +172,12 @@ async function runTask(taskId: string): Promise<void> {
 
   try {
     const result = await provider.provision(provisionCtx);
+    // 周期商品按结账周期落一个初始到期时间（缺省取第一个周期）；永久商品为 null。
+    // 异步开通（PENDING）也在下单时起算，避免上游开通后无到期时间。
+    const initialExpiry =
+      result.status !== 'FAILED'
+        ? initialExpiryAt(product.metadata, provisionCtx.config?.cycle, new Date())
+        : null;
     const service = await createServiceInstance({
       userId: task.userId,
       orderId: task.orderId,
@@ -179,6 +196,7 @@ async function runTask(taskId: string): Promise<void> {
       runtime: result.runtime ?? null,
       amount: snapshot.price ?? product.price,
       currency: snapshot.currency ?? product.currency,
+      ...(initialExpiry ? { expiresAt: initialExpiry.toISOString() } : {}),
       provisionedAt: result.status === 'ACTIVE' ? new Date().toISOString() : null,
     });
 
@@ -237,23 +255,7 @@ async function markTaskFailed(taskId: string, message: string): Promise<void> {
   await replaceTask(taskId, { ...toTaskData(task), state: 'FAILED', error: message });
 }
 
-const toServiceData = (service: ServiceInstanceRecord): StoreServiceInstanceData => ({
-  userId: service.userId,
-  orderId: service.orderId,
-  productId: service.productId,
-  productName: service.productName,
-  fulfillmentType: service.fulfillmentType,
-  providerId: service.providerId,
-  providerServiceId: service.providerServiceId,
-  state: service.status,
-  credentialsRef: service.credentialsRef,
-  runtime: service.runtime,
-  amount: service.amount,
-  currency: service.currency,
-  expiresAt: isoOrNull(service.expiresAt),
-  provisionedAt: isoOrNull(service.provisionedAt),
-  terminatedAt: isoOrNull(service.terminatedAt),
-});
+const toServiceData = toServiceInstanceData;
 
 const toTaskData = (task: DeliveryTaskRecord): StoreDeliveryTaskData => ({
   orderId: task.orderId,
@@ -328,6 +330,7 @@ export async function listMyServices(req: HttpRequest): Promise<unknown> {
       runtime: service.runtime,
       amount: service.amount,
       currency: service.currency,
+      expiresAt: service.expiresAt,
       provisionedAt: service.provisionedAt,
       createdAt: service.createdAt,
     })),
@@ -361,6 +364,7 @@ export async function getMyService(req: HttpRequest): Promise<unknown> {
       runtime: service.runtime,
       amount: service.amount,
       currency: service.currency,
+      expiresAt: service.expiresAt,
       provisionedAt: service.provisionedAt,
       createdAt: service.createdAt,
       detail: detail ?? { fields: [] },
@@ -392,10 +396,100 @@ export async function runMyServiceAction(req: HttpRequest): Promise<unknown> {
   requireOwnedService(service, userId);
   const provider = providerById(service.providerId) ?? productTypeById(service.fulfillmentType);
   if (!provider?.executeAction) throw new StoreError(501, '该服务不支持此操作');
-  const actionId = (req.body as { actionId?: string })?.actionId;
-  if (!actionId) throw new StoreError(400, '缺少动作 ID');
-  await provider.executeAction(actionId, serviceContext(service));
-  return { ok: true };
+  const body = (req.body ?? {}) as { actionId?: unknown };
+  const actionId = body.actionId;
+  if (typeof actionId !== 'string' || !actionId) throw new StoreError(400, '缺少动作 ID');
+  const ctx = serviceContext(service);
+  // 除保留键外的标量字段视为动作参数（动作参数名由动作声明决定）。
+  const params = collectActionParams(body);
+  // 若提供方声明了该动作的参数，则只允许声明过的参数名，防止任意键透传到上游。
+  const guarded = await restrictActionParams(provider, ctx, actionId, params);
+  const result = await provider.executeAction(actionId, ctx, guarded);
+  // 提供方返回的 runtime 补丁浅合并回服务（如电源状态、系统、密码更新时间）。
+  if (result?.runtime && typeof result.runtime === 'object') {
+    const merged = {
+      ...toServiceInstanceData(service),
+      runtime: { ...((service.runtime as Record<string, unknown>) ?? {}), ...result.runtime },
+    };
+    await replaceServiceInstance(service.id, merged);
+  }
+  return { ok: true, result: result ?? null };
+}
+
+/** 保留键（路由/动作标识 + JSON 参数袋），不参与动作参数。 */
+const ACTION_RESERVED_KEYS = new Set(['id', 'actionId', 'params']);
+/** 动作参数名：字母开头，允许字母/数字/下划线/连字符，最长 64。 */
+const ACTION_PARAM_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+
+/**
+ * 限制动作参数为该动作**声明**过的参数名。提供方经 `getDetail().actions[].params`
+ * 声明每个动作接受哪些参数；未声明的键一律拒绝，防止任意键（乃至上游保留字段）
+ * 被透传。若提供方未实现 `getDetail` 或详情不可用，则放行——此时仍由提供方自身的
+ * 参数校验兜底（如 zjmf 的保留字段检查）。
+ */
+async function restrictActionParams(
+  provider: FulfillmentProvider,
+  ctx: ProviderServiceContext,
+  actionId: string,
+  params: Record<string, string> | undefined,
+): Promise<Record<string, string> | undefined> {
+  if (!params || !provider.getDetail) return params;
+  let declared: string[] | null = null;
+  try {
+    const detail = await provider.getDetail(ctx);
+    const action = detail.actions?.find((candidate) => candidate.id === actionId);
+    if (action) declared = (action.params ?? []).map((param) => param.name);
+  } catch {
+    return params;
+  }
+  if (declared === null) return params;
+  for (const key of Object.keys(params)) {
+    if (!declared.includes(key)) throw new StoreError(400, '动作参数无效');
+  }
+  return params;
+}
+
+/**
+ * 从动作请求体收集参数：仅接受合法参数名的标量，忽略空值与保留键。
+ *
+ * 参数会原样透传给履约提供方（乃至上游），因此必须与动作声明对齐、且不得携带
+ * 保留字段名——否则调用方可借参数覆盖上游的动作/鉴权字段（如 `func`/`action`）。
+ * 平台 action 的 `input` 是静态声明，故另提供可选 `params`（JSON 对象字符串）作为
+ * 通用参数袋，供动作声明了 `os`/`password` 之外的参数时使用；显式字段优先于 JSON。
+ */
+function collectActionParams(body: Record<string, unknown>): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  // 通用参数袋（可选 JSON 对象）。
+  const bag = body['params'];
+  if (bag !== undefined && bag !== null && bag !== '') {
+    if (typeof bag !== 'string') throw new StoreError(400, '动作参数无效');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(bag);
+    } catch {
+      throw new StoreError(400, '动作参数无效');
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new StoreError(400, '动作参数无效');
+    }
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!isScalar(value)) throw new StoreError(400, '动作参数无效');
+      if (!ACTION_PARAM_NAME.test(key)) throw new StoreError(400, '动作参数无效');
+      out[key] = String(value);
+    }
+  }
+  for (const [key, value] of Object.entries(body)) {
+    if (ACTION_RESERVED_KEYS.has(key)) continue;
+    if (value === undefined || value === null || value === '') continue;
+    if (!isScalar(value)) throw new StoreError(400, '动作参数无效');
+    if (!ACTION_PARAM_NAME.test(key)) throw new StoreError(400, '动作参数无效');
+    out[key] = String(value);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function isScalar(value: unknown): value is string | number | boolean {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
 /* ------------------------- 管理端：履约任务/服务 ------------------------- */

@@ -152,6 +152,91 @@ describe.skipIf(!dbAvailable)('Extension 引擎（真实库）', () => {
     expect(await client.get(widgetModel, created.name)).toBeNull();
   });
 
+  it('page：无 COUNT 的有界读取 + 游标续读 + hasMore', async () => {
+    const created: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const item = await client.create(widgetModel, {
+        name: `页码 ${i}`,
+        slug: `page-${i}`,
+        qty: i,
+      });
+      created.push(item.name);
+    }
+    try {
+      const first = await client.page<{ slug: string }>(widgetModel, { limit: 2 });
+      expect(first.items).toHaveLength(2);
+      expect(first.hasMore).toBe(true);
+      expect(first.nextCursor).toBeTruthy();
+
+      const seen = [...first.items];
+      let cursor = first.nextCursor ?? undefined;
+      let guard = 0;
+      let last = first;
+      while (cursor && guard < 10) {
+        last = await client.page<{ slug: string }>(widgetModel, { limit: 2, cursor });
+        seen.push(...last.items);
+        cursor = last.nextCursor ?? undefined;
+        guard += 1;
+      }
+      // Every row is reached exactly once.
+      expect(new Set(seen.map((item) => item.name)).size).toBe(seen.length);
+      expect(last.hasMore).toBe(false);
+      expect(seen.length).toBeGreaterThanOrEqual(5);
+    } finally {
+      for (const name of created) await client.delete(widgetModel, name);
+    }
+  });
+
+  it('page：按索引字段排序的游标不重不漏', async () => {
+    const created: string[] = [];
+    for (const qty of [3, 1, 2]) {
+      const item = await client.create(widgetModel, {
+        name: `排序 ${qty}`,
+        slug: `cursor-${qty}`,
+        qty,
+      });
+      created.push(item.name);
+    }
+    try {
+      const where = { slug: { contains: 'cursor-' } };
+      const collected: number[] = [];
+      let cursor: string | undefined;
+      for (let guard = 0; guard < 10; guard += 1) {
+        const result = await client.page<{ qty: number }>(widgetModel, {
+          where,
+          orderBy: { field: 'qty' },
+          limit: 1,
+          ...(cursor ? { cursor } : {}),
+        });
+        collected.push(...result.items.map((item) => item.spec.qty));
+        if (!result.hasMore) break;
+        cursor = result.nextCursor ?? undefined;
+      }
+      expect(collected).toEqual([1, 2, 3]);
+    } finally {
+      for (const name of created) await client.delete(widgetModel, name);
+    }
+  });
+
+  it('getMany：一次读取多个主键，缺失项静默缺席', async () => {
+    const first = await client.create(widgetModel, { name: 'M1', slug: 'many-1', qty: 1 });
+    const second = await client.create(widgetModel, { name: 'M2', slug: 'many-2', qty: 2 });
+    try {
+      const found = await client.getMany<{ slug: string }>(widgetModel, [
+        first.name,
+        second.name,
+        'does-not-exist',
+      ]);
+      expect(found.size).toBe(2);
+      expect(found.get(first.name)?.spec.slug).toBe('many-1');
+      expect(found.get(second.name)?.spec.slug).toBe('many-2');
+      expect(found.has('does-not-exist')).toBe(false);
+    } finally {
+      await client.delete(widgetModel, first.name);
+      await client.delete(widgetModel, second.name);
+    }
+  });
+
   it('唯一索引冲突 → ExtensionUniqueViolation', async () => {
     const first = await client.create(widgetModel, { name: 'A', slug: 'dup', qty: 1 });
     await expect(

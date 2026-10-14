@@ -48,14 +48,78 @@ export interface Capability {
  *
  * Scope refinement must not widen access: a refined sub-scope grants strictly
  * less than the coarse permission it is derived from, and the coarse permission
- * remains the holder's admission gate. This table is the single place that
- * says which coarse key governs which resource, so issuance
- * ({@link canGrantScope}) and enforcement ({@link scopeSatisfied}) cannot drift.
+ * remains the holder's admission gate.
+ *
+ * ADR-0021 §D1: the kernel no longer hardcodes *plugin* permission keys. This
+ * table is the **kernel-owned resource baseline** only. A plugin declares which
+ * resources its permissions govern via `PluginPermission.scope`; the runtime
+ * aggregates those at {@link PluginRuntime.scopeGovernance} and the consumers
+ * pass the merged table in. The kernel therefore stays ignorant of any concrete
+ * business plugin's permission namespace.
  */
-export const RESOURCE_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
+export type ScopeGovernance = Readonly<Record<string, readonly string[]>>;
+
+/** Resources the kernel itself owns (identity/RBAC). Always in scope. */
+export const KERNEL_RESOURCE_PERMISSIONS: ScopeGovernance = {
   user: ['platform.admin', 'platform.manage.users'],
-  gateway: ['llm-gateway.use', 'llm-gateway.admin'],
 };
+
+/**
+ * @deprecated Kernel baseline only (ADR-0021). Prefer passing an explicit
+ * runtime-aggregated {@link ScopeGovernance}; retained for the tests and any
+ * call site that has no runtime at hand (fail-closed: fewer grants).
+ */
+export const RESOURCE_PERMISSIONS = KERNEL_RESOURCE_PERMISSIONS;
+
+/**
+ * Merge governance tables left-to-right; later tables add keys to a resource
+ * without dropping earlier ones. Undefined entries are ignored, so callers can
+ * pass an optional runtime table and still get the kernel baseline.
+ */
+export function mergeScopeGovernance(
+  ...tables: Array<ScopeGovernance | undefined>
+): ScopeGovernance {
+  const out = new Map<string, Set<string>>();
+  for (const table of tables) {
+    if (!table) continue;
+    for (const [resource, keys] of Object.entries(table)) {
+      const set = out.get(resource) ?? new Set<string>();
+      for (const key of keys) set.add(key);
+      out.set(resource, set);
+    }
+  }
+  const merged: Record<string, readonly string[]> = {};
+  for (const [resource, keys] of out) merged[resource] = [...keys];
+  return merged;
+}
+
+/** A plugin's declared permissions, in the mixed manifest form. */
+type DeclaredPermissions = ReadonlyArray<
+  string | { readonly key: string; readonly scope?: string }
+>;
+
+/**
+ * Aggregate the refined-scope governance table from plugin manifests (ADR-0021
+ * §D1). Each `permission.scope` says "holding this permission governs this
+ * refined-scope resource"; the result merges them on top of the kernel baseline.
+ *
+ * Pure and dependency-free so it can be unit-tested and reused by
+ * {@link PluginRuntime.scopeGovernance}.
+ */
+export function aggregateScopeGovernance(
+  pluginPermissions: readonly DeclaredPermissions[],
+): ScopeGovernance {
+  const tables: Array<Record<string, string[]>> = [];
+  for (const permissions of pluginPermissions) {
+    const table: Record<string, string[]> = {};
+    for (const permission of permissions) {
+      if (typeof permission === 'string' || !permission.scope) continue;
+      (table[permission.scope] ??= []).push(permission.key);
+    }
+    if (Object.keys(table).length > 0) tables.push(table);
+  }
+  return mergeScopeGovernance(KERNEL_RESOURCE_PERMISSIONS, ...tables);
+}
 
 /** The `资源` part of a refined `资源:read|write` scope, if it is one. */
 export function scopeResource(scope: string): string | null {
@@ -69,13 +133,14 @@ export function scopeResource(scope: string): string | null {
  *
  * A `null` scope is identity-only. A refined `资源:read|write` scope is
  * satisfied by the exact key, by a coarse permission governing the resource
- * (e.g. `gateway` ← `llm-gateway.use`), or by a `资源:admin` super-key.
- * Non-refined scopes must match exactly, preserving slice-one/two/three
- * semantics.
+ * (per `governance`), or by a `资源:admin` super-key. Non-refined scopes must
+ * match exactly, preserving slice-one/two/three semantics. Without an explicit
+ * governance table only the kernel baseline applies (fail-closed).
  */
 export function scopeSatisfied(
   scope: string | null,
   permissions: ReadonlySet<string> | readonly string[],
+  governance: ScopeGovernance = KERNEL_RESOURCE_PERMISSIONS,
 ): boolean {
   if (scope === null) return true;
   const owned = permissions instanceof Set ? permissions : new Set(permissions);
@@ -83,15 +148,16 @@ export function scopeSatisfied(
   const resource = scopeResource(scope);
   if (!resource) return false;
   if (owned.has(`${resource}:admin`)) return true;
-  return (RESOURCE_PERMISSIONS[resource] ?? []).some((permission) => owned.has(permission));
+  return (governance[resource] ?? []).some((permission) => owned.has(permission));
 }
 
 /** Whether a caller holding `owned` may hand `scope` to a token (no privilege escalation). */
 export function canGrantScope(
   scope: string,
   owned: ReadonlySet<string> | readonly string[],
+  governance: ScopeGovernance = KERNEL_RESOURCE_PERMISSIONS,
 ): boolean {
-  return scopeSatisfied(scope, owned);
+  return scopeSatisfied(scope, owned, governance);
 }
 
 /**
@@ -99,10 +165,13 @@ export function canGrantScope(
  * they hold, plus the refined `资源:read|write` scopes for resources their
  * coarse permissions govern (and `资源:admin` when they hold it directly).
  */
-export function grantableScopesFor(owned: ReadonlySet<string> | readonly string[]): string[] {
+export function grantableScopesFor(
+  owned: ReadonlySet<string> | readonly string[],
+  governance: ScopeGovernance = KERNEL_RESOURCE_PERMISSIONS,
+): string[] {
   const set = owned instanceof Set ? owned : new Set(owned);
   const out = new Set<string>(set);
-  for (const [resource, coarse] of Object.entries(RESOURCE_PERMISSIONS)) {
+  for (const [resource, coarse] of Object.entries(governance)) {
     if (coarse.some((permission) => set.has(permission)) || set.has(`${resource}:admin`)) {
       out.add(`${resource}:read`);
       out.add(`${resource}:write`);
@@ -228,6 +297,67 @@ export const CAPABILITIES: readonly Capability[] = [
     summary: 'Gift a service instance to a user',
     mutating: true,
   },
+  // Kernel Agent (PLAN-agent-in-kernel P0). Every entry is `scope: null`
+  // (identity-only): an agent can only ever act **as the human who owns the
+  // credential**, so there is no permission key that could widen it. The
+  // mutating flag makes MCP callers additionally declare `mcp.write` — the
+  // existing meaning of that scope, unchanged.
+  {
+    id: 'agent.run.create',
+    method: 'POST',
+    path: '/api/v1/agent/runs',
+    scope: null,
+    summary: 'Start a kernel Agent run as yourself',
+    mutating: true,
+  },
+  {
+    id: 'agent.run.list',
+    method: 'GET',
+    path: '/api/v1/agent/runs',
+    scope: null,
+    summary: 'List your own kernel Agent runs',
+    mutating: false,
+  },
+  {
+    id: 'agent.run.read',
+    method: 'GET',
+    path: '/api/v1/agent/runs/:id',
+    scope: null,
+    summary: 'Read one of your own kernel Agent runs and its steps',
+    mutating: false,
+  },
+  {
+    id: 'agent.run.resume',
+    method: 'POST',
+    path: '/api/v1/agent/runs/:id/resume',
+    scope: null,
+    summary: 'Continue one of your own suspended kernel Agent runs',
+    mutating: true,
+  },
+  {
+    id: 'agent.run.cancel',
+    method: 'POST',
+    path: '/api/v1/agent/runs/:id/cancel',
+    scope: null,
+    summary: 'Cancel one of your own kernel Agent runs',
+    mutating: true,
+  },
+  {
+    id: 'agent.approval.list',
+    method: 'GET',
+    path: '/api/v1/agent/approvals',
+    scope: null,
+    summary: 'List tool approvals awaiting your decision',
+    mutating: false,
+  },
+  {
+    id: 'agent.approval.decide',
+    method: 'POST',
+    path: '/api/v1/agent/approvals/:id/decide',
+    scope: null,
+    summary: 'Approve or deny a pending agent tool call you are eligible to decide',
+    mutating: true,
+  },
 ];
 
 /** A capability contributed by an active plugin. */
@@ -247,10 +377,11 @@ export function capabilitiesFor(
   permissions: ReadonlySet<string> | readonly string[],
   pluginCapabilities: readonly Capability[] = [],
   refinedScopes: readonly string[] = [],
+  governance: ScopeGovernance = KERNEL_RESOURCE_PERMISSIONS,
 ): Capability[] {
   const owned = permissions instanceof Set ? permissions : new Set(permissions);
   return [...CAPABILITIES, ...pluginCapabilities].filter((cap) => {
-    if (scopeSatisfied(cap.scope, owned)) return true;
+    if (scopeSatisfied(cap.scope, owned, governance)) return true;
     if (cap.scope === null) return true;
     return refinedScopes.includes(cap.scope);
   });

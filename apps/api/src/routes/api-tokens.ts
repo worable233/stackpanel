@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { apiTokenPrefix, generateApiToken, toStringArray } from '../lib/api-tokens.ts';
-import { canGrantScope, grantableScopesFor } from '../lib/capability-registry.ts';
+import { canGrantScope, grantableScopesFor, type ScopeGovernance } from '../lib/capability-registry.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { isKnownPlatformScope, mcpGrantableScopes } from '../mcp/index.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
@@ -89,7 +89,7 @@ function toView(row: TokenRow) {
  */
 async function grantableScopes(request: FastifyRequest): Promise<string[]> {
   const owned = request.user?.permissions ?? new Set<string>();
-  const scopes = new Set(grantableScopesFor(owned));
+  const scopes = new Set(grantableScopesFor(owned, request.server.pluginRuntime?.scopeGovernance()));
   for (const scope of mcpGrantableScopes()) scopes.add(scope.key);
   return [...scopes].sort();
 }
@@ -98,8 +98,14 @@ async function grantableScopes(request: FastifyRequest): Promise<string[]> {
  * Scopes a caller may not grant: refined `资源:read|write` scopes whose coarse gate the
  * owner lacks, except identity-level delegable platform scopes (always grantable).
  */
-function illegalScopes(scopes: readonly string[], owned: ReadonlySet<string>): string[] {
-  return scopes.filter((scope) => !isKnownPlatformScope(scope) && !canGrantScope(scope, owned));
+function illegalScopes(
+  scopes: readonly string[],
+  owned: ReadonlySet<string>,
+  governance?: ScopeGovernance,
+): string[] {
+  return scopes.filter(
+    (scope) => !isKnownPlatformScope(scope) && !canGrantScope(scope, owned, governance),
+  );
 }
 
 export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
@@ -138,7 +144,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
       const body = createSchema.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: '参数无效' });
       const owned = await permissionsOf(currentUser(request).id);
-      const illegal = illegalScopes(body.data.scopes, owned);
+      const illegal = illegalScopes(body.data.scopes, owned, request.server.pluginRuntime?.scopeGovernance());
       if (illegal.length > 0) {
         return reply.code(403).send({ error: `无权授予以下权限：${illegal.join('、')}` });
       }
@@ -180,7 +186,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
       }
       if (body.data.scopes) {
         const owned = await permissionsOf(currentUser(request).id);
-        const illegal = illegalScopes(body.data.scopes, owned);
+        const illegal = illegalScopes(body.data.scopes, owned, request.server.pluginRuntime?.scopeGovernance());
         if (illegal.length > 0) {
           return reply.code(403).send({ error: `无权授予以下权限：${illegal.join('、')}` });
         }

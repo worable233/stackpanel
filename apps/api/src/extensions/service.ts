@@ -9,6 +9,7 @@
 import type { CustomModelDefinition, ExtensionClient, ExtensionFinalizer } from '@stackpanel/sdk';
 import type { PrismaClient } from '@stackpanel/db';
 import { FinalizerStore, createExtensionClient, type RawDatabase } from './client.ts';
+import type { DataCache } from '../cache/data-cache.ts';
 import { dropExtensionTable, ensureExtensionModels } from './migrator.ts';
 import { ExtensionRegistry, type RegisteredModel } from './registry.ts';
 import { compileTable, type ExtensionTable } from './schema.ts';
@@ -35,7 +36,11 @@ export class ExtensionService implements PluginExtensionRuntime {
   readonly registry = new ExtensionRegistry();
   private readonly finalizers = new FinalizerStore();
 
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    /** 内核托管读缓存（ADR-0022 D3）。缺省时不缓存，行为与改造前一致。 */
+    private readonly cache?: DataCache,
+  ) {}
 
   /** Create/migrate a plugin's tables, then register the models. */
   async registerModels(
@@ -84,6 +89,9 @@ export class ExtensionService implements PluginExtensionRuntime {
       pluginId,
       ownerId,
       finalizers: this.finalizers,
+      // 内核托管读缓存（ADR-0022 D3）。事务句柄下也带上：写入路径的失效必须
+      // 与读缓存看到同一份实例，否则事务内写入不会让并发读者失效。
+      ...(this.cache ? { cache: this.cache } : {}),
     });
   }
 

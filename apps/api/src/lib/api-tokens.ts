@@ -143,6 +143,108 @@ export interface ResolvedApiToken {
   scopes: string[];
 }
 
+/** The token's owner, resolved in the same round-trip as the token itself. */
+export interface ApiTokenOwner {
+  id: string;
+  email: string;
+  status: string;
+  /** Union of the owner's groups' permission keys. */
+  permissions: Set<string>;
+}
+
+/** A platform token plus its owner, resolved by a single query. */
+export interface ResolvedApiTokenWithOwner {
+  tokenId: string;
+  userId: string;
+  scopes: string[];
+  owner: ApiTokenOwner;
+}
+
+/**
+ * Resolve a plaintext credential **and its owner's permission set** in one
+ * round-trip.
+ *
+ * This is the hot-path entry point. The naive composition —
+ * `resolveApiToken()` then `user.findUnique()` then `permissionsOf()` — costs
+ * three sequential queries on every authenticated request, and those happen
+ * before any useful work, so they multiply the whole API's latency. One nested
+ * `findUnique` through the `keyHash` unique index fetches the same facts in a
+ * single statement.
+ *
+ * It deliberately does **not** relax the M-1 invariant: status, expiry and the
+ * IP allowlist are still evaluated on every request against freshly read rows.
+ * Only the number of round-trips changes, never the authority of the result.
+ *
+ * `undefined` means the credential is valid but its owner cannot act (missing
+ * or disabled user); `null` means the credential itself is invalid.
+ */
+export async function resolveApiTokenWithOwner(
+  db: PrismaClient,
+  plaintext: string,
+  clientIp?: string,
+): Promise<ResolvedApiTokenWithOwner | null> {
+  const token = await db.apiToken.findUnique({
+    where: { keyHash: hashApiToken(plaintext) },
+    select: {
+      id: true,
+      userId: true,
+      scopes: true,
+      ipAllowlist: true,
+      status: true,
+      expiresAt: true,
+      lastUsedAt: true,
+      user: {
+        select: {
+          id: true,
+          email: true,
+          status: true,
+          groups: {
+            select: {
+              group: {
+                select: {
+                  permissions: { select: { permission: { select: { key: true } } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!token) return null;
+  if (token.status !== 'ACTIVE') return null;
+  if (token.expiresAt && token.expiresAt.getTime() <= Date.now()) return null;
+  if (!ipAllowed(token.ipAllowlist, clientIp)) return null;
+
+  const stale =
+    !token.lastUsedAt || Date.now() - token.lastUsedAt.getTime() > LAST_USED_THROTTLE_MS;
+  if (stale) {
+    void db.apiToken
+      .update({
+        where: { id: token.id },
+        data: { lastUsedAt: new Date(), ...(clientIp ? { lastUsedIp: clientIp } : {}) },
+      })
+      .catch(() => undefined);
+  }
+
+  const permissions = new Set<string>();
+  for (const row of token.user.groups) {
+    for (const gp of row.group.permissions) permissions.add(gp.permission.key);
+  }
+
+  return {
+    tokenId: token.id,
+    userId: token.userId,
+    scopes: toStringArray(token.scopes),
+    owner: {
+      id: token.user.id,
+      email: token.user.email,
+      status: token.user.status,
+      permissions,
+    },
+  };
+}
+
 /**
  * 校验一枚明文凭证，返回其所属用户与 scope。
  * 命中时顺带更新 `lastUsedAt`/`lastUsedIp`；节流到 5 分钟一次，避免每请求一次写。

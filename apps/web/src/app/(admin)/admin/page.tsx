@@ -1,7 +1,10 @@
 import { AdminWidget } from '@/components/admin-widget';
 import { AdminOverview } from '@/components/admin-overview';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { MetricCard } from '@/components/clarity';
 import { getAuthedApiClient } from '@/lib/api';
 import { loadAdminOverview } from '@/lib/admin-overview';
+import { Users, ShoppingCart, DollarSign, Activity } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,19 +41,57 @@ export default async function AdminHome({
   }
 
   return (
-    <main className="w-full space-y-6">
-      {overview ? <AdminOverview data={overview} /> : null}
+    <main className="w-full space-y-8">
+      {/* 数据概览 */}
+      {overview ? (
+        <div>
+          <h2 className="mb-4 text-2xl font-semibold">数据概览</h2>
+          <div className="grid gap-6 md:grid-cols-4">
+            <MetricCard
+              icon={Users}
+              value={overview.metrics?.totalUsers?.toString() || '0'}
+              label="总用户数"
+            />
+            <MetricCard
+              icon={ShoppingCart}
+              value={overview.metrics?.activeOrders?.toString() || '0'}
+              label="活跃订单"
+              trend="+12%"
+            />
+            <MetricCard
+              icon={DollarSign}
+              value={`¥${overview.metrics?.revenue || '0'}`}
+              label="本月收入"
+              trend="+23%"
+            />
+            <MetricCard icon={Activity} value="99.9%" label="系统可用率" />
+          </div>
+        </div>
+      ) : null}
 
+      {/* Widget 网格 */}
       {widgets.length ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {widgets.map((widget) => (
-            <div key={`${widget.pluginId}:${widget.id}`} className="space-y-1">
-              <AdminWidget pluginId={widget.pluginId} widgetId={widget.id} />
-              {widget.description ? (
-                <p className="px-1 text-xs text-muted-foreground">{widget.description}</p>
-              ) : null}
-            </div>
-          ))}
+        <div>
+          <h2 className="mb-4 text-2xl font-semibold">仪表板</h2>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {widgets.map((widget) => (
+              <Card
+                key={`${widget.pluginId}:${widget.id}`}
+                interactive
+                className="overflow-hidden"
+              >
+                <CardHeader>
+                  <CardTitle className="text-base">{widget.title}</CardTitle>
+                  {widget.description ? (
+                    <CardDescription className="text-xs">{widget.description}</CardDescription>
+                  ) : null}
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <AdminWidget pluginId={widget.pluginId} widgetId={widget.id} />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       ) : null}
     </main>

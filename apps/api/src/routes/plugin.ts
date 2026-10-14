@@ -107,9 +107,14 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * Expose only the active plugin's actual mutable routes to the web BFF.
-   * This lets the host reject a frontend action that tries to target a kernel
-   * route or a different plugin before it can use the current session.
+   * Expose the active plugin's route table to the web BFF.
+   *
+   * The same-origin BFF proxy uses this to validate **both** dynamic GET routes
+   * (finders) and mutation routes before forwarding, so it intentionally lists
+   * every method — not just mutations. The action executor matches its declared
+   * POST/PATCH/DELETE against this table. This also lets the host reject a
+   * frontend action that tries to target a kernel route or a different plugin
+   * before it can use the current session.
    */
   app.get('/plugins/:id/action-targets', { preHandler: requireAuth }, async (request, reply) => {
     const params = pluginIdSchema.safeParse(request.params);

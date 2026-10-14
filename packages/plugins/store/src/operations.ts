@@ -29,8 +29,8 @@ import {
   listServicesByUser,
   replaceServiceInstance,
   reserveProductStock,
+  toServiceInstanceData,
 } from './repository';
-import type { StoreServiceInstanceData } from './data';
 
 /**
  * 商业域操作的内核出口实现（`EXTENSION_POINTS.commerce`，见 SDK `commerce.ts`）。
@@ -90,25 +90,7 @@ const toCommerceService = (service: ServiceInstanceRecord): CommerceService => (
   createdAt: service.createdAt,
 });
 
-const isoOrNull = (value: Date | null): string | null => (value ? value.toISOString() : null);
-
-const toServiceData = (service: ServiceInstanceRecord): StoreServiceInstanceData => ({
-  userId: service.userId,
-  orderId: service.orderId,
-  productId: service.productId,
-  productName: service.productName,
-  fulfillmentType: service.fulfillmentType,
-  providerId: service.providerId,
-  providerServiceId: service.providerServiceId,
-  state: service.status,
-  credentialsRef: service.credentialsRef,
-  runtime: service.runtime,
-  amount: service.amount,
-  currency: service.currency,
-  expiresAt: isoOrNull(service.expiresAt),
-  provisionedAt: isoOrNull(service.provisionedAt),
-  terminatedAt: isoOrNull(service.terminatedAt),
-});
+const toServiceData = toServiceInstanceData;
 
 export const storeOperations: CommerceOperations = {
   id: 'store',

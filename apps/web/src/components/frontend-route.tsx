@@ -1,4 +1,5 @@
-import { createElement } from 'react';
+import { cache, createElement } from 'react';
+import { activeThemeCandidate, importFrontendPackage } from '@/lib/slots';
 import type { ReactElement } from 'react';
 import { z } from 'zod';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
@@ -37,7 +38,9 @@ export async function FrontendRoute({
   themeId,
   actionError,
   searchParams = {},
+  standalone = false,
 }: {
+  standalone?: boolean;
   path: string;
   params?: Record<string, string>;
   fallback?: Record<string, unknown>;
@@ -47,7 +50,7 @@ export async function FrontendRoute({
 }): Promise<ReactElement> {
   const resolved = await resolveFrontendRoute(path, params, fallback, themeId, searchParams);
   if (!resolved || resolved.fallback) notFound();
-  return renderResolution(resolved, actionError);
+  return renderResolution(resolved, actionError, standalone);
 }
 
 /**
@@ -64,6 +67,7 @@ export async function FrontendFallback(): Promise<ReactElement> {
 async function renderResolution(
   resolved: PageResolution,
   actionError: string | undefined,
+  standalone = false,
 ): Promise<ReactElement> {
   const content = createElement(resolved.component, {
     params: resolved.params,
@@ -86,6 +90,28 @@ async function renderResolution(
     content
   );
   if (!resolved.layout) return page;
+  const shared = await getPublicThemeLayout();
+  if (!standalone && resolved.layout === shared) return page;
+  return renderPublicLayout(resolved.layout, page, resolved.assetsBaseUrl);
+}
+
+export const getPublicThemeLayout = cache(async () => {
+  const candidate = await activeThemeCandidate();
+  if (!candidate) return undefined;
+  const pkg = await importFrontendPackage(candidate.kind, candidate.id, candidate.manifest);
+  return pkg?.layouts?.theme;
+});
+
+export async function PublicThemeShell({ children }: { children: React.ReactNode }) {
+  const layout = await getPublicThemeLayout();
+  return layout ? renderPublicLayout(layout, children) : <>{children}</>;
+}
+
+async function renderPublicLayout(
+  layout: NonNullable<PageResolution['layout']>,
+  page: React.ReactNode,
+  assetsBaseUrl?: string,
+): Promise<ReactElement> {
   const [navigation, token, platform, categories, brand] = await Promise.all([
     getApiClient()
       .getNav('public')
@@ -105,13 +131,13 @@ async function renderResolution(
       .then((result) => result.brand)
       .catch(() => null),
   ]);
-  return createElement(resolved.layout, {
+  return createElement(layout, {
     children: page,
     navigation,
     isAuthenticated: token !== null,
     platform,
     categories,
-    assetsBaseUrl: resolved.assetsBaseUrl ?? getApiClient().baseUrl,
+    assetsBaseUrl: assetsBaseUrl ?? getApiClient().baseUrl,
     brand: brand
       ? {
           logoUrl: brand.logo ? apiAssetUrl(brand.logo) : null,

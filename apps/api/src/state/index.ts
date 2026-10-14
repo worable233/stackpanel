@@ -9,7 +9,7 @@
  * current implementation without any consumer change.
  */
 import type { RedisClient } from '@stackpanel/db';
-import type { StateService } from '@stackpanel/sdk';
+import type { StateCandidate, StateLease, StateService } from '@stackpanel/sdk';
 import { MemoryStateService } from './state-service.ts';
 import { RedisStateService } from './redis-state-service.ts';
 
@@ -47,6 +47,18 @@ class RoutedStateService implements StateService {
   }
   withLock(key: string, ttlMs: number, fn: () => Promise<void>): Promise<boolean> {
     return this.active.withLock(key, ttlMs, fn);
+  }
+  acquireLease(
+    candidates: ReadonlyArray<StateCandidate>,
+    ttlMs?: number,
+  ): Promise<StateLease | null> {
+    return this.active.acquireLease(candidates, ttlMs);
+  }
+  renewLease(lease: StateLease, ttlMs?: number): Promise<boolean> {
+    return this.active.renewLease(lease, ttlMs);
+  }
+  releaseLease(lease: StateLease): Promise<boolean> {
+    return this.active.releaseLease(lease);
   }
 
   /** In-process only: drop expired keys. Redis expires keys itself. */

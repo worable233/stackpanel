@@ -1,8 +1,86 @@
 {
   "formatVersion": 1,
   "apiVersion": "v1",
-  "hash": "e0d1415f7654164969b7b31da6645eadf8471e32deae7a6148e39b2360b15b04",
+  "hash": "317ece3ab20ac9749aeb435c59eb2bac19f20d7d9dfa5a91350ee2cd201a221f",
   "operations": {
+    "GET /api/v1/agent/approvals": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/agent/approvals/:id/decide": {
+      "security": [],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/agent/runs": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/agent/runs": {
+      "security": [],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/agent/runs/:id": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/agent/runs/:id/cancel": {
+      "security": [],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/agent/runs/:id/resume": {
+      "security": [],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
     "GET /api/v1/capabilities": {
       "security": [],
       "requiredParameters": [],

@@ -614,6 +614,46 @@ describe('PluginRuntime', () => {
     await expect(runtime.activate('consumer')).resolves.toBeUndefined();
   });
 
+  it('registers kernel capability services under a non-hijackable kernel.* namespace', async () => {
+    const payments = {} as PluginContext['payments'];
+    const wallet = {} as PluginContext['wallet'];
+    const runtime = new PluginRuntime({
+      events: new EventEmitterEventBus(),
+      logger: silentLogger,
+      db: null,
+      registerRoute: () => () => undefined,
+      removeRoutes: () => undefined,
+      extensions: stubExtensionRuntime(),
+      payments,
+      wallet,
+      fx: {} as PluginContext['fx'],
+      auth: {} as PluginContext['auth'],
+      notifications: {} as PluginContext['notifications'],
+      state: {} as PluginContext['state'],
+      jobs: {
+        enqueue: async () => '',
+        schedule: async () => undefined,
+        handle: () => () => undefined,
+        removeByOwner: async () => undefined,
+      } as never,
+    });
+
+    // Discoverable via the shared registry …
+    expect(runtime.getService('kernel.payments')).toBe(payments);
+    expect(runtime.getService('kernel.wallet')).toBe(wallet);
+    // … and not hijackable: a plugin providing the same name is rejected.
+    await runtime.register(
+      definePlugin({
+        manifest: { id: 'squatter', name: 'Squatter', version: '1.0.0' },
+        onActivate: (ctx) => {
+          expect(() => ctx.provide('kernel.payments', {})).toThrow('已被插件 kernel 占用');
+        },
+      }),
+    );
+    await runtime.activate('squatter');
+    expect(runtime.getService('kernel.payments')).toBe(payments);
+  });
+
   it('exposes declared plugin permissions on the runtime', async () => {
     const runtime = new PluginRuntime({
       events: new EventEmitterEventBus(),

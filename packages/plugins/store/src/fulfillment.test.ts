@@ -8,7 +8,13 @@ import type {
 } from '@stackpanel/sdk';
 import { CommerceError } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
-import { enqueueOrderFulfillment, getMyService, listMyServices, processDue } from './fulfillment';
+import {
+  enqueueOrderFulfillment,
+  getMyService,
+  listMyServices,
+  processDue,
+  runMyServiceAction,
+} from './fulfillment';
 import { storeOperations } from './operations';
 
 interface Stored {
@@ -45,12 +51,17 @@ function createFakeExtensions() {
       const value = fieldValue(row, field);
       if ('eq' in cond && value !== cond.eq) return false;
       if ('in' in cond && !(cond.in as unknown[]).includes(value)) return false;
-      if ('gte' in cond && !(typeof value === 'number' && value >= (cond.gte as number))) return false;
-      if ('lte' in cond && !(typeof value === 'number' && value <= (cond.lte as number))) return false;
+      if ('gte' in cond && !(typeof value === 'number' && value >= (cond.gte as number)))
+        return false;
+      if ('lte' in cond && !(typeof value === 'number' && value <= (cond.lte as number)))
+        return false;
     }
     return true;
   };
-  const applyPatch = (spec: Record<string, unknown>, patch: Record<string, { set?: unknown; inc?: number; dec?: number }>) => {
+  const applyPatch = (
+    spec: Record<string, unknown>,
+    patch: Record<string, { set?: unknown; inc?: number; dec?: number }>,
+  ) => {
     for (const [key, op] of Object.entries(patch)) {
       if ('set' in op) spec[key] = op.set;
       else if ('inc' in op) spec[key] = ((spec[key] as number) ?? 0) + (op.inc as number);
@@ -62,18 +73,39 @@ function createFakeExtensions() {
       const row = table(model.kind).get(name);
       return row ? (row as unknown as ExtensionInstance) : null;
     },
-    async list(model: CustomModelDefinition, query: { where?: Record<string, Record<string, unknown>> }) {
+    async list(
+      model: CustomModelDefinition,
+      query: { where?: Record<string, Record<string, unknown>> },
+    ) {
       const rows = [...table(model.kind).values()].filter((row) => matches(row, query.where ?? {}));
-      return { items: rows as unknown as ExtensionInstance[], total: rows.length, page: 1, pageSize: rows.length };
+      return {
+        items: rows as unknown as ExtensionInstance[],
+        total: rows.length,
+        page: 1,
+        pageSize: rows.length,
+      };
     },
-    async listAll(model: CustomModelDefinition, query: { where?: Record<string, Record<string, unknown>> }) {
+    async listAll(
+      model: CustomModelDefinition,
+      query: { where?: Record<string, Record<string, unknown>> },
+    ) {
       return [...table(model.kind).values()].filter((row) =>
         matches(row, query?.where ?? {}),
       ) as unknown as ExtensionInstance[];
     },
-    async create(model: CustomModelDefinition, spec: Record<string, unknown>, opts?: { name?: string }) {
+    async create(
+      model: CustomModelDefinition,
+      spec: Record<string, unknown>,
+      opts?: { name?: string },
+    ) {
       const name = opts?.name ?? `${model.kind}-${++seq}`;
-      const row: Stored = { name, spec: { ...spec }, version: 1, createdAt: new Date(), updatedAt: new Date() };
+      const row: Stored = {
+        name,
+        spec: { ...spec },
+        version: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
       table(model.kind).set(name, row);
       return row as unknown as ExtensionInstance;
     },
@@ -106,7 +138,13 @@ function createFakeExtensions() {
     client: client as unknown as ExtensionClient,
     seed(kind: string, spec: Record<string, unknown>, name?: string): string {
       const key = name ?? `${kind}-${++seq}`;
-      table(kind).set(key, { name: key, spec: { ...spec }, version: 1, createdAt: new Date(), updatedAt: new Date() });
+      table(kind).set(key, {
+        name: key,
+        spec: { ...spec },
+        version: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
       return key;
     },
     all(kind: string): Stored[] {
@@ -162,7 +200,12 @@ function makeCtx(
     notifications: {} as never,
     state: {} as never,
     jobs: {} as never,
-    media: { register: async () => {}, unregister: async () => {}, unregisterResource: async () => {} },
+    cache: {} as never,
+    media: {
+      register: async () => {},
+      unregister: async () => {},
+      unregisterResource: async () => {},
+    },
     effect: () => () => {},
     provide: () => () => {},
     getService: () => undefined,
@@ -191,29 +234,37 @@ describe('store fulfillment dispatcher', () => {
 
   it('creates delivery tasks for paid order lines and provisions services', async () => {
     const fake = createFakeExtensions();
-    fake.seed(ORDER, {
-      userId: 'user-1',
-      items: { items: [{ productId: 'prod-1', quantity: 1 }] },
-      total: 9900,
-      currency: 'CNY',
-      state: 'PAID',
-      channelCode: null,
-      settlementCurrency: 'CNY',
-      settlementTotal: 9900,
-      fxRate: null,
-    }, 'order-1');
-    fake.seed(PRODUCT, {
-      name: '云服务器',
-      price: 9900,
-      currency: 'CNY',
-      status: 'ACTIVE',
-      stock: 10,
-      fulfillmentType: 'upstream_service',
-      providerId: 'zjmf',
-      providerProductId: 'up-prod-1',
-      metadata: null,
-      discount: null,
-    }, 'prod-1');
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: { items: [{ productId: 'prod-1', quantity: 1 }] },
+        total: 9900,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 9900,
+        fxRate: null,
+      },
+      'order-1',
+    );
+    fake.seed(
+      PRODUCT,
+      {
+        name: '云服务器',
+        price: 9900,
+        currency: 'CNY',
+        status: 'ACTIVE',
+        stock: 10,
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerProductId: 'up-prod-1',
+        metadata: null,
+        discount: null,
+      },
+      'prod-1',
+    );
     const { provider, provision } = makeProvider();
     bindContext(makeCtx(fake, provider));
 
@@ -245,29 +296,37 @@ describe('store fulfillment dispatcher', () => {
 
   it('retries with backoff then fails after attempts exhaust', async () => {
     const fake = createFakeExtensions();
-    fake.seed(ORDER, {
-      userId: 'user-2',
-      items: { items: [{ productId: 'prod-2', quantity: 1 }] },
-      total: 100,
-      currency: 'CNY',
-      state: 'PAID',
-      channelCode: null,
-      settlementCurrency: 'CNY',
-      settlementTotal: 100,
-      fxRate: null,
-    }, 'order-2');
-    fake.seed(PRODUCT, {
-      name: '坏商品',
-      price: 100,
-      currency: 'CNY',
-      status: 'ACTIVE',
-      stock: 5,
-      fulfillmentType: 'upstream_service',
-      providerId: 'zjmf',
-      providerProductId: 'up-prod-2',
-      metadata: null,
-      discount: null,
-    }, 'prod-2');
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-2',
+        items: { items: [{ productId: 'prod-2', quantity: 1 }] },
+        total: 100,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 100,
+        fxRate: null,
+      },
+      'order-2',
+    );
+    fake.seed(
+      PRODUCT,
+      {
+        name: '坏商品',
+        price: 100,
+        currency: 'CNY',
+        status: 'ACTIVE',
+        stock: 5,
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerProductId: 'up-prod-2',
+        metadata: null,
+        discount: null,
+      },
+      'prod-2',
+    );
     const { provider, provision } = makeProvider();
     provision.mockRejectedValue(new Error('上游超时'));
     bindContext(makeCtx(fake, provider));
@@ -364,23 +423,27 @@ describe('store fulfillment dispatcher', () => {
 
   it('defaults a missing provider statusLabel to null in the service detail', async () => {
     const fake = createFakeExtensions();
-    fake.seed(SERVICE, {
-      userId: 'user-1',
-      productName: '云服务器',
-      fulfillmentType: 'upstream_service',
-      providerId: 'zjmf',
-      providerServiceId: 'up-1',
-      runtime: null,
-      credentialsRef: null,
-      orderId: null,
-      productId: 'prod-1',
-      state: 'ACTIVE',
-      amount: 9900,
-      currency: 'CNY',
-      provisionedAt: null,
-      expiresAt: null,
-      terminatedAt: null,
-    }, 'svc-detail-1');
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'up-1',
+        runtime: null,
+        credentialsRef: null,
+        orderId: null,
+        productId: 'prod-1',
+        state: 'ACTIVE',
+        amount: 9900,
+        currency: 'CNY',
+        provisionedAt: null,
+        expiresAt: null,
+        terminatedAt: null,
+      },
+      'svc-detail-1',
+    );
     const provider = {
       id: 'zjmf',
       name: '智简魔方',
@@ -398,5 +461,293 @@ describe('store fulfillment dispatcher', () => {
     expect('statusLabel' in result.service).toBe(true);
     expect(result.service.statusLabel).toBeNull();
     expect(result.service.status).toBe('ACTIVE');
+  });
+
+  it('forwards action params to the provider and merges the returned runtime', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'up-1',
+        runtime: { powerState: 'running' },
+        credentialsRef: null,
+        orderId: null,
+        productId: 'prod-1',
+        state: 'ACTIVE',
+        amount: 9900,
+        currency: 'CNY',
+      },
+      'svc-act-1',
+    );
+    const executeAction = vi.fn(async () => ({
+      message: '系统重装已提交',
+      runtime: { powerState: 'running', os: 'ubuntu-22.04' },
+    }));
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      executeAction,
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    const result = (await runMyServiceAction({
+      params: { id: 'svc-act-1' },
+      body: { actionId: 'reinstall', os: 'ubuntu-22.04' },
+      user: { id: 'user-1', role: 'USER' },
+    } as never)) as { ok: boolean; result: { message: string } | null };
+
+    expect(executeAction).toHaveBeenCalledWith(
+      'reinstall',
+      expect.objectContaining({ service: expect.objectContaining({ id: 'svc-act-1' }) }),
+      { os: 'ubuntu-22.04' },
+    );
+    expect(result.result?.message).toBe('系统重装已提交');
+    // runtime 补丁应合并回服务实例
+    expect(fake.all(SERVICE)[0]!.spec.runtime).toMatchObject({
+      powerState: 'running',
+      os: 'ubuntu-22.04',
+    });
+  });
+
+  it('rejects an action for a service owned by another user', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      { userId: 'other', productName: 'A', fulfillmentType: 'upstream_service', state: 'ACTIVE' },
+      'svc-other',
+    );
+    const { provider } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+    await expect(
+      runMyServiceAction({
+        params: { id: 'svc-other' },
+        body: { actionId: 'reboot' },
+        user: { id: 'user-1', role: 'USER' },
+      } as never),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('rejects reserved or malformed action params instead of forwarding them', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'up-1',
+        runtime: null,
+        credentialsRef: null,
+        orderId: null,
+        productId: 'prod-1',
+        state: 'ACTIVE',
+        amount: 9900,
+        currency: 'CNY',
+      },
+      'svc-act-bad',
+    );
+    const executeAction = vi.fn(async () => undefined);
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      executeAction,
+      getDetail: async () => ({
+        fields: [],
+        actions: [
+          {
+            id: 'reinstall',
+            label: '重装系统',
+            params: [{ name: 'os', label: '操作系统', type: 'select' as const, required: true }],
+          },
+        ],
+      }),
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    // 非法参数名（含空格）直接拒绝。
+    await expect(
+      runMyServiceAction({
+        params: { id: 'svc-act-bad' },
+        body: { actionId: 'reinstall', 'bad name': 'x' },
+        user: { id: 'user-1', role: 'USER' },
+      } as never),
+    ).rejects.toMatchObject({ status: 400 });
+    // 未在动作声明中的参数名（含疑似上游保留键 func）被拒绝。
+    await expect(
+      runMyServiceAction({
+        params: { id: 'svc-act-bad' },
+        body: { actionId: 'reinstall', func: 'terminate' },
+        user: { id: 'user-1', role: 'USER' },
+      } as never),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(executeAction).not.toHaveBeenCalled();
+    // 声明中的参数正常透传。
+    await runMyServiceAction({
+      params: { id: 'svc-act-bad' },
+      body: { actionId: 'reinstall', os: 'debian-12' },
+      user: { id: 'user-1', role: 'USER' },
+    } as never);
+    expect(executeAction).toHaveBeenCalledWith('reinstall', expect.anything(), { os: 'debian-12' });
+  });
+
+  it('accepts extra action params via the JSON params bag', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'up-1',
+        runtime: null,
+        credentialsRef: null,
+        orderId: null,
+        productId: 'prod-1',
+        state: 'ACTIVE',
+        amount: 9900,
+        currency: 'CNY',
+      },
+      'svc-act-bag',
+    );
+    const executeAction = vi.fn(async () => undefined);
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      executeAction,
+      getDetail: async () => ({
+        fields: [],
+        actions: [
+          {
+            id: 'reinstall',
+            label: '重装系统',
+            params: [
+              { name: 'os', label: '系统', type: 'text' as const, required: true },
+              { name: 'image_id', label: '镜像', type: 'text' as const },
+            ],
+          },
+        ],
+      }),
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await runMyServiceAction({
+      params: { id: 'svc-act-bag' },
+      body: { actionId: 'reinstall', os: 'custom', params: JSON.stringify({ image_id: 'img-7' }) },
+      user: { id: 'user-1', role: 'USER' },
+    } as never);
+
+    expect(executeAction).toHaveBeenCalledWith('reinstall', expect.anything(), {
+      os: 'custom',
+      image_id: 'img-7',
+    });
+  });
+
+  it('sets an initial expiry from the checkout cycle when provisioning', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: { items: [{ productId: 'prod-cycle', quantity: 1, config: { cycle: 'monthly' } }] },
+        total: 9900,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 9900,
+        fxRate: null,
+      },
+      'order-cycle',
+    );
+    fake.seed(
+      PRODUCT,
+      {
+        name: '云服务器',
+        price: 9900,
+        currency: 'CNY',
+        status: 'ACTIVE',
+        stock: 10,
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerProductId: 'up-prod-1',
+        metadata: {
+          checkoutConfig: {
+            cycles: [{ id: 'monthly', label: '月付', price: 9900, months: 1 }],
+            options: [],
+          },
+        },
+        discount: null,
+      },
+      'prod-cycle',
+    );
+    const { provider } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+
+    await enqueueOrderFulfillment('order-cycle');
+
+    const service = fake.all(SERVICE)[0]!;
+    expect(typeof service.spec.expiresAt).toBe('string');
+    expect(service.spec.expiresAtMs).toBe(new Date(service.spec.expiresAt as string).getTime());
+    const expected = new Date();
+    expected.setMonth(expected.getMonth() + 1);
+    // 允许数秒误差
+    expect(Math.abs((service.spec.expiresAtMs as number) - expected.getTime())).toBeLessThan(
+      10_000,
+    );
+  });
+
+  it('sets an initial expiry from the product billingCycle when no checkout cycles exist', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: { items: [{ productId: 'prod-billing', quantity: 1 }] },
+        total: 9900,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 9900,
+        fxRate: null,
+      },
+      'order-billing',
+    );
+    fake.seed(
+      PRODUCT,
+      {
+        name: '云服务器',
+        price: 9900,
+        currency: 'CNY',
+        status: 'ACTIVE',
+        stock: 10,
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerProductId: 'up-prod-1',
+        metadata: { region: 'east-china', billingCycle: 'yearly' },
+        discount: null,
+      },
+      'prod-billing',
+    );
+    const { provider } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+
+    await enqueueOrderFulfillment('order-billing');
+
+    const service = fake.all(SERVICE)[0]!;
+    const expected = new Date();
+    expected.setFullYear(expected.getFullYear() + 1);
+    expect(Math.abs((service.spec.expiresAtMs as number) - expected.getTime())).toBeLessThan(
+      10_000,
+    );
   });
 });

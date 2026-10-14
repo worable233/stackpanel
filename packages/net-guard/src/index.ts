@@ -206,20 +206,31 @@ export function isPublicHttpUrl(value: string, options: PublicUrlOptions = {}): 
  * 避免出站调用在 DNS 故障时 fail-open。
  */
 export async function resolvesToUnsafeAddress(hostname: string): Promise<boolean> {
-  if (isUnsafeHostname(hostname)) return true;
-  // IP 字面量无需 DNS：`isUnsafeHostname` 已按其字面量判定，到达此处即为安全公网
-  // 地址。跳过 `dns.lookup` 可避免占用解析线程池（同时也让测试不依赖外部 DNS）。
+  return (await resolvePublicAddresses(hostname)) === null;
+}
+
+/**
+ * 解析主机名为**已验证**的公网地址列表；任一地址非公网、解析为空或失败时返回
+ * `null`。调用方应使用返回的地址发起连接（而不是让底层再次解析主机名），从而
+ * 关闭“校验后再解析”的 DNS rebinding TOCTOU 窗口（审计 H-3）。
+ *
+ * IP 字面量不触发 DNS：`isUnsafeHostname` 已按其字面量判定，到达此处即为安全公网
+ * 地址（同时让测试不依赖外部 DNS）。
+ */
+export async function resolvePublicAddresses(hostname: string): Promise<string[] | null> {
+  if (isUnsafeHostname(hostname)) return null;
   const literal = hostname
     .trim()
     .toLowerCase()
     .replace(/\.$/, '')
     .replace(/^\[|\]$/g, '');
-  if (isIP(literal) !== 0) return false;
+  if (isIP(literal) !== 0) return [literal];
   try {
     const addresses = await lookup(hostname, { all: true, verbatim: true });
-    if (addresses.length === 0) return true;
-    return addresses.some((entry) => isUnsafeIpAddress(entry.address));
+    if (addresses.length === 0) return null;
+    if (addresses.some((entry) => isUnsafeIpAddress(entry.address))) return null;
+    return addresses.map((entry) => entry.address);
   } catch {
-    return true;
+    return null;
   }
 }

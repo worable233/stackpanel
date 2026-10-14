@@ -2,9 +2,12 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import type { Readable } from 'node:stream';
 import { z } from 'zod';
-import type { PluginDefinition, PluginManifest, PluginRoute, HttpRequest, HttpReply, PluginContext, JobOptions, JobSchedule, ExtensionTransaction, CustomModelDefinition } from '@stackpanel/sdk';
-import { decodeWire, encodeWire, RPC_MAX_BYTES, RPC_MAX_IN_FLIGHT, RPC_PROTOCOL, RPC_TIMEOUT_MS, wireError } from './protocol.ts';
+import type { PluginDefinition, PluginManifest, PluginRoute, HttpRequest, HttpReply, RawHttpRequest, RawHttpReply, PluginContext, JobOptions, JobSchedule, ExtensionTransaction, CustomModelDefinition } from '@stackpanel/sdk';
+import { decodeWire, encodeWire, RPC_MAX_BYTES, RPC_MAX_IN_FLIGHT, RPC_MAX_RAW_STREAMS, RPC_PROTOCOL, RPC_TIMEOUT_MS, RAW_CHUNK_BYTES, wireError } from './protocol.ts';
+import type { RawInvokeRequest } from './raw-protocol.ts';
+import { dispatchCacheCapability } from '../../cache/index.ts';
 
 type ModelDescriptor = {
   kind: string;
@@ -44,6 +47,20 @@ interface IsolatedWorker {
   models: Map<string, CustomModelDefinition>;
   allowedServices: Set<string>;
   allowedExtensions: Set<string>;
+  /** Live raw streams, keyed by request id (successful raw invocations only). */
+  raw: Map<string, RawSession>;
+}
+
+/** Host-side state for one `kind: 'raw'` route invocation over the stream protocol. */
+interface RawSession {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  reply: RawHttpReply;
+  /** Answer exactly one outstanding `raw-pull` with a chunk or EOF. */
+  answerPull: () => void;
+  started: boolean;
+  ended: boolean;
+  abort: (reason: string, error?: Error) => void;
 }
 
 const workers = new Map<string, IsolatedWorker>();
@@ -78,6 +95,19 @@ function workerExecArgv(): string[] {
   return allowed;
 }
 
+/**
+ * RSS ceiling (MiB) handed to each isolated worker (audit C-2). Defaults one
+ * headroom step above the heap ceiling so a worker can legitimately use its
+ * whole heap plus runtime overhead without tripping the guard. A value `<= 0`
+ * disables the in-worker guard (the container `mem_limit` still applies).
+ */
+function workerMaxRssMb(): number {
+  const heapMb = Math.max(64, Number(process.env.STACKPANEL_PLUGIN_MAX_OLD_SPACE_MB ?? 256));
+  const raw = process.env.STACKPANEL_PLUGIN_MAX_RSS_MB;
+  const value = raw === undefined || raw === '' ? heapMb + 256 : Number(raw);
+  return Number.isFinite(value) ? Math.trunc(value) : heapMb + 256;
+}
+
 async function startWorker(id: string, entry: string, manifest: PluginManifest): Promise<Ready> {
   const child = fork(workerModule(), [], {
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
@@ -85,6 +115,7 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
       NODE_ENV: process.env.NODE_ENV ?? 'production',
       STACKPANEL_PLUGIN_ID: id,
       STACKPANEL_PLUGIN_ENTRY: entry,
+      STACKPANEL_PLUGIN_MAX_RSS_MB: String(workerMaxRssMb()),
       STACKPANEL_PLUGIN_MANIFEST: JSON.stringify({
         ...manifest,
         export: (manifest as PluginManifest & { export?: string }).export ?? 'default',
@@ -102,6 +133,7 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
     models: new Map(),
     allowedServices: new Set(),
     allowedExtensions: new Set(),
+    raw: new Map(),
   };
   workers.set(id, state);
   const spec = workerSpecs.get(id);
@@ -170,6 +202,10 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
         return;
       }
       if (message.type === 'lifecycle') return;
+      if (message.type.startsWith('raw-')) {
+        handleRawFrame(id, state, message as unknown as Record<string, unknown>);
+        return;
+      }
       const request = state.pending.get(message.id);
       if (!request) return;
       clearTimeout(request.timer);
@@ -194,6 +230,11 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
         request.reject(new Error(`isolated plugin ${id} exited`));
       }
       state.pending.clear();
+      /* c8 ignore next 3 -- exit cleanup after a mid-stream worker crash */
+      for (const session of state.raw.values()) {
+        session.abort('worker exited', new Error(`isolated plugin ${id} exited`));
+      }
+      state.raw.clear();
       state.capabilityRequests.clear();
       workerExitHandler?.(id);
     });
@@ -253,7 +294,7 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
-  const extensionMatch = /^(tx\.)?extensions\.(get|list|listAll|create|update|updateWhere|delete)$/.exec(message.capability);
+  const extensionMatch = /^(tx\.)?extensions\.(get|list|listAll|page|getMany|create|update|updateWhere|delete)$/.exec(message.capability);
   if (extensionMatch) {
     const model = state.models.get(String(args.kind));
     if (!model) throw new Error(`未知或未声明的自定义模型：${String(args.kind)}`);
@@ -268,6 +309,8 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
         case 'get': return [model, String(args.name)];
         case 'list': return [model, args.query];
         case 'listAll': return [model, args.query];
+        case 'page': return [model, args.query];
+        case 'getMany': return [model, Array.isArray(args.names) ? args.names.map(String) : []];
         case 'create': return [model, args.spec, args.options];
         case 'update': return [model, String(args.name), args.spec, args.options];
         case 'updateWhere': return [model, args.where, args.patch];
@@ -276,6 +319,10 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
       }
     })();
     value = await (method as (...input: unknown[]) => Promise<unknown>).apply(client, invokeArgs);
+    // A Map cannot cross JSON IPC: send `[name, instance]` pairs for getMany.
+    if (extensionMatch[2] === 'getMany' && value instanceof Map) {
+      value = [...(value as Map<string, unknown>).entries()];
+    }
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
@@ -333,6 +380,13 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
+  if (message.capability === 'cache.peek' || message.capability === 'cache.put' || message.capability === 'cache.invalidate') {
+    // 内核托管缓存的跨进程代理。worker 侧没有 loader 之外的状态：命中就地返回，
+    // 未命中在 worker 里跑回源后再 put 回来，因此值与机制都留在内核侧（ADR-0022 D3）。
+    value = dispatchCacheCapability(message.capability, args);
+    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
+    return;
+  }
   if (message.capability === 'state.withLock') {
     const token = String(args.token);
     const acquired = await ctx.state.withLock(
@@ -367,8 +421,8 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     return;
   }
   const serviceMatch = /^([a-z]+)\.([a-zA-Z][a-zA-Z0-9]*)$/.exec(message.capability);
-  if (serviceMatch && ['state', 'auth', 'notifications', 'secrets', 'payments', 'wallet', 'fx'].includes(serviceMatch[1] ?? '')) {
-    const service = ctx[serviceMatch[1] as 'state' | 'auth' | 'notifications' | 'secrets' | 'payments' | 'wallet' | 'fx'] as unknown as Record<string, unknown>;
+  if (serviceMatch && ['state', 'auth', 'notifications', 'secrets', 'payments', 'wallet', 'fx', 'cache'].includes(serviceMatch[1] ?? '')) {
+    const service = ctx[serviceMatch[1] as 'state' | 'auth' | 'notifications' | 'secrets' | 'payments' | 'wallet' | 'fx' | 'cache'] as unknown as Record<string, unknown>;
     const method = service[serviceMatch[2] ?? ''];
     if (typeof method !== 'function') throw new Error(`未知插件服务方法：${message.capability}`);
     value = await method.apply(service, Array.isArray(args) ? args : []);
@@ -410,14 +464,20 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
 
 function sendWorker(child: ChildProcess, message: Record<string, unknown>): void {
   if (!child.connected) throw new Error('isolated plugin worker is disconnected');
+  // Encode once and reuse the result: `encodeWire` is the expensive half
+  // (Buffer → base64), so encoding a second time just to hand the same object to
+  // `send` doubled the per-frame cost of every IPC message, including each
+  // 64 KiB raw chunk (ADR-0022 P13).
+  let frame: unknown;
   let size: number;
   try {
-    size = Buffer.byteLength(JSON.stringify(encodeWire(message)), 'utf8');
+    frame = encodeWire(message);
+    size = Buffer.byteLength(JSON.stringify(frame), 'utf8');
   } catch {
     throw new Error('isolated plugin RPC message is not serializable');
   }
   if (size > MAX_IPC_BYTES) throw new Error('isolated plugin RPC message exceeds IPC limit');
-  child.send(encodeWire(message) as Record<string, unknown>, (error) => {
+  child.send(frame as Record<string, unknown>, (error) => {
     if (error) child.kill('SIGTERM');
   });
 }
@@ -470,6 +530,218 @@ function invokeWorker(id: string, kind: string, token: string, payload: unknown)
       reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
+}
+
+/**
+ * Pull-based reader over a raw request body. The worker asks for one chunk at a
+ * time (`raw-pull`); the host reads no more than one chunk ahead and pauses the
+ * source when it has a full chunk buffered, so a slow plugin cannot make the
+ * kernel buffer an entire upload.
+ */
+class RawBodyPump {
+  private readonly chunks: Buffer[] = [];
+  private bytes = 0;
+  private ended = false;
+  private failure: Error | null = null;
+  private waiters: Array<() => void> = [];
+  private readonly body: Readable;
+  private readonly onData: (chunk: Buffer) => void;
+  private readonly onEnd: () => void;
+  private readonly onError: (error: unknown) => void;
+
+  constructor(body: Readable) {
+    this.body = body;
+    this.onData = (chunk: Buffer) => {
+      this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      this.bytes += this.chunks[this.chunks.length - 1]?.length ?? 0;
+      if (this.bytes >= RAW_CHUNK_BYTES) body.pause();
+      this.wake();
+    };
+    this.onEnd = () => { this.ended = true; this.wake(); };
+    this.onError = (error: unknown) => {
+      this.failure = error instanceof Error ? error : new Error(String(error));
+      this.ended = true;
+      this.wake();
+    };
+    body.on('data', this.onData);
+    body.on('end', this.onEnd);
+    body.on('error', this.onError);
+  }
+
+  /**
+   * Detach and (if the request body was never fully consumed) discard the
+   * source stream, so an abandoned upload cannot hold the socket open. A normal
+   * end leaves the stream as-is (already finished).
+   */
+  dispose(): void {
+    this.body.off('data', this.onData);
+    this.body.off('end', this.onEnd);
+    this.body.off('error', this.onError);
+    if (!this.ended) this.body.destroy();
+  }
+
+  private wake(): void {
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const resolve of waiters) resolve();
+  }
+
+  /** Next request-body chunk (at most `RAW_CHUNK_BYTES`), or EOF. */
+  async next(): Promise<{ data?: Buffer; error?: Error; eof: boolean }> {
+    if (this.failure) return { eof: true, error: this.failure };
+    while (this.bytes === 0 && !this.ended) {
+      await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
+    if (this.bytes === 0) return { eof: true };
+    let data = this.chunks.shift() as Buffer;
+    this.bytes -= data.length;
+    while (this.bytes > 0 && data.length < RAW_CHUNK_BYTES) {
+      const head = this.chunks[0] as Buffer;
+      const need = RAW_CHUNK_BYTES - data.length;
+      if (head.length <= need) {
+        this.chunks.shift();
+        this.bytes -= head.length;
+        data = Buffer.concat([data, head]);
+      } else {
+        this.chunks[0] = head.subarray(need);
+        this.bytes -= need;
+        data = Buffer.concat([data, head.subarray(0, need)]);
+      }
+    }
+    if (this.bytes < RAW_CHUNK_BYTES && !this.ended) this.body.resume();
+    return { eof: false, data };
+  }
+}
+
+/**
+ * Bridge a host-side raw route to the isolated worker over stream frames. The
+ * worker rebuilds the plugin's `RawHttpRequest`/`RawHttpReply`; this side owns
+ * the real request body and response, so plugin source needs no changes.
+ */
+function invokeRaw(id: string, request: RawHttpRequest, routePath: string, reply: RawHttpReply): Promise<void> {
+  const state = workers.get(id);
+  if (!state || !state.child.connected) return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
+  if (state.raw.size >= RPC_MAX_RAW_STREAMS) return Promise.reject(new Error(`isolated plugin ${id} raw stream limit exceeded`));
+  const requestId = randomUUID();
+  const child = state.child;
+
+  const invokeRequest: RawInvokeRequest = {
+    method: request.method,
+    url: request.url,
+    params: request.params,
+    query: request.query.toString(),
+    headers: request.headers,
+    ...(request.ip !== undefined ? { ip: request.ip } : {}),
+    ...(request.user !== undefined ? { user: request.user } : {}),
+    ...(request.sessionToken !== undefined ? { sessionToken: request.sessionToken } : {}),
+  };
+
+  const pump = new RawBodyPump(request.body);
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      pump.dispose();
+      state.raw.delete(requestId);
+      if (error) reject(error);
+      else resolve();
+    };
+    const session: RawSession = {
+      resolve: () => finish(),
+      reject: (error) => finish(error),
+      reply,
+      started: false,
+      ended: false,
+      answerPull: () => {
+        void pump.next().then((result) => {
+          if (settled || session.ended) return;
+          try {
+            if (result.error) sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-body-error', id: requestId, message: result.error.message });
+            else if (result.eof) sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-body', id: requestId, eof: true });
+            else sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-body', id: requestId, data: (result.data as Buffer).toString('base64') });
+          } catch (error) {
+            finish(error instanceof Error ? error : new Error(String(error)));
+          }
+        });
+      },
+      abort: (reason: string, error?: Error) => {
+        if (settled) return;
+        try { sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-abort', id: requestId, reason }); } catch { /* exit path */ }
+        // A client disconnect is a normal end: resolve so the dispatcher does not
+        // log it as a handler failure. A worker crash passes an error to reject.
+        finish(error);
+      },
+    };
+    state.raw.set(requestId, session);
+    reply.onClientClose(() => {
+      if (!session.ended) session.abort('client disconnected');
+    });
+    try {
+      sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-invoke', id: requestId, method: request.method, route: routePath, request: invokeRequest });
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
+/** Route a worker→host `raw-*` frame to its live session. */
+function handleRawFrame(id: string, state: IsolatedWorker, frame: Record<string, unknown>): void {
+  const session = state.raw.get(String(frame.id));
+  if (!session) return;
+  switch (frame.type) {
+    case 'raw-pull':
+      session.answerPull();
+      return;
+    case 'raw-head': {
+      const status = Number(frame.status ?? 200);
+      session.reply.status(status);
+      for (const entry of (frame.headers as Array<[string, string | string[]]> | undefined) ?? []) {
+        session.reply.header(entry[0], entry[1]);
+      }
+      session.started = true;
+      return;
+    }
+    case 'raw-chunk': {
+      const data = Buffer.from(String(frame.data ?? ''), 'base64');
+      const ok = session.reply.write(data);
+      const ack = (): void => {
+        if (session.ended) return;
+        try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-ack', id: String(frame.id), bytes: data.length }); } catch { /* exit path */ }
+      };
+      if (ok) ack();
+      else {
+        const raw = session.reply.raw as { once?: (event: string, listener: () => void) => void } | undefined;
+        if (raw && typeof raw.once === 'function') raw.once('drain', ack);
+        else ack();
+      }
+      return;
+    }
+    case 'raw-end':
+      session.ended = true;
+      session.reply.end();
+      session.resolve();
+      return;
+    case 'raw-error': {
+      const error = frame.error as { message?: string; code?: string; status?: number } | undefined;
+      if (session.started) {
+        // Headers already flushed: mirror the in-process path by aborting the
+        // partial response (the client sees a truncated body / connection cut).
+        const raw = session.reply.raw as { destroy?: (error?: Error) => void } | undefined;
+        session.ended = true;
+        if (raw && typeof raw.destroy === 'function') raw.destroy();
+        session.resolve();
+        return;
+      }
+      const failure = new Error(error?.message ?? 'isolated raw route failed') as Error & { code?: string; status?: number };
+      if (error?.code !== undefined) failure.code = error.code;
+      if (error?.status !== undefined) failure.status = error.status;
+      session.reject(failure);
+      return;
+    }
+    default:
+      return;
+  }
 }
 
 function invoke(id: string, method: string, route: string, request: HttpRequest): Promise<Result> {
@@ -573,15 +845,25 @@ export async function loadIsolatedPluginDefinition(id: string, entry: string, ma
       }
     }
   };
-  const routes: PluginRoute[] = ready.routes.map((route) => ({
-    ...route,
-    handler: async (request: HttpRequest, _reply: HttpReply) => {
-      const result = await invoke(id, String(route.method), String(route.path), request);
-      if (result.response?.status !== undefined) _reply.code(result.response.status);
-      if (result.response?.payload !== undefined) _reply.send(result.response.payload);
-      return result.value;
-    },
-  })) as PluginRoute[];
+  const routes: PluginRoute[] = ready.routes.map((route) => {
+    if (route.kind === 'raw') {
+      const path = String(route.path);
+      return {
+        ...route,
+        kind: 'raw',
+        handler: (request: RawHttpRequest, reply: RawHttpReply) => invokeRaw(id, request, path, reply),
+      } as unknown as PluginRoute;
+    }
+    return {
+      ...route,
+      handler: async (request: HttpRequest, _reply: HttpReply) => {
+        const result = await invoke(id, String(route.method), String(route.path), request);
+        if (result.response?.status !== undefined) _reply.code(result.response.status);
+        if (result.response?.payload !== undefined) _reply.send(result.response.payload);
+        return result.value;
+      },
+    } as PluginRoute;
+  });
   return {
     manifest,
     routes,

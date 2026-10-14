@@ -20,7 +20,8 @@
   "scripts": {
     "prepare": "tsc -p tsconfig.build.json",
     "build": "node ../../../scripts/build-plugin.mjs",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@stackpanel/sdk": "workspace:*",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }

@@ -44,9 +44,54 @@ export interface AuthAuditInput {
   action: string;
   resource?: string;
   resourceId?: string;
+  /** Acting user id (attribution). Omit for system/background actions. */
+  actorId?: string;
   /** JSON-serializable metadata (Prisma InputJsonValue-compatible). */
   meta?: Record<string, unknown>;
   ip?: string;
+  userAgent?: string;
+}
+
+/** One append-only audit row as read back through {@link AuthService.listAuditLogs}. */
+export interface AuthAuditEntry {
+  id: string;
+  /** The acting user id, or null for system/kernel actions. */
+  actorId: string | null;
+  action: string;
+  resource: string;
+  resourceId: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  /** Caller-provided metadata (JSON), or null. */
+  meta: unknown;
+  createdAt: string;
+}
+
+/** Paged audit query. `action`, `resourceId` and `since` narrow the append-only log. */
+export interface AuthAuditQuery {
+  action?: string;
+  resourceId?: string;
+  /** Only entries created at/after this ISO-8601 timestamp. */
+  since?: string;
+  page: number;
+  /** 1–100. */
+  pageSize: number;
+}
+
+/** One page of audit rows (newest first) plus the total matching count. */
+export interface AuthAuditPage {
+  logs: AuthAuditEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Find-or-create an id-less platform identity anchored by email. */
+export interface EnsureSystemUserInput {
+  /** Stable, unique email that identifies the account (case-insensitive). */
+  email: string;
+  /** Group to attach on creation (defaults to the platform's standard user group). */
+  groupId?: string;
 }
 
 /** Input to register a new local user. */
@@ -125,6 +170,13 @@ export interface AuthService {
   verifyPassword(email: string, password: string): Promise<AuthUser | null>;
   /** Register a new local user. First user becomes an `admin` (see bootstrap). */
   registerUser(input: RegisterUserInput): Promise<AuthUser>;
+  /**
+   * Resolve or lazily create a password-less platform identity anchored by a
+   * stable email. Lets a plugin that models an external principal (e.g. a
+   * channel partner) obtain the `ownerId` it needs for orders/services without
+   * holding raw DB access. Idempotent and race-safe (re-reads on conflict).
+   */
+  ensureSystemUser(input: EnsureSystemUserInput): Promise<AuthUser>;
   /** Create a server-side session for `userId` and return its opaque token. */
   issueSession(userId: string): Promise<string>;
   /** Revoke one session immediately (logout). No-op for unknown tokens. */
@@ -184,4 +236,10 @@ export interface AuthService {
   deletePlatformToken(tokenId: string): Promise<void>;
   /** Emit a kernel-owned audit entry (login success/failure etc.). */
   audit(input: AuthAuditInput): Promise<void>;
+  /**
+   * Read the append-only audit log (newest first, paged). Lets a plugin project
+   * the provenance of its own authenticated calls without raw DB access; the
+   * log stays kernel-owned.
+   */
+  listAuditLogs(query: AuthAuditQuery): Promise<AuthAuditPage>;
 }

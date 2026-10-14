@@ -23,11 +23,24 @@ export interface SessionRecord {
   userId: string;
   createdAt: number;
   lastSeenAt: number;
+  /**
+   * Set when this session was minted by an administrator impersonating
+   * `userId` (audit AZ-4). Carries the *real* administrator's user id so audit
+   * entries and the UI can attribute actions to a human rather than the
+   * impersonated account.
+   */
+  impersonatorId?: string;
+}
+
+/** Options accepted when creating a session. */
+export interface CreateSessionOptions {
+  /** Attribute the session to an administrator impersonating the target. */
+  impersonatorId?: string;
 }
 
 export interface SessionStore {
   /** Create a new random session for `userId`; returns the opaque token. */
-  create(userId: string): Promise<string>;
+  create(userId: string, options?: CreateSessionOptions): Promise<string>;
   /** Persist a session under an explicit token (legacy JWT migration path). */
   adopt(token: string, userId: string): Promise<void>;
   /** Read a session and slide its TTL; returns null when absent/expired. */
@@ -74,10 +87,15 @@ class RedisSessionStore implements SessionStore {
       .exec();
   }
 
-  async create(userId: string): Promise<string> {
+  async create(userId: string, options?: CreateSessionOptions): Promise<string> {
     const token = newSessionToken();
     const now = Date.now();
-    await this.persist(token, { userId, createdAt: now, lastSeenAt: now });
+    await this.persist(token, {
+      userId,
+      createdAt: now,
+      lastSeenAt: now,
+      ...(options?.impersonatorId ? { impersonatorId: options.impersonatorId } : {}),
+    });
     return token;
   }
 
@@ -139,10 +157,15 @@ class MemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, MemoryRecord>();
   private readonly userIndex = new Map<string, Set<string>>();
 
-  async create(userId: string): Promise<string> {
+  async create(userId: string, options?: CreateSessionOptions): Promise<string> {
     const token = newSessionToken();
     const now = Date.now();
-    this.write(token, { userId, createdAt: now, lastSeenAt: now });
+    this.write(token, {
+      userId,
+      createdAt: now,
+      lastSeenAt: now,
+      ...(options?.impersonatorId ? { impersonatorId: options.impersonatorId } : {}),
+    });
     return token;
   }
 
@@ -172,6 +195,7 @@ class MemorySessionStore implements SessionStore {
       userId: record.userId,
       createdAt: record.createdAt,
       lastSeenAt: record.lastSeenAt,
+      ...(record.impersonatorId ? { impersonatorId: record.impersonatorId } : {}),
     };
   }
 

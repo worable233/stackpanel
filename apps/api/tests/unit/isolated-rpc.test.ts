@@ -1,9 +1,10 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadIsolatedPluginDefinition, stopIsolatedPlugin } from '../../src/plugins/isolated/host.ts';
-import type { PluginManifest } from '@stackpanel/sdk';
+import type { PluginManifest, RawHttpReply, RawHttpRequest } from '@stackpanel/sdk';
 
 type Message = {
   protocol: 1;
@@ -80,6 +81,119 @@ function send(child: ChildProcess, message: Message): void {
 function messageId(message: Message): string {
   if (!message.id) throw new Error(`message ${message.type} has no id`);
   return message.id;
+}
+
+/** Minimal host-side `RawHttpReply` capturing the plugin's output. */
+function captureReply(): { reply: RawHttpReply; chunks: Buffer[]; status: number; headers: Array<[string, string | string[]]>; closed: () => void; closedFns: Array<() => void>; destroyed: () => boolean } {
+  const chunks: Buffer[] = [];
+  const headers: Array<[string, string | string[]]> = [];
+  const closedFns: Array<() => void> = [];
+  const holder = { statusCode: 200, headersSent: false, destroyed: false, destroy() { holder.destroyed = true; } };
+  const reply = {
+    status(code: number) { holder.statusCode = code; return reply; },
+    header(name: string, value: string | string[]) { headers.push([name, value]); return reply; },
+    write(chunk: string | Uint8Array) { chunks.push(Buffer.from(chunk)); return true; },
+    end(body?: string | Uint8Array) { if (body !== undefined) chunks.push(Buffer.from(body)); },
+    hijack() { /* already hijacked */ },
+    onClientClose(fn: () => void) { closedFns.push(fn); },
+    raw: holder,
+  } as unknown as RawHttpReply;
+  return {
+    reply,
+    chunks,
+    get status() { return holder.statusCode; },
+    headers,
+    closedFns,
+    closed: () => { for (const fn of closedFns.splice(0)) fn(); },
+    destroyed: () => holder.destroyed,
+  };
+}
+
+/**
+ * A deliberately slow host-side reply: `write()` reports backpressure once it
+ * holds more than {@link SLOW_REPLY_HIGH_WATER} bytes, and the registered
+ * `drain` listener fires only when a background "consumer" has caught up. This
+ * exercises the real path where the client reads slower than the upstream
+ * produces, which is what the bounded raw queue must survive.
+ */
+const SLOW_REPLY_HIGH_WATER = 128 * 1024;
+
+function captureSlowReply(): {
+  reply: RawHttpReply;
+  chunks: Buffer[];
+  startDraining: () => Promise<void>;
+  stopDraining: () => void;
+  backpressureEvents: () => number;
+  maxBufferedBytes: () => number;
+} {
+  const chunks: Buffer[] = [];
+  let buffered = 0;
+  let maxBuffered = 0;
+  let backpressure = 0;
+  let draining = false;
+  const drainListeners: Array<() => void> = [];
+  const holder = {
+    statusCode: 200,
+    headersSent: false,
+    destroyed: false,
+    destroy() { holder.destroyed = true; },
+    once(event: string, fn: () => void) { if (event === 'drain') drainListeners.push(fn); },
+    off() { /* tests never remove listeners */ },
+  };
+  const reply = {
+    status(code: number) { holder.statusCode = code; return reply; },
+    header() { return reply; },
+    write(chunk: string | Uint8Array) {
+      const data = Buffer.from(chunk);
+      chunks.push(data);
+      buffered += data.length;
+      if (buffered > maxBuffered) maxBuffered = buffered;
+      if (buffered >= SLOW_REPLY_HIGH_WATER) {
+        backpressure += 1;
+        return false;
+      }
+      return true;
+    },
+    end(body?: string | Uint8Array) { if (body !== undefined) reply.write(body); },
+    hijack() { /* already hijacked */ },
+    onClientClose() { /* not exercised */ },
+    raw: holder,
+  } as unknown as RawHttpReply;
+  const startDraining = async (): Promise<void> => {
+    // Consume a little at a time, waking anyone parked on `drain` each round.
+    draining = true;
+    while (draining) {
+      await new Promise((resolve) => setImmediate(resolve));
+      if (buffered > 0) {
+        buffered = Math.max(0, buffered - 256 * 1024);
+        const listeners = drainListeners.splice(0, drainListeners.length);
+        for (const fn of listeners) fn();
+      }
+    }
+  };
+  const stopDraining = (): void => {
+    draining = false;
+  };
+  return {
+    reply,
+    chunks,
+    startDraining,
+    stopDraining,
+    backpressureEvents: () => backpressure,
+    maxBufferedBytes: () => maxBuffered,
+  };
+}
+
+function rawRequest(body: Buffer, headers: Record<string, string | string[] | undefined> = {}, query = '', method = 'POST'): RawHttpRequest {
+  return {
+    method,
+    url: `/raw/echo${query}`,
+    params: { '*': 'echo' },
+    query: new URLSearchParams(query.replace(/^\?/, '')),
+    headers,
+    body: Readable.from(body.length === 0 ? [] : [body]),
+    raw: {},
+  };
 }
 
 afterEach(() => {
@@ -267,6 +381,50 @@ describe('isolated worker RPC protocol', () => {
     const lockResult = await nextMessage(child);
     expect(lockResult).toMatchObject({ type: 'result', id: lockInvokeId, value: true });
 
+    // 跨进程缓存：worker 把「查/回填/失效」拆成三步 IPC，存储与失效都留在内核侧。
+    const cacheInvokeId = randomUUID();
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'invoke',
+      id: cacheInvokeId,
+      method: 'GET',
+      route: '/cache',
+      request: { params: {}, query: {}, body: null, headers: {} },
+    });
+    // 第一次 read：peek 未命中 → 回源 → put。
+    const peek1 = await nextMessage(child);
+    expect(peek1).toMatchObject({ type: 'capability', capability: 'cache.peek', args: { key: 'rpc-cache-probe' } });
+    send(child, { protocol: 1, pluginId, type: 'result', id: messageId(peek1), value: { hit: false } });
+    const put1 = await nextMessage(child);
+    expect(put1).toMatchObject({
+      capability: 'cache.put',
+      args: { key: 'rpc-cache-probe', ttlMs: 30_000, kinds: ['rpc/note'] },
+    });
+    send(child, { protocol: 1, pluginId, type: 'result', id: messageId(put1), value: undefined });
+    // 第二次 read：peek 命中 → 不回源。
+    const peek2 = await nextMessage(child);
+    expect(peek2.capability).toBe('cache.peek');
+    send(child, { protocol: 1, pluginId, type: 'result', id: messageId(peek2), value: { hit: true, value: { value: 1 } } });
+    // invalidate → peek 再次未命中 → 再回源。
+    const invalidate = await nextMessage(child);
+    expect(invalidate).toMatchObject({ capability: 'cache.invalidate', args: { kinds: ['rpc/note'] } });
+    send(child, { protocol: 1, pluginId, type: 'result', id: messageId(invalidate), value: undefined });
+    const peek3 = await nextMessage(child);
+    send(child, { protocol: 1, pluginId, type: 'result', id: messageId(peek3), value: { hit: false } });
+    const put2 = await nextMessage(child);
+    expect(put2).toMatchObject({
+      capability: 'cache.put',
+      args: { key: 'rpc-cache-probe', value: { value: 2 }, kinds: ['rpc/note'] },
+    });
+    send(child, { protocol: 1, pluginId, type: 'result', id: messageId(put2), value: undefined });
+    const cacheResult = await nextMessage(child);
+    expect(cacheResult).toMatchObject({
+      type: 'result',
+      id: cacheInvokeId,
+      value: { first: { value: 1 }, second: { value: 1 }, third: { value: 2 }, loads: 2 },
+    });
+
     const modelInvokeId = randomUUID();
     send(child, {
       protocol: 1,
@@ -316,4 +474,144 @@ describe('isolated worker RPC protocol', () => {
     const snapshotResult = await nextMessage(child);
     expect(snapshotResult).toMatchObject({ type: 'result', id: snapshotInvokeId, value: { id: 'snapshot-extension', result: 'done' } });
   });
+
+  it('streams a raw request body through the isolated bridge', async () => {
+    const id = 'isolated-raw-echo';
+    const manifest: PluginManifest = { id, name: 'Raw echo', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/raw/echo');
+      expect(route?.kind).toBe('raw');
+      const capture = captureReply();
+      // Two writes so the body is delivered across multiple pulls.
+      const body = Buffer.from('hello raw world');
+      const request = rawRequest(body, { 'x-test': 'abc' });
+      await (route?.handler as (req: RawHttpRequest, reply: RawHttpReply) => Promise<void>)(request, capture.reply);
+      expect(capture.status).toBe(201);
+      expect(capture.headers).toContainEqual(['x-raw', 'yes']);
+      const output = Buffer.concat(capture.chunks).toString('utf8');
+      expect(output).toBe(`len=${body.length};hdr=abc;hello raw world`);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
+  it('streams a raw response larger than one IPC message', async () => {
+    const id = 'isolated-raw-burst';
+    const manifest: PluginManifest = { id, name: 'Raw burst', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/raw/burst');
+      const capture = captureReply();
+      // 40 * 64KiB = 2.5MiB across ~40 IPC frames; each frame stays under 1MiB.
+      const request = rawRequest(Buffer.alloc(0), {}, '?chunks=40&size=65536', 'GET');
+      request.params = { '*': 'burst' };
+      await (route?.handler as (req: RawHttpRequest, reply: RawHttpReply) => Promise<void>)(request, capture.reply);
+      expect(capture.status).toBe(200);
+      expect(Buffer.concat(capture.chunks).length).toBe(40 * 65536);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
+  it('honours raw backpressure without unbounded buffering', async () => {
+    const id = 'isolated-raw-drain';
+    const manifest: PluginManifest = { id, name: 'Raw drain', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/raw/drain');
+      expect(route?.kind).toBe('raw');
+      const capture = captureSlowReply();
+      // 8MiB in 64KiB chunks. That is deliberately *twice* the worker's
+      // RAW_MAX_QUEUE_BYTES (4MiB): without a working `drain()` every write is
+      // queued synchronously and the bounded-queue guard trips; with it the
+      // handler parks whenever the window closes.
+      const request = rawRequest(Buffer.alloc(0), {}, '?chunks=128&size=65536', 'GET');
+      request.params = { '*': 'drain' };
+      const pump = capture.startDraining();
+      await (route?.handler as (req: RawHttpRequest, reply: RawHttpReply) => Promise<void>)(
+        request,
+        capture.reply,
+      );
+      // The handler resolved, so every chunk was accepted; stop the pump.
+      capture.stopDraining();
+      await pump;
+      const text = Buffer.concat(capture.chunks).toString('utf8');
+      expect(text).toContain('stalls=');
+      expect(capture.backpressureEvents()).toBeGreaterThan(0);
+      expect(capture.maxBufferedBytes()).toBeLessThan(64 * 65536 * 4);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 20_000);
+
+  it('surfaces a raw handler error before any output', async () => {
+    const id = 'isolated-raw-error';
+    const manifest: PluginManifest = { id, name: 'Raw error', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/raw/boom');
+      const capture = captureReply();
+      const request = rawRequest(Buffer.alloc(0), {}, '', 'GET');
+      request.params = { '*': 'boom' };
+      await expect((route?.handler as (req: RawHttpRequest, reply: RawHttpReply) => Promise<void>)(request, capture.reply))
+        .rejects.toMatchObject({ message: 'raw boom', status: 502 });
+      expect(capture.chunks).toHaveLength(0);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
+  it('cancels a hanging raw handler when the client disconnects', async () => {
+    const id = 'isolated-raw-abort';
+    const manifest: PluginManifest = { id, name: 'Raw abort', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/raw/hang');
+      const capture = captureReply();
+      const request = rawRequest(Buffer.alloc(0), {}, '', 'GET');
+      request.params = { '*': 'hang' };
+      const pending = (route?.handler as (req: RawHttpRequest, reply: RawHttpReply) => Promise<void>)(request, capture.reply);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      capture.closed();
+      await expect(pending).resolves.toBeUndefined();
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
+  it('streams a raw request body larger than one IPC message', async () => {
+    const id = 'isolated-raw-bigreq';
+    const manifest: PluginManifest = { id, name: 'Raw big request', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/raw/echo');
+      const capture = captureReply();
+      const body = Buffer.alloc(500_000, 0x62);
+      const request = rawRequest(body, { 'x-test': 'big' });
+      await (route?.handler as (req: RawHttpRequest, reply: RawHttpReply) => Promise<void>)(request, capture.reply);
+      const output = Buffer.concat(capture.chunks);
+      expect(output.subarray(output.length - body.length).equals(body)).toBe(true);
+      expect(output.subarray(0, output.length - body.length).toString()).toBe('len=500000;hdr=big;');
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
+  it('aborts a partial raw response when the handler fails after the head', async () => {
+    const id = 'isolated-raw-late';
+    const manifest: PluginManifest = { id, name: 'Raw late error', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/raw/boom-late');
+      const capture = captureReply();
+      const request = rawRequest(Buffer.alloc(0), {}, '', 'GET');
+      request.params = { '*': 'boom-late' };
+      await expect((route?.handler as (req: RawHttpRequest, reply: RawHttpReply) => Promise<void>)(request, capture.reply))
+        .resolves.toBeUndefined();
+      expect(capture.destroyed()).toBe(true);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
 });

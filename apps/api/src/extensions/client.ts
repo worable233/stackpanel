@@ -12,11 +12,14 @@ import type {
   ExtensionFinalizer,
   ExtensionInstance,
   ExtensionListResult,
+  ExtensionPage,
+  ExtensionPageQuery,
   ExtensionPatch,
   ExtensionQuery,
   ExtensionWhere,
 } from '@stackpanel/sdk';
 import {
+  EXTENSION_MAX_BATCH_KEYS,
   EXTENSION_MAX_PAGE_SIZE,
   MAX_LIST_ALL,
   ExtensionNotFound,
@@ -24,10 +27,11 @@ import {
   ExtensionValidationError,
   ExtensionVersionConflict,
 } from '@stackpanel/sdk';
-import { compileOrderBy, compileWhere, joinClauses } from './query.ts';
+import { compileOrderBy, compileWhere, joinClauses, resolveQueryColumn } from './query.ts';
 import type { ExtensionColumn, ExtensionTable } from './schema.ts';
 import { quoteIdentifier } from './schema.ts';
 import type { ExtensionRegistry, RegisteredModel } from './registry.ts';
+import type { DataCache } from '../cache/data-cache.ts';
 
 /** Minimal raw-SQL surface shared by PrismaClient and an interactive tx client. */
 export interface RawDatabase {
@@ -38,6 +42,21 @@ export interface RawDatabase {
 type Row = Record<string, unknown>;
 
 const IS_DELETED = `"deleted_at" IS NULL`;
+
+/**
+ * 稳定序列化，保证同一查询产生同一缓存键。
+ *
+ * `JSON.stringify` 按属性插入顺序输出，调用方用不同字面量顺序构造的等价
+ * 查询会命中不同键、缓存形同虚设；这里按键名排序递归输出。
+ */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(',')}}`;
+}
 const NOT_DELETED = `"deleted_at" IS NOT NULL`;
 
 /** Named finalizers, keyed by (pluginId, kind, name). */
@@ -70,6 +89,11 @@ export interface ExtensionClientOptions {
   /** Acting user for `scoped` models; `null` in system contexts. */
   ownerId: string | null;
   finalizers: FinalizerStore;
+  /**
+   * 内核托管读缓存（ADR-0022 D3）。声明了 `cacheTtlMs` 的模型走缓存；其余照旧直读。
+   * 进程单例：失效必须能到达所有客户端实例，所以不能每客户端建一个。
+   */
+  cache?: DataCache;
 }
 
 function toDate(value: unknown): Date {
@@ -132,6 +156,39 @@ class ExtensionClientImpl implements ExtensionClient {
     return this.options.registry.resolve(this.options.pluginId, model);
   }
 
+  /**
+   * 本模型的缓存 TTL（毫秒）；未声明或未接线缓存时返回 0。
+   * ownerId 参与 key：scoped 模型的可见性取决于调用者身份。
+   */
+  private cacheTtlFor(model: CustomModelDefinition): number {
+    const ttl = model.cacheTtlMs;
+    if (!this.options.cache || typeof ttl !== 'number' || !Number.isFinite(ttl) || ttl <= 0) {
+      return 0;
+    }
+    return ttl;
+  }
+
+  /** 缓存键：插件 + kind + ownerId + 操作 + 稳定序列化的查询。 */
+  private cacheKey(model: CustomModelDefinition, op: string, rest: unknown): string {
+    return JSON.stringify([this.options.pluginId, model.kind, this.options.ownerId, op, stableStringify(rest)]);
+  }
+
+  /**
+   * 触达该 kind 的**非 volatile** 写入后失效其读缓存（本地 + 广播）。
+   *
+   * `volatileFields` 里的字段是只增统计列（lastUsedAt / quotaUsed 之类），
+   * 它们变化不改变读取结果，若也参与失效则每次结算都会打穿缓存，
+   * 缓存等于不存在（PLAN-perf-hardening P11）。
+   */
+  private invalidateModel(model: CustomModelDefinition, touchedFields: readonly string[]): void {
+    const cache = this.options.cache;
+    if (!cache) return;
+    const volatile = new Set(model.volatileFields ?? []);
+    const meaningful = touchedFields.filter((field) => !volatile.has(field));
+    if (touchedFields.length > 0 && meaningful.length === 0) return;
+    void cache.invalidateKinds([model.kind]).catch(() => undefined);
+  }
+
   private validate<T>(model: CustomModelDefinition, spec: T): T {
     const parsed = model.schema.safeParse(spec);
     if (!parsed.success) {
@@ -165,6 +222,19 @@ class ExtensionClientImpl implements ExtensionClient {
     }
   }
 
+  /** 读穿缓存；未声明缓存或值为空时退回直读。 */
+  private async cached<T>(
+    model: CustomModelDefinition,
+    op: string,
+    rest: unknown,
+    load: () => Promise<T>,
+  ): Promise<T> {
+    const ttl = this.cacheTtlFor(model);
+    const cache = this.options.cache;
+    if (ttl <= 0 || !cache) return load();
+    return cache.remember<T>(this.cacheKey(model, op, rest), { ttlMs: ttl, kinds: [model.kind] }, load);
+  }
+
   private async fetchRow(
     registered: RegisteredModel,
     name: string,
@@ -191,8 +261,10 @@ class ExtensionClientImpl implements ExtensionClient {
   ): Promise<ExtensionInstance<T> | null> {
     const registered = this.resolve(model);
     this.assertOwnerContext(registered.table);
-    const row = await this.fetchRow(registered, name);
-    return row ? toInstance<T>(row) : null;
+    return this.cached(model, 'get', [name], async () => {
+      const row = await this.fetchRow(registered, name);
+      return row ? toInstance<T>(row) : null;
+    });
   }
 
   private async listPage<T>(
@@ -247,7 +319,8 @@ class ExtensionClientImpl implements ExtensionClient {
     model: CustomModelDefinition,
     query: ExtensionQuery,
   ): Promise<ExtensionListResult<T>> {
-    return this.listPage<T>(this.resolve(model), query);
+    const registered = this.resolve(model);
+    return this.cached(model, 'list', [query], () => this.listPage<T>(registered, query));
   }
 
   async listAll<T>(
@@ -256,18 +329,200 @@ class ExtensionClientImpl implements ExtensionClient {
   ): Promise<ExtensionInstance<T>[]> {
     const registered = this.resolve(model);
     const pageSize = EXTENSION_MAX_PAGE_SIZE;
-    const items: ExtensionInstance<T>[] = [];
-    let page = 1;
-    for (;;) {
-      const result = await this.listPage<T>(registered, { ...query, page, pageSize });
-      items.push(...result.items);
-      if (items.length >= result.total || result.items.length === 0) break;
-      if (items.length >= MAX_LIST_ALL) {
-        throw new ExtensionValidationError(`listAll 结果超过上限 ${MAX_LIST_ALL} 条`);
+    const load = async (): Promise<ExtensionInstance<T>[]> => {
+      const items: ExtensionInstance<T>[] = [];
+      let page = 1;
+      for (;;) {
+        const result = await this.listPage<T>(registered, { ...query, page, pageSize });
+        items.push(...result.items);
+        if (items.length >= result.total || result.items.length === 0) break;
+        if (items.length >= MAX_LIST_ALL) {
+          throw new ExtensionValidationError(`listAll 结果超过上限 ${MAX_LIST_ALL} 条`);
+        }
+        page += 1;
       }
-      page += 1;
+      return items;
+    };
+    return this.cached(model, 'listAll', [query ?? null], load);
+  }
+
+  /**
+   * Bounded read with no `COUNT(*)` (P4). Uses keyset pagination over the
+   * compiled ORDER BY (which always ends with the `id` tiebreaker), fetching
+   * `limit + 1` rows so `hasMore` is known without counting.
+   */
+  async page<T>(
+    model: CustomModelDefinition,
+    query: ExtensionPageQuery,
+  ): Promise<ExtensionPage<T>> {
+    const registered = this.resolve(model);
+    this.assertOwnerContext(registered.table);
+    const load = async (): Promise<ExtensionPage<T>> => {
+    const limit = Math.min(
+      EXTENSION_MAX_PAGE_SIZE,
+      Math.max(1, Math.trunc(query.limit)),
+    );
+    const params: unknown[] = [];
+    const clauses = [IS_DELETED];
+    if (registered.table.scoped && this.options.ownerId) {
+      params.push(this.options.ownerId);
+      clauses.push(`"owner_id" = $${params.length}`);
     }
-    return items;
+    const predicate = compileWhere(registered.table, query.where, params);
+    if (predicate) clauses.push(predicate);
+
+    // Resolve the order target once: either a declared/built-in field or the
+    // implicit `id` ordering used when no orderBy is given.
+    const orderBy = query.orderBy;
+    if (orderBy) {
+      const keyset = this.keysetClause(registered, orderBy, query.cursor, params);
+      if (keyset) clauses.push(keyset);
+    } else if (query.cursor) {
+      const keyset = this.keysetIdOnly(registered, query.cursor, params);
+      if (keyset) clauses.push(keyset);
+    }
+
+    const limitParam = `$${params.push(limit + 1)}::int`;
+    const table = quoteIdentifier(registered.table.tableName);
+    const rows = await this.options.db.$queryRawUnsafe<Row[]>(
+      `SELECT * FROM ${table} WHERE ${joinClauses(clauses)} ORDER BY ${compileOrderBy(registered.table, orderBy)} LIMIT ${limitParam}`,
+      ...params,
+    );
+
+    const hasMore = rows.length > limit;
+    const visible = hasMore ? rows.slice(0, limit) : rows;
+    const items = visible.map((row) => toInstance<T>(row));
+    const last = items.at(-1) ?? null;
+    return {
+      items,
+      hasMore,
+      nextCursor: hasMore && last ? this.encodeCursor(registered, orderBy, visible.at(-1)) : null,
+    };
+    };
+    return this.cached(model, 'page', [query], load);
+  }
+
+  /** Read many instances by id in one query (P4 batch read). */
+  async getMany<T>(
+    model: CustomModelDefinition,
+    names: readonly string[],
+  ): Promise<Map<string, ExtensionInstance<T>>> {
+    const registered = this.resolve(model);
+    this.assertOwnerContext(registered.table);
+    if (names.length > EXTENSION_MAX_BATCH_KEYS) {
+      throw new ExtensionValidationError(
+        `getMany 最多 ${EXTENSION_MAX_BATCH_KEYS} 个主键，收到 ${names.length}`,
+      );
+    }
+    const unique = [...new Set(names)];
+    if (unique.length === 0) return new Map<string, ExtensionInstance<T>>();
+    return this.cached(model, 'getMany', [unique], async () => {
+    const result = new Map<string, ExtensionInstance<T>>();
+    const params: unknown[] = [];
+    const clauses = [IS_DELETED];
+    if (registered.table.scoped && this.options.ownerId) {
+      params.push(this.options.ownerId);
+      clauses.push(`"owner_id" = $${params.length}`);
+    }
+    const placeholders = unique.map((name) => `$${params.push(name)}`);
+    clauses.push(`"id" IN (${placeholders.join(', ')})`);
+    const rows = await this.options.db.$queryRawUnsafe<Row[]>(
+      `SELECT * FROM ${quoteIdentifier(registered.table.tableName)} WHERE ${joinClauses(clauses)}`,
+      ...params,
+    );
+    for (const row of rows) {
+      const instance = toInstance<T>(row);
+      result.set(instance.name, instance);
+    }
+    return result;
+    });
+  }
+
+  /** Keyset predicate `(col >| < v) OR (col = v AND id > cursorId)`. */
+  private keysetClause(
+    registered: RegisteredModel,
+    orderBy: { field: string; desc?: boolean },
+    cursor: string | undefined,
+    params: unknown[],
+  ): string | null {
+    if (!cursor) return null;
+    const decoded = this.decodeCursor(cursor);
+    if (decoded.field !== orderBy.field) {
+      throw new ExtensionValidationError(
+        `游标与 orderBy 不匹配：游标为 ${decoded.field ?? 'id'}，查询为 ${orderBy.field}`,
+      );
+    }
+    const { column } = resolveQueryColumn(registered.table, orderBy.field);
+    return this.appendKeyset(column, orderBy.desc === true, decoded.value, decoded.id, params);
+  }
+
+  private keysetIdOnly(registered: RegisteredModel, cursor: string, params: unknown[]): string | null {
+    const decoded = this.decodeCursor(cursor);
+    if (decoded.field !== null) {
+      throw new ExtensionValidationError('游标与 orderBy 不匹配：查询未指定 orderBy');
+    }
+    void registered;
+    return this.appendKeyset('id', false, decoded.value, decoded.id, params);
+  }
+
+  private appendKeyset(
+    column: string,
+    desc: boolean,
+    value: unknown,
+    id: string,
+    params: unknown[],
+  ): string {
+    const quoted = quoteIdentifier(column);
+    const idQuoted = quoteIdentifier('id');
+    // Only bind the value when it is actually referenced: an unused placeholder
+    // makes PostgreSQL fail with "could not determine data type of parameter".
+    if (column === 'id') {
+      return `${idQuoted} > $${params.push(id)}`;
+    }
+    if (value === null || value === undefined) {
+      // NULLs sort last in PostgreSQL ascending order; resume after them by id.
+      return `(${quoted} IS NOT NULL OR (${quoted} IS NULL AND ${idQuoted} > $${params.push(id)}))`;
+    }
+    const valueParam = `$${params.push(value)}`;
+    const idParam = `$${params.push(id)}`;
+    const compare = desc ? '<' : '>';
+    return `(${quoted} ${compare} ${valueParam} OR (${quoted} = ${valueParam} AND ${idQuoted} > ${idParam}))`;
+  }
+
+  private encodeCursor(
+    registered: RegisteredModel,
+    orderBy: { field: string; desc?: boolean } | undefined,
+    row: Row | undefined,
+  ): string | null {
+    if (!row) return null;
+    const id = String(row['id']);
+    if (!orderBy) {
+      return Buffer.from(JSON.stringify({ f: null, d: false, v: null, id })).toString('base64url');
+    }
+    const { column } = resolveQueryColumn(registered.table, orderBy.field);
+    const raw = row[column];
+    const value = raw instanceof Date ? raw.toISOString() : (raw ?? null);
+    return Buffer.from(
+      JSON.stringify({ f: orderBy.field, d: orderBy.desc === true, v: value, id }),
+    ).toString('base64url');
+  }
+
+  private decodeCursor(cursor: string): { field: string | null; value: unknown; id: string } {
+    try {
+      const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+        f?: unknown;
+        v?: unknown;
+        id?: unknown;
+      };
+      if (typeof parsed.id !== 'string' || parsed.id.length === 0) throw new Error('bad id');
+      return {
+        field: typeof parsed.f === 'string' ? parsed.f : null,
+        value: parsed.v ?? null,
+        id: parsed.id,
+      };
+    } catch {
+      throw new ExtensionValidationError('无效的分页游标');
+    }
   }
 
   async create<T>(
@@ -331,6 +586,8 @@ class ExtensionClientImpl implements ExtensionClient {
       throw error;
     }
     const row = await this.fetchRow(registered, String(params[0]), true);
+    // 新增行总会改变任何「按条件列出该模型」的结果 → 无条件失效（空数组即「全部字段」）。
+    this.invalidateModel(model, []);
     return toInstance<T>(row ?? {});
   }
 
@@ -385,6 +642,15 @@ class ExtensionClientImpl implements ExtensionClient {
       throw new ExtensionVersionConflict(name);
     }
     const row = await this.fetchRow(registered, name, true);
+    // 逐字段比较新旧 spec：`update` 是整行重写，但调用方常常只改一两个字段
+    // （网关每次结算只刷新 lastUsedAt）。若能确定本次只动了 volatile 列，
+    // 就不必打穿读缓存——否则账号池缓存会被每个请求的结算干掉
+    // （PLAN-perf-hardening P11）。
+    const previous = current.spec as Record<string, unknown>;
+    const next = parsed as Record<string, unknown>;
+    const fields = new Set([...Object.keys(previous), ...Object.keys(next)]);
+    const touched = [...fields].filter((field) => stableStringify(previous[field]) !== stableStringify(next[field]));
+    this.invalidateModel(model, touched);
     return toInstance<T>(row ?? {});
   }
 
@@ -459,6 +725,8 @@ class ExtensionClientImpl implements ExtensionClient {
       `UPDATE ${quoteIdentifier(table.tableName)} SET ${sets.join(', ')} WHERE ${joinClauses(clauses)}`,
       ...params,
     );
+    // 只有触及非 volatile 字段的写入才失效：结算更新 lastUsedAt 不该打穿账号池缓存。
+    if (updated > 0) this.invalidateModel(model, Object.keys(patch));
     return { updated };
   }
 
@@ -513,6 +781,7 @@ class ExtensionClientImpl implements ExtensionClient {
       `DELETE FROM ${quoteIdentifier(table.tableName)} WHERE ${joinClauses(clauses)}`,
       ...params,
     );
+    this.invalidateModel(model, []);
   }
 
   registerFinalizer(

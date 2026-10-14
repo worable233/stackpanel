@@ -375,6 +375,7 @@ export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise
     const record = await tx.extensions.get<StoreOrderData>(orderModel, order.id);
     if (record) {
       for (const item of stockItems({ items: record.spec.items })) {
+        if (item.renewalServiceId) continue; // 续费行未占用库存
         await tx.extensions.updateWhere(
           productModel,
           { name: { eq: item.productId } },
@@ -436,6 +437,7 @@ export const settlementHandler: PaymentSettlementHandler = {
         );
         if (updated === 0) return false;
         for (const item of stockItems({ items: record.spec.items })) {
+          if (item.renewalServiceId) continue; // 续费行未占用库存
           await tx.extensions.updateWhere(
             productModel,
             { name: { eq: item.productId } },

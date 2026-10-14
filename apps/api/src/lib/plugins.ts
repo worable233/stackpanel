@@ -44,6 +44,8 @@ export const BUILTIN_PLUGIN_IDS: readonly string[] = Object.freeze(discoverBuilt
 const RESERVED_IDS = new Set<string>([...BUILTIN_PLUGIN_IDS, 'kernel', 'default']);
 
 const PLUGIN_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
+/** Refined-scope resource name a `PluginPermission.scope` may declare (ADR-0021). */
+const SCOPE_RESOURCE_PATTERN = /^[a-z][a-z0-9-]*$/;
 const FORBIDDEN_SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.jsx']);
 const MAX_ENTRY_BYTES = 512 * 1024;
 const MAX_ARCHIVE_FILES = 128;
@@ -375,6 +377,12 @@ function validatePermissions(permissions: Array<string | PluginPermission>): voi
     }
     if (permission.name !== undefined && typeof permission.name !== 'string') {
       throw new PluginError(422, 'permissions 条目的 name 必须是字符串');
+    }
+    if (
+      permission.scope !== undefined &&
+      (typeof permission.scope !== 'string' || !SCOPE_RESOURCE_PATTERN.test(permission.scope))
+    ) {
+      throw new PluginError(422, 'permissions 条目的 scope 必须是合法资源名（^[a-z][a-z0-9-]*$）');
     }
     keys.push(permission.key);
   }

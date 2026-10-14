@@ -1,0 +1,101 @@
+import type { HttpRequest } from '@stackpanel/sdk';
+import { bus, logger, runTransaction } from './context';
+import { StoreError, stockItems } from './errors';
+import { getOrder } from './repository';
+import type { OrderRecord } from './repository';
+import { orderModel, productModel } from './data';
+import { refundOrderSchema } from './utils';
+
+/**
+ * 退款（refund）。
+ *
+ * 魔方 V10 的交易流水可删改、可退款。本实现把「已支付订单」退回用户钱包：
+ * 1) 原子把订单状态 PAID → REFUNDED（并发下只有一次生效）；
+ * 2) 按结算币种把金额退回用户钱包（账本 `ORDER_REFUND` 幂等，重复调用不重复入账）；
+ * 3) 回补非续费行的库存（续费行不占库存）。
+ *
+ * 退款不自动终止交付物：云服务器是否随之释放取决于运营策略，管理员可另行
+ * 经 `updateService`/生命周期动作处理。
+ *
+ * 全额退款（`amount` 缺省或等于结算金额）会回补非续费行库存，并**撤销**续费行
+ * 顺延的到期时间（防止「续费→退款」白拿时长）。部分退款只退回金额：不动物库存
+ * 亦不回退时长，且订单即进入终态（不可再次退款）。
+ */
+
+/** 退款业务引用类型（账本幂等键）。 */
+const REFUND_REFERENCE = 'ORDER_REFUND';
+
+/** 可退款的订单状态。 */
+const REFUNDABLE_STATES = new Set(['PAID']);
+
+export async function refundOrder(req: HttpRequest): Promise<unknown> {
+  const id = req.params['id'];
+  if (!id) throw new StoreError(400, '缺少 ID');
+  const parsed = refundOrderSchema.safeParse(req.body ?? {});
+  if (!parsed.success) throw new StoreError(400, '请求参数无效');
+  const actorId = req.user?.id;
+
+  const order = await getOrder(id);
+  if (!order) throw new StoreError(404, '订单不存在');
+  if (!REFUNDABLE_STATES.has(order.status)) throw new StoreError(409, '订单不可退款');
+
+  const amount = resolveRefundAmount(order, parsed.data.amount);
+  if (amount <= 0) throw new StoreError(400, '退款金额无效');
+  const isFull = amount === order.settlementTotal;
+
+  const reason = parsed.data.reason;
+  await runTransaction(async (tx) => {
+    const { updated } = await tx.extensions.updateWhere(
+      orderModel,
+      { name: { eq: id }, state: { eq: 'PAID' } },
+      { state: { set: 'REFUNDED' } },
+    );
+    if (updated === 0) throw new StoreError(409, '订单状态已变更');
+    await tx.wallet.credit(order.userId, amount, order.settlementCurrency, {
+      type: 'ORDER_REFUND',
+      referenceType: REFUND_REFERENCE,
+      // 账本以 (referenceType, referenceId) 唯一约束做幂等；订单一旦退款即终态，
+      // 故用订单号即可保证同一订单不会重复入账。
+      referenceId: id,
+      note: actorId
+        ? `退款 订单 ${id}（操作人 ${actorId}）${reason ? `｜${reason}` : ''}`
+        : `退款 订单 ${id}${reason ? `｜${reason}` : ''}`,
+    });
+    // 仅全额退款回补库存：非续费行才占用库存。
+    if (isFull) {
+      for (const line of stockItems(order)) {
+        if (line.renewalServiceId) continue;
+        await tx.extensions.updateWhere(
+          productModel,
+          { name: { eq: line.productId } },
+          { stock: { inc: line.quantity } },
+        );
+      }
+    }
+  });
+
+  // 全额退款：撤销续费行顺延的到期时间（best-effort，失败不影响退款本身）。
+  if (isFull) {
+    const { reverseRenewalOrder } = await import('./renewal');
+    await reverseRenewalOrder(id).catch((error) => {
+      logger().warn(`store: reverse renewal failed for order ${id}: ${messageOf(error)}`);
+    });
+  }
+
+  bus().publish('order.refunded', { orderId: id, amount, userId: order.userId });
+  const updated = await getOrder(id);
+  return { order: updated, refunded: amount, currency: order.settlementCurrency };
+}
+
+/** 解析退款金额：显式 amount 优先，否则全额（结算金额）。越界即拒绝。 */
+function resolveRefundAmount(order: OrderRecord, requested: number | undefined): number {
+  const full = order.settlementTotal;
+  if (requested === undefined) return full;
+  if (!Number.isInteger(requested) || requested <= 0) throw new StoreError(400, '退款金额无效');
+  if (requested > full) throw new StoreError(400, '退款金额超过订单金额');
+  return requested;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : '未知错误';
+}

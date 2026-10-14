@@ -8,6 +8,10 @@ ARG NODE_BASE_IMAGE=node:22-bookworm-slim
 FROM ${NODE_BASE_IMAGE} AS base
 ENV PNPM_HOME=/opt/pnpm
 ENV PATH="${PATH}:${PNPM_HOME}"
+# Corepack caches the prepared pnpm under `$HOME` by default, which would break
+# when we run as a non-root user with a different HOME. Pin an absolute cache
+# location that the runtime stage can hand to that user.
+ENV COREPACK_HOME=/opt/corepack
 # pnpm 11 defaults `verifyDepsBeforeRun` to `prompt`; in a non-interactive
 # container that turns into an implicit `pnpm install` before every `pnpm run`
 # and `pnpm exec`. With the devDependencies stripped (see `prod-deps`) that
@@ -80,11 +84,25 @@ RUN apt-get update \
  && apt-get update \
  && apt-get install -y --no-install-recommends postgresql-client-16 \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=prod-deps /app /app
+COPY --chown=node:node --from=prod-deps /app /app
 COPY docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY docker/entrypoint-web.sh /usr/local/bin/entrypoint-web
 COPY docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker
 RUN chmod +x /usr/local/bin/entrypoint-api /usr/local/bin/entrypoint-web /usr/local/bin/entrypoint-worker
+# Run as a non-privileged user (security audit M-3). The node base image already
+# ships a `node` user (uid/gid 1000); reuse it. `COPY --chown` hands ownership of
+# the app tree to it without an extra (image-doubling) recursive `chown` layer,
+# and the writable paths the runtime needs (the `/app/data` mountpoint and the
+# corepack cache) are chowned to match. Pre-owning these as `node` also lets
+# fresh named volumes inherit the right ownership. `HOME` must point at a
+# writable directory because pnpm writes its store/cache under `$HOME`.
+# NOTE: named volumes created by an earlier root image keep root ownership; run a
+# one-off `chown -R node:node` on them when upgrading (see docker/README.md).
+RUN mkdir -p /app/data \
+ && chown node:node /app /app/data \
+ && chown -R node:node /opt/corepack
+ENV HOME=/home/node
+USER node
 WORKDIR /app
 EXPOSE 3000 3001
 CMD ["/bin/sh", "-c", "echo \"stackpanel image ready (override entrypoint via compose)\""]

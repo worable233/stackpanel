@@ -1,9 +1,12 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { z } from 'zod';
 import type { CustomModelDefinition } from '@stackpanel/sdk';
-import { decodeWire, encodeWire, RPC_MAX_BYTES, RPC_MAX_IN_FLIGHT, RPC_PROTOCOL, RPC_TIMEOUT_MS, wireError } from './protocol.ts';
+import { decodeWire, encodeWire, RPC_MAX_BYTES, RPC_MAX_IN_FLIGHT, RPC_MAX_RAW_STREAMS, RPC_PROTOCOL, RPC_TIMEOUT_MS, wireError, RAW_CHUNK_BYTES, RAW_MAX_QUEUE_BYTES, RAW_WINDOW_BYTES } from './protocol.ts';
+import type { RawInvokeRequest } from './raw-protocol.ts';
+import { resolveMaxRssMb, startMemoryGuard } from './memory-guard.ts';
 
 type PluginHook = (value: unknown) => unknown | Promise<unknown>;
 type RouteHook = (request: unknown, reply: unknown) => unknown | Promise<unknown>;
@@ -12,6 +15,20 @@ const entry = process.env.STACKPANEL_PLUGIN_ENTRY;
 if (!entry) throw new Error('STACKPANEL_PLUGIN_ENTRY is required');
 const pluginId = process.env.STACKPANEL_PLUGIN_ID;
 if (!pluginId) throw new Error('STACKPANEL_PLUGIN_ID is required');
+
+// Start the RSS guard *before* importing the plugin so plugin top-level code
+// cannot observe or interfere with it. Exit code 137 (128 + SIGKILL) is the
+// conventional OOM signal the host's circuit breaker already understands.
+const maxRssMb = resolveMaxRssMb(process.env.STACKPANEL_PLUGIN_MAX_RSS_MB);
+startMemoryGuard({
+  maxRssMb,
+  onExceed: (rss) => {
+    console.error(
+      `[isolated-worker] ${pluginId} exceeded RSS ceiling: ${rss.toFixed(0)}MB > ${maxRssMb}MB`,
+    );
+    process.exit(137);
+  },
+});
 
 const mod = (await import(`${pathToFileURL(path.resolve(entry)).href}?isolated=${Date.now()}`)) as Record<string, unknown>;
 const manifest = JSON.parse(process.env.STACKPANEL_PLUGIN_MANIFEST ?? '{}') as { export?: string; id?: string; name?: string; version?: string; [key: string]: unknown };
@@ -27,7 +44,6 @@ const definition = (mod[manifest.export ?? 'default'] ?? mod.default) as {
 
 if (!definition || !Array.isArray(definition.routes)) throw new Error('isolated plugin definition is invalid');
 const unsupported: string[] = [];
-if (definition.routes.some((route) => route.kind === 'raw')) unsupported.push('raw routes');
 
 const routes = definition.routes.map(({ handler: _handler, ...route }) => route);
 const modelDescriptors: Array<Record<string, unknown>> = [];
@@ -66,14 +82,20 @@ const MAX_IN_FLIGHT = RPC_MAX_IN_FLIGHT;
 
 function sendHost(message: Record<string, unknown>): void {
   if (!process.send) throw new Error('isolated plugin host is disconnected');
+  // Encode once and reuse the result: `encodeWire` is the expensive half
+  // (Buffer → base64), so encoding a second time just to hand the same object to
+  // `send` doubled the per-frame cost of every IPC message, including each
+  // 64 KiB raw chunk (ADR-0022 P13).
+  let frame: unknown;
   let size: number;
   try {
-    size = Buffer.byteLength(JSON.stringify(encodeWire(message)), 'utf8');
+    frame = encodeWire(message);
+    size = Buffer.byteLength(JSON.stringify(frame), 'utf8');
   } catch {
     throw new Error('isolated plugin RPC message is not serializable');
   }
   if (size > MAX_IPC_BYTES) throw new Error('isolated plugin RPC message exceeds IPC limit');
-  process.send(encodeWire(message) as Record<string, unknown>, (error) => {
+  process.send(frame as Record<string, unknown>, (error) => {
     if (error) process.exitCode = 1;
   });
 }
@@ -162,6 +184,18 @@ const extensions = {
     return { ...value, items: (value.items ?? []).map(reviveInstance) };
   }),
   listAll: (model: unknown, query?: unknown) => callHost('extensions.listAll', { kind: modelKind(model), query }).then((items) => (items as unknown[]).map(reviveInstance)),
+  page: (model: unknown, query: unknown) => callHost('extensions.page', { kind: modelKind(model), query }).then((result) => {
+    const value = result as { items?: unknown[] };
+    return { ...value, items: (value.items ?? []).map(reviveInstance) };
+  }),
+  getMany: (model: unknown, names: readonly string[]) => callHost('extensions.getMany', { kind: modelKind(model), names }).then((result) => {
+    // Maps do not survive JSON IPC; the host sends `[name, instance]` pairs.
+    const map = new Map<string, unknown>();
+    for (const entry of (result ?? []) as Array<[string, unknown]>) {
+      map.set(String(entry[0]), reviveInstance(entry[1]));
+    }
+    return map;
+  }),
   create: (model: unknown, spec: unknown, options?: unknown) => callHost('extensions.create', { kind: modelKind(model), spec: validateModelPayload(model, spec), options }).then(reviveInstance),
   update: (model: unknown, name: string, spec: unknown, options?: unknown) => callHost('extensions.update', { kind: modelKind(model), name, spec: validateModelPayload(model, spec), options }).then(reviveInstance),
   updateWhere: (model: unknown, where: unknown, patch: unknown) => callHost('extensions.updateWhere', { kind: modelKind(model), where, patch }),
@@ -226,16 +260,30 @@ const context = {
     },
   },
   state: {
-    ...serviceProxy('state', ['get', 'consume', 'set', 'del', 'incr', 'decr', 'acquire', 'release']),
+    ...serviceProxy('state', ['get', 'consume', 'set', 'del', 'incr', 'decr', 'acquire', 'release', 'acquireLease', 'renewLease', 'releaseLease']),
     withLock: (key: string, ttlMs: number, fn: () => Promise<void>) => {
       const token = `state-lock:${randomUUID()}`;
       pendingStateLocks.set(token, fn);
       return callHost('state.withLock', { key, ttlMs, token }).finally(() => pendingStateLocks.delete(token));
     },
   },
-  auth: serviceProxy('auth', ['verifyPassword', 'registerUser', 'issueSession', 'revokeSession', 'revokeAllSessions', 'sessionCookieConfig', 'hasPermission', 'listUserGroups', 'getUser', 'getUserByEmail', 'listUsersByIds', 'resolvePlatformToken', 'inspectPlatformToken', 'listPlatformTokens', 'listAllPlatformTokens', 'listPlatformTokensByScope', 'createPlatformToken', 'updatePlatformToken', 'ownsPlatformToken', 'deletePlatformToken', 'audit']),
+  auth: serviceProxy('auth', ['verifyPassword', 'registerUser', 'ensureSystemUser', 'issueSession', 'revokeSession', 'revokeAllSessions', 'sessionCookieConfig', 'hasPermission', 'listUserGroups', 'getUser', 'getUserByEmail', 'listUsersByIds', 'resolvePlatformToken', 'inspectPlatformToken', 'listPlatformTokens', 'listAllPlatformTokens', 'listPlatformTokensByScope', 'createPlatformToken', 'updatePlatformToken', 'ownsPlatformToken', 'deletePlatformToken', 'audit', 'listAuditLogs']),
   notifications: serviceProxy('notifications', ['create', 'upsert', 'listForUser', 'unreadCount', 'markRead', 'markAllRead']),
   secrets: serviceProxy('secrets', ['isAvailable', 'get', 'set', 'remove']),
+  // 内核托管读缓存：把「查缓存 / 回源 / 回填」拆成三步 IPC。
+  // 回源跑在插件进程（数据只能由插件自己的扩展读出来），但存储、边界与
+  // 跨副本失效都在内核侧，插件只声明 kinds（ADR-0022 D3）。
+  cache: {
+    remember: async <T>(key: string, options: { ttlMs: number; kinds: readonly string[] }, loader: () => Promise<T>): Promise<T> => {
+      const cached = await callHost('cache.peek', { key }) as { hit: boolean; value?: unknown };
+      if (cached?.hit) return cached.value as T;
+      const value = await loader();
+      await callHost('cache.put', { key, value, ttlMs: options.ttlMs, kinds: [...options.kinds] });
+      return value;
+    },
+    invalidate: async (kind: string) => { await callHost('cache.invalidate', { kinds: [kind] }); },
+  },
+
   payments: serviceProxy('payments', ['listPaymentMethods', 'createRecord', 'initiate', 'create', 'settle', 'cancelExternalPayment', 'cancelTopUp', 'listTopUps', 'getProviderConfig', 'listByOrderIds', 'listChannelMethods', 'sweepExpired', 'confirmManual', 'cancelManual']),
   wallet: serviceProxy('wallet', ['getAccount', 'debit', 'credit', 'adjust', 'listAccounts', 'listLedger']),
   fx: serviceProxy('fx', ['quote', 'getRate', 'listRates']),
@@ -335,6 +383,276 @@ function serviceProxy(service: string, methods: string[]): Record<string, (...ar
     if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, method)) return snapshot[method];
     return callHost(`${service}.${method}`, args);
   }])) as Record<string, (...args: unknown[]) => unknown>;
+}
+
+/* ------------------------------------------------------------------ *
+ * Raw stream sessions (`kind: 'raw'` routes under isolated execution).
+ * ------------------------------------------------------------------ */
+
+interface RawSession {
+  id: string;
+  request: RawInvokeRequest;
+  routePath: string;
+  /** Request body stream handed to the plugin; created on demand. */
+  body: HostRequestBody | null;
+  status: number;
+  headers: Array<[string, string | string[]]>;
+  started: boolean;
+  ended: boolean;
+  aborted: boolean;
+  /** Bytes queued but not yet handed to the IPC channel. */
+  queue: Buffer[];
+  queuedBytes: number;
+  /** Resolvers waiting for the outbound queue to drain below the high-water mark. */
+  drainWaiters: Array<() => void>;
+  /** Bytes sent to the host but not yet acknowledged (response backpressure). */
+  unackedBytes: number;
+  pendingEnd: boolean;
+  pullOutstanding: boolean;
+  bodyDone: boolean;
+  clientCloseListeners: Array<() => void>;
+}
+
+const rawSessions = new Map<string, RawSession>();
+
+/** Request-body Readable that pulls chunks from the host on demand. */
+class HostRequestBody extends Readable {
+  private readonly session: RawSession;
+
+  constructor(session: RawSession) {
+    super({ highWaterMark: RAW_CHUNK_BYTES });
+    this.session = session;
+  }
+
+  override _read(): void {
+    const session = this.session;
+    if (session.bodyDone || session.aborted || session.pullOutstanding) return;
+    session.pullOutstanding = true;
+    sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'raw-pull', id: session.id });
+  }
+
+  deliver(data: Buffer): void {
+    this.session.pullOutstanding = false;
+    this.push(data);
+  }
+
+  finish(): void {
+    this.session.bodyDone = true;
+    this.session.pullOutstanding = false;
+    this.push(null);
+  }
+
+  fail(message: string): void {
+    this.session.bodyDone = true;
+    this.session.pullOutstanding = false;
+    // `destroy(error)` emits 'error'. With no listener that is an *unhandled*
+    // 'error' event, which tears down the whole worker process — one client
+    // disconnecting mid-request would quarantine the plugin for every tenant.
+    // A close/abort before the handler starts reading is normal, so guarantee a
+    // listener exists. A handler already reading still sees the failure: its own
+    // `for await` / `once('error')` registers an additional listener.
+    if (this.listenerCount('error') === 0) this.on('error', () => undefined);
+    this.destroy(Object.assign(new Error(message), { code: 'raw.body' }));
+  }
+}
+
+function rawSessionOf(id: string): RawSession | undefined {
+  return rawSessions.get(id);
+}
+
+function sendRawHead(session: RawSession): void {
+  if (session.started) return;
+  session.started = true;
+  sendHost({
+    protocol: RPC_PROTOCOL,
+    pluginId,
+    type: 'raw-head',
+    id: session.id,
+    status: session.status,
+    headers: session.headers,
+  });
+}
+
+/**
+ * Drain the outbound queue while the ack window allows, flushing the head before
+ * the first chunk and ending once the queue empties (`pendingEnd`).
+ */
+function flushRaw(session: RawSession): void {
+  if (session.ended || session.aborted) return;
+  while (session.queue.length > 0 && session.unackedBytes < RAW_WINDOW_BYTES) {
+    sendRawHead(session);
+    const chunk = session.queue.shift() as Buffer;
+    session.queuedBytes -= chunk.length;
+    session.unackedBytes += chunk.length;
+    sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'raw-chunk', id: session.id, data: chunk.toString('base64') });
+  }
+  if (session.queue.length === 0 && session.pendingEnd) {
+    sendRawHead(session);
+    session.ended = true;
+    sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'raw-end', id: session.id });
+    rawSessions.delete(session.id);
+  }
+  // Wake anyone parked in `drain()` once the ack window has room again. The
+  // condition must match what `write()` reports as backpressure, which counts
+  // both queued and still-unacknowledged bytes.
+  if (rawWritable(session) && session.drainWaiters.length > 0) {
+    const waiters = session.drainWaiters.splice(0, session.drainWaiters.length);
+    for (const resolve of waiters) resolve();
+  }
+}
+
+/** True when the stream can accept another window's worth of bytes. */
+function rawWritable(session: RawSession): boolean {
+  return session.unackedBytes + session.queuedBytes < RAW_WINDOW_BYTES;
+}
+
+/**
+ * Await capacity in the outbound queue. Resolves immediately when the stream
+ * has already ended/aborted or the ack window has room, so callers can
+ * `await drain()` unconditionally without stalling a healthy connection.
+ * While blocked, the returned promise only settles when `flushRaw` observes an
+ * ack freeing window space, or the stream aborts — so it must not resolve on a
+ * mere empty queue, or a plugin would keep writing past the window.
+ */
+function drainRaw(session: RawSession): Promise<void> {
+  if (session.ended || session.aborted) return Promise.resolve();
+  if (rawWritable(session)) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    session.drainWaiters.push(resolve);
+  });
+}
+
+/** Split an outbound write into IPC-sized chunks and enqueue them. */
+function enqueueRaw(session: RawSession, data: Buffer): void {
+  let offset = 0;
+  while (offset < data.length) {
+    const chunk = data.subarray(offset, offset + RAW_CHUNK_BYTES);
+    offset += chunk.length;
+    // Copy out of the caller's buffer: a plugin may reuse it after `write`.
+    const owned = Buffer.from(chunk);
+    session.queue.push(owned);
+    session.queuedBytes += owned.length;
+  }
+  // Hard ceiling: `flushRaw` only runs while the ack window allows, so a slow
+  // client would otherwise let the queue grow without bound (ADR-0022 P1). The
+  // plugin is expected to honour `write()`/`drain()`; if a misbehaving handler
+  // ignores backpressure we must still bound worker memory, so fail the stream
+  // instead of growing until the container OOMs.
+  if (session.queuedBytes > RAW_MAX_QUEUE_BYTES) {
+    sendHost({
+      protocol: RPC_PROTOCOL,
+      pluginId,
+      type: 'raw-error',
+      id: session.id,
+      error: { message: 'isolated plugin raw stream queue limit exceeded' },
+    });
+    abortRawSession(session.id, 'raw stream queue limit exceeded');
+  }
+}
+
+/** `RawHttpReply` view forwarded to the host over stream frames. */
+function rawReplyView(session: RawSession): Record<string, unknown> {
+  const setHeader = (name: string, value: string | string[]): void => {
+    if (!session.started) session.headers.push([name, value]);
+  };
+  const view: Record<string, unknown> = {
+    status: (code: number) => { if (!session.started) session.status = code; return view; },
+    header: (name: string, value: string | string[]) => { setHeader(name, value); return view; },
+    write: (chunk: string | Uint8Array) => {
+      if (session.ended || session.aborted) return false;
+      enqueueRaw(session, typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk));
+      flushRaw(session);
+      return session.unackedBytes + session.queuedBytes < RAW_WINDOW_BYTES;
+    },
+    drain: () => drainRaw(session),
+    end: (body?: string | Uint8Array) => {
+      if (session.ended || session.aborted) return;
+      if (body !== undefined) enqueueRaw(session, typeof body === 'string' ? Buffer.from(body) : Buffer.from(body));
+      session.pendingEnd = true;
+      flushRaw(session);
+    },
+    hijack: () => undefined,
+    onClientClose: (fn: () => void) => {
+      if (session.aborted) { try { fn(); } catch { /* handler-owned */ } return; }
+      session.clientCloseListeners.push(fn);
+    },
+    raw: {
+      get headersSent() { return session.started; },
+      setHeader,
+    },
+  };
+  return view;
+}
+
+/**
+ * Run a raw route against streamed views. Returns once the handler resolves or
+ * throws; the reply frames are flushed as the handler writes.
+ */
+async function runRawRoute(session: RawSession): Promise<void> {
+  const route = definition.routes?.find(
+    (candidate) => candidate.method === session.request.method && candidate.path === session.routePath,
+  );
+  if (!route || route.kind !== 'raw') {
+    sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'raw-error', id: session.id, error: { message: 'isolated raw route not found' } });
+    rawSessions.delete(session.id);
+    return;
+  }
+  const body = new HostRequestBody(session);
+  session.body = body;
+  const requestView = {
+    method: session.request.method,
+    url: session.request.url,
+    params: session.request.params,
+    query: new URLSearchParams(session.request.query),
+    headers: session.request.headers,
+    body,
+    ip: session.request.ip,
+    ...(session.request.user ? { user: session.request.user } : {}),
+    ...(session.request.sessionToken ? { sessionToken: session.request.sessionToken } : {}),
+    raw: { headers: session.request.headers },
+  };
+  const replyView = rawReplyView(session);
+  try {
+    await (route.handler as RouteHook)(requestView, replyView);
+    if (!session.ended && !session.aborted) {
+      session.pendingEnd = true;
+      flushRaw(session);
+    }
+  } catch (error) {
+    if (session.aborted) return;
+    const candidate = error as { code?: unknown; status?: unknown };
+    session.ended = true;
+    rawSessions.delete(session.id);
+    // Mirror the in-process path: before headers, the dispatcher maps this to a
+    // problem+json response; after headers, it destroys the partial response.
+    sendHost({
+      protocol: RPC_PROTOCOL,
+      pluginId,
+      type: 'raw-error',
+      id: session.id,
+      error: {
+        message: String(error instanceof Error ? error.message : error),
+        ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
+        ...(typeof candidate.status === 'number' ? { status: candidate.status } : {}),
+      },
+    });
+  }
+}
+
+/** Abort a raw session because the client disconnected (fires `onClientClose`). */
+function abortRawSession(id: string, reason: string): void {
+  const session = rawSessions.get(id);
+  if (!session) return;
+  session.aborted = true;
+  rawSessions.delete(id);
+  session.body?.fail(reason);
+  // Unblock any handler parked in `drain()`; the stream is gone.
+  const waiters = session.drainWaiters.splice(0, session.drainWaiters.length);
+  for (const resolve of waiters) resolve();
+  for (const fn of session.clientCloseListeners) {
+    try { fn(); } catch { /* handler-owned */ }
+  }
+  session.clientCloseListeners.length = 0;
 }
 
 process.on('message', async (raw: unknown) => {
@@ -489,6 +807,65 @@ process.on('message', async (raw: unknown) => {
     } catch (error) { sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'result', id: requestId, error: wireError(error) }); }
     return;
   }
+  if (message.type === 'raw-body') {
+    const session = rawSessionOf(requestId);
+    const body = session?.body;
+    if (session && body && !session.aborted) {
+      const frame = message as unknown as { data?: string; eof?: boolean };
+      if (frame.eof || frame.data === undefined) body.finish();
+      else body.deliver(Buffer.from(frame.data, 'base64'));
+    }
+    return;
+  }
+  if (message.type === 'raw-body-error') {
+    const session = rawSessionOf(requestId);
+    if (session && session.body && !session.aborted) {
+      session.body.fail(String((message as unknown as { message?: unknown }).message ?? 'raw body error'));
+    }
+    return;
+  }
+  if (message.type === 'raw-abort') {
+    abortRawSession(requestId, String((message as unknown as { reason?: unknown }).reason ?? 'client disconnected'));
+    return;
+  }
+  if (message.type === 'raw-ack') {
+    const session = rawSessionOf(requestId);
+    if (session) {
+      const bytes = Number((message as unknown as { bytes?: unknown }).bytes ?? 0);
+      session.unackedBytes = Math.max(0, session.unackedBytes - bytes);
+      flushRaw(session);
+    }
+    return;
+  }
+  if (message.type === 'raw-invoke') {
+    const frame = message as unknown as { request: RawInvokeRequest; route?: string };
+    if (rawSessions.size >= RPC_MAX_RAW_STREAMS) {
+      sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'raw-error', id: requestId, error: { message: 'isolated plugin raw stream limit exceeded' } });
+      return;
+    }
+    const session: RawSession = {
+      id: requestId,
+      request: frame.request,
+      routePath: String(frame.route ?? ''),
+      body: null,
+      status: 200,
+      headers: [],
+      started: false,
+      ended: false,
+      aborted: false,
+      queue: [],
+      queuedBytes: 0,
+      drainWaiters: [],
+      unackedBytes: 0,
+      pendingEnd: false,
+      pullOutstanding: false,
+      bodyDone: false,
+      clientCloseListeners: [],
+    };
+    rawSessions.set(requestId, session);
+    void runRawRoute(session);
+    return;
+  }
   if (message.type !== 'invoke') return;
   const route = definition.routes?.find((candidate) => candidate.method === message.method && candidate.path === message.route);
   if (!route) {
@@ -499,10 +876,15 @@ process.on('message', async (raw: unknown) => {
     let status: number | undefined;
     let sent = false;
     let payload: unknown;
-    const value = await route.handler(message.request as never, {
-      code: (next: number) => { status = next; return undefined as never; },
+    // `HttpReply.code` is chainable per the SDK contract: plugins write
+    // `reply.code(201).send(body)`. Returning `undefined` here made that chain
+    // throw "Cannot read properties of undefined (reading 'send')", which killed
+    // the whole worker on the first handler-route request (ADR-0022 P0).
+    const replyView: Record<string, unknown> = {
+      code: (next: number) => { status = next; return replyView; },
       send: (next: unknown) => { sent = true; payload = next; },
-    });
+    };
+    const value = await route.handler(message.request as never, replyView as never);
     sendHost({ protocol: 1, pluginId, type: 'result', id: requestId, value: sent ? undefined : value, ...(sent || status !== undefined ? { response: { ...(status !== undefined ? { status } : {}), ...(sent ? { payload } : {}) } } : {}) });
   } catch (error) {
     const candidate = error as { code?: unknown; status?: unknown };

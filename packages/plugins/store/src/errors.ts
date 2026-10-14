@@ -32,6 +32,16 @@ const STORE_ERROR_CODES: Record<string, string> = {
   '订单商品币种不一致，请分开下单': 'store.order.currency_mismatch',
   '该服务不支持此操作': 'store.service.unsupported',
   '商店插件未就绪': 'store.not_ready',
+  // 续费 / 退款 / 运维动作（本次新增）
+  '请求参数无效': 'store.request.invalid',
+  '缺少服务 ID': 'store.request.service_id_required',
+  '服务不存在': 'store.service.not_found',
+  '该服务当前状态不可续费': 'store.service.not_renewable',
+  '订单金额无效': 'store.order.amount_invalid',
+  '订单不可退款': 'store.order.not_refundable',
+  '退款金额无效': 'store.refund.amount_invalid',
+  '退款金额超过订单金额': 'store.refund.amount_exceeds',
+  '动作参数无效': 'store.service.action_param_invalid',
 };
 
 /** Messages that carry a variable suffix; matched on the part before `：`. */
@@ -58,12 +68,28 @@ export class StoreError extends Error {
 /** Extract the product lines from an order's JSON payload. */
 export function stockItems(order: {
   items: unknown;
-}): Array<{ productId: string; quantity: number; config?: unknown }> {
+}): Array<{
+  productId: string;
+  quantity: number;
+  config?: unknown;
+  /** 续费订单行：指向被续费的服务实例 id（非空则本行不产生交付任务）。 */
+  renewalServiceId?: string;
+  /** 续费时长（月）。 */
+  renewMonths?: number;
+  /** 续费前服务到期时间（ISO），供全额退款精确回滚；`null` = 续费前无到期。 */
+  previousExpiresAt?: string | null;
+  /** 续费前服务状态，供全额退款回滚。 */
+  previousState?: string;
+}> {
   const value = order.items as {
     items?: Array<{
       productId?: unknown;
       quantity?: unknown;
       config?: unknown;
+      renewalServiceId?: unknown;
+      renewMonths?: unknown;
+      previousExpiresAt?: unknown;
+      previousState?: unknown;
     }>;
   };
   return (value.items ?? []).flatMap((item) =>
@@ -77,6 +103,18 @@ export function stockItems(order: {
             quantity: item.quantity,
             ...(item.config !== undefined && item.config !== null
               ? { config: item.config }
+              : {}),
+            ...(typeof item.renewalServiceId === 'string'
+              ? { renewalServiceId: item.renewalServiceId }
+              : {}),
+            ...(typeof item.renewMonths === 'number' && Number.isInteger(item.renewMonths)
+              ? { renewMonths: item.renewMonths }
+              : {}),
+            ...('previousExpiresAt' in item
+              ? { previousExpiresAt: item.previousExpiresAt as string | null }
+              : {}),
+            ...(typeof item.previousState === 'string'
+              ? { previousState: item.previousState }
               : {}),
           },
         ]

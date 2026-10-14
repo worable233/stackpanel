@@ -96,12 +96,49 @@ export interface ServiceDetailField {
   copyable?: boolean;
 }
 
-/** 服务可执行的运维动作（开机/关机/重启）。 */
+/**
+ * 运维动作的一个输入参数声明。提供方（商品类型/上游插件）据此告诉前端如何
+ * 渲染表单，并在 {@link FulfillmentProvider.executeAction} 中以同名键回传用户输入。
+ */
+export interface ServiceActionParam {
+  name: string;
+  label: string;
+  type: 'text' | 'password' | 'number' | 'select' | 'textarea';
+  required?: boolean;
+  default?: string | number;
+  /** type=select 时的候选值。 */
+  options?: Array<{ label: string; value: string }>;
+  min?: number;
+  max?: number;
+  maxLength?: number;
+  placeholder?: string;
+}
+
+/** 服务可执行的运维动作（开机/关机/重启/重装/重置密码等）。 */
 export interface ServiceAction {
   id: string;
   label: string;
   danger?: boolean;
   confirm?: boolean;
+  /** 需要用户填写的参数；缺省表示无参动作。 */
+  params?: ServiceActionParam[];
+}
+
+/**
+ * 运维动作的执行结果。多数动作无需返回内容；当动作产生可展示数据（如重置后的
+ * 新密码、控制台地址）或需要跳转时，由提供方返回本结构供 store 透传给前端。
+ */
+export interface ServiceActionResult {
+  message?: string;
+  /** 执行后返回的展示字段（如新密码、一次性控制台令牌）。 */
+  fields?: ServiceDetailField[];
+  /** 需要打开的地址（如 VNC / 控制台 URL）。 */
+  url?: string;
+  /**
+   * 需要合并回服务 runtime 的补丁（如重装后的操作系统、电源状态）。
+   * store 会浅合并到 `ServiceInstance.runtime` 并刷新详情。
+   */
+  runtime?: Record<string, unknown>;
 }
 
 /** 提供方返回的服务详情。 */
@@ -152,8 +189,16 @@ export interface FulfillmentProvider {
   getDetail?(ctx: ProviderServiceContext): Promise<ServiceDetail>;
   /** 读取监控时序（CPU/内存等）。 */
   getMetrics?(ctx: ProviderServiceContext): Promise<MetricSeries[]>;
-  /** 执行运维动作（开机/关机/重启）。 */
-  executeAction?(actionId: string, ctx: ProviderServiceContext): Promise<void>;
+  /**
+   * 执行运维动作（开机/关机/重启/重装/重置密码等）。
+   * `params` 为 {@link ServiceAction.params} 声明并由用户在表单填写的键值；
+   * 返回 {@link ServiceActionResult} 可携带展示数据或跳转地址。
+   */
+  executeAction?(
+    actionId: string,
+    ctx: ProviderServiceContext,
+    params?: Record<string, string>,
+  ): Promise<ServiceActionResult | void>;
 }
 
 /**
@@ -219,6 +264,8 @@ export interface CheckoutBillingCycle {
   price: number;
   /** 续费价（可选，默认等于 price）。 */
   renewPrice?: number;
+  /** 该周期时长（月）。用于续费推算新到期时间；缺省按 1 个月处理。 */
+  months?: number;
 }
 
 /** 结账页渲染的一个配置项。 */

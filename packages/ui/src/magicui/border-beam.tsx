@@ -76,6 +76,7 @@ export const BorderBeam = ({
       <motion.div
         className={cn(
           'absolute aspect-square',
+          !transition && 'motion-safe:animate-border-beam',
           'bg-linear-to-l from-(--color-from) via-(--color-to) to-transparent',
           className,
         )}
@@ -85,15 +86,23 @@ export const BorderBeam = ({
             offsetPath: `rect(0 auto auto 0 round ${size}px)`,
             '--color-from': colorFrom,
             '--color-to': colorTo,
+            '--beam-duration': `${duration}s`,
+            '--beam-delay': `${-delay}s`,
+            '--beam-start': `${reverse ? 100 - initialOffset : initialOffset}%`,
+            '--beam-end': `${reverse ? -initialOffset : 100 + initialOffset}%`,
             ...style,
           } as MotionStyle
         }
         initial={{ offsetDistance: `${initialOffset}%` }}
-        animate={{
-          offsetDistance: reverse
-            ? [`${100 - initialOffset}%`, `${-initialOffset}%`]
-            : [`${initialOffset}%`, `${100 + initialOffset}%`],
-        }}
+        animate={
+          transition
+            ? {
+                offsetDistance: reverse
+                  ? [`${100 - initialOffset}%`, `${-initialOffset}%`]
+                  : [`${initialOffset}%`, `${100 + initialOffset}%`],
+              }
+            : false
+        }
         transition={{
           repeat: Infinity,
           ease: 'linear',

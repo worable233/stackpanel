@@ -44,7 +44,12 @@ export const MCP_SERVER_INFO: McpServerInfo = {
 /** Capabilities the presented credential may call, as MCP tools. */
 export function mcpCapabilitiesFor(request: FastifyRequest): McpCapability[] {
   const user = currentUser(request);
-  return capabilitiesFor(user.permissions, request.server.pluginRuntime.listCapabilities());
+  return capabilitiesFor(
+    user.permissions,
+    request.server.pluginRuntime.listCapabilities(),
+    [],
+    request.server.pluginRuntime.scopeGovernance(),
+  );
 }
 
 /**

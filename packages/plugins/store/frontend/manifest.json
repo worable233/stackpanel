@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "2bb59aadf5af",
+  "revision": "fc14f03e3feb",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -26,7 +26,8 @@
             "page": 1,
             "pageSize": 60,
             "categoryId": "",
-            "showAll": ""
+            "showAll": "",
+            "q": ""
           }
         }
       ]
@@ -362,6 +363,75 @@
           "type": "string",
           "required": true,
           "maxLength": 64
+        },
+        {
+          "name": "os",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "password",
+          "type": "string",
+          "maxLength": 128
+        },
+        {
+          "name": "params",
+          "type": "string",
+          "maxLength": 4000
+        }
+      ]
+    },
+    {
+      "id": "store.renew-service-wallet",
+      "method": "POST",
+      "path": "/services/:id/renew",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "paymentMode",
+          "type": "string",
+          "default": "wallet"
+        },
+        {
+          "name": "months",
+          "type": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 120
+        }
+      ],
+      "redirect": {
+        "responsePath": "nextPath"
+      }
+    },
+    {
+      "id": "store.admin-refund-order",
+      "method": "POST",
+      "path": "/store/admin/orders/:id/refund",
+      "permission": "store.admin",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "amount",
+          "type": "integer",
+          "min": 1,
+          "max": 2000000000
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "maxLength": 191
         }
       ]
     },

@@ -14,6 +14,7 @@ import {
 } from '@stackpanel/db';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { useRedisState } from './state/index.ts';
+import { useRedisCache } from './cache/index.ts';
 import { configureOutboxEventBus } from './plugins/events.ts';
 import { initJobs } from './jobs/index.ts';
 import { getPrisma } from './plugins/prisma.ts';
@@ -59,7 +60,11 @@ export async function initInfra(): Promise<void> {
   const redis = await initRedis();
   // S5.5: share kernel state across replicas. Development without Redis keeps
   // the in-process implementation.
-  if (redis) useRedisState(redis);
+  if (redis) {
+    useRedisState(redis);
+    // ADR-0022 D3: the read cache learns about cross-replica invalidation here.
+    await useRedisCache(redis);
+  }
   // S5: bind the durable outbox; the relay covers crash recovery and Redis
   // Pub/Sub covers cross-replica delivery (Redis absent -> local-only relay).
   configureOutboxEventBus({

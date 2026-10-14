@@ -1,15 +1,23 @@
 'use client';
 
 import Link from 'next/link';
-import { Layers, LogIn } from 'lucide-react';
+import { ArrowUpRight, Layers, LogIn } from 'lucide-react';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { Button } from '@/components/ui/button';
+import { Reveal, HeroRays } from '@stackpanel/ui';
 import { localeOptions } from '@/i18n/core';
 import { useLocale, useTranslator } from '@/i18n/provider';
 
 export interface AuthProvider {
   id: string;
   name: string;
+}
+
+export interface AuthPost {
+  title: string;
+  excerpt: string;
+  path: string;
+  publishedAt?: string | null;
 }
 
 export interface AuthShellProps {
@@ -19,29 +27,17 @@ export interface AuthShellProps {
   logoSrc?: string | null;
   /** Third-party login providers; the block is hidden when the list is empty. */
   providers?: AuthProvider[];
+  posts?: AuthPost[];
   children: React.ReactNode;
 }
 
-/**
- * Shared auth chrome for /login and /register.
- *
- * Composition mirrors https://studio-admin.arhamkhnz.com/auth/v2/login: a
- * viewport grid with an inset rounded brand panel on the right (brand block at
- * the top, two info columns at the bottom), a vertically centred 350px form
- * column with a centred heading, an optional third-party provider block with an
- * "or continue with" divider, a cross-link pinned top-right, and a footer row
- * with copyright and language switcher. Only the panel palette follows
- * https://js.design/login: a saturated pastel aurora drawn in CSS (no
- * third-party image is vendored). The decorative hues are one-off values
- * sampled from that reference and are intentionally not theme tokens, which
- * would flatten the aurora to a single brand channel.
- */
+/** Standalone authentication: centered form and inset brand panel. */
 export function AuthShell({
   mode,
   platformName,
-  platformDescription,
   logoSrc,
   providers = [],
+  posts = [],
   children,
 }: AuthShellProps) {
   const locale = useLocale();
@@ -63,21 +59,21 @@ export function AuthShell({
   );
 
   return (
-    <div className="grid min-h-svh flex-1 justify-center p-2 lg:grid-cols-2">
+    <div className="grid min-h-svh w-full flex-1 p-3 lg:grid-cols-2 lg:gap-3">
       <div className="relative flex h-full flex-col">
-        <div className="absolute right-10 top-5 hidden text-sm text-muted-foreground sm:block">
+        <div className="absolute right-6 top-5 hidden text-sm text-muted-foreground sm:block">
           {crossPrompt} {crossLink}
         </div>
 
-        <div className="flex flex-1 items-center justify-center px-8 py-20">
-          <div className="w-full max-w-[350px]">
-            <div className="mb-8 space-y-2 text-center">
+        <div className="flex flex-1 items-center justify-center px-5 pb-24 pt-28 sm:px-12 sm:py-28">
+          <Reveal className="w-full max-w-[350px]">
+            <div className="mb-8 flex flex-col gap-2 text-center">
               <h1 className="text-3xl font-medium tracking-tight text-foreground">{title}</h1>
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             </div>
 
             {providers.length > 0 ? (
-              <div className="mb-6 space-y-4">
+              <div className="mb-6 flex flex-col gap-4">
                 <div className="grid gap-2">
                   {providers.map((provider) => (
                     <Button
@@ -108,7 +104,7 @@ export function AuthShell({
             <p className="mt-6 text-center text-sm text-muted-foreground sm:hidden">
               {crossPrompt} {crossLink}
             </p>
-          </div>
+          </Reveal>
         </div>
 
         <div className="absolute bottom-5 flex w-full items-center justify-between px-10">
@@ -123,62 +119,65 @@ export function AuthShell({
         </div>
       </div>
 
-      <aside className="relative hidden overflow-hidden rounded-3xl lg:flex lg:flex-col">
-        {/* Pastel aurora: hues sampled from the js.design login panel. */}
+      <aside className="relative hidden overflow-hidden rounded-3xl border border-foreground/10 bg-foreground/[0.025] lg:flex lg:flex-col">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#4fc9ff] via-[#7b6cff] to-[#c96cff]"
+          className="pointer-events-none absolute inset-0 [background:radial-gradient(ellipse_at_50%_30%,color-mix(in_oklch,var(--primary)_18%,transparent),transparent_70%)]"
         />
-        <div aria-hidden className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-24 -top-32 size-[30rem] rounded-full bg-[#5fe0ff] opacity-90 blur-3xl" />
-          <div className="absolute right-[-6rem] top-[-4rem] size-[26rem] rounded-full bg-[#5b8cff] opacity-90 blur-3xl" />
-          <div className="absolute left-1/4 top-1/3 size-[24rem] rounded-full bg-[#9a6cff] opacity-80 blur-3xl" />
-          <div className="absolute right-[-3rem] top-1/4 size-[22rem] rounded-full bg-[#6ef0c0] opacity-70 blur-3xl" />
-          <div className="absolute right-[-2rem] top-1/2 size-[24rem] rounded-full bg-[#ffe07a] opacity-70 blur-3xl" />
-          <div className="absolute right-[-4rem] bottom-[8rem] size-[26rem] rounded-full bg-[#ff7ec7] opacity-80 blur-3xl" />
-          <div className="absolute bottom-[-8rem] left-1/4 size-[28rem] rounded-full bg-[#c96cff] opacity-80 blur-3xl" />
-          <div className="absolute bottom-[-6rem] right-1/4 size-[24rem] rounded-full bg-[#ff9ad5] opacity-70 blur-3xl" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
-        </div>
-
-        <div className="relative z-10 flex flex-1 flex-col p-10 text-white">
-          <div className="flex items-start gap-3">
-            {logoSrc ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoSrc} alt="" className="size-10 rounded-xl bg-white/15 object-contain p-1" />
-            ) : (
-              <span className="flex size-10 items-center justify-center rounded-xl bg-white/15">
-                <Layers className="size-5" />
-              </span>
-            )}
-            <div className="space-y-0.5">
-              <p className="text-xl font-semibold tracking-tight drop-shadow-sm">{platformName}</p>
-              {platformDescription ? (
-                <p className="max-w-md text-sm text-white/85 drop-shadow-sm">
-                  {platformDescription}
-                </p>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mt-auto grid grid-cols-2 gap-6">
-            <div className="drop-shadow-sm">
-              <p className="text-base font-medium">{t('auth.panel.highlightTitle')}</p>
-              <p className="mt-1 text-sm text-white/85">{t('auth.panel.highlightText')}</p>
-            </div>
-            <div className="border-l border-white/25 pl-6 drop-shadow-sm">
-              <p className="text-base font-medium">{t('auth.panel.helpTitle')}</p>
-              <p className="mt-1 text-sm text-white/85">
-                {t('auth.panel.helpText')}{' '}
-                <Link
-                  href="/blog"
-                  className="font-medium text-white underline underline-offset-4 hover:text-white/80"
-                >
-                  {t('auth.panel.helpLink')}
-                </Link>
-              </p>
-            </div>
-          </div>
+        <HeroRays />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:linear-gradient(to_bottom,transparent,black,transparent)]"
+        />
+        <div className="relative flex flex-1 flex-col gap-10 p-8 xl:p-12">
+          <Reveal>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-3 text-xl font-semibold tracking-tight"
+            >
+              {logoSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoSrc} alt="" className="size-9 object-contain" />
+              ) : (
+                <Layers className="size-8 text-primary" aria-hidden />
+              )}
+              {platformName}
+            </Link>
+          </Reveal>
+          <Reveal className="flex flex-1 flex-col justify-center py-10">
+            <h2 className="text-4xl font-medium leading-tight tracking-tight xl:text-5xl">
+              你的业务，
+              <br />
+              <span className="text-muted-foreground">即刻上云。</span>
+            </h2>
+          </Reveal>
+          {posts.length > 0 ? (
+            <Reveal className="flex flex-col gap-4">
+              <p className="text-xs font-medium text-muted-foreground">最新文章</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                {posts.slice(0, 2).map((post) => (
+                  <Link
+                    key={post.path}
+                    href={post.path}
+                    className="group rounded-xl border border-foreground/10 bg-background/25 p-4 backdrop-blur-xl transition-colors hover:border-primary/30 hover:bg-background/40"
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <h3 className="line-clamp-2 text-sm font-medium leading-6">{post.title}</h3>
+                      <ArrowUpRight
+                        className="mt-1 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary"
+                        aria-hidden
+                      />
+                    </div>
+                    {post.excerpt ? (
+                      <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                        {post.excerpt}
+                      </p>
+                    ) : null}
+                  </Link>
+                ))}
+              </div>
+            </Reveal>
+          ) : null}
         </div>
       </aside>
     </div>

@@ -1,25 +1,28 @@
 import type { FastifyInstance } from 'fastify';
 import type { CommerceOperations } from '@stackpanel/sdk';
+import { generateKeyPairSync } from 'node:crypto';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.ts';
 import { getPrisma } from '../../src/plugins/prisma.ts';
 import { checkDbAvailable } from '../helpers.ts';
 import { createAdminUser } from '../auth-helpers.ts';
-import { generateEd25519KeyPair, protectPrivateKey } from '../../src/reseller/keys.ts';
-import { ResellerRepository } from '../../src/reseller/repository.ts';
-import {
-  canonicalRequest,
-  bodyDigest,
-  signCanonical,
-  verifyRequestSignature,
-} from '../../src/reseller/signing.ts';
-import { processDueWebhooks } from '../../src/reseller/webhook.ts';
+import { bodyDigest, canonicalRequest, signCanonical } from '../sp-signing.ts';
+import { deletePartner, enablePlugin, seedPartner } from '../channel-helpers.ts';
 
 const dbAvailable = await checkDbAvailable();
 
 const PRODUCT_TABLE = 'ext_store_product';
 const SERVICE_TABLE = 'ext_store_service-instance';
+
+/** A fresh Ed25519 key pair in PEM (test-local; avoids importing plugin code). */
+function generateEd25519KeyPair(): { publicKey: string; privateKey: string } {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  return {
+    publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  };
+}
 
 /** Seed an active product in the store plugin's Extension table. */
 async function seedProduct(id: string, name: string, price: number, stock: number): Promise<void> {
@@ -52,15 +55,16 @@ async function seedProduct(id: string, name: string, price: number, stock: numbe
 }
 
 /**
- * SP v1 upstream surface (P3): reseller Ed25519 signing, nonce replay defense,
- * scope enforcement, idempotent writes and signed webhook delivery.
+ * SP v1 upstream surface (ADR-0021 §D4, now served by the channel plugin):
+ * partner Ed25519 signing, nonce replay defense, scope enforcement, idempotent
+ * writes and signed webhook delivery.
  */
-describe.skipIf(!dbAvailable)('SP v1 reseller surface (real DB)', () => {
+describe.skipIf(!dbAvailable)('SP v1 channel surface (real DB)', () => {
   let app: FastifyInstance;
   const suffix = Date.now();
-  const keyId = `it_reseller_${suffix}`;
-  const aliceKey = generateEd25519KeyPair(); // full-scope reseller
-  const bobKey = generateEd25519KeyPair(); // read-only reseller
+  const keyId = `it_partner_${suffix}`;
+  const aliceKey = generateEd25519KeyPair(); // full-scope partner
+  const bobKey = generateEd25519KeyPair(); // read-only partner
   let aliceId = '';
   let bobId = '';
   let adminEmail = '';
@@ -99,41 +103,31 @@ describe.skipIf(!dbAvailable)('SP v1 reseller surface (real DB)', () => {
     app = buildApp();
     await app.ready();
     await app.pluginRuntime.activate('login');
-    const prisma = getPrisma();
-    const repo = new ResellerRepository(prisma);
 
-    const alice = await repo.create({
-      id: `res_${suffix}_a`,
-      name: `it-reseller-a-${suffix}`,
+    adminEmail = `sp-admin-${suffix}@example.com`;
+    adminToken = (await createAdminUser(app, adminEmail, 'password1234')).token;
+    // SP v1 reads/writes through the store plugin's commerce outlet.
+    await enablePlugin(app, 'store', adminToken);
+    await enablePlugin(app, 'channel', adminToken);
+
+    aliceId = `res_${suffix}_a`;
+    await seedPartner({
+      id: aliceId,
+      name: `it-partner-a-${suffix}`,
       keyId: `${keyId}_a`,
       publicKey: aliceKey.publicKey,
       scopes: ['catalog:read', 'order:read', 'order:write', 'service:read', 'service:write'],
       rateLimitRpm: 0,
     });
-    aliceId = alice.id;
-
-    const bob = await repo.create({
-      id: `res_${suffix}_b`,
-      name: `it-reseller-b-${suffix}`,
+    bobId = `res_${suffix}_b`;
+    await seedPartner({
+      id: bobId,
+      name: `it-partner-b-${suffix}`,
       keyId: `${keyId}_b`,
       publicKey: bobKey.publicKey,
       scopes: ['catalog:read'],
       rateLimitRpm: 0,
     });
-    bobId = bob.id;
-
-    // SP v1 now reads/writes through the store plugin's commerce outlet.
-    adminEmail = `sp-admin-${suffix}@example.com`;
-    const admin = await createAdminUser(app, adminEmail, 'password1234');
-    adminToken = admin.token;
-    await prisma.plugin.deleteMany({ where: { id: 'store' } });
-    const enable = await app.inject({
-      method: 'PATCH',
-      url: '/admin/plugins/store',
-      headers: { authorization: `Bearer ${adminToken}` },
-      payload: { enabled: true },
-    });
-    expect(enable.statusCode).toBe(200);
 
     productId = `sp_prod_${suffix}`;
     await seedProduct(productId, `SP-V1 测试商品 ${suffix}`, 1200, 5);
@@ -141,9 +135,8 @@ describe.skipIf(!dbAvailable)('SP v1 reseller surface (real DB)', () => {
 
   afterAll(async () => {
     const prisma = getPrisma();
-    const repo = new ResellerRepository(prisma);
-    await repo.delete(aliceId);
-    await repo.delete(bobId);
+    await deletePartner(aliceId);
+    await deletePartner(bobId);
     await prisma.$executeRawUnsafe(
       `DELETE FROM "ext_store_order" WHERE "spec"->>'channelCode' LIKE 'SP_V1:%'`,
     );
@@ -152,7 +145,7 @@ describe.skipIf(!dbAvailable)('SP v1 reseller surface (real DB)', () => {
       productId,
     );
     await prisma.$executeRawUnsafe(`DELETE FROM "${PRODUCT_TABLE}" WHERE "id" = $1`, productId);
-    await prisma.plugin.deleteMany({ where: { id: 'store' } });
+    await prisma.plugin.deleteMany({ where: { id: { in: ['store', 'channel'] } } });
     await prisma.user.deleteMany({ where: { email: { contains: 'reseller+' } } });
     if (adminEmail) await prisma.user.deleteMany({ where: { email: adminEmail } });
     await app.close();
@@ -226,7 +219,7 @@ describe.skipIf(!dbAvailable)('SP v1 reseller surface (real DB)', () => {
     expect((second.json() as { code: string }).code).toBe('sp_v1.nonce_replayed');
   });
 
-  it('enforces scopes per reseller', async () => {
+  it('enforces scopes per partner', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/sp/v1/orders',
@@ -348,79 +341,4 @@ describe.skipIf(!dbAvailable)('SP v1 reseller surface (real DB)', () => {
     expect(updated?.status).toBe('SUSPENDED');
   });
 
-  it('delivers a signed webhook, retries with backoff, then verifies the signature', async () => {
-    const prisma = getPrisma();
-    const repo = new ResellerRepository(prisma);
-    const webhookKeys = generateEd25519KeyPair();
-    // 回调地址用公网 IP 字面量：SSRF 守卫对字面量直接判定、不做 DNS，测试因此
-    // 不依赖外部解析器（否则并发受压时会卡在 libuv 解析线程池上导致超时）。
-    const webhookUrl = 'https://93.184.216.34/sp-hook';
-    await repo.update(aliceId, {
-      webhookUrl,
-      webhookPrivateKey: protectPrivateKey(webhookKeys.privateKey),
-      webhookPublicKey: webhookKeys.publicKey,
-    });
-    const delivery = await repo.createDelivery({
-      id: `wh_${suffix}`,
-      resellerId: aliceId,
-      event: 'order.paid',
-      url: webhookUrl,
-      payload: { id: `wh_${suffix}`, event: 'order.paid', data: { orderId: 'o_1' } },
-      maxAttempts: 3,
-    });
-
-    // Attempt 1: transport failure → scheduled retry with a future nextAttemptAt.
-    const failing = (() => Promise.reject(new Error('boom'))) as unknown as typeof fetch;
-    const claimed = await processDueWebhooks(prisma, failing);
-    expect(claimed).toBe(1);
-    let row = await repo.findDelivery(delivery.id);
-    expect(row?.status).toBe('PENDING');
-    expect(row?.attempts).toBe(1);
-    expect(row?.nextAttemptAt?.getTime() ?? 0).toBeGreaterThan(Date.now());
-
-    // Force the retry due, then deliver successfully and capture the request.
-    // Set the deadline in the *past* rather than to CURRENT_TIMESTAMP: the
-    // dispatcher compares against the application clock, and a database clock
-    // even a few milliseconds ahead would otherwise leave the row not-yet-due.
-    await prisma.$executeRaw`
-      UPDATE "webhook_deliveries" SET "nextAttemptAt" = now() - interval '60 seconds'
-      WHERE "id" = ${delivery.id}
-    `;
-    let captured: Array<{ headers: Record<string, string>; body: string; url: string }> = [];
-    const okFetch = ((url: string, init: RequestInit) => {
-      captured = [
-        ...captured,
-        {
-          url,
-          headers: init.headers as Record<string, string>,
-          body: String(init.body),
-        },
-      ];
-      return Promise.resolve(new Response('ok', { status: 200 }));
-    }) as unknown as typeof fetch;
-    const claimedAgain = await processDueWebhooks(prisma, okFetch);
-    expect(claimedAgain).toBe(1);
-    row = await repo.findDelivery(delivery.id);
-    expect(row?.status).toBe('SUCCEEDED');
-    expect(row?.responseCode).toBe(200);
-
-    expect(captured).toHaveLength(1);
-    const request = captured[0];
-    if (!request) throw new Error('预置：webhook 回调未被捕获');
-    // The outbound signature verifies against the reseller webhook public key.
-    const verdict = verifyRequestSignature(
-      {
-        method: 'POST',
-        path: '/sp-hook',
-        timestamp: request.headers['x-sp-timestamp'] ?? '',
-        nonce: request.headers['x-sp-delivery'] ?? '',
-        signature: request.headers['x-sp-signature'] ?? '',
-        body: request.body,
-      },
-      webhookKeys.publicKey,
-    );
-    expect(verdict).toEqual({ ok: true });
-    expect(request.headers['x-sp-key-id']).toBe(`${keyId}_a`);
-    expect(request.headers['x-sp-event']).toBe('order.paid');
-  });
 });

@@ -161,6 +161,7 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
         user.permissions,
         request.server.pluginRuntime.listCapabilities(),
         user.effectiveScopes,
+        request.server.pluginRuntime.scopeGovernance(),
       ),
     };
   });

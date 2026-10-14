@@ -1,19 +1,29 @@
 import type { FastifyInstance } from 'fastify';
+import { generateKeyPairSync } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.ts';
 import { getPrisma } from '../../src/plugins/prisma.ts';
 import { checkDbAvailable } from '../helpers.ts';
 import { createAdminUser, createTestUser } from '../auth-helpers.ts';
-import { generateEd25519KeyPair, protectPrivateKey } from '../../src/reseller/keys.ts';
-import { ResellerRepository } from '../../src/reseller/repository.ts';
-import { bodyDigest, canonicalRequest, signCanonical } from '../../src/reseller/signing.ts';
+import { bodyDigest, canonicalRequest, signCanonical } from '../sp-signing.ts';
+import { deletePartner, enablePlugin, seedDelivery, seedPartner } from '../channel-helpers.ts';
 
 const dbAvailable = await checkDbAvailable();
 
+/** A fresh Ed25519 key pair in PEM (no dependency on plugin internals). */
+function generateEd25519KeyPair(): { publicKey: string; privateKey: string } {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  return {
+    publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    privateKey: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  };
+}
+
 /**
- * Developer console (P4 / DEV-CONSOLE): read-only distribution views over the
- * kernel-owned reseller, webhook-delivery and SP v1 call-audit data. Verifies
- * admin-only access, secret redaction, filtering and the onResponse audit hook.
+ * Developer console (P4 / DEV-CONSOLE): distribution views over channel partners,
+ * webhook deliveries and SP v1 call audit. Since ADR-0021 §D4 these views are
+ * served by the channel plugin; the paths are unchanged (`/admin/developer/*`).
+ * Verifies admin-only access, secret redaction, filtering and the call audit.
  */
 describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
   let app: FastifyInstance;
@@ -22,8 +32,8 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
   let adminEmail = '';
   let userToken = '';
   let userEmail = '';
-  let resellerId = '';
-  let resellerKeyId = '';
+  let partnerId = '';
+  let partnerKeyId = '';
   const inbound = generateEd25519KeyPair();
   const webhook = generateEd25519KeyPair();
 
@@ -33,30 +43,32 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
     app = buildApp();
     await app.ready();
     await app.pluginRuntime.activate('login');
-    const prisma = getPrisma();
-    const repo = new ResellerRepository(prisma);
 
     adminEmail = `dev-admin-${suffix}@example.com`;
     adminToken = (await createAdminUser(app, adminEmail, 'password1234')).token;
     userEmail = `dev-user-${suffix}@example.com`;
     userToken = (await createTestUser(app, userEmail, 'password1234')).token;
 
-    resellerKeyId = `dev_reseller_${suffix}`;
-    const created = await repo.create({
-      id: `res_${suffix}_dev`,
+    await enablePlugin(app, 'store', adminToken);
+    await enablePlugin(app, 'channel', adminToken);
+
+    partnerKeyId = `dev_partner_${suffix}`;
+    partnerId = `res_${suffix}_dev`;
+    await seedPartner({
+      id: partnerId,
       name: `dev-reseller-${suffix}`,
-      keyId: resellerKeyId,
+      keyId: partnerKeyId,
       publicKey: inbound.publicKey,
-      webhookPrivateKey: protectPrivateKey(webhook.privateKey),
+      // A secret-store *ref*, never the key material itself.
+      webhookPrivateKeyRef: `webhook-key.${partnerId}`,
       webhookPublicKey: webhook.publicKey,
       webhookUrl: 'https://partner.example.com/hook',
       scopes: ['catalog:read'],
       rateLimitRpm: 120,
     });
-    resellerId = created.id;
-    await repo.createDelivery({
+    await seedDelivery({
       id: `wh_${suffix}_pending`,
-      resellerId,
+      partnerId,
       event: 'order.paid',
       url: 'https://partner.example.com/hook',
       payload: { id: `wh_${suffix}_pending`, event: 'order.paid', data: {} },
@@ -66,9 +78,9 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
 
   afterAll(async () => {
     const prisma = getPrisma();
-    await prisma.webhookDelivery.deleteMany({ where: { resellerId } });
-    await new ResellerRepository(prisma).delete(resellerId).catch(() => undefined);
-    await prisma.auditLog.deleteMany({ where: { action: 'sp_v1.call', resourceId: resellerId } });
+    await deletePartner(partnerId);
+    await prisma.auditLog.deleteMany({ where: { action: 'sp_v1.call', resourceId: partnerId } });
+    await prisma.plugin.deleteMany({ where: { id: { in: ['store', 'channel'] } } });
     if (adminEmail) await prisma.user.deleteMany({ where: { email: adminEmail } });
     if (userEmail) await prisma.user.deleteMany({ where: { email: userEmail } });
     await app.close();
@@ -102,7 +114,7 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
     expect(body.overview.webhookDeliveries.pending).toBeGreaterThanOrEqual(1);
   });
 
-  it('lists resellers without leaking private keys', async () => {
+  it('lists partners without leaking private keys', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/admin/developer/resellers?pageSize=100',
@@ -110,7 +122,7 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { resellers: Array<Record<string, unknown>>; total: number };
-    const row = body.resellers.find((entry) => entry.id === resellerId);
+    const row = body.resellers.find((entry) => entry.id === partnerId);
     expect(row).toBeDefined();
     expect(row?.hasWebhookKey).toBe(true);
     expect(row?.publicKey).toBe(inbound.publicKey);
@@ -118,10 +130,10 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
     expect(JSON.stringify(body)).not.toContain(webhook.privateKey);
   });
 
-  it('returns reseller detail with recent deliveries (no secrets)', async () => {
+  it('returns partner detail with recent deliveries (no secrets)', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: `/admin/developer/resellers/${resellerId}`,
+      url: `/admin/developer/resellers/${partnerId}`,
       headers: auth(),
     });
     expect(res.statusCode).toBe(200);
@@ -129,12 +141,12 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
       reseller: { id: string; hasWebhookKey: boolean };
       deliveries: Array<{ event: string; resellerName: string | null }>;
     };
-    expect(body.reseller.id).toBe(resellerId);
+    expect(body.reseller.id).toBe(partnerId);
     expect(body.deliveries.some((delivery) => delivery.event === 'order.paid')).toBe(true);
     expect(JSON.stringify(body)).not.toContain(webhook.privateKey);
   });
 
-  it('404s an unknown reseller', async () => {
+  it('404s an unknown partner', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/admin/developer/resellers/does-not-exist',
@@ -146,7 +158,7 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
   it('lists webhook deliveries with the partner name and filters by status', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: `/admin/developer/webhook-deliveries?resellerId=${resellerId}`,
+      url: `/admin/developer/webhook-deliveries?resellerId=${partnerId}`,
       headers: auth(),
     });
     expect(res.statusCode).toBe(200);
@@ -159,13 +171,13 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
 
     const succeeded = await app.inject({
       method: 'GET',
-      url: `/admin/developer/webhook-deliveries?status=SUCCEEDED&resellerId=${resellerId}`,
+      url: `/admin/developer/webhook-deliveries?status=SUCCEEDED&resellerId=${partnerId}`,
       headers: auth(),
     });
     expect((succeeded.json() as { total: number }).total).toBe(0);
   });
 
-  it('records SP v1 calls in the audit trail and filters by reseller', async () => {
+  it('records SP v1 calls in the audit trail and filters by partner', async () => {
     const timestamp = String(Math.floor(Date.now() / 1000));
     const nonce = `devconsole-${suffix}`;
     const canonical = canonicalRequest({
@@ -179,13 +191,13 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
       method: 'GET',
       url: '/sp/v1/catalog',
       headers: {
-        'x-sp-key-id': resellerKeyId,
+        'x-sp-key-id': partnerKeyId,
         'x-sp-timestamp': timestamp,
         'x-sp-nonce': nonce,
         'x-sp-signature': signCanonical(canonical, inbound.privateKey),
       },
     });
-    // The catalog may degrade when the store plugin is inactive; the audit
+    // The catalog may degrade when the store plugin has no products; the audit
     // entry is written regardless of the business outcome.
     expect(res.statusCode).toBeLessThan(600);
 
@@ -193,7 +205,7 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const list = await app.inject({
         method: 'GET',
-        url: `/admin/developer/calls?resellerId=${resellerId}`,
+        url: `/admin/developer/calls?resellerId=${partnerId}`,
         headers: auth(),
       });
       expect(list.statusCode).toBe(200);
@@ -205,7 +217,7 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
 
     const list = await app.inject({
       method: 'GET',
-      url: `/admin/developer/calls?resellerId=${resellerId}`,
+      url: `/admin/developer/calls?resellerId=${partnerId}`,
       headers: auth(),
     });
     const logs = (
@@ -215,7 +227,7 @@ describe.skipIf(!dbAvailable)('developer console (real DB)', () => {
     ).logs;
     const entry = logs[0];
     expect(entry?.action).toBe('sp_v1.call');
-    expect(entry?.resourceId).toBe(resellerId);
+    expect(entry?.resourceId).toBe(partnerId);
     expect(entry?.meta?.method).toBe('GET');
   });
 });

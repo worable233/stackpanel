@@ -51,6 +51,26 @@ export interface CustomModelDefinition {
    * query. Undeclared payload fields still persist, they are just not queryable.
    */
   indexes?: ModelIndex[];
+  /**
+   * 声明本模型可被内核读缓存（ADR-0022 D3）。给出陈旧窗口的硬上限（毫秒），
+   * 内核对**该 kind 的任何非 volatile 写入**自动失效全部副本的缓存条目。
+   *
+   * 只对读多写少的**配置类**模型声明（定价表、账号池、导航项）。不要给余额、
+   * 额度、会话、限流这类一致性敏感数据声明——它们必须每请求权威
+   * （ADR-0017 §2），继续走 ctx.state / 内核服务。
+   *
+   * 缺省不缓存：显式声明才生效，避免「加了模型就悄悄变陈旧」。
+   */
+  cacheTtlMs?: number;
+  /**
+   * 顶层 payload 字段名：**只增不改语义的统计列**（例如 `lastUsedAt`、
+   * `quotaUsed`）。写入只触及这些字段时内核**不**失效读缓存，否则一次成功的
+   * 结算就会把账号池/定价这类读缓存整条打穿（PLAN-perf-hardening P11）。
+   *
+   * 只对标量字段有意义：内核按字段名比较，不做深比较。声明错（把真正参与
+   * 决策的字段写进来）只会导致读到陈旧配置，所以宁可漏声明、不可多声明。
+   */
+  volatileFields?: string[];
   /** Named finalizers run in order when an instance is deleted. */
   finalizers?: string[];
   /** What happens to the model's data when the plugin is uninstalled. */

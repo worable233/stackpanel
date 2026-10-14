@@ -3,8 +3,12 @@ import type {
   AuthService,
   AuthUser,
   AuthAuditInput,
+  AuthAuditEntry,
+  AuthAuditPage,
+  AuthAuditQuery,
   CreatedPlatformToken,
   CreatePlatformTokenInput,
+  EnsureSystemUserInput,
   PermissionGroup,
   PlatformTokenView,
   PlatformTokenInspection,
@@ -30,6 +34,18 @@ import { writeAudit } from '../plugins/audit.ts';
 
 export interface AuthServiceOptions {
   db: PrismaClient;
+}
+
+/**
+ * Kernel-internal auth surface: the plugin-facing {@link AuthService} plus
+ * operations only the kernel's own routes may perform. Keeping impersonation
+ * off `AuthService` means plugin code cannot type-call it (plugins already hold
+ * a reference to this object, so this is a contract-level, not a security,
+ * boundary — but it keeps the plugin API honest).
+ */
+export interface KernelAuth extends AuthService {
+  /** Mint a session presenting as `targetUserId`, attributed to `impersonatorId`. */
+  issueImpersonationSession(targetUserId: string, impersonatorId: string): Promise<string>;
 }
 
 /**
@@ -108,6 +124,44 @@ export class KernelAuthService implements AuthService {
       data: { lastLoginAt: new Date() },
     });
     return getSessionStore().create(user.id);
+  }
+
+  /**
+   * Resolve or lazily create a password-less identity anchored by a stable
+   * email. Used by plugins that model an external principal (e.g. a channel
+   * partner) but must not hold raw DB access. Race-safe: a losing concurrent
+   * insert re-reads the winner.
+   */
+  async ensureSystemUser(input: EnsureSystemUserInput): Promise<AuthUser> {
+    const email = input.email.toLowerCase();
+    const existing = await this.options.db.user.findUnique({ where: { email } });
+    if (existing) return this.toAuthUser(existing);
+    try {
+      const created = await this.options.db.user.create({
+        data: {
+          email,
+          groups: { create: [{ groupId: input.groupId ?? 'group_user' }] },
+        },
+      });
+      return this.toAuthUser(created);
+    } catch (err) {
+      // Lost the creation race: re-read the winner instead of failing.
+      const again = await this.options.db.user.findUnique({ where: { email } });
+      if (again) return this.toAuthUser(again);
+      throw err;
+    }
+  }
+
+  /**
+   * Mint a session that presents as `targetUserId` but is attributed to the
+   * administrator `impersonatorId` (audit AZ-4). Deliberately *not* exposed on
+   * the plugin-facing {@link AuthService} contract: only the kernel's admin
+   * surface may create impersonation sessions, so a plugin can never forge one.
+   */
+  async issueImpersonationSession(targetUserId: string, impersonatorId: string): Promise<string> {
+    const target = await this.options.db.user.findUnique({ where: { id: targetUserId } });
+    if (!target || target.status !== 'ACTIVE') throw new Error('账号不可用');
+    return getSessionStore().create(target.id, { impersonatorId });
   }
 
   async revokeSession(token: string): Promise<void> {
@@ -263,10 +317,43 @@ export class KernelAuthService implements AuthService {
     await writeAudit({
       action: input.action,
       resource: input.resource ?? 'auth',
+      ...(input.actorId ? { actorId: input.actorId } : {}),
       ...(input.resourceId ? { resourceId: input.resourceId } : {}),
       ...(input.meta ? { meta: input.meta as never } : {}),
       ...(input.ip ? { ip: input.ip } : {}),
+      ...(input.userAgent ? { userAgent: input.userAgent } : {}),
     });
+  }
+
+  async listAuditLogs(query: AuthAuditQuery): Promise<AuthAuditPage> {
+    const pageSize = Math.max(1, Math.min(query.pageSize, 100));
+    const page = Math.max(1, query.page);
+    const where = {
+      ...(query.action ? { action: query.action } : {}),
+      ...(query.resourceId ? { resourceId: query.resourceId } : {}),
+      ...(query.since ? { createdAt: { gte: new Date(query.since) } } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.options.db.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.options.db.auditLog.count({ where }),
+    ]);
+    const logs: AuthAuditEntry[] = rows.map((row) => ({
+      id: row.id,
+      actorId: row.actorId,
+      action: row.action,
+      resource: row.resource,
+      resourceId: row.resourceId,
+      ip: row.ip,
+      userAgent: row.userAgent,
+      meta: row.meta,
+      createdAt: row.createdAt.toISOString(),
+    }));
+    return { logs, total, page, pageSize };
   }
 
   private async toAuthUser(user: {

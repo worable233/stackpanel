@@ -118,6 +118,17 @@ export const serviceInstanceModel = defineModel({
     amount: z.number().int(),
     currency: z.string().default('CNY'),
     expiresAt: z.string().nullable().default(null),
+    /**
+     * `expiresAt` 的 epoch 毫秒镜像。索引列只支持数值型范围查询，到期扫描
+     * (`gte`/`lte`) 必须落在真实列上，所以这里冗余一份数值到期时间；写入时由
+     * repository 从 `expiresAt` 统一派生，避免两处不一致。
+     */
+    expiresAtMs: z.number().int().nullable().default(null),
+    /**
+     * 到期处理阶段：`reminded`（已提醒）→ `suspended`（已暂停）→ `terminated`
+     * （已终止）。仅用于让周期扫描「每个阶段只动作一次」，续费成功时重置。
+     */
+    expiryStage: z.string().nullable().default(null),
     provisionedAt: z.string().nullable().default(null),
     terminatedAt: z.string().nullable().default(null),
   }),
@@ -128,6 +139,8 @@ export const serviceInstanceModel = defineModel({
     { fields: ['state'], types: { state: 'string' } },
     { fields: ['providerId'], types: { providerId: 'string' } },
     { fields: ['providerServiceId'], types: { providerServiceId: 'string' } },
+    { fields: ['expiresAtMs'], types: { expiresAtMs: 'number' } },
+    { fields: ['expiryStage'], types: { expiryStage: 'string' } },
   ],
 });
 
@@ -224,6 +237,10 @@ export interface StoreServiceInstanceData {
   amount: number;
   currency: string;
   expiresAt: string | null;
+  /** `expiresAt` 的 epoch 毫秒镜像（索引列，供到期范围扫描）。 */
+  expiresAtMs: number | null;
+  /** 到期处理阶段：reminded | suspended | terminated（每次动作推进一档）。 */
+  expiryStage: string | null;
   provisionedAt: string | null;
   terminatedAt: string | null;
 }

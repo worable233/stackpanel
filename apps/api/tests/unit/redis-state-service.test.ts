@@ -95,6 +95,50 @@ describe.skipIf(!available)('RedisStateService', () => {
     expect(ran).toBe(2);
   });
 
+  it('acquires and releases identified seats across replicas', async () => {
+    const a = new RedisStateService(redis as RedisClient);
+    const b = new RedisStateService(redis as RedisClient);
+    const candidate = { key: `${prefix}seat`, limit: 2 };
+    // Two replicas each take one seat; the third attempt from either is refused.
+    const first = await a.acquireLease([candidate], 5_000);
+    const second = await b.acquireLease([candidate], 5_000);
+    expect(first?.key).toBe(candidate.key);
+    expect(second?.key).toBe(candidate.key);
+    expect(first!.token).not.toBe(second!.token);
+    expect(await a.acquireLease([candidate], 5_000)).toBeNull();
+    expect(await b.acquireLease([candidate], 5_000)).toBeNull();
+    // Releasing a seat makes it available again, and only the holder can do it.
+    expect(await a.releaseLease({ key: candidate.key, token: 'not-mine' })).toBe(false);
+    expect(await a.releaseLease(first!)).toBe(true);
+    expect(await b.acquireLease([candidate], 5_000)).not.toBeNull();
+  });
+
+  it('renews a held seat and reports a lost one', async () => {
+    const state = svc();
+    const candidate = { key: `${prefix}renew`, limit: 1 };
+    const lease = await state.acquireLease([candidate], 5_000);
+    expect(lease).not.toBeNull();
+    expect(await state.renewLease(lease!, 60_000)).toBe(true);
+    expect(await state.releaseLease(lease!)).toBe(true);
+    // The seat is gone, so renewal must fail rather than resurrect it.
+    expect(await state.renewLease(lease!, 60_000)).toBe(false);
+  });
+
+  it('falls through ordered pools and skips saturated ones untouched', async () => {
+    const state = svc();
+    const full = { key: `${prefix}full`, limit: 1 };
+    const free = { key: `${prefix}free`, limit: 1 };
+    const firstSeat = await state.acquireLease([full, free], 5_000);
+    expect(firstSeat?.key).toBe(full.key);
+    const secondSeat = await state.acquireLease([full, free], 5_000);
+    expect(secondSeat?.key).toBe(free.key);
+    expect(await state.acquireLease([full, free], 5_000)).toBeNull();
+    // An unlimited pool always admits.
+    expect(
+      (await state.acquireLease([{ key: `${prefix}any`, limit: 0 }], 5_000))?.key,
+    ).toBe(`${prefix}any`);
+  });
+
   it('shares state across two client instances (replica simulation)', async () => {
     // Both services point at the same Redis, which is exactly what two API
     // replicas see.
@@ -104,6 +148,6 @@ describe.skipIf(!available)('RedisStateService', () => {
     await a.set(key, 'from-a');
     expect(await b.get(key)).toBe('from-a');
     expect(await b.acquire(`${prefix}shared-lock`, 1000)).toEqual(expect.any(String));
-    expect(await a.acquire(`${prefix}shared-lock`, 1000)).toBe(false);
+    expect(await a.acquire(`${prefix}shared-lock`, 1000)).toBeNull();
   });
 });

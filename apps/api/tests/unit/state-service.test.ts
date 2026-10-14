@@ -69,4 +69,51 @@ describe('MemoryStateService', () => {
     state.sweep();
     expect(await state.get('gone')).toBeNull();
   });
+
+  it('acquires the first candidate pool with a free seat', async () => {
+    const state = new MemoryStateService();
+    const a = { key: 'a', limit: 1 };
+    const b = { key: 'b', limit: 1 };
+    const first = await state.acquireLease([a, b]);
+    expect(first?.key).toBe('a');
+    // `a` is full, so the next call falls through to `b`.
+    const second = await state.acquireLease([a, b]);
+    expect(second?.key).toBe('b');
+    expect(await state.acquireLease([a, b])).toBeNull();
+  });
+
+  it('treats a non-positive limit as unlimited', async () => {
+    const state = new MemoryStateService();
+    const pool = { key: 'unbounded', limit: 0 };
+    expect((await state.acquireLease([pool]))?.key).toBe('unbounded');
+    expect((await state.acquireLease([pool]))?.key).toBe('unbounded');
+  });
+
+  it('releases and renews seats by token, and never revives a lost seat', async () => {
+    const state = new MemoryStateService();
+    const pool = { key: 'pool', limit: 1 };
+    const lease = await state.acquireLease([pool], 60_000);
+    expect(lease).not.toBeNull();
+    // A foreign token must not release someone else's seat.
+    expect(await state.releaseLease({ key: 'pool', token: 'foreign' })).toBe(false);
+    expect(await state.acquireLease([pool])).toBeNull();
+    expect(await state.renewLease(lease!, 60_000)).toBe(true);
+    expect(await state.releaseLease(lease!)).toBe(true);
+    expect(await state.renewLease(lease!, 60_000)).toBe(false);
+    // Freed by its owner, so the seat is available again.
+    expect(await state.acquireLease([pool])).not.toBeNull();
+  });
+
+  it('reclaims seats whose TTL elapsed', async () => {
+    const state = new MemoryStateService();
+    const pool = { key: 'expiring', limit: 1 };
+    expect(await state.acquireLease([pool], 1)).not.toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const reclaimed = await state.acquireLease([pool], 1);
+    expect(reclaimed).not.toBeNull();
+  });
+
+  it('returns null for an empty candidate list', async () => {
+    expect(await new MemoryStateService().acquireLease([])).toBeNull();
+  });
 });

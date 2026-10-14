@@ -3,6 +3,7 @@ import {
   isPublicHttpUrl,
   isUnsafeHostname,
   isUnsafeIpAddress,
+  resolvePublicAddresses,
   resolvesToUnsafeAddress,
 } from '../src/index.js';
 
@@ -101,5 +102,29 @@ describe('resolvesToUnsafeAddress', () => {
   it('accepts public IP literals without DNS resolution', async () => {
     expect(await resolvesToUnsafeAddress('93.184.216.34')).toBe(false);
     expect(await resolvesToUnsafeAddress('[2606:4700:4700::1111]')).toBe(false);
+  });
+});
+
+describe('resolvePublicAddresses', () => {
+  // 只断言 IP 字面量路径：它不触发 DNS，因此测试既不依赖网络也不会 flake。
+  // 域名路径由 `resolvesToUnsafeAddress` 的等价测试覆盖。
+  it('returns the validated public address for a public literal', async () => {
+    expect(await resolvePublicAddresses('93.184.216.34')).toEqual(['93.184.216.34']);
+    expect(await resolvePublicAddresses('[2606:4700:4700::1111]')).toEqual([
+      '2606:4700:4700::1111',
+    ]);
+  });
+
+  it('returns null for private literals and internal hostnames', async () => {
+    for (const host of [
+      '10.0.0.5',
+      '192.168.1.1',
+      '169.254.169.254',
+      '[::1]',
+      'localhost',
+      'db.internal',
+    ]) {
+      expect(await resolvePublicAddresses(host), host).toBeNull();
+    }
   });
 });
