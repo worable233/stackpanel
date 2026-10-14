@@ -273,7 +273,9 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
-  const transactionMatch = /^tx\.([a-z]+)\.([a-z]+)$/.exec(message.capability);
+  // Method names are camelCase (`settleHold`), so the second group must accept
+  // uppercase letters.
+  const transactionMatch = /^tx\.([a-z]+)\.([a-zA-Z]+)$/.exec(message.capability);
   if (transactionMatch) {
     const transaction = state.transactions.get(String(args.txId));
     if (!transaction) throw new Error('事务不存在或已结束');
@@ -286,6 +288,17 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
       value = await transaction.tx.wallet.credit(
         String(args.userId), Number(args.amount), String(args.currency), args.ref as never,
       );
+    } else if (operation === 'wallet.hold') {
+      value = await transaction.tx.wallet.hold(
+        String(args.userId), Number(args.amount), String(args.currency), args.ref as never,
+        args.options as never,
+      );
+    } else if (operation === 'wallet.settleHold') {
+      value = await transaction.tx.wallet.settleHold(
+        String(args.holdId), Number(args.settledAmount), args.ref as never,
+      );
+    } else if (operation === 'wallet.releaseHold') {
+      value = await transaction.tx.wallet.releaseHold(String(args.holdId));
     } else if (operation === 'payments.createRecord') {
       value = await transaction.tx.payments.createRecord(args.input as never);
     } else {

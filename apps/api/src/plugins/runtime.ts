@@ -753,6 +753,14 @@ export class PluginRuntime {
                 this.options.wallet.debit(userId, amount, currency, ref, trx),
               credit: (userId, amount, currency, ref) =>
                 this.options.wallet.credit(userId, amount, currency, ref, trx),
+              hold: (userId, amount, currency, ref, options) =>
+                this.options.wallet.hold(userId, amount, currency, ref, {
+                  ...(options ?? {}),
+                  tx: trx,
+                }),
+              settleHold: (holdId, settledAmount, ref) =>
+                this.options.wallet.settleHold(holdId, settledAmount, ref, trx),
+              releaseHold: (holdId) => this.options.wallet.releaseHold(holdId, trx),
             };
             const payments: ExtensionTransaction['payments'] = {
               createRecord: (input) => this.options.payments.createRecord(input, trx),

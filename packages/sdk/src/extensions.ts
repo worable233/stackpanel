@@ -186,7 +186,10 @@ export interface ExtensionClient {
  */
 export interface ExtensionTransaction {
   readonly extensions: ExtensionClient;
-  readonly wallet: Pick<WalletService, 'debit' | 'credit'>;
+  readonly wallet: Pick<
+    WalletService,
+    'debit' | 'credit' | 'hold' | 'settleHold' | 'releaseHold'
+  >;
   readonly payments: Pick<PaymentService, 'createRecord'>;
 }
 

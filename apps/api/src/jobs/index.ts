@@ -55,12 +55,15 @@ export interface KernelSweepDeps {
   outboxRelay: () => Promise<void>;
   /** Trim delivered outbox rows; runs on a slow cadence. */
   outboxCleanup: () => Promise<void>;
+  /** Return expired wallet holds to the balance (ADR-0022 P16). */
+  walletHoldSweep: () => Promise<void>;
   logger: { warn: (m: string) => void };
 }
 
 /** Fixed intervals for kernel sweeps. */
 const STATE_SWEEP_MS = 60_000;
 const PAYMENT_SWEEP_MS = 5 * 60_000;
+const WALLET_HOLD_SWEEP_MS = 60_000;
 const OUTBOX_RELAY_MS = 2_000;
 /** Run outbox retention roughly hourly (every N relay passes). */
 const OUTBOX_CLEANUP_EVERY = Math.max(1, Math.round((60 * 60_000) / OUTBOX_RELAY_MS));
@@ -80,6 +83,9 @@ export async function registerKernelSweeps(
   jobs.handle(KERNEL_JOBS.paymentSweep, async () => {
     await deps.paymentSweep();
   });
+  jobs.handle(KERNEL_JOBS.walletHoldSweep, async () => {
+    await deps.walletHoldSweep();
+  });
   let outboxPasses = 0;
   jobs.handle(KERNEL_JOBS.outboxRelay, async () => {
     await deps.outboxRelay();
@@ -93,6 +99,7 @@ export async function registerKernelSweeps(
 
   await jobs.schedule('state.sweep', { everyMs: STATE_SWEEP_MS }, undefined);
   await jobs.schedule('payments.sweep-expired', { everyMs: PAYMENT_SWEEP_MS }, undefined);
+  await jobs.schedule('wallet.sweep-holds', { everyMs: WALLET_HOLD_SWEEP_MS }, undefined);
   await jobs.schedule('outbox.relay', { everyMs: OUTBOX_RELAY_MS }, undefined);
 }
 

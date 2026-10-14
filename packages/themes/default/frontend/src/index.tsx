@@ -11,9 +11,6 @@ import {
   Activity,
   Network,
   Headphones,
-  Copy,
-  Plus,
-  Upload,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -64,6 +61,7 @@ function Hero({ assetsBaseUrl }: { assetsBaseUrl: string }) {
     <section data-section="hero" className="relative overflow-hidden">
       <HeroRays />
       <div className={`${container} relative flex flex-col items-center pt-48`}>
+        <Reveal>
         <Link
           href="#features"
           className="relative inline-flex h-8 items-center gap-2 overflow-hidden rounded-full border border-primary/30 bg-gradient-to-r from-primary/0 via-primary/15 to-primary/30 py-1 pl-1 pr-3 text-sm text-foreground/80 transition-colors hover:text-foreground"
@@ -81,6 +79,7 @@ function Hero({ assetsBaseUrl }: { assetsBaseUrl: string }) {
           为你的业务，选一朵好云
           <ArrowRight className="size-4" />
         </Link>
+        </Reveal>
         <Reveal>
           <h1 className="mt-6 max-w-2xl text-center text-[36px] font-normal leading-[1.15] sm:text-[40px] tracking-tighter md:text-5xl lg:text-6xl lg:leading-[56px]">
             <RevealText text="你的业务，" />
@@ -105,37 +104,22 @@ function Hero({ assetsBaseUrl }: { assetsBaseUrl: string }) {
           </div>
         </Reveal>
         <Reveal className="w-full">
-          <div className="mt-12 w-full overflow-hidden relative rounded-xl border border-primary/45 bg-background/30 p-[7px] shadow-2xl shadow-primary/10 backdrop-blur-md before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-primary/20 before:opacity-70 motion-safe:before:animate-pulse-soft lg:mt-16">
-            <BorderBeam
-              duration={14}
-              size={100}
-              colorFrom="var(--clarity-primary)"
-              colorTo="var(--clarity-border-highlight)"
-              className="motion-reduce:hidden"
-            />
-            <div
-              aria-hidden="true"
-              className="flex items-center justify-between px-2 pb-2 text-foreground/70"
-            >
-              <div className="flex gap-1">
-                <span className="size-1.5 rounded-full bg-current md:size-2" />
-                <span className="size-1.5 rounded-full bg-current md:size-2" />
-                <span className="size-1.5 rounded-full bg-current md:size-2" />
+          <div className="clarity-cloud-scene relative mx-auto mt-12 h-[280px] w-full max-w-5xl overflow-hidden rounded-2xl border border-primary/15 sm:h-[400px] lg:mt-16" role="img" aria-label="云产品玻璃插画">
+            <img src={`${assetsBaseUrl}/glass-theme/background/bg-glass-panel-wide.png`} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover opacity-30" />
+            <div aria-hidden="true" className="absolute inset-x-[10%] inset-y-[12%] rounded-full bg-primary/15 blur-3xl" />
+            <div aria-hidden="true" className="absolute left-1/2 top-1/2 h-[190px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border border-primary/20 sm:h-[280px] sm:w-[580px]" />
+            <div aria-hidden="true" className="absolute left-1/2 top-1/2 h-[250px] w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border border-primary/10 sm:h-[370px] sm:w-[800px]" />
+            {[
+              { image: 'product/product-browser-card.png', position: 'left-1/2 top-1/2 z-10 w-[150px] -translate-x-1/2 -translate-y-1/2 sm:w-[230px]', delay: '0s' },
+              { image: 'feature/feature-elastic-compute.png', position: 'left-[4%] top-[8%] w-[110px] sm:left-[12%] sm:w-[170px]', delay: '-2s' },
+              { image: 'feature/feature-secure-network.png', position: 'right-[4%] top-[8%] w-[110px] sm:right-[12%] sm:w-[170px]', delay: '-4s' },
+              { image: 'product/product-revenue-growth.png', position: 'bottom-[2%] left-[6%] w-[105px] sm:bottom-[5%] sm:left-[18%] sm:w-[160px]', delay: '-1s' },
+              { image: 'product/product-user-payment.png', position: 'bottom-[2%] right-[6%] w-[105px] sm:bottom-[5%] sm:right-[18%] sm:w-[160px]', delay: '-3s' },
+            ].map((item) => (
+              <div key={item.image} className={`absolute ${item.position}`} aria-hidden="true">
+                <img src={`${assetsBaseUrl}/glass-theme/${item.image}`} width={item.image.startsWith('feature/') ? 200 : item.image.endsWith('product-browser-card.png') ? 128 : 180} height={item.image.startsWith('feature/') ? 200 : item.image.endsWith('product-browser-card.png') ? 128 : 180} alt="" fetchPriority={item.delay === '0s' ? 'high' : 'auto'} className="clarity-glass-float h-auto w-full object-contain drop-shadow-2xl" style={{ animationDelay: item.delay }} />
               </div>
-              <div className="flex gap-2.5">
-                <Upload className="size-3.5" />
-                <Plus className="size-3.5" />
-                <Copy className="size-3.5" />
-              </div>
-            </div>
-            <img
-              src={`${assetsBaseUrl}/cloud-console-hero.png`}
-              width={1536}
-              height={1024}
-              alt="云资源控制台展示图"
-              className="h-[500px] w-full rounded-lg object-cover object-left-top md:aspect-video md:h-auto md:object-center"
-              fetchPriority="high"
-            />
+            ))}
           </div>
         </Reveal>
       </div>
@@ -150,6 +134,7 @@ function Ecosystem() {
         <Reveal>
           <p className="text-center text-sm text-muted-foreground">熟悉的技术栈，轻松部署到云端</p>
         </Reveal>
+        <Reveal>
         <div className="mx-auto mt-8 overflow-hidden text-xl font-medium tracking-tight text-muted-foreground transition-[filter,opacity] duration-300 group-hover/ecosystem:opacity-50 group-hover/ecosystem:blur-[4px] group-focus-within/ecosystem:blur-[4px] [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
           <Marquee
             pauseOnHover
@@ -172,6 +157,7 @@ function Ecosystem() {
             ))}
           </Marquee>
         </div>
+        </Reveal>
         <Link
           href="#capabilities"
           className="absolute inset-0 flex items-center justify-center gap-2 bg-background/60 text-sm opacity-0 backdrop-blur-[2px] transition-opacity duration-300 hover:opacity-100 focus:opacity-100 group-hover/ecosystem:opacity-100"
@@ -189,25 +175,25 @@ const features = [
     title: '云服务器，为应用提供算力',
     body: '为网站、应用和后端服务选择合适的云服务器，把想法变成在线业务。',
     points: ['多种规格可选', '独立运行环境', '在线选购与管理'],
-    image: 'cloud-console-hero.png',
+    image: 'feature/feature-elastic-compute.png',
   },
   {
     title: '云存储，安放业务数据',
     body: '为应用文件与业务数据选择存储空间，让容量适应当前需求。',
     points: [],
-    image: 'cloud-glass-hero.png',
+    image: 'feature/feature-simple-management.png',
   },
   {
     title: '云数据库，支撑业务应用',
     body: '为网站与应用的数据读写选择数据库资源，搭建业务所需的数据环境。',
     points: ['按应用需求选型', '清晰的资源规格', '集中查看与管理'],
-    image: '已移除背景的cloud-glass-hero.png',
+    image: 'feature/feature-secure-network.png',
   },
   {
     title: '灵活选型，满足不同阶段',
     body: '从小型项目到生产应用，按预算、配置和使用周期选择云产品。',
     points: [],
-    image: 'cloud-glass-hero.png',
+    image: 'feature/feature-flexible-config.png',
   },
 ];
 function Features({ assetsBaseUrl }: { assetsBaseUrl: string }) {
@@ -240,7 +226,7 @@ function Features({ assetsBaseUrl }: { assetsBaseUrl: string }) {
           </Reveal>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          {features.map((f, i) => (
+          {features.map((f) => (
             <Reveal key={f.title} className="h-full">
               <Spotlight>
                 <article className="group relative min-h-[350px] overflow-hidden md:min-h-80 rounded-xl bg-transparent p-6 shadow-xl shadow-primary/5 backdrop-blur-xl transition duration-500 md:p-8">
@@ -259,12 +245,12 @@ function Features({ assetsBaseUrl }: { assetsBaseUrl: string }) {
                     </ul>
                   </div>
                   <img
-                    src={`${assetsBaseUrl}/${f.image}`}
-                    width={1536}
-                    height={1024}
+                    src={`${assetsBaseUrl}/glass-theme/${f.image}`}
+                    width={200}
+                    height={200}
                     alt={f.title}
                     loading="lazy"
-                    className={`absolute bottom-0 right-0 h-28 w-32 sm:h-40 sm:w-48 rounded-tl-xl object-cover transition-transform duration-700 motion-safe:group-hover:scale-110 ${i === 0 ? 'opacity-60' : 'opacity-80'}`}
+                    className="pointer-events-none absolute bottom-3 right-2 h-28 w-44 object-contain transition-transform duration-700 motion-safe:group-hover:-translate-y-2 sm:bottom-4 sm:right-4 sm:h-36 sm:w-56"
                   />
                 </article>
               </Spotlight>
@@ -328,7 +314,7 @@ function Capabilities() {
   );
 }
 
-function UseCases() {
+function UseCases({ assetsBaseUrl }: { assetsBaseUrl: string }) {
   return (
     <section
       id="use-cases"
@@ -352,32 +338,37 @@ function UseCases() {
           {[
             {
               tag: '网站与应用',
+              image: 'product/product-browser-card.png',
               title: '让产品稳定在线',
               body: '为网站、API 与业务应用提供可靠的运行环境。',
             },
             {
               tag: '开发与测试',
+              image: 'product/product-revenue-growth.png',
               title: '快速搭建独立环境',
               body: '为团队准备一致的开发测试资源，缩短环境交付时间。',
             },
             {
               tag: '数据与存储',
+              image: 'product/product-vip-star.png',
               title: '管理业务中的关键数据',
               body: '为数据服务与持久化存储安排适合的资源配置。',
             },
             {
               tag: '企业应用',
+              image: 'product/product-user-payment.png',
               title: '为业务系统准备云资源',
               body: '为办公协作、内部系统与业务服务配置运行环境。',
             },
           ].map((c) => (
             <Reveal key={c.tag} className="h-full">
               <Spotlight>
-                <article className="flex h-full flex-col items-start rounded-xl bg-gradient-to-br from-muted/20 to-background/0 p-6 shadow-2xl shadow-primary/5 transition-shadow duration-500 hover:shadow-primary/10 lg:p-8">
+                <article className="group relative flex h-full flex-col items-start overflow-hidden rounded-xl bg-gradient-to-br from-muted/20 to-background/0 p-6 shadow-2xl shadow-primary/5 transition-shadow duration-500 hover:shadow-primary/10 lg:p-8">
+                  <img src={`${assetsBaseUrl}/glass-theme/${c.image}`} width={c.image.endsWith('product-browser-card.png') ? 128 : 180} height={c.image.endsWith('product-browser-card.png') ? 128 : 180} alt="" loading="lazy" className="pointer-events-none absolute right-4 top-4 h-16 w-20 object-contain transition-transform duration-700 motion-safe:group-hover:-translate-y-1 sm:h-20 sm:w-28" />
                   <span className="mb-4 inline-flex rounded-full bg-primary/20 px-3 py-1 text-sm text-foreground md:py-1.5">
                     {c.tag}
                   </span>
-                  <h3 className="text-xl font-normal leading-7 tracking-tight md:text-2xl">
+                  <h3 className="max-w-[calc(100%-5rem)] text-xl font-normal leading-7 tracking-tight md:text-2xl">
                     {c.title}
                   </h3>
                   <p className="mt-4 max-w-md flex-1 text-sm leading-6 text-muted-foreground lg:text-base">
@@ -618,7 +609,7 @@ function HomePage(props: FrontendPageProps): ReactElement {
       <Ecosystem />
       <Features assetsBaseUrl={assetsBaseUrl} />
       <Capabilities />
-      <UseCases />
+      <UseCases assetsBaseUrl={assetsBaseUrl} />
       <Statement />
       <Pricing />
       <section

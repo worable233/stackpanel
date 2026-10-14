@@ -4,23 +4,23 @@
  * Tokens follow the shadcn/ui CSS-variable convention so themes can drive both
  * user and admin surfaces. Light mode = :root, dark mode = .dark.
  *
- * Visual direction: bright azure accent on a clean white canvas, generous
- * rounding, hairline borders — a modern SaaS product surface.
+ * Visual direction: Clarity blue accent, neutral surfaces, glass layers and hairline borders.
+ * The backend follows the same palette while retaining light/dark preferences.
  */
 
 :root {
-  --background: #f3f7fb;
-  --foreground: #0b1220;
+  --background: #fafafa;
+  --foreground: #171717;
   --card: #ffffff;
-  --card-foreground: #0b1220;
+  --card-foreground: #171717;
   --popover: #ffffff;
-  --popover-foreground: #0b1220;
-  --primary: #009dff;
+  --popover-foreground: #171717;
+  --primary: #0065fc;
   --primary-foreground: #ffffff;
   --secondary: #f1f5f9;
   --secondary-foreground: #0f172a;
-  --muted: #f5f7fa;
-  --muted-foreground: #64748b;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
   --accent: #e8f4ff;
   --accent-foreground: #0079d6;
   --destructive: #ef4444;
@@ -28,19 +28,19 @@
   --success-foreground: #ffffff;
   --warning: #f59e0b;
   --warning-foreground: #1f2937;
-  --border: #e8ecf1;
+  --border: #e5e5e5;
   --input: #e2e8f0;
-  --ring: #009dff;
+  --ring: #0065fc;
   --radius: 0.75rem;
   --sidebar: #f8fafc;
-  --sidebar-foreground: #0b1220;
-  --sidebar-primary: #009dff;
+  --sidebar-foreground: #171717;
+  --sidebar-primary: #0065fc;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #e8f4ff;
   --sidebar-accent-foreground: #0079d6;
-  --sidebar-border: #e8ecf1;
-  --sidebar-ring: #009dff;
-  --chart-1: #009dff;
+  --sidebar-border: #e5e5e5;
+  --sidebar-ring: #0065fc;
+  --chart-1: #0065fc;
   --chart-2: #38bdf8;
   --chart-3: #6366f1;
   --chart-4: #8b5cf6;
@@ -48,37 +48,37 @@
 }
 
 .dark {
-  --background: #0b1220;
-  --foreground: #e8edf5;
-  --card: #111a2b;
-  --card-foreground: #e8edf5;
-  --popover: #111a2b;
-  --popover-foreground: #e8edf5;
-  --primary: #38a9ff;
-  --primary-foreground: #06111f;
-  --secondary: #1b2538;
-  --secondary-foreground: #e8edf5;
-  --muted: #1b2538;
-  --muted-foreground: #94a3b8;
-  --accent: #14304d;
-  --accent-foreground: #7cc4ff;
+  --background: #090909;
+  --foreground: #f5f5f5;
+  --card: #111113;
+  --card-foreground: #f5f5f5;
+  --popover: #151518;
+  --popover-foreground: #f5f5f5;
+  --primary: #0065fc;
+  --primary-foreground: #ffffff;
+  --secondary: #202023;
+  --secondary-foreground: #f5f5f5;
+  --muted: #202023;
+  --muted-foreground: #999999;
+  --accent: #18243a;
+  --accent-foreground: #a9caff;
   --destructive: #f87171;
   --success: #34d399;
-  --success-foreground: #06111f;
+  --success-foreground: #052e23;
   --warning: #fbbf24;
-  --warning-foreground: #06111f;
-  --border: rgba(255, 255, 255, 0.12);
-  --input: rgba(255, 255, 255, 0.14);
-  --ring: #38a9ff;
-  --sidebar: #0e1726;
-  --sidebar-foreground: #e8edf5;
-  --sidebar-primary: #38a9ff;
-  --sidebar-primary-foreground: #06111f;
-  --sidebar-accent: #1b2538;
-  --sidebar-accent-foreground: #e8edf5;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #38a9ff;
-  --chart-1: #38a9ff;
+  --warning-foreground: #1f2937;
+  --border: #262626;
+  --input: #333336;
+  --ring: #6ea8ff;
+  --sidebar: #111113;
+  --sidebar-foreground: #f5f5f5;
+  --sidebar-primary: #0065fc;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #202023;
+  --sidebar-accent-foreground: #f5f5f5;
+  --sidebar-border: #262626;
+  --sidebar-ring: #6ea8ff;
+  --chart-1: #6ea8ff;
   --chart-2: #67c9ff;
   --chart-3: #818cf8;
   --chart-4: #a78bfa;
@@ -116,7 +116,6 @@
   opacity: 1;
   transform: rotate(3deg) translateY(-4px);
   box-shadow: 0 0 10px var(--clarity-primary, var(--primary)), 0 0 5px var(--clarity-primary, var(--primary));
-  transition: width 180ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -127,7 +126,7 @@
   }
 }
 
-/* Homepage palette scoped by the Clarity layout; admin tokens stay independent. */
+/* Marketing pages keep their dark palette independently of the user preference. */
 :root,
 .dark {
   --clarity-background: #090909;
@@ -144,4 +143,13 @@
   --clarity-glass: rgba(255, 255, 255, 0.035);
   --clarity-grid: #222222;
   --clarity-glow: rgba(0, 101, 252, 0.12);
+}
+
+/* Transparent glass artwork floats independently of its placement transform. */
+@keyframes clarity-glass-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .clarity-glass-float { animation: clarity-glass-float 7s ease-in-out infinite; }
 }

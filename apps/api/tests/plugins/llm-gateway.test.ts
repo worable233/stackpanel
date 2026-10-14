@@ -98,6 +98,11 @@ describe.skipIf(!dbAvailable || !gatewayInstalled)(
           lastUpstreamBody = null;
         }
         const streaming = raw.includes('"stream":true');
+        if (raw.includes('error_probe')) {
+          res.writeHead(500, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: 'upstream boom' } }));
+          return;
+        }
         if (streaming) {
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           res.write('data: {"id":"1","choices":[{"delta":{"content":"hi"}}]}\n\n');
@@ -220,6 +225,7 @@ describe.skipIf(!dbAvailable || !gatewayInstalled)(
     await prisma.$executeRawUnsafe(`DELETE FROM "ext_llm-gateway_model-price"`);
     await prisma.$executeRawUnsafe(`DELETE FROM "ext_llm-gateway_account"`);
     await prisma.apiToken.deleteMany({ where: { userId: { in: [userId, viewerId] } } });
+    await prisma.walletHold.deleteMany({ where: { userId } });
     await prisma.walletLedgerEntry.deleteMany({ where: { userId } });
     await prisma.walletAccount.deleteMany({ where: { userId } });
     await prisma.plugin.deleteMany({ where: { id: { in: ['store', 'llm-gateway'] } } });
@@ -297,6 +303,72 @@ describe.skipIf(!dbAvailable || !gatewayInstalled)(
     const prisma = getPrisma();
     const account = await prisma.walletAccount.findFirst({ where: { userId } });
     expect(account?.balance).toBe(9_999);
+  });
+
+  it('freezes the estimated cost up front and refunds the unused remainder', async () => {
+    const prisma = getPrisma();
+    const account = await prisma.walletAccount.findFirstOrThrow({ where: { userId } });
+    const startBalance = account.balance;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/llm-gateway/v1/chat/completions',
+      headers: { authorization: `Bearer ${apiKeyPlaintext}` },
+      payload: {
+        model: 'test-model',
+        max_tokens: 50_000,
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+
+    // 预授权必须结算为一个终态，而不是留下 HELD 残影。
+    const holds = await prisma.walletHold.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 1,
+    });
+    expect(holds).toHaveLength(1);
+    expect(holds[0]?.status).toBe('SETTLED');
+    // 实际用量 150 token → 1 分（见上一条用例），预估远超实际，差额必须退回。
+    expect(holds[0]?.settledAmount).toBe(1);
+
+    const after = await prisma.walletAccount.findFirstOrThrow({ where: { userId } });
+    expect(after.balance).toBe(startBalance - 1);
+    // 结算后不应再有冻结残留。
+    expect(after.held).toBe(0);
+    expect(holds[0]?.amount).toBeGreaterThan(1);
+  });
+
+  it('refunds the hold when the request never reaches a settled state', async () => {
+    const prisma = getPrisma();
+    const account = await prisma.walletAccount.findFirstOrThrow({ where: { userId } });
+    const before = account.balance;
+    const holdsBefore = await prisma.walletHold.count({ where: { userId } });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/llm-gateway/v1/chat/completions',
+      headers: { authorization: `Bearer ${apiKeyPlaintext}` },
+      payload: {
+        model: 'test-model',
+        error_probe: true,
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+    expect(res.statusCode).toBe(500);
+
+    // 上游报错也必须把冻结金额归还，不能永久占用用户余额。
+    const holds = await prisma.walletHold.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(holds.length).toBe(holdsBefore + 1);
+    expect(holds[0]?.status).not.toBe('HELD');
+
+    const after = await prisma.walletAccount.findFirstOrThrow({ where: { userId } });
+    expect(after.held).toBe(0);
+    expect(after.balance).toBe(before);
   });
 
   it('charges cached input tokens at the cache-read price', async () => {

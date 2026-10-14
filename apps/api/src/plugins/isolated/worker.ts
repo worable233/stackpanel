@@ -285,7 +285,7 @@ const context = {
   },
 
   payments: serviceProxy('payments', ['listPaymentMethods', 'createRecord', 'initiate', 'create', 'settle', 'cancelExternalPayment', 'cancelTopUp', 'listTopUps', 'getProviderConfig', 'listByOrderIds', 'listChannelMethods', 'sweepExpired', 'confirmManual', 'cancelManual']),
-  wallet: serviceProxy('wallet', ['getAccount', 'debit', 'credit', 'adjust', 'listAccounts', 'listLedger']),
+  wallet: serviceProxy('wallet', ['getAccount', 'hold', 'settleHold', 'releaseHold', 'debit', 'credit', 'adjust', 'listAccounts', 'listLedger']),
   fx: serviceProxy('fx', ['quote', 'getRate', 'listRates']),
   extensions,
   registerExtension,
@@ -304,6 +304,9 @@ const context = {
       wallet: {
         debit: (...args: unknown[]) => callHost('tx.wallet.debit', { txId, userId: args[0], amount: args[1], currency: args[2], ref: args[3] }),
         credit: (...args: unknown[]) => callHost('tx.wallet.credit', { txId, userId: args[0], amount: args[1], currency: args[2], ref: args[3] }),
+        hold: (...args: unknown[]) => callHost('tx.wallet.hold', { txId, userId: args[0], amount: args[1], currency: args[2], ref: args[3], options: args[4] }),
+        settleHold: (...args: unknown[]) => callHost('tx.wallet.settleHold', { txId, holdId: args[0], settledAmount: args[1], ref: args[2] }),
+        releaseHold: (...args: unknown[]) => callHost('tx.wallet.releaseHold', { txId, holdId: args[0] }),
       },
       payments: {
         createRecord: (input: unknown) => callHost('tx.payments.createRecord', { txId, input }),

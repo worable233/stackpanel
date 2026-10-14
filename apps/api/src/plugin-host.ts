@@ -206,6 +206,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       void registerKernelSweeps(kernelJobs, {
         stateSweep: () => stateService.sweep(),
         paymentSweep: () => paymentsService.sweepExpired().then(() => undefined),
+        walletHoldSweep: () => walletService.sweepExpiredHolds().then(() => undefined),
         outboxRelay: () => getOutboxBus().relay(),
         outboxCleanup: () => getOutboxBus().cleanup().then(() => undefined),
         logger: { warn: (message) => logger.warn(message) },

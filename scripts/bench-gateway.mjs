@@ -54,6 +54,19 @@ const WARMUP = Number(arg('warmup', 20));
 const FIRST_TOKEN_MS = Number(arg('first-token-ms', 40));
 const UPSTREAM_CHUNKS = Number(arg('upstream-chunks', 20));
 const CHUNK_MS = Number(arg('chunk-ms', 10));
+/**
+ * 容量曲线：逗号分隔的并发档位，例如 `--sweep=1,4,8,16,32,64`。每档都跑一遍
+ * 非流式负载，输出「并发 → QPS / 附加延迟 / RSS」，把「能撑多少并发」变成实测值，
+ * 而不是拿 `RPC_MAX_IN_FLIGHT=64` 之类的在途上限去换算。
+ */
+const SWEEP = String(arg('sweep', ''))
+  .split(',')
+  .map((item) => Number(item.trim()))
+  .filter((n) => Number.isFinite(n) && n > 0);
+/** 慢客户端：每读一块后等待这么多毫秒，用来验证背压（P1）不会让内核无界排队。 */
+const SLOW_READ_MS = Number(arg('slow-read-ms', 0));
+/** 账号满载：把上游账号的 maxConcurrency 压到这个值，验证超限分支。 */
+const SATURATE = Number(arg('saturate', 0));
 const TRUSTED = process.env.BENCH_TRUSTED === '1';
 const DATABASE_URL =
   process.env.BENCH_DATABASE_URL ??
@@ -197,6 +210,10 @@ async function main() {
       .replace('__REQUESTS__', String(REQUESTS))
       .replace('__CONCURRENCY__', String(CONCURRENCY))
       .replace('__WARMUP__', String(WARMUP))
+      .replace('__SWEEP__', JSON.stringify(SWEEP))
+      .replace('__SLOWREAD__', String(SLOW_READ_MS))
+      // 必须 replaceAll：bootstrap 里既有声明又有用例，replace 只换第一处。
+      .replaceAll('__SATURATE__', String(SATURATE))
       .replace('__TRUSTED__', String(TRUSTED))
       .replace('__DB__', JSON.stringify(DATABASE_URL))
       // Replace the quoted placeholder itself: JSON.stringify already supplies
@@ -280,8 +297,9 @@ async function main() {
 
   // ---- report -------------------------------------------------------------
   const { mode, plain, stream, billing, pool: poolStats, rss } = report;
+  const banner = SATURATE > 0 ? `${mode} · 账号满载 maxConcurrency=${SATURATE}` : mode;
   console.log('');
-  console.log(`  llm-gateway 请求路径基线（mode=${mode}，N=${plain.total}，c=${CONCURRENCY}）`);
+  console.log(`  llm-gateway 请求路径基线（mode=${banner}，N=${plain.total}，c=${CONCURRENCY}）`);
   console.log('  ────────────────────────────────────────────────────────────────');
   const row = (label, p50, p95, extra = '') =>
     console.log(`  ${label.padEnd(22)} p50 ${String(p50).padStart(8)} ms   p95 ${String(p95).padStart(8)} ms  ${extra}`);
@@ -300,9 +318,33 @@ async function main() {
   console.log(`  ${'错误率'.padEnd(22)} ${plain.errors + (stream?.errors ?? 0)} / ${plain.total + (stream?.count ?? 0)}`);
   console.log('');
 
-  if (plain.errors > 0) bad(`非流式请求出现 ${plain.errors} 个错误`);
-  if (plain.addedP95 > 250) bad(`非流式附加延迟 p95 ${plain.addedP95} ms 超过 250 ms 预算线`);
-  if (report.saturation && report.saturation.capped === 0 && report.saturation.attempted > 0) {
+  if (Array.isArray(report.sweep) && report.sweep.length > 0) {
+    console.log('');
+    console.log('  容量曲线（并发 → 吞吐 / 附加延迟 / 内存）');
+    console.log('  ────────────────────────────────────────────────────────────────');
+    console.log(`  ${'并发'.padStart(6)} ${'请求'.padStart(6)} ${'QPS'.padStart(9)} ${'附加p50'.padStart(9)} ${'附加p95'.padStart(9)} ${'总p95'.padStart(9)} ${'RSS'.padStart(8)} ${'错误'.padStart(6)} ${'拒绝'.padStart(6)}`);
+    for (const row of report.sweep) {
+      console.log(
+        `  ${String(row.concurrency).padStart(6)} ${String(row.n).padStart(6)} ${String(row.qps).padStart(9)} ` +
+          `${String(row.addedP50).padStart(9)} ${String(row.addedP95).padStart(9)} ${String(row.totalP95).padStart(9)} ` +
+          `${String(row.peakRssMb + ' MB').padStart(8)} ${String(row.errors).padStart(6)} ${String(row.capped ?? 0).padStart(6)}`,
+      );
+    }
+  }
+  // --saturate 故意把账号池压小，此时 429/502 是预期拒绝，延迟也被排队拉长；
+  // 该模式只用来确认超限路径会**明确拒绝**（而不是无界排队），不套用吞吐预算线。
+  if (SATURATE > 0) {
+    console.log(`  账号满载模式（maxConcurrency=${SATURATE}）：只验证超限被明确拒绝，不套用延迟与错误预算线。`);
+  } else {
+    if (plain.errors > 0) bad(`非流式请求出现 ${plain.errors} 个错误`);
+    if (plain.addedP95 > 250) bad(`非流式附加延迟 p95 ${plain.addedP95} ms 超过 250 ms 预算线`);
+  }
+  if (
+    SATURATE === 0 &&
+    report.saturation &&
+    report.saturation.capped === 0 &&
+    report.saturation.attempted > 0
+  ) {
     console.log(`  备注：账号满载分支未触发上限（尝试 ${report.saturation.attempted} 个并发）。`);
   }
   console.log(
@@ -336,6 +378,9 @@ const REQUESTS = __REQUESTS__;
 const CONCURRENCY = __CONCURRENCY__;
 const WARMUP = __WARMUP__;
 const TRUSTED = __TRUSTED__;
+const SWEEP = __SWEEP__;
+const SLOW_READ_MS = __SLOWREAD__;
+const SATURATE = __SATURATE__;
 
 function finish(payload) {
   process.stdout.write('__BENCH__' + JSON.stringify(payload) + '__END__');
@@ -385,7 +430,7 @@ console.log('[bench] step=wallet');
 await prisma.walletAccount.create({ data: { userId: user.userId, currency: 'CNY', balance: 10_000_000 } });
 await app.inject({ method: 'POST', url: '/llm-gateway/billing', headers: { authorization: 'Bearer ' + user.token }, payload: { enabled: true } });
 await app.inject({ method: 'POST', url: '/llm-gateway/admin/prices', headers: { authorization: 'Bearer ' + admin.token }, payload: { model: 'bench-model', inputPrice: 1, outputPrice: 2, multiplier: 100 } });
-await app.inject({ method: 'POST', url: '/llm-gateway/admin/accounts', headers: { authorization: 'Bearer ' + admin.token }, payload: { name: 'bench-upstream', baseUrl: UPSTREAM, apiKey: 'up-secret', models: 'bench-model' } });
+await app.inject({ method: 'POST', url: '/llm-gateway/admin/accounts', headers: { authorization: 'Bearer ' + admin.token }, payload: { name: 'bench-upstream', baseUrl: UPSTREAM, apiKey: 'up-secret', models: 'bench-model', maxConcurrency: __SATURATE__ } });
 
 console.log('[bench] step=accounts-done');
 const keyRes = await app.inject({ method: 'POST', url: '/llm-gateway/keys', headers: { authorization: 'Bearer ' + user.token }, payload: { name: 'bench', models: 'bench-model' } });
@@ -418,6 +463,8 @@ async function callOnce(streaming) {
       const { done, value } = await reader.read();
       if (done) break;
       if (first && value && value.length > 0) { ttft = Date.now() - started; first = false; }
+      // 慢客户端：故意不消费，验证内核在客户端跟不上时是背压而不是无界排队。
+      if (SLOW_READ_MS > 0) await new Promise((r) => setTimeout(r, SLOW_READ_MS));
     }
   } else {
     // Read as text so a failing response can be reported verbatim.
@@ -460,6 +507,38 @@ try {
   const ttfts = streamOk.map((r) => r.ttft).sort((a, b) => a - b);
   const streamTotals = streamOk.map((r) => r.total).sort((a, b) => a - b);
 
+  // 容量曲线：每个并发档位跑同样的非流式负载，量出真实吞吐而不是推算。
+  const sweep = [];
+  for (const c of SWEEP) {
+    const n = Math.max(c * 4, 20);
+    const t0 = Date.now();
+    const runs = await pool(n, c, async () => { const r = await callOnce(false); sampleRss(); return r; });
+    const elapsed = Math.max(1, Date.now() - t0);
+    const ok = runs.filter((r) => r.status === 200);
+    const lat = ok.map((r) => r.total).sort((a, b) => a - b);
+    const addedSweep = ok.map((r) => {
+      const at = Number(r.upstreamHeader ?? 0);
+      const upstream = at > 0 ? Math.max(0, Date.now() - at) : 0;
+      return Math.max(0, r.total - upstream);
+    }).sort((a, b) => a - b);
+    // --saturate 故意把账号池压小，此时 429（每 key 在途超限）与 502（账号池
+    // 全部满载，pickAccount 返回 null）都是预期的准入拒绝而非错误。
+    // （注意：本段位于 String.raw 模板内，不能出现反引号。）
+    const capped = SATURATE > 0 ? runs.filter((r) => r.status === 429 || r.status === 502).length : 0;
+    sweep.push({
+      concurrency: c,
+      n,
+      ok: ok.length,
+      errors: runs.length - ok.length - capped,
+      capped,
+      qps: Math.round((ok.length / elapsed) * 1000 * 10) / 10,
+      addedP50: pct(addedSweep, 50),
+      addedP95: pct(addedSweep, 95),
+      totalP95: pct(lat, 95),
+      peakRssMb: Math.round(peakRss / 1048576),
+    });
+  }
+
   const poolStats = { waitedMs: 0, note: 'max=' + (process.env.DATABASE_POOL_MAX ?? '10') };
   const rss = { peakMb: Math.round(peakRss / 1048576), endMb: Math.round(process.memoryUsage().rss / 1048576) };
 
@@ -467,7 +546,9 @@ try {
     mode: TRUSTED ? 'trusted(dev)' : 'isolated',
     plain: {
       total: plainRuns.length,
-      errors: plainRuns.length - plainOk.length,
+      errors: SATURATE > 0
+        ? plainRuns.filter((r) => r.status !== 200 && r.status !== 429 && r.status !== 502).length
+        : plainRuns.length - plainOk.length,
       totalP50: pct(totals, 50), totalP95: pct(totals, 95),
       addedP50: pct(added, 50), addedP95: pct(added, 95),
     },
@@ -479,7 +560,13 @@ try {
       peakConcurrent: CONCURRENCY, capped: streamRuns.filter((r) => r.status === 429).length,
     },
     billing: null,
-    saturation: { attempted: CONCURRENCY, capped: streamRuns.filter((r) => r.status === 429).length },
+    sweep,
+    saturation: {
+      attempted: CONCURRENCY,
+      limit: SATURATE,
+      capped: streamRuns.filter((r) => r.status === 429).length,
+      rejected: plainRuns.filter((r) => r.status === 429 || r.status === 502).length,
+    },
     pool: poolStats,
     rss,
   });
@@ -488,6 +575,7 @@ try {
   process.exit(9);
 } finally {
   try {
+    await prisma.walletHold.deleteMany({ where: { userId: user.userId } });
     await prisma.walletLedgerEntry.deleteMany({ where: { userId: user.userId } });
     await prisma.walletAccount.deleteMany({ where: { userId: user.userId } });
     await prisma.apiToken.deleteMany({ where: { userId: { in: [user.userId, admin.userId] } } });

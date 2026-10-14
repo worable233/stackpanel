@@ -155,5 +155,6 @@ export function createKernelJobContext(owner: string, jobs: JobRuntime): JobCont
 export const KERNEL_JOBS = {
   stateSweep: 'state.sweep',
   paymentSweep: 'payments.sweep-expired',
+  walletHoldSweep: 'wallet.sweep-holds',
   outboxRelay: 'outbox.relay',
 } as const;

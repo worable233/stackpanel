@@ -9,6 +9,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -139,6 +140,7 @@ function UserDropdown({
           </div>
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuGroup>
         {backLink ? (
           <DropdownMenuItem
             render={
@@ -163,6 +165,7 @@ function UserDropdown({
           <LogOut className="size-4" />
           {t('nav.logout')}
         </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -189,9 +192,9 @@ function NavButton({
       render={<Link href={item.href} aria-current={active ? 'page' : undefined} />}
       variant="ghost"
       className={cn(
-        'relative h-9 gap-2 px-3 text-sm',
+        'relative h-9 gap-2 rounded-lg px-3 text-sm transition duration-200 motion-reduce:transition-none',
         active
-          ? 'bg-primary/10 text-primary'
+          ? 'bg-primary/15 text-accent-foreground ring-1 ring-primary/25'
           : 'text-foreground/70 hover:bg-accent hover:text-foreground',
       )}
     >
@@ -230,9 +233,9 @@ function NavDropdown({
           <Button
             variant="ghost"
             className={cn(
-              'relative h-9 gap-2 px-3 text-sm',
+              'relative h-9 gap-2 rounded-lg px-3 text-sm transition duration-200 motion-reduce:transition-none',
               anyActive
-                ? 'bg-primary/10 text-primary'
+                ? 'bg-primary/15 text-accent-foreground ring-1 ring-primary/25'
                 : 'text-foreground/70 hover:bg-accent hover:text-foreground',
             )}
           >
@@ -243,6 +246,7 @@ function NavDropdown({
         }
       />
       <DropdownMenuContent align="start" className="min-w-40">
+        <DropdownMenuGroup>
         {items.map((item) => {
           const ItemIcon = icons[item.href] ?? defaultIcon ?? User;
           const active = item.href === activeHref;
@@ -252,7 +256,7 @@ function NavDropdown({
               render={
                 <Link
                   href={item.href}
-                  className={cn('flex items-center gap-2', active && 'bg-primary/10 text-primary')}
+                  className={cn('flex items-center gap-2', active && 'bg-primary/15 text-accent-foreground ring-1 ring-primary/25')}
                   aria-current={active ? 'page' : undefined}
                 />
               }
@@ -262,6 +266,7 @@ function NavDropdown({
             </DropdownMenuItem>
           );
         })}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -305,9 +310,13 @@ export function BackendShell({
   };
 
   return (
-    <div className="flex min-h-dvh flex-col bg-muted/30">
+    <div className="relative isolate flex min-h-dvh flex-col bg-background text-foreground">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[480px] overflow-hidden">
+        <div className="absolute -top-72 left-1/2 h-[600px] w-[min(900px,100%)] -translate-x-1/2 rounded-full bg-primary/8 blur-3xl" />
+      </div>
       <NotificationToaster />
-      <header className="h-16 border-b bg-background/85 backdrop-blur">
+      <div className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-2xl">
+      <header className="h-16 border-b border-border/50">
         <div className={cn('mx-auto flex h-full w-full items-center justify-between gap-4 px-4 sm:px-6 lg:px-10', contentMaxWidth)}>
           <Link
             href={rootHref}
@@ -337,10 +346,10 @@ export function BackendShell({
         </div>
       </header>
 
-      <nav className="border-b bg-background">
+      <nav aria-label={t('nav.homeAriaLabel')} className="bg-transparent">
         <div
           className={cn(
-            'scrollbar-none mx-auto flex h-12 w-full items-center gap-1 overflow-x-auto px-4 sm:px-6 lg:px-10',
+            'scrollbar-none mx-auto flex h-14 w-full items-center gap-1.5 overflow-x-auto px-4 sm:px-6 lg:px-10',
             contentMaxWidth,
           )}
         >
@@ -372,6 +381,7 @@ export function BackendShell({
           ))}
         </div>
       </nav>
+      </div>
 
       <main className="flex-1 overflow-x-hidden">
         <div className={cn('mx-auto w-full px-4 py-8 sm:px-6 lg:px-10 lg:py-10', contentMaxWidth)}>

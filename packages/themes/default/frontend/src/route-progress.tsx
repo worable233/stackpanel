@@ -75,14 +75,16 @@ function RouteProgressState() {
       start();
     };
     const onPopState = () => start();
-    document.addEventListener('click', onClick);
+    // Next Link prevents the native navigation during bubbling; observe before it.
+    document.addEventListener('click', onClick, true);
     window.addEventListener('popstate', onPopState);
     return () => {
-      document.removeEventListener('click', onClick);
+      document.removeEventListener('click', onClick, true);
       window.removeEventListener('popstate', onPopState);
-      stopTimers();
     };
-  }, [location, start, stopTimers]);
+  }, [location, start]);
+
+  useEffect(() => stopTimers, [stopTimers]);
 
   return (
     <div

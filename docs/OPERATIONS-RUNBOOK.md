@@ -56,6 +56,46 @@ P1（背压）之后应额外确认慢客户端不再造成无界排队。
 容量上限口径：`RPC_MAX_IN_FLIGHT=64` 与 `RPC_MAX_RAW_STREAMS=256` 是**在途上限**，
 不得直接换算成 QPS。压测若出现 `Plugin worker exited; plugin quarantined`，见上一节。
 
+### 容量曲线（实测吞吐）
+
+基线的 p95 告诉你「单请求附加了多少开销」，容量曲线告诉你「这台机器能同时扛多少」。
+用 `--sweep` 扫并发档位，每个档位跑一遍非流式负载：
+
+```bash
+node scripts/bench-gateway.mjs --sweep=1,4,8,16,32,64 --requests=80 --concurrency=16
+BENCH_TRUSTED=1 node scripts/bench-gateway.mjs --sweep=1,4,8,16   # 对照
+node scripts/bench-gateway.mjs --slow-read-ms=50                  # 慢客户端背压
+node scripts/bench-gateway.mjs --saturate=2 --sweep=1,2,4,8       # 账号满载分支
+```
+
+同机实测（isolated，mock 上游，单副本；数值随机器变化，请以同机重复运行为准）：
+
+| 并发 | QPS | 附加延迟 p95 | 总耗时 p95 | RSS |
+| --- | --- | --- | --- | --- |
+| 1 | ~47 | 0 ms | 31 ms | 341 MB |
+| 4 | ~113 | 20 ms | 40 ms | 341 MB |
+| 8 | ~108 | 33 ms | 97 ms | 344 MB |
+| 16 | ~51 | 197 ms | 418 ms | 349 MB |
+| 32 | ~73 | 212 ms | 612 ms | 349 MB |
+
+**读法：吞吐在并发 4–8 附近触顶（约 110 QPS），再往上只增加延迟、不增加吞吐** ——
+mock 上游把每请求压到几十毫秒，这时限制来自本机的单核 CPU 与 IPC 往返，而不是
+上游。真实 LLM 上游是 1–60 秒量级，同一档位的 QPS 会低得多，但**形状不变**：先
+线性增长，然后在单进程 CPU 饱和处拐平。因此「能撑多少」必须实测，不能从
+`RPC_MAX_IN_FLIGHT=64` 换算。
+
+`--slow-read-ms` 用来确认 P1 的背压语义：客户端故意拖延读取时，内核应当让生产端
+`await drain()` 停下来，而不是把数据堆在内存里（`RAW_MAX_QUEUE_BYTES=4 MiB` 是硬顶，
+超出即报错终止该流）。同机实测（isolated，`--slow-read-ms=30`，N=24、并发 8）：
+**24/24 全部完成、0 错误、RSS 峰值 328 MB / 末态 159 MB** —— 内存回到低水位，说明慢
+客户端造成的是背压而不是无界排队。
+
+`--saturate=N` 把上游账号的 `maxConcurrency` 压到 N，用来确认**超限被明确拒绝而不是
+排队**：账号池满载时 `pickAccount` 返回 null → 502 `no_upstream`，每 key 在途超限则
+429 `concurrency_limited`。该模式**不套用吞吐/延迟预算线**（排队与拒绝本来就会拉长
+p95），只读「拒绝」列是否有值。同机实测（`--saturate=2`）：并发 4/8 档分别出现
+12/26 次拒绝、0 个非预期错误。
+
 ## Production release gates
 
 Use immutable image digests, verify the cosign signature, and retain the OCI SBOM

@@ -225,6 +225,8 @@ export type {
 export type {
   WalletAccount,
   WalletAdjustmentInput,
+  WalletHold,
+  WalletHoldOptions,
   WalletLedgerEntry,
   WalletLedgerRef,
   WalletService,

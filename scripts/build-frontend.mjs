@@ -54,6 +54,8 @@ async function buildFrontendPackageFromSource(pkg) {
       '--external:next/link',
       '--external:next/form',
       '--external:next/navigation',
+      // Keep this client entry separate from the server-rendered theme bundle.
+      '--external:./route-progress.js',
       '--external:@stackpanel/sdk',
       '--external:@stackpanel/ui',
       '--external:zod',
@@ -62,6 +64,26 @@ async function buildFrontendPackageFromSource(pkg) {
     ],
     { cwd: pkg.source, stdio: 'inherit' },
   );
+  if (existsSync(path.join(pkg.source, 'src', 'route-progress.tsx'))) {
+    execFileSync(
+      esbuildBin,
+      [
+        'src/route-progress.tsx',
+        '--bundle',
+        '--format=esm',
+        '--outdir=dist',
+        '--platform=neutral',
+        '--target=es2020',
+        '--jsx=automatic',
+        '--sourcemap',
+        '--banner:js="use client";',
+        '--external:react',
+        '--external:react/jsx-runtime',
+        '--external:next/navigation',
+      ],
+      { cwd: pkg.source, stdio: 'inherit' },
+    );
+  }
   // Build the client-only admin entry (interactive admin pages) when present.
   if (existsSync(path.join(pkg.source, 'src', 'admin.tsx'))) {
     execFileSync(
@@ -107,7 +129,9 @@ async function buildFrontendPackageFromSource(pkg) {
   const probeLinkStub = path.join(probeDir, 'next-link-stub.mjs');
   await writeFile(
     probeLinkStub,
-    'export default function Link(props) { return props.children ?? null; }\n',
+    'export default function Link(props) { return props.children ?? null; }\n' +
+      'export function usePathname() { return "/"; }\n' +
+      'export function useSearchParams() { return new URLSearchParams(); }\n',
   );
   execFileSync(
     esbuildBin,

@@ -176,16 +176,58 @@ model Payment {
 }
 
 /// 钱包账户：每用户每币种一个。本期仅使用 CNY 账户；结构为多币种预留。
+///
+/// `held` 是**已被预授权冻结**的金额（ADR-0022 P16）。冻结采用「从 balance 划走」
+/// 的记法：`hold` 时 `balance -= amount; held += amount`，结算时 `held -= amount`
+/// 并把差额退回 `balance`。因此 `balance` 始终是**当前可用余额**，普通
+/// `debit`/`credit` 的判定无需感知 `held`，冻结额天然不会被其它请求花掉。
+/// 不变量：`held == SUM(wallet_holds.amount WHERE status='HELD')`，
+/// 由内核 sweep 与 `wallet_holds` 表对账。
 model WalletAccount {
   id        String   @id @default(cuid())
   userId    String
   currency  String   @default("CNY")
   balance   Int      @default(0)
+  held      Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("wallet_accounts")
   @@unique([userId, currency])
+}
+
+/// 预授权（hold）：请求开始前冻结一笔额度，结束时按实际用量结算。
+///
+/// 存在的意义是消除「先查余额、使用后扣费」的并发窗口：并发请求若共享同一
+/// 余额快照，多个请求都能通过余额检查，最后一个扣费失败形成坏账（PLAN §7）。
+/// 有 `HELD` 记录时余额已被冻结，后来者看到的 `balance` 已扣掉冻结额。
+///
+/// 幂等：`(referenceType, referenceId)` 唯一，同一业务引用重复 hold 返回同一行、
+/// 不会重复冻结；`status` 单向流转（HELD → SETTLED / RELEASED / EXPIRED），
+/// 重复 settle/release 是 no-op。
+model WalletHold {
+  id            String    @id @default(cuid())
+  userId        String
+  currency      String    @default("CNY")
+  /// 冻结金额（minor 单位）。
+  amount        Int
+  /// HELD | SETTLED | RELEASED | EXPIRED
+  status        String    @default("HELD")
+  /// 实际结算金额；SETTLED 时写入。
+  settledAmount Int?
+  referenceType String
+  referenceId   String
+  note          String?
+  /// 过期时间：超过后由内核 sweep 归位，防止进程崩溃造成永久冻结。
+  expiresAt     DateTime
+  settledAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([referenceType, referenceId])
+  @@index([status, expiresAt])
+  @@index([userId, createdAt])
+  @@map("wallet_holds")
 }
 
 /// 销售渠道：终端（PC/小程序/API）× 支付方式绑定，订单来源追踪。
