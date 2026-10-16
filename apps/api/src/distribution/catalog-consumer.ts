@@ -21,6 +21,8 @@ import type {
   Keyring,
   PackageManifest,
 } from '@stackpanel/spec';
+import { fetchAndVerifyPackage, type FileMap } from './package-source.ts';
+import type { SourceCache } from './github-source.ts';
 export interface PublisherBinding {
   publisher: string;
   /** 用于校验条目包签名的 keyId（取自目录白名单）。 */
@@ -105,6 +107,12 @@ export function resolveUsableKeyId(
   if (key.purpose !== 'package') {
     throw new CatalogConsumerError(`keyId ${binding.keyId} 用途不是 package`, 'missing_key');
   }
+  if (key.publisher !== binding.publisher) {
+    throw new CatalogConsumerError(
+      `keyId ${binding.keyId} 的发布者 ${key.publisher ?? '（未声明）'} 与目录绑定 ${binding.publisher} 不符`,
+      'unknown_publisher',
+    );
+  }
   if (key.revoked) {
     throw new CatalogConsumerError(`keyId ${binding.keyId} 已撤销`, 'missing_key');
   }
@@ -125,4 +133,47 @@ export function resolveUsableKeyId(
     );
   }
   return binding.keyId;
+}
+
+export interface FetchCatalogPackageResult {
+  files: FileMap;
+  sha256: string;
+  size: number;
+  publisher: string;
+  keyId: string;
+}
+
+/**
+ * 一站式取包：解析条目信任归属 → 校验 keyId 内核可用 → 下载并验签（绑定发布者/仓库）。
+ * 这是统一安装事务（§7）`resolve`+`verify` 两步在**远程目录来源**上的实现：返回已解压、
+ * 已验签的文件集合，交给 `packages/**` 做 staging/物化（不在此处落盘）。
+ */
+export async function fetchCatalogPackage(input: {
+  catalog: CatalogSnapshot;
+  entry: CatalogEntry;
+  keyring: Keyring;
+  cache: SourceCache;
+  token?: string;
+  fetchImpl?: typeof fetch;
+  now?: Date;
+}): Promise<FetchCatalogPackageResult> {
+  const binding = resolvePublisherBinding(input.catalog, input.entry);
+  const keyId = resolveUsableKeyId(input.keyring, binding, input.entry, input.now ?? new Date());
+  const verified = await fetchAndVerifyPackage({
+    manifest: input.entry,
+    cache: input.cache,
+    keyring: input.keyring,
+    publisher: binding.publisher,
+    keyId,
+    ...(input.token ? { token: input.token } : {}),
+    ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
+    ...(input.now ? { now: input.now } : {}),
+  });
+  return {
+    files: verified.files,
+    sha256: verified.sha256,
+    size: verified.size,
+    publisher: binding.publisher,
+    keyId,
+  };
 }
