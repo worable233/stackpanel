@@ -61,4 +61,22 @@ export interface DeploymentAdapter {
     ctx: StepContext,
     failure: { stage: string; detail: string; migrated: boolean; postWrite: boolean },
   ): Promise<{ recovered: boolean; credential: string; detail?: string }>;
+
+  /**
+   * 独立恢复入口（§5.2）限定动作：回退到**上一代**部署。由恢复入口在**持有执行权**
+   * 且无在途升级时调用；与 {@link recover} 不同，它不绑定某次任务上下文，只按部署指针
+   * 回切 previousDigest。可选：未配置的适配器不提供，入口据此返回「无能力」而非假成功。
+   */
+  rollbackToPrevious?(): Promise<{ ok: boolean; detail: string }>;
+
+  /**
+   * 独立恢复入口（§5.2）限定动作：对账现场——读取当前生效代次/digest 并做一次
+   * readiness 探针。幂等，不改部署。可选，语义同上。
+   */
+  reconcile?(): Promise<{
+    ok: boolean;
+    generation: number;
+    digest: string | null;
+    detail: string;
+  }>;
 }

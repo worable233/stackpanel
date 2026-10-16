@@ -28,6 +28,7 @@ import {
   assessHandover,
 } from './self-update.ts';
 import { createRecoveryServer, type RecoveryServerHandle } from './recovery-entry.ts';
+import { RecoveryCoordinator } from './recovery-actions.ts';
 import { UPDATE_PROTOCOL_VERSION } from '@stackpanel/spec';
 
 export interface UpdaterConfig {
@@ -177,6 +178,8 @@ export class Updater {
     }
     const task = await this.channel.claim(this.deps.config.instanceId);
     if (!task) return false;
+    // 归档完整声明，供独立恢复入口在失败后重建重试任务（不依赖内存）。
+    await this.channel.archiveTask(task);
     await this.publishStatus(task.idempotencyKey);
     const result = await this.engine.run(task, true);
     const projection = await this.toTaskResult(task, result);
@@ -247,6 +250,16 @@ export class Updater {
   stop(): void {
     this.stopping = true;
   }
+
+  /** 供独立恢复入口复用的任务通道（重试即重新投递）。 */
+  get channelForRecovery(): FileUpdateTaskChannel {
+    return this.channel;
+  }
+
+  /** 供独立恢复入口复用的权威日志（只读，统计重试次数）。 */
+  get journalForRecovery(): FileUpdateJournal {
+    return this.journal;
+  }
 }
 
 async function main(): Promise<void> {
@@ -260,6 +273,17 @@ async function main(): Promise<void> {
   let recovery: RecoveryServerHandle | null = null;
   const recoveryToken = process.env['UPDATER_RECOVERY_TOKEN'];
   const recoveryPort = Number(process.env['UPDATER_RECOVERY_PORT'] ?? 0);
+  const statusStore = FileUpdaterStatus.resolve(config.stateDir);
+  const pointerStore = FileDeploymentPointer.resolve(config.stateDir);
+  const coordinator = new RecoveryCoordinator({
+    instanceId: config.instanceId,
+    channel: updater.channelForRecovery,
+    journal: updater.journalForRecovery,
+    status: statusStore,
+    pointer: pointerStore,
+    adapter,
+    log,
+  });
   if (recoveryToken && recoveryPort > 0) {
     recovery = createRecoveryServer({
       port: recoveryPort,
@@ -267,7 +291,7 @@ async function main(): Promise<void> {
       deps: {
         token: recoveryToken,
         readStatus: async () => {
-          const status = await FileUpdaterStatus.resolve(config.stateDir).read();
+          const status = await statusStore.read();
           return status
             ? {
                 generation: status.generation,
@@ -277,20 +301,11 @@ async function main(): Promise<void> {
               }
             : null;
         },
-        // 受限动作：写入一个接管/重试请求由同一循环处理；这里是恢复入口的**入口点**，
-        // 真正动作仍经执行权与引擎，不绕过状态机。
-        retry: async (idempotencyKey) => {
-          log(`恢复入口请求重试：${idempotencyKey ?? '当前任务'}`);
-          return { ok: true, detail: '已排队重试；由执行循环在持有执行权时处理' };
-        },
-        rollback: async () => {
-          log('恢复入口请求回退上一代');
-          return { ok: true, detail: '已请求回退；将由适配器在持有执行权时执行' };
-        },
-        reconcile: async () => {
-          const pointer = await FileDeploymentPointer.resolve(config.stateDir).read();
-          return { ok: true, detail: `当前代次 ${pointer?.generation ?? 0}` };
-        },
+        // 受限动作：重新投递任务 / 回退上一代 / 对账现场；均经执行权与适配器，不绕过
+        // 状态机，也不在 HTTP 线程里直接跑变更（§5.2）。
+        retry: (idempotencyKey) => coordinator.retry(idempotencyKey),
+        rollback: () => coordinator.rollback(),
+        reconcile: () => coordinator.reconcile(),
         log,
       },
     });
@@ -343,3 +358,5 @@ export {
 export type { HandoverRequest, HandoverDecision, SelfUpdateState } from './self-update.ts';
 export { createRecoveryServer } from './recovery-entry.ts';
 export type { RecoveryDeps, RecoveryServerHandle } from './recovery-entry.ts';
+export { RecoveryCoordinator, MAX_AUTO_RETRIES } from './recovery-actions.ts';
+export type { RecoveryCoordinatorDeps, RecoveryActionResult } from './recovery-actions.ts';

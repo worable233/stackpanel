@@ -356,6 +356,59 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
     };
   }
 
+  // —— §5.2 独立恢复入口：回退到上一代 ——
+  async rollbackToPrevious(): Promise<{ ok: boolean; detail: string }> {
+    const pointer = await this.pointer.read();
+    const target = pointer?.previousDigest ?? null;
+    if (!pointer || !target) {
+      return { ok: false, detail: '没有可回退的上一代部署（指针缺失或从未切换）' };
+    }
+    await this.composeRun(['up', '-d', ...this.config.allowedServices], {
+      env: { [this.config.imageEnv]: target },
+      timeoutMs: 15 * 60_000,
+    });
+    // 回退即把指针指回上一代；generation 递增以标记一次新的生效态，保留被回退的那一代
+    // 供再次前滚，绝不静默丢弃现场。
+    const nextGeneration = pointer.generation + 1;
+    await this.pointer.write({
+      generation: nextGeneration,
+      digest: target,
+      previousDigest: pointer.digest,
+      previousGeneration: pointer.generation,
+      updatedAt: this.now().toISOString(),
+    });
+    const readiness = await this.probe(
+      this.config.probes.readinessUrl,
+      DEFAULT_PROBE_TIMEOUT_MS,
+    ).catch(() => false);
+    return {
+      ok: readiness,
+      detail: readiness
+        ? `已回退到上一代（generation ${nextGeneration}）`
+        : `已回退但 readiness 探针未通过，保持维护（generation ${nextGeneration}）`,
+    };
+  }
+
+  // —— §5.2 独立恢复入口：对账现场（幂等，不改部署） ——
+  async reconcile(): Promise<{
+    ok: boolean;
+    generation: number;
+    digest: string | null;
+    detail: string;
+  }> {
+    const pointer = await this.pointer.read();
+    const readiness = await this.probe(
+      this.config.probes.readinessUrl,
+      DEFAULT_PROBE_TIMEOUT_MS,
+    ).catch(() => false);
+    return {
+      ok: readiness,
+      generation: pointer?.generation ?? 0,
+      digest: pointer?.digest ?? null,
+      detail: readiness ? 'readiness 探针通过' : 'readiness 探针未通过',
+    };
+  }
+
   /** 用 pg_restore 从快照恢复数据库（仅 §6 允许的迁移后场景调用）。 */
   async restoreSnapshot(ref: string): Promise<void> {
     const dumpFile = path.join(ref, 'database.dump');

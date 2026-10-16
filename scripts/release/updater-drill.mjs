@@ -288,6 +288,67 @@ async function scenarioPostWriteFailure(drill, root) {
   );
 }
 
+async function scenarioRecoveryEntry(drill, root) {
+  console.log('\n场景 E：独立恢复入口动作（对账 / 回退 / 重试），经真实适配器与通道');
+  const stateDir = path.join(root, 'E-state');
+  const projectDir = path.join(root, 'E-project');
+  await mkdir(stateDir, { recursive: true });
+  await mkdir(projectDir, { recursive: true });
+  // 预置一代旧部署 + 一代新的（可回退）现场。
+  await drill.FileDeploymentPointer.resolve(stateDir).write({
+    generation: 4,
+    digest: TARGET_DIGEST,
+    previousDigest: OLD_DIGEST,
+    previousGeneration: 3,
+    updatedAt: '2026-10-17T00:00:00Z',
+  });
+  // 预置一条失败结果 + 归档任务，供重试。
+  await drill.FileUpdaterStatus.resolve(stateDir).write({
+    generation: 4,
+    digest: TARGET_DIGEST,
+    activeTask: null,
+    recent: [
+      { idempotencyKey: 'failed-key', result: { phase: 'recovery_failed', checkpoints: [] } },
+    ],
+    updatedAt: '2026-10-17T00:00:00Z',
+  });
+  const channelRoot = path.join(stateDir, 'channel');
+  const channel = new drill.FileUpdateTaskChannel(channelRoot);
+  await channel.archiveTask(makeTask({ idempotencyKey: 'failed-key' }));
+  const { runner, calls } = makeRunner();
+  const adapter = deploymentAdapterFactory(drill, {
+    stateDir,
+    projectDir,
+    backupDir: path.join(stateDir, 'backups'),
+    runner,
+  });
+  const coordinator = new drill.RecoveryCoordinator({
+    instanceId: 'drill-instance',
+    channel,
+    journal: new drill.FileUpdateJournal(path.join(stateDir, 'journal.jsonl')),
+    status: drill.FileUpdaterStatus.resolve(stateDir),
+    pointer: drill.FileDeploymentPointer.resolve(stateDir),
+    adapter,
+    now: () => new Date('2026-10-17T12:00:00Z'),
+  });
+
+  const reconcile = await coordinator.reconcile();
+  assert(reconcile.ok, `对账通过并读回现场（${reconcile.detail}）`);
+
+  const rollback = await coordinator.rollback();
+  assert(rollback.ok, `回退经真实适配器执行（${rollback.detail}）`);
+  const rolled = await drill.FileDeploymentPointer.resolve(stateDir).read();
+  assert(rolled?.digest === OLD_DIGEST, '回退后部署指针指向上一代 digest');
+  assert(rolled?.generation === 5, `回退推进 generation 到 5（实际 ${rolled?.generation}）`);
+
+  const retry = await coordinator.retry();
+  assert(retry.ok, `重试重新投递已归档任务（${retry.detail}）`);
+  assert(
+    calls.some((c) => c.includes('up -d') || c.includes('up')),
+    '回退确实调用 compose up -d 切换服务',
+  );
+}
+
 async function main() {
   const real = process.argv.includes('--real');
   const drill = await loadDrill();
@@ -297,7 +358,8 @@ async function main() {
     await scenarioPreMigrationFailure(drill, root);
     await scenarioPostMigrationFailure(drill, root);
     await scenarioPostWriteFailure(drill, root);
-    console.log('\n离线演练通过：成功路径 + §6 三类失败恢复语义均符合预期。');
+    await scenarioRecoveryEntry(drill, root);
+    console.log('\n离线演练通过：成功路径 + §6 三类失败恢复语义 + §5.2 恢复入口动作均符合预期。');
     if (!real) {
       console.log(
         '\n注：真实 Docker/Compose、真机干净安装与发布镜像的端到端验收（§13-7）尚未执行。\n' +

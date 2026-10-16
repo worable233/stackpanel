@@ -269,4 +269,51 @@ describe('ComposeDeploymentAdapter', () => {
     expect(calls.some((c) => c.args.includes('pg_restore'))).toBe(true);
     expect(result.recovered).toBe(true);
   });
+
+  it('rolls back to the previous digest and advances the pointer generation', async () => {
+    const pointer = FileDeploymentPointer.resolve(root);
+    await pointer.write({
+      generation: 4,
+      digest: 'sha256:' + 'b'.repeat(64),
+      previousDigest: 'sha256:' + 'c'.repeat(64),
+      previousGeneration: 3,
+      updatedAt: '2026-01-01T00:00:00Z',
+    });
+    const { adapter, calls } = adapterFor((req) =>
+      req.args.includes('up') ? { code: 0, stdout: '', stderr: '' } : undefined,
+    );
+    const result = await adapter.rollbackToPrevious();
+    expect(result.ok).toBe(true);
+    const up = calls.find((c) => c.args.includes('up'));
+    expect(up?.env?.['STACKPANEL_IMAGE']).toBe('sha256:' + 'c'.repeat(64));
+    const after = await FileDeploymentPointer.resolve(root).read();
+    expect(after?.digest).toBe('sha256:' + 'c'.repeat(64));
+    expect(after?.generation).toBe(5);
+    // The rolled-back-from generation is preserved for a forward re-roll.
+    expect(after?.previousDigest).toBe('sha256:' + 'b'.repeat(64));
+  });
+
+  it('refuses to roll back when there is no previous generation', async () => {
+    const { adapter, calls } = adapterFor();
+    const result = await adapter.rollbackToPrevious();
+    expect(result.ok).toBe(false);
+    expect(calls.some((c) => c.args.includes('up'))).toBe(false);
+  });
+
+  it('reconciles by reading the pointer and probing readiness', async () => {
+    const pointer = FileDeploymentPointer.resolve(root);
+    await pointer.write({
+      generation: 6,
+      digest: DIGEST,
+      previousDigest: null,
+      previousGeneration: null,
+      updatedAt: '2026-01-01T00:00:00Z',
+    });
+    const { adapter, probes } = adapterFor();
+    const result = await adapter.reconcile();
+    expect(result.ok).toBe(true);
+    expect(result.generation).toBe(6);
+    expect(result.digest).toBe(DIGEST);
+    expect(probes).toContain('http://api:3001/health');
+  });
 });

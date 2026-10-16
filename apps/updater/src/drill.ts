@@ -27,5 +27,8 @@ export { validateComposeConfig, composeConfigFromEnv } from './compose-config.ts
 export type { ComposeProjectConfig } from './compose-config.ts';
 export { FileDeploymentPointer } from './deployment-pointer.ts';
 export { FileSnapshotStore } from './snapshot-store.ts';
+export { FileUpdaterStatus } from './status.ts';
+export { RecoveryCoordinator, MAX_AUTO_RETRIES } from './recovery-actions.ts';
+export type { RecoveryCoordinatorDeps, RecoveryActionResult } from './recovery-actions.ts';
 export { SpawnCommandRunner } from './command.ts';
 export type { CommandRunner, CommandRequest, CommandResult } from './command.ts';

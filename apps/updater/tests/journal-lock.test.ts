@@ -155,4 +155,17 @@ describe('FileUpdateTaskChannel', () => {
     ) as { phase: string };
     expect(result.phase).toBe('committed');
   });
+
+  it('archives the full task declaration and reads it back for recovery retry', async () => {
+    const { FileUpdateTaskChannel } = await import('../src/task-channel.ts');
+    const channel = new FileUpdateTaskChannel(path.join(root, 'channel'));
+    const t = task();
+    await channel.archiveTask(t);
+    // Survives a fresh channel instance (persisted, not in-memory).
+    const reopened = new FileUpdateTaskChannel(path.join(root, 'channel'));
+    const archived = await reopened.readArchivedTask('i1', 'k1');
+    expect(archived?.targetDigest).toBe(t.targetDigest);
+    expect(archived?.plan.kernel.migration).toBe('m1');
+    expect(await reopened.readArchivedTask('i1', 'missing')).toBeNull();
+  });
 });

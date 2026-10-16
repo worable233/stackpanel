@@ -26,6 +26,14 @@ export interface UpdateTaskChannel {
   claim(instanceId: string): Promise<UpdateTask | null>;
   /** 回写任务结果投影（业务库侧再消费）。 */
   complete(task: UpdateTask, result: UpdateTaskResult): Promise<void>;
+  /**
+   * 归档完整任务声明（认领后、执行前调用）。任务结果只含检查点，恢复入口需要完整任务
+   * 才能重建 {@link import('./deployment-adapter.ts').StepContext} 来重试；归档使该信息
+   * 在重启后仍可读（不依赖内存）。
+   */
+  archiveTask(task: UpdateTask): Promise<void>;
+  /** 读取已归档任务；不存在则 null。 */
+  readArchivedTask(instanceId: string, idempotencyKey: string): Promise<UpdateTask | null>;
 }
 
 const FILE_PATTERN = /\.json$/;
@@ -50,6 +58,11 @@ export class FileUpdateTaskChannel implements UpdateTaskChannel {
 
   private resultsDir(instanceId: string): string {
     return updateChannelDir(this.root, 'results', instanceId);
+  }
+
+  /** 归档目录（updater 内部，非通道契约子目录）。 */
+  private archiveDir(instanceId: string): string {
+    return path.join(this.root, 'archived', instanceId);
   }
 
   async submit(task: UpdateTask): Promise<void> {
@@ -98,5 +111,26 @@ export class FileUpdateTaskChannel implements UpdateTaskChannel {
     await rm(path.join(this.claimedDir(task.instanceId), updateTaskFileName(task.idempotencyKey)), {
       force: true,
     });
+  }
+
+  async archiveTask(task: UpdateTask): Promise<void> {
+    const dir = this.archiveDir(task.instanceId);
+    await mkdir(dir, { recursive: true });
+    const target = path.join(dir, updateTaskFileName(task.idempotencyKey));
+    const tmp = `${target}.tmp`;
+    await writeFile(tmp, JSON.stringify(task, null, 2), 'utf8');
+    await rename(tmp, target);
+  }
+
+  async readArchivedTask(instanceId: string, idempotencyKey: string): Promise<UpdateTask | null> {
+    try {
+      const raw = await readFile(
+        path.join(this.archiveDir(instanceId), updateTaskFileName(idempotencyKey)),
+        'utf8',
+      );
+      return JSON.parse(raw) as UpdateTask;
+    } catch {
+      return null;
+    }
   }
 }
