@@ -20,14 +20,19 @@
 宿主交互（Docker/Compose、pg 备份、一次性迁移、恢复）全部藏在 `DeploymentAdapter`
 契约后，因此可以在不碰真实 Docker 的情况下覆盖推进、断电续跑与失败恢复。
 
-| 文件                        | 职责                                                                                                        |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `src/journal.ts`            | 独立持久卷上的**权威操作日志**：append-only、单调 seq、容忍断电半行、不倒退（§5.2、§5.3）                   |
-| `src/executor-lock.ts`      | 有所有者的执行代次 + 跨进程互斥；失联可被接管，被接管后 `assertOwned()` 立即停手（§5.2）                    |
-| `src/deployment-adapter.ts` | 宿主交互契约：§5.4 的 9 个步骤 + 失败恢复，每步返回完成凭据                                                 |
-| `src/engine.ts`             | 状态机驱动器：记录输入摘要与凭据、断点续跑、失败走 `recovering → recovered / recovery_failed`（§5.3、§5.4） |
-| `src/task-channel.ts`       | 任务通道契约 + 文件系统实现（投递 / 认领 / 结果回写），生产可换成带认证的内部端点                           |
-| `src/main.ts`               | 组装轮询循环；默认装配**未配置即拒绝**的适配器，避免未绑定 project 时误操作宿主                             |
+| 文件                        | 职责                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `src/journal.ts`            | 独立持久卷上的**权威操作日志**：append-only、单调 seq、容忍断电半行、不倒退（§5.2、§5.3）                       |
+| `src/executor-lock.ts`      | 有所有者的执行代次 + 跨进程互斥；失联可被接管，被接管后 `assertOwned()` 立即停手（§5.2）                        |
+| `src/deployment-adapter.ts` | 宿主交互契约：§5.4 的 9 个步骤 + 失败恢复，每步返回完成凭据                                                     |
+| `src/engine.ts`             | 状态机驱动器：记录输入摘要与凭据、断点续跑、失败走 `recovering → recovered / recovery_failed`（§5.3、§5.4）     |
+| `src/task-channel.ts`       | 任务通道契约 + 文件系统实现（投递 / 认领 / 结果回写），生产可换成带认证的内部端点                               |
+| `src/command.ts`            | 宿主命令执行抽象：`SpawnCommandRunner` 用白名单 + **非 shell** 参数数组调用 docker/pg 客户端；测试注入假 runner |
+| `src/compose-config.ts`     | 绑定部署配置：project 目录、compose 文件、服务名、镜像注入变量、数据库、探针；从 `UPDATER_*` 装配并校验         |
+| `src/deployment-pointer.ts` | 部署指针：当前 digest + generation，切换成功递增并保留上一代供回退（§5.2、§5.4-6）                              |
+| `src/snapshot-store.ts`     | 最近成功备份的引用，供失败恢复判断（§5.4-4、§6）                                                                |
+| `src/compose-adapter.ts`    | **真实** Docker/Compose 适配器：九步落到绑定 project，切换用镜像环境变量 + `up -d` 拉到同一 release 集合        |
+| `src/main.ts`               | 组装轮询循环；绑定配置齐全时用真实适配器，否则用**未配置即拒绝**的默认适配器                                    |
 
 状态机（§5.3）：
 
@@ -48,23 +53,42 @@ pnpm --filter @stackpanel/updater typecheck
 pnpm --filter @stackpanel/updater test       # 假适配器：状态推进 / 续跑 / 恢复 / 停手
 ```
 
-生产镜像在 `dist/main.js` 之外预置 Docker/Compose 客户端与 pg 备份恢复工具；执行器通过
-`node:child_process` 调用它们（`tsup` 不打包这些外部工具）。运行时环境变量：
+生产镜像（`apps/updater/Dockerfile`）是**独立、预构建**镜像：只复制 `dist/main.js`，
+不带源码 / pnpm / 构建器，内置固定来源的 Docker CLI + Compose v2 插件与
+`postgresql-client-16`（§5.1）。`@stackpanel/spec` 被内联进产物，运行时无需任何
+workspace node_modules。
 
-| 变量                       | 说明                                                |
-| -------------------------- | --------------------------------------------------- |
-| `UPDATER_STATE_DIR`        | updater 独立持久卷根（日志 / 锁 / 通道 / 工作目录） |
-| `UPDATER_INSTANCE_ID`      | 绑定实例 ID；updater 只服务该实例                   |
-| `UPDATER_COMPOSE_PROJECT`  | 该实例绑定的 Compose project                        |
-| `UPDATER_POLL_INTERVAL_MS` | 轮询间隔，默认 `5000`                               |
+```bash
+docker build -f apps/updater/Dockerfile -t stackpanel-updater .
+```
 
-三项均为必填；缺任一项则 `loadConfig` 直接抛错，进程不启动。
+运行时环境变量：
+
+| 变量                             | 说明                                                             |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `UPDATER_STATE_DIR`              | updater 独立持久卷根（日志 / 锁 / 通道 / 指针 / 备份）           |
+| `UPDATER_INSTANCE_ID`            | 绑定实例 ID（同时作为 Compose project 名）；updater 只服务该实例 |
+| `UPDATER_COMPOSE_PROJECT`        | 绑定的 Compose project 目录（命令工作目录）                      |
+| `UPDATER_COMPOSE_FILES`          | compose 文件（逗号分隔），默认 `docker-compose.yml`              |
+| `UPDATER_IMAGE_REPOSITORY`       | 目标镜像仓库（不含 digest），如 `ghcr.io/worable233/stackpanel`  |
+| `UPDATER_IMAGE_ENV`              | 承载镜像引用的环境变量名，默认 `STACKPANEL_IMAGE`                |
+| `UPDATER_SERVICE_API/WORKER/WEB` | 受管服务名，默认 `api` / `worker` / `web`                        |
+| `UPDATER_DB_SERVICE/USER/NAME`   | 数据库服务名与凭据                                               |
+| `UPDATER_READINESS_URL`          | 维护态 readiness 探针，默认 `http://api:3001/health`             |
+| `UPDATER_LOGIN_PROBE_URL`        | 登录/权限探针（可选）                                            |
+| `UPDATER_WEB_URL`                | Web 资源探针（可选）                                             |
+| `UPDATER_MIN_FREE_BYTES`         | 磁盘下限（可选；不足则在停服前失败，§5.4-1）                     |
+| `UPDATER_POLL_INTERVAL_MS`       | 轮询间隔，默认 `5000`                                            |
+
+缺 `UPDATER_STATE_DIR` / `UPDATER_INSTANCE_ID` / `UPDATER_COMPOSE_PROJECT` /
+`UPDATER_IMAGE_REPOSITORY` 任一项则拒绝启动（`main.ts` 用**未配置即拒绝**的默认
+适配器，绝不误操作宿主）。
 
 ## 尚未实现（后续 §13 切片）
 
-- **真实 `DeploymentAdapter`**：Docker/Compose 下载与切换、PG 备份与恢复、一次性迁移、
-  维护态探针、以及 §6 失败兜底矩阵。当前 `main.ts` 装配的是拒绝执行的占位适配器。
 - **updater 自更新与真实接管测试**（§5.2）：候选 updater 先验证日志协议兼容，旧实例停止
   并释放执行权后才接管；不能只靠 restart 策略宣称完成。
 - **恢复入口服务**（§5.2）：固定恢复页 + 独立认证的恢复 API，默认仅管理网可达。
-- 断点续跑目前重建自属主内存中的 `held`；跨进程接管后的现场对账将随真实适配器补齐。
+- **真实运行验收**：Docker/Compose 适配器已有可测实现（假 runner 覆盖九步与恢复），但
+  「干净机器从旧发行版自动升级」的端到端证据属 §13-7，需真实 Docker/PG 与发布版镜像，
+  仍未执行。

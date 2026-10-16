@@ -52,9 +52,13 @@ export interface DeploymentAdapter {
   /**
    * 失败恢复（§6）。`stage` 给出失败发生处，适配器据「是否已迁移写入」决定：
    * 切回旧 digest / 恢复快照 / 兼容程序回退，**不得**在开放写入后自动恢复旧快照。
+   *
+   * - `migrated`：迁移步骤已执行（schema 可能已变）。
+   * - `postWrite`：已提交并放行写入（committed 之后的失败）。此时禁止自动恢复旧快照
+   *   （会丢新数据），只允许兼容程序回退或前向修复。
    */
   recover(
     ctx: StepContext,
-    failure: { stage: string; detail: string; migrated: boolean },
+    failure: { stage: string; detail: string; migrated: boolean; postWrite: boolean },
   ): Promise<{ recovered: boolean; credential: string; detail?: string }>;
 }

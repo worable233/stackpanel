@@ -16,6 +16,10 @@ import { FileUpdateJournal } from './journal.ts';
 import { ExecutorLock } from './executor-lock.ts';
 import { FileUpdateTaskChannel } from './task-channel.ts';
 import type { DeploymentAdapter } from './deployment-adapter.ts';
+import { composeConfigFromEnv } from './compose-config.ts';
+import { ComposeDeploymentAdapter } from './compose-adapter.ts';
+import { SpawnCommandRunner } from './command.ts';
+import { FileDeploymentPointer } from './deployment-pointer.ts';
 
 export interface UpdaterConfig {
   /** updater 独立持久卷根（日志/锁/通道）。 */
@@ -168,11 +172,30 @@ export class Updater {
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const updater = new Updater({ config, adapter: unconfiguredAdapter });
+  const adapter = selectAdapter(process.env);
+  const updater = new Updater({ config, adapter });
   const shutdown = (): void => updater.stop();
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
   await updater.run();
+}
+
+/**
+ * 选择部署适配器：绑定配置齐全时用真实 Compose 适配器；否则用**拒绝执行**的默认，
+ * 避免未绑定 project 时误操作宿主。真实适配器的装配（compose 目录、镜像仓库、探针）
+ * 由 `UPDATER_*` 环境变量提供，见 `apps/updater/README.md`。
+ */
+export function selectAdapter(env: NodeJS.ProcessEnv = process.env): DeploymentAdapter {
+  const bound =
+    env['UPDATER_COMPOSE_PROJECT'] && env['UPDATER_IMAGE_REPOSITORY'] && env['UPDATER_STATE_DIR'];
+  if (!bound) return unconfiguredAdapter;
+  const stateDir = env['UPDATER_STATE_DIR'] as string;
+  return new ComposeDeploymentAdapter({
+    config: composeConfigFromEnv(env),
+    runner: new SpawnCommandRunner(),
+    stateDir,
+    pointer: FileDeploymentPointer.resolve(stateDir),
+  });
 }
 
 // 仅在作为入口直接运行时启动（测试导入本模块不启动循环）。

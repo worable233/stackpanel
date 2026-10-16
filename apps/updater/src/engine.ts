@@ -157,7 +157,8 @@ export class UpdateEngine {
     // 上次失败停在 recovering：走恢复，不继续主路径。
     if (latest === 'recovering') {
       const migrated = done.has('migrating') || done.has('switching') || done.has('verifying');
-      return this.recover(task, ctx, 'restart-after-failure', migrated);
+      const postWrite = done.has('committed');
+      return this.recover(task, ctx, 'restart-after-failure', migrated, postWrite);
     }
 
     // 找到断点：从最后一个已完成阶段的下一阶段开始。
@@ -182,9 +183,10 @@ export class UpdateEngine {
           undefined,
           error instanceof Error ? error.message : String(error),
         );
-        // 迁移一旦完成，后续失败不得自动恢复旧快照（§6）。
+        // 迁移一旦完成，后续失败不得自动恢复旧快照（§6）；已提交后的失败更禁止。
         const migrated = done.has('migrating') || done.has('switching') || done.has('verifying');
-        return this.recover(task, ctx, phase, migrated);
+        const postWrite = done.has('committed');
+        return this.recover(task, ctx, phase, migrated, postWrite);
       }
     }
     return { phase: 'committed', checkpoints: done.size };
@@ -195,10 +197,16 @@ export class UpdateEngine {
     ctx: StepContext,
     stage: string,
     migrated: boolean,
+    postWrite: boolean,
   ): Promise<EngineRunResult> {
     try {
       await this.opts.lock.assertOwned();
-      const result = await this.opts.adapter.recover(ctx, { stage, detail: stage, migrated });
+      const result = await this.opts.adapter.recover(ctx, {
+        stage,
+        detail: stage,
+        migrated,
+        postWrite,
+      });
       const phase: UpdatePhase = result.recovered ? 'recovered' : 'recovery_failed';
       await this.record(task, phase, result.credential, result.detail);
       return {

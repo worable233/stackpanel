@@ -14,3 +14,23 @@ export type { LockInfo, ExecutorLockOptions } from './executor-lock.ts';
 export type { DeploymentAdapter, StepContext } from './deployment-adapter.ts';
 export { UpdateEngine, isTerminal, assertTransition, canTransition } from './engine.ts';
 export type { EngineOptions, EngineRunResult } from './engine.ts';
+export { SpawnCommandRunner, CommandError, DEFAULT_ALLOWED_FILES } from './command.ts';
+export type { CommandRunner, CommandRequest, CommandResult } from './command.ts';
+export {
+  ComposeDeploymentAdapter,
+  DeploymentAdapterError,
+  normalizeDigest,
+  parseDfFreeBytes,
+} from './compose-adapter.ts';
+export type { ComposeAdapterOptions, Probe } from './compose-adapter.ts';
+export { composeConfigFromEnv, validateComposeConfig } from './compose-config.ts';
+export type {
+  ComposeProjectConfig,
+  ComposeServiceNames,
+  DatabaseConfig,
+  ProbeConfig,
+} from './compose-config.ts';
+export { FileDeploymentPointer } from './deployment-pointer.ts';
+export type { DeploymentPointer } from './deployment-pointer.ts';
+export { FileSnapshotStore } from './snapshot-store.ts';
+export type { SnapshotRef } from './snapshot-store.ts';

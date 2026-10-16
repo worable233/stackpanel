@@ -172,6 +172,38 @@ services:
     deploy:
       replicas: 2
 
+  # 独立升级执行器（§5.1）。集群档中，updater 仍只操作**一个** Compose project；
+  # 跨主机版本需要每节点一个 updater（见计划 §13 末尾）。
+  updater:
+    image: ${STACKPANEL_UPDATER_IMAGE:?STACKPANEL_UPDATER_IMAGE must be pinned to an immutable digest}
+    restart: unless-stopped
+    entrypoint: ['/usr/local/bin/entrypoint-updater']
+    environment:
+      NODE_ENV: production
+      UPDATER_STATE_DIR: /var/lib/stackpanel-updater
+      UPDATER_INSTANCE_ID: ${UPDATER_INSTANCE_ID:-stackpanel}
+      UPDATER_COMPOSE_PROJECT: /workspace
+      UPDATER_COMPOSE_FILES: ${UPDATER_COMPOSE_FILES:-docker-compose.cluster.yml}
+      UPDATER_IMAGE_REPOSITORY: ${STACKPANEL_IMAGE_REPOSITORY:?STACKPANEL_IMAGE_REPOSITORY required}
+      UPDATER_IMAGE_ENV: STACKPANEL_IMAGE
+      UPDATER_SERVICE_API: api
+      UPDATER_SERVICE_WORKER: worker
+      UPDATER_SERVICE_WEB: web
+      UPDATER_DB_SERVICE: ${UPDATER_DB_SERVICE:-}
+      UPDATER_DB_USER: ${POSTGRES_USER:-stackpanel}
+      UPDATER_DB_NAME: ${POSTGRES_DB:-stackpanel}
+      UPDATER_READINESS_URL: http://api:3001/health
+      UPDATER_POLL_INTERVAL_MS: ${UPDATER_POLL_INTERVAL_MS:-5000}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace:ro
+      - stackpanel-updater-state:/var/lib/stackpanel-updater
+    networks:
+      - stackpanel
+    deploy:
+      # 同机单执行者：集群档严禁多副本竞争同一 project。
+      replicas: 1
+
   caddy:
     image: ${CADDY_IMAGE:?CADDY_IMAGE must be pinned to an immutable digest}
     restart: unless-stopped
@@ -196,6 +228,7 @@ services:
 volumes:
   stackpanel-data:
   stackpanel-web-build:
+  stackpanel-updater-state:
   caddy-data:
   caddy-config:
 
