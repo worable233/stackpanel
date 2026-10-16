@@ -1,7 +1,9 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/main.ts'],
+  // `main.ts` 是可部署的独立执行器；`drill.ts` 只导出升级引擎/适配器面，供
+  // `scripts/release/updater-drill.mjs` 在**不接触 Docker** 时做干净机器演练（§13-7）。
+  entry: ['src/main.ts', 'src/drill.ts'],
   format: ['esm'],
   platform: 'node',
   target: 'node22',

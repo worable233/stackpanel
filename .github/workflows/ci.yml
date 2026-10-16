@@ -114,6 +114,16 @@ jobs:
           pnpm --filter @stackpanel/spec build
           pnpm release:rehearse
 
+      # §13-7: offline clean-machine update drill. Builds the updater with its
+      # drill entry and drives the real engine + Compose adapter through the
+      # nine-step success path and the §6 failure-recovery matrix with an
+      # injected host-command runner. No Docker required; the real-Docker
+      # clean-machine acceptance is a separate, host-gated run.
+      - name: Updater drill (engine + compose adapter, no Docker)
+        run: |
+          pnpm --filter @stackpanel/updater build
+          pnpm release:updater-drill
+
       - name: Test
         run: pnpm test
 
