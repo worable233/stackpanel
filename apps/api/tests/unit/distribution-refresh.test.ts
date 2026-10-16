@@ -84,7 +84,9 @@ function fakeGitHub(
     const url = String(input);
     if (url === raw('main', 'channels.json')) {
       return new Response(
-        JSON.stringify({ channels: [{ channel: 'stable', sequence: overrides.channelsSequence ?? sequence }] }),
+        JSON.stringify({
+          channels: [{ channel: 'stable', sequence: overrides.channelsSequence ?? sequence }],
+        }),
       );
     }
     if (url === raw(`catalog-v1/${sequence}`, 'catalog.json')) return new Response(body);
@@ -173,7 +175,11 @@ describe('CatalogRefreshService', () => {
 
   it('refreshes, verifies, advances the replay guard, and exposes current()', async () => {
     const { publicKeyPem, privateKey } = keypair();
-    const svc = await service(fakeGitHub(privateKey, 7), path.join(await tempDir(), 's.json'), publicKeyPem);
+    const svc = await service(
+      fakeGitHub(privateKey, 7),
+      path.join(await tempDir(), 's.json'),
+      publicKeyPem,
+    );
     const result = await svc.refresh();
     expect(result.resolved?.sequence).toBe(7);
     expect(result.failure).toBeNull();

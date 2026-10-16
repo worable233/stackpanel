@@ -13,11 +13,7 @@
  */
 
 import type { Keyring, ReleaseChannel } from '@stackpanel/spec';
-import {
-  fetchCatalog,
-  type CatalogFetchOptions,
-  type ResolvedCatalog,
-} from './catalog-client.ts';
+import { fetchCatalog, type CatalogFetchOptions, type ResolvedCatalog } from './catalog-client.ts';
 import { CatalogError } from './catalog-client.ts';
 import type { SourceCache } from './github-source.ts';
 import { GitHubSourceError } from './github-source.ts';
@@ -95,7 +91,9 @@ export class CatalogRefreshService {
   /** 是否到了后台定时刷新时间（含抖动）。 */
   isDue(lastCheckMs: number): boolean {
     const interval = this.opts.intervalMs ?? DEFAULT_REFRESH_INTERVAL_MS;
-    const jitter = Math.floor(((this.opts.jitterMs ?? DEFAULT_REFRESH_JITTER_MS) as number) * Math.random());
+    const jitter = Math.floor(
+      ((this.opts.jitterMs ?? DEFAULT_REFRESH_JITTER_MS) as number) * Math.random(),
+    );
     return this.now().getTime() - lastCheckMs >= interval + jitter;
   }
 
