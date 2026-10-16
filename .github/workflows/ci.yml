@@ -103,6 +103,17 @@ jobs:
             --pack-destination "$RUNNER_TEMP/pack"
           ls -1 "$RUNNER_TEMP/pack"
 
+      # ADR-0023 / PLAN-github-distribution-and-updates: the release-side catalog
+      # signer and the kernel-side verifier must share one contract source. This
+      # offline drill builds/signs a catalog + package with the real release
+      # scripts and re-verifies with the same spec primitives, then injects
+      # tampering/replay/expiry faults that must all be rejected. No GitHub
+      # permission required, so the chain is gated on every PR.
+      - name: Distribution rehearsal (sign + verify round-trip + faults)
+        run: |
+          pnpm --filter @stackpanel/spec build
+          pnpm release:rehearse
+
       - name: Test
         run: pnpm test
 

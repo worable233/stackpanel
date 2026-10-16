@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PluginDefinition, PluginDependency, PluginExtensionConsumer } from '@stackpanel/sdk';
@@ -10,6 +10,7 @@ import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { unzipSync } from 'fflate';
 import semver from 'semver';
 import { FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './frontend.ts';
+import { packageManager, StagingError } from '../packages/manager.ts';
 import { env } from '../config/env.ts';
 import { SignatureError, verifyPackageSignature } from './signatures.ts';
 import { getPrisma } from '../plugins/prisma.ts';
@@ -230,10 +231,18 @@ export function validateManifest(manifest: PluginManifestFile, allowReserved = f
   if (!semver.valid(manifest.version)) {
     throw new PluginError(422, `插件版本号无效：${manifest.version}`);
   }
-  if (manifest.execution !== undefined && manifest.execution !== 'trusted' && manifest.execution !== 'isolated') {
+  if (
+    manifest.execution !== undefined &&
+    manifest.execution !== 'trusted' &&
+    manifest.execution !== 'isolated'
+  ) {
     throw new PluginError(422, 'execution 必须是 trusted 或 isolated');
   }
-  if (!manifest.builtin && manifest.execution === 'trusted' && process.env.NODE_ENV === 'production') {
+  if (
+    !manifest.builtin &&
+    manifest.execution === 'trusted' &&
+    process.env.NODE_ENV === 'production'
+  ) {
     throw new PluginError(403, '生产环境第三方插件必须使用 isolated 执行模式');
   }
   validateManifestSchemaVersion(manifest.schemaVersion);
@@ -414,35 +423,21 @@ export async function writePluginFiles(
   id: string,
   files: Map<string, Uint8Array>,
 ): Promise<PluginFileWrite> {
-  const target = pluginPackageDir(id);
-  const parent = pluginsDir();
-  const tmp = path.join(parent, `.upload-${id}-${randomUUID()}`);
-  const backup = path.join(parent, `.backup-${id}-${randomUUID()}`);
-  await rm(tmp, { recursive: true, force: true });
-  await mkdir(parent, { recursive: true });
-  await mkdir(path.join(tmp, 'dist'), { recursive: true });
-  for (const [name, data] of files.entries()) {
-    const dest = path.resolve(tmp, name);
-    if (!dest.startsWith(tmp + path.sep)) throw new PluginError(422, `非法的文件名：${name}`);
-    await mkdir(path.dirname(dest), { recursive: true });
-    await writeFile(dest, data);
-  }
-  try {
-    if (existsSync(target)) await rename(target, backup);
-    await rename(tmp, target);
-  } catch (err) {
-    await rm(tmp, { recursive: true, force: true });
-    if (!existsSync(target) && existsSync(backup)) await rename(backup, target);
-    throw err;
-  }
+  // 统一 staging/swap：先写完整产物到暂存目录，再整体 rename 切换，失败可回滚
+  // （§7.6「不得原地覆盖活动目录」）。所有来源（上传/市场/远程/重装）共用门面。
+  const handle = await packageManager
+    .stageFiles('plugin', id, files, {
+      prepareStage: async (stage) => {
+        await mkdir(path.join(stage, 'dist'), { recursive: true });
+      },
+    })
+    .catch((err) => {
+      if (err instanceof StagingError) throw new PluginError(err.status, err.message);
+      throw err;
+    });
   return {
-    commit: async () => {
-      await rm(backup, { recursive: true, force: true });
-    },
-    rollback: async () => {
-      await rm(target, { recursive: true, force: true });
-      if (existsSync(backup)) await rename(backup, target);
-    },
+    commit: handle.commit,
+    rollback: handle.rollback,
   };
 }
 
@@ -599,8 +594,9 @@ async function seedBuiltinPlugin(id: string): Promise<{ name: string; version: s
   if (existsSync(assets)) {
     await cp(assets, path.join(tmp, 'assets'), { recursive: true });
   }
-  await rm(target, { recursive: true, force: true });
-  await rename(tmp, target);
+  // 同一安装事务：整体切换而非原地覆盖（§7.6）。
+  const handle = await packageManager.swapDirectory('plugin', id, tmp);
+  await handle.commit();
   return { name, version };
 }
 
@@ -665,7 +661,8 @@ export async function loadPluginDefinition(id: string): Promise<PluginDefinition
   if (!entryData) throw new PluginError(422, `缺少插件入口文件：${id}`);
   // Existing local development plugins predate the execution field. Keep them
   // usable during development; production always takes the isolated path.
-  const execution = manifest.execution ?? (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted');
+  const execution =
+    manifest.execution ?? (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted');
   if (!manifest.builtin && execution !== 'trusted') {
     return loadIsolatedPluginDefinition(id, entry, { ...manifest, execution });
   }

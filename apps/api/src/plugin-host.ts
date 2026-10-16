@@ -16,6 +16,7 @@ import type { PrismaClient } from '@stackpanel/db';
 import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { loadPluginDefinition, scanPlugins, seedBuiltinPlugins } from './lib/plugins.ts';
+import { packageManager } from './packages/manager.ts';
 import { configureRuntimeCoherence, type RuntimeCoherence } from './runtime/coherence.ts';
 import { getEventBus, getOutboxBus } from './plugins/events.ts';
 import { getPrisma } from './plugins/prisma.ts';
@@ -168,6 +169,8 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     coherence,
     async registerPlugins(): Promise<void> {
       await seedBuiltinPlugins();
+      // 回收上次崩溃遗留的未引用暂存/备份产物（§7.6/§7.8）；活动目录不受影响。
+      await packageManager.gcAll().catch(() => undefined);
       await authService.seedPlatformPermissions();
       const definitions = await scanPlugins();
       for (const definition of definitions) {

@@ -1,0 +1,150 @@
+# 该文件由 DIST-CONTRACT 流维护：市场目录快照的构建、签名与发布
+# （PLAN-github-distribution-and-updates §12；ADR-0023 提议）。
+#
+# 目标仓库：`worable233/stackpanel-market`（建议新增）。目录采用唯一 Release tag
+# `catalog-v1/<sequence>`，含 `catalog.json` + `catalog.sig`（Ed25519）。目录只**引用**
+# 允许仓库/release/asset/摘要，不保存安装包。
+#
+# 为什么先交付本 workflow：§13 明确「未取得 GitHub 发布权限时先交付 workflows、签名
+# 测试产物和本地完整演练」。因此：
+# - `workflow_dispatch` 默认只**构建 + 签名 + 自检**，产出 artifact（不发布）；
+# - 只有显式 `publish=true` 且备有受保护环境密钥时才真正建 Release 并更新渠道指针。
+#
+# 目录更新必须**串行化**：两个发布者不得覆盖同一 sequence（本 workflow 的
+# concurrency 组 + sequence 单调校验共同保证）。
+name: Publish Catalog
+
+on:
+  workflow_dispatch:
+    inputs:
+      sequence:
+        description: '目录 sequence（必须大于已发布最高值）'
+        required: true
+        type: number
+      publish:
+        description: '是否真正创建 Release 并发布（默认只构建 + 自检）'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+
+# 目录更新串行化：同一时刻只允许一个目录发布运行。
+concurrency:
+  group: catalog-publish
+  cancel-in-progress: false
+
+jobs:
+  build-catalog:
+    name: 构建 · 签名 · 自检
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 私钥来自受保护环境；未配置时本 job 仍可给出干跑产物（不发布）。
+    environment: catalog-publishing
+    steps:
+      - name: 检出（主仓：提供发布脚本与契约单一来源）
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建契约单一来源
+        run: pnpm --filter @stackpanel/spec build
+
+      # 签名私钥只在受保护环境中；干跑（无 secrets）时改用一次性的测试密钥，
+      # 产物只用于演练，绝不对外发布。
+      - name: 准备目录签名私钥
+        env:
+          CATALOG_KEY_PEM: ${{ secrets.CATALOG_SIGNING_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          if [ -n "$CATALOG_KEY_PEM" ]; then
+            printf '%s\n' "$CATALOG_KEY_PEM" > "$RUNNER_TEMP/keys/catalog.private.pem"
+            chmod 600 "$RUNNER_TEMP/keys/catalog.private.pem"
+            echo "REAL_KEY=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::未配置 CATALOG_SIGNING_KEY；使用临时测试密钥，仅产出演练目录（不发布）"
+            npm_config_yes=true npx --yes tsx --version >/dev/null 2>&1 || true
+            node -e "const{generateKeyPairSync}=require('node:crypto');const k=generateKeyPairSync('ed25519');require('node:fs').writeFileSync(process.env.RUNNER_TEMP+'/keys/catalog.private.pem', k.privateKey.export({type:'pkcs8',format:'pem'}))"
+            echo "REAL_KEY=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: 构建目录签名自检信任根
+        if: env.REAL_KEY == '1'
+        env:
+          KEYRING_JSON: ${{ secrets.CATALOG_KEYRING }}
+        run: |
+          if [ -z "$KEYRING_JSON" ]; then
+            echo "::error::已配置目录私钥但缺少 CATALOG_KEYRING（用于自检）"; exit 1
+          fi
+          printf '%s\n' "$KEYRING_JSON" > "$RUNNER_TEMP/keys/keyring.json"
+
+      # 条目来源：由市场仓 PR 提供的清单（此处以主仓 _dist/catalog/entries 为例，
+      # 实施时改为 checkout 市场仓的 entries 目录）。
+      - name: 构建并签名目录快照
+        run: |
+          mkdir -p "$RUNNER_TEMP/catalog/entries"
+          cp -r _dist/catalog/entries/. "$RUNNER_TEMP/catalog/entries/" 2>/dev/null || true
+          args=(--entries "$RUNNER_TEMP/catalog/entries" --config _dist/catalog/catalog.config.json --key-file "$RUNNER_TEMP/keys/catalog.private.pem" --out "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" --key-id "${{ secrets.CATALOG_KEY_ID || 'catalog-2026' }}")
+          if [ -f "$RUNNER_TEMP/keys/keyring.json" ]; then
+            args+=(--keyring "$RUNNER_TEMP/keys/keyring.json")
+          fi
+          node scripts/release/build-catalog.mjs "${args[@]}"
+
+      - name: 回读校验（与实例端同一验证器）
+        run: |
+          if [ ! -f "$RUNNER_TEMP/keys/keyring.json" ]; then
+            echo "::warning::干跑：跳过回读校验（需要真实 keyring）"
+            exit 0
+          fi
+          node scripts/release/verify-catalog.mjs \
+            --dir "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" \
+            --keyring "$RUNNER_TEMP/keys/keyring.json" \
+            --repository "${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-market' }}" \
+            --highest "${{ inputs.sequence }}"
+
+      - name: 上传目录产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-v1-${{ inputs.sequence }}
+          path: ${{ runner.temp }}/out/catalog-v1/${{ inputs.sequence }}/
+          retention-days: 30
+
+      # 实际发布到市场仓 Release（仅真实密钥 + 显式 publish）。
+      - name: 发布 catalog-v1 Release
+        if: ${{ inputs.publish && env.REAL_KEY == '1' }}
+        env:
+          GH_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+        run: |
+          dir="$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}"
+          tag="catalog-v1/${{ inputs.sequence }}"
+          if gh release view "$tag" --repo "${{ secrets.CATALOG_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::目录 tag 已存在：$tag（禁止覆盖同一 sequence）"; exit 1
+          fi
+          gh release create "$tag" \
+            --repo "${{ secrets.CATALOG_REPOSITORY }}" \
+            --title "catalog-v1/${{ inputs.sequence }}" \
+            --notes "Market catalog snapshot sequence ${{ inputs.sequence }}" \
+            "$dir/catalog.json" "$dir/catalog.sig"
+
+      - name: 摘要
+        run: |
+          {
+            echo "## 目录快照"
+            echo
+            echo "- sequence：${{ inputs.sequence }}"
+            echo "- 真实密钥：${{ env.REAL_KEY }}"
+            echo "- 发布：${{ inputs.publish }}"
+          } >> "$GITHUB_STEP_SUMMARY"
