@@ -20,6 +20,13 @@ describe('parseKeyring', () => {
     expect(keyring.formatVersion).toBe(1);
   });
 
+  it('accepts a kernel-purpose key (needed for signed kernel manifests, §13-4)', () => {
+    const keyring = parseKeyring({
+      keys: [{ keyId: 'k-kernel', purpose: 'kernel', publicKeyPem: pem() }],
+    });
+    expect(keyring.keys[0]?.purpose).toBe('kernel');
+  });
+
   it('rejects malformed keyrings', () => {
     expect(() => parseKeyring({})).toThrow(KeyringError);
     expect(() =>
