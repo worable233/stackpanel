@@ -194,6 +194,9 @@ services:
       UPDATER_DB_NAME: ${POSTGRES_DB:-stackpanel}
       UPDATER_READINESS_URL: http://api:3001/health
       UPDATER_POLL_INTERVAL_MS: ${UPDATER_POLL_INTERVAL_MS:-5000}
+      UPDATER_RECOVERY_TOKEN: ${UPDATER_RECOVERY_TOKEN:-}
+      UPDATER_RECOVERY_PORT: ${UPDATER_RECOVERY_PORT:-0}
+      UPDATER_RECOVERY_HOST: ${UPDATER_RECOVERY_HOST:-127.0.0.1}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/workspace:ro

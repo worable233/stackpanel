@@ -32,7 +32,10 @@
 | `src/deployment-pointer.ts` | 部署指针：当前 digest + generation，切换成功递增并保留上一代供回退（§5.2、§5.4-6）                              |
 | `src/snapshot-store.ts`     | 最近成功备份的引用，供失败恢复判断（§5.4-4、§6）                                                                |
 | `src/compose-adapter.ts`    | **真实** Docker/Compose 适配器：九步落到绑定 project，切换用镜像环境变量 + `up -d` 拉到同一 release 集合        |
-| `src/main.ts`               | 组装轮询循环；绑定配置齐全时用真实适配器，否则用**未配置即拒绝**的默认适配器                                    |
+| `src/status.ts`             | 只读状态投影（代次 / digest / 进行中任务 / 最近结果），供内核更新中心读取（§5.2）                               |
+| `src/self-update.ts`        | 自更新交接：候选先验证协议与日志格式兼容，旧实例释放执行权后接管；不兼容即拒绝（§5.2）                          |
+| `src/recovery-entry.ts`     | 独立恢复入口：固定恢复页 + 独立 bearer 认证的受限动作（重试 / 回退 / 对账），默认只回环（§5.2）                 |
+| `src/main.ts`               | 组装轮询循环；绑定配置齐全时用真实适配器，否则用**未配置即拒绝**的默认适配器；写自更新状态、处理交接            |
 
 状态机（§5.3）：
 
@@ -84,11 +87,11 @@ docker build -f apps/updater/Dockerfile -t stackpanel-updater .
 `UPDATER_IMAGE_REPOSITORY` 任一项则拒绝启动（`main.ts` 用**未配置即拒绝**的默认
 适配器，绝不误操作宿主）。
 
-## 尚未实现（后续 §13 切片）
+## 尚未实现 / 未验收（后续 §13 切片）
 
-- **updater 自更新与真实接管测试**（§5.2）：候选 updater 先验证日志协议兼容，旧实例停止
-  并释放执行权后才接管；不能只靠 restart 策略宣称完成。
-- **恢复入口服务**（§5.2）：固定恢复页 + 独立认证的恢复 API，默认仅管理网可达。
-- **真实运行验收**：Docker/Compose 适配器已有可测实现（假 runner 覆盖九步与恢复），但
-  「干净机器从旧发行版自动升级」的端到端证据属 §13-7，需真实 Docker/PG 与发布版镜像，
-  仍未执行。
+- **真实运行验收**：Docker/Compose 适配器、自更新交接与恢复入口均已有可测核心（假
+  runner / 注入依赖覆盖成功、失败与不兼容分支），但「干净机器从旧发行版自动升级」
+  的端到端证据属 §13-7，需真实 Docker/PG 与发布版镜像，**仍未执行**。
+- **恢复入口的自动动作接线**（§6）：受限动作（重试 / 回退 / 对账）的 HTTP 契约与认证
+  已就绪，但把「回退」真正落到 `ComposeDeploymentAdapter.restoreSnapshot` / `recover`
+  需要真实 Docker 现场，属 §13-7。

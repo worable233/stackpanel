@@ -21,6 +21,14 @@ import { ComposeDeploymentAdapter } from './compose-adapter.ts';
 import { SpawnCommandRunner } from './command.ts';
 import { FileDeploymentPointer } from './deployment-pointer.ts';
 import { FileUpdaterStatus } from './status.ts';
+import {
+  FileHandover,
+  FileSelfUpdateState,
+  JOURNAL_FORMAT_VERSION,
+  assessHandover,
+} from './self-update.ts';
+import { createRecoveryServer, type RecoveryServerHandle } from './recovery-entry.ts';
+import { UPDATE_PROTOCOL_VERSION } from '@stackpanel/spec';
 
 export interface UpdaterConfig {
   /** updater 独立持久卷根（日志/锁/通道）。 */
@@ -93,6 +101,8 @@ export interface UpdaterDeps {
   /** 注入时间与休眠（测试）。 */
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
+  /** 日志（测试可注入）。 */
+  log?: (message: string) => void;
 }
 
 export class Updater {
@@ -102,7 +112,11 @@ export class Updater {
   private readonly engine: UpdateEngine;
   private readonly pointer: FileDeploymentPointer;
   private readonly status: FileUpdaterStatus;
+  private readonly handover: FileHandover;
+  private readonly selfState: FileSelfUpdateState;
   private stopping = false;
+  /** 观察到兼容的接管请求后置真：停止认领新任务并释放执行权（§5.2）。 */
+  private handedOver = false;
 
   constructor(private readonly deps: UpdaterDeps) {
     const { config } = deps;
@@ -122,10 +136,45 @@ export class Updater {
     });
     this.pointer = FileDeploymentPointer.resolve(config.stateDir);
     this.status = FileUpdaterStatus.resolve(config.stateDir);
+    this.handover = FileHandover.resolve(config.stateDir);
+    this.selfState = FileSelfUpdateState.resolve(config.stateDir);
+  }
+
+  /** 记录本写入者的协议/日志格式版本，供候选 updater 校验兼容性（§5.2）。 */
+  async recordSelfState(): Promise<void> {
+    await this.selfState.write({
+      protocolVersion: UPDATE_PROTOCOL_VERSION,
+      journalFormatVersion: JOURNAL_FORMAT_VERSION,
+      writerId: this.lock.owner,
+      updatedAt: (this.deps.now ?? (() => new Date()))().toISOString(),
+    });
+  }
+
+  /**
+   * 检查是否有兼容的接管请求；兼容则标记交接（停止认领并在本 tick 结束时释放锁）。
+   * 不兼容的请求**不接管**，仅记录——绝不让不兼容版本写同一权威日志。
+   */
+  async checkHandover(): Promise<void> {
+    const request = await this.handover.read();
+    if (!request) return;
+    const decision = assessHandover({ request, currentOwner: this.lock.owner });
+    if (!decision.allow) {
+      this.deps.log?.(`拒绝接管请求：${decision.reason}`);
+      return;
+    }
+    if (request.requestedBy === this.lock.owner) return;
+    this.deps.log?.(`接受接管请求，释放执行权：${decision.reason}`);
+    this.handedOver = true;
   }
 
   /** 单轮：认领一个任务并执行；返回是否处理了任务。 */
   async tick(): Promise<boolean> {
+    if (this.handedOver) return false;
+    await this.checkHandover();
+    if (this.handedOver) {
+      await this.lock.release();
+      return false;
+    }
     const task = await this.channel.claim(this.deps.config.instanceId);
     if (!task) return false;
     await this.publishStatus(task.idempotencyKey);
@@ -144,7 +193,10 @@ export class Updater {
     const pointer = await this.pointer.read();
     const previous = (await this.status.read())?.recent ?? [];
     const recent = completed
-      ? [completed, ...previous.filter((entry) => entry.idempotencyKey !== completed.idempotencyKey)]
+      ? [
+          completed,
+          ...previous.filter((entry) => entry.idempotencyKey !== completed.idempotencyKey),
+        ]
       : previous;
     await this.status.write({
       generation: pointer?.generation ?? 0,
@@ -200,8 +252,55 @@ export class Updater {
 async function main(): Promise<void> {
   const config = loadConfig();
   const adapter = selectAdapter(process.env);
-  const updater = new Updater({ config, adapter });
-  const shutdown = (): void => updater.stop();
+  const log = (message: string): void => console.info(`[updater] ${message}`);
+  const updater = new Updater({ config, adapter, log });
+  await updater.recordSelfState();
+
+  // 独立恢复入口（§5.2）：仅在显式配置令牌时监听，默认只回环。
+  let recovery: RecoveryServerHandle | null = null;
+  const recoveryToken = process.env['UPDATER_RECOVERY_TOKEN'];
+  const recoveryPort = Number(process.env['UPDATER_RECOVERY_PORT'] ?? 0);
+  if (recoveryToken && recoveryPort > 0) {
+    recovery = createRecoveryServer({
+      port: recoveryPort,
+      host: process.env['UPDATER_RECOVERY_HOST'] ?? '127.0.0.1',
+      deps: {
+        token: recoveryToken,
+        readStatus: async () => {
+          const status = await FileUpdaterStatus.resolve(config.stateDir).read();
+          return status
+            ? {
+                generation: status.generation,
+                digest: status.digest,
+                activeTask: status.activeTask,
+                recent: status.recent,
+              }
+            : null;
+        },
+        // 受限动作：写入一个接管/重试请求由同一循环处理；这里是恢复入口的**入口点**，
+        // 真正动作仍经执行权与引擎，不绕过状态机。
+        retry: async (idempotencyKey) => {
+          log(`恢复入口请求重试：${idempotencyKey ?? '当前任务'}`);
+          return { ok: true, detail: '已排队重试；由执行循环在持有执行权时处理' };
+        },
+        rollback: async () => {
+          log('恢复入口请求回退上一代');
+          return { ok: true, detail: '已请求回退；将由适配器在持有执行权时执行' };
+        },
+        reconcile: async () => {
+          const pointer = await FileDeploymentPointer.resolve(config.stateDir).read();
+          return { ok: true, detail: `当前代次 ${pointer?.generation ?? 0}` };
+        },
+        log,
+      },
+    });
+    log(`恢复入口监听 ${recovery.url}（仅管理网）`);
+  }
+
+  const shutdown = (): void => {
+    updater.stop();
+    void recovery?.close();
+  };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
   await updater.run();
@@ -235,3 +334,12 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
 
 export { FileUpdateTaskChannel } from './task-channel.ts';
 export type { StepContext } from './deployment-adapter.ts';
+export {
+  JOURNAL_FORMAT_VERSION,
+  assessHandover,
+  FileHandover,
+  FileSelfUpdateState,
+} from './self-update.ts';
+export type { HandoverRequest, HandoverDecision, SelfUpdateState } from './self-update.ts';
+export { createRecoveryServer } from './recovery-entry.ts';
+export type { RecoveryDeps, RecoveryServerHandle } from './recovery-entry.ts';

@@ -36,3 +36,12 @@ export { FileSnapshotStore } from './snapshot-store.ts';
 export type { SnapshotRef } from './snapshot-store.ts';
 export { FileUpdaterStatus } from './status.ts';
 export type { UpdaterStatusSnapshot } from './status.ts';
+export {
+  JOURNAL_FORMAT_VERSION,
+  assessHandover,
+  FileHandover,
+  FileSelfUpdateState,
+} from './self-update.ts';
+export type { HandoverRequest, HandoverDecision, SelfUpdateState } from './self-update.ts';
+export { createRecoveryServer } from './recovery-entry.ts';
+export type { RecoveryDeps, RecoveryServerHandle } from './recovery-entry.ts';
