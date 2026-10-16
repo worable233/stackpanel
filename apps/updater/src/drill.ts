@@ -19,6 +19,7 @@ export { FileUpdateJournal } from './journal.ts';
 export { FileUpdateTaskChannel } from './task-channel.ts';
 export {
   ComposeDeploymentAdapter,
+  ComposeSelfUpdateAdapter,
   DeploymentAdapterError,
   normalizeDigest,
 } from './compose-adapter.ts';
@@ -30,5 +31,20 @@ export { FileSnapshotStore } from './snapshot-store.ts';
 export { FileUpdaterStatus } from './status.ts';
 export { RecoveryCoordinator, MAX_AUTO_RETRIES } from './recovery-actions.ts';
 export type { RecoveryCoordinatorDeps, RecoveryActionResult } from './recovery-actions.ts';
+export {
+  SelfUpdateExecutor,
+  SelfUpdateError,
+  FileSelfUpdatePlan,
+  FileSelfUpdateRequest,
+  imagesMatch,
+} from './self-update-executor.ts';
+export type {
+  SelfUpdateAdapter,
+  SelfUpdatePlan,
+  SelfUpdatePhase,
+  SelfUpdateRequest,
+  SelfUpdateResult,
+  SelfUpdateExecutorDeps,
+} from './self-update-executor.ts';
 export { SpawnCommandRunner } from './command.ts';
 export type { CommandRunner, CommandRequest, CommandResult } from './command.ts';

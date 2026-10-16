@@ -308,6 +308,9 @@ services:
       UPDATER_DB_NAME: ${POSTGRES_DB:-stackpanel}
       UPDATER_READINESS_URL: http://api:3001/health
       UPDATER_POLL_INTERVAL_MS: ${UPDATER_POLL_INTERVAL_MS:-5000}
+      # updater 自升级（§5.2）：切换自身服务镜像的环境变量，候选与回退都用它。
+      UPDATER_SELF_SERVICE: updater
+      UPDATER_SELF_IMAGE_ENV: STACKPANEL_UPDATER_IMAGE
       # 独立恢复入口（§5.2）：仅在配置令牌与端口时监听；默认只回环，不进 compose 网络。
       UPDATER_RECOVERY_TOKEN: ${UPDATER_RECOVERY_TOKEN:-}
       UPDATER_RECOVERY_PORT: ${UPDATER_RECOVERY_PORT:-0}

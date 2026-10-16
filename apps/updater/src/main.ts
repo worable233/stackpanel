@@ -17,7 +17,7 @@ import { ExecutorLock } from './executor-lock.ts';
 import { FileUpdateTaskChannel } from './task-channel.ts';
 import type { DeploymentAdapter } from './deployment-adapter.ts';
 import { composeConfigFromEnv } from './compose-config.ts';
-import { ComposeDeploymentAdapter } from './compose-adapter.ts';
+import { ComposeDeploymentAdapter, ComposeSelfUpdateAdapter } from './compose-adapter.ts';
 import { SpawnCommandRunner } from './command.ts';
 import { FileDeploymentPointer } from './deployment-pointer.ts';
 import { FileUpdaterStatus } from './status.ts';
@@ -27,6 +27,11 @@ import {
   JOURNAL_FORMAT_VERSION,
   assessHandover,
 } from './self-update.ts';
+import {
+  FileSelfUpdatePlan,
+  FileSelfUpdateRequest,
+  SelfUpdateExecutor,
+} from './self-update-executor.ts';
 import { createRecoveryServer, type RecoveryServerHandle } from './recovery-entry.ts';
 import { RecoveryCoordinator } from './recovery-actions.ts';
 import { UPDATE_PROTOCOL_VERSION } from '@stackpanel/spec';
@@ -104,6 +109,15 @@ export interface UpdaterDeps {
   sleep?: (ms: number) => Promise<void>;
   /** 日志（测试可注入）。 */
   log?: (message: string) => void;
+  /**
+   * 自升级执行器（可选）。启动时确认是否为已提交候选，每轮守卫空闲的 `switching`
+   * 计划在候选超时未确认时回退（§5.2）。不注入则完全跳过自升级逻辑。
+   */
+  selfUpdate?: {
+    settleOnStart: () => Promise<unknown>;
+    guardTick: () => Promise<unknown>;
+    consumeRequest: () => Promise<unknown>;
+  };
 }
 
 export class Updater {
@@ -243,6 +257,10 @@ export class Updater {
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     while (!this.stopping) {
       const handled = await this.tick();
+      // 自升级守卫：空闲时检查候选是否超时未确认，超时则回退（§5.2）。
+      await this.deps.selfUpdate?.guardTick();
+      // 消费管理端提交的自升级请求（无在途计划/任务时）。
+      await this.deps.selfUpdate?.consumeRequest();
       if (!handled) await sleep(this.deps.config.pollIntervalMs);
     }
   }
@@ -266,8 +284,11 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const adapter = selectAdapter(process.env);
   const log = (message: string): void => console.info(`[updater] ${message}`);
-  const updater = new Updater({ config, adapter, log });
+  const selfUpdate = selectSelfUpdateExecutor(config, adapter, log);
+  const updater = new Updater({ config, adapter, log, ...(selfUpdate ? { selfUpdate } : {}) });
   await updater.recordSelfState();
+  // 启动对账：若本进程正是已提交候选，清理自升级计划（幂等）。
+  await selfUpdate?.settleOnStart();
 
   // 独立恢复入口（§5.2）：仅在显式配置令牌时监听，默认只回环。
   let recovery: RecoveryServerHandle | null = null;
@@ -339,6 +360,34 @@ export function selectAdapter(env: NodeJS.ProcessEnv = process.env): DeploymentA
   });
 }
 
+/**
+ * 装配自升级执行器：仅在绑定配置齐全（真实 Compose 适配器）时提供。自升级切换与内核
+ * 部署共用同一绑定 project，故复用 `UPDATER_*`。未绑定时返回 null，主循环跳过自升级。
+ */
+export function selectSelfUpdateExecutor(
+  config: UpdaterConfig,
+  adapter: DeploymentAdapter,
+  log: (message: string) => void,
+  env: NodeJS.ProcessEnv = process.env,
+): SelfUpdateExecutor | null {
+  if (adapter === unconfiguredAdapter) return null;
+  const compose = composeConfigFromEnv(env);
+  const selfAdapter = new ComposeSelfUpdateAdapter(compose, new SpawnCommandRunner());
+  const channel = new FileUpdateTaskChannel(path.join(config.stateDir, 'channel'));
+  return new SelfUpdateExecutor({
+    adapter: selfAdapter,
+    plan: FileSelfUpdatePlan.resolve(config.stateDir),
+    // 存在待认领任务时不并行自升级。
+    request: FileSelfUpdateRequest.resolve(config.stateDir),
+    hasActiveTask: () => channel.hasPending(config.instanceId),
+    requestHandover: async (request) => {
+      await FileHandover.resolve(config.stateDir).write(request);
+    },
+    writerId: `${env['HOSTNAME'] ?? 'updater'}:${process.pid}`,
+    log,
+  });
+}
+
 // 仅在作为入口直接运行时启动（测试导入本模块不启动循环）。
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
@@ -360,3 +409,18 @@ export { createRecoveryServer } from './recovery-entry.ts';
 export type { RecoveryDeps, RecoveryServerHandle } from './recovery-entry.ts';
 export { RecoveryCoordinator, MAX_AUTO_RETRIES } from './recovery-actions.ts';
 export type { RecoveryCoordinatorDeps, RecoveryActionResult } from './recovery-actions.ts';
+export {
+  SelfUpdateExecutor,
+  SelfUpdateError,
+  FileSelfUpdatePlan,
+  FileSelfUpdateRequest,
+} from './self-update-executor.ts';
+export type {
+  SelfUpdateAdapter,
+  SelfUpdatePlan,
+  SelfUpdatePhase,
+  SelfUpdateRequest,
+  SelfUpdateResult,
+  SelfUpdateExecutorDeps,
+} from './self-update-executor.ts';
+export { ComposeSelfUpdateAdapter } from './compose-adapter.ts';

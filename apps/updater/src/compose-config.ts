@@ -52,6 +52,10 @@ export interface ComposeProjectConfig {
   allowedServices: string[];
   database: DatabaseConfig;
   probes: ProbeConfig;
+  /** updater 自身服务名（自升级时切换它）；缺省 `updater`。 */
+  updaterService?: string;
+  /** 承载 updater 镜像引用的环境变量名；缺省 `STACKPANEL_UPDATER_IMAGE`。 */
+  updaterImageEnv?: string;
   /** 快照/备份目录（updater 独立卷内）。缺省用 workDir/backups。 */
   backupDir?: string;
   /** 磁盘空间下限（字节）；不足则在停服前失败（§5.4-1）。 */
@@ -120,6 +124,8 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
     services,
     imageEnv: env['UPDATER_IMAGE_ENV'] ?? 'STACKPANEL_IMAGE',
     imageRepository: required('UPDATER_IMAGE_REPOSITORY'),
+    updaterService: env['UPDATER_SELF_SERVICE'] ?? 'updater',
+    updaterImageEnv: env['UPDATER_SELF_IMAGE_ENV'] ?? 'STACKPANEL_UPDATER_IMAGE',
     allowedServices: allowed,
     database: {
       service: env['UPDATER_DB_SERVICE'] ?? 'postgres',

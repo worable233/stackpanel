@@ -6,6 +6,7 @@ import type { UpdateTask } from '@stackpanel/spec';
 import type { CommandRequest, CommandResult, CommandRunner } from '../src/command.ts';
 import {
   ComposeDeploymentAdapter,
+  ComposeSelfUpdateAdapter,
   DeploymentAdapterError,
   parseDfFreeBytes,
 } from '../src/compose-adapter.ts';
@@ -315,5 +316,28 @@ describe('ComposeDeploymentAdapter', () => {
     expect(result.generation).toBe(6);
     expect(result.digest).toBe(DIGEST);
     expect(probes).toContain('http://api:3001/health');
+  });
+
+  it('self-updates the updater service by switching its image env', async () => {
+    const { runner, calls } = fakeRunner((req) => {
+      if (req.args.includes('images')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ Repository: 'ghcr.io/acme/updater', Tag: '1.0.0' }),
+          stderr: '',
+        };
+      }
+      if (req.args.includes('image') && req.args.includes('inspect')) {
+        return { code: 0, stdout: `ghcr.io/acme/stackpanel@${DIGEST}\n`, stderr: '' };
+      }
+      return undefined;
+    });
+    const self = new ComposeSelfUpdateAdapter(config(), runner);
+    expect(await self.currentUpdaterImage()).toBe('ghcr.io/acme/updater:1.0.0');
+    await self.pullAndVerifyUpdater(DIGEST);
+    await self.switchUpdaterTo(DIGEST);
+    const up = calls.find((c) => c.args.includes('up'));
+    expect(up?.env?.['STACKPANEL_UPDATER_IMAGE']).toBe(`ghcr.io/acme/stackpanel@${DIGEST}`);
+    expect(up?.args).toEqual(expect.arrayContaining(['up', '-d', 'updater']));
   });
 });

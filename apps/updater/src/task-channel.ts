@@ -26,6 +26,8 @@ export interface UpdateTaskChannel {
   claim(instanceId: string): Promise<UpdateTask | null>;
   /** 回写任务结果投影（业务库侧再消费）。 */
   complete(task: UpdateTask, result: UpdateTaskResult): Promise<void>;
+  /** 是否存在待认领任务（只读，不消费）；自升级前据此拒绝与内核迁移并行（§5.2）。 */
+  hasPending(instanceId: string): Promise<boolean>;
   /**
    * 归档完整任务声明（认领后、执行前调用）。任务结果只含检查点，恢复入口需要完整任务
    * 才能重建 {@link import('./deployment-adapter.ts').StepContext} 来重试；归档使该信息
@@ -111,6 +113,15 @@ export class FileUpdateTaskChannel implements UpdateTaskChannel {
     await rm(path.join(this.claimedDir(task.instanceId), updateTaskFileName(task.idempotencyKey)), {
       force: true,
     });
+  }
+
+  async hasPending(instanceId: string): Promise<boolean> {
+    try {
+      const names = await readdir(this.inboxDir(instanceId));
+      return names.some((name) => FILE_PATTERN.test(name));
+    } catch {
+      return false;
+    }
   }
 
   async archiveTask(task: UpdateTask): Promise<void> {

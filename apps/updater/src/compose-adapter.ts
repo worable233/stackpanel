@@ -17,6 +17,7 @@ import type { ComposeProjectConfig } from './compose-config.ts';
 import { FileDeploymentPointer } from './deployment-pointer.ts';
 import { FileSnapshotStore } from './snapshot-store.ts';
 import type { DeploymentAdapter, StepContext } from './deployment-adapter.ts';
+import type { SelfUpdateAdapter } from './self-update-executor.ts';
 
 /** HTTP 探针（可注入，测试不发起真实请求）。返回 true = 通过。 */
 export type Probe = (url: string, timeoutMs?: number) => Promise<boolean>;
@@ -457,3 +458,112 @@ const defaultProbe: Probe = async (url, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS) =>
     clearTimeout(timer);
   }
 };
+
+/**
+ * 基于 Compose 的 updater **自升级**适配器（§5.2）。切换 updater 服务自身的镜像引用
+ * （`updaterImageEnv`）并 `up -d updater`；候选启动失败由 {@link SelfUpdateExecutor}
+ * 的守护者用 {@link restoreUpdater} 回退。只操作绑定的 project 与 updater 服务。
+ */
+export class ComposeSelfUpdateAdapter implements SelfUpdateAdapter {
+  constructor(
+    private readonly config: ComposeProjectConfig,
+    private readonly runner: CommandRunner,
+  ) {}
+
+  private updaterService(): string {
+    return this.config.updaterService ?? 'updater';
+  }
+
+  private updaterImageEnv(): string {
+    return this.config.updaterImageEnv ?? 'STACKPANEL_UPDATER_IMAGE';
+  }
+
+  private composeRun(
+    args: string[],
+    opts: { env?: Record<string, string>; allowNonZeroExit?: boolean; timeoutMs?: number } = {},
+  ): Promise<string> {
+    const files = this.config.composeFiles.flatMap((f) => ['-f', f]);
+    return this.runner
+      .run({
+        file: 'docker',
+        args: ['compose', '-p', this.config.projectName, ...files, ...args],
+        cwd: this.config.projectDir,
+        ...(opts.env ? { env: opts.env } : {}),
+        ...(opts.allowNonZeroExit ? { allowNonZeroExit: true } : {}),
+        ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
+      })
+      .then((result) => result.stdout);
+  }
+
+  /** 读取当前 updater 服务镜像引用（compose 解析后的实际值）。 */
+  async currentUpdaterImage(): Promise<string> {
+    const out = await this.composeRun(['images', '--format', 'json', this.updaterService()], {
+      allowNonZeroExit: true,
+      timeoutMs: 60_000,
+    });
+    // compose images --format json 每行一个对象；取含镜像引用的字段。Tag 可能是 `sha256:...`
+    // （digest 引用）或普通 tag，两者都要还原成可直接比较的完整引用。
+    for (const line of out.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      try {
+        const parsed = JSON.parse(trimmed) as {
+          Repository?: string;
+          Tag?: string;
+          Image?: string;
+        };
+        if (parsed.Image) return parsed.Image;
+        if (parsed.Repository && parsed.Tag) {
+          const sep = parsed.Tag.startsWith('sha256:') ? '@' : ':';
+          return `${parsed.Repository}${sep}${parsed.Tag}`;
+        }
+      } catch {
+        // 非 JSON 行忽略。
+      }
+    }
+    throw new DeploymentAdapterError('无法读取当前 updater 镜像引用', 'self-update-current');
+  }
+
+  async pullAndVerifyUpdater(digest: string): Promise<{ credential: string }> {
+    const image = `${this.config.imageRepository}@${normalizeDigest(digest)}`;
+    await this.runner.run({
+      file: 'docker',
+      args: ['pull', image],
+      cwd: this.config.projectDir,
+      timeoutMs: 30 * 60_000,
+    });
+    const inspect = await this.runner.run({
+      file: 'docker',
+      args: ['image', 'inspect', '--format', '{{index .RepoDigests 0}}', image],
+    });
+    if (!inspect.stdout.includes(normalizeDigest(digest))) {
+      throw new DeploymentAdapterError(
+        `候选 updater 镜像摘要不匹配：期望 ${digest}`,
+        'self-update-pull',
+      );
+    }
+    return { credential: inspect.stdout.trim() };
+  }
+
+  async switchUpdaterTo(digest: string): Promise<{ credential: string }> {
+    // 只把「已含 `@`」的完整引用当完整引用；裸摘要/`sha256:` 一律与仓库拼成
+    // `repo@sha256:...`，避免把 digest 当成 `repo:tag` 形态误用。
+    const reference = digest.includes('@')
+      ? digest
+      : `${this.config.imageRepository}@${normalizeDigest(digest)}`;
+    await this.composeRun(['up', '-d', this.updaterService()], {
+      env: { [this.updaterImageEnv()]: reference },
+      timeoutMs: 15 * 60_000,
+    });
+    return { credential: `self-switched:${reference}` };
+  }
+
+  async restoreUpdater(digest: string): Promise<{ credential: string }> {
+    await this.composeRun(['up', '-d', this.updaterService()], {
+      env: { [this.updaterImageEnv()]: digest },
+      allowNonZeroExit: true,
+      timeoutMs: 15 * 60_000,
+    });
+    return { credential: `self-restored:${digest}` };
+  }
+}

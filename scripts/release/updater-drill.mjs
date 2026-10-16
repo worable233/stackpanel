@@ -123,6 +123,10 @@ function makeRunner({ failOn } = {}) {
         stdout =
           'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda1 10000000 1 9999999 1% /';
       }
+      if (request.file === 'docker' && request.args.includes('images')) {
+        // `docker compose images --format json` 的当前 updater 镜像引用。
+        stdout = JSON.stringify({ Repository: 'ghcr.io/worable233/updater', Tag: '1.0.0' });
+      }
       if (request.stdoutFile) {
         await writeFile(request.stdoutFile, 'PGDUMP');
       }
@@ -349,6 +353,93 @@ async function scenarioRecoveryEntry(drill, root) {
   );
 }
 
+async function scenarioSelfUpdate(drill, root) {
+  console.log('\n场景 F：updater 自升级（切换 → 候选确认 / 超时回退），经真实适配器');
+  const stateDir = path.join(root, 'F-state');
+  const projectDir = path.join(root, 'F-project');
+  await mkdir(stateDir, { recursive: true });
+  await mkdir(projectDir, { recursive: true });
+  const { runner } = makeRunner();
+  // 让 `docker compose images` 反映最近一次切换的 updater 镜像，从而真实走通「候选确认」。
+  let liveUpdaterImage = `ghcr.io/worable233/updater:1.0.0`;
+  const statefulRunner = {
+    run: async (request) => {
+      if (request.file === 'docker' && request.args.includes('up')) {
+        const env = request.env ?? {};
+        const injected = env['STACKPANEL_UPDATER_IMAGE'];
+        if (injected) liveUpdaterImage = injected;
+      }
+      if (
+        request.file === 'docker' &&
+        request.args[0] === 'compose' &&
+        request.args.includes('images')
+      ) {
+        const [repository, tag] =
+          liveUpdaterImage.split('@').length > 1
+            ? liveUpdaterImage.split('@')
+            : liveUpdaterImage.split(':');
+        return {
+          code: 0,
+          stdout: JSON.stringify({ Repository: repository, Tag: tag, ID: 'deadbeef' }),
+          stderr: '',
+        };
+      }
+      return runner.run(request);
+    },
+  };
+  const config = composeConfig(projectDir, path.join(stateDir, 'backups'));
+  const selfAdapter = new drill.ComposeSelfUpdateAdapter(config, statefulRunner);
+
+  // A) 候选在截止前确认 → committed。
+  const planA = new drill.FileSelfUpdatePlan(path.join(stateDir, 'plan-confirm.json'));
+  const executorA = new drill.SelfUpdateExecutor({
+    adapter: selfAdapter,
+    plan: planA,
+    hasActiveTask: async () => false,
+  });
+  const switched = await executorA.requestUpdate(TARGET_DIGEST);
+  assert(switched.status === 'switched', `自升级切换到候选（${switched.status}）`);
+  // 候选进程读同一计划并确认（此时 compose images 已反映候选镜像）。
+  const confirmed = await executorA.confirmCandidate();
+  assert(confirmed.status === 'committed', `候选确认后提交（${confirmed.status}）`);
+
+  // B) 候选在截止前未确认 → 守护者回退。（独立现场，避免 A 的切换影响当前镜像）
+  const planB = new drill.FileSelfUpdatePlan(path.join(stateDir, 'plan-timeout.json'));
+  let liveB = 'ghcr.io/worable233/updater:1.0.0';
+  const statefulRunnerB = {
+    run: async (request) => {
+      if (request.file === 'docker' && request.args.includes('up')) {
+        const injected = (request.env ?? {})['STACKPANEL_UPDATER_IMAGE'];
+        if (injected) liveB = injected;
+      }
+      if (request.file === 'docker' && request.args.includes('images')) {
+        const [repository, tag] = liveB.includes('@') ? liveB.split('@') : liveB.split(':');
+        return {
+          code: 0,
+          stdout: JSON.stringify({ Repository: repository, Tag: tag }),
+          stderr: '',
+        };
+      }
+      return runner.run(request);
+    },
+  };
+  const selfAdapterB = new drill.ComposeSelfUpdateAdapter(config, statefulRunnerB);
+  let now = new Date('2026-10-17T00:00:00Z');
+  const executorB = new drill.SelfUpdateExecutor({
+    adapter: selfAdapterB,
+    plan: planB,
+    hasActiveTask: async () => false,
+    now: () => now,
+    candidateTimeoutMs: 60_000,
+  });
+  await executorB.requestUpdate(TARGET_DIGEST);
+  now = new Date('2026-10-17T00:00:30Z');
+  assert((await executorB.guardTick()).status === 'waiting', '未到截止前守护者保持等待');
+  now = new Date('2026-10-17T00:05:00Z');
+  const rolled = await executorB.guardTick();
+  assert(rolled.status === 'rolled_back', `候选超时未确认 → 回退（${rolled.status}）`);
+}
+
 async function main() {
   const real = process.argv.includes('--real');
   const drill = await loadDrill();
@@ -359,7 +450,10 @@ async function main() {
     await scenarioPostMigrationFailure(drill, root);
     await scenarioPostWriteFailure(drill, root);
     await scenarioRecoveryEntry(drill, root);
-    console.log('\n离线演练通过：成功路径 + §6 三类失败恢复语义 + §5.2 恢复入口动作均符合预期。');
+    await scenarioSelfUpdate(drill, root);
+    console.log(
+      '\n离线演练通过：成功路径 + §6 三类失败恢复语义 + §5.2 恢复入口动作 + 自升级交接/回退均符合预期。',
+    );
     if (!real) {
       console.log(
         '\n注：真实 Docker/Compose、真机干净安装与发布镜像的端到端验收（§13-7）尚未执行。\n' +
