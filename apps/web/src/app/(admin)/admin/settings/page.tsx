@@ -5,6 +5,7 @@ import {
   type SigningStatus,
 } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
+import { Separator } from '@/components/ui/separator';
 import { apiAssetUrl, getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { SettingsManager } from './settings-manager';
@@ -41,11 +42,9 @@ export default async function AdminSettingsPage() {
     : null;
 
   return (
-    <main className="w-full space-y-6">
-      <PageHeader
-        title={t('admin.settings.title')}
-        description={t('admin.settings.pageDescription')}
-      />
+    <main className="w-full">
+      <PageHeader title={t('admin.settings.title')} />
+      <Separator className="my-4 lg:my-6" />
       {error ? (
         <p className="text-sm text-destructive">
           {t('admin.settings.serviceUnavailable', { error })}

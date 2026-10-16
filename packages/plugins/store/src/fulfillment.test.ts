@@ -6,7 +6,7 @@ import type {
   FulfillmentProvider,
   PluginContext,
 } from '@stackpanel/sdk';
-import { CommerceError } from '@stackpanel/sdk';
+import { CommerceError, ExtensionVersionConflict } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
 import {
   enqueueOrderFulfillment,
@@ -15,6 +15,7 @@ import {
   processDue,
   runMyServiceAction,
 } from './fulfillment';
+import { applyChangeOrder } from './changes';
 import { storeOperations } from './operations';
 
 interface Stored {
@@ -29,6 +30,22 @@ interface Stored {
  * 最小内存版 ExtensionClient，按模型 kind 存储实例，覆盖 fulfillment 用到的
  * get/list/listAll/create/update/updateWhere/delete。
  */
+const INDEX_FIELDS: Record<string, Set<string>> = {
+  'store/order': new Set(['userId', 'state']),
+  'store/product': new Set(['status', 'categoryId', 'stock', 'providerId']),
+  'store/delivery-task': new Set(['state', 'orderId', 'userId', 'nextAttemptAtMs', 'attempts']),
+  'store/service-instance': new Set([
+    'userId',
+    'orderId',
+    'productId',
+    'state',
+    'providerId',
+    'providerServiceId',
+    'expiresAtMs',
+    'expiryStage',
+  ]),
+};
+
 function createFakeExtensions() {
   const tables = new Map<string, Map<string, Stored>>();
   let seq = 0;
@@ -61,8 +78,16 @@ function createFakeExtensions() {
   const applyPatch = (
     spec: Record<string, unknown>,
     patch: Record<string, { set?: unknown; inc?: number; dec?: number }>,
+    kind: string,
   ) => {
+    // 与内核 `updateWhere` 对齐：patch 字段必须在模型 indexes 内，否则抛错
+    // （真实内核 `client.ts` 抛 `extension.validation_error`）。这条断言正是当初能
+    // 掩盖 `reclaimTask` 写未索引 `error` 的原因——补齐后防止再次回归。
+    const allowed = INDEX_FIELDS[kind];
     for (const [key, op] of Object.entries(patch)) {
+      if (allowed && !allowed.has(key)) {
+        throw new Error(`不可更新的字段：${key}`);
+      }
       if ('set' in op) spec[key] = op.set;
       else if ('inc' in op) spec[key] = ((spec[key] as number) ?? 0) + (op.inc as number);
       else if ('dec' in op) spec[key] = ((spec[key] as number) ?? 0) - (op.dec as number);
@@ -109,9 +134,17 @@ function createFakeExtensions() {
       table(model.kind).set(name, row);
       return row as unknown as ExtensionInstance;
     },
-    async update(model: CustomModelDefinition, name: string, spec: Record<string, unknown>) {
+    async update(
+      model: CustomModelDefinition,
+      name: string,
+      spec: Record<string, unknown>,
+      opts?: { expectedVersion?: number },
+    ) {
       const row = table(model.kind).get(name);
       if (!row) throw new Error(`not found: ${name}`);
+      if (opts?.expectedVersion !== undefined && opts.expectedVersion !== row.version) {
+        throw new ExtensionVersionConflict(name);
+      }
       row.spec = { ...spec };
       row.version += 1;
       row.updatedAt = new Date();
@@ -124,7 +157,7 @@ function createFakeExtensions() {
     ) {
       const rows = [...table(model.kind).values()].filter((row) => matches(row, where));
       for (const row of rows) {
-        applyPatch(row.spec, patch);
+        applyPatch(row.spec, patch, model.kind);
         row.version += 1;
         row.updatedAt = new Date();
       }
@@ -349,6 +382,81 @@ describe('store fulfillment dispatcher', () => {
     await processDue();
     expect(fake.all(TASK)[0]?.spec.state).toBe('FAILED');
     expect(fake.all(TASK)[0]?.spec.error).toBe('上游超时');
+  });
+
+  it('F-1: reclaims a stale task without writing the unindexed error field (real-kernel parity)', async () => {
+    // 回归：reclaimTask 曾用 updateWhere 写 error（未声明为索引）→ 真实库抛
+    // `不可更新的字段：error`。强化后的 fake 也会抛，故此用例锁定整行读改写的行为。
+    const fake = createFakeExtensions();
+    fake.seed(
+      TASK,
+      {
+        orderId: 'order-1',
+        productId: 'prod-1',
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        quantity: 1,
+        state: 'RUNNING',
+        attempts: 5,
+        maxAttempts: 3,
+        error: null,
+        payload: null,
+        serviceId: null,
+        nextAttemptAtMs: 0, // 已过租约
+      },
+      'task-stale',
+    );
+    bindContext(makeCtx(fake, makeProvider().provider));
+
+    await processDue();
+
+    const task = fake.all(TASK).find((row) => row.name === 'task-stale')!;
+    expect(task.spec.state).toBe('FAILED');
+    expect(task.spec.error).toBe('运行超时，已回收');
+  });
+
+  it('F-2: does not clobber a concurrently-modified task (optimistic lock)', async () => {
+    // 回归：reclaimTask 的整行读改写必须带 expectedVersion；否则读与写之间若该行被并发
+    // 修改（此处模拟：get 返回陈旧版本），会用陈旧快照覆盖。
+    const fake = createFakeExtensions();
+    fake.seed(
+      TASK,
+      {
+        orderId: 'order-1',
+        productId: 'prod-1',
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        quantity: 1,
+        state: 'RUNNING',
+        attempts: 5,
+        maxAttempts: 3,
+        error: null,
+        payload: null,
+        serviceId: null,
+        nextAttemptAtMs: 0, // 已过租约
+      },
+      'task-race',
+    );
+    bindContext(makeCtx(fake, makeProvider().provider));
+
+    // 模拟「读到之后、写入之前」被并发改动：get 对 task-race 返回陈旧版本。
+    const stored = fake.all(TASK)[0]!;
+    stored.version = 2;
+    const originalGet = fake.client.get.bind(fake.client);
+    fake.client.get = (async (model: CustomModelDefinition, name: string) => {
+      const row = await originalGet(model, name);
+      return row && name === 'task-race' ? { ...row, version: 1 } : row;
+    }) as typeof fake.client.get;
+
+    await processDue();
+
+    // 版本冲突 → 放弃回收，不得把该行覆盖为 FAILED。
+    const task = fake.all(TASK).find((row) => row.name === 'task-race')!;
+    expect(task.spec.state).toBe('RUNNING');
   });
 
   it('lists only the current user services', async () => {
@@ -749,5 +857,76 @@ describe('store fulfillment dispatcher', () => {
     expect(Math.abs((service.spec.expiresAtMs as number) - expected.getTime())).toBeLessThan(
       10_000,
     );
+  });
+
+  it('does not mark a change applied when the provider hook throws (C-3)', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: 'order-old',
+        productId: 'prod-old',
+        productName: '旧配置',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-up-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: { config: { plan: 'small' } },
+        amount: 5000,
+        currency: 'CNY',
+        expiresAt: null,
+        expiresAtMs: null,
+        expiryStage: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-change',
+    );
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: {
+          items: [
+            {
+              productId: 'prod-old',
+              quantity: 1,
+              changeServiceId: 'svc-change',
+              changeType: 'package',
+              changeSelection: { plan: 'large' },
+            },
+          ],
+        },
+        total: 1000,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 1000,
+        fxRate: null,
+      },
+      'order-change',
+    );
+    // 提供方声明 changePackage 但抛错：变更失败必须可重试，不能标记 changeApplied。
+    const changePackage = vi.fn(async () => {
+      throw new Error('upstream change failed');
+    });
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      changePackage,
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await applyChangeOrder('order-change');
+
+    const raw = fake.all(ORDER)[0]!.spec.items as { items: Array<Record<string, unknown>> };
+    expect(raw.items[0]!['changeApplied']).not.toBe(true);
+    // 本地服务未被改写成目标配置。
+    const service = fake.all(SERVICE)[0]!;
+    expect((service.spec.runtime as { config?: { plan?: string } }).config?.plan).toBe('small');
   });
 });

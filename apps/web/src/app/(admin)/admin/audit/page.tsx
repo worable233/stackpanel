@@ -121,7 +121,7 @@ export default async function AdminAuditPage({
 
   return (
     <main className="w-full space-y-6">
-      <PageHeader title={t('admin.audit.title')} description={t('admin.audit.description')} />
+      <PageHeader title={t('admin.audit.title')} />
 
       <form method="get" action="/admin/audit" className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">

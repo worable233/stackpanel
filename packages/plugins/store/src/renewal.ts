@@ -7,9 +7,15 @@ import {
   getService,
   replaceServiceInstance,
   toOrder,
+  toService,
   toServiceInstanceData,
 } from './repository';
-import { orderModel, type StoreOrderData } from './data';
+import {
+  orderModel,
+  serviceInstanceModel,
+  type StoreOrderData,
+  type StoreServiceInstanceData,
+} from './data';
 import { monthsForCycle, readCycles, renewOrderSchema } from './utils';
 
 /**
@@ -115,7 +121,7 @@ export async function renewService(ctx: PluginContext, req: HttpRequest): Promis
       if (!paid) throw new StoreError(503, '商店插件未就绪');
       return toOrder(paid);
     });
-    bus().publish('order.paid', { orderId: order.id });
+    bus().publish('order.paid', { orderId: order.id, userId: order.userId });
     return { order, nextPath: '/account/services' };
   }
 
@@ -181,7 +187,6 @@ export async function applyRenewalOrder(orderId: string): Promise<void> {
   const now = new Date();
   const raw = record.spec.items as { items?: Array<Record<string, unknown>> } | null;
   const rawItems = Array.isArray(raw?.items) ? raw!.items : [];
-  let mutated = false;
   for (const line of stockItems({ items: record.spec.items })) {
     if (!line.renewalServiceId) continue;
     // 幂等：同一订单行只处理一次（重复投递不会二次顺延或覆盖回滚点）。
@@ -196,36 +201,67 @@ export async function applyRenewalOrder(orderId: string): Promise<void> {
     const months =
       line.renewMonths && line.renewMonths > 0 ? line.renewMonths : DEFAULT_RENEW_MONTHS;
     const nextExpiry = extendExpiry(service.expiresAt, now, months);
-    // 在原始订单行上记录续费前的到期/状态，供全额退款精确回滚（不重建行，避免丢字段）。
+    // 已暂停（到期暂停）的服务：补费后调上游 resume 并恢复为 ACTIVE。resume 是**外部
+    // 副作用**，失败必须抛出（不落 ACTIVE、不置幂等标记），否则会出现「平台已恢复、
+    // 上游仍暂停」且不可重试。应在写入到期时间之前完成。
+    const wasSuspended = service.status === 'SUSPENDED';
+    if (wasSuspended) {
+      await applyServiceLifecycleAction(service, 'resume');
+    }
+    // M-3 + M-4：到期时间与幂等标记在**同一事务**内落库，二者要么都生效要么都不生效，
+    // 既避免「续费开始时的陈旧整行快照覆盖并发写入」，也避免「已顺延但标记丢失 → 重试
+    // 再顺延一次」。标记在外部钩子成功后才写，因此失败可重试。
+    //
+    // 注：`expiresAt` 未声明为索引字段（无需查询），内核 `updateWhere` 不接受它，所以
+    // 这里在事务内**重新读取当前行**再整行写回，既携带 `expiresAt` 又不会用续费开始时的
+    // 陈旧快照覆盖这段时间内并发写入的 runtime 等字段。
     if (rawLine) {
       rawLine['previousExpiresAt'] = service.expiresAt ? service.expiresAt.toISOString() : null;
       rawLine['previousState'] = service.status;
       rawLine['renewalApplied'] = true;
-      mutated = true;
     }
-    // 已暂停（到期暂停）的服务：补费后调上游 resume 并恢复为 ACTIVE。
-    const wasSuspended = service.status === 'SUSPENDED';
-    if (wasSuspended) {
-      await applyServiceLifecycleAction(service, 'resume').catch((error) => {
-        logger().warn(`store: renewal resume hook failed for ${service.id}: ${messageOf(error)}`);
+    await runTransaction(async (tx) => {
+      const latestInstance = await tx.extensions.get<StoreServiceInstanceData>(
+        serviceInstanceModel,
+        service.id,
+      );
+      if (!latestInstance) return;
+      const latest = toServiceInstanceData(toService(latestInstance));
+      await tx.extensions.update<StoreServiceInstanceData>(serviceInstanceModel, service.id, {
+        ...latest,
+        expiresAt: nextExpiry.toISOString(),
+        expiresAtMs: nextExpiry.getTime(),
+        // 重置到期阶段与失败计数：续费后应从头重走提醒/暂停，且不继承上一次到期的失败次数。
+        expiryStage: null,
+        expiryAttempts: 0,
+        expiryLastError: null,
+        ...(wasSuspended ? { state: 'ACTIVE' } : {}),
       });
-    }
-    await replaceServiceInstance(service.id, {
-      ...toServiceInstanceData(service),
-      ...(wasSuspended ? { state: 'ACTIVE' } : {}),
-      expiresAt: nextExpiry.toISOString(),
-      expiresAtMs: nextExpiry.getTime(),
-      expiryStage: null,
+      if (rawLine) {
+        await tx.extensions.update<StoreOrderData>(orderModel, orderId, {
+          ...record.spec,
+          items: { items: rawItems },
+        });
+      }
+    });
+    // 续费回调：通知提供方到期时间已推进（尽力而为，失败不阻断续费）。失败不阻断，但
+    // 记录到 runtime 以便对账/排查（不改 state，不影响续费结果）。
+    const { notifyServiceRenewal } = await import('./fulfillment');
+    const { readServiceSelection } = await import('./changes');
+    const selection = readServiceSelection(service);
+    await notifyServiceRenewal(
+      { ...service, expiresAt: nextExpiry },
+      {
+        newExpiresAt: nextExpiry.toISOString(),
+        months,
+        ...(selection ? { selection } : {}),
+      },
+    ).catch(async (error) => {
+      const message = messageOf(error);
+      logger().warn(`store: renewal provider hook failed for ${service.id}: ${message}`);
+      await recordRenewalNotifyFailure(service, message);
     });
     logger().info(`store: renewed service ${service.id} to ${nextExpiry.toISOString()}`);
-  }
-  if (mutated) {
-    await context()
-      .extensions.update<StoreOrderData>(orderModel, orderId, {
-        ...record.spec,
-        items: { items: rawItems },
-      })
-      .catch(() => undefined);
   }
 }
 
@@ -247,8 +283,10 @@ export async function reverseRenewalOrder(orderId: string): Promise<void> {
       ...(line.previousState ? { state: line.previousState } : {}),
       expiresAt: restored ? restored.toISOString() : null,
       expiresAtMs: restored ? restored.getTime() : null,
-      // 回滚到期阶段，使服务按恢复后的到期时间重新走一遍提醒/暂停。
+      // 回滚到期阶段（连同失败计数），使服务按恢复后的到期时间重新走一遍提醒/暂停。
       expiryStage: null,
+      expiryAttempts: 0,
+      expiryLastError: null,
     });
     logger().info(`store: reversed renewal for service ${service.id}`);
   }
@@ -256,6 +294,39 @@ export async function reverseRenewalOrder(orderId: string): Promise<void> {
 
 function messageOf(error: unknown): string {
   return error instanceof Error && error.message ? error.message : '未知错误';
+}
+
+/**
+ * 记录一次「续费后上游通知失败」到 `runtime`（不改 state，不阻断续费）。默认决策 B：
+ * 续费以上游确认为准会造成强一致耦合，本步仅在 runtime 留痕供对账/排查。
+ *
+ * `runtime` 未声明为索引字段，内核 `updateWhere` 不接受它，因此重新读取当前行后整行
+ * 写回（避免用续费前的陈旧快照覆盖刚写入的 expiresAt/expiryStage）。
+ */
+async function recordRenewalNotifyFailure(
+  service: { id: string },
+  message: string,
+): Promise<void> {
+  try {
+    const current = await getService(service.id);
+    if (!current) return;
+    const base =
+      current.runtime && typeof current.runtime === 'object'
+        ? (current.runtime as Record<string, unknown>)
+        : {};
+    await replaceServiceInstance(current.id, {
+      ...toServiceInstanceData(current),
+      runtime: {
+        ...base,
+        renewalNotifyError: message,
+        renewalNotifyFailedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    logger().warn(
+      `store: failed to record renewal notify failure for ${service.id}: ${messageOf(error)}`,
+    );
+  }
 }
 
 /** 判断订单是否包含续费行（履约调度器据此决定是否跳过 provision）。 */

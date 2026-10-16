@@ -1,4 +1,5 @@
 'use client';
+import { SectionTitle } from '@stackpanel/ui';
 
 import { useTransition } from 'react';
 import Link from 'next/link';
@@ -52,7 +53,7 @@ export function ThemeManager({
         </section>
       ) : null}
       <section>
-        <h2 className="text-lg font-semibold">{t('admin.themes.installed')}</h2>
+        <SectionTitle>{t('admin.themes.installed')}</SectionTitle>
         <ul className="mt-3 space-y-2">
           {themes.map((theme) => (
             <li

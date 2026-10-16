@@ -17,6 +17,7 @@
     "@stackpanel/ui": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "cn": "^0.4.0",
     "jose": "^6.2.6",
     "lucide-react": "^1.31.0",

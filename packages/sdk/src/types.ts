@@ -27,6 +27,27 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  /** When email ownership was verified, or `null`. */
+  emailVerifiedAt: string | null;
+}
+
+/** Public auth policy for the frontend (register form). */
+export interface AuthConfigResponse {
+  emailVerificationRequired: boolean;
+  captcha: {
+    mode: 'off' | 'optional' | 'required';
+    configured: boolean;
+    providerIds: string[];
+    clientConfig: Record<string, unknown> | null;
+  };
+}
+
+/** Result of POST /register/send-code. */
+export interface SendRegisterCodeResponse {
+  sent: boolean;
+  email: string;
+  expiresAt: string;
+  expiresInSeconds: number;
 }
 
 /** Standard success envelope. */
@@ -103,6 +124,11 @@ export interface AdminUser {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  /** Spendable wallet balance in the currency's minor unit. */
+  balance?: number | undefined;
+  balanceCurrency?: string | undefined;
+  /** Number of non-terminated cloud products currently held by the user. */
+  serviceCount?: number | null | undefined;
 }
 
 /** Response of GET /admin/users (paginated list). */
@@ -153,6 +179,7 @@ export interface AdminUserDetailResponse {
   wallet: { balance: number; currency: string } | null;
   services: AdminServiceItem[];
   orders: AdminUserOrderItem[];
+  ordersPagination?: { page: number; pageSize: number; total: number } | undefined;
   ledger: AdminUserLedgerItem[];
 }
 

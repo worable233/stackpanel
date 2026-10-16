@@ -27,6 +27,8 @@ import { brandSdkErrorClass, isSdkErrorClass } from './errors.js';
 export interface LlmProvider {
   readonly id: string; // 'llm-gateway'
   readonly name: string; // 管理端展示名
+  /** 配置未就绪时允许内核选择其他提供方或兜底配置。 */
+  available?(): Promise<boolean>;
 
   /** 管理端下拉与 allowedModels 校验用。必须是确定、无副作用、可缓存的纯读取。 */
   listModels(): Promise<LlmModelInfo[]>;

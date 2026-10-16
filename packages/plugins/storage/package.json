@@ -1,0 +1,33 @@
+{
+  "name": "@stackpanel/plugin-storage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "stackpanel": {
+    "builtin": true
+  },
+  "description": "存储插件：把媒体/品牌/备份的对象存储交给本地盘或 S3 兼容后端（MinIO/R2/OSS/AWS）。",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prepare": "tsc -p tsconfig.build.json",
+    "build": "node ../../../scripts/build-plugin.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@stackpanel/sdk": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^6.0.3"
+  }
+}

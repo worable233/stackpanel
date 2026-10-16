@@ -12,11 +12,11 @@ import type {
   CommerceServicePatch,
 } from '@stackpanel/sdk';
 import { CommerceError } from '@stackpanel/sdk';
-import { bus } from './context';
+import { bus, extensions, runTransaction } from './context';
+import { orderModel, productModel, serviceInstanceModel, type StoreOrderData } from './data';
 import { applyServiceLifecycleAction } from './fulfillment';
 import type { OrderRecord, ProductRecord, ServiceInstanceRecord } from './repository';
 import {
-  createOrderInstance,
   createServiceInstance,
   deleteServiceInstance,
   findOrderForUser,
@@ -28,7 +28,7 @@ import {
   listServicesByProvider,
   listServicesByUser,
   replaceServiceInstance,
-  reserveProductStock,
+  toOrder,
   toServiceInstanceData,
 } from './repository';
 
@@ -122,22 +122,38 @@ export const storeOperations: CommerceOperations = {
     if (!Number.isSafeInteger(total) || total < 1 || total > MAX_MINOR_AMOUNT) {
       throw new CommerceError('amount_invalid', '订单金额无效');
     }
-    const reserved = await reserveProductStock(product.id, quantity);
-    if (!reserved) {
-      throw new CommerceError('product_unavailable', '商品不可用或库存不足');
-    }
-    const order = await createOrderInstance({
-      userId: input.userId,
-      items: { items: [{ productId: product.id, quantity, price: product.price, name: product.name }] },
-      total,
-      currency: product.currency,
-      channelCode: input.channelCode ?? null,
-      settlementCurrency: product.currency,
-      settlementTotal: total,
-      fxRate: null,
-      state: 'PAID',
+    // 扣库存与建单必须原子：否则后者失败会永久泄漏库存（与站内 reserve() 同源）。
+    const order = await runTransaction(async (tx) => {
+      const { updated } = await tx.extensions.updateWhere(
+        productModel,
+        { name: { eq: product.id }, status: { eq: 'ACTIVE' }, stock: { gte: quantity } },
+        { stock: { dec: quantity } },
+      );
+      if (updated === 0) {
+        throw new CommerceError('product_unavailable', '商品不可用或库存不足');
+      }
+      const created = await tx.extensions.create<StoreOrderData>(orderModel, {
+        userId: input.userId,
+        items: {
+          items: [{ productId: product.id, quantity, price: product.price, name: product.name }],
+          // 标记本单为「合作方预付」（SP v1）——平台未实际收款，禁止退款入账。
+          settlement: 'partner_prepaid',
+        },
+        total,
+        currency: product.currency,
+        state: 'PAID',
+        channelCode: input.channelCode ?? null,
+        settlementCurrency: product.currency,
+        settlementTotal: total,
+        fxRate: null,
+      });
+      return toOrder(created);
     });
-    bus().publish('order.paid', { orderId: order.id, channelCode: order.channelCode });
+    bus().publish('order.paid', {
+      orderId: order.id,
+      userId: order.userId,
+      channelCode: order.channelCode,
+    });
     return toCommerceOrder(order);
   },
 
@@ -156,6 +172,19 @@ export const storeOperations: CommerceOperations = {
   async listServices(userId: string): Promise<CommerceService[]> {
     const services = await listServicesByUser(userId);
     return services.slice(0, MAX_SERVICES).map(toCommerceService);
+  },
+
+  async countServicesByUsers(userIds: string[]): Promise<Record<string, number>> {
+    // The paged query returns an exact total without loading service payloads in bulk.
+    const counts = await Promise.all([...new Set(userIds)].slice(0, 100).map(async (userId) => {
+      const result = await extensions().list(serviceInstanceModel, {
+        where: { userId: { eq: userId }, state: { in: ['ACTIVE', 'SUSPENDED'] } },
+        page: 1,
+        pageSize: 1,
+      });
+      return [userId, result.total] as const;
+    }));
+    return Object.fromEntries(counts);
   },
 
   async getService(userId: string, id: string): Promise<CommerceService | null> {

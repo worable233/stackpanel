@@ -7,9 +7,29 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+/**
+ * Human-verification token captured by the frontend widget. Carried on the
+ * register and send-code requests; the kernel's `ctx.captcha.enforce` applies
+ * the configured policy, so the plugin never branches on `off`/`optional`/
+ * `required` itself.
+ */
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  /**
+   * Referral code the visitor arrived with. The kernel has no notion of
+   * referrals; this plugin only forwards it on the `user.registered` event so
+   * an interested plugin can attribute the signup (ADR: referral design §4.1).
+   */
+  affid: z.string().trim().max(64).optional(),
+  /** Verification code, required when registration requires a verified email. */
+  code: z.string().trim().min(1).max(16).optional(),
+  captchaToken: z.string().trim().min(1).max(4096).optional(),
+});
+
+const sendCodeSchema = z.object({
+  email: z.string().email(),
+  captchaToken: z.string().trim().min(1).max(4096).optional(),
 });
 
 /** Fixed-window rate limiter backed by the kernel shared state (Redis-ready). */
@@ -67,6 +87,11 @@ function setSessionCookie(reply: HttpReply, token: string): void {
   });
 }
 
+/** Extract the client IP for the captcha verification (scoping per source). */
+function clientIp(req: HttpRequest): string | undefined {
+  return req.ip ?? undefined;
+}
+
 const login = handle(async (req: HttpRequest, reply: HttpReply) => {
   if (!(await allow('ip', req.ip ?? 'unknown', rateLimits().login))) {
     throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
@@ -99,19 +124,95 @@ const login = handle(async (req: HttpRequest, reply: HttpReply) => {
   return { token, user };
 });
 
+/**
+ * Send a registration verification code. Independent identity-challenge flow:
+ * the kernel owns the challenge table (digest, TTL, attempt/limit, single
+ * consumption) and the delivery channel (an `identity.challengeSender` plugin);
+ * the code never touches the in-app inbox (audit §5).
+ */
+const sendCode = handle(async (req: HttpRequest, reply: HttpReply) => {
+  const ip = clientIp(req);
+  if (!(await allow('ip', ip ?? 'unknown', rateLimits().register))) {
+    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
+  }
+  const parsed = sendCodeSchema.safeParse(req.body);
+  if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
+  const email = parsed.data.email.toLowerCase();
+
+  // Human verification covers the send-code entry point (audit §5).
+  await auth().captcha.enforce({
+    token: parsed.data.captchaToken ?? '',
+    action: 'register_send_code',
+    ...(ip ? { remoteIp: ip } : {}),
+  });
+
+  // Fail fast when email verification is off and no code is wanted: avoid
+  // spending a challenge/email for a flow that ignores it.
+  if (!auth().identity.requiresEmailVerification()) {
+    throw new PluginError('auth.code_not_required', 400, '当前未启用注册邮箱验证');
+  }
+
+  const existing = await auth().auth.getUserByEmail(email);
+  if (existing) {
+    // Do not confirm existence to an unauthenticated caller beyond what the
+    // register endpoint already reveals; but skip sending a code.
+    throw new PluginError('auth.email_taken', 409, '邮箱已被使用');
+  }
+
+  const issued = await auth().identity.issue({
+    purpose: 'register',
+    email,
+    ...(ip ? { ip } : {}),
+    ...(req.headers['user-agent'] ? { userAgent: String(req.headers['user-agent']) } : {}),
+  });
+  await auth().auth.audit({
+    action: 'auth.register.code_sent',
+    resource: 'user',
+    meta: { email, deliveredBy: issued.deliveredBy, provider: 'password' },
+    ...(ip ? { ip } : {}),
+  });
+  return reply.code(202).send({
+    sent: true,
+    email: issued.email,
+    expiresAt: issued.expiresAt,
+    expiresInSeconds: issued.expiresInSeconds,
+  });
+});
+
 const register = handle(async (req: HttpRequest, reply: HttpReply) => {
-  if (!(await allow('ip', req.ip ?? 'unknown', rateLimits().register))) {
+  const ip = clientIp(req);
+  if (!(await allow('ip', ip ?? 'unknown', rateLimits().register))) {
     throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
   }
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
-  const { email, password } = parsed.data;
+  const { email, password, affid, code } = parsed.data;
   if (!(await allow('user', email.toLowerCase(), rateLimits().register))) {
     throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
   }
+
+  // Human verification covers the register entry point.
+  await auth().captcha.enforce({
+    token: parsed.data.captchaToken ?? '',
+    action: 'register',
+    ...(ip ? { remoteIp: ip } : {}),
+  });
+
+  const requireVerification = auth().identity.requiresEmailVerification();
+  if (requireVerification) {
+    // Consume the code *before* creating the account: a verified email is a
+    // precondition for an ACTIVE account, and single-use consumption is atomic
+    // in the kernel service (audit §5).
+    await auth().identity.consume({
+      purpose: 'register',
+      email: email.toLowerCase(),
+      code: code ?? '',
+    });
+  }
+
   let user: AuthUser;
   try {
-    user = await auth().auth.registerUser({ email, password });
+    user = await auth().auth.registerUser({ email, password, emailVerified: requireVerification });
   } catch (error) {
     const message = (error as Error).message ?? '';
     if (message.includes('邮箱已被使用')) {
@@ -128,8 +229,16 @@ const register = handle(async (req: HttpRequest, reply: HttpReply) => {
     action: 'auth.register',
     resource: 'user',
     resourceId: user.id,
-    meta: { provider: 'password' },
-    ...(req.ip ? { ip: req.ip } : {}),
+    meta: { provider: 'password', emailVerified: user.emailVerifiedAt != null },
+    ...(ip ? { ip } : {}),
+  });
+  // Announce the signup so downstream plugins can attribute it. Published after
+  // the account and session exist so a subscriber can safely act on the user.
+  auth().events.publish('user.registered', {
+    userId: user.id,
+    email: user.email,
+    affid: affid ?? null,
+    ip: req.ip ?? null,
   });
   return reply.code(201).send({ token, user });
 });
@@ -150,16 +259,36 @@ const me = handle(async (req: HttpRequest) => {
   return { user: fullUser };
 });
 
+/**
+ * Public authentication policy for the frontend: whether a verification code is
+ * required at registration and the (non-secret) captcha widget config. Keeps the
+ * register form from hard-coding deployment policy.
+ */
+const authConfig = handle(async () => {
+  return {
+    emailVerificationRequired: auth().identity.requiresEmailVerification(),
+    captcha: {
+      mode: auth().captcha.mode(),
+      configured: auth().captcha.isConfigured(),
+      providerIds: auth().captcha.providerIds(),
+      clientConfig: auth().captcha.clientConfig(),
+    },
+  };
+});
+
 export const loginPlugin = definePlugin({
   manifest: {
     id: 'login',
     name: '登录插件',
-    version: '0.1.0',
-    description: '内置登录/注册插件：登录、注册与注销流程，验证与令牌签发由平台 ctx.auth 完成。',
+    version: '0.2.0',
+    description:
+      '内置登录/注册插件：登录、注册与注销流程，支持可选的注册邮箱验证与人机验证。验证与令牌签发由平台 ctx 完成。',
   },
   routes: [
     { method: 'POST', path: '/login', auth: 'public', handler: login },
     { method: 'POST', path: '/register', auth: 'public', handler: register },
+    { method: 'POST', path: '/register/send-code', auth: 'public', handler: sendCode },
+    { method: 'GET', path: '/auth/config', auth: 'public', handler: authConfig },
     { method: 'POST', path: '/logout', auth: 'user', handler: logout },
     { method: 'GET', path: '/auth/me', auth: 'user', handler: me },
   ],

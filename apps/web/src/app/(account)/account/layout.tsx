@@ -41,8 +41,11 @@ async function loadAccountShell(): Promise<{
       getPluginAccountMenus(),
     ]);
     const items: BackendNavigationItem[] = [
-      ...navResult.items.map((item) => ({ label: item.label, href: item.href })),
-      { label: 'nav.shop', href: '/shop' },
+      ...navResult.items.map((item) => ({
+        label: item.label,
+        href: item.href,
+        group: item.href === '/account' ? undefined : '账户',
+      })),
       ...sortPluginMenus(pluginMenus),
     ];
     const user: BackendUser = {
@@ -56,23 +59,7 @@ async function loadAccountShell(): Promise<{
   }
 }
 
-/**
- * Normalize plugin menu groups to a fixed, ordered set of top-level menus so
- * the account nav stays predictable: 服务 (business objects) before 费用
- * (money). Unknown groups fall back to 服务.
- */
+/** Preserve plugin-owned functional groups; no business-specific fallback in the shell. */
 function sortPluginMenus(menus: PluginAccountMenu[]): BackendNavigationItem[] {
-  const GROUP_KEYS: Record<string, string> = {
-    服务: 'services',
-    大模型: 'models',
-    费用: 'billing',
-  };
-  const ORDER = ['services', 'models', 'billing'];
-  return [...menus]
-    .map((item) => ({
-      label: item.label,
-      href: item.href,
-      group: GROUP_KEYS[item.group ?? ''] ?? 'services',
-    }))
-    .sort((a, b) => ORDER.indexOf(a.group ?? '') - ORDER.indexOf(b.group ?? ''));
+  return menus.map((item) => ({ ...item, group: item.group ?? item.pluginId }));
 }

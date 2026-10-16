@@ -4,6 +4,7 @@ import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { LoginForm } from './login-form';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
+import { safeInternalPath } from '@/lib/safe-path';
 
 const postsSchema = z.object({
   items: z.array(
@@ -22,18 +23,12 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
+  const safeNext = safeInternalPath(next);
   const session = await getSessionUser();
   if (session) {
-    redirect(
-      typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')
-        ? next
-        : session.role === 'ADMIN'
-          ? '/admin'
-          : '/account',
-    );
+    redirect(safeNext ?? (session.role === 'ADMIN' ? '/admin' : '/account'));
   }
-  const nextPath =
-    typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : undefined;
+  const nextPath = safeNext ?? undefined;
   const api = getApiClient();
   const [providers, platform, brand, posts] = await Promise.all([
     api

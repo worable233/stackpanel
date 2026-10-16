@@ -154,6 +154,7 @@ export interface ApiTokenOwner {
 
 /** A platform token plus its owner, resolved by a single query. */
 export interface ResolvedApiTokenWithOwner {
+  audience?: string | null;
   tokenId: string;
   userId: string;
   scopes: string[];
@@ -189,6 +190,7 @@ export async function resolveApiTokenWithOwner(
       id: true,
       userId: true,
       scopes: true,
+      audience: true,
       ipAllowlist: true,
       status: true,
       expiresAt: true,
@@ -233,6 +235,7 @@ export async function resolveApiTokenWithOwner(
   }
 
   return {
+    audience: token.audience,
     tokenId: token.id,
     userId: token.userId,
     scopes: toStringArray(token.scopes),

@@ -150,6 +150,52 @@ export interface ServiceDetail {
   actions?: ServiceAction[];
 }
 
+/**
+ * 一种「服务子资源」种类（磁盘/快照/备份/IP/安全组/流量包…）的声明。
+ *
+ * 提供方只做声明，商店通用渲染「资源面板」：列表 + 新建 + 行内动作。
+ * 该抽象让增值运维能力可纯插件扩展，商店对具体资源类型零耦合。
+ */
+export interface ServiceResourceKind {
+  id: string;
+  label: string;
+  /** 是否支持新建（提供 createParams 时生效）。 */
+  creatable?: boolean;
+  /** 新建表单参数（复用 {@link ServiceActionParam}）。 */
+  createParams?: ServiceActionParam[];
+  /** 列表展示列。 */
+  columns?: Array<{ key: string; label: string }>;
+  /** 行内可执行动作（扩容/挂载/删除/恢复…）。 */
+  rowActions?: ServiceAction[];
+  /** 条件显隐：相对服务 runtime 的字段值（如仅 VPC 网络显示 NAT）。 */
+  visibleWhen?: { field: string; equals?: unknown; in?: readonly unknown[] };
+}
+
+/** 服务子资源列表中的一行。 */
+export interface ServiceResource {
+  id: string;
+  /** 列 key → 展示值（与 {@link ServiceResourceKind.columns} 对应）。 */
+  fields: Record<string, string>;
+  /** 本行实际可用的动作（可裁剪 `rowActions`）。 */
+  actions?: ServiceAction[];
+}
+
+/** 服务配置变更（升配/降配/换商品）的入参。 */
+export interface ServiceChangeInput {
+  /** 目标配置选择（升配降配用）。 */
+  config?: CheckoutSelection;
+  /** 目标商品 id（换商品用）。 */
+  targetProductId?: string;
+  targetProviderProductId?: string | null;
+}
+
+/** 续费回调入参。 */
+export interface ServiceRenewalInput {
+  newExpiresAt: string;
+  months: number;
+  selection?: CheckoutSelection;
+}
+
 /** 时序点：t 为 epoch 毫秒，v 为数值。 */
 export interface MetricPoint {
   t: number;
@@ -184,6 +230,70 @@ export interface FulfillmentProvider {
   suspend?(ctx: ProviderServiceContext): Promise<void>;
   resume?(ctx: ProviderServiceContext): Promise<void>;
   terminate?(ctx: ProviderServiceContext): Promise<void>;
+
+  /**
+   * 续费回调（可选）：store 已推进到期时间后通知提供方（如上游需同步续费）。
+   * 尽力而为——失败不阻断续费，由 store 记日志。
+   */
+  renew?(
+    ctx: ProviderServiceContext,
+    info: ServiceRenewalInput,
+  ): Promise<ServiceActionResult | void>;
+
+  /**
+   * 变更配置（升配/降配，可选）：按新的 {@link CheckoutSelection} 调整实例规格。
+   * 返回的 `runtime` 会合并回服务实例。
+   */
+  changePackage?(
+    ctx: ProviderServiceContext,
+    change: ServiceChangeInput,
+  ): Promise<ServiceActionResult | void>;
+
+  /** 换商品（可选）。 */
+  changeProduct?(
+    ctx: ProviderServiceContext,
+    change: ServiceChangeInput,
+  ): Promise<ServiceActionResult | void>;
+
+  /**
+   * 变更差价试算（可选）：升配/降配下单前的差价（minor units）。
+   * 缺省由 store 用 checkoutConfig 差额估算；上游（如 zjmf）以权威试算为准。
+   * `service` 为被变更服务的只读标识（上游试算需要其 providerServiceId）。
+   */
+  calculateChangePrice?(
+    ctx: CheckoutPriceContext & {
+      from?: CheckoutSelection;
+      service?: ProviderServiceContext['service'];
+    },
+  ): Promise<CheckoutPriceResult>;
+
+  /** 转移所有权（可选，管理员动作，走审批流）。 */
+  changeOwner?(
+    ctx: ProviderServiceContext,
+    targetUserId: string,
+  ): Promise<ServiceActionResult | void>;
+
+  /** 声明可用的服务子资源种类（增值运维：磁盘/快照/备份/网络/流量包…）。 */
+  listResourceKinds?(ctx: ProviderServiceContext): Promise<ServiceResourceKind[]>;
+
+  /** 列出某类子资源。 */
+  listResources?(ctx: ProviderServiceContext, kind: string): Promise<ServiceResource[]>;
+
+  /** 新建子资源。 */
+  createResource?(
+    ctx: ProviderServiceContext,
+    kind: string,
+    params?: Record<string, string>,
+  ): Promise<ServiceActionResult>;
+
+  /** 对某个子资源执行行内动作（扩容/挂载/删除/恢复…）。 */
+  runResourceAction?(
+    ctx: ProviderServiceContext,
+    kind: string,
+    resourceId: string,
+    actionId: string,
+    params?: Record<string, string>,
+  ): Promise<ServiceActionResult>;
 
   /** 读取并展示服务详情（可选；无实现则回退到缓存的 runtime）。 */
   getDetail?(ctx: ProviderServiceContext): Promise<ServiceDetail>;
@@ -224,18 +334,53 @@ export interface ProductTypeProvider extends FulfillmentProvider {
   configSchema?: z.ZodType<Record<string, unknown>>;
 }
 
-/** 类型配置表单的一个字段声明（数据驱动，store 通用渲染）。 */
+/** 类型配置表单控件的种类（数据驱动，store 通用渲染）。 */
+export type ProductConfigFieldType =
+  'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'boolean' | 'tags' | 'json';
+
+/**
+ * 条件显隐：仅当同组内 `field`（点路径）的当前值满足条件时才展示本字段。
+ * `equals` 精确匹配；`in` 任一命中；两者都缺省表示「非空即显示」。
+ */
+export interface ProductConfigVisibility {
+  field: string;
+  equals?: unknown;
+  in?: readonly unknown[] | undefined;
+}
+
+/**
+ * 类型配置表单的一个字段声明（数据驱动，store 通用渲染）。
+ *
+ * 这是一个可递归的结构：`fields` 用于「分组」（不带 `repeat`）或「重复子表单」
+ * （带 `repeat`，落库为数组）。类型插件只用声明式描述，store 负责渲染与归集，
+ * 不引入任何插件前端代码（保持商店对类型零耦合）。
+ */
 export interface ProductConfigField {
-  /** 存到 metadata 的键，支持点路径（如 `specs.cpu`）。 */
+  /** 存到 metadata 的键，支持点路径（如 `specs.cpu`）。分组/重复项时为其字段名。 */
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'number' | 'select' | 'boolean';
+  type: ProductConfigFieldType | 'group' | 'repeat';
   required?: boolean | undefined;
   placeholder?: string | undefined;
+  /** 字段下方的说明文案（可选）。 */
+  help?: string | undefined;
+  /** 新商品时的默认值（可选）。 */
+  defaultValue?: unknown;
   min?: number | undefined;
   max?: number | undefined;
   maxLength?: number | undefined;
+  /** select / multiselect 的候选项。 */
   options?: Array<{ label: string; value: string }> | undefined;
+  /** 条件显隐（相对同一表单作用域内的兄弟字段）。 */
+  visibleWhen?: ProductConfigVisibility | undefined;
+  /** 分组名（同名的字段在 UI 上归入一个分组卡片）。 */
+  group?: string | undefined;
+  /** 布局列数（1 或 2，缺省 2）。 */
+  columns?: 1 | 2 | undefined;
+  /** type=group/repeat 时的子字段声明；repeat 时落库为数组。 */
+  fields?: ProductConfigField[] | undefined;
+  /** repeat 子表单中「新增一项」的按钮文案。 */
+  itemLabel?: string | undefined;
 }
 
 /* ------------------------- 可配置商品（结账配置） ------------------------- */
@@ -268,18 +413,37 @@ export interface CheckoutBillingCycle {
   months?: number;
 }
 
+/**
+ * 结账配置的条件显隐/联动条件（相对其它配置项或周期的当前选择）。
+ * `equals` 精确匹配、`in` 任一命中；两者都缺省表示「非空即显示」。
+ */
+export interface CheckoutVisibility {
+  /** 目标配置项 id，或特殊值 `cycle`（计费周期 id）。 */
+  field: string;
+  equals?: unknown;
+  in?: readonly unknown[];
+}
+
 /** 结账页渲染的一个配置项。 */
 export interface CheckoutConfigOption {
   /** 稳定 id。对上游是 configoption 的配置项 id。 */
   id: string;
   label: string;
   type: 'select' | 'quantity';
+  /** 维度分组（如「规格」「网络」「镜像」），前端按分组渲染卡片。 */
+  group?: string;
+  /** 字段下方的说明文案（可选）。 */
+  help?: string;
   /** 数量类型时的单位（核/GB/Mbps…）。 */
   unit?: string;
   min?: number;
   max?: number;
   step?: number;
   required?: boolean;
+  /** 默认选中项（select 时为 choiceId）。缺省取第一个可用档位。 */
+  defaultChoice?: string;
+  /** 整体条件显隐：仅当条件满足时才展示本配置项。 */
+  visibleWhen?: CheckoutVisibility;
   /**
    * 选项。select 类型 = 每个候选项；quantity 类型 = 计费档位（通常 1 条，price=单位价）。
    * 上游商品的价格可能由上游权威计算（此处可为空，价格走 calculateCheckoutPrice）。
@@ -291,8 +455,23 @@ export interface CheckoutConfigOption {
 export interface CheckoutOptionChoice {
   id: string;
   label: string;
-  /** 附加价（minor）：select=选中增量；quantity=每单位价格。 */
+  /** 附加价（minor）：select=选中增量；quantity=每单位价格。缺省 0。 */
   price?: number;
+  /**
+   * 按周期覆盖的增量价（cycleId → minor units）。缺省回退 {@link price}；
+   * 用于表达「同一档位在不同周期价格不同」的配置矩阵。
+   */
+  prices?: Record<string, number>;
+  /**
+   * 层级联动：该档位仅在父配置项选中指定项时可用。
+   * 形如 `{ data_center: ['hk','sg'] }`；数组表示任一命中，字符串表示精确匹配。
+   */
+  requires?: Record<string, string | string[]>;
+  /**
+   * 是否在续费时重复计费（缺省 true）。镜像等一次性配置可置 false，
+   * 使其只计入首期、不计入续费价。
+   */
+  recurring?: boolean;
   qtyMin?: number;
   qtyMax?: number;
 }
@@ -348,9 +527,112 @@ export function readCheckoutConfig(metadata: unknown): CheckoutConfigSchema | nu
 }
 
 /**
+ * 条件是否命中当前选择值。选择值来自 {@link CheckoutSelection.selections}（select 为
+ * choiceId，quantity 为数量）或 `cycle`。比较时统一转字符串，容忍数字/字符串混用。
+ */
+function matchesCondition(
+  value: string | number | undefined,
+  condition: { equals?: unknown; in?: readonly unknown[] },
+): boolean {
+  if (condition.equals === undefined && condition.in === undefined) {
+    return value !== undefined && value !== null && value !== '';
+  }
+  if (value === undefined || value === null) return false;
+  if (condition.equals !== undefined && String(value) === String(condition.equals)) return true;
+  if (condition.in && condition.in.some((candidate) => String(candidate) === String(value))) {
+    return true;
+  }
+  return false;
+}
+
+/** 当前选择下可见的配置项（按 `visibleWhen` 过滤）。 */
+export function visibleOptions(
+  schema: CheckoutConfigSchema,
+  config: CheckoutSelection,
+): CheckoutConfigOption[] {
+  const selections = config.selections ?? {};
+  return schema.options.filter((option) => {
+    if (!option.visibleWhen) return true;
+    const { field } = option.visibleWhen;
+    const value = field === 'cycle' ? config.cycle : selections[field];
+    return matchesCondition(value, option.visibleWhen);
+  });
+}
+
+/** 当前选择下某配置项可用的档位（按档位 `requires` 层级联动过滤）。 */
+export function allowedChoices(
+  schema: CheckoutConfigSchema,
+  optionId: string,
+  config: CheckoutSelection,
+): CheckoutOptionChoice[] {
+  const option = schema.options.find((candidate) => candidate.id === optionId);
+  if (!option?.choices) return [];
+  const selections = config.selections ?? {};
+  return option.choices.filter((choice) => {
+    if (!choice.requires) return true;
+    return Object.entries(choice.requires).every(([field, expected]) => {
+      const value = field === 'cycle' ? config.cycle : selections[field];
+      const allowed = Array.isArray(expected) ? expected : [expected];
+      return (
+        value !== undefined && allowed.some((candidate) => String(candidate) === String(value))
+      );
+    });
+  });
+}
+
+/**
+ * 校验结账选择是否合法，返回违规原因列表（空数组表示合法）。
+ * 检查：未知配置项、必填项缺失、档位不可用（含联动）、数量超范围。
+ */
+export function validateCheckoutSelection(
+  schema: CheckoutConfigSchema,
+  config: CheckoutSelection,
+): string[] {
+  const errors: string[] = [];
+  const selections = config.selections ?? {};
+  if (config.cycle && !schema.cycles.some((cycle) => cycle.id === config.cycle)) {
+    errors.push(`未知计费周期：${config.cycle}`);
+  }
+  const visible = new Set(visibleOptions(schema, config).map((option) => option.id));
+  for (const optionId of Object.keys(selections)) {
+    if (!schema.options.some((option) => option.id === optionId)) {
+      errors.push(`未知配置项：${optionId}`);
+    }
+  }
+  for (const option of schema.options) {
+    if (!visible.has(option.id)) continue;
+    const raw = selections[option.id];
+    if (raw === undefined || raw === null || raw === '') {
+      if (option.required) errors.push(`缺少必填配置：${option.label}`);
+      continue;
+    }
+    const choices = allowedChoices(schema, option.id, config);
+    if (option.type === 'quantity') {
+      const qty = typeof raw === 'number' ? raw : Number(raw);
+      if (!Number.isFinite(qty)) {
+        errors.push(`配置项数量无效：${option.label}`);
+        continue;
+      }
+      const min = option.min ?? 0;
+      const max = option.max ?? Number.POSITIVE_INFINITY;
+      if (qty < min || qty > max) {
+        errors.push(`配置项数量超范围：${option.label}`);
+      }
+      continue;
+    }
+    if (!choices.some((choice) => choice.id === raw)) {
+      errors.push(`配置项档位不可用：${option.label}`);
+    }
+  }
+  return errors;
+}
+
+/**
  * 本地计价：从 schema + 选择计算单价（minor units）。不依赖上游。
- * - select：`price` 为该选项的附加价增量。
- * - quantity：`price` 为该选项的单位价，按选择数量累加。
+ * - select：`prices[cycleId] ?? price` 为该选项的附加价增量。
+ * - quantity：`prices[cycleId] ?? price` 为单位价，按选择数量累加。
+ * - 仅计可见项（`visibleWhen`）与合法档位（`requires`）。
+ * - `renewPrice` 只累计 `recurring !== false` 的档位。
  * 若提供方实现了 `calculateCheckoutPrice`，应由其返回权威价；本函数是回退/本地类型用。
  */
 export function computeCheckoutPrice(
@@ -359,20 +641,26 @@ export function computeCheckoutPrice(
 ): CheckoutPriceResult {
   const cycleId = config.cycle ?? schema.cycles[0]?.id ?? '';
   const cycle = schema.cycles.find((candidate) => candidate.id === cycleId) ?? schema.cycles[0];
+  const resolvedCycleId = cycle?.id ?? cycleId;
   let price = cycle?.price ?? 0;
+  let renewPrice = cycle?.renewPrice ?? cycle?.price ?? 0;
   const breakdown: CheckoutPriceResult['breakdown'] = [];
   if (cycle) breakdown.push({ label: cycle.label, value: cycle.label, price: cycle.price });
   const selections = config.selections ?? {};
-  for (const option of schema.options) {
+  const cyclePrice = (choice: CheckoutOptionChoice): number =>
+    choice.prices?.[resolvedCycleId] ?? choice.price ?? 0;
+  for (const option of visibleOptions(schema, config)) {
     const raw = selections[option.id];
     if (raw === undefined || raw === null || raw === '') continue;
+    const choices = allowedChoices(schema, option.id, config);
     if (option.type === 'quantity') {
       const qty = typeof raw === 'number' ? raw : Number(raw);
-      const choice = option.choices?.[0];
-      const unit = choice?.price ?? 0;
+      const choice = choices[0];
+      const unit = choice ? cyclePrice(choice) : 0;
       if (!Number.isFinite(qty) || qty <= 0) continue;
       const line = Math.round(unit * qty);
       price += line;
+      if (choice?.recurring !== false) renewPrice += line;
       breakdown.push({
         label: option.label,
         value: `${qty}${option.unit ? ` ${option.unit}` : ''}`,
@@ -380,15 +668,16 @@ export function computeCheckoutPrice(
       });
       continue;
     }
-    const choice = option.choices?.find((candidate) => candidate.id === raw);
+    const choice = choices.find((candidate) => candidate.id === raw);
     if (!choice) continue;
-    const line = choice.price ?? 0;
+    const line = cyclePrice(choice);
     price += line;
+    if (choice.recurring !== false) renewPrice += line;
     breakdown.push({ label: option.label, value: choice.label, price: line });
   }
   return {
     price,
-    renewPrice: cycle?.renewPrice ?? cycle?.price ?? price,
+    renewPrice,
     breakdown,
     summary: breakdown.map((item) => `${item.label}:${item.value}`).join(' · '),
   };

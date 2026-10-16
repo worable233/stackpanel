@@ -436,11 +436,11 @@ export interface AccountWidgetDefinition {
 /** A navigation item shown in the account-center sidebar. */
 export interface AccountMenuDefinition {
   label: string;
-  /**
-   * Top-level account menu this item belongs to. The account shell groups items
-   * into 服务 (business objects) and 费用 (money); anything else falls back to
-   * 服务. Use '费用' for billing-related pages (余额充值, 历史订单, ...).
-   */
+  /** Stable ordering within the declared functional group. */
+  order?: number;
+  /** Additional route prefixes owned by this entry (e.g. hidden editor pages). */
+  activePaths?: string[];
+  /** Functional group shared with related plugins; omitted items use their plugin id. */
   group?: string;
 }
 
@@ -507,6 +507,9 @@ export type AdminActionComponent = ComponentType<AdminActionComponentProps>;
 /** Admin sidebar menu contributed by a plugin frontend package. */
 export interface AdminMenuDefinition {
   label: string;
+  order?: number;
+  /** Additional plugin-relative route prefixes owned by this entry. */
+  activePaths?: string[];
   group?: string;
 }
 

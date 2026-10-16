@@ -140,4 +140,25 @@ describe.skipIf(!dbAvailable)('wallet holds (real DB)', () => {
     expect(after?.held).toBe(0);
     expect((await prisma.walletHold.findUnique({ where: { id: hold.id } }))?.status).toBe('EXPIRED');
   });
+
+  it('refuses to settle when the frozen total drifted below the hold (B-2)', async () => {
+    const hold = await wallet.hold(userId, 150, 'CNY', ref(randomUUID()));
+    // Simulate drift: someone/something zeroed `held` behind the hold's back.
+    await prisma.walletAccount.update({
+      where: { userId_currency: { userId, currency: 'CNY' } },
+      data: { held: 0 },
+    });
+    // The guard must refuse rather than drive `held` negative, and roll back.
+    await expect(wallet.settleHold(hold.id, 150)).rejects.toThrow('钱包冻结额不一致');
+    const account = await wallet.getAccount(userId);
+    expect(account?.held).toBe(0);
+    // The hold was not consumed by the failed settle.
+    expect((await prisma.walletHold.findUnique({ where: { id: hold.id } }))?.status).toBe('HELD');
+    // Restore consistency for the next test.
+    await prisma.walletAccount.update({
+      where: { userId_currency: { userId, currency: 'CNY' } },
+      data: { held: 150 },
+    });
+    await wallet.releaseHold(hold.id);
+  });
 });

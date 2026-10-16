@@ -1,3 +1,5 @@
+import type { CheckoutConfigSchema } from './fulfillment.js';
+
 /**
  * 上游商品关联 SPI（Upstream SPI）。
  *
@@ -7,8 +9,12 @@
  *
  * 关联行为（在 store 商品表单里完成）：
  *  - 选择上游商品 → 写入 `product.providerId` + `product.providerProductId`；
+ *    上游实例（账号）标识写入 `product.metadata.upstream.sourceRef`，供履约定位；
  *  - 同步上游价格到 `product.cost`（成本，仅后台可见）；
  *  - 标题/简介/图标默认预填上游信息（可改）；售卖价 `product.price` 独立设置。
+ *
+ * 上游插件**不创建**商店商品；它只提供货源清单、配置读取与履约。商品由管理员
+ * 在商店里显式创建后选择类型并绑定货源。
  */
 
 /** 上游侧的一个商品条目。 */
@@ -78,8 +84,15 @@ export interface UpstreamProductSource {
   /** 取单个上游商品（编辑商品时回显当前关联）。 */
   get(id: string): Promise<UpstreamProductItem | null>;
   /**
-   * 商品建立/解除关联时由 store 回调（可选）。外部上游（如魔方）用它在自己
-   * 的表里建立本地商品 ↔ 上游商品的映射（履约时据此定位上游实例）。
+   * 取某上游商品的结账配置（周期 + 配置项），供商品表单一键填充。
+   * 返回 null 表示该商品不可配置（或该上游不支持读取配置）。可选实现。
+   */
+  getConfig?(id: string): Promise<CheckoutConfigSchema | null>;
+  /**
+   * 商品建立/解除关联时由 store 回调（可选）。外部上游（如魔方）用它做关联
+   * 侧的副作用（校验、预取配置等）。注意：商品 ↔ 上游实例的绑定本身存在
+   * 商品的 `providerId`/`providerProductId`/`metadata.upstream` 上，上游插件
+   * 不持有本地映射表。
    */
   associate?(input: { productId: string; item: UpstreamProductItem }): Promise<void>;
   dissociate?(productId: string): Promise<void>;

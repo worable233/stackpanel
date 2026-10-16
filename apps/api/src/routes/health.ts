@@ -42,7 +42,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
 
     let storageOk = true;
     const driver = getStorage();
-    if (driver.kind === 's3' && 'ping' in driver) {
+    if ('ping' in driver && typeof (driver as { ping?: unknown }).ping === 'function') {
       storageOk = await (driver as unknown as { ping(): Promise<boolean> }).ping();
       checks['storage'] = storageOk ? 'ok' : 'unreachable';
     } else {

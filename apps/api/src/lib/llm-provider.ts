@@ -1,3 +1,4 @@
+import { agentHttp } from '../agent/http.ts';
 /**
  * Kernel-side model supply resolution (PLAN-agent-in-kernel §3.1 / §3.6).
  *
@@ -222,7 +223,10 @@ export class ConfiguredLlmProvider implements LlmProvider {
 
     let response: Response;
     try {
-      response = await doFetch(endpoint, {
+      if (!this.fetchImpl) {
+        const result = await agentHttp(endpoint, body, {authorization:`Bearer ${config.apiKey}`}, signal);
+        response = new Response(result.text, {status:result.status});
+      } else response = await doFetch(endpoint, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -277,7 +281,7 @@ export async function resolveLlmProvider(
   options: ResolveLlmProviderOptions = {},
 ): Promise<LlmProvider | null> {
   const extension = runtime.getExtensions<LlmProvider>(EXTENSION_POINTS.llmProvider)[0];
-  if (extension) return new ExtensionLlmProvider(extension);
+  if (extension && (!extension.available || await extension.available())) return new ExtensionLlmProvider(extension);
 
   const loadConfig = options.loadConfig ?? loadConfiguredLlmConfig;
   const config = await loadConfig();

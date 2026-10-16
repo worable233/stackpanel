@@ -63,7 +63,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`h-full antialiased has-[.clarity-surface]:bg-[var(--clarity-background)] has-[.clarity-surface]:[color-scheme:dark]! [@media(pointer:fine)]:has-[.clarity-surface]:[scrollbar-width:none] [@media(pointer:fine)]:has-[.clarity-surface]:[&::-webkit-scrollbar]:hidden ${geistSans.variable} ${geistMono.variable}`}
+      className={`h-full overflow-y-scroll antialiased [scrollbar-gutter:stable_both-edges] has-[.clarity-surface]:bg-[var(--clarity-background)] has-[.clarity-surface]:[color-scheme:dark]! [@media(pointer:fine)]:has-[.clarity-surface]:[scrollbar-width:none] [@media(pointer:fine)]:has-[.clarity-surface]:[&::-webkit-scrollbar]:hidden ${geistSans.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >
       <body

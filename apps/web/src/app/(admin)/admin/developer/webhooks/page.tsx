@@ -73,7 +73,6 @@ export default async function AdminDeveloperWebhooksPage({
     <main className="w-full space-y-6">
       <PageHeader
         title={t('admin.developer.webhooks.title')}
-        description={t('admin.developer.webhooks.description')}
       />
 
       <form className="flex flex-wrap items-end gap-3" method="get">

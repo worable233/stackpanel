@@ -1,9 +1,5 @@
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
-import type {
-  HttpRequest,
-  ProductTypeProvider,
-  UpstreamProductSource,
-} from '@stackpanel/sdk';
+import type { HttpRequest, ProductTypeProvider, UpstreamProductSource } from '@stackpanel/sdk';
 import { context } from './context';
 import { StoreError } from './errors';
 
@@ -17,8 +13,9 @@ import { StoreError } from './errors';
 
 /** GET /store/product-types：活跃商品类型聚合（含类型配置字段声明）。 */
 export async function listProductTypes(): Promise<unknown> {
-  const entries =
-    context().getExtensionsWithOwner<ProductTypeProvider>(EXTENSION_POINTS.productType);
+  const entries = context().getExtensionsWithOwner<ProductTypeProvider>(
+    EXTENSION_POINTS.productType,
+  );
   const types = entries.flatMap(({ pluginId, implementation }) =>
     implementation.fulfillmentTypes.map((typeId) => ({
       id: typeId,
@@ -71,4 +68,19 @@ export async function getUpstreamProduct(req: HttpRequest): Promise<unknown> {
   if (!source) throw new StoreError(404, '上游不存在或未启用');
   const item = await source.get(productId);
   return { item };
+}
+
+/**
+ * GET /store/upstream-products/:provider/:productId/config —— 取上游商品的结账配置
+ * （周期 + 配置项），供商品表单「一键填充」。上游未实现或商品不可配置时返回 null。
+ */
+export async function getUpstreamProductConfig(req: HttpRequest): Promise<unknown> {
+  const provider = req.params['provider'];
+  const productId = req.params['productId'];
+  if (!provider || !productId) throw new StoreError(400, '缺少参数');
+  const source = upstreamSourceById(provider);
+  if (!source) throw new StoreError(404, '上游不存在或未启用');
+  if (!source.getConfig) return { checkoutConfig: null };
+  const checkoutConfig = await source.getConfig(productId);
+  return { checkoutConfig };
 }

@@ -2,17 +2,19 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { CartesianGrid, Label, Line, LineChart, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import {
-  CartesianGrid,
-  Label,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { Blocks, ChevronRight, Package, Palette, Receipt, ScrollText, Settings2, TrendingUp, UserCog, Users } from 'lucide-react';
+  Blocks,
+  ChevronRight,
+  Package,
+  Palette,
+  Receipt,
+  ScrollText,
+  Settings2,
+  TrendingUp,
+  UserCog,
+  Users,
+} from 'lucide-react';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +27,12 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { Field } from '@/components/ui/field';
-import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from '@/components/ui/input-group';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from '@/components/ui/input-group';
 import {
   Item,
   ItemActions,
@@ -154,13 +161,11 @@ export function OverviewKpis({ data }: { data: AdminOverviewData }) {
             className={`gap-5 overflow-hidden rounded-none border-0 border-foreground/10 ring-0 xl:col-span-4 ${card.cell}`}
           >
             <CardHeader>
-              <CardTitle className="font-normal">{card.title}</CardTitle>
+              <CardTitle>{card.title}</CardTitle>
             </CardHeader>
             <CardContent className="flex items-end justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-3xl leading-none tracking-tight">
-                  {card.value}
-                </div>
+                <div className="text-3xl leading-none tracking-tight">{card.value}</div>
                 <p className="text-xs text-muted-foreground">{card.hint}</p>
               </div>
               <DeltaBadge value={card.delta} />
@@ -180,7 +185,7 @@ export function RevenueSources({ data }: { data: AdminOverviewData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="font-normal">{t('admin.overview.incomeSources')}</CardTitle>
+        <CardTitle>{t('admin.overview.incomeSources')}</CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-1 md:grid-cols-3">
         {data.topProducts.length ? (
@@ -271,7 +276,7 @@ export function RevenueTrendCard({ data }: { data: AdminOverviewData }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="font-normal">{t('admin.overview.spendingOverview')}</CardTitle>
+        <CardTitle>{t('admin.overview.spendingOverview')}</CardTitle>
         <CardAction>
           <Select value={range} onValueChange={(value) => setRange(value as 'weekly' | 'monthly')}>
             <SelectTrigger className="w-28" size="sm">
@@ -357,7 +362,7 @@ export function OrderStatusCard({ data }: { data: AdminOverviewData }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="font-normal">{t('admin.overview.orderStatusTitle')}</CardTitle>
+        <CardTitle>{t('admin.overview.orderStatusTitle')}</CardTitle>
       </CardHeader>
       <CardContent className="grid items-center gap-4 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
         {chartData.length ? (
@@ -418,9 +423,7 @@ export function OrderStatusCard({ data }: { data: AdminOverviewData }) {
         ) : (
           <div className="mx-auto grid aspect-square h-50 place-items-center">
             <div className="grid size-40 place-items-center rounded-full border border-dashed border-border">
-              <span className="text-sm text-muted-foreground">
-                {t('admin.overview.noData')}
-              </span>
+              <span className="text-sm text-muted-foreground">{t('admin.overview.noData')}</span>
             </div>
           </div>
         )}
@@ -455,7 +458,7 @@ export function RecentOrdersCard({ data }: { data: AdminOverviewData }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="font-normal">{t('admin.overview.recentOrders')}</CardTitle>
+        <CardTitle>{t('admin.overview.recentOrders')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {data.recentOrders.length ? (
@@ -503,7 +506,7 @@ export function RecentUsersCard({ data }: { data: AdminOverviewData }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="font-normal">{t('admin.overview.recentUsers')}</CardTitle>
+        <CardTitle>{t('admin.overview.recentUsers')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {data.recentUsers.length ? (
@@ -511,14 +514,12 @@ export function RecentUsersCard({ data }: { data: AdminOverviewData }) {
             {data.recentUsers.map((user) => (
               <div key={user.id} className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <Avatar className="size-8">
+                  <Avatar className="size-9">
                     <AvatarFallback className="text-xs">
                       {user.email.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {user.email}
-                  </span>
+                  <span className="truncate text-sm font-medium text-foreground">{user.email}</span>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatDate(new Date(user.createdAt), locale, {
@@ -564,7 +565,7 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle className="font-normal">{t('admin.overview.quickSearch')}</CardTitle>
+          <CardTitle>{t('admin.overview.quickSearch')}</CardTitle>
           <CardAction>
             <div className="flex items-center gap-1">
               {contacts.length ? (
@@ -591,7 +592,10 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
                     <Users />
                   </InputGroupText>
                 </InputGroupAddon>
-                <InputGroupInput name="q" placeholder={t('admin.overview.quickSearchPlaceholder')} />
+                <InputGroupInput
+                  name="q"
+                  placeholder={t('admin.overview.quickSearchPlaceholder')}
+                />
               </InputGroup>
               <Button type="submit">{t('admin.overview.quickSearchAction')}</Button>
             </Field>
@@ -601,7 +605,7 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-normal">{t('admin.overview.quickActions')}</CardTitle>
+          <CardTitle>{t('admin.overview.quickActions')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-4 gap-4">
@@ -616,7 +620,9 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
                   >
                     <Icon className="size-5" />
                   </Button>
-                  <span className="text-center text-xs text-muted-foreground">{shortcut.label}</span>
+                  <span className="text-center text-xs text-muted-foreground">
+                    {shortcut.label}
+                  </span>
                 </div>
               );
             })}
@@ -634,7 +640,7 @@ export function OrdersTable({ data }: { data: AdminOverviewData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="font-normal">{t('admin.overview.tabOrders')}</CardTitle>
+        <CardTitle>{t('admin.overview.tabOrders')}</CardTitle>
         <CardAction>
           <span className="text-xs text-muted-foreground">
             {t('admin.overview.ordersTotal', { count: data.orderRows.length })}
@@ -710,7 +716,7 @@ export function ProductsTable({ data }: { data: AdminOverviewData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="font-normal">{t('admin.overview.tabProducts')}</CardTitle>
+        <CardTitle>{t('admin.overview.tabProducts')}</CardTitle>
         <CardAction>
           <span className="text-xs text-muted-foreground">
             {t('admin.overview.productsTotal', { count: data.productRows.length })}

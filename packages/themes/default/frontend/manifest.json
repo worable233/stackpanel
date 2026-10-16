@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
-  "revision": "9a1e96ba761f",
+  "revision": "cb804f265de1",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -16,7 +16,12 @@
   "actions": [],
   "accountRoutes": [],
   "accountWidgets": [],
-  "files": ["frontend/dist/index.js", "frontend/dist/index.js.map"],
+  "files": [
+    "frontend/dist/index.js",
+    "frontend/dist/index.js.map",
+    "frontend/dist/route-progress.js",
+    "frontend/dist/route-progress.js.map"
+  ],
   "overrides": {
     "/shop": "shop",
     "/shop/:id": "product",

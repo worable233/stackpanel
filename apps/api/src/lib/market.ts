@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs';
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import type { MarketPackage } from '@stackpanel/sdk';
 import type { PluginManifestFile } from './plugins.ts';
 import { readFrontendManifest } from './frontend.ts';
+import { packageManager } from '../packages/manager.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { env } from '../config/env.ts';
 import { verifyPackageSignature } from './signatures.ts';
@@ -206,8 +207,9 @@ export async function installMarketPlugin(id: string): Promise<{ id: string; ver
       `插件 ${id} 未构建（缺少 dist/），请先运行 pnpm --filter @stackpanel/plugin-${id} build`,
     );
   }
-  const target = pluginDataDir(id);
-  const tmp = path.join(dataDir(), 'plugins', `.market-${id}-${process.pid}`);
+  const parent = path.dirname(pluginDataDir(id)); // data/plugins
+  // §7.6：先把完整产物写进暂存目录，再整体切换；不得原地覆盖活动目录。
+  const tmp = path.join(parent, `.market-${id}-${process.pid}-${Date.now()}`);
   await rm(tmp, { recursive: true, force: true });
   await mkdir(tmp, { recursive: true });
   await cp(distDir, path.join(tmp, 'dist'), { recursive: true });
@@ -279,15 +281,27 @@ export async function installMarketPlugin(id: string): Promise<{ id: string; ver
   if (existsSync(assets)) {
     await cp(assets, path.join(tmp, 'assets'), { recursive: true });
   }
-  await rm(target, { recursive: true, force: true });
-  await rename(tmp, target);
+  let handle;
+  try {
+    handle = await packageManager.swapDirectory('plugin', id, tmp);
+  } catch (err) {
+    await rm(tmp, { recursive: true, force: true });
+    throw err;
+  }
   // Sync the plugin record so the admin panel sees the new version.
   const prisma = getPrisma();
-  await prisma.plugin.upsert({
-    where: { id },
-    create: { id, name: source.name, version: source.version, enabled: true },
-    update: { name: source.name, version: source.version },
-  });
+  try {
+    await prisma.plugin.upsert({
+      where: { id },
+      create: { id, name: source.name, version: source.version, enabled: true },
+      update: { name: source.name, version: source.version },
+    });
+  } catch (err) {
+    // DB 指针未提交：恢复旧目录，避免半切换（§7.6）。
+    await handle.rollback();
+    throw err;
+  }
+  await handle.commit();
   return { id, version: source.version };
 }
 
@@ -297,8 +311,9 @@ export async function installMarketTheme(id: string): Promise<{ id: string; vers
   const source = sources.find((t) => t.id === id);
   if (!source) throw new Error(`市场中没有主题：${id}`);
   await verifyMarketPackage(source.sourceDir, 'theme');
-  const target = themeDataDir(id);
-  const tmp = path.join(dataDir(), 'themes', `.market-${id}-${process.pid}`);
+  const parent = path.dirname(themeDataDir(id)); // data/themes
+  // §7.6：先写完整产物到暂存目录，再整体切换；不得原地覆盖活动目录。
+  const tmp = path.join(parent, `.market-${id}-${process.pid}-${Date.now()}`);
   await rm(tmp, { recursive: true, force: true });
   await mkdir(tmp, { recursive: true });
   for (const name of ['theme.json', 'theme.css']) {
@@ -327,7 +342,11 @@ export async function installMarketTheme(id: string): Promise<{ id: string; vers
       await cp(frontendDist, path.join(tmp, 'frontend', 'dist'), { recursive: true });
     }
   }
-  await rm(target, { recursive: true, force: true });
-  await rename(tmp, target);
+  try {
+    await packageManager.swapDirectory('theme', id, tmp);
+  } catch (err) {
+    await rm(tmp, { recursive: true, force: true });
+    throw err;
+  }
   return { id, version: source.version };
 }

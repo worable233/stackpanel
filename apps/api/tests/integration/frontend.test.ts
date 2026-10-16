@@ -16,7 +16,7 @@ const VALID_CSS = `:root { --background: oklch(1 0 0); --primary: oklch(0.5 0.2 
 
 const THEME_FRONTEND_MANIFEST = JSON.stringify({
   version: '1.0.0',
-  revision: 'theme-revision-1',
+  revision: 'a1b2c3d4e5f6',
   entry: 'frontend/dist/index.js',
   pages: [{ path: '/', component: 'home' }],
   finders: ['theme.home'],
@@ -45,7 +45,7 @@ const THEME_FRONTEND_MANIFEST = JSON.stringify({
 
 const PLUGIN_FRONTEND_MANIFEST = JSON.stringify({
   version: '1.0.0',
-  revision: 'plugin-revision-1',
+  revision: 'b2c3d4e5f6a1',
   entry: 'frontend/dist/index.js',
   pages: [{ path: '/shop/:id', component: 'product' }],
   finders: ['store.product'],
@@ -319,6 +319,47 @@ describe.skipIf(!dbAvailable)('frontend package integration (real DB)', () => {
       (patch.json() as { settings: { shop: { showMetadata: boolean } } }).settings.shop
         .showMetadata,
     ).toBe(false);
+  });
+
+  it('serves compiled frontend assets with the versioned transport contract', async () => {
+    // Versioned path (head == manifest.revision): immutable + ETag + JS MIME.
+    const versioned = await app.inject({
+      method: 'GET',
+      url: '/themes/frontend-theme/frontend/a1b2c3d4e5f6/dist/index.js',
+    });
+    expect(versioned.statusCode).toBe(200);
+    expect(versioned.headers['content-type']).toContain('text/javascript');
+    expect(versioned.headers['cache-control']).toContain('immutable');
+    expect(versioned.headers['etag']).toContain('a1b2c3d4e5f6');
+
+    // Legacy path: revalidated, still whitelisted.
+    const legacy = await app.inject({
+      method: 'GET',
+      url: '/themes/frontend-theme/frontend/dist/index.js',
+    });
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.headers['cache-control']).toContain('must-revalidate');
+
+    // A stale/forged revision head must not fall back to another version.
+    const forged = await app.inject({
+      method: 'GET',
+      url: '/themes/frontend-theme/frontend/ffffffffffff/dist/index.js',
+    });
+    expect(forged.statusCode).toBe(404);
+
+    // A file not declared in manifest.files is rejected.
+    const undeclared = await app.inject({
+      method: 'GET',
+      url: '/themes/frontend-theme/frontend/dist/secret.js',
+    });
+    expect(undeclared.statusCode).toBe(404);
+
+    // Traversal is rejected.
+    const traversal = await app.inject({
+      method: 'GET',
+      url: '/themes/frontend-theme/frontend/..%2f..%2fpackage.json',
+    });
+    expect([400, 404]).toContain(traversal.statusCode);
   });
 
   it('rejects frontend source files outside dist', async () => {

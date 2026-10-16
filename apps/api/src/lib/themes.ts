@@ -6,6 +6,7 @@ import * as csstree from 'css-tree';
 import type { CssNode } from 'css-tree';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './frontend.ts';
+import { packageManager, StagingError, type StageHandle } from '../packages/manager.ts';
 import { env } from '../config/env.ts';
 import { SignatureError, verifyPackageSignature } from './signatures.ts';
 
@@ -51,12 +52,6 @@ export function themeManifestPath(id: string): string {
 
 export function themeAssetPath(id: string, asset: string): string {
   return path.join(themePackageDir(id), 'assets', asset);
-}
-
-function safeJoin(base: string, name: string): string | null {
-  const resolved = path.resolve(base, name);
-  if (!resolved.startsWith(base + path.sep) && resolved !== base) return null;
-  return resolved;
 }
 
 /** Reject a ZIP entry name that could escape the theme directory. */
@@ -236,17 +231,17 @@ export function parseThemeZip(
   return { manifest, files };
 }
 
-/** Write the validated theme files to disk. */
-export async function writeThemeFiles(id: string, files: Map<string, Uint8Array>): Promise<void> {
-  const dir = themePackageDir(id);
-  await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
-  for (const [name, data] of files.entries()) {
-    const target = safeJoin(dir, name);
-    if (!target) throw new ThemeError(422, `非法的文件名：${name}`);
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, data);
-  }
+/** Write the validated theme files to disk via staging + atomic swap (rollback-able). */
+export async function writeThemeFiles(
+  id: string,
+  files: Map<string, Uint8Array>,
+): Promise<StageHandle> {
+  // §7.6：先写完整产物到暂存目录，再整体切换；不得原地覆盖活动目录。
+  const handle = await packageManager.stageFiles('theme', id, files).catch((err) => {
+    if (err instanceof StagingError) throw new ThemeError(err.status, err.message);
+    throw err;
+  });
+  return handle;
 }
 
 export async function removeThemeFiles(id: string): Promise<void> {

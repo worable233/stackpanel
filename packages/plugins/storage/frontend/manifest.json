@@ -1,0 +1,90 @@
+{
+  "version": "0.1.0",
+  "revision": "5400db5aab77",
+  "entry": "frontend/dist/index.js",
+  "pages": [],
+  "layouts": [],
+  "finders": ["storage.adminConfig"],
+  "adminRoutes": [
+    {
+      "path": "/storage",
+      "component": "admin/storage",
+      "permission": "storage.admin",
+      "nav": {
+        "label": "存储",
+        "group": "系统",
+        "order": 100
+      },
+      "data": [
+        {
+          "finder": "storage.adminConfig",
+          "as": "storageConfig"
+        }
+      ]
+    }
+  ],
+  "adminActions": [],
+  "actions": [
+    {
+      "id": "storage.save-config",
+      "method": "POST",
+      "path": "/storage/admin/config",
+      "permission": "storage.admin",
+      "input": [
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "maxLength": 16
+        },
+        {
+          "name": "localRoot",
+          "type": "string",
+          "maxLength": 1024
+        },
+        {
+          "name": "s3Endpoint",
+          "type": "string",
+          "maxLength": 2048
+        },
+        {
+          "name": "s3Region",
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "name": "s3Bucket",
+          "type": "string",
+          "maxLength": 255
+        },
+        {
+          "name": "s3ForcePathStyle",
+          "type": "boolean"
+        },
+        {
+          "name": "publicBaseUrl",
+          "type": "string",
+          "maxLength": 2048
+        },
+        {
+          "name": "accessKeyId",
+          "type": "string",
+          "maxLength": 255
+        },
+        {
+          "name": "secretAccessKey",
+          "type": "string",
+          "maxLength": 255
+        }
+      ]
+    }
+  ],
+  "accountRoutes": [],
+  "accountWidgets": [],
+  "files": [
+    "frontend/dist/admin.js",
+    "frontend/dist/admin.js.map",
+    "frontend/dist/index.js",
+    "frontend/dist/index.js.map"
+  ]
+}

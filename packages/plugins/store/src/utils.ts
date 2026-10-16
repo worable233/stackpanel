@@ -94,17 +94,30 @@ export const checkoutConfigZod = z.object({
         id: z.string().min(1).max(64),
         label: z.string().min(1).max(64),
         type: z.enum(['select', 'quantity']),
+        group: z.string().max(64).optional(),
+        help: z.string().max(256).optional(),
         unit: z.string().max(16).optional(),
         min: z.number().int().min(0).max(1_000_000).optional(),
         max: z.number().int().min(0).max(1_000_000).optional(),
         step: z.number().int().min(1).max(1_000_000).optional(),
         required: z.boolean().optional(),
+        defaultChoice: z.string().max(64).optional(),
+        visibleWhen: z
+          .object({
+            field: z.string().min(1).max(64),
+            equals: z.unknown().optional(),
+            in: z.array(z.unknown()).optional(),
+          })
+          .optional(),
         choices: z
           .array(
             z.object({
               id: z.string().min(1).max(64),
               label: z.string().min(1).max(64),
               price: z.number().int().min(0).max(MAX_MINOR_AMOUNT).optional(),
+              prices: z.record(z.string(), z.number().int().min(0).max(MAX_MINOR_AMOUNT)).optional(),
+              requires: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
+              recurring: z.boolean().optional(),
               qtyMin: z.number().int().min(0).optional(),
               qtyMax: z.number().int().min(0).optional(),
             }),
@@ -228,6 +241,33 @@ export const renewOrderSchema = z.object({
   providerId: z.string().min(1).max(64).optional(),
   paymentMethod: z.string().min(1).max(64).optional(),
   methodId: z.string().min(1).max(191).optional(),
+});
+
+/**
+ * 升配/降配/换商品下单入参。
+ * - `config`：目标配置选择（JSON 字符串），与下单同形。
+ * - `targetProductId`：换商品时的目标商品 id；与 `config` 二选一（可同时给）。
+ */
+export const changeServiceSchema = z.object({
+  serviceId: z.string().min(1).max(191).optional(),
+  config: z.string().optional(),
+  targetProductId: z.string().min(1).max(191).optional(),
+  paymentMode: z.enum(['wallet', 'external']).default('wallet'),
+  channelCode: z.string().min(1).max(64).default('MALL_PC'),
+  providerId: z.string().min(1).max(64).optional(),
+  paymentMethod: z.string().min(1).max(64).optional(),
+  methodId: z.string().min(1).max(191).optional(),
+});
+
+/** 变更试算入参。 */
+export const changeQuoteSchema = z.object({
+  config: z.string().optional(),
+  targetProductId: z.string().min(1).max(191).optional(),
+});
+
+/** 产品转移入参（管理端）。 */
+export const transferServiceSchema = z.object({
+  targetUserId: z.string().min(1).max(191),
 });
 
 /** 退款入参：`amount` 为最小货币单位；缺省全额退款。 */

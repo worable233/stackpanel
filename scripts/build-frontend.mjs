@@ -231,8 +231,15 @@ async function discoverFrontendPackages() {
   const sourcePackages = [];
   const dataPackages = [];
   const sourceIds = new Set();
+  const externalPluginGroups = (process.env.STACKPANEL_PLUGIN_SOURCES ?? '')
+      .split(path.delimiter)
+      .filter(Boolean)
+      .map((directory) => ({ kind: 'plugins', root: path.resolve(directory) }));
   const sourceGroups = [
     { kind: 'themes', root: path.join(root, 'packages', 'themes') },
+    // An optional plugin checkout takes precedence over the matching built-in
+    // source, so local plugin development can be rebuilt into the same runtime.
+    ...externalPluginGroups,
     { kind: 'plugins', root: path.join(root, 'packages', 'plugins') },
   ];
   const dataGroups = [
@@ -246,6 +253,7 @@ async function discoverFrontendPackages() {
       if (!entry.isDirectory()) continue;
       const source = path.join(group.root, entry.name, 'frontend');
       if (existsSync(path.join(source, 'src', 'index.tsx'))) {
+        if (sourceIds.has(`${group.kind}/${entry.name}`)) continue;
         sourcePackages.push({ kind: group.kind, id: entry.name, source });
         sourceIds.add(`${group.kind}/${entry.name}`);
       }

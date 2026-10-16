@@ -386,7 +386,9 @@ describe.skipIf(!dbAvailable)('store plugin wallet and settlement integration (r
       currency: 'CNY',
     };
     expect((await app.payments.settle(settled)).applied).toBe(true);
-    expect((await app.payments.settle(settled)).applied).toBe(false);
+    // A replayed callback re-dispatches the (idempotent) handler; the settlement
+    // is already complete, so it reports success rather than doing nothing.
+    expect((await app.payments.settle(settled)).applied).toBe(true);
     expect(await readOrderState(orderId)).toBe('PAID');
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe(
       'PAID',

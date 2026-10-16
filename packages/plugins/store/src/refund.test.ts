@@ -307,4 +307,81 @@ describe('refundOrder', () => {
       } as never),
     ).rejects.toMatchObject({ status: 409 });
   });
+
+  it('does not restore stock for a change-order line (B-3)', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: {
+          items: [
+            {
+              productId: 'prod-1',
+              quantity: 1,
+              changeServiceId: 'svc-1',
+              changeType: 'package',
+            },
+          ],
+        },
+        total: 5000,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 5000,
+        fxRate: null,
+      },
+      'order-change',
+    );
+    // 变配订单从未 reserve 库存；退款不得给目标商品 +stock。
+    fake.seed(PRODUCT, { name: '云服务器', stock: 8, status: 'ACTIVE' }, 'prod-1');
+    const credit = vi.fn(async () => ({}));
+    bindContext(makeCtx(fake, credit));
+
+    const result = (await refundOrder({
+      params: { id: 'order-change' },
+      body: {},
+      user: { id: 'admin-1', role: 'ADMIN' },
+    } as never)) as { refunded: number };
+
+    expect(result.refunded).toBe(5000);
+    expect(fake.all(PRODUCT)[0]!.spec.stock).toBe(8);
+  });
+
+  it('refuses a wallet refund for a partner-prepaid order (B-4)', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        // SP v1 出口建单：平台未实际收款，标记 partner_prepaid。
+        items: {
+          settlement: 'partner_prepaid',
+          items: [{ productId: 'p', quantity: 1, price: 10000, name: 'p' }],
+        },
+        total: 10000,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: 'SP_V1:key',
+        settlementCurrency: 'CNY',
+        settlementTotal: 10000,
+        fxRate: null,
+      },
+      'order-prepaid',
+    );
+    const credit = vi.fn(async () => ({}));
+    bindContext(makeCtx(fake, credit));
+
+    await expect(
+      refundOrder({
+        params: { id: 'order-prepaid' },
+        body: {},
+        user: { id: 'a', role: 'ADMIN' },
+      } as never),
+    ).rejects.toMatchObject({ status: 409 });
+    // 未入账、未改状态。
+    expect(credit).not.toHaveBeenCalled();
+    expect(fake.all(ORDER)[0]!.spec.state).toBe('PAID');
+  });
 });

@@ -45,6 +45,7 @@ function attemptsOf(options?: JobOptions): number {
 }
 
 export class BullMqJobBackend implements JobBackend {
+  readonly kind = 'bullmq' as const;
   private readonly handlers = new Map<string, JobHandler>();
   private readonly schedules = new Map<string, RegisteredSchedule>();
   private queue: Queue<BullJobData> | null = null;

@@ -165,6 +165,8 @@ export interface CommerceOperations {
   listOrders(userId: string, page: number, pageSize: number): Promise<CommerceList<CommerceOrder>>;
   /** 某用户的交付物（不限状态）。 */
   listServices(userId: string): Promise<CommerceService[]>;
+  /** Exact counts of provisioned (active or suspended) services; no list truncation. */
+  countServicesByUsers?(userIds: string[]): Promise<Record<string, number>>;
   getService(userId: string, id: string): Promise<CommerceService | null>;
   /** 生命周期动作：转发给履约提供方并落状态。找不到返回 `null`。 */
   runServiceLifecycle(

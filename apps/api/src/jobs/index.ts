@@ -39,8 +39,15 @@ export async function initJobs(options: InitJobsOptions): Promise<void> {
           options.logger.warn(`[jobs] 本副本无处理器，任务回退重试：${fullName}`),
       }),
     );
+    options.logger.info('[jobs] 已启用 Redis/BullMQ 任务后端（集群安全）');
   } else {
-    options.logger.warn('[jobs] 未配置 Redis，任务使用进程内实现（仅单机正确）');
+    // Losing Redis is not fatal to boot, but it silently downgrades scheduled
+    // work (payment/outbox/state sweeps) to a per-process timer and **drops**
+    // cron declarations entirely — so make the degradation loud, not a footnote
+    // (audit E-10). `/ready` also reports the backend via `backendKind()`.
+    options.logger.warn(
+      '[jobs] 未配置 Redis：任务使用进程内实现，cron 计划任务将被忽略、且仅单副本正确。生产环境请配置 REDIS_URL。',
+    );
     await runtime.useBackend(new MemoryJobBackend({ logger: options.logger }));
   }
   await runtime.start();

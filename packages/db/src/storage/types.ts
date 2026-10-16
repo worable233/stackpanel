@@ -25,7 +25,7 @@ export interface PutObjectOptions {
 
 export interface StorageDriver {
   /** Stable identifier used for logs and introspection. */
-  readonly kind: 'local' | 's3';
+  readonly kind: 'local' | 's3' | 'provider';
   /** Write bytes at `key`, overwriting any existing object. */
   put(key: string, data: Uint8Array, options?: PutObjectOptions): Promise<void>;
   /** Read bytes at `key`, or null when the object does not exist. */

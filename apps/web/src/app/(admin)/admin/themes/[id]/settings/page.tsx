@@ -34,7 +34,6 @@ export default async function AdminThemeSettingsPage({
           </Link>
         }
         title={t('admin.themeSettings.title')}
-        description={id}
       />
       <div>
         {schema ? (

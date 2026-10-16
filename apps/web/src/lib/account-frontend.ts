@@ -18,6 +18,8 @@ export interface PluginAccountMenu {
   label: string;
   href: string;
   group?: string;
+  order?: number;
+  activePaths?: string[];
 }
 
 export type PluginAccountRouteResult =
@@ -53,6 +55,8 @@ export async function getPluginAccountMenus(): Promise<PluginAccountMenu[]> {
         pluginId: candidate.id,
         label: route.nav.label,
         href: accountHref(route.path),
+        order: route.nav.order,
+        activePaths: route.nav.activePaths?.map(accountHref),
         ...(route.nav.group ? { group: route.nav.group } : {}),
       });
     }

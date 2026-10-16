@@ -6,6 +6,14 @@ import { UsersManager } from './users-manager';
 export const dynamic = 'force-dynamic';
 
 const DEFAULT_PAGE_SIZE = 20;
+const SORT_VALUES = [
+  'createdAt_desc',
+  'createdAt_asc',
+  'balance_desc',
+  'balance_asc',
+  'lastLoginAt_desc',
+  'lastLoginAt_asc',
+] as const;
 const STATUS_VALUES = ['ACTIVE', 'DISABLED'] as const;
 
 export default async function AdminUsersPage({
@@ -21,6 +29,7 @@ export default async function AdminUsersPage({
     ? (rawStatus as (typeof STATUS_VALUES)[number])
     : 'all';
   const groupId = typeof params.groupId === 'string' ? params.groupId : '';
+  const sort = SORT_VALUES.find((value) => value === params.sort) ?? 'createdAt_desc';
   const parsedPageSize = Number(params.pageSize);
   const pageSize = [10, 20, 30, 50].includes(parsedPageSize) ? parsedPageSize : DEFAULT_PAGE_SIZE;
 
@@ -33,6 +42,7 @@ export default async function AdminUsersPage({
       client.listAdminUsers({
         page,
         pageSize,
+        sort,
         ...(q ? { q } : {}),
         ...(status !== 'all' ? { status } : {}),
         ...(groupId ? { groupId } : {}),
@@ -53,6 +63,7 @@ export default async function AdminUsersPage({
         q={q}
         status={status}
         groupId={groupId}
+        sort={sort}
         groups={groups?.groups ?? []}
         error={error}
       />

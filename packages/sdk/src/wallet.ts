@@ -173,4 +173,9 @@ export interface WalletService {
   listAccounts(limit?: number): Promise<Array<WalletAccount & { email: string }>>;
   /** List a user's recent ledger entries. */
   listLedger(userId: string, limit?: number): Promise<WalletLedgerEntry[]>;
+  /** Last twelve calendar months of wallet spending in CNY, Asia/Shanghai time.
+   * Positive minor-unit totals of debits, excluding administrator adjustments.
+   * Refunds and top-ups do not count as spending. No recent-ledger truncation.
+   */
+  getMonthlySpending(userId: string): Promise<Array<{ month: string; amount: number }>>;
 }

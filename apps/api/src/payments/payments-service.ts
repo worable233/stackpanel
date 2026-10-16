@@ -368,11 +368,24 @@ export class PaymentsService implements PaymentServiceContract {
 
     // ORDER payments: the kernel claims the payment, then dispatches the
     // commerce-owned settlement handler synchronously before the callback reply.
+    //
+    // The claim and the handler cannot share one DB transaction (the handler is
+    // commerce-owned and may make its own writes), so they are two steps. If the
+    // process dies between them, a duplicate gateway callback must be able to
+    // finish the job: when the payment is already `PAID` we re-dispatch the
+    // (idempotent) handler instead of treating it as done. This closes the
+    // "claimed PAID, order never settled" window without a schema change.
     const gate = await this.options.db.payment.updateMany({
       where: { id: payment.id, status: { in: [...EXTERNAL_PAYMENT_STATUSES] } },
       data: { status: 'PAID', externalId: input.externalId },
     });
-    if (gate.count === 0) return { applied: false, purpose: 'ORDER' };
+    const claimed = gate.count > 0;
+    if (!claimed) {
+      const current = await this.options.db.payment.findUnique({ where: { id: payment.id } });
+      // Only an already-`PAID` payment may be retried; anything else (CANCELLED,
+      // REFUNDED, CANCELLING, …) is terminal and must not be revived here.
+      if (!current || current.status !== 'PAID') return { applied: false, purpose: 'ORDER' };
+    }
 
     const settlement = this.resolveSettlement(payment);
     let dispatched = false;
@@ -390,17 +403,25 @@ export class PaymentsService implements PaymentServiceContract {
       }
     }
     if (!dispatched) {
-      // No merchant handler applied: revert to REVIEW so the money is not lost.
-      await this.options.db.payment.updateMany({
-        where: { id: payment.id, status: 'PAID' },
-        data: { status: 'REVIEW' },
-      });
+      // No merchant handler applied: revert to REVIEW so the money is not lost —
+      // but only a claim we just made. An already-`PAID` payment whose retry still
+      // fails stays `PAID` so the next callback can try again.
+      if (claimed) {
+        await this.options.db.payment.updateMany({
+          where: { id: payment.id, status: 'PAID' },
+          data: { status: 'REVIEW' },
+        });
+      }
       return { applied: false, purpose: 'ORDER' };
     }
-    this.options.events.publish('payment.settled', {
-      orderId: payment.orderId,
-      paymentId: payment.id,
-    });
+    // Publish only on a fresh claim so downstream consumers do not react twice to
+    // a replayed callback.
+    if (claimed) {
+      this.options.events.publish('payment.settled', {
+        orderId: payment.orderId,
+        paymentId: payment.id,
+      });
+    }
     return { applied: true, purpose: 'ORDER' };
   }
 
@@ -665,7 +686,15 @@ export class PaymentsService implements PaymentServiceContract {
       where: { id: payment.id, status: 'PENDING' },
       data: { status: 'PAID' },
     });
-    if (gate.count === 0) return { confirmed: false, reason: 'NOT_PENDING' };
+    const claimed = gate.count > 0;
+    if (!claimed) {
+      const current = await this.options.db.payment.findUnique({ where: { id: payment.id } });
+      // A replayed confirm may finish a settlement that died between the claim
+      // and the handler; only an already-`PAID` payment is retryable.
+      if (!current || current.status !== 'PAID') {
+        return { confirmed: false, reason: 'NOT_PENDING' };
+      }
+    }
 
     const settlement = this.resolveSettlement(payment);
     let dispatched = false;
@@ -683,16 +712,20 @@ export class PaymentsService implements PaymentServiceContract {
       }
     }
     if (!dispatched) {
-      await this.options.db.payment.updateMany({
-        where: { id: payment.id, status: 'PAID' },
-        data: { status: 'REVIEW' },
-      });
+      if (claimed) {
+        await this.options.db.payment.updateMany({
+          where: { id: payment.id, status: 'PAID' },
+          data: { status: 'REVIEW' },
+        });
+      }
       return { confirmed: false, reason: 'NOT_PENDING' };
     }
-    this.options.events.publish('payment.settled', {
-      orderId: payment.orderId,
-      paymentId: payment.id,
-    });
+    if (claimed) {
+      this.options.events.publish('payment.settled', {
+        orderId: payment.orderId,
+        paymentId: payment.id,
+      });
+    }
     return { confirmed: true };
   }
 

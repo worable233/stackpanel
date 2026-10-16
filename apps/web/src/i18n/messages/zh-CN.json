@@ -1,4 +1,10 @@
 {
+  "backendSearch": {
+    "placeholder": "搜索页面或命令…",
+    "empty": "没有找到结果",
+    "pages": "页面",
+    "theme": "主题"
+  },
   "common": {
     "loading": "加载中…",
     "save": "保存",
@@ -84,7 +90,12 @@
       "showPassword": "显示密码",
       "hidePassword": "隐藏密码",
       "hasAccount": "已有账户？",
-      "login": "去登录"
+      "login": "去登录",
+      "code": "邮箱验证码",
+      "sendCode": "获取验证码",
+      "sendingCode": "发送中…",
+      "codeSent": "验证码已发送，请查收邮箱。",
+      "codeSentTo": "验证码已发送至 {email}，请查收（有效期 10 分钟）。"
     },
     "panel": {
       "highlightTitle": "开箱即用",
@@ -99,12 +110,14 @@
     "validation": {
       "emailPasswordRequired": "请输入邮箱和密码",
       "passwordMin": "密码至少需要 8 位",
-      "passwordMismatch": "两次输入的密码不一致"
+      "passwordMismatch": "两次输入的密码不一致",
+      "emailRequired": "请输入邮箱"
     },
     "error": {
       "invalidCredentials": "邮箱或密码错误",
       "loginFailed": "登录失败，请稍后再试",
-      "registerFailed": "注册失败，请稍后再试"
+      "registerFailed": "注册失败，请稍后再试",
+      "sendCodeFailed": "验证码发送失败，请稍后再试"
     }
   },
   "localeSwitcher": {
@@ -539,7 +552,19 @@
       "colGroups": "权限组",
       "colStatus": "状态",
       "colJoined": "注册时间",
-      "colLastLogin": "最后登录",
+      "colLastLogin": "最近登录",
+      "colServices": "已开通产品",
+      "colBalance": "账户余额",
+      "sortLabel": "用户排序",
+      "neverLoggedIn": "从未登录",
+      "sort": {
+        "createdAt_desc": "按注册时间 · 最新优先",
+        "createdAt_asc": "按注册时间 · 最早优先",
+        "balance_desc": "按余额 · 从高到低",
+        "balance_asc": "按余额 · 从低到高",
+        "lastLoginAt_desc": "按最近登录 · 最新优先",
+        "lastLoginAt_asc": "按最近登录 · 最早优先"
+      },
       "statusAll": "全部状态",
       "groupAll": "全部权限组",
       "total": "共 {total} 位用户",
@@ -727,7 +752,19 @@
       "rate_limited": "尝试太频繁，请稍后再试",
       "register_failed": "注册失败，请稍后再试",
       "unauthenticated": "登录已过期，请重新登录",
-      "forbidden": "没有权限执行此操作"
+      "forbidden": "没有权限执行此操作",
+      "code_missing": "验证码不存在或已失效，请重新获取",
+      "code_invalid": "验证码不正确",
+      "code_expired": "验证码已过期，请重新获取",
+      "code_locked": "验证码尝试次数过多，请重新获取",
+      "code_rate_limited": "验证码发送过于频繁，请稍后再试",
+      "code_channel_unavailable": "暂未配置验证码发送通道，请联系管理员",
+      "code_delivery_failed": "验证码发送失败，请稍后再试",
+      "code_not_required": "当前未启用注册邮箱验证",
+      "code_purpose_invalid": "不支持的验证码用途",
+      "captcha_required": "请完成人机验证",
+      "captcha_failed": "人机验证未通过，请重试",
+      "captcha_unavailable": "人机验证服务不可用"
     },
     "validation": {
       "invalid": "请求参数无效"
@@ -876,7 +913,7 @@
       "upstream_credentials_required": "缺少上游 Base URL 或 API Key",
       "upstream_failed": "上游服务返回错误，请稍后重试",
       "models_fetch_failed": "拉取模型失败，请稍后重试",
-      "not_ready": "API 中转服务暂不可用，请稍后重试"
+      "not_ready": "模型服务暂不可用，请稍后重试"
     },
     "zjmf": {
       "upstream_not_found": "上游不存在",
@@ -979,7 +1016,7 @@
   },
   "apiToken": {
     "group": {
-      "llm-gateway": "API 中转",
+      "llm-gateway": "模型服务",
       "store": "商店",
       "store-wallet": "钱包",
       "store-product-card": "卡密",
@@ -1120,6 +1157,7 @@
   "apply": {
     "queued": "已排队，等待 Web 处理",
     "processing": "正在处理",
+    "applyFailed": "应用失败",
     "installed": "插件已安装。",
     "installingFrontend": "插件已安装，正在应用前端…",
     "noun": {

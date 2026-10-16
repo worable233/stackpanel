@@ -1,3 +1,4 @@
+import { getPrisma } from '../plugins/prisma.ts';
 import type { FastifyInstance } from 'fastify';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import type { NavItem } from '@stackpanel/sdk';
@@ -17,6 +18,7 @@ const KERNEL_NAV: Record<'public' | 'account' | 'admin', NavItem[]> = {
   ],
   admin: [
     { surface: 'admin', label: '工作台', href: '/admin' },
+    { surface: 'admin', label: 'Agent 管理', href: '/admin/agent' },
     { surface: 'admin', label: '用户管理', href: '/admin/users' },
     { surface: 'admin', label: '系统设置', href: '/admin/settings' },
     { surface: 'admin', label: '插件管理', href: '/admin/plugins' },
@@ -45,6 +47,11 @@ export async function navRoutes(app: FastifyInstance): Promise<void> {
     }
     const pluginItems = app.pluginRuntime.getExtensions<NavItem>(EXTENSION_POINTS.webNav);
     const items = [...KERNEL_NAV[surface], ...pluginItems.filter((i) => i.surface === surface)];
+    if (surface === 'account') {
+      const setting = await getPrisma().setting.findUnique({where:{key:'agent.enabled'}});
+      const value = setting?.value;
+      if (value === true || (value && typeof value === 'object' && !Array.isArray(value) && value.enabled === true)) items.push({surface:'account',label:'Agent',href:'/account/agent'});
+    }
     return { items };
   });
 }

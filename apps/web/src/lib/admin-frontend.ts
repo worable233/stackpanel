@@ -15,6 +15,8 @@ export interface PluginAdminMenu {
   label: string;
   href: string;
   group?: string;
+  order?: number;
+  activePaths?: string[];
 }
 
 export type PluginAdminRouteResult =
@@ -34,13 +36,16 @@ export type PluginAdminRouteResult =
 export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
   const candidates = await listPluginFrontendCandidates();
   const menus: PluginAdminMenu[] = [];
+  const api = await getAuthedApiClient();
   for (const candidate of candidates) {
     for (const route of candidate.manifest.adminRoutes) {
-      if (!route.nav) continue;
+      if (!route.nav || (route.permission && !(await isAllowed(api, route.permission)))) continue;
       menus.push({
         pluginId: candidate.id,
         label: route.nav.label,
         href: pluginAdminHref(candidate.id, route.path),
+        order: route.nav.order,
+        activePaths: route.nav.activePaths?.map((path) => pluginAdminHref(candidate.id, path)),
         ...(route.nav.group ? { group: route.nav.group } : {}),
       });
     }

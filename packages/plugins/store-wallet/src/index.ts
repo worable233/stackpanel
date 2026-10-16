@@ -53,6 +53,21 @@ const getWallet = async (req: HttpRequest): Promise<unknown> => {
   };
 };
 
+const getOverview = async (req: HttpRequest): Promise<unknown> => {
+  const userId = req.user?.id ?? '';
+  const wallet = context().wallet;
+  const [account, entries, monthly] = await Promise.all([
+    wallet.getAccount(userId),
+    wallet.listLedger(userId, 6),
+    wallet.getMonthlySpending(userId),
+  ]);
+  return {
+    account: account ?? { balance: 0, held: 0, currency: CURRENCY },
+    entries,
+    monthly,
+  };
+};
+
 const createTopUp = async (req: HttpRequest): Promise<unknown> => {
   const parsed = topUpSchema.safeParse(req.body);
   if (!parsed.success) throw new WalletPluginError(400, '无效的充值参数');
@@ -126,6 +141,13 @@ export const storeWalletPlugin = definePlugin({
     ],
   },
   routes: [
+    {
+      method: 'GET',
+      path: '/wallet/overview',
+      auth: 'user',
+      permission: 'store.wallet',
+      handler: handle(getOverview),
+    },
     {
       method: 'GET',
       path: '/wallet',

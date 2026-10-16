@@ -1,8 +1,17 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { AFFILIATE_COOKIE, normalizeAffiliateCode } from './lib/affiliate';
 
 const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? 'sp_session';
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
+
+/**
+ * Referral attribution cookie. A visitor arriving on `?affid=<code>` keeps the
+ * code so a later signup can be attributed to it. The Web layer only stores and
+ * forwards the code — it never validates or redeems it; the owning plugin
+ * decides whether the code is real.
+ */
+const AFFILIATE_COOKIE_MAX_AGE = Number(process.env.AFFILIATE_COOKIE_DAYS ?? 30) * 86_400;
 
 /** The API origin, allowed for cross-origin styles/images/connections. */
 function apiStyleOrigin(): string {
@@ -64,16 +73,35 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const { pathname } = request.nextUrl;
 
+  // Capture `?affid=` on any landing page. First click wins: an existing
+  // attribution cookie is never overwritten, so a second code cannot steal a
+  // visitor who already arrived through someone else's link.
+  const affid = normalizeAffiliateCode(request.nextUrl.searchParams.get('affid'));
+  const shouldSetAffiliate = affid !== null && !request.cookies.get(AFFILIATE_COOKIE)?.value;
+
+  const withAffiliate = <T extends NextResponse>(response: T): T => {
+    if (shouldSetAffiliate && affid) {
+      response.cookies.set(AFFILIATE_COOKIE, affid, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+        maxAge: AFFILIATE_COOKIE_MAX_AGE,
+      });
+    }
+    return response;
+  };
+
   // Non-admin routes: skip the kernel round-trip, just carry the nonce.
   if (!pathname.startsWith('/admin')) {
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set('Content-Security-Policy', csp);
-    return response;
+    return withAffiliate(response);
   }
 
   const token = request.cookies.get(COOKIE_NAME)?.value;
   if (!token) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return withAffiliate(NextResponse.redirect(new URL('/login', request.url)));
   }
   try {
     const res = await fetch(`${API_BASE_URL}/auth/session`, {
@@ -85,16 +113,16 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     } | null;
     const user = body?.user ?? null;
     if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      return withAffiliate(NextResponse.redirect(new URL('/login', request.url)));
     }
     if (user.role !== 'ADMIN') {
-      return new NextResponse('Forbidden', { status: 403 });
+      return withAffiliate(new NextResponse('Forbidden', { status: 403 }));
     }
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set('Content-Security-Policy', csp);
-    return response;
+    return withAffiliate(response);
   } catch {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return withAffiliate(NextResponse.redirect(new URL('/login', request.url)));
   }
 }
 

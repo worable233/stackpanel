@@ -7,9 +7,12 @@
  *   包共享，发版联动）。
  * - OpenAPI 投影：能力项 → 文档 operation（内核 docs 与快照共用）。
  * - 兼容性：`normalizeSpec` / `buildSnapshot` / `diffContracts`（CI 破坏性变更门禁）。
+ * - 分发：`validatePackageManifest` / `validateCatalogSnapshot` / `computeRevision` /
+ *   升级状态机 / 信任链 / 安装事务 / 部署计划求解（GitHub 分发与自动升级契约）。
  *
  * 本包不依赖任何运行时依赖，可在内核、契约脚本、CI 与第三方工具中复用。
  */
 export * from './version.js';
 export * from './contract.js';
 export * from './openapi.js';
+export * from './distribution/index.js';

@@ -27,7 +27,6 @@ export default async function AdminMarketPage() {
     <main className="w-full space-y-6">
       <PageHeader
         title={t('admin.market.title')}
-        description={t('admin.market.description')}
       />
       {error ? (
         <p className="text-sm text-destructive">

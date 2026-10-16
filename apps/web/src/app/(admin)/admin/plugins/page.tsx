@@ -30,7 +30,6 @@ export default async function AdminPluginsPage() {
     <main className="w-full space-y-6">
       <PageHeader
         title={t('admin.plugins.title')}
-        description={t('admin.plugins.pageDescription')}
         actions={<PluginUploadDialog />}
       />
       {error ? (

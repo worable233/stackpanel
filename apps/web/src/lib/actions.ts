@@ -4,15 +4,20 @@ import { redirect } from 'next/navigation';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
 import { getApiClient, getAuthedApiClient } from './api';
+import { AFFILIATE_COOKIE, normalizeAffiliateCode } from './affiliate';
 import { apiErrorMessage } from './api-errors';
+import { safeInternalPath } from './safe-path';
 
 export interface LoginState {
   error?: string;
+  notice?: string;
+  /** Set by the send-code action so the form can show a countdown. */
+  codeSentTo?: string;
+  codeExpiresInSeconds?: number;
 }
 
 function safeNextPath(value: FormDataEntryValue | null): string | null {
-  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) return null;
-  return value;
+  return safeInternalPath(value);
 }
 
 /**
@@ -57,6 +62,15 @@ export async function logoutAction(): Promise<void> {
   redirect('/');
 }
 
+/** Read the referral code the visitor arrived with: cookie first, then form. */
+async function readAffiliateCode(formData: FormData): Promise<string | null> {
+  const fromCookie = normalizeAffiliateCode(
+    (await cookies()).get(AFFILIATE_COOKIE)?.value,
+  );
+  if (fromCookie) return fromCookie;
+  return normalizeAffiliateCode(formData.get('affid') as string | null);
+}
+
 /** Server action: register a new local account, then route to the workspace. */
 export async function registerAction(
   _prev: LoginState,
@@ -71,8 +85,17 @@ export async function registerAction(
   if (password.length < 8) {
     return { error: translate(locale, 'auth.validation.passwordMin') };
   }
+  const code = formData.get('code');
+  const captchaToken = formData.get('captchaToken');
   try {
-    const result = await getApiClient().register(email, password);
+    const affid = await readAffiliateCode(formData);
+    const result = await getApiClient().register(email, password, {
+      affid,
+      ...(typeof code === 'string' && code.trim() ? { code: code.trim() } : {}),
+      ...(typeof captchaToken === 'string' && captchaToken.trim()
+        ? { captchaToken: captchaToken.trim() }
+        : {}),
+    });
     const store = await cookies();
     store.set(process.env.SESSION_COOKIE_NAME ?? 'sp_session', result.token, {
       httpOnly: true,
@@ -81,8 +104,39 @@ export async function registerAction(
       path: '/',
       maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
     });
+    // Attribution is now recorded server-side; the landing cookie has no
+    // further purpose, and keeping it would mis-attribute a second signup
+    // from the same browser.
+    store.delete(AFFILIATE_COOKIE);
     redirect(result.user.role === 'ADMIN' ? '/admin' : '/account');
   } catch (error) {
     return { error: await apiErrorMessage(error, translate(locale, 'auth.error.registerFailed')) };
+  }
+}
+
+/** Server action: request a registration email verification code. */
+export async function sendRegisterCodeAction(
+  _prev: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const locale = await getLocale();
+  const email = formData.get('email');
+  const captchaToken = formData.get('captchaToken');
+  if (typeof email !== 'string' || !email.trim()) {
+    return { error: translate(locale, 'auth.validation.emailRequired') };
+  }
+  try {
+    const result = await getApiClient().sendRegisterCode(email.trim(), {
+      ...(typeof captchaToken === 'string' && captchaToken.trim()
+        ? { captchaToken: captchaToken.trim() }
+        : {}),
+    });
+    return {
+      notice: translate(locale, 'auth.register.codeSent'),
+      codeSentTo: result.email,
+      codeExpiresInSeconds: result.expiresInSeconds,
+    };
+  } catch (error) {
+    return { error: await apiErrorMessage(error, translate(locale, 'auth.error.sendCodeFailed')) };
   }
 }

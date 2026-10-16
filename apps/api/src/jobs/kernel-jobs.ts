@@ -107,6 +107,16 @@ class CanonicalJobRuntime implements JobRuntime {
     return this.backend !== null;
   }
 
+  /**
+   * Which job backend is active (`bullmq`/`memory`), or `null` before
+   * `initJobs()`. Surfaced by `/ready` so a deployment that lost Redis (and thus
+   * silently fell back to the single-process timer) is visible to operators
+   * instead of quietly dropping cron work (audit E-10).
+   */
+  backendKind(): 'bullmq' | 'memory' | null {
+    return this.backend?.kind ?? null;
+  }
+
   start(): Promise<void> {
     return this.backend?.start() ?? Promise.resolve();
   }

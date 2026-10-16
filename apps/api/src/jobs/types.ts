@@ -39,6 +39,8 @@ export interface JobRuntime {
 
 /** The storage seam behind the kernel job runtime. */
 export interface JobBackend {
+  /** Which backend this is: the BullMQ/Redis cluster backend or the in-process fallback. */
+  readonly kind: 'bullmq' | 'memory';
   /** Register/override the handler for a fully-qualified job name. */
   handle(fullName: string, handler: JobHandler): void;
   /** Remove a handler without registering an invalid placeholder. */

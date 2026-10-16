@@ -19,6 +19,7 @@ export interface MemoryJobBackendOptions {
 }
 
 export class MemoryJobBackend implements JobBackend {
+  readonly kind = 'memory' as const;
   private readonly handlers = new Map<string, JobHandler>();
   private readonly schedules = new Map<
     string,

@@ -227,7 +227,7 @@ async function placeOrder(
       if (!paid) throw new StoreError(503, '商店插件未就绪');
       return toOrder(paid);
     });
-    bus().publish('order.paid', { orderId: order.id });
+    bus().publish('order.paid', { orderId: order.id, userId: order.userId });
     return { order, nextPath: '/account/orders' };
   }
 
@@ -375,7 +375,9 @@ export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise
     const record = await tx.extensions.get<StoreOrderData>(orderModel, order.id);
     if (record) {
       for (const item of stockItems({ items: record.spec.items })) {
-        if (item.renewalServiceId) continue; // 续费行未占用库存
+        // 续费行与变配行都不占用库存（变配订单在 changes.ts 直接建单，从未 reserve），
+        // 回补它们会给目标商品凭空增加库存。
+        if (item.renewalServiceId || item.changeServiceId) continue;
         await tx.extensions.updateWhere(
           productModel,
           { name: { eq: item.productId } },
@@ -406,8 +408,17 @@ export const settlementHandler: PaymentSettlementHandler = {
       return { applied: false, purpose: 'ORDER' };
     try {
       const applied = await changeOrderState(payment.orderId, 'PENDING', 'PAID');
-      if (!applied) throw new StoreError(409, '订单不可支付');
-      bus().publish('order.paid', { orderId: payment.orderId });
+      if (!applied) {
+        // The order was not PENDING. If it is already PAID the settlement has
+        // effectively happened (e.g. a replayed callback after a crash between
+        // the kernel claim and this handler) — report success so the retry
+        // converges. Any other state (CANCELLED/REFUNDED/…) is a genuine
+        // conflict and must surface.
+        const current = await getOrder(payment.orderId);
+        if (current?.status === 'PAID') return { applied: true, purpose: 'ORDER' };
+        throw new StoreError(409, '订单不可支付');
+      }
+      bus().publish('order.paid', { orderId: payment.orderId, userId: payment.userId });
       return { applied, purpose: 'ORDER' };
     } catch (error) {
       // A deactivated plugin (context reset) must not 503 the payment kernel:
@@ -437,7 +448,8 @@ export const settlementHandler: PaymentSettlementHandler = {
         );
         if (updated === 0) return false;
         for (const item of stockItems({ items: record.spec.items })) {
-          if (item.renewalServiceId) continue; // 续费行未占用库存
+          // 续费行与变配行都不占用库存，见 cancelOrder。
+          if (item.renewalServiceId || item.changeServiceId) continue;
           await tx.extensions.updateWhere(
             productModel,
             { name: { eq: item.productId } },

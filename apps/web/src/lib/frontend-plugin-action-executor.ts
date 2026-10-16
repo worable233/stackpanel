@@ -7,6 +7,7 @@ import type { PluginActionDefinition } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
 import { apiErrorMessage } from './api-errors';
 import { actionTargetsSchema } from './frontend-plugin-action-targets';
+import { safeInternalPath } from './safe-path';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
 import { listPluginFrontendCandidates } from './slots';
@@ -187,9 +188,9 @@ function redirectDestination(action: PluginActionDefinition, response: unknown):
     .reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), response);
   if (typeof value !== 'string' || value.length === 0) throw new Error('Invalid redirect response');
   if (!config.external) {
-    if (!value.startsWith('/') || value.startsWith('//'))
-      throw new Error('Invalid internal redirect');
-    return value;
+    const safe = safeInternalPath(value);
+    if (!safe) throw new Error('Invalid internal redirect');
+    return safe;
   }
   const url = new URL(value);
   if (url.protocol !== 'https:' && url.protocol !== 'http:')

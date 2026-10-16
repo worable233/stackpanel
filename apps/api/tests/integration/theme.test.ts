@@ -224,6 +224,40 @@ describe.skipIf(!dbAvailable)('theme engine integration (real DB)', () => {
     expect(res.body).toContain('oklch(1 0 0)');
   });
 
+  it('upgrades an installed theme in place, preserving its active state', async () => {
+    // ocean is active (test above). Re-uploading a higher version must upgrade
+    // via the shared transaction without resetting `active` (PLAN §13-3).
+    const { payload, boundary } = zipToMultipart(
+      zip({
+        'theme.json': JSON.stringify({ id: 'ocean', name: 'Ocean', version: '2.0.0' }),
+        'theme.css': `:root { --background: oklch(0.9 0 0); --primary: oklch(0.5 0.2 250); }`,
+        'assets/logo.svg': '<svg/>',
+      }),
+      'ocean-2.zip',
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/themes',
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { upgraded: boolean; theme: { id: string; version: string; active: boolean } };
+    expect(body.upgraded).toBe(true);
+    expect(body.theme.version).toBe('2.0.0');
+    expect(body.theme.active).toBe(true);
+    // The new CSS is now being served and the theme is still the single active one.
+    const css = await app.inject({ method: 'GET', url: '/themes/ocean/theme.css' });
+    expect(css.body).toContain('oklch(0.9 0 0)');
+    const themes = await app.inject({ method: 'GET', url: '/themes' });
+    const rows = (themes.json() as { themes: Array<{ id: string; active: boolean }> }).themes;
+    expect(rows.filter((t) => t.active).length).toBe(1);
+    expect(rows.find((t) => t.id === 'ocean')?.active).toBe(true);
+  });
+
   it('serves theme assets from the installed directory', async () => {
     const res = await app.inject({ method: 'GET', url: '/themes/ocean/assets/logo.svg' });
     expect(res.statusCode).toBe(200);

@@ -168,6 +168,58 @@ export function isUnsafeIpAddress(address: string): boolean {
 /** 内网/特殊用途主机名后缀。 */
 const UNSAFE_HOST_SUFFIXES = ['.localhost', '.local', '.internal', '.home.arpa'] as const;
 
+/**
+ * 云元数据服务主机名（IMDSv1/v2 等）。这些地址解析到链路本地 `169.254.169.254`
+ * 或被厂商占用；内核代发的出站请求（如存储 endpoint）必须拒绝它们，避免窃取实例
+ * 凭据。`*.internal` 之类的后缀见 {@link UNSAFE_HOST_SUFFIXES}。
+ */
+const METADATA_HOSTNAMES = new Set([
+  'metadata',
+  'metadata.google.internal',
+  'metadata.goog',
+  'instance-data',
+]);
+
+/**
+ * 是否为链路本地地址（IPv4 `169.254.0.0/16` / IPv6 `fe80::/10`，含 IPv4-mapped
+ * 形式）。与 {@link isUnsafeIpAddress} 不同，这里**不**把 `10/8`、`127/8`、
+ * `192.168/16` 等私有/回环地址算作不安全——自建 MinIO 常位于内网或本机，需要放行；
+ * 只拦链路本地，即云元数据 `169.254.169.254` 所在网段。非 IP 输入返回 false。
+ */
+export function isLinkLocalIpAddress(address: string): boolean {
+  const normalized = address
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
+  const version = isIP(normalized);
+  if (version === 4) {
+    const octets = normalized.split('.').map(Number);
+    return octets[0] === 169 && octets[1] === 254;
+  }
+  if (version === 6) {
+    const bytes = parseIpv6(normalized);
+    if (!bytes) return false;
+    // ::ffff:a.b.c.d 形式：按内嵌 IPv4 判定。
+    if (zeroRange(bytes, 0, 10) && bytes[10] === 0xff && bytes[11] === 0xff) {
+      return isLinkLocalIpAddress(embeddedV4(bytes, 12));
+    }
+    return bytes[0] === 0xfe && ((bytes[1] ?? 0) & 0xc0) === 0x80; // fe80::/10
+  }
+  return false;
+}
+
+/**
+ * 主机名是否指向云元数据服务：已知元数据域名，或链路本地 IP 字面量。用于拦截
+ * 「把内核出站请求指向 IMDS 窃取凭据」这一类 SSRF，同时放行内网/回环自建服务。
+ */
+export function isMetadataHostname(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '').replace(/^\[|\]$/g, '');
+  if (host === '') return false;
+  if (METADATA_HOSTNAMES.has(host)) return true;
+  if (isIP(host) !== 0) return isLinkLocalIpAddress(host);
+  return false;
+}
+
 /** 主机名（不含端口）是否指向本机或内网：localhost、内网 TLD、私有 IP 字面量。 */
 export function isUnsafeHostname(hostname: string): boolean {
   const host = hostname.trim().toLowerCase().replace(/\.$/, '');

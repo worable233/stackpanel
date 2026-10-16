@@ -1,12 +1,23 @@
 'use client';
+import { SectionTitle } from '@stackpanel/ui';
 
-import { useActionState, useTransition } from 'react';
+import { useActionState, useTransition, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { PlatformInfo, SigningStatus } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Settings, Palette, ShieldCheck, Wrench, ImageIcon } from 'lucide-react';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import {
   clearPlatformBrandAction,
   savePlatformBrandAction,
@@ -30,12 +41,89 @@ export function SettingsManager({
   signing: SigningStatus | null;
   brand: BrandAssets | null;
 }) {
+  const t = useTranslator();
+  const [active, setActive] = useState('platform');
+  const sections = [
+    {
+      id: 'platform',
+      title: t('admin.settings.platform.title'),
+      Icon: Settings,
+      content: <PlatformInfoSettings platform={platform} />,
+    },
+    {
+      id: 'brand',
+      title: t('admin.settings.brand.title'),
+      Icon: Palette,
+      content: <BrandSettings brand={brand} />,
+    },
+    {
+      id: 'signing',
+      title: t('admin.settings.signing.title'),
+      Icon: ShieldCheck,
+      content: <SigningSettings signing={signing} />,
+    },
+    {
+      id: 'advanced',
+      title: t('admin.settings.advanced.title'),
+      Icon: Wrench,
+      content: <AdvancedSettings />,
+    },
+  ];
+
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
-      <PlatformInfoSettings platform={platform} />
-      <BrandSettings brand={brand} />
-      <SigningSettings signing={signing} />
-      <AdvancedSettings />
+    <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-12">
+      <aside className="shrink-0 lg:w-1/5">
+        <div className="md:hidden">
+          <Select value={active} onValueChange={(value) => value && setActive(value)}>
+            <SelectTrigger className="h-12 w-full" aria-label={t('admin.settings.title')}>
+              <SelectValue>{sections.find((section) => section.id === active)?.title}</SelectValue>
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {sections.map(({ id, title, Icon }) => (
+                  <SelectItem key={id} value={id}>
+                    <Icon className="size-4" />
+                    {title}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+        <nav
+          aria-label={t('admin.settings.title')}
+          className="scrollbar-none hidden gap-1 overflow-x-auto p-1 md:flex lg:flex-col"
+        >
+          {sections.map(({ id, title, Icon }) => (
+            <Button
+              key={id}
+              variant="ghost"
+              onClick={() => setActive(id)}
+              aria-pressed={active === id}
+              aria-controls={`settings-${id}`}
+              className={cn(
+                'justify-start gap-3 whitespace-nowrap',
+                active === id ? 'bg-muted hover:bg-accent' : 'hover:underline',
+              )}
+            >
+              <Icon className="size-[18px]" />
+              {title}
+            </Button>
+          ))}
+        </nav>
+      </aside>
+      <div className="min-w-0 flex-1 p-1">
+        {sections.map(({ id, content }) => (
+          <div
+            key={id}
+            id={`settings-${id}`}
+            hidden={active !== id}
+            className="w-full max-w-xl pb-12"
+          >
+            {content}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -50,9 +138,9 @@ function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {
   const [isMutating, startTransition] = useTransition();
 
   return (
-    <section className="flex flex-col gap-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">{t('admin.settings.platform.title')}</h2>
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1 border-b pb-4">
+        <SectionTitle>{t('admin.settings.platform.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{t('admin.settings.platform.description')}</p>
       </div>
       <form
@@ -62,7 +150,7 @@ function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {
             router.refresh();
           });
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-6"
       >
         <div className="flex flex-col gap-2">
           <Label htmlFor="name">{t('admin.settings.platform.name')}</Label>
@@ -94,7 +182,9 @@ function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {
         ) : null}
         <div>
           <Button type="submit" disabled={pending || isMutating}>
-            {pending || isMutating ? t('admin.settings.saving') : t('admin.settings.platform.submit')}
+            {pending || isMutating
+              ? t('admin.settings.saving')
+              : t('admin.settings.platform.submit')}
           </Button>
         </div>
       </form>
@@ -116,12 +206,10 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
   const [isMutating, startTransition] = useTransition();
 
   return (
-    <section className="flex flex-col gap-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">{t('admin.settings.brand.title')}</h2>
-        <p className="text-sm text-muted-foreground">
-          {t('admin.settings.brand.description')}
-        </p>
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1 border-b pb-4">
+        <SectionTitle>{t('admin.settings.brand.title')}</SectionTitle>
+        <p className="text-sm text-muted-foreground">{t('admin.settings.brand.description')}</p>
       </div>
       <form
         action={(formData) => {
@@ -130,25 +218,33 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
             router.refresh();
           });
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-6"
       >
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-center gap-1.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={brand?.logoUrl ?? ''}
-              alt={t('admin.settings.brand.currentLogo')}
-              className="size-14 rounded-md border bg-background object-contain p-1"
-            />
+            <div className="flex size-16 items-center justify-center rounded-md border bg-muted/30 p-2">
+              {brand?.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={brand.logoUrl}
+                  alt={t('admin.settings.brand.currentLogo')}
+                  className="size-full object-contain"
+                />
+              ) : (
+                <ImageIcon className="size-5 text-muted-foreground" />
+              )}
+            </div>
             <span className="text-xs text-muted-foreground">Logo</span>
           </div>
           <div className="flex flex-col items-center gap-1.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={brand?.faviconUrl ?? ''}
-              alt="Favicon"
-              className="size-14 rounded-md border bg-background object-contain p-1"
-            />
+            <div className="flex size-16 items-center justify-center rounded-md border bg-muted/30 p-2">
+              {brand?.faviconUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={brand.faviconUrl} alt="Favicon" className="size-full object-contain" />
+              ) : (
+                <ImageIcon className="size-5 text-muted-foreground" />
+              )}
+            </div>
             <span className="text-xs text-muted-foreground">Favicon</span>
           </div>
         </div>
@@ -200,9 +296,9 @@ function SigningSettings({ signing }: { signing: SigningStatus | null }) {
   const envManaged = signing?.source === 'env';
 
   return (
-    <section className="flex flex-col gap-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">{t('admin.settings.signing.title')}</h2>
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1 border-b pb-4">
+        <SectionTitle>{t('admin.settings.signing.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">
           {envManaged
             ? t('admin.settings.signing.envManaged')
@@ -219,7 +315,7 @@ function SigningSettings({ signing }: { signing: SigningStatus | null }) {
             router.refresh();
           });
         }}
-        className="flex flex-col gap-3"
+        className="flex flex-col gap-6"
       >
         <div className="flex flex-col gap-2">
           <Label htmlFor="publicKey">{t('admin.settings.signing.publicKey')}</Label>
@@ -239,7 +335,9 @@ function SigningSettings({ signing }: { signing: SigningStatus | null }) {
         ) : null}
         <div className="flex items-center gap-2">
           <Button type="submit" disabled={pending || isMutating || envManaged} className="w-fit">
-            {pending || isMutating ? t('admin.settings.saving') : t('admin.settings.signing.submit')}
+            {pending || isMutating
+              ? t('admin.settings.saving')
+              : t('admin.settings.signing.submit')}
           </Button>
         </div>
       </form>
@@ -251,13 +349,13 @@ function AdvancedSettings() {
   const t = useTranslator();
 
   return (
-    <section className="flex flex-col gap-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">{t('admin.settings.advanced.title')}</h2>
+    <section className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1 border-b pb-4">
+        <SectionTitle>{t('admin.settings.advanced.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{t('admin.settings.advanced.description')}</p>
       </div>
-      <div className="flex items-start justify-between gap-4 rounded-md border bg-muted/30 p-4">
-        <div className="flex flex-col gap-1">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
+        <div className="flex flex-col gap-1 border-b pb-4">
           <h3 className="text-sm font-medium">
             {t('admin.settings.advanced.developerConsoleTitle')}
           </h3>
@@ -265,7 +363,12 @@ function AdvancedSettings() {
             {t('admin.settings.advanced.developerConsoleDescription')}
           </p>
         </div>
-        <Button render={<Link href="/admin/developer" />} variant="outline" size="sm" className="shrink-0">
+        <Button
+          render={<Link href="/admin/developer" />}
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+        >
           {t('admin.settings.advanced.developerConsoleOpen')}
         </Button>
       </div>

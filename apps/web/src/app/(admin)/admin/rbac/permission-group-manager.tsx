@@ -667,7 +667,6 @@ export function PermissionGroupManager({
     <div className="flex flex-col gap-4">
       <PageHeader
         title={t('admin.rbac.title')}
-        description={t('admin.rbac.pageDescription')}
         actions={<CreateGroupForm />}
       />
 

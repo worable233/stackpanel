@@ -45,6 +45,7 @@ const definition = (mod[manifest.export ?? 'default'] ?? mod.default) as {
 if (!definition || !Array.isArray(definition.routes)) throw new Error('isolated plugin definition is invalid');
 const unsupported: string[] = [];
 
+const serviceControllers = new Map<string, AbortController>();
 const routes = definition.routes.map(({ handler: _handler, ...route }) => route);
 const modelDescriptors: Array<Record<string, unknown>> = [];
 for (const model of definition.customModels ?? []) {
@@ -236,6 +237,27 @@ const context = {
     unregister: (input: unknown) => callHost('media.unregister', input),
     unregisterResource: (resourceType: string, resourceId: string) => callHost('media.unregisterResource', { resourceType, resourceId }),
   },
+  // 内核托管存储能力（ADR-0014 扩展）：worker 只拿到一个「远程序」provider 代理，
+  // 字节/预签名/AWS 机制全部留在内核侧。控制面方法经 IPC 调用，参数与返回都不含字节。
+  storage: {
+    backend: async (spec: unknown) => {
+      const handle = (await callHost('storage.backend', spec)) as {
+        token: string;
+        methods?: string[];
+        values?: Record<string, unknown>;
+      };
+      const token = handle.token;
+      const proxy: Record<string, unknown> = Object.assign(
+        Object.create(null) as Record<string, unknown>,
+        handle.values ?? {},
+      );
+      for (const method of handle.methods ?? []) {
+        proxy[method] = (...args: unknown[]) =>
+          callHost('storage.invoke', { token, method, args });
+      }
+      return proxy;
+    },
+  },
   events: {
     publish: (topic: string, payload?: unknown) => {
       void callHost('events.publish', { topic, payload }).catch(() => undefined);
@@ -269,6 +291,8 @@ const context = {
   },
   auth: serviceProxy('auth', ['verifyPassword', 'registerUser', 'ensureSystemUser', 'issueSession', 'revokeSession', 'revokeAllSessions', 'sessionCookieConfig', 'hasPermission', 'listUserGroups', 'getUser', 'getUserByEmail', 'listUsersByIds', 'resolvePlatformToken', 'inspectPlatformToken', 'listPlatformTokens', 'listAllPlatformTokens', 'listPlatformTokensByScope', 'createPlatformToken', 'updatePlatformToken', 'ownsPlatformToken', 'deletePlatformToken', 'audit', 'listAuditLogs']),
   notifications: serviceProxy('notifications', ['create', 'upsert', 'listForUser', 'unreadCount', 'markRead', 'markAllRead']),
+  identity: serviceProxy('identity', ['requiresEmailVerification', 'isDeliveryConfigured', 'senderIds', 'issue', 'consume']),
+  captcha: serviceProxy('captcha', ['mode', 'isConfigured', 'providerIds', 'verify', 'enforce', 'clientConfig']),
   secrets: serviceProxy('secrets', ['isAvailable', 'get', 'set', 'remove']),
   // 内核托管读缓存：把「查缓存 / 回源 / 回填」拆成三步 IPC。
   // 回源跑在插件进程（数据只能由插件自己的扩展读出来），但存储、边界与
@@ -694,6 +718,7 @@ process.on('message', async (raw: unknown) => {
     return;
   }
   if (message.type === 'cancel') {
+    serviceControllers.get(requestId)?.abort();
     const waiter = pending.get(requestId);
     if (waiter) { clearTimeout(waiter.timer); pending.delete(requestId); waiter.reject(new Error('RPC request cancelled')); }
     return;
@@ -745,15 +770,18 @@ process.on('message', async (raw: unknown) => {
     return;
   }
   if (message.type === 'service') {
+    const controller = new AbortController(); serviceControllers.set(requestId, controller);
     try {
       const implementation = serviceProxies.get(message.token ?? '');
       const method = implementation?.[String(message.method ?? '')];
       if (typeof method !== 'function') throw new Error('isolated service method is not registered');
-      const result = await method(...(Array.isArray(message.payload) ? message.payload : []));
+      const args = Array.isArray(message.payload) ? message.payload : [];
+      if (args[1] && typeof args[1] === 'object' && 'callId' in args[1]) args[1] = { ...args[1], signal: controller.signal };
+      const result = await method(...args);
       sendHost({ protocol: 1, pluginId, type: 'result', id: requestId, value: result });
     } catch (error) {
       sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'result', id: requestId, error: wireError(error) });
-    }
+    } finally { serviceControllers.delete(requestId); }
     return;
   }
   if (message.type === 'lifecycle') {

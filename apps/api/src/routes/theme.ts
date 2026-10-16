@@ -304,17 +304,34 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
       themeInfo = { id: manifest.id, name: manifest.name, version: manifest.version };
       const prisma = getPrisma();
       const existing = await prisma.theme.findUnique({ where: { id: manifest.id } });
-      if (existing) {
-        return reply.code(409).send({ error: '主题已安装' });
+      const upgraded = Boolean(existing);
+      // 主题与插件共用同一安装事务：先把完整产物暂存，再提交 DB 指针（§7、§13-3）。
+      const fileWrite = await writeThemeFiles(manifest.id, files);
+      let theme: { id: string; name: string; version: string; active: boolean };
+      try {
+        theme = existing
+          ? await prisma.theme.update({
+              where: { id: manifest.id },
+              data: { name: manifest.name, version: manifest.version },
+            })
+          : await prisma.theme.create({
+              data: {
+                id: manifest.id,
+                name: manifest.name,
+                version: manifest.version,
+                active: false,
+              },
+            });
+      } catch (err) {
+        // 文件已暂存但 DB 指针未提交：恢复旧目录（升级时还原旧版本），避免半切换（§7.6）。
+        await fileWrite.rollback();
+        throw err;
       }
-      await writeThemeFiles(manifest.id, files);
-      const theme = await prisma.theme.create({
-        data: { id: manifest.id, name: manifest.name, version: manifest.version, active: false },
-      });
+      await fileWrite.commit();
       const frontend = frontendSummary(await readFrontendManifest(themePackageDir(theme.id)));
       const signed = existsSync(path.join(themePackageDir(theme.id), 'signature.json'));
       await writeAudit({
-        action: 'theme.install',
+        action: upgraded ? 'theme.upgrade' : 'theme.install',
         resource: 'theme',
         resourceId: manifest.id,
         meta: { name: manifest.name, version: manifest.version },
@@ -322,26 +339,29 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
       });
       // A theme frontend is only picked up after a registry rebuild + reload.
       const hasFrontend = Boolean(await readFrontendManifest(themePackageDir(theme.id)));
+      const action = upgraded ? 'update' : 'install';
       if (hasFrontend) {
         await requestFrontendApply({
-          reason: 'theme.install',
+          reason: upgraded ? 'theme.upgrade' : 'theme.install',
           requestedBy: request.user?.id ?? null,
           target: 'theme',
-          action: 'install',
+          action,
           label: manifest.name,
           rebuild: true,
         });
       } else {
         await notifyLifecycle(request.user?.id, {
           target: 'theme',
-          action: 'install',
+          action,
           label: manifest.name,
           id: manifest.id,
           version: manifest.version,
           ok: true,
         });
       }
-      return reply.code(201).send({ theme: { ...theme, frontend, signed } });
+      return reply
+        .code(upgraded ? 200 : 201)
+        .send({ theme: { ...theme, frontend, signed }, upgraded });
     } catch (err) {
       if (err instanceof ThemeError) {
         await notifyLifecycle(request.user?.id, {

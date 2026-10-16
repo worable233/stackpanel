@@ -19,7 +19,6 @@ export default async function AccountApiKeysPage() {
     <main className="max-w-3xl space-y-6">
       <PageHeader
         title={t('account.apiKeys.title')}
-        description={t('account.apiKeys.description')}
       />
       <ApiTokenManager
         tokens={tokenResult.tokens}

@@ -25,7 +25,6 @@ export default async function AdminThemesPage() {
     <main className="w-full space-y-6">
       <PageHeader
         title={t('admin.themes.title')}
-        description={t('admin.themes.description')}
         actions={<ThemeUploadDialog />}
       />
       {error ? (

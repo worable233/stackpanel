@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { ApiError } from '@stackpanel/sdk';
 import { getBffPluginClient } from '@/lib/plugins-bff';
+import { decodeSegmentsSafely, isPublicAssetRequest } from '@/lib/plugin-proxy-path';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 
@@ -41,33 +42,6 @@ const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
 /** 转发路径首段（插件命名空间）的形状；与内核 `PLUGIN_ID_PATTERN` 对齐。 */
 const PLUGIN_NAMESPACE_PATTERN = /^[a-z0-9_-]{1,64}$/;
-const THEME_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
-
-/**
- * Public resources required before a user has a session. These are the only
- * kernel paths that bypass plugin route discovery; mutations and all dynamic
- * plugin routes still go through the authenticated action-target check below.
- */
-function isPublicAssetRequest(method: string, segments: string[]): boolean {
-  if (method !== 'GET' && method !== 'HEAD') return false;
-  if (segments[0] === 'platform' && segments.length === 3) {
-    return segments[1] === 'brand' && (segments[2] === 'logo' || segments[2] === 'favicon');
-  }
-  if (
-    segments[0] !== 'themes' ||
-    segments.length < 3 ||
-    !THEME_ID_PATTERN.test(segments[1] ?? '')
-  ) {
-    return false;
-  }
-  if (segments.length === 3 && segments[2] === 'theme.css') return true;
-  // Theme assets are served by the API's path-safe /themes/:id/assets/* route.
-  return (
-    segments[2] === 'assets' &&
-    segments.length > 3 &&
-    !segments.slice(3).some((part) => part === '..' || part === '')
-  );
-}
 
 /** 不转发到上游的逐跳请求头（RFC 9110 §7.6.1）。 */
 const HOP_BY_HOP_REQUEST_HEADERS = new Set([
@@ -81,6 +55,20 @@ const HOP_BY_HOP_REQUEST_HEADERS = new Set([
   'proxy-authorization',
   'proxy-authenticate',
   'content-length',
+]);
+
+/**
+ * 除逐跳头外还要从浏览器请求里剥离的头。
+ *
+ * BFF 是**唯一**的认证边界：它用会话 cookie 解析出令牌，再以 `Bearer` 代填给内核。
+ * 浏览器的原始 `cookie`（含 `sp_session`）和任何 `authorization` 都不得透传——否则
+ * 匿名请求会把受害者会话原样送到上游，绕过代填逻辑。内核按「Bearer 优先、cookie
+ * 兜底」解析（`apps/api/src/plugins/auth.ts`），转发 cookie 等于把 BFF 变成会话透传器。
+ */
+const STRIPPED_REQUEST_HEADERS = new Set([
+  ...HOP_BY_HOP_REQUEST_HEADERS,
+  'cookie',
+  'authorization',
 ]);
 
 /** 不转发回浏览器的逐跳响应头。 */
@@ -113,9 +101,22 @@ function routeMatches(pattern: string, pathname: string): boolean {
 
 async function proxy(request: NextRequest, context: RouteContext): Promise<Response> {
   const t = createTranslator(await getLocale());
-  const { path: segments } = await context.params;
+  const { path: rawSegments } = await context.params;
 
-  if (!segments || segments.length === 0 || !PLUGIN_NAMESPACE_PATTERN.test(segments[0] ?? '')) {
+  if (
+    !rawSegments ||
+    rawSegments.length === 0 ||
+    !PLUGIN_NAMESPACE_PATTERN.test(rawSegments[0] ?? '')
+  ) {
+    return NextResponse.json({ error: t('api.invalidParams') }, { status: 400 });
+  }
+
+  // Normalise every segment before any gating decision. The framework already
+  // decoded once; a second decode + rejection of `%`/`.`/`..`/separators closes
+  // the double-encoding traversal (`%252e%252e` → `..`) that let an attacker
+  // reach arbitrary kernel GET routes while skipping the action-target check.
+  const segments = decodeSegmentsSafely(rawSegments);
+  if (!segments) {
     return NextResponse.json({ error: t('api.invalidParams') }, { status: 400 });
   }
 
@@ -128,7 +129,7 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
 
   const headers = new Headers();
   request.headers.forEach((value, key) => {
-    if (!HOP_BY_HOP_REQUEST_HEADERS.has(key.toLowerCase())) headers.set(key, value);
+    if (!STRIPPED_REQUEST_HEADERS.has(key.toLowerCase())) headers.set(key, value);
   });
 
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD';

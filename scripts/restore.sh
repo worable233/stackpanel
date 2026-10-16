@@ -55,45 +55,67 @@ fi
 
 # ---- 校验完整性 -------------------------------------------------------------
 if [[ -n "$OUT_DIR" ]]; then
-  if [[ -n "$MANIFEST_JSON" ]]; then
-    if ! grep -q '"engine"[[:space:]]*:[[:space:]]*"postgresql"' "$MANIFEST_JSON"; then
-      echo "错误：manifest.json 的 engine 非 postgresql，拒绝恢复。" >&2
-      exit 1
-    fi
-    if grep -q '"selective"[[:space:]]*:[[:space:]]*true' "$MANIFEST_JSON"; then
-      warn "归档为选择性导出（部分域），仅这些域的数据会被恢复，其余表保持原样。"
-    fi
-    if grep -q '"secretsIncluded"[[:space:]]*:[[:space:]]*true' "$MANIFEST_JSON"; then
-      warn "归档含加密密钥（AES-256-GCM 密文），需本实例 SETTINGS_ENCRYPTION_KEY 与之相同才能解密。"
-      if [[ -z "${SETTINGS_ENCRYPTION_KEY:-}" ]]; then
-        warn "当前环境未设置 SETTINGS_ENCRYPTION_KEY，相关密文将无法解密。"
-      fi
+  # manifest.json 与 checksums.txt 是归档契约的一部分：目录形态必须两者齐备，
+  # 缺失即拒绝恢复（此前缺失 checksums.txt 会静默跳过校验，E-7）。
+  if [[ -z "$MANIFEST_JSON" ]]; then
+    echo "错误：备份目录缺少 manifest.json，拒绝恢复。" >&2
+    exit 1
+  fi
+  if ! grep -q '"engine"[[:space:]]*:[[:space:]]*"postgresql"' "$MANIFEST_JSON"; then
+    echo "错误：manifest.json 的 engine 非 postgresql，拒绝恢复。" >&2
+    exit 1
+  fi
+  if grep -q '"selective"[[:space:]]*:[[:space:]]*true' "$MANIFEST_JSON"; then
+    warn "归档为选择性导出（部分域），仅这些域的数据会被恢复，其余表保持原样。"
+  fi
+  if grep -q '"secretsIncluded"[[:space:]]*:[[:space:]]*true' "$MANIFEST_JSON"; then
+    warn "归档含加密密钥（AES-256-GCM 密文），需本实例 SETTINGS_ENCRYPTION_KEY 与之相同才能解密。"
+    if [[ -z "${SETTINGS_ENCRYPTION_KEY:-}" ]]; then
+      warn "当前环境未设置 SETTINGS_ENCRYPTION_KEY，相关密文将无法解密。"
     fi
   fi
-  if [[ -f "$OUT_DIR/checksums.txt" ]]; then
-    echo "==> 校验 sha256"
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      [[ "$line" =~ ^([0-9a-f]{64})[[:space:]]+\*?(.+)$ ]] || continue
-      sum="${BASH_REMATCH[1]}"
-      name="${BASH_REMATCH[2]}"
-      target="$OUT_DIR/$name"
-      [[ -f "$target" ]] || { echo "错误：缺少成员 $name" >&2; exit 1; }
-      actual="$(sha256_of "$target")"
-      if [[ "$actual" != "$sum" ]]; then
-        echo "错误：$name 校验失败（期望 ${sum}，实际 ${actual}）" >&2
-        exit 1
-      fi
-    done < "$OUT_DIR/checksums.txt"
+  if [[ ! -f "$OUT_DIR/checksums.txt" ]]; then
+    echo "错误：备份目录缺少 checksums.txt，无法校验完整性，拒绝恢复。" >&2
+    exit 1
+  fi
+  echo "==> 校验 sha256"
+  checksum_seen=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^([0-9a-f]{64})[[:space:]]+\*?(.+)$ ]] || continue
+    sum="${BASH_REMATCH[1]}"
+    name="${BASH_REMATCH[2]}"
+    checksum_seen=1
+    target="$OUT_DIR/$name"
+    [[ -f "$target" ]] || { echo "错误：缺少成员 $name" >&2; exit 1; }
+    actual="$(sha256_of "$target")"
+    if [[ "$actual" != "$sum" ]]; then
+      echo "错误：$name 校验失败（期望 ${sum}，实际 ${actual}）" >&2
+      exit 1
+    fi
+    # manifest 声明的校验和若存在，必须与实际一致（防止 manifest 被单独篡改）。
+    declared_hash="$(grep -o "\"$name\"[[:space:]]*:[[:space:]]*\"[0-9a-f]\{64\}\"" "$MANIFEST_JSON" 2>/dev/null | grep -o '[0-9a-f]\{64\}' | head -1 || true)"
+    if [[ -n "$declared_hash" && "$declared_hash" != "$sum" ]]; then
+      echo "错误：manifest.json 中 $name 的校验和与 checksums.txt 不一致，拒绝恢复。" >&2
+      exit 1
+    fi
+  done < "$OUT_DIR/checksums.txt"
+  if [[ "$checksum_seen" == "0" ]]; then
+    echo "错误：checksums.txt 无有效条目，拒绝恢复。" >&2
+    exit 1
   fi
 fi
 
 # ---- 覆盖前安全快照 ---------------------------------------------------------
+# 安全快照是「恢复失败可回滚」的唯一保障：它失败就**中止**恢复，除非运维显式
+# 声明 SKIP_SAFETY_DUMP=1（知道自己没有回滚退路）。此前失败仅 warn 就继续，
+# 会制造经典的不可回滚场景（E-8）。
 if [[ "${SKIP_SAFETY_DUMP:-0}" != "1" ]]; then
   SNAP_DIR="$BACKUP_DIR/$(date +%Y%m%d-%H%M%S)-prerestore"
   echo "==> 恢复前安全快照 -> $SNAP_DIR"
   mkdir -p "$SNAP_DIR"
   if ! pg_dump --format=custom --no-owner --file="$SNAP_DIR/database.dump" "$DATABASE_URL"; then
-    warn "安全快照失败，继续恢复（可用 SKIP_SAFETY_DUMP=1 静默跳过）。"
+    echo "错误：恢复前安全快照失败，已中止恢复。确认无需回滚可用 SKIP_SAFETY_DUMP=1 跳过。" >&2
+    exit 1
   fi
 fi
 

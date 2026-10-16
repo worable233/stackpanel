@@ -97,8 +97,11 @@ import type {
   UpstreamSourceInfo,
   UpstreamSourceListResponse,
   WalletAdjustResponse,
+  AuthConfigResponse,
+  SendRegisterCodeResponse,
 } from './types.js';
 import type { UpstreamProductItem } from './upstream.js';
+import type { ProductConfigField } from './fulfillment.js';
 import type { NotificationView } from './notifications.js';
 import type {
   NotificationListResponse,
@@ -117,7 +120,27 @@ export const userSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   lastLoginAt: z.string().nullable(),
+  // Tolerance for responses minted before this field existed; the API always
+  // sends it now, but the BFF must not fail parsing an older replica's reply.
+  emailVerifiedAt: z.string().nullable().default(null),
 }) satisfies z.ZodType<User>;
+
+export const authConfigResponseSchema = z.object({
+  emailVerificationRequired: z.boolean(),
+  captcha: z.object({
+    mode: z.enum(['off', 'optional', 'required']),
+    configured: z.boolean(),
+    providerIds: z.array(z.string()),
+    clientConfig: z.record(z.string(), z.unknown()).nullable(),
+  }),
+}) satisfies z.ZodType<AuthConfigResponse>;
+
+export const sendRegisterCodeResponseSchema = z.object({
+  sent: z.boolean(),
+  email: z.string(),
+  expiresAt: z.string(),
+  expiresInSeconds: z.number(),
+}) satisfies z.ZodType<SendRegisterCodeResponse>;
 
 export const healthSchema = z.object({
   status: z.literal('ok'),
@@ -174,6 +197,9 @@ export const adminUserSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   lastLoginAt: z.string().nullable(),
+  balance: z.number().int().optional(),
+  balanceCurrency: z.string().optional(),
+  serviceCount: z.number().int().nonnegative().nullable().optional(),
 }) satisfies z.ZodType<AdminUser>;
 
 export const userListResponseSchema = z.object({
@@ -210,6 +236,7 @@ export const adminUserDetailResponseSchema = z.object({
       createdAt: z.string(),
     }),
   ),
+  ordersPagination: z.object({ page: z.number().int(), pageSize: z.number().int(), total: z.number().int() }).optional(),
   ledger: z.array(
     z.object({
       id: z.string(),
@@ -268,22 +295,50 @@ export const adminProductsResponseSchema = z.object({
   products: z.array(adminProductItemSchema),
 }) satisfies z.ZodType<AdminProductsResponse>;
 
+const productConfigVisibilitySchema = z.object({
+  field: z.string(),
+  equals: z.unknown().optional(),
+  in: z.array(z.unknown()).optional(),
+});
+
+/** Recursive: a config field may nest children (group / repeat). */
+const productConfigFieldSchema: z.ZodType<ProductConfigField> = z.lazy(() =>
+  z.object({
+    name: z.string(),
+    label: z.string(),
+    type: z.enum([
+      'text',
+      'textarea',
+      'number',
+      'select',
+      'multiselect',
+      'boolean',
+      'tags',
+      'json',
+      'group',
+      'repeat',
+    ]),
+    required: z.boolean().optional(),
+    placeholder: z.string().optional(),
+    help: z.string().optional(),
+    defaultValue: z.unknown().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    maxLength: z.number().optional(),
+    options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+    visibleWhen: productConfigVisibilitySchema.optional(),
+    group: z.string().optional(),
+    columns: z.union([z.literal(1), z.literal(2)]).optional(),
+    fields: z.array(productConfigFieldSchema).optional(),
+    itemLabel: z.string().optional(),
+  }),
+);
+
 export const storeProductTypeInfoSchema = z.object({
   id: z.string(),
   label: z.string(),
   pluginId: z.string(),
-  configFields: z.array(
-    z.object({
-      name: z.string(),
-      label: z.string(),
-      type: z.enum(['text', 'textarea', 'number', 'select', 'boolean']),
-      required: z.boolean().optional(),
-      placeholder: z.string().optional(),
-      min: z.number().optional(),
-      max: z.number().optional(),
-      options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
-    }),
-  ),
+  configFields: z.array(productConfigFieldSchema),
 }) satisfies z.ZodType<StoreProductTypeInfo>;
 
 export const storeProductTypeListResponseSchema = z.object({
@@ -574,6 +629,8 @@ export const frontendPageSchema = z.object({
 
 export const adminMenuSchema = z.object({
   label: z.string().min(1),
+  order: z.number().finite().optional(),
+  activePaths: z.array(z.string().startsWith('/')).optional(),
   group: z.string().optional(),
 });
 
@@ -618,6 +675,8 @@ export const adminActionSchema = z.object({
 
 export const accountMenuSchema = z.object({
   label: z.string().min(1),
+  order: z.number().finite().optional(),
+  activePaths: z.array(z.string().startsWith('/')).optional(),
   group: z.string().optional(),
 });
 
@@ -894,7 +953,9 @@ export const permissionGroupInfoSchema = z.object({
 }) satisfies z.ZodType<PermissionGroupInfo>;
 
 export const permissionGroupViewSchema = permissionGroupInfoSchema.extend({
-  permissions: z.array(z.object({ key: z.string(), name: z.string(), description: z.string().nullable() })),
+  permissions: z.array(
+    z.object({ key: z.string(), name: z.string(), description: z.string().nullable() }),
+  ),
   memberCount: z.number(),
   structural: z.boolean(),
 });

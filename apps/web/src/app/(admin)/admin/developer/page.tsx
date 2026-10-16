@@ -1,3 +1,4 @@
+import { SectionTitle } from '@stackpanel/ui';
 import Link from 'next/link';
 import type { DeveloperOverviewResponse, ResellerListResponse } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
@@ -44,7 +45,6 @@ export default async function AdminDeveloperPage({
     <main className="w-full space-y-6">
       <PageHeader
         title={t('admin.developer.title')}
-        description={t('admin.developer.description')}
         actions={<CreateResellerDialog />}
       />
 
@@ -117,7 +117,7 @@ export default async function AdminDeveloperPage({
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{t('admin.developer.overview.webhooks')}</CardTitle>
+            <SectionTitle as="h3">{t('admin.developer.overview.webhooks')}</SectionTitle>
             <CardDescription>{t('admin.developer.overview.webhooksDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -128,7 +128,7 @@ export default async function AdminDeveloperPage({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>{t('admin.developer.overview.calls')}</CardTitle>
+            <SectionTitle as="h3">{t('admin.developer.overview.calls')}</SectionTitle>
             <CardDescription>{t('admin.developer.overview.callsDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -140,9 +140,9 @@ export default async function AdminDeveloperPage({
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
+        <SectionTitle>
           {t('admin.developer.overview.channels')}
-        </h2>
+        </SectionTitle>
         {resellers ? (
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full min-w-[840px] text-sm">

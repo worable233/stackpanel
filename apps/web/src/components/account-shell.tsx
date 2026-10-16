@@ -29,6 +29,8 @@ const NAVIGATION_ICONS: Record<string, LucideIcon> = {
   '/account/services': Server,
   '/account/orders': Receipt,
   '/account/balance': Wallet,
+  '/account/balance/records': Receipt,
+  '/account/billing': Receipt,
   '/account/gateway': Gauge,
   '/account/gateway/pricing': Tags,
   '/account/gateway/keys': KeyRound,
@@ -56,7 +58,7 @@ export function AccountShell({ user, items, children, brandLogoUrl }: AccountShe
       navigationIcons={NAVIGATION_ICONS}
       defaultIcon={FileText}
       groupIcons={GROUP_ICONS}
-      contentMaxWidth="max-w-6xl"
+      contentMaxWidth="max-w-[1440px]"
       backLink={{ label: '', href: '/', messageKey: 'nav.backToSite' }}
       brandLogoUrl={brandLogoUrl}
     >

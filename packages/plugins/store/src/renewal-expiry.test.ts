@@ -7,6 +7,7 @@ import type {
   PluginContext,
 } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
+import { ExtensionVersionConflict } from '@stackpanel/sdk';
 import {
   extendExpiry,
   monthsForCycle,
@@ -14,11 +15,29 @@ import {
   reverseRenewalOrder,
   hasRenewalLine,
 } from './renewal';
-import { runExpirySweep } from './expiry';
+import { runExpirySweep, EXPIRY_MAX_ATTEMPTS } from './expiry';
+import { patchServiceInstance } from './repository';
+
+const INDEX_FIELDS: Record<string, Set<string>> = {
+  'store/order': new Set(['userId', 'state']),
+  'store/service-instance': new Set([
+    'userId',
+    'orderId',
+    'productId',
+    'state',
+    'providerId',
+    'providerServiceId',
+    'expiresAtMs',
+    'expiryStage',
+  ]),
+};
 
 /**
  * 内存版 ExtensionClient（与 fulfillment.test.ts 同构），覆盖 renewal/expiry 用到的
  * get/list/listAll/create/update/updateWhere/delete。
+ *
+ * `updateWhere` 与 `update` 均对齐真实内核语义：patch 字段必须在模型 `indexes` 内、
+ * `update` 支持 `expectedVersion` 乐观锁——这样此类回归会在单测暴露，而非只在真实库。
  */
 function createFakeExtensions() {
   const tables = new Map<string, Map<string, Stored>>();
@@ -59,8 +78,14 @@ function createFakeExtensions() {
   const applyPatch = (
     spec: Record<string, unknown>,
     patch: Record<string, { set?: unknown; inc?: number; dec?: number }>,
+    kind: string,
   ) => {
+    // 与内核 `updateWhere` 对齐：patch 字段必须在模型 indexes 内（见 fulfillment.test.ts 说明）。
+    const allowed = INDEX_FIELDS[kind];
     for (const [key, op] of Object.entries(patch)) {
+      if (allowed && !allowed.has(key)) {
+        throw new Error(`不可更新的字段：${key}`);
+      }
       if ('set' in op) spec[key] = op.set;
       else if ('inc' in op) spec[key] = ((spec[key] as number) ?? 0) + (op.inc as number);
       else if ('dec' in op) spec[key] = ((spec[key] as number) ?? 0) - (op.dec as number);
@@ -107,9 +132,17 @@ function createFakeExtensions() {
       table(model.kind).set(name, row);
       return row as unknown as ExtensionInstance;
     },
-    async update(model: CustomModelDefinition, name: string, spec: Record<string, unknown>) {
+    async update(
+      model: CustomModelDefinition,
+      name: string,
+      spec: Record<string, unknown>,
+      opts?: { expectedVersion?: number },
+    ) {
       const row = table(model.kind).get(name);
       if (!row) throw new Error(`not found: ${name}`);
+      if (opts?.expectedVersion !== undefined && opts.expectedVersion !== row.version) {
+        throw new ExtensionVersionConflict(name);
+      }
       row.spec = { ...spec };
       row.version += 1;
       row.updatedAt = new Date();
@@ -122,7 +155,7 @@ function createFakeExtensions() {
     ) {
       const rows = [...table(model.kind).values()].filter((row) => matches(row, where));
       for (const row of rows) {
-        applyPatch(row.spec, patch);
+        applyPatch(row.spec, patch, model.kind);
         row.version += 1;
         row.updatedAt = new Date();
       }
@@ -173,9 +206,12 @@ function makeCtx(
       waterfall: <T>(_topic: string, value: T, _terminal: (value: T) => T): T => value,
     },
     extensions: fake.client,
-    tx: (async () => {
-      throw new Error('no tx in this test');
-    }) as never,
+    tx: (async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        extensions: fake.client,
+        wallet: { debit: async () => ({}), credit: async () => ({}) },
+        payments: { createRecord: async () => ({}) },
+      })) as never,
     secrets,
     payments: {} as never,
     wallet: {} as never,
@@ -489,6 +525,63 @@ describe('renewal', () => {
     expect(twice).toBe(once);
     expect(new Date(twice).toISOString().slice(0, 7)).toBe('2099-03');
   });
+
+  it('F-3: renewal clears the expiry failure counters (no residue from a prior lapse)', async () => {
+    const fake = createFakeExtensions();
+    const expiry = new Date('2099-02-01T00:00:00Z');
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'prod-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        providerServiceId: 'svc-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 9900,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'reminded',
+        expiryAttempts: 4, // 上一次到期失败累积的计数
+        expiryLastError: 'upstream down',
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-reset',
+    );
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: {
+          items: [
+            { productId: 'prod-1', quantity: 1, renewalServiceId: 'svc-reset', renewMonths: 1 },
+          ],
+        },
+        total: 9900,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 9900,
+        fxRate: null,
+      },
+      'order-renew-reset',
+    );
+    bindContext(makeCtx(fake));
+
+    await applyRenewalOrder('order-renew-reset');
+
+    const svc = fake.all(SERVICE)[0]!;
+    expect(svc.spec.expiryStage).toBeNull();
+    expect(svc.spec.expiryAttempts).toBe(0);
+    expect(svc.spec.expiryLastError).toBeNull();
+  });
 });
 
 describe('expiry sweep', () => {
@@ -701,5 +794,430 @@ describe('expiry sweep', () => {
     await runExpirySweep(now);
     expect(fake.all(SERVICE)[0]!.spec.state).toBe('ACTIVE');
     expect(notifications).toHaveLength(0);
+  });
+
+  it('T1: keeps state ACTIVE and records the failure when suspend provider fails', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000); // > grace
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'reminded',
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-fail-suspend',
+    );
+    let suspendCalls = 0;
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      suspend: async () => {
+        suspendCalls += 1;
+        throw new Error('upstream down');
+      },
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await runExpirySweep(now);
+
+    const svc = fake.all(SERVICE)[0]!;
+    expect(svc.spec.state).toBe('ACTIVE');
+    expect(svc.spec.expiryStage).toBe('suspending');
+    expect(svc.spec.expiryAttempts).toBe(1);
+    expect(svc.spec.expiryLastError).toBe('upstream down');
+    expect(suspendCalls).toBe(1);
+    expect(notifications.filter((n) => n.type === 'service.suspended')).toHaveLength(0);
+  });
+
+  it('T2: retries suspend and reaches the terminal state once the provider succeeds', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'reminded',
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-retry-suspend',
+    );
+    let fail = true;
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      suspend: async () => {
+        if (fail) throw new Error('upstream down');
+      },
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await runExpirySweep(now); // first attempt fails
+    fail = false;
+    await runExpirySweep(now); // retry succeeds
+
+    const svc = fake.all(SERVICE)[0]!;
+    expect(svc.spec.state).toBe('SUSPENDED');
+    expect(svc.spec.expiryStage).toBe('suspended');
+    expect(svc.spec.expiryAttempts).toBe(0);
+    expect(svc.spec.expiryLastError).toBeNull();
+    expect(notifications.filter((n) => n.type === 'service.suspended')).toHaveLength(1);
+  });
+
+  it('T3: stops auto-retrying once attempts reach the cap (provider not called)', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'suspending',
+        expiryAttempts: EXPIRY_MAX_ATTEMPTS,
+        expiryLastError: 'upstream down',
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-capped',
+    );
+    let suspendCalls = 0;
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      suspend: async () => {
+        suspendCalls += 1;
+      },
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await runExpirySweep(now);
+
+    const svc = fake.all(SERVICE)[0]!;
+    expect(suspendCalls).toBe(0);
+    expect(svc.spec.state).toBe('ACTIVE');
+    expect(svc.spec.expiryStage).toBe('suspending');
+    expect(notifications).toHaveLength(0);
+  });
+
+  it('T4: keeps state SUSPENDED and records the failure when terminate provider fails', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000); // > grace + retention
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-1',
+        state: 'SUSPENDED',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'suspended',
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-fail-terminate',
+    );
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      terminate: async () => {
+        throw new Error('upstream down');
+      },
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await runExpirySweep(now);
+
+    const svc = fake.all(SERVICE)[0]!;
+    expect(svc.spec.state).toBe('SUSPENDED');
+    expect(svc.spec.expiryStage).toBe('terminating');
+    expect(svc.spec.expiryAttempts).toBe(1);
+    expect(notifications.filter((n) => n.type === 'service.terminated')).toHaveLength(0);
+  });
+
+  it('T5: retries terminate and reaches TERMINATED once the provider succeeds', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000);
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-1',
+        state: 'SUSPENDED',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'suspended',
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-retry-terminate',
+    );
+    let fail = true;
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      terminate: async () => {
+        if (fail) throw new Error('upstream down');
+      },
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await runExpirySweep(now); // fails
+    fail = false;
+    await runExpirySweep(now); // succeeds
+
+    const svc = fake.all(SERVICE)[0]!;
+    expect(svc.spec.state).toBe('TERMINATED');
+    expect(svc.spec.expiryStage).toBe('terminated');
+    expect(svc.spec.terminatedAt).toBeTruthy();
+    expect(svc.spec.expiryAttempts).toBe(0);
+    expect(notifications.filter((n) => n.type === 'service.terminated')).toHaveLength(1);
+  });
+
+  it('T6: reminder batch skips already-reminded services so later ones get reminded', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // inside window
+    // 50 already-reminded with the earliest expiry, plus 1 un-reminded later.
+    for (let i = 0; i < 50; i += 1) {
+      const e = new Date(expiry.getTime() + i);
+      fake.seed(
+        SERVICE,
+        {
+          userId: 'user-1',
+          orderId: null,
+          productId: 'p',
+          productName: '云服务器',
+          fulfillmentType: 'upstream_service',
+          providerId: null,
+          providerServiceId: null,
+          state: 'ACTIVE',
+          credentialsRef: null,
+          runtime: null,
+          amount: 100,
+          currency: 'CNY',
+          expiresAt: e.toISOString(),
+          expiresAtMs: e.getTime(),
+          expiryStage: 'reminded',
+          expiryAttempts: 0,
+          expiryLastError: null,
+          provisionedAt: null,
+          terminatedAt: null,
+        },
+        `svc-reminded-${i}`,
+      );
+    }
+    const lastExpiry = new Date(expiry.getTime() + 100_000);
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        providerServiceId: null,
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: lastExpiry.toISOString(),
+        expiresAtMs: lastExpiry.getTime(),
+        expiryStage: null,
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-late',
+    );
+    bindContext(makeCtx(fake));
+
+    await runExpirySweep(now);
+
+    const late = fake
+      .all(SERVICE)
+      .find((row) => row.name === 'svc-late')!;
+    expect(late.spec.expiryStage).toBe('reminded');
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]!.data).toMatchObject({ serviceId: 'svc-late' });
+  });
+
+  it('T7: is idempotent — repeated sweeps notify and reach the terminal state only once', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'reminded',
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-idem-sweep',
+    );
+    let suspendCalls = 0;
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      suspend: async () => {
+        suspendCalls += 1;
+      },
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await runExpirySweep(now);
+    await runExpirySweep(now);
+
+    const svc = fake.all(SERVICE)[0]!;
+    expect(svc.spec.state).toBe('SUSPENDED');
+    expect(svc.spec.expiryStage).toBe('suspended');
+    expect(suspendCalls).toBe(1);
+    expect(notifications.filter((n) => n.type === 'service.suspended')).toHaveLength(1);
+  });
+
+  it('F-2: patchServiceInstance abandons the write when the row changed since it was read', async () => {
+    // 回归：整行读改写必须带乐观锁。模拟「读到之后被并发改动」——直接用过期版本号写入。
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        providerServiceId: null,
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'suspending',
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-lock',
+    );
+    bindContext(makeCtx(fake));
+
+    // 模拟「读到之后、写入之前」被并发改动：get 返回陈旧版本（1），而存储行已是版本 2。
+    // patchServiceInstance 以读到的版本做乐观锁，写入应冲突 → 返回 false 且不落库。
+    const stored = fake.all(SERVICE)[0]!;
+    stored.version = 2;
+    const originalGet = fake.client.get.bind(fake.client);
+    fake.client.get = (async (model: CustomModelDefinition, name: string) => {
+      const row = await originalGet(model, name);
+      return row && name === 'svc-lock' ? { ...row, version: 1 } : row;
+    }) as typeof fake.client.get;
+
+    const ok = await patchServiceInstance('svc-lock', 'suspending', {
+      state: { set: 'SUSPENDED' },
+      expiryStage: { set: 'suspended' },
+    });
+    expect(ok).toBe(false);
+    expect(fake.all(SERVICE)[0]!.spec.state).toBe('ACTIVE');
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('suspending');
   });
 });

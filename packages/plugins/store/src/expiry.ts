@@ -5,6 +5,7 @@ import {
   getProduct,
   listDueExpiryReminders,
   listExpiringServices,
+  markExpiryFailure,
   patchServiceInstance,
   type ServiceInstanceRecord,
 } from './repository';
@@ -17,8 +18,10 @@ import { providerForProduct } from './fulfillment';
  * 资源不可用但数据保留）→ 终止（释放）。本模块以周期任务实现同一闭环，全程
  * 走交付物的到期阶段（`expiryStage`）保证每个阶段对同一服务只动作一次。
  *
- * 阶段：null → `reminded` → `suspended` → `terminated`。服务一旦续费，阶段被
- * 重置为 null（见 renewal.ts），新的到期时间自然会重新走一遍。
+ * 阶段：null → `reminded` → `suspending` → `suspended` → `terminating` → `terminated`。
+ * `suspending`/`terminating` 表示已认领但**尚未确认上游**：上游调用失败时停留在此，
+ * 下一轮 sweep 可重试；只有上游成功才推进到 `suspended`/`terminated` 终态。服务一旦
+ * 续费，阶段被重置为 null（见 renewal.ts），新的到期时间自然会重新走一遍。
  */
 
 /** 到期前提醒窗口（天）。 */
@@ -31,6 +34,8 @@ export const RETENTION_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
 export const EXPIRY_SWEEP_BATCH = 50;
 /** 到期扫描周期（毫秒）：每小时一次。 */
 export const EXPIRY_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+/** 上游到期动作最大自动重试次数（超过后停止自动重试并告警）。 */
+export const EXPIRY_MAX_ATTEMPTS = 5;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -84,22 +89,38 @@ async function processExpired(nowMs: number): Promise<void> {
 }
 
 async function suspendExpired(service: ServiceInstanceRecord): Promise<void> {
-  // 原子推进阶段：null / 'reminded' → 'suspended'，确保只执行一次。
-  const from = service.expiryStage === 'reminded' ? 'reminded' : null;
-  const claimed = from
-    ? await claimExpiryStage(service.id, from, 'suspended')
-    : await claimExpiryStage(service.id, null, 'suspended');
+  // 认领：null | 'reminded' → 'suspending'（处理中）。已是 'suspending' 时走重试分支。
+  const claimed =
+    service.expiryStage === 'suspending'
+      ? true
+      : await claimExpiryStage(service.id, service.expiryStage === 'reminded' ? 'reminded' : null, 'suspending');
   if (!claimed) return;
 
-  await callProviderHook(service, 'suspend').catch((error) => {
+  // 已达重试上限：停止自动重试，仅告警（不落成功态）。
+  if ((service.expiryAttempts ?? 0) >= EXPIRY_MAX_ATTEMPTS) {
+    logger().error(
+      `store: expiry suspend gave up for ${service.id} after ${service.expiryAttempts} attempts: ${service.expiryLastError ?? '未知错误'}`,
+    );
+    return;
+  }
+
+  // 外部副作用：失败则记录、不落终态、不发通知，停在 suspending 待下轮重试。
+  try {
+    await callProviderHook(service, 'suspend');
+  } catch (error) {
+    await markExpiryFailure(service.id, 'suspending', error);
     logger().warn(
       `store: expiry suspend provider hook failed for ${service.id}: ${messageOf(error)}`,
     );
-  });
-  // 只按条件 patch 状态，不用整行快照覆盖（避免覆盖并发写入的 runtime 等字段）。
-  const patched = await patchServiceInstance(service.id, 'suspended', {
+    return;
+  }
+
+  // 上游确认成功：落终态 + 清重试状态（条件匹配处理中阶段，防并发覆盖）。
+  const patched = await patchServiceInstance(service.id, 'suspending', {
     state: { set: 'SUSPENDED' },
     expiryStage: { set: 'suspended' },
+    expiryAttempts: { set: 0 },
+    expiryLastError: { set: null },
   });
   if (!patched) return;
   await notify(service, {
@@ -113,17 +134,37 @@ async function suspendExpired(service: ServiceInstanceRecord): Promise<void> {
 }
 
 async function terminateExpired(service: ServiceInstanceRecord): Promise<void> {
-  const claimed = await claimExpiryStage(service.id, 'suspended', 'terminated');
+  // 认领：'suspended' → 'terminating'（处理中）。已是 'terminating' 时走重试分支。
+  const claimed =
+    service.expiryStage === 'terminating'
+      ? true
+      : await claimExpiryStage(service.id, 'suspended', 'terminating');
   if (!claimed) return;
 
-  await callProviderHook(service, 'terminate').catch((error) => {
+  // 已达重试上限：停止自动重试，仅告警（不落成功态）。
+  if ((service.expiryAttempts ?? 0) >= EXPIRY_MAX_ATTEMPTS) {
+    logger().error(
+      `store: expiry terminate gave up for ${service.id} after ${service.expiryAttempts} attempts: ${service.expiryLastError ?? '未知错误'}`,
+    );
+    return;
+  }
+
+  // 外部副作用：失败则记录、不落终态、不发通知，停在 terminating 待下轮重试。
+  try {
+    await callProviderHook(service, 'terminate');
+  } catch (error) {
+    await markExpiryFailure(service.id, 'terminating', error);
     logger().warn(
       `store: expiry terminate provider hook failed for ${service.id}: ${messageOf(error)}`,
     );
-  });
-  const patched = await patchServiceInstance(service.id, 'terminated', {
+    return;
+  }
+
+  const patched = await patchServiceInstance(service.id, 'terminating', {
     state: { set: 'TERMINATED' },
     expiryStage: { set: 'terminated' },
+    expiryAttempts: { set: 0 },
+    expiryLastError: { set: null },
     terminatedAt: { set: new Date().toISOString() },
   });
   if (!patched) return;

@@ -1,6 +1,6 @@
 /**
  * MetricCard - 数据指标卡片
- * 
+ *
  * 用于展示关键数据指标，带可选的趋势指示器
  */
 
@@ -41,15 +41,15 @@ export function MetricCard({
   return (
     <div
       className={cn(
-        'group rounded-lg border border-neutral-200 bg-white p-6 transition-all duration-300',
-        'hover:shadow-lg dark:border-neutral-800 dark:bg-neutral-950',
+        'group rounded-xl border border-border bg-card p-6 text-card-foreground transition duration-300 motion-reduce:transition-none',
+        'hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5',
         className,
       )}
     >
       {/* 顶部：图标和趋势 */}
       <div className="mb-3 flex items-center justify-between">
         {Icon && (
-          <div className="rounded-lg bg-neutral-100 p-2 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+          <div className="rounded-lg bg-primary/10 p-2 text-primary">
             <Icon className="size-5" />
           </div>
         )}

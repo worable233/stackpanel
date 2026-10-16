@@ -41,17 +41,17 @@ BENCH_LOG_LEVEL=info BENCH_VERBOSE=1 node scripts/bench-gateway.mjs   # 诊断
 判定口径（见 ADR-0022 D7）：**看「附加延迟」而不是总耗时** —— 总耗时被 LLM 上游的
 固有耗时淹没。同机（N=200、并发 16、错误率 0/400）基线：
 
-| 指标 | isolated（生产形态） | trusted（开发形态，对照） |
-| --- | --- | --- |
-| 附加延迟（非流式）p50 / p95 | 0 ms / 84 ms | 0 ms / 10 ms |
-| 首 token（流式）p50 / p95 | 109 ms / 215 ms | 173 ms / 951 ms |
-| 并发流 峰值 / 完成 / 超限 | 16 / 200 / 0 | 16 / 200 / 0 |
-| PG 池 等待 / max | 0 ms / 10 | 0 ms / 10 |
-| RSS 峰值 / 末态 | 293 MB / 242 MB | 289 MB / 146 MB |
+| 指标 | isolated（生产形态） |
+| --- | --- |
+| 附加延迟（非流式）p50 / p95 | 0 ms / 12 ms |
+| 总耗时（非流式）p50 / p95 | 58 ms / 118 ms |
+| 首 token（流式）p50 / p95 | 64 ms / 74 ms |
+| 并发流 峰值 / 完成 / 超限 | 16 / 200 / 0 |
+| PG 池 等待 / max | 0 ms / 10 |
+| RSS 峰值 / 末态 | 402 MB / 335 MB |
 
-isolated 下附加延迟 p95 约为 trusted 的 8 倍，这是跨进程 IPC 加每请求多次
-DB/Redis 往返的真实成本。**改动后的验收线：附加延迟 p95 不得高于本表基线**；
-P1（背压）之后应额外确认慢客户端不再造成无界排队。
+**改动后的验收线：附加延迟 p95 不得高于本表基线**（当前基线已含 hold 预授权状态机
+`src/billing.ts`，即 ADR-0022 P16）。P1（背压）之后再确认慢客户端不再造成无界排队。
 
 容量上限口径：`RPC_MAX_IN_FLIGHT=64` 与 `RPC_MAX_RAW_STREAMS=256` 是**在途上限**，
 不得直接换算成 QPS。压测若出现 `Plugin worker exited; plugin quarantined`，见上一节。
@@ -72,17 +72,20 @@ node scripts/bench-gateway.mjs --saturate=2 --sweep=1,2,4,8       # 账号满载
 
 | 并发 | QPS | 附加延迟 p95 | 总耗时 p95 | RSS |
 | --- | --- | --- | --- | --- |
-| 1 | ~47 | 0 ms | 31 ms | 341 MB |
-| 4 | ~113 | 20 ms | 40 ms | 341 MB |
-| 8 | ~108 | 33 ms | 97 ms | 344 MB |
-| 16 | ~51 | 197 ms | 418 ms | 349 MB |
-| 32 | ~73 | 212 ms | 612 ms | 349 MB |
+| 1 | ~75 | 0 ms | 15 ms | 405 MB |
+| 16 | ~296 | 22 ms | 68 ms | 405 MB |
+| 64 | ~241 | 110 ms | 369 ms | 406 MB |
+| 256 | ~297 | 446 ms | 702 ms | 477 MB |
 
-**读法：吞吐在并发 4–8 附近触顶（约 110 QPS），再往上只增加延迟、不增加吞吐** ——
-mock 上游把每请求压到几十毫秒，这时限制来自本机的单核 CPU 与 IPC 往返，而不是
-上游。真实 LLM 上游是 1–60 秒量级，同一档位的 QPS 会低得多，但**形状不变**：先
-线性增长，然后在单进程 CPU 饱和处拐平。因此「能撑多少」必须实测，不能从
+**读法：mock 上游把每请求压到几十毫秒，这时限制来自本机的单核 CPU 与 IPC 往返，
+而不是上游。** 真实 LLM 上游是 1–60 秒量级，同一档位的 QPS 会低得多，但**形状不变**：
+先线性增长，然后在单进程 CPU 饱和处拐平。因此「能撑多少」必须实测，不能从
 `RPC_MAX_IN_FLIGHT=64` 换算。
+
+> 并发 256 档请注意「传输」列：负载生成器自身会先耗尽连接预算（`ECONNRESET`），
+> 这类失败记为 `status=0` 并单列，不计入网关错误。它们说明**压测客户端**在极高并发
+> 下先成瓶颈，而不是网关（网关侧 0 个非预期错误、0 个拒绝）。要测更高档位需要
+> 多台压测机或独立的连接池。
 
 `--slow-read-ms` 用来确认 P1 的背压语义：客户端故意拖延读取时，内核应当让生产端
 `await drain()` 停下来，而不是把数据堆在内存里（`RAW_MAX_QUEUE_BYTES=4 MiB` 是硬顶，
@@ -93,8 +96,43 @@ mock 上游把每请求压到几十毫秒，这时限制来自本机的单核 CP
 `--saturate=N` 把上游账号的 `maxConcurrency` 压到 N，用来确认**超限被明确拒绝而不是
 排队**：账号池满载时 `pickAccount` 返回 null → 502 `no_upstream`，每 key 在途超限则
 429 `concurrency_limited`。该模式**不套用吞吐/延迟预算线**（排队与拒绝本来就会拉长
-p95），只读「拒绝」列是否有值。同机实测（`--saturate=2`）：并发 4/8 档分别出现
-12/26 次拒绝、0 个非预期错误。
+p95），只读「拒绝」列是否有值。同机实测（`--saturate=2`，N=120、并发 64）：
+非流式 116 条拒绝（全部 502）、流式 118 条（全部 502），**0 个非预期错误** —— 说明
+满载时是明确拒绝而非无界排队。
+
+## llm-gateway 计费：预授权与补偿
+
+计费是「预留 → 结算 → 补偿」状态机（`src/billing.ts`），台账物理表
+`ext_llm-gateway_billing-entry`。一次请求的生命周期：
+
+1. 开始按上限 `wallet.hold` 冻结（冻结额进钱包 `held`，`balance` 是可用余额）。
+2. 上游返回后按真实 usage `wallet.settleHold`，差额退回；usage 缺失时估算并标
+   `estimated`。
+3. 结算失败**绝不静默吞**：台账转 `COMPENSATING` 并设下一次重试时间，由
+   `llm-gateway.compensation` 任务（每 30s）按 `(referenceType, referenceId)` 幂等重试。
+4. 补偿重试 `MAX_COMPENSATION_ATTEMPTS = 8` 次仍失败 → 台账 `FAILED`（唯一允许的
+   明确欠费态），并 `logger.error` 提示运维介入。
+
+台账状态：`RESERVED` / `SETTLED` / `RELEASED` / `COMPENSATING` / `COMPENSATED` / `FAILED`。
+排查：
+
+```bash
+# 补偿队列（待处理 / 失败）
+curl -H "Authorization: Bearer <admin>" localhost:3001/llm-gateway/admin/compensations
+# 立即跑一轮补偿
+curl -X POST -H "Authorization: Bearer <admin>" localhost:3001/llm-gateway/admin/compensations/run
+# 后台任务状态
+curl -H "Authorization: Bearer <admin>" localhost:3001/llm-gateway/admin/tasks
+# 指标（分钟桶）
+curl -H "Authorization: Bearer <admin>" localhost:3001/llm-gateway/admin/metrics
+```
+
+- 出现 `billing.settle_failed` 指标上抬：先查钱包与 DB 是否可达，再查
+  `admin/compensations` 是否有堆积。补偿是幂等的，重放不会二次扣款。
+- 钱包 hold 有默认 15 分钟 TTL；即使进程在 hold 与结算之间崩溃，内核的过期清扫会把
+  冻结金额归还用户（`sweepExpiredHolds`），不会永久冻结。
+- **永远不要手改** `ext_llm-gateway_billing-entry` 的状态来「修复」欠费；应通过给用户
+  补钱包余额后让补偿成功，或人工核销并记录。
 
 ## Production release gates
 

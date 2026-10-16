@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "apiVersion": "v1",
-  "hash": "317ece3ab20ac9749aeb435c59eb2bac19f20d7d9dfa5a91350ee2cd201a221f",
+  "hash": "3f42a544445f01e7986de0eda63384696f30796353aa730240efd38cc7dfc7e5",
   "operations": {
     "GET /api/v1/agent/approvals": {
       "security": [],
@@ -18,6 +18,26 @@
       "requiredParameters": [
         "header:Idempotency-Key"
       ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/agent/models": {
+      "security": [],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/agent/profiles/:tokenId": {
+      "security": [],
+      "requiredParameters": [],
       "hasRequestBody": false,
       "responseCodes": [
         "200",
@@ -74,6 +94,16 @@
       "requiredParameters": [
         "header:Idempotency-Key"
       ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/agent/status": {
+      "security": [],
+      "requiredParameters": [],
       "hasRequestBody": false,
       "responseCodes": [
         "200",

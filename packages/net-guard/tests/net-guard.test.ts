@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isLinkLocalIpAddress,
+  isMetadataHostname,
   isPublicHttpUrl,
   isUnsafeHostname,
   isUnsafeIpAddress,
@@ -125,6 +127,52 @@ describe('resolvePublicAddresses', () => {
       'db.internal',
     ]) {
       expect(await resolvePublicAddresses(host), host).toBeNull();
+    }
+  });
+});
+
+describe('isLinkLocalIpAddress', () => {
+  it('flags link-local (metadata) addresses only', () => {
+    for (const address of ['169.254.169.254', '169.254.0.1', 'fe80::1', '::ffff:169.254.169.254']) {
+      expect(isLinkLocalIpAddress(address), address).toBe(true);
+    }
+  });
+
+  it('allows private/loopback and public addresses', () => {
+    // Self-hosted MinIO commonly lives on a private network or the same host,
+    // so the storage endpoint guard must NOT block these.
+    for (const address of ['10.0.0.5', '192.168.1.1', '127.0.0.1', '172.16.0.1', '93.184.216.34']) {
+      expect(isLinkLocalIpAddress(address), address).toBe(false);
+    }
+  });
+
+  it('treats non-IP input as not link-local', () => {
+    expect(isLinkLocalIpAddress('minio.example.com')).toBe(false);
+  });
+});
+
+describe('isMetadataHostname', () => {
+  it('flags known metadata hostnames and link-local literals', () => {
+    for (const host of [
+      'metadata.google.internal',
+      'metadata',
+      '169.254.169.254',
+      'instance-data',
+      '[fe80::1]',
+    ]) {
+      expect(isMetadataHostname(host), host).toBe(true);
+    }
+  });
+
+  it('allows ordinary hosts, private and loopback hosts', () => {
+    for (const host of [
+      'minio.example.com',
+      '127.0.0.1',
+      '10.0.0.5',
+      'localhost',
+      'bucket.s3.amazonaws.com',
+    ]) {
+      expect(isMetadataHostname(host), host).toBe(false);
     }
   });
 });

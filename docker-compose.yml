@@ -45,7 +45,7 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     command: ['server', '/data', '--console-address', ':9001']
     environment:
@@ -65,7 +65,7 @@ services:
   # One-shot: create the object-storage bucket once MinIO is healthy. The API
   # also ensures the bucket on boot; this makes it ready for first-run seeding.
   minio-init:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: 'no'
     depends_on:
       minio:

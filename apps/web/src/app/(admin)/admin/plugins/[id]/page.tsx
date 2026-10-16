@@ -1,3 +1,4 @@
+import { SectionTitle } from '@stackpanel/ui';
 import Link from 'next/link';
 import type { AdminPlugin, PluginDependencyStatus, PluginConsumesStatus } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
@@ -104,7 +105,6 @@ export default async function AdminPluginDetailPage({
             </Link>
           }
           title={t('admin.plugins.detail.notFound')}
-          description={id}
         />
       </main>
     );
@@ -145,14 +145,6 @@ export default async function AdminPluginDetailPage({
             ) : null}
           </span>
         }
-        description={
-          <>
-            {plugin.description ? <span className="block">{plugin.description}</span> : null}
-            <span className="block text-xs">
-              {plugin.id} · v{plugin.version}
-            </span>
-          </>
-        }
         actions={
           plugin.frontend.available ? (
             <Button render={<Link href={`/admin/plugins/${plugin.id}/settings`} />} variant="outline">
@@ -163,7 +155,7 @@ export default async function AdminPluginDetailPage({
       />
 
       <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <h2 className="text-sm font-semibold">{t('admin.plugins.detail.dependencies')}</h2>
+        <SectionTitle>{t('admin.plugins.detail.dependencies')}</SectionTitle>
         {plugin.dependencies.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {plugin.dependencies.map((dep) => (
@@ -176,7 +168,7 @@ export default async function AdminPluginDetailPage({
       </section>
 
       <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <h2 className="text-sm font-semibold">{t('admin.plugins.detail.extensionPoints')}</h2>
+        <SectionTitle>{t('admin.plugins.detail.extensionPoints')}</SectionTitle>
         <div className="mt-2 space-y-3">
           <div>
             <p className="text-xs text-muted-foreground">{t('admin.plugins.detail.consumes')}</p>
@@ -215,7 +207,7 @@ export default async function AdminPluginDetailPage({
       </section>
 
       <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <h2 className="text-sm font-semibold">{t('admin.plugins.detail.permissions')}</h2>
+        <SectionTitle>{t('admin.plugins.detail.permissions')}</SectionTitle>
         {plugin.permissions.length > 0 ? (
           <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
             {plugin.permissions.map((permission) => (
@@ -242,7 +234,7 @@ export default async function AdminPluginDetailPage({
       </section>
 
       <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <h2 className="text-sm font-semibold">{t('admin.plugins.detail.frontendPages')}</h2>
+        <SectionTitle>{t('admin.plugins.detail.frontendPages')}</SectionTitle>
         {plugin.frontend.available && plugin.frontend.pages.length > 0 ? (
           <ul className="mt-2 space-y-1">
             {plugin.frontend.pages.map((page) => (

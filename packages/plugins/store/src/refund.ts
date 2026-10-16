@@ -28,6 +28,15 @@ const REFUND_REFERENCE = 'ORDER_REFUND';
 /** 可退款的订单状态。 */
 const REFUNDABLE_STATES = new Set(['PAID']);
 
+/**
+ * 订单是否为「合作方预付」（SP v1 出口经 `CommerceOperations.createOrder` 建单）：
+ * 此类订单平台从未经支付渠道实际收款，退款入账会给买家凭空铸造钱包余额。
+ */
+function isPartnerPrepaidOrder(order: OrderRecord): boolean {
+  const items = order.items as { settlement?: unknown } | null;
+  return items?.settlement === 'partner_prepaid';
+}
+
 export async function refundOrder(req: HttpRequest): Promise<unknown> {
   const id = req.params['id'];
   if (!id) throw new StoreError(400, '缺少 ID');
@@ -38,6 +47,10 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
   const order = await getOrder(id);
   if (!order) throw new StoreError(404, '订单不存在');
   if (!REFUNDABLE_STATES.has(order.status)) throw new StoreError(409, '订单不可退款');
+  // 合作方预付订单（SP v1 出口建单）平台从未实际收款，退款入账会凭空铸造钱包余额。
+  if (isPartnerPrepaidOrder(order)) {
+    throw new StoreError(409, '该订单为合作方预付，不支持钱包退款');
+  }
 
   const amount = resolveRefundAmount(order, parsed.data.amount);
   if (amount <= 0) throw new StoreError(400, '退款金额无效');
@@ -61,10 +74,10 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
         ? `退款 订单 ${id}（操作人 ${actorId}）${reason ? `｜${reason}` : ''}`
         : `退款 订单 ${id}${reason ? `｜${reason}` : ''}`,
     });
-    // 仅全额退款回补库存：非续费行才占用库存。
+    // 仅全额退款回补库存：非续费、非变配行才占用库存（变配订单从未 reserve）。
     if (isFull) {
       for (const line of stockItems(order)) {
-        if (line.renewalServiceId) continue;
+        if (line.renewalServiceId || line.changeServiceId) continue;
         await tx.extensions.updateWhere(
           productModel,
           { name: { eq: line.productId } },
@@ -79,6 +92,10 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
     const { reverseRenewalOrder } = await import('./renewal');
     await reverseRenewalOrder(id).catch((error) => {
       logger().warn(`store: reverse renewal failed for order ${id}: ${messageOf(error)}`);
+    });
+    const { reverseChangeOrder } = await import('./changes');
+    await reverseChangeOrder(id).catch((error) => {
+      logger().warn(`store: reverse change failed for order ${id}: ${messageOf(error)}`);
     });
   }
 
