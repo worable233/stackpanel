@@ -8,6 +8,7 @@
 export * from './github-source.ts';
 export * from './source-cache.ts';
 export * from './catalog-client.ts';
+export * from './catalog-consumer.ts';
 export * from './catalog-state.ts';
 export * from './refresh-service.ts';
 export * from './runtime.ts';
