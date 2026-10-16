@@ -31,6 +31,7 @@
     "release:verify-catalog": "node scripts/release/verify-catalog.mjs",
     "release:rehearse": "node scripts/release/rehearse-distribution.mjs",
     "release:updater-drill": "node scripts/release/updater-drill.mjs",
+    "release:acceptance-report": "node scripts/release/acceptance-report.mjs",
     "backup": "bash scripts/backup.sh",
     "restore": "bash scripts/restore.sh",
     "backup:drill": "bash scripts/backup-drill.sh",

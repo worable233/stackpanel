@@ -124,6 +124,13 @@ jobs:
           pnpm --filter @stackpanel/updater build
           pnpm release:updater-drill
 
+      # §13: the acceptance report re-runs both offline drills and prints the
+      # per-row acceptance table with replayable commands and residual limits.
+      # It never claims real-host rows passed; gated rows stay gated so the
+      # evidence boundary is explicit on every CI run.
+      - name: Acceptance report (offline rows only; gated rows stay gated)
+        run: pnpm release:acceptance-report
+
       - name: Test
         run: pnpm test
 
