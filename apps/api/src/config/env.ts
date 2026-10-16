@@ -56,11 +56,12 @@ const envSchema = z.object({
   // 决定后台刷新从哪取签名目录；只读 token 可选（私有目录/提高配额），浏览器与插件
   // 不可见。未配置仓库时内核不发起任何目录网络请求（自托管默认离线）。
   DISTRIBUTION_CATALOG_REPOSITORY: z.preprocess(emptyToUndefined, z.string().optional()),
-  DISTRIBUTION_CATALOG_CHANNEL: z
-    .enum(['stable', 'beta'])
-    .default('stable'),
+  DISTRIBUTION_CATALOG_CHANNEL: z.enum(['stable', 'beta']).default('stable'),
   DISTRIBUTION_CATALOG_REF: z.string().default('main'),
   DISTRIBUTION_CATALOG_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+  // 部署目标平台（内核镜像选择用；如 linux/amd64、linux/arm64）。容器内运行，故与
+  // 开发宿主 `process.platform` 解耦；缺省 linux/amd64。
+  DISTRIBUTION_DEPLOY_PLATFORM: z.string().default('linux/amd64'),
   // 升级任务通道（§5.1）。API 把声明式任务投递到实例私有卷；updater 认领并回写结果。
   // 生产里指向 updater 状态卷的 `channel` 子目录；本机/PM2 可共用数据目录。
   DISTRIBUTION_UPDATE_CHANNEL_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -82,7 +83,11 @@ const envSchema = z.object({
   STORAGE_S3_FORCE_PATH_STYLE: z.preprocess(emptyToUndefined, z.string().optional()),
   // Media upload ceiling in bytes (ADR-0014 §3). Default 25 MiB; enforced by the
   // media routes' per-content-type body parser before any byte is persisted.
-  MEDIA_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
+  MEDIA_MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(25 * 1024 * 1024),
   // Async image-variant pipeline (ADR-0014 §4 Stage B). On by default: variants
   // are encoded by the worker instead of on the upload thread. `false` restores
   // the synchronous Stage A path (rollback switch); it is also inert before the

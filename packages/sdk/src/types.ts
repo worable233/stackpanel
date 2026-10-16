@@ -589,6 +589,8 @@ export interface UpdatePlanResponse {
     kernel: { version: string; digest: string; migration: string };
     packages: UpdatePlannedPackage[];
   };
+  /** Whether the plan includes a kernel self-upgrade (target kernel != running). */
+  includesKernel?: boolean;
   task?: {
     instanceId: string;
     baselineGeneration: number;

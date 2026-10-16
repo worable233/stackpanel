@@ -23,9 +23,18 @@ import {
   type FrontendMode,
   type KernelCapabilities,
 } from '@stackpanel/spec';
+import { env } from '../config/env.ts';
 
 /** 内核当前支持的前端加载模式（见模块说明）。 */
 export const SUPPORTED_FRONTEND_MODES: readonly FrontendMode[] = Object.freeze(['M2']);
+
+/**
+ * 部署目标平台（内核镜像选择用）。容器内运行应报告容器目标平台而非开发宿主：
+ * `DISTRIBUTION_DEPLOY_PLATFORM` 显式覆盖，缺省 `linux/amd64`。
+ */
+export function deploymentPlatform(): string {
+  return env.DISTRIBUTION_DEPLOY_PLATFORM;
+}
 
 /** 组装当前内核能力面，供 `checkPackageCompatibility` / `selectTargetVersion` 使用。 */
 export function kernelCapabilities(): KernelCapabilities {
@@ -36,6 +45,6 @@ export function kernelCapabilities(): KernelCapabilities {
     packageFormat: PACKAGE_MANIFEST_FORMAT_VERSION,
     schemaRange: '*',
     frontendModes: [...SUPPORTED_FRONTEND_MODES],
-    platform: `${process.platform}/${process.arch}`,
+    platform: deploymentPlatform(),
   };
 }

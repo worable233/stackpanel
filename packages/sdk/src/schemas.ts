@@ -848,6 +848,7 @@ export const updatePlanResponseSchema = z.object({
       ),
     })
     .optional(),
+  includesKernel: z.boolean().optional(),
   task: z
     .object({
       instanceId: z.string(),

@@ -15,7 +15,12 @@ import { decideAutoUpdate } from './auto.ts';
 import { readUpdatePolicy } from './policy.ts';
 import { submitUpdateTask } from './plan.ts';
 import { readUpdaterStatus } from './status.ts';
-import { updateCatalogContext, updateChannelRoot, updateInstanceId } from './runtime.ts';
+import {
+  loadKernelCandidates,
+  updateCatalogContext,
+  updateChannelRoot,
+  updateInstanceId,
+} from './runtime.ts';
 
 export interface AutoUpdateResult {
   submitted: boolean;
@@ -38,12 +43,14 @@ export async function runAutoUpdate(input: {
   }
   const policy = await readUpdatePolicy(input.prisma);
   const status = await readUpdaterStatus();
+  const kernelCandidates = await loadKernelCandidates(context);
   const outcome = await buildUpdatePlan({
     prisma: input.prisma,
     catalog: context.catalog,
     policy,
     instanceId: updateInstanceId(),
     baselineGeneration: status?.generation ?? 0,
+    kernelCandidates,
     now,
   });
   if (!outcome.ok) {
@@ -57,7 +64,7 @@ export async function runAutoUpdate(input: {
     policy,
     plan: outcome.plan,
     requiresAuthorization: requiresAuthorization(outcome.plan),
-    includesKernel: false,
+    includesKernel: outcome.includesKernel,
     now,
   });
   if (!decision.submit) {

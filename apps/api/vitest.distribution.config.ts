@@ -5,6 +5,7 @@ export default defineConfig({
     include: [
       'tests/unit/distribution-source.test.ts',
       'tests/unit/distribution-package.test.ts',
+      'tests/unit/distribution-kernel-source.test.ts',
       'tests/unit/distribution-keyring.test.ts',
       'tests/unit/distribution-refresh.test.ts',
       'tests/unit/distribution-catalog-consumer.test.ts',

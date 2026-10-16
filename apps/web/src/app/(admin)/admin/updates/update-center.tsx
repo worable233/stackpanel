@@ -73,9 +73,7 @@ export function UpdateCenter({ initial }: { initial: UpdateStatusResponse }) {
             <dd>{status.status.activeTask ?? '空闲'}</dd>
           </dl>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            独立执行器状态不可读（可能未运行）。
-          </p>
+          <p className="text-sm text-muted-foreground">独立执行器状态不可读（可能未运行）。</p>
         )}
         <p className="mt-2 text-xs text-muted-foreground">
           远程目录：
@@ -132,6 +130,12 @@ export function UpdateCenter({ initial }: { initial: UpdateStatusResponse }) {
               计划摘要：<code className="text-xs">{plan?.planDigest?.slice(0, 16)}…</code>
               {plan?.requiresAuthorization ? '（含需人工授权的变更）' : ''}
             </p>
+            {plan?.includesKernel ? (
+              <p className="mt-1 text-muted-foreground">
+                含内核自身升级：<code className="text-xs">{plan.plan?.kernel.version}</code>
+                {plan.plan?.kernel.migration ? `（迁移 ${plan.plan.kernel.migration}）` : ''}
+              </p>
+            ) : null}
             <table className="mt-2 w-full text-left text-xs">
               <thead className="text-muted-foreground">
                 <tr>

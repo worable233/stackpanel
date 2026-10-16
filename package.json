@@ -27,6 +27,7 @@
     "release:key": "node scripts/release/generate-key.mjs",
     "release:manifest": "node scripts/release/build-manifest.mjs",
     "release:catalog": "node scripts/release/build-catalog.mjs",
+    "release:kernel-manifest": "node scripts/release/build-kernel-manifest.mjs",
     "release:verify-catalog": "node scripts/release/verify-catalog.mjs",
     "release:rehearse": "node scripts/release/rehearse-distribution.mjs",
     "release:updater-drill": "node scripts/release/updater-drill.mjs",

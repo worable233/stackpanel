@@ -47,6 +47,7 @@ export async function readPackageManifest(file) {
  * @param {string[]} input.channels 需要写入稳定指针的渠道（stable/beta）。
  * @param {Array} [input.publishers] 发布者白名单（publisher → keyIds/repositories）。
  * @param {Array} input.entries 已校验包清单（可带 `revoked`）。
+ * @param {Array} [input.kernels] 内核引用列表（`CatalogKernelRef`；可带 `revoked`）。
  * @param {object} [input.now] 生成时刻（Date）。
  * @param {number} [input.ttlDays] 有效期天数；缺省 14。
  * @returns {Promise<{ catalog: object, catalogJson: string, catalogBytes: Uint8Array }>}
@@ -66,6 +67,7 @@ export async function buildCatalog(input) {
     })),
     publishers: input.publishers ?? [],
     entries: input.entries ?? [],
+    ...(input.kernels && input.kernels.length > 0 ? { kernels: input.kernels } : {}),
   };
   const issues = spec.validateCatalogSnapshot(catalog);
   if (issues.length > 0) {

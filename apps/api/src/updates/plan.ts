@@ -20,12 +20,14 @@ import {
   UPDATE_PROTOCOL_VERSION,
   buildPlanDigestInput,
   resolveDeployment,
+  resolveKernelUpgrade,
   updateChannelDir,
   updateTaskFileName,
   type BlockReasonLike,
   type CandidateSource,
   type CatalogSnapshot,
   type DeploymentPlan,
+  type KernelManifest,
   type PlannedPackage,
   type UpdateTask,
   type UpdateTaskResult,
@@ -37,7 +39,14 @@ import type { UpdatePolicy } from './policy.ts';
 
 /** 求解产物：要么可执行计划，要么具体的阻止原因（§4）。 */
 export type PlanOutcome =
-  { ok: true; plan: DeploymentPlan; task: UpdateTask } | { ok: false; blocks: BlockReasonLike[] };
+  | {
+      ok: true;
+      plan: DeploymentPlan;
+      task: UpdateTask;
+      /** 计划是否包含内核自身升级（目标内核版本不同于当前）。 */
+      includesKernel: boolean;
+    }
+  | { ok: false; blocks: BlockReasonLike[] };
 
 export interface PlanInput {
   prisma: PrismaClient;
@@ -47,6 +56,14 @@ export interface PlanInput {
   instanceId: string;
   /** 目标内核镜像摘要（内核升级时）；缺省表示只解扩展。 */
   targetKernel?: { version: string; digest: string; migration: string };
+  /**
+   * 已验签的内核候选清单（§13-4）。提供则用 {@link resolveKernelUpgrade} 求解内核自身
+   * 升级：选中目标内核版本、校验平台镜像、生成迁移路径，并把其 digest/migration 落到
+   * 任务。`targetKernel` 显式提供时优先（调用方已求解）。
+   */
+  kernelCandidates?: KernelManifest[];
+  /** 显式目标内核版本（缺省自动选最高可升级版本）。 */
+  targetKernelVersion?: string;
   /** 当前部署基线代次（updater 指针投影；缺省 0）。 */
   baselineGeneration: number;
   /** 幂等键；缺省由计划摘要派生（同计划不重复投递）。 */
@@ -69,14 +86,34 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
   const installed = await listInstalledComponents(prisma, policy);
   const candidates: CandidateSource[] = catalogCandidateSources(catalog);
 
+  // 内核目标：显式 targetKernel 优先；否则若提供内核候选，用 §4 求解器选目标（§13-4）。
+  let targetKernel = input.targetKernel;
+  if (!targetKernel && input.kernelCandidates && input.kernelCandidates.length > 0) {
+    const resolvedKernel = resolveKernelUpgrade({
+      currentVersion: kernel.version,
+      platform: kernel.platform,
+      channel: policy.channel,
+      candidates: input.kernelCandidates,
+      ...(input.targetKernelVersion ? { targetVersion: input.targetKernelVersion } : {}),
+    });
+    if (!resolvedKernel.ok) {
+      return { ok: false, blocks: resolvedKernel.blocks };
+    }
+    targetKernel = {
+      version: resolvedKernel.target.version,
+      digest: resolvedKernel.digest,
+      migration: resolvedKernel.target.databaseMigration,
+    };
+  }
+
   const resolveInput = {
     kernel,
     installed,
     candidates,
-    ...(input.targetKernel
+    ...(targetKernel
       ? {
           targetKernel: {
-            version: input.targetKernel.version,
+            version: targetKernel.version,
             kernelApi: kernel.kernelApi,
             frontendAbi: kernel.frontendAbi,
             schemaRange: kernel.schemaRange,
@@ -101,7 +138,7 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
     packages,
   );
   const plan: DeploymentPlan = {
-    kernel: input.targetKernel ?? {
+    kernel: targetKernel ?? {
       version: kernelVersion,
       digest: '',
       migration: '',
@@ -121,7 +158,11 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
     plan,
     createdAt: now.toISOString(),
   };
-  return { ok: true, plan, task };
+  const includesKernel =
+    targetKernel !== undefined &&
+    targetKernel.version !== kernel.version &&
+    targetKernel.digest !== '';
+  return { ok: true, plan, task, includesKernel };
 }
 
 /** 策略版本：策略内容哈希，任何变化都要求重新授权（§5.1）。 */

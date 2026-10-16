@@ -68,9 +68,11 @@ async function main() {
   console.log('1) 生成密钥与信任根');
   const catalogKp = generateKeyPairSync('ed25519');
   const packageKp = generateKeyPairSync('ed25519');
+  const kernelKp = generateKeyPairSync('ed25519');
   const catalogPrivatePem = catalogKp.privateKey
     .export({ type: 'pkcs8', format: 'pem' })
     .toString();
+  const kernelPrivatePem = kernelKp.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
   const keyring = {
     formatVersion: 1,
     keys: [
@@ -87,10 +89,16 @@ async function main() {
         publisher: 'stackpanel',
         allowedRepositories: ['worable233/stackpanel-plugins'],
       },
+      {
+        keyId: 'kernel-rehearsal',
+        purpose: 'kernel',
+        publicKeyPem: kernelKp.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+        allowedRepositories: ['worable233/stackpanel'],
+      },
     ],
   };
   await writeFile(path.join(root, 'keyring.json'), `${JSON.stringify(keyring, null, 2)}\n`);
-  assert(keyring.keys.length === 2, '信任根含目录与包两把公钥');
+  assert(keyring.keys.length === 3, '信任根含目录、包与内核三把公钥');
 
   // 2) 构造包 ZIP 文件集合并签名（发布端）。
   console.log('2) 发布端签名扩展包');
@@ -143,6 +151,61 @@ async function main() {
 
   // 4) 构建并签名目录。
   console.log('4) 构建并签名目录快照');
+  // 内核清单（§13-4）：发布端签 `kernel-manifest.json`，目录只引用其摘要与 keyId。
+  const kernelManifest = {
+    formatVersion: spec.PACKAGE_MANIFEST_FORMAT_VERSION,
+    kind: 'kernel',
+    version: '0.3.0',
+    channel: 'stable',
+    kernelApi: KERNEL_API_VERSION,
+    frontendAbi: '1.0.0',
+    updateProtocol: spec.UPDATE_PROTOCOL_VERSION,
+    upgradeFrom: '>=0.1.0',
+    migrationPath: 'direct',
+    schemaRange: '*',
+    images: [
+      {
+        platform: 'linux/amd64',
+        digest: `ghcr.io/worable233/stackpanel@sha256:${sha256(new TextEncoder().encode('amd64'))}`,
+      },
+    ],
+    corePackages: [],
+    supportedPlatforms: ['linux/amd64'],
+    smokeProbeVersion: 1,
+    databaseMigration: '20261010000000_kernel_0_3_0',
+  };
+  assert(spec.validateKernelManifest(kernelManifest).length === 0, '内核清单通过契约校验');
+  const kernelBytes = spec.kernelManifestBytes(kernelManifest);
+  const kernelSig = spec.signKernelManifest(kernelBytes, kernelPrivatePem, 'kernel-rehearsal');
+  spec.verifyKernelManifestSignature({
+    manifestBytes: kernelBytes,
+    signature: kernelSig,
+    keyring,
+    repository: 'worable233/stackpanel',
+  });
+  assert(true, '内核清单签名通过（用途 kernel + 仓库绑定）');
+  const kernelRef = {
+    version: kernelManifest.version,
+    channel: kernelManifest.channel,
+    source: {
+      repository: 'worable233/stackpanel',
+      tag: 'v0.3.0',
+      asset: 'kernel-manifest.json',
+    },
+    digest: sha256(kernelBytes),
+    keyId: 'kernel-rehearsal',
+  };
+  const resolvedKernel = spec.resolveKernelUpgrade({
+    currentVersion: KERNEL_VERSION,
+    platform: 'linux/amd64',
+    channel: 'stable',
+    candidates: [kernelManifest],
+  });
+  assert(
+    resolvedKernel.ok && resolvedKernel.target.version === '0.3.0',
+    '内核自身升级求解选中 0.3.0 目标',
+  );
+
   const { catalogBytes, catalogJson } = await buildCatalog({
     sequence: 7,
     channels: ['stable', 'beta'],
@@ -154,6 +217,7 @@ async function main() {
       },
     ],
     entries: [manifest],
+    kernels: [kernelRef],
   });
   const { catalogSigJson } = await signCatalogBytes(
     catalogBytes,
@@ -184,6 +248,10 @@ async function main() {
   assert(
     spec.catalogCandidates(parsedCatalog, 'plugin', 'rehearsal').length === 1,
     '目录含 1 个候选',
+  );
+  assert(
+    spec.catalogKernelRefs(parsedCatalog, 'stable').length === 1,
+    '目录含 1 条内核引用（stable）',
   );
 
   const boundFiles = new Map([
@@ -241,6 +309,30 @@ async function main() {
   await expectReject('回放旧 sequence', () => {
     if (!spec.isNewerSequence(6, 7)) throw new Error('回放未拒绝');
   });
+  await expectReject('篡改内核清单（摘要不符）', () =>
+    spec.verifyKernelManifestSignature({
+      manifestBytes: spec.kernelManifestBytes({ ...kernelManifest, version: '9.9.9' }),
+      signature: kernelSig,
+      keyring,
+      repository: 'worable233/stackpanel',
+    }),
+  );
+  await expectReject('内核清单签名 key 用途不是 kernel', () =>
+    spec.verifyKernelManifestSignature({
+      manifestBytes: kernelBytes,
+      signature: kernelSig,
+      keyring: {
+        formatVersion: 1,
+        keys: [
+          {
+            keyId: 'kernel-rehearsal',
+            purpose: 'package',
+            publicKeyPem: kernelKp.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+          },
+        ],
+      },
+    }),
+  );
 
   // 过期目录：生成一份已过期目录并确认 isCatalogExpired。
   const expired = await buildCatalog({

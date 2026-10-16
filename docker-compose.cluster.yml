@@ -72,8 +72,19 @@ services:
       WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
       WOWID_CLIENT_SECRET: ${WOWID_CLIENT_SECRET:-}
       WOWID_REDIRECT_URI: ${WOWID_REDIRECT_URI:-}
+      # ---- GitHub distribution & update centre (PLAN-github-distribution-and-updates) ----
+      DISTRIBUTION_CATALOG_REPOSITORY: ${DISTRIBUTION_CATALOG_REPOSITORY:-}
+      DISTRIBUTION_CATALOG_CHANNEL: ${DISTRIBUTION_CATALOG_CHANNEL:-stable}
+      DISTRIBUTION_CATALOG_REF: ${DISTRIBUTION_CATALOG_REF:-main}
+      DISTRIBUTION_CATALOG_TOKEN: ${DISTRIBUTION_CATALOG_TOKEN:-}
+      DISTRIBUTION_DEPLOY_PLATFORM: ${DISTRIBUTION_DEPLOY_PLATFORM:-linux/amd64}
+      DISTRIBUTION_UPDATE_CHANNEL_DIR: ${DISTRIBUTION_UPDATE_CHANNEL_DIR:-/var/lib/stackpanel-updater/channel}
+      DISTRIBUTION_UPDATE_INSTANCE_ID: ${UPDATER_INSTANCE_ID:-stackpanel}
+      DISTRIBUTION_UPDATER_STATUS_FILE: ${DISTRIBUTION_UPDATER_STATUS_FILE:-/var/lib/stackpanel-updater/status.json}
     volumes:
       - stackpanel-data:/app/data
+      # Read/write: submit update tasks + read updater status projection.
+      - stackpanel-updater-state:/var/lib/stackpanel-updater
     networks:
       - stackpanel
     deploy:
@@ -134,10 +145,21 @@ services:
       WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
       WOWID_CLIENT_SECRET: ${WOWID_CLIENT_SECRET:-}
       WOWID_REDIRECT_URI: ${WOWID_REDIRECT_URI:-}
+      # Background jobs (catalog refresh + auto-update) run on the worker.
+      DISTRIBUTION_CATALOG_REPOSITORY: ${DISTRIBUTION_CATALOG_REPOSITORY:-}
+      DISTRIBUTION_CATALOG_CHANNEL: ${DISTRIBUTION_CATALOG_CHANNEL:-stable}
+      DISTRIBUTION_CATALOG_REF: ${DISTRIBUTION_CATALOG_REF:-main}
+      DISTRIBUTION_CATALOG_TOKEN: ${DISTRIBUTION_CATALOG_TOKEN:-}
+      DISTRIBUTION_DEPLOY_PLATFORM: ${DISTRIBUTION_DEPLOY_PLATFORM:-linux/amd64}
+      DISTRIBUTION_UPDATE_CHANNEL_DIR: ${DISTRIBUTION_UPDATE_CHANNEL_DIR:-/var/lib/stackpanel-updater/channel}
+      DISTRIBUTION_UPDATE_INSTANCE_ID: ${UPDATER_INSTANCE_ID:-stackpanel}
+      DISTRIBUTION_UPDATER_STATUS_FILE: ${DISTRIBUTION_UPDATER_STATUS_FILE:-/var/lib/stackpanel-updater/status.json}
     volumes:
       - stackpanel-data:/app/data
       # Single-builder web bundle (S7); every web replica serves this.
       - stackpanel-web-build:/app/apps/web/.next
+      # Submit update tasks + read updater status projection.
+      - stackpanel-updater-state:/var/lib/stackpanel-updater
     networks:
       - stackpanel
     deploy:

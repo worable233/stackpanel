@@ -24,7 +24,8 @@ services:
     networks:
       - stackpanel
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-stackpanel} -d ${POSTGRES_DB:-stackpanel}']
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-stackpanel} -d ${POSTGRES_DB:-stackpanel}']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -145,9 +146,23 @@ services:
       WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
       WOWID_CLIENT_SECRET: ${WOWID_CLIENT_SECRET:-}
       WOWID_REDIRECT_URI: ${WOWID_REDIRECT_URI:-}
+      # ---- GitHub distribution & update centre (PLAN-github-distribution-and-updates) ----
+      # Unset catalog repo => fully offline self-host (no outbound catalog requests).
+      DISTRIBUTION_CATALOG_REPOSITORY: ${DISTRIBUTION_CATALOG_REPOSITORY:-}
+      DISTRIBUTION_CATALOG_CHANNEL: ${DISTRIBUTION_CATALOG_CHANNEL:-stable}
+      DISTRIBUTION_CATALOG_REF: ${DISTRIBUTION_CATALOG_REF:-main}
+      DISTRIBUTION_CATALOG_TOKEN: ${DISTRIBUTION_CATALOG_TOKEN:-}
+      # Docker target platform used to select the kernel image digest (linux/amd64, linux/arm64).
+      DISTRIBUTION_DEPLOY_PLATFORM: ${DISTRIBUTION_DEPLOY_PLATFORM:-linux/amd64}
+      # Update task channel shared with the updater's private volume.
+      DISTRIBUTION_UPDATE_CHANNEL_DIR: ${DISTRIBUTION_UPDATE_CHANNEL_DIR:-/var/lib/stackpanel-updater/channel}
+      DISTRIBUTION_UPDATE_INSTANCE_ID: ${UPDATER_INSTANCE_ID:-stackpanel}
+      DISTRIBUTION_UPDATER_STATUS_FILE: ${DISTRIBUTION_UPDATER_STATUS_FILE:-/var/lib/stackpanel-updater/status.json}
     volumes:
       # Shared with web for plugin/theme frontend artifacts + the apply signal.
       - stackpanel-data:/app/data
+      # Read/write: submit update tasks + read updater status projection.
+      - stackpanel-updater-state:/var/lib/stackpanel-updater
     ports:
       - '3001:3001'
     networks:
@@ -208,11 +223,22 @@ services:
       STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
       STACKPANEL_DATA_DIR: /app/data
       STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
+      # Background jobs (catalog refresh + auto-update) run on the worker.
+      DISTRIBUTION_CATALOG_REPOSITORY: ${DISTRIBUTION_CATALOG_REPOSITORY:-}
+      DISTRIBUTION_CATALOG_CHANNEL: ${DISTRIBUTION_CATALOG_CHANNEL:-stable}
+      DISTRIBUTION_CATALOG_REF: ${DISTRIBUTION_CATALOG_REF:-main}
+      DISTRIBUTION_CATALOG_TOKEN: ${DISTRIBUTION_CATALOG_TOKEN:-}
+      DISTRIBUTION_DEPLOY_PLATFORM: ${DISTRIBUTION_DEPLOY_PLATFORM:-linux/amd64}
+      DISTRIBUTION_UPDATE_CHANNEL_DIR: ${DISTRIBUTION_UPDATE_CHANNEL_DIR:-/var/lib/stackpanel-updater/channel}
+      DISTRIBUTION_UPDATE_INSTANCE_ID: ${UPDATER_INSTANCE_ID:-stackpanel}
+      DISTRIBUTION_UPDATER_STATUS_FILE: ${DISTRIBUTION_UPDATER_STATUS_FILE:-/var/lib/stackpanel-updater/status.json}
     volumes:
       # Plugin/theme packages + the apply request/status files.
       - stackpanel-data:/app/data
       # Single-builder web bundle, shared read-only with every web replica.
       - stackpanel-web-build:/app/apps/web/.next
+      # Submit update tasks + read updater status projection.
+      - stackpanel-updater-state:/var/lib/stackpanel-updater
     networks:
       - stackpanel
     deploy:

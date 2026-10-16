@@ -17,6 +17,7 @@ import {
 } from '../src/distribution/manifest.js';
 import {
   catalogCandidates,
+  catalogKernelRefs,
   catalogReleaseTag,
   channelSequence,
   isCatalogExpired,
@@ -50,6 +51,7 @@ import {
   addedPermissions,
   checkPackageCompatibility,
   resolveDeployment,
+  resolveKernelUpgrade,
   selectTargetVersion,
   type KernelCapabilities,
 } from '../src/distribution/compatibility.js';
@@ -550,6 +552,179 @@ describe('compatibility gate and deployment plan', () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.plan[0]?.addsPermissions).toBe(true);
+  });
+});
+
+describe('kernel self-upgrade resolution (§13-4)', () => {
+  function kernelManifest(
+    version: string,
+    overrides: Partial<KernelManifest> = {},
+  ): KernelManifest {
+    return {
+      formatVersion: PACKAGE_MANIFEST_FORMAT_VERSION,
+      kind: 'kernel',
+      version,
+      channel: 'stable',
+      kernelApi: '0.4.0',
+      frontendAbi: '1.0.0',
+      updateProtocol: UPDATE_PROTOCOL_VERSION,
+      upgradeFrom: '>=0.1.0',
+      migrationPath: 'direct',
+      schemaRange: '>=20261001000000',
+      images: [
+        { platform: 'linux/amd64', digest: `ghcr.io/worable233/stackpanel@sha256:${sha('b')}` },
+        { platform: 'linux/arm64', digest: `ghcr.io/worable233/stackpanel@sha256:${sha('c')}` },
+      ],
+      corePackages: [],
+      supportedPlatforms: ['linux/amd64', 'linux/arm64'],
+      smokeProbeVersion: 1,
+      databaseMigration: '20261003000000_x',
+      ...overrides,
+    };
+  }
+
+  it('picks the highest newer stable kernel on the target platform', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      platform: 'linux/arm64',
+      channel: 'stable',
+      candidates: [kernelManifest('0.3.0'), kernelManifest('0.4.0'), kernelManifest('0.1.0')],
+    });
+    expect(plan.ok).toBe(true);
+    if (plan.ok) {
+      expect(plan.target.version).toBe('0.4.0');
+      expect(plan.digest).toContain(sha('c')); // arm64 image
+    }
+  });
+
+  it('blocks when the target platform image is missing', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      platform: 'linux/riscv64',
+      channel: 'stable',
+      candidates: [kernelManifest('0.3.0')],
+    });
+    expect(plan.ok).toBe(false);
+    if (!plan.ok) expect(plan.blocks[0]?.code).toBe('incompatible_kernel');
+  });
+
+  it('refuses a downgrade unless explicitly allowed', () => {
+    const blocked = resolveKernelUpgrade({
+      currentVersion: '0.4.0',
+      channel: 'stable',
+      targetVersion: '0.3.0',
+      candidates: [kernelManifest('0.3.0')],
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.blocks[0]?.code).toBe('downgrade');
+
+    const forced = resolveKernelUpgrade({
+      currentVersion: '0.4.0',
+      channel: 'stable',
+      targetVersion: '0.3.0',
+      allowDowngrade: true,
+      candidates: [kernelManifest('0.3.0')],
+    });
+    expect(forced.ok).toBe(true);
+  });
+
+  it('requires a verifiable migration path for multi-step upgrades', () => {
+    const ok = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      candidates: [
+        kernelManifest('0.4.0', { migrationPath: ['0.3.0', '0.4.0'] }),
+        kernelManifest('0.3.0'),
+      ],
+    });
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.path.map((m) => m.version)).toEqual(['0.3.0', '0.4.0']);
+
+    const missing = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      candidates: [kernelManifest('0.4.0', { migrationPath: ['0.3.0', '0.4.0'] })],
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.blocks[0]?.code).toBe('irreversible_migration');
+  });
+
+  it('blocks a target kernel that needs a newer update protocol', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      candidates: [kernelManifest('0.3.0', { updateProtocol: 2 })],
+    });
+    expect(plan.ok).toBe(false);
+    if (!plan.ok) expect(plan.blocks[0]?.detail).toContain('升级协议');
+  });
+
+  it('honours each candidate\u2019s own upgradeFrom when auto-selecting', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      candidates: [
+        // Highest version but only accepts >=0.3.0 as source -> must be skipped.
+        kernelManifest('0.5.0', { upgradeFrom: '>=0.3.0' }),
+        kernelManifest('0.3.0'),
+      ],
+    });
+    expect(plan.ok).toBe(true);
+    if (plan.ok) expect(plan.target.version).toBe('0.3.0');
+
+    const none = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      candidates: [kernelManifest('0.5.0', { upgradeFrom: '>=0.3.0' })],
+    });
+    expect(none.ok).toBe(false);
+  });
+
+  it('exposes catalog kernel refs and validates them', () => {
+    const snapshot: CatalogSnapshot = {
+      formatVersion: 1,
+      sequence: 5,
+      generatedAt: '2026-10-01T00:00:00.000Z',
+      expiresAt: '2026-10-15T00:00:00.000Z',
+      channels: [{ channel: 'stable', sequence: 5 }],
+      publishers: [],
+      entries: [],
+      kernels: [
+        {
+          version: '0.2.0',
+          channel: 'stable',
+          source: {
+            repository: 'worable233/stackpanel',
+            tag: 'v0.2.0',
+            asset: 'kernel-manifest.json',
+          },
+          digest: sha('d'),
+          keyId: 'kernel-2026',
+        },
+        {
+          version: '0.3.0',
+          channel: 'beta',
+          source: {
+            repository: 'worable233/stackpanel',
+            tag: 'v0.3.0',
+            asset: 'kernel-manifest.json',
+          },
+          digest: sha('e'),
+          keyId: 'kernel-2026',
+        },
+      ],
+    };
+    expect(validateCatalogSnapshot(snapshot)).toEqual([]);
+    expect(catalogKernelRefs(snapshot).map((k) => k.version)).toEqual(['0.3.0', '0.2.0']);
+    expect(catalogKernelRefs(snapshot, 'stable').map((k) => k.version)).toEqual(['0.2.0']);
+
+    const bad = {
+      ...snapshot,
+      kernels: [{ ...snapshot.kernels?.[0], digest: 'nope', channel: 'nightly' }],
+    };
+    const paths = validateCatalogSnapshot(bad).map((i) => i.path);
+    expect(paths).toContain('kernels[0].digest');
+    expect(paths).toContain('kernels[0].channel');
   });
 });
 

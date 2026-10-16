@@ -29,6 +29,7 @@ export {
   updateChannelRoot,
   updateInstanceId,
   setUpdateChannelForTest,
+  loadKernelCandidates,
 } from './runtime.ts';
 export { readUpdaterStatus } from './status.ts';
 export type { UpdaterStatus } from './status.ts';

@@ -61,12 +61,25 @@ async function main() {
     entries.push(manifest);
   }
 
+  // 内核引用（可选）：`--kernels <dir>` 读取目录下所有 `kernel-ref.json`（或 *.json），
+  // 每条声明内核版本、来源 Release、清单摘要与签名 keyId；目录只引用不保存清单本体。
+  const kernels = [];
+  if (args.kernels) {
+    const kernelFiles = (await readdir(args.kernels))
+      .filter((name) => name.endsWith('.json'))
+      .sort();
+    for (const name of kernelFiles) {
+      kernels.push(JSON.parse(await readFile(path.join(args.kernels, name), 'utf8')));
+    }
+  }
+
   const { catalogBytes, catalogJson, catalog } = await buildCatalog({
     sequence: config.sequence,
     channels: config.channels,
     ttlDays: config.ttlDays,
     publishers: config.publishers ?? [],
     entries,
+    kernels,
   });
   const { catalogSigJson } = await signCatalogBytes(catalogBytes, privateKeyPem, keyId);
 

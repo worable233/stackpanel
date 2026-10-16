@@ -16,7 +16,7 @@
  */
 
 import { createHash, createPublicKey, createPrivateKey, sign, verify } from 'node:crypto';
-import { catalogDigest, type CatalogSignature } from './catalog.js';
+import { catalogDigest, stableStringify, type CatalogSignature } from './catalog.js';
 import { catalogKeyAllowed, findKey, packageKeyAllowed, type Keyring } from './trust.js';
 
 const PACKAGE_SIGNATURE_FILE = 'signature.json';
@@ -123,6 +123,87 @@ export function signPackageFiles(
     createPrivateKey(privateKeyPem),
   ).toString('base64');
   return { algorithm: ALGORITHM, files: digests, signature };
+}
+
+/** 内核清单签名（`kernel-manifest.sig`）。 */
+export interface KernelManifestSignature {
+  algorithm: 'ed25519';
+  keyId: string;
+  /** 被签名内容的 SHA-256（对内核清单规范化字节）。 */
+  digest: string;
+  signature: string;
+}
+
+/** 内核清单的规范化字节：与 {@link stableStringify} 同一规范化，保证逐字可复现。 */
+export function kernelManifestBytes(manifest: unknown): Uint8Array {
+  return new TextEncoder().encode(stableStringify(manifest));
+}
+
+/** 用内核发布私钥签名内核清单字节。 */
+export function signKernelManifest(
+  manifestBytes: Uint8Array,
+  privateKeyPem: string | Buffer,
+  keyId: string,
+): KernelManifestSignature {
+  const digest = createHash('sha256').update(manifestBytes).digest('hex');
+  const signature = sign(
+    null,
+    Buffer.from(digest, 'utf8'),
+    createPrivateKey(privateKeyPem),
+  ).toString('base64');
+  return { algorithm: ALGORITHM, keyId, digest, signature };
+}
+
+/**
+ * 校验内核清单签名：keyId 必须命中 keyring、用途为 `kernel`、有效且（若声明）允许该
+ * 来源仓库。生产自动更新**不允许**跳过。不通过时抛 {@link DistributionSignatureError}。
+ */
+export function verifyKernelManifestSignature(input: {
+  manifestBytes: Uint8Array;
+  signature: KernelManifestSignature;
+  keyring: Keyring;
+  repository?: string;
+  now?: Date;
+}): void {
+  const { manifestBytes, signature, keyring, repository, now } = input;
+  if (signature.algorithm !== ALGORITHM) {
+    throw new DistributionSignatureError(`不支持的内核清单签名算法：${signature.algorithm}`);
+  }
+  const digest = createHash('sha256').update(manifestBytes).digest('hex');
+  if (signature.digest !== digest) {
+    throw new DistributionSignatureError('内核清单摘要与签名不一致');
+  }
+  const key = findKey(keyring, signature.keyId);
+  if (!key || key.revoked || key.purpose !== 'kernel') {
+    throw new DistributionSignatureError(`内核清单签名者未被信任：${signature.keyId}`);
+  }
+  if (key.notBefore && Date.parse(key.notBefore) > (now ?? new Date()).getTime()) {
+    throw new DistributionSignatureError(`内核清单签名公钥尚未生效：${signature.keyId}`);
+  }
+  if (key.notAfter && Date.parse(key.notAfter) < (now ?? new Date()).getTime()) {
+    throw new DistributionSignatureError(`内核清单签名公钥已过期：${signature.keyId}`);
+  }
+  if (
+    repository &&
+    key.allowedRepositories &&
+    key.allowedRepositories.length > 0 &&
+    !key.allowedRepositories.includes(repository)
+  ) {
+    throw new DistributionSignatureError(`内核清单签名公钥不允许来源仓库 ${repository}`);
+  }
+  try {
+    const publicKey = createPublicKey(key.publicKeyPem);
+    const valid = verify(
+      null,
+      Buffer.from(signature.digest, 'utf8'),
+      publicKey,
+      Buffer.from(signature.signature, 'base64'),
+    );
+    if (!valid) throw new DistributionSignatureError('内核清单签名无效');
+  } catch (error) {
+    if (error instanceof DistributionSignatureError) throw error;
+    throw new DistributionSignatureError('无法校验内核清单签名');
+  }
 }
 
 /** 解析并做最小结构校验 `signature.json`。 */

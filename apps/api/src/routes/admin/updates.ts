@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   buildUpdatePlan,
   listTaskResults,
+  loadKernelCandidates,
   readTaskResult,
   readUpdaterStatus,
   readUpdatePolicy,
@@ -180,12 +181,14 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
     if (!context) return null;
     const policy = await readUpdatePolicy(prisma());
     const status = await readUpdaterStatus();
+    const kernelCandidates = await loadKernelCandidates(context);
     return buildUpdatePlan({
       prisma: prisma(),
       catalog: context.catalog,
       policy,
       instanceId: updateInstanceId(),
       baselineGeneration: status?.generation ?? 0,
+      kernelCandidates,
       ...(idempotencyKey ? { idempotencyKey } : {}),
     });
   }
@@ -200,6 +203,7 @@ function planResponse(outcome: PlanOutcome): Record<string, unknown> {
     ok: true,
     planDigest: outcome.task.planDigest,
     plan: outcome.plan,
+    includesKernel: outcome.includesKernel,
     task: {
       instanceId: outcome.task.instanceId,
       baselineGeneration: outcome.task.baselineGeneration,

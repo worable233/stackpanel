@@ -200,6 +200,89 @@ describe('buildUpdatePlan', () => {
     if (!outcome.ok) return;
     expect(requiresAuthorization(outcome.plan)).toBe(true);
   });
+
+  it('solves a kernel self-upgrade from signed kernel candidates (§13-4)', async () => {
+    const prisma = fakePrisma({});
+    const kernelManifest = {
+      formatVersion: 1,
+      kind: 'kernel' as const,
+      version: '0.3.0',
+      channel: 'stable' as const,
+      kernelApi: '0.4.0',
+      frontendAbi: '1.0.0',
+      updateProtocol: 1,
+      upgradeFrom: '>=0.1.0',
+      migrationPath: 'direct' as const,
+      schemaRange: '>=20261001000000',
+      images: [
+        {
+          platform: 'linux/amd64',
+          digest: `ghcr.io/worable233/stackpanel@sha256:${'f'.repeat(64)}`,
+        },
+      ],
+      corePackages: [],
+      supportedPlatforms: ['linux/amd64'],
+      smokeProbeVersion: 1,
+      databaseMigration: '20261010000000_kernel_0_3_0',
+    };
+    const outcome = await buildUpdatePlan({
+      prisma,
+      catalog: catalog([
+        entry({
+          version: '1.1.0',
+          compatibility: {
+            kernel: '>=0.2.0 <0.4.0',
+            kernelApi: '^0.4.0',
+            frontendAbi: '^1.0.0',
+            packageFormat: 1,
+          },
+        }),
+      ]),
+      policy: normalizeUpdatePolicy({}),
+      instanceId: 'sp',
+      baselineGeneration: 0,
+      kernelCandidates: [kernelManifest],
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.includesKernel).toBe(true);
+    expect(outcome.plan.kernel.version).toBe('0.3.0');
+    expect(outcome.plan.kernel.digest).toContain('f'.repeat(64));
+    expect(outcome.task.targetDigest).toContain('f'.repeat(64));
+  });
+
+  it('blocks on an incompatible kernel candidate with a concrete reason', async () => {
+    const prisma = fakePrisma({});
+    const outcome = await buildUpdatePlan({
+      prisma,
+      catalog: catalog([]),
+      policy: normalizeUpdatePolicy({ channel: 'stable' }),
+      instanceId: 'sp',
+      baselineGeneration: 0,
+      kernelCandidates: [
+        {
+          formatVersion: 1,
+          kind: 'kernel' as const,
+          version: '0.3.0',
+          channel: 'stable' as const,
+          kernelApi: '0.4.0',
+          frontendAbi: '1.0.0',
+          updateProtocol: 2,
+          upgradeFrom: '>=0.1.0',
+          migrationPath: 'direct' as const,
+          schemaRange: '*',
+          images: [{ platform: 'linux/amd64', digest: `ghcr.io/x/y@sha256:${'a'.repeat(64)}` }],
+          corePackages: [],
+          supportedPlatforms: ['linux/amd64'],
+          smokeProbeVersion: 1,
+          databaseMigration: '20261010000000',
+        },
+      ],
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.blocks[0]?.detail).toContain('升级协议');
+  });
 });
 
 describe('task channel (submit → result)', () => {

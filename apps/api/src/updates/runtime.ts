@@ -9,8 +9,10 @@
 
 import path from 'node:path';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
+import { catalogKernelRefs, type KernelManifest } from '@stackpanel/spec';
 import type { CatalogInstallContext } from '../distribution/runtime.ts';
 import { resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import { fetchAndVerifyKernelManifest } from '../distribution/kernel-source.ts';
 import { env } from '../config/env.ts';
 
 /**
@@ -50,4 +52,31 @@ export function updateInstanceId(): string {
 /** 目录安装/更新上下文；未配置目录仓时为 null（离线）。 */
 export async function updateCatalogContext(): Promise<CatalogInstallContext | null> {
   return resolveCatalogInstallContext();
+}
+
+/**
+ * 取回并验签目录引用的**内核候选清单**（§13-4）。未配置目录、目录无内核引用，或某个
+ * 引用下载/验签失败时，跳过该引用（不阻断扩展更新）；返回已验签通过的内核清单集合。
+ */
+export async function loadKernelCandidates(
+  context: CatalogInstallContext,
+): Promise<KernelManifest[]> {
+  const refs = catalogKernelRefs(context.catalog);
+  if (refs.length === 0) return [];
+  const manifests: KernelManifest[] = [];
+  for (const ref of refs) {
+    try {
+      const result = await fetchAndVerifyKernelManifest({
+        ref,
+        cache: context.cache,
+        keyring: context.keyring,
+        ...(context.token ? { token: context.token } : {}),
+        ...(context.fetchImpl ? { fetchImpl: context.fetchImpl } : {}),
+      });
+      manifests.push(result.manifest);
+    } catch {
+      // 单个内核引用不可用不影响扩展求解；内核自动升级仅在有可用签名清单时进行。
+    }
+  }
+  return manifests;
 }
