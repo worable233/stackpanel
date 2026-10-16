@@ -56,7 +56,8 @@
     "logout": "退出登录",
     "roleAdmin": "管理员",
     "roleUser": "普通用户",
-    "homeAriaLabel": "回到首页"
+    "homeAriaLabel": "回到首页",
+    "updates": "升级"
   },
   "auth": {
     "login": {
@@ -640,7 +641,12 @@
       "title": "通知中心",
       "description": "面向当前管理员的站内通知，与用户收件箱同源。"
     },
-    "pluginActions": "插件操作"
+    "pluginActions": "插件操作",
+    "updates": {
+      "title": "更新中心",
+      "pageDescription": "通过独立执行器求解并应用内核/插件升级。",
+      "serviceUnavailable": "更新中心不可用：{error}"
+    }
   },
   "locale": {
     "zh-CN": "简体中文",

@@ -14,6 +14,7 @@ const FALLBACK_NAV: BackendNavigationItem[] = [
   { label: 'nav.rbac', href: '/admin/rbac' },
   { label: 'nav.audit', href: '/admin/audit' },
   { label: 'nav.themes', href: '/admin/themes' },
+  { label: 'nav.updates', href: '/admin/updates' },
 ];
 /**
  * Admin shell with a two-row top navigation: toolbar + horizontal menu.

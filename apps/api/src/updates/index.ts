@@ -32,3 +32,7 @@ export {
 } from './runtime.ts';
 export { readUpdaterStatus } from './status.ts';
 export type { UpdaterStatus } from './status.ts';
+export { decideAutoUpdate } from './auto.ts';
+export type { AutoUpdateDecision, AutoUpdateInput, AutoUpdateSkipReason } from './auto.ts';
+export { runAutoUpdate } from './auto-run.ts';
+export type { AutoUpdateResult } from './auto-run.ts';

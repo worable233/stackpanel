@@ -59,6 +59,8 @@ export interface KernelSweepDeps {
   walletHoldSweep: () => Promise<void>;
   /** 目录刷新（PLAN §10）。缺省为无操作：未配置目录仓的实例完全离线。 */
   catalogRefresh?: () => Promise<void>;
+  /** 自动更新评估（§13-6）。缺省为无操作：未配置目录仓或策略关闭时完全离线。 */
+  autoUpdate?: () => Promise<void>;
   logger: { warn: (m: string) => void };
 }
 
@@ -116,6 +118,14 @@ export async function registerKernelSweeps(
       { everyMs: CATALOG_REFRESH_MS },
       undefined,
     );
+  }
+  // §13-6：目录刷新后评估自动更新。与刷新同频（刷新内部按 isDue 施加抖动与离线短路）；
+  // 未配置目录仓时 deps.autoUpdate 为 undefined，不注册、零出网。
+  if (deps.catalogRefresh && deps.autoUpdate) {
+    jobs.handle(KERNEL_JOBS.autoUpdate, async () => {
+      await deps.autoUpdate?.();
+    });
+    await jobs.schedule(KERNEL_JOBS.autoUpdate, { everyMs: CATALOG_REFRESH_MS }, undefined);
   }
 }
 

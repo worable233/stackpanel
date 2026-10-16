@@ -23,6 +23,11 @@ import {
   developerOverviewResponseSchema,
   frontendAuditResponseSchema,
   frontendApplyStatusResponseSchema,
+  updateStatusResponseSchema,
+  updatePolicyResponseSchema,
+  updatePlanResponseSchema,
+  updateSubmitResponseSchema,
+  updateResultsResponseSchema,
   frontendDescriptorSchema,
   healthSchema,
   loginResponseSchema,
@@ -83,6 +88,10 @@ import type {
   AuditLogResponse,
   AdminPluginsResponse,
   FrontendApplyStatusResponse,
+  UpdateStatusResponse,
+  UpdatePolicyView,
+  UpdatePlanResponse,
+  UpdateSubmitResponse,
   AdminThemesResponse,
   AdminProductsResponse,
   AdminServiceMutationResponse,
@@ -166,7 +175,7 @@ async function request<T>(
   fetchImpl: typeof fetch,
   url: string,
   init: {
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
     body: unknown | undefined;
     token: string | undefined;
   },
@@ -277,6 +286,16 @@ export class ApiClient {
     );
   }
 
+  put<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+    return request(
+      this.#fetch,
+      `${this.baseUrl}${path}`,
+      { method: 'PUT', body, token: this.token },
+      this.timeoutMs,
+      schema,
+    );
+  }
+
   del<T>(path: string, schema: z.ZodType<T>): Promise<T> {
     return request(
       this.#fetch,
@@ -324,6 +343,41 @@ export class ApiClient {
   /** Read plugin-frontend rebuild/reload progress of the web tier. */
   getFrontendApplyStatus(): Promise<FrontendApplyStatusResponse> {
     return this.get('/admin/plugins/frontend-status', frontendApplyStatusResponseSchema);
+  }
+
+  /** Read the update center status (policy, updater projection, catalog state). */
+  getUpdateStatus(): Promise<UpdateStatusResponse> {
+    return this.get('/admin/updates/status', updateStatusResponseSchema);
+  }
+
+  /** Update the auto-update policy. */
+  updateUpdatePolicy(patch: Partial<UpdatePolicyView>): Promise<{ policy: UpdatePolicyView }> {
+    return request(
+      this.#fetch,
+      `${this.baseUrl}/admin/updates/policy`,
+      { method: 'PUT', body: patch, token: this.token },
+      this.timeoutMs,
+      updatePolicyResponseSchema,
+    );
+  }
+
+  /** Solve a full deployment plan from the signed catalog (no state change). */
+  planUpdate(): Promise<UpdatePlanResponse> {
+    return this.post('/admin/updates/plan', {}, updatePlanResponseSchema);
+  }
+
+  /** Submit an update task to the instance-private channel. */
+  submitUpdate(
+    input: { acknowledge?: boolean; idempotencyKey?: string } = {},
+  ): Promise<UpdateSubmitResponse> {
+    return this.post('/admin/updates/submit', input, updateSubmitResponseSchema);
+  }
+
+  /** List recent update task results projected by the updater. */
+  listUpdateResults(): Promise<{
+    results: Array<{ idempotencyKey: string; result: { phase: string } }>;
+  }> {
+    return this.get('/admin/updates/results', updateResultsResponseSchema);
   }
 
   /** Read the append-only audit trail (admin only). */

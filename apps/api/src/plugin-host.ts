@@ -18,6 +18,7 @@ import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { loadPluginDefinition, scanPlugins, seedBuiltinPlugins } from './lib/plugins.ts';
 import { packageManager } from './packages/manager.ts';
 import { getCatalogRefresh } from './distribution/runtime.ts';
+import { runAutoUpdate } from './updates/auto-run.ts';
 import { configureRuntimeCoherence, type RuntimeCoherence } from './runtime/coherence.ts';
 import { getEventBus, getOutboxBus } from './plugins/events.ts';
 import { getPrisma } from './plugins/prisma.ts';
@@ -223,6 +224,17 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
                   logger.warn(
                     `[distribution] 目录刷新失败（${result.failure.kind}）：${result.failure.message}`,
                   );
+                }
+              },
+              // §13-6：刷新后按策略评估自动更新。默认策略关闭，只有显式开启才投递。
+              autoUpdate: async () => {
+                const result = await runAutoUpdate({ prisma: getPrisma() });
+                if (result.submitted) {
+                  logger.info(
+                    `[distribution] 自动更新已投递（${result.idempotencyKey ?? ''}）：${result.reason}`,
+                  );
+                } else if (result.reason !== 'auto-disabled') {
+                  logger.info(`[distribution] 自动更新跳过：${result.reason} ${result.detail ?? ''}`);
                 }
               },
             }

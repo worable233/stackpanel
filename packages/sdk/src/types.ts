@@ -529,6 +529,81 @@ export interface AdminPluginsResponse {
   plugins: AdminPlugin[];
 }
 
+/** Update channel. */
+export type UpdateChannel = 'stable' | 'beta';
+
+/** Update strategy (GET /admin/updates/status · PUT /admin/updates/policy). */
+export interface UpdatePolicyView {
+  autoUpdate: boolean;
+  channel: UpdateChannel;
+  autoUpdateKernel: boolean;
+  excluded: string[];
+  pinned: Record<string, string>;
+  maintenanceWindow?: { startHour: number; endHour: number };
+  allowPermissionIncrease: boolean;
+  allowIrreversibleMigration: boolean;
+  updatedAt?: string;
+  updatedBy?: string | null;
+}
+
+/** Block reason returned when a deployment plan cannot be solved. */
+export interface UpdateBlockReason {
+  code: string;
+  detail: string;
+  component?: { kind: string; id: string };
+}
+
+/** One planned component upgrade. */
+export interface UpdatePlannedPackage {
+  kind: 'plugin' | 'theme';
+  id: string;
+  fromVersion: string | null;
+  toVersion: string;
+  revision: string;
+  addsPermissions: boolean;
+  reversible: boolean;
+}
+
+/** Updater status projection (GET /admin/updates/status). */
+export interface UpdateUpdaterStatus {
+  generation: number;
+  digest: string | null;
+  activeTask: string | null;
+  recent: Array<{ idempotencyKey: string; result: { phase: string } }>;
+  updatedAt: string;
+}
+
+export interface UpdateStatusResponse {
+  status: UpdateUpdaterStatus | null;
+  policy: UpdatePolicyView;
+  catalogConfigured: boolean;
+  catalogExpired: boolean | null;
+  instanceId: string;
+}
+
+export interface UpdatePlanResponse {
+  ok: boolean;
+  blocks?: UpdateBlockReason[];
+  planDigest?: string;
+  plan?: {
+    kernel: { version: string; digest: string; migration: string };
+    packages: UpdatePlannedPackage[];
+  };
+  task?: {
+    instanceId: string;
+    baselineGeneration: number;
+    targetDigest: string;
+    idempotencyKey: string;
+  };
+  requiresAuthorization?: boolean;
+}
+
+export interface UpdateSubmitResponse {
+  submitted: boolean;
+  idempotencyKey: string;
+  planDigest: string;
+}
+
 /** Progress of the web tier's plugin-frontend rebuild/reload (GET /admin/plugins/frontend-status). */
 export type FrontendApplyState = 'pending' | 'building' | 'restarting' | 'succeeded' | 'failed';
 
@@ -820,11 +895,7 @@ export interface DeveloperOverviewResponse {
 
 /** 渠道可授予的能力 scope（与 `/sp/v1` 一致）。 */
 export type DeveloperSpScope =
-  | 'catalog:read'
-  | 'order:read'
-  | 'order:write'
-  | 'service:read'
-  | 'service:write';
+  'catalog:read' | 'order:read' | 'order:write' | 'service:read' | 'service:write';
 
 /** 新建渠道请求体。 */
 export interface CreateResellerInput {

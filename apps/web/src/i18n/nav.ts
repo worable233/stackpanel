@@ -16,6 +16,7 @@ const NAV_KEYS: Record<string, string> = {
   '/admin/rbac': 'nav.rbac',
   '/admin/audit': 'nav.audit',
   '/admin/themes': 'nav.themes',
+  '/admin/updates': 'nav.updates',
   '/admin/notifications': 'nav.notifications',
   '/account': 'nav.dashboard',
   '/account/security': 'nav.security',
