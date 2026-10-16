@@ -157,4 +157,6 @@ export const KERNEL_JOBS = {
   paymentSweep: 'payments.sweep-expired',
   walletHoldSweep: 'wallet.sweep-holds',
   outboxRelay: 'outbox.relay',
+  /** 目录刷新（§10：六小时 + 抖动；未配置目录仓时处理器为空操作）。 */
+  catalogRefresh: 'distribution.catalog-refresh',
 } as const;

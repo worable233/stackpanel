@@ -52,6 +52,15 @@ const envSchema = z.object({
   OPEN_API_TOKEN_RPM: z.coerce.number().int().min(0).default(240),
   OPEN_API_TOKEN_CONCURRENCY: z.coerce.number().int().min(0).default(0),
   STACKPANEL_SIGNING_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+  // GitHub 分发（PLAN-github-distribution-and-updates §2、§10）。目录仓地址与渠道
+  // 决定后台刷新从哪取签名目录；只读 token 可选（私有目录/提高配额），浏览器与插件
+  // 不可见。未配置仓库时内核不发起任何目录网络请求（自托管默认离线）。
+  DISTRIBUTION_CATALOG_REPOSITORY: z.preprocess(emptyToUndefined, z.string().optional()),
+  DISTRIBUTION_CATALOG_CHANNEL: z
+    .enum(['stable', 'beta'])
+    .default('stable'),
+  DISTRIBUTION_CATALOG_REF: z.string().default('main'),
+  DISTRIBUTION_CATALOG_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
   // Infrastructure. Redis is mandatory in production (ADR-0017); storage
   // defaults to the local disk in development and S3 in production.
   REDIS_URL: z.preprocess(emptyToUndefined, z.string().optional()),

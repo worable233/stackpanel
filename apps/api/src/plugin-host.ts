@@ -17,6 +17,7 @@ import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { loadPluginDefinition, scanPlugins, seedBuiltinPlugins } from './lib/plugins.ts';
 import { packageManager } from './packages/manager.ts';
+import { getCatalogRefresh } from './distribution/runtime.ts';
 import { configureRuntimeCoherence, type RuntimeCoherence } from './runtime/coherence.ts';
 import { getEventBus, getOutboxBus } from './plugins/events.ts';
 import { getPrisma } from './plugins/prisma.ts';
@@ -206,12 +207,26 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     },
     registerKernelJobs(): void {
       const kernelJobs = createKernelJobContext('kernel', getJobRuntime());
+      const catalogRefresh = getCatalogRefresh();
       void registerKernelSweeps(kernelJobs, {
         stateSweep: () => stateService.sweep(),
         paymentSweep: () => paymentsService.sweepExpired().then(() => undefined),
         walletHoldSweep: () => walletService.sweepExpiredHolds().then(() => undefined),
         outboxRelay: () => getOutboxBus().relay(),
         outboxCleanup: () => getOutboxBus().cleanup().then(() => undefined),
+        // §10：后台目录刷新。未配置目录仓时为 undefined（不注册、零出网）。
+        ...(catalogRefresh
+          ? {
+              catalogRefresh: async () => {
+                const result = await catalogRefresh.refresh();
+                if (result.failure) {
+                  logger.warn(
+                    `[distribution] 目录刷新失败（${result.failure.kind}）：${result.failure.message}`,
+                  );
+                }
+              },
+            }
+          : {}),
         logger: { warn: (message) => logger.warn(message) },
       });
       // ADR-0018: export/import run on any consumer (API replicas and worker),

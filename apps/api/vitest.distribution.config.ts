@@ -6,6 +6,7 @@ export default defineConfig({
       'tests/unit/distribution-source.test.ts',
       'tests/unit/distribution-package.test.ts',
       'tests/unit/distribution-keyring.test.ts',
+      'tests/unit/distribution-refresh.test.ts',
       'tests/unit/package-transaction.test.ts',
       'tests/unit/frontend-assets.test.ts',
     ],
