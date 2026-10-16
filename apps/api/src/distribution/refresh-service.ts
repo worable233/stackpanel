@@ -83,6 +83,44 @@ export class CatalogRefreshService {
     return this.lastResolved;
   }
 
+  /**
+   * 若无内存快照则触发一次（合并）刷新并返回结果；已有则直接返回。
+   * 供**显式**的用户动作（如市场安装）在需要目录时按需取一次，页面渲染路径不用它。
+   */
+  async ensureCurrent(): Promise<ResolvedCatalog | null> {
+    if (this.lastResolved) return this.lastResolved;
+    const result = await this.refresh();
+    return result.resolved;
+  }
+
+  /** 条件请求缓存（安装消费端做 Release 下载时复用同一缓存）。 */
+  get cache(): SourceCache {
+    return this.opts.cache;
+  }
+
+  /** 当前配置的发布渠道。 */
+  get channel(): ReleaseChannel {
+    return this.opts.options.channel;
+  }
+
+  /** 目录仓只读 token（可选）。 */
+  get token(): string | undefined {
+    return this.opts.options.token;
+  }
+
+  /**
+   * 当前信任根（每次现取，支持轮换）。安装消费端与刷新协调器共用同一信任根，
+   * 避免「刷新信任的包 key 与安装校验的 key 不一致」。
+   */
+  async loadTrustKeyring(): Promise<Keyring> {
+    return this.opts.loadKeyring();
+  }
+
+  /** 定制的 `fetch`（测试注入；生产为 undefined，走全局 fetch）。 */
+  get fetchImpl(): typeof fetch | undefined {
+    return this.opts.options.fetchImpl;
+  }
+
   /** 距离下次允许刷新还剩多少毫秒（0 表示可以立即刷新）。 */
   cooldownRemainingMs(): number {
     return Math.max(0, this.nextAllowedAt - this.now().getTime());

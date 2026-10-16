@@ -12,6 +12,7 @@ export * from './catalog-consumer.ts';
 export * from './catalog-state.ts';
 export * from './refresh-service.ts';
 export * from './runtime.ts';
+export * from './kernel-capabilities.ts';
 export * from './package-source.ts';
 export * from './keyring.ts';
 export {

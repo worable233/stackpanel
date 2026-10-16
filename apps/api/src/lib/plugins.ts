@@ -155,6 +155,29 @@ export function parsePluginZip(
     throw new PluginError(400, '无效的 ZIP 压缩包');
   }
 
+  const { manifest, files } = assemblePluginFiles(entries);
+
+  try {
+    verifyPackageSignature(files, signingPublicKey);
+  } catch (err) {
+    if (err instanceof SignatureError) throw new PluginError(422, err.message);
+    throw err;
+  }
+
+  return { manifest, files };
+}
+
+/**
+ * 校验一组**已解包**的插件文件并返回可落盘的集合（**不含**包签名校验）。
+ *
+ * 这是 ZIP 上传与远程目录安装**共用**的包体规则（§13-3「统一 ZIP/本地/远程市场
+ * 安装」）：上传路径在此之上追加单公钥 `verifyPackageSignature`；远程路径的签名
+ * 已由 `fetchCatalogPackage` 按 keyring 绑定校验，故不重复走本函数的签名分支。
+ */
+export function assemblePluginFiles(entries: Record<string, Uint8Array>): {
+  manifest: PluginManifestFile;
+  files: Map<string, Uint8Array>;
+} {
   const files = new Map<string, Uint8Array>();
   const frontendFiles = new Map<string, Uint8Array>();
   for (const [name, data] of Object.entries(entries)) {
@@ -201,13 +224,6 @@ export function parsePluginZip(
   const entryData = files.get(entry);
   if (!entryData) throw new PluginError(422, `缺少插件入口文件：${entry}`);
   if (entryData.length > MAX_ENTRY_BYTES) throw new PluginError(422, '插件入口文件过大');
-
-  try {
-    verifyPackageSignature(files, signingPublicKey);
-  } catch (err) {
-    if (err instanceof SignatureError) throw new PluginError(422, err.message);
-    throw err;
-  }
 
   return { manifest, files };
 }

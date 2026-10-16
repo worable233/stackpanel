@@ -159,9 +159,30 @@ export function parseThemeZip(
     throw new ThemeError(400, '无效的 ZIP 压缩包');
   }
 
+  const { manifest, files } = assembleThemeFiles(all);
+
+  try {
+    verifyPackageSignature(files, signingPublicKey);
+  } catch (err) {
+    if (err instanceof SignatureError) throw new ThemeError(422, err.message);
+    throw err;
+  }
+
+  return { manifest, files };
+}
+
+/**
+ * 校验一组**已解包**的主题文件并返回可落盘的集合（**不含**包签名校验）。
+ * ZIP 上传与远程目录安装共用（§13-3）。远程路径的签名由 `fetchCatalogPackage`
+ * 按 keyring 绑定校验。
+ */
+export function assembleThemeFiles(entries: Record<string, Uint8Array>): {
+  manifest: ThemeManifest;
+  files: Map<string, Uint8Array>;
+} {
   const files = new Map<string, Uint8Array>();
   const frontendFiles = new Map<string, Uint8Array>();
-  for (const [name, data] of Object.entries(all)) {
+  for (const [name, data] of Object.entries(entries)) {
     if (name.endsWith('/') || data.length === 0) continue;
     if (!isSafeEntryName(name)) throw new ThemeError(422, `非法的文件名：${name}`);
     if (name.startsWith('frontend/')) {
@@ -219,13 +240,6 @@ export function parseThemeZip(
   for (const [name, data] of files.entries()) {
     if (!name.startsWith('assets/')) continue;
     if (data.length > MAX_ASSET_BYTES) throw new ThemeError(422, `资源文件过大：${name}`);
-  }
-
-  try {
-    verifyPackageSignature(files, signingPublicKey);
-  } catch (err) {
-    if (err instanceof SignatureError) throw new ThemeError(422, err.message);
-    throw err;
   }
 
   return { manifest, files };

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import type { MarketPackage } from '@stackpanel/sdk';
 import type { PluginManifestFile } from './plugins.ts';
+import type { CatalogMarketEntry } from './market-catalog.ts';
 import { readFrontendManifest } from './frontend.ts';
 import { packageManager } from '../packages/manager.ts';
 import { getPrisma } from '../plugins/prisma.ts';
@@ -192,6 +193,30 @@ export async function marketPackageView(
           },
         }
       : {}),
+  };
+}
+
+/**
+ * 远程目录条目的市场视图（§13-3）。与本地 {@link marketPackageView} 共用同一
+ * `MarketPackage` 形状，前端无需为远程来源分叉；`blocks` 非空时该条目不可安装。
+ */
+export function catalogMarketPackageView(
+  entry: CatalogMarketEntry,
+  installedVersion: string | null,
+): MarketPackage {
+  const installed = installedVersion !== null;
+  return {
+    id: entry.id,
+    name: entry.name,
+    version: entry.version,
+    ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.publisher ? { author: entry.publisher } : {}),
+    kind: entry.kind,
+    installed,
+    installedVersion,
+    upgradable: installed && installedVersion !== entry.version,
+    current: installed && installedVersion === entry.version,
+    builtin: false,
   };
 }
 

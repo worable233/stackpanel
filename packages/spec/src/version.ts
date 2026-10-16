@@ -35,6 +35,19 @@ export const KERNEL_API_VERSION = '0.4.0';
  */
 export const KERNEL_VERSION = '0.2.0';
 
+/**
+ * 宿主前端 ABI 版本（契约 03 / runtime-frontend-contracts）。
+ *
+ * 与 `KERNEL_VERSION`（产品版本）、`KERNEL_API_VERSION`（后端契约版本）是**独立
+ * 维度**：它标记宿主提供的 React / next / `@stackpanel/ui` / `@stackpanel/sdk`
+ * 等前端 ABI 槽的兼容面（见 `runtime-frontend-contracts/02`）。包的
+ * `compatibility.frontendAbi` 必须命中本范围才允许安装（`checkPackageCompatibility`）。
+ *
+ * 当前取计划 §3.2 示例所用的 `1.0.0`；当 `PLAN-runtime-frontend-loading` 完成
+ * 「运行时前端正式接入」后，本值应与宿主 ABI 表的实际版本统一，并由发版流程同步。
+ */
+export const KERNEL_FRONTEND_ABI = '1.0.0';
+
 /** 人类可读的开放平台版本，用于文档与响应头。 */
 export const API_VERSION = 'v1';
 
