@@ -20,6 +20,7 @@ import { composeConfigFromEnv } from './compose-config.ts';
 import { ComposeDeploymentAdapter } from './compose-adapter.ts';
 import { SpawnCommandRunner } from './command.ts';
 import { FileDeploymentPointer } from './deployment-pointer.ts';
+import { FileUpdaterStatus } from './status.ts';
 
 export interface UpdaterConfig {
   /** updater 独立持久卷根（日志/锁/通道）。 */
@@ -99,6 +100,8 @@ export class Updater {
   private readonly journal: FileUpdateJournal;
   private readonly lock: ExecutorLock;
   private readonly engine: UpdateEngine;
+  private readonly pointer: FileDeploymentPointer;
+  private readonly status: FileUpdaterStatus;
   private stopping = false;
 
   constructor(private readonly deps: UpdaterDeps) {
@@ -117,15 +120,39 @@ export class Updater {
       workDir: path.join(config.stateDir, 'work'),
       ...(deps.now ? { now: deps.now } : {}),
     });
+    this.pointer = FileDeploymentPointer.resolve(config.stateDir);
+    this.status = FileUpdaterStatus.resolve(config.stateDir);
   }
 
   /** 单轮：认领一个任务并执行；返回是否处理了任务。 */
   async tick(): Promise<boolean> {
     const task = await this.channel.claim(this.deps.config.instanceId);
     if (!task) return false;
+    await this.publishStatus(task.idempotencyKey);
     const result = await this.engine.run(task, true);
-    await this.channel.complete(task, await this.toTaskResult(task, result));
+    const projection = await this.toTaskResult(task, result);
+    await this.channel.complete(task, projection);
+    await this.publishStatus(null, { idempotencyKey: task.idempotencyKey, result: projection });
     return true;
+  }
+
+  /** 写只读状态投影（代次/digest/进行中/最近结果），供更新中心读取（§5.2）。 */
+  private async publishStatus(
+    activeTask: string | null,
+    completed?: { idempotencyKey: string; result: UpdateTaskResult },
+  ): Promise<void> {
+    const pointer = await this.pointer.read();
+    const previous = (await this.status.read())?.recent ?? [];
+    const recent = completed
+      ? [completed, ...previous.filter((entry) => entry.idempotencyKey !== completed.idempotencyKey)]
+      : previous;
+    await this.status.write({
+      generation: pointer?.generation ?? 0,
+      digest: pointer?.digest ?? null,
+      activeTask,
+      recent: recent.slice(0, 20),
+      updatedAt: (this.deps.now ?? (() => new Date()))().toISOString(),
+    });
   }
 
   /** 把权威日志投影为业务库结果（检查点来自日志，非内存猜测，§5.2）。 */

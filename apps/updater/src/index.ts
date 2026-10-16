@@ -34,3 +34,5 @@ export { FileDeploymentPointer } from './deployment-pointer.ts';
 export type { DeploymentPointer } from './deployment-pointer.ts';
 export { FileSnapshotStore } from './snapshot-store.ts';
 export type { SnapshotRef } from './snapshot-store.ts';
+export { FileUpdaterStatus } from './status.ts';
+export type { UpdaterStatusSnapshot } from './status.ts';

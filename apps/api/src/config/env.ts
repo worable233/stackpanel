@@ -61,6 +61,13 @@ const envSchema = z.object({
     .default('stable'),
   DISTRIBUTION_CATALOG_REF: z.string().default('main'),
   DISTRIBUTION_CATALOG_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+  // 升级任务通道（§5.1）。API 把声明式任务投递到实例私有卷；updater 认领并回写结果。
+  // 生产里指向 updater 状态卷的 `channel` 子目录；本机/PM2 可共用数据目录。
+  DISTRIBUTION_UPDATE_CHANNEL_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
+  // 绑定实例 ID（与 updater `UPDATER_INSTANCE_ID` 一致）。
+  DISTRIBUTION_UPDATE_INSTANCE_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+  // updater 状态投影文件（只读；更新中心展示当前代次/进行中任务）。
+  DISTRIBUTION_UPDATER_STATUS_FILE: z.preprocess(emptyToUndefined, z.string().optional()),
   // Infrastructure. Redis is mandatory in production (ADR-0017); storage
   // defaults to the local disk in development and S3 in production.
   REDIS_URL: z.preprocess(emptyToUndefined, z.string().optional()),

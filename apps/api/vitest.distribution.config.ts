@@ -12,6 +12,7 @@ export default defineConfig({
       'tests/unit/distribution-runtime.test.ts',
       'tests/unit/package-transaction.test.ts',
       'tests/unit/frontend-assets.test.ts',
+      'tests/unit/updates-plan.test.ts',
     ],
     environment: 'node',
     // `env.ts` is parsed at import time; supply the required values so pure

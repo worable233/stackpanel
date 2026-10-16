@@ -37,6 +37,7 @@ import {
   isTerminalPhase,
   UPDATE_PROTOCOL_VERSION,
 } from '../src/distribution/update-protocol.js';
+import { updateChannelDir, updateTaskFileName } from '../src/distribution/update-channel.js';
 import {
   activeKeys,
   applyKeyRotation,
@@ -578,5 +579,20 @@ describe('install transaction and GC', () => {
       new Date('2026-10-16T00:00:00.000Z'),
     );
     expect(collected).toEqual(['stale']);
+  });
+});
+
+describe('update task channel layout (§5.1)', () => {
+  it('builds instance-scoped paths from a single source', () => {
+    expect(updateChannelDir('/var/lib/updater/channel', 'inbox', 'sp')).toBe(
+      '/var/lib/updater/channel/inbox/sp',
+    );
+    expect(updateChannelDir('/root/', 'results', 'sp')).toBe('/root/results/sp');
+  });
+
+  it('rejects path-traversal in the idempotency key and instance id', () => {
+    expect(() => updateTaskFileName('../evil')).toThrow();
+    expect(() => updateTaskFileName('a/b')).toThrow();
+    expect(() => updateChannelDir('/root', 'inbox', '../x')).toThrow();
   });
 });

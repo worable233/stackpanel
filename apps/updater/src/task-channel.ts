@@ -12,7 +12,12 @@
 
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { UpdateTask, UpdateTaskResult } from '@stackpanel/spec';
+import {
+  updateChannelDir,
+  updateTaskFileName,
+  type UpdateTask,
+  type UpdateTaskResult,
+} from '@stackpanel/spec';
 
 export interface UpdateTaskChannel {
   /** 投递（幂等：同 idempotencyKey 覆盖写，不重复入队）。 */
@@ -26,7 +31,8 @@ export interface UpdateTaskChannel {
 const FILE_PATTERN = /\.json$/;
 
 /**
- * 文件系统通道。目录布局：
+ * 文件系统通道。目录布局由 `@stackpanel/spec` 的 {@link updateChannelDir} 单一来源
+ * 决定，保证内核（提交）与 updater（认领/回写）对同一实例私有卷的路径理解一致：
  *   <root>/inbox/<instanceId>/<idempotencyKey>.json      待执行
  *   <root>/claimed/<instanceId>/<idempotencyKey>.json    已认领（防并发）
  *   <root>/results/<instanceId>/<idempotencyKey>.json    结果投影
@@ -35,22 +41,22 @@ export class FileUpdateTaskChannel implements UpdateTaskChannel {
   constructor(private readonly root: string) {}
 
   private inboxDir(instanceId: string): string {
-    return path.join(this.root, 'inbox', instanceId);
+    return updateChannelDir(this.root, 'inbox', instanceId);
   }
 
   private claimedDir(instanceId: string): string {
-    return path.join(this.root, 'claimed', instanceId);
+    return updateChannelDir(this.root, 'claimed', instanceId);
   }
 
   private resultsDir(instanceId: string): string {
-    return path.join(this.root, 'results', instanceId);
+    return updateChannelDir(this.root, 'results', instanceId);
   }
 
   async submit(task: UpdateTask): Promise<void> {
     const dir = this.inboxDir(task.instanceId);
     await mkdir(dir, { recursive: true });
     // 原子写，避免 updater 读到半写任务。
-    const target = path.join(dir, `${task.idempotencyKey}.json`);
+    const target = path.join(dir, updateTaskFileName(task.idempotencyKey));
     const tmp = `${target}.tmp`;
     await writeFile(tmp, JSON.stringify(task, null, 2), 'utf8');
     await rename(tmp, target);
@@ -84,12 +90,12 @@ export class FileUpdateTaskChannel implements UpdateTaskChannel {
     const dir = this.resultsDir(task.instanceId);
     await mkdir(dir, { recursive: true });
     await writeFile(
-      path.join(dir, `${task.idempotencyKey}.json`),
+      path.join(dir, updateTaskFileName(task.idempotencyKey)),
       JSON.stringify(result, null, 2),
       'utf8',
     );
     // 认领文件在结果落盘后移除。
-    await rm(path.join(this.claimedDir(task.instanceId), `${task.idempotencyKey}.json`), {
+    await rm(path.join(this.claimedDir(task.instanceId), updateTaskFileName(task.idempotencyKey)), {
       force: true,
     });
   }
