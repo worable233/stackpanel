@@ -179,6 +179,14 @@ export async function setupAction(_prev: LoginState, formData: FormData): Promis
     if (error instanceof ApiError && ['setup.already_completed', 'setup.disabled'].includes(error.code ?? '')) {
       redirect('/login');
     }
+    // The API may have committed the first-admin transaction even if its
+    // response was lost while the web process or connection was restarting.
+    // Re-check the authoritative state before showing a misleading network
+    // error on a setup form that can no longer be submitted.
+    if (error instanceof ApiError && error.status === 0) {
+      const setup = await getApiClient().getSetupStatus().catch(() => null);
+      if (setup && !setup.required) redirect('/login');
+    }
     return { error: await apiErrorMessage(error, translate(locale, 'auth.error.setupFailed')) };
   }
   redirect('/admin');

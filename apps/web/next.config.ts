@@ -10,11 +10,13 @@ import type { NextConfig } from 'next';
  * `SITE_URL` simply yields an empty allowlist.
  */
 function publicDevOrigins(): string[] {
+  const origins = ['localhost', '127.0.0.1'];
   try {
-    return process.env.SITE_URL ? [new URL(process.env.SITE_URL).hostname] : [];
+    if (process.env.SITE_URL) origins.push(new URL(process.env.SITE_URL).hostname);
   } catch {
-    return [];
+    // Keep the local development origins above when SITE_URL is unset or invalid.
   }
+  return [...new Set(origins)];
 }
 
 const nextConfig: NextConfig = {

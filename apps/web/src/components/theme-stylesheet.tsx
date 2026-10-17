@@ -10,14 +10,17 @@ import { apiAssetUrl, getApiClient } from '@/lib/api';
  * browser never needs the server-only API origin.
  */
 export default async function ThemeStylesheet() {
-  let href: string | null = null;
+  // The setup page is available before an instance has an active theme (and
+  // during the short window while the API is seeding the built-in theme). Keep
+  // the host styled in that state instead of falling back to browser defaults.
+  let href: string | null = apiAssetUrl('/themes/default/theme.css');
   try {
     const { theme } = await getApiClient().getActiveTheme();
     if (theme) {
       href = apiAssetUrl(`/themes/${theme.id}/theme.css`);
     }
   } catch {
-    href = null;
+    // Keep the built-in default stylesheet as a deterministic fallback.
   }
   return href ? <link rel="stylesheet" href={href} /> : null;
 }

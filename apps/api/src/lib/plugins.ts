@@ -655,8 +655,14 @@ async function seedBuiltinPlugin(id: string): Promise<{ name: string; version: s
   const sourceFrontendManifest = await readFile(path.join(frontendSource, 'manifest.json')).catch(
     () => null,
   );
+  const sourceFrontendPackage = await readFile(path.join(frontendSource, 'package.json')).catch(
+    () => null,
+  );
   const targetFrontendManifest = await readFile(
     path.join(target, 'frontend', 'manifest.json'),
+  ).catch(() => null);
+  const targetFrontendPackage = await readFile(
+    path.join(target, 'frontend', 'package.json'),
   ).catch(() => null);
   if (
     existing &&
@@ -666,7 +672,9 @@ async function seedBuiltinPlugin(id: string): Promise<{ name: string; version: s
     sourceDistRevision === targetDistRevision &&
     existsSync(path.join(target, 'dist', 'index.js')) &&
     (sourceFrontendManifest === null ||
-      targetFrontendManifest?.toString() === sourceFrontendManifest.toString())
+      targetFrontendManifest?.toString() === sourceFrontendManifest.toString()) &&
+    (sourceFrontendPackage === null ||
+      targetFrontendPackage?.toString() === sourceFrontendPackage.toString())
   ) {
     return { name, version }; // already seeded at the same version
   }
@@ -691,6 +699,10 @@ async function seedBuiltinPlugin(id: string): Promise<{ name: string; version: s
     const frontendManifest = path.join(frontendSource, 'manifest.json');
     if (existsSync(frontendManifest)) {
       await writeFile(path.join(frontendTarget, 'manifest.json'), await readFile(frontendManifest));
+    }
+    const frontendPackage = path.join(frontendSource, 'package.json');
+    if (existsSync(frontendPackage)) {
+      await writeFile(path.join(frontendTarget, 'package.json'), await readFile(frontendPackage));
     }
     const frontendDist = path.join(frontendSource, 'dist');
     if (existsSync(frontendDist)) {
