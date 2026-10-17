@@ -109,7 +109,7 @@ StackPanel/
     ├── ui/             # 共享组件
     ├── db/             # Prisma schema、迁移与客户端
     ├── net-guard/      # 共享网络防护原语（SSRF 判定等）
-    ├── plugins/        # 内置插件：认证、商店及商品类型、钱包
+    ├── plugins/        # 内置插件：认证、商店及商品类型、钱包、应用市场
     ├── themes/         # 配置化主题
     └── mcp/            # MCP Server（stdio / HTTP）
 ```

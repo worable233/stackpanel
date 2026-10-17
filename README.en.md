@@ -109,7 +109,7 @@ StackPanel/
     ├── ui/             # Shared components
     ├── db/             # Prisma schema, migrations, and client
     ├── net-guard/      # Shared network-guard primitives (SSRF checks, etc.)
-    ├── plugins/        # Built-in plugins: auth, store and product types, wallet
+    ├── plugins/        # Built-in plugins: auth, store and product types, wallet, market
     ├── themes/         # Configurable themes
     └── mcp/            # MCP Server (stdio / HTTP)
 ```
