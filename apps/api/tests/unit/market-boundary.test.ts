@@ -69,13 +69,20 @@ describe('市场归属（ADR-0020 D3）', () => {
     const manifest = JSON.parse(
       readFileSync(path.join(marketPlugin, 'frontend', 'manifest.json'), 'utf8'),
     ) as {
-      adminRoutes: Array<{ permission?: string; nav?: { label: string } }>;
+      adminRoutes: Array<{ permission?: string; nav?: { labelKey?: string } }>;
       actions: Array<{ path: string; permission?: string }>;
       finders: string[];
     };
     const route = manifest.adminRoutes[0];
     expect(route?.permission).toBe('market.admin');
-    expect(route?.nav?.label).toBeTruthy();
+    // ADR-0016: nav copy lives in the package catalog, not as inline Chinese.
+    // The key must resolve in every shipped locale (see `i18n:packages`).
+    const labelKey = route?.nav?.labelKey;
+    expect(labelKey).toBeTruthy();
+    const catalogs = JSON.parse(
+      readFileSync(path.join(marketPlugin, 'frontend', 'messages', 'zh-CN.json'), 'utf8'),
+    ) as Record<string, string>;
+    expect(catalogs[labelKey ?? '']).toBeTruthy();
     expect(manifest.finders).toContain('market.adminPlugins');
     expect(manifest.finders).toContain('market.adminThemes');
     // 动作路径必须落在插件自己的命名空间，而不是内核路径。

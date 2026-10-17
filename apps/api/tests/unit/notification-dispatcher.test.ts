@@ -10,6 +10,7 @@ import {
   NotificationDispatcher,
   type NotificationDispatcherOptions,
 } from '../../src/notifications/dispatcher.ts';
+import { present } from '../helpers.ts';
 
 /** Minimal in-memory fake of the fields the dispatcher touches. */
 interface DeliveryRow {
@@ -211,7 +212,7 @@ describe('NotificationDispatcher', () => {
 
     await dispatcher.dispatch(VIEW, 'user-1');
 
-    const row = [...db.rows.values()][0]!;
+    const row = present([...db.rows.values()][0]);
     expect(row.status).toBe('PENDING');
     expect(row.attempts).toBe(1);
     expect(row.lastError).toBe('smtp down');
@@ -227,7 +228,7 @@ describe('NotificationDispatcher', () => {
 
     await dispatcher.dispatch(VIEW, 'user-1'); // attempt 1 → PENDING
     // Force due now so the sweep retries immediately.
-    const row = [...db.rows.values()][0]!;
+    const row = present([...db.rows.values()][0]);
     row.nextAttemptAt = new Date(0);
     await dispatcher.sweep(); // attempt 2 → FAILED
 
@@ -243,7 +244,7 @@ describe('NotificationDispatcher', () => {
     const { dispatcher, db } = makeDispatcher([{ id: 'email', name: '邮件', deliver }]);
 
     await dispatcher.dispatch(VIEW, 'user-1');
-    const row = [...db.rows.values()][0]!;
+    const row = present([...db.rows.values()][0]);
     expect(row.status).toBe('PENDING');
 
     fail = false;
@@ -274,7 +275,7 @@ describe('NotificationDispatcher', () => {
     // once; a *changed* payload re-arms (covered below).
     expect(calls).toBe(1);
     expect([...db.rows.values()]).toHaveLength(1);
-    expect([...db.rows.values()][0]!.status).toBe('DELIVERED');
+    expect(present([...db.rows.values()][0]).status).toBe('DELIVERED');
   });
 
   it('sweep marks a delivery FAILED when its channel plugin is gone', async () => {
@@ -282,7 +283,7 @@ describe('NotificationDispatcher', () => {
       { id: 'email', name: '邮件', deliver: async () => {} },
     ]);
     await dispatcher.dispatch(VIEW, 'user-1');
-    const row = [...db.rows.values()][0]!;
+    const row = present([...db.rows.values()][0]);
     row.nextAttemptAt = new Date(0);
     row.status = 'PENDING';
 
@@ -338,7 +339,7 @@ describe('NotificationDispatcher', () => {
     });
 
     await dispatcher.dispatch(VIEW, 'user-1'); // PENDING after failure
-    const row = [...db.rows.values()][0]!;
+    const row = present([...db.rows.values()][0]);
     expect(row.status).toBe('PENDING');
 
     // User disables the channel, then the sweep comes due.
@@ -371,7 +372,7 @@ describe('NotificationDispatcher', () => {
     const { dispatcher, db } = makeDispatcher([{ id: 'email', name: '邮件', deliver }]);
 
     await dispatcher.dispatch(VIEW, 'user-1');
-    const row = [...db.rows.values()][0]!;
+    const row = present([...db.rows.values()][0]);
     expect(row.status).toBe('DELIVERED');
     expect(deliver).toHaveBeenCalledTimes(1);
 
@@ -387,7 +388,7 @@ describe('NotificationDispatcher', () => {
     const { dispatcher, db } = makeDispatcher([{ id: 'email', name: '邮件', deliver }]);
 
     await dispatcher.dispatch(VIEW, 'user-1');
-    const row = [...db.rows.values()][0]!;
+    const row = present([...db.rows.values()][0]);
     expect(deliver).toHaveBeenCalledTimes(1);
 
     // Same event id but the body changed (notification upsert): deliver again.
@@ -421,18 +422,21 @@ describe('NotificationDispatcher', () => {
     } as NotificationDispatcherOptions);
 
     // Subscribe through the real `start()` wiring so the meta path is exercised.
-    let handler: ((payload: unknown, meta?: { eventId: string; topic: string }) => void) | null =
-      null;
-    events.subscribe = ((_topic: string, fn: typeof handler) => {
-      handler = fn;
+    type Handler = (payload: unknown, meta?: { eventId: string; topic: string }) => void;
+    // Boxed so TypeScript does not narrow the captured value to `null` after
+    // the assignment happens inside the subscribe callback.
+    const captured: { handler: Handler | null } = { handler: null };
+    events.subscribe = ((_topic: string, fn: Handler) => {
+      captured.handler = fn;
       return () => {};
     }) as EventBus['subscribe'];
     dispatcher.start();
 
     const payload = { notification: VIEW, userId: 'user-1' };
-    handler!(payload, { eventId: 'evt-1', topic: 'notification.created' });
+    const dispatch = present(captured.handler);
+    dispatch(payload, { eventId: 'evt-1', topic: 'notification.created' });
     // Duplicate delivery of the same event id must be skipped.
-    handler!(payload, { eventId: 'evt-1', topic: 'notification.created' });
+    dispatch(payload, { eventId: 'evt-1', topic: 'notification.created' });
     // `start()` dispatches fire-and-forget; let both run.
     await new Promise((resolve) => setTimeout(resolve, 50));
 

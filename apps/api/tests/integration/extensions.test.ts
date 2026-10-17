@@ -15,7 +15,7 @@ import { ExtensionService } from '../../src/extensions/service.ts';
 import { ensureExtensionModels } from '../../src/extensions/migrator.ts';
 import { PluginRuntime } from '../../src/plugins/runtime.ts';
 import { EventEmitterEventBus } from '../../src/plugins/events.ts';
-import { checkDbAvailable } from '../helpers.ts';
+import { checkDbAvailable, present } from '../helpers.ts';
 
 const dbAvailable = await checkDbAvailable();
 
@@ -361,12 +361,11 @@ describe.skipIf(!dbAvailable)('Extension 引擎（真实库）', () => {
          FROM "ext_e1test_stress" WHERE "id" = $1`,
       item.name,
     );
-    const row = rows[0];
-    expect(row).toBeDefined();
+    const row = present(rows[0], 'stress row');
     // 版本号没有丢更新：每次成功写入都 +1。
-    expect(row!.version).toBeGreaterThan(item.version);
+    expect(row.version).toBeGreaterThan(item.version);
     // 索引列与 spec 始终同步（updateWhere 用一次 UPDATE 同时改两者）。
-    expect(row!.spec_qty).toBe(row!.qty);
+    expect(row.spec_qty).toBe(row.qty);
     await client.delete(stressModel, item.name);
   });
 

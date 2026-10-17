@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import type { EventBus, NotificationChannel, NotificationDispatch } from '@stackpanel/sdk';
+import { present } from '../helpers.ts';
 
 const { getPrisma } = await import('../../src/plugins/prisma.ts');
 const { NotificationDispatcher } = await import('../../src/notifications/dispatcher.ts');
@@ -49,7 +50,7 @@ describe.skipIf(!dbAvailable)('notification dispatcher (real DB)', () => {
 
     expect(count).toBe(1);
     expect(delivered).toHaveLength(1);
-    expect(delivered[0]!.notificationId).toBe(notificationId);
+    expect(present(delivered[0]).notificationId).toBe(notificationId);
 
     const row = await db.notificationDelivery.findUnique({
       where: { notificationId_channelId: { notificationId, channelId: 'it-email' } },
@@ -75,22 +76,25 @@ describe.skipIf(!dbAvailable)('notification dispatcher (real DB)', () => {
     });
 
     await dispatcher.dispatch(notificationView(notificationId), 'user-it');
-    const pending = await db.notificationDelivery.findUnique({
-      where: { notificationId_channelId: { notificationId, channelId: 'it-email-retry' } },
-    });
-    expect(pending?.status).toBe('PENDING');
-    expect(pending?.attempts).toBe(1);
-    expect(pending?.lastError).toBe('smtp down');
+    const pending = present(
+      await db.notificationDelivery.findUnique({
+        where: { notificationId_channelId: { notificationId, channelId: 'it-email-retry' } },
+      }),
+      'pending delivery',
+    );
+    expect(pending.status).toBe('PENDING');
+    expect(pending.attempts).toBe(1);
+    expect(pending.lastError).toBe('smtp down');
 
     // Force the record due now, then let the sweep succeed.
     fail = false;
     await db.notificationDelivery.update({
-      where: { id: pending!.id },
+      where: { id: pending.id },
       data: { nextAttemptAt: new Date(0) },
     });
     await dispatcher.sweep();
 
-    const done = await db.notificationDelivery.findUnique({ where: { id: pending!.id } });
+    const done = await db.notificationDelivery.findUnique({ where: { id: pending.id } });
     expect(done?.status).toBe('DELIVERED');
   });
 

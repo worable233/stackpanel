@@ -16,6 +16,20 @@ export async function checkDbAvailable(): Promise<boolean> {
 }
 
 /**
+ * Narrow away `null`/`undefined` for assertions on values the test just built.
+ *
+ * Test bodies used to reach for `!` here; asserting presence explicitly keeps the
+ * `@typescript-eslint/no-non-null-assertion` ban enforced everywhere and reports
+ * a readable failure instead of a downstream `TypeError`.
+ */
+export function present<T>(value: T | null | undefined, label = 'value'): T {
+  if (value === null || value === undefined) {
+    throw new Error(`expected ${label} to be present`);
+  }
+  return value;
+}
+
+/**
  * No-op Extension runtime for unit tests that only exercise lifecycle wiring.
  * Any attempt to actually use the returned client throws.
  */

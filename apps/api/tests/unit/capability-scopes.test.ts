@@ -96,7 +96,8 @@ describe('refined open-API scopes', () => {
     const again = mergeScopeGovernance(PLUGIN_GOVERNANCE, {
       gateway: ['llm-gateway.use'],
     });
-    expect(new Set(again.gateway).size).toBe(again.gateway!.length);
+    const gateway = again.gateway ?? [];
+    expect(new Set(gateway).size).toBe(gateway.length);
   });
 
   it('aggregates plugin-declared scope governance on top of the kernel baseline (ADR-0021)', () => {
