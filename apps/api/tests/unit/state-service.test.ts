@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryStateService } from '../../src/state/state-service.ts';
+import { present } from '../helpers.ts';
 
 describe('MemoryStateService', () => {
   it('stores and expires TTL values', async () => {
@@ -92,14 +93,13 @@ describe('MemoryStateService', () => {
   it('releases and renews seats by token, and never revives a lost seat', async () => {
     const state = new MemoryStateService();
     const pool = { key: 'pool', limit: 1 };
-    const lease = await state.acquireLease([pool], 60_000);
-    expect(lease).not.toBeNull();
+    const lease = present(await state.acquireLease([pool], 60_000));
     // A foreign token must not release someone else's seat.
     expect(await state.releaseLease({ key: 'pool', token: 'foreign' })).toBe(false);
     expect(await state.acquireLease([pool])).toBeNull();
-    expect(await state.renewLease(lease!, 60_000)).toBe(true);
-    expect(await state.releaseLease(lease!)).toBe(true);
-    expect(await state.renewLease(lease!, 60_000)).toBe(false);
+    expect(await state.renewLease(lease, 60_000)).toBe(true);
+    expect(await state.releaseLease(lease)).toBe(true);
+    expect(await state.renewLease(lease, 60_000)).toBe(false);
     // Freed by its owner, so the seat is available again.
     expect(await state.acquireLease([pool])).not.toBeNull();
   });

@@ -5,6 +5,7 @@ import type { UserAdminDeps } from '../../src/lib/user-admin.ts';
 import { userListResponseSchema, adminUserMutationResponseSchema } from '@stackpanel/sdk';
 vi.mock('../../src/plugins/prisma.ts', () => ({ getPrisma: vi.fn() }));
 import { UserAdminService } from '../../src/lib/user-admin.ts';
+import { present } from '../helpers.ts';
 
 const date = new Date('2026-10-16T00:00:00Z');
 const rows = ['a', 'b'].map((id) => ({
@@ -90,7 +91,7 @@ describe('admin user list', () => {
       groupId: 'group_user',
     });
     expect(result.users.map((user) => user.id)).toEqual(['b', 'a']);
-    const sql = raw.mock.calls[0]![0];
+    const sql = present(raw.mock.calls[0])[0];
     expect(sql.sql).toContain('COALESCE(w.balance, 0) DESC');
     expect(sql.sql).toContain('LIMIT ? OFFSET ?');
     expect(sql.sql).not.toContain("a'_%");

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { closeRedis, getRedis, pingRedis, type RedisClient } from '@stackpanel/db';
 import { RedisStateService } from '../../src/state/redis-state-service.ts';
+import { present } from '../helpers.ts';
 
 /**
  * Redis state service (S5.5). Uses a real Redis when reachable (local `sp-redis`
@@ -104,24 +105,23 @@ describe.skipIf(!available)('RedisStateService', () => {
     const second = await b.acquireLease([candidate], 5_000);
     expect(first?.key).toBe(candidate.key);
     expect(second?.key).toBe(candidate.key);
-    expect(first!.token).not.toBe(second!.token);
+    expect(present(first).token).not.toBe(present(second).token);
     expect(await a.acquireLease([candidate], 5_000)).toBeNull();
     expect(await b.acquireLease([candidate], 5_000)).toBeNull();
     // Releasing a seat makes it available again, and only the holder can do it.
     expect(await a.releaseLease({ key: candidate.key, token: 'not-mine' })).toBe(false);
-    expect(await a.releaseLease(first!)).toBe(true);
+    expect(await a.releaseLease(present(first))).toBe(true);
     expect(await b.acquireLease([candidate], 5_000)).not.toBeNull();
   });
 
   it('renews a held seat and reports a lost one', async () => {
     const state = svc();
     const candidate = { key: `${prefix}renew`, limit: 1 };
-    const lease = await state.acquireLease([candidate], 5_000);
-    expect(lease).not.toBeNull();
-    expect(await state.renewLease(lease!, 60_000)).toBe(true);
-    expect(await state.releaseLease(lease!)).toBe(true);
+    const lease = present(await state.acquireLease([candidate], 5_000));
+    expect(await state.renewLease(lease, 60_000)).toBe(true);
+    expect(await state.releaseLease(lease)).toBe(true);
     // The seat is gone, so renewal must fail rather than resurrect it.
-    expect(await state.renewLease(lease!, 60_000)).toBe(false);
+    expect(await state.renewLease(lease, 60_000)).toBe(false);
   });
 
   it('falls through ordered pools and skips saturated ones untouched', async () => {

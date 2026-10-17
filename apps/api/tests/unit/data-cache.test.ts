@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DataCache, cacheInvalidateChannel } from '../../src/cache/data-cache.ts';
+import { present } from '../helpers.ts';
 
 /** 一个极小的假 Redis：记录广播，允许把消息投递给另一个订阅者。 */
 function fakeRedis() {
@@ -24,8 +25,9 @@ function fakeRedis() {
     on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
       const channel = cacheInvalidateChannel();
       if (event === 'message') {
-        if (!listeners.has(channel)) listeners.set(channel, []);
-        listeners.get(channel)!.push(listener);
+        const bucket = listeners.get(channel) ?? [];
+        bucket.push(listener);
+        listeners.set(channel, bucket);
       }
       return client;
     }),
@@ -130,7 +132,7 @@ describe('DataCache', () => {
     // one 失效 → 广播 → two 的订阅者丢弃条目。
     await one.invalidateKinds(['demo/a']);
     expect(redis.publish).toHaveBeenCalledTimes(1);
-    redis.deliver(cacheInvalidateChannel(), redis.published[0]!.message);
+    redis.deliver(cacheInvalidateChannel(), present(redis.published[0]).message);
     expect(await two.remember('k', { ttlMs: 1000, kinds: ['demo/a'] }, twoLoader)).toBe('from-two');
     expect(twoLoader).toHaveBeenCalledTimes(2);
   });
@@ -143,7 +145,7 @@ describe('DataCache', () => {
     await cache.invalidateKinds(['demo/a']);
     // 把同一条消息投递回自己：不能因此再次清空（它已经清过，且 origin 相同应忽略）。
     await cache.remember('k', { ttlMs: 1000, kinds: ['demo/a'] }, async () => 'v2');
-    redis.deliver(cacheInvalidateChannel(), redis.published[0]!.message);
+    redis.deliver(cacheInvalidateChannel(), present(redis.published[0]).message);
     const loader = vi.fn(async () => 'v3');
     expect(await cache.remember('k', { ttlMs: 1000, kinds: ['demo/a'] }, loader)).toBe('v2');
     expect(loader).not.toHaveBeenCalled();

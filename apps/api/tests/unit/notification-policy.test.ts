@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { NotificationChannel, NotificationTypeDefinition } from '@stackpanel/sdk';
 import { INAPP_CHANNEL_ID } from '@stackpanel/sdk';
 import { KernelNotificationPolicyService } from '../../src/notifications/policy-service.ts';
+import { present } from '../helpers.ts';
 
 /**
  * Minimal in-memory fake of the two models the policy service touches:
@@ -109,7 +110,7 @@ describe('KernelNotificationPolicyService', () => {
       db,
     );
     const view = await service.listForUser('user-1');
-    const entry = view.types.find((t) => t.type === 'order.paid')!;
+    const entry = present(view.types.find((t) => t.type === 'order.paid'), 'order.paid type');
     const channels = entry.channels.map((c) => c.channelId).sort();
     expect(channels).toEqual([INAPP_CHANNEL_ID, 'smtp'].sort());
     expect(entry.channels.every((c) => c.enabled)).toBe(true);
@@ -128,9 +129,18 @@ describe('KernelNotificationPolicyService', () => {
       db,
     );
     const view = await service.listForUser('user-1');
-    const entry = view.types.find((t) => t.type === 'service.provisioning')!;
-    const inapp = entry.channels.find((c) => c.channelId === INAPP_CHANNEL_ID)!;
-    const smtp = entry.channels.find((c) => c.channelId === 'smtp')!;
+    const entry = present(
+      view.types.find((t) => t.type === 'service.provisioning'),
+      'service.provisioning type',
+    );
+    const inapp = present(
+      entry.channels.find((c) => c.channelId === INAPP_CHANNEL_ID),
+      'inapp channel',
+    );
+    const smtp = present(
+      entry.channels.find((c) => c.channelId === 'smtp'),
+      'smtp channel',
+    );
     expect(inapp.enabled).toBe(true);
     expect(smtp.enabled).toBe(false);
   });
@@ -320,9 +330,10 @@ describe('account notification catalog boundaries', () => {
     const { service, db } = makeService(definitions);
     db.prefs.push({ userId: 'user-1', type: 'order.paid', channelId: 'inapp', enabled: true });
     await service.updatePolicy({ types: { 'order.paid': { enabled: false } } });
-    const row = (await service.listForUser('user-1')).types.find(
-      (row) => row.type === 'order.paid',
-    )!;
+    const row = present(
+      (await service.listForUser('user-1')).types.find((row) => row.type === 'order.paid'),
+      'order.paid entry',
+    );
     expect(row.configurable).toBe(false);
     expect(row.channels.every((channel) => !channel.enabled && !channel.configurable)).toBe(true);
     expect((await service.inAppExclusions('user-1'))?.exact).toContain('order.paid');
