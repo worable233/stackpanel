@@ -93,9 +93,27 @@ describe('validateFrontendFiles styles[] (contract 05 §3.2)', () => {
 });
 
 describe('serveFrontendFile MIME (contract 05 §6 / frontend-service.ts)', () => {
+  /**
+   * The legacy flat route validates against `manifest.files[]` (contract 04
+   * §2), so a package dir needs a manifest declaring the served asset.
+   */
+  function manifestJson(files: string[]): string {
+    return JSON.stringify({
+      version: '1.0.0',
+      revision: 'a1b2c3d4e5f6',
+      entry: 'frontend/dist/index.js',
+      files,
+    });
+  }
+
   function fakeReply() {
-    const state: { type?: string; sent?: unknown; code?: number } = {};
+    const state: { type?: string; sent?: unknown; code?: number; headers?: Record<string, string> } =
+      {};
     const reply = {
+      header(name: string, value: string) {
+        state.headers = { ...state.headers, [name]: value };
+        return this;
+      },
       type(value: string) {
         state.type = value;
         return this;
@@ -117,6 +135,10 @@ describe('serveFrontendFile MIME (contract 05 §6 / frontend-service.ts)', () =>
     try {
       await mkdir(path.join(dir, 'frontend', 'dist'), { recursive: true });
       await writeFile(path.join(dir, 'frontend', 'dist', 'theme.css'), '.x{color:red}');
+      await writeFile(
+        path.join(dir, 'frontend', 'manifest.json'),
+        manifestJson(['frontend/dist/theme.css']),
+      );
       const { reply, state } = fakeReply();
       await serveFrontendFile(reply as never, dir, 'dist/theme.css');
       expect(state.type).toBe('text/css; charset=utf-8');
@@ -130,6 +152,10 @@ describe('serveFrontendFile MIME (contract 05 §6 / frontend-service.ts)', () =>
     try {
       await mkdir(path.join(dir, 'frontend', 'dist'), { recursive: true });
       await writeFile(path.join(dir, 'frontend', 'dist', 'index.js'), 'export default {};');
+      await writeFile(
+        path.join(dir, 'frontend', 'manifest.json'),
+        manifestJson(['frontend/dist/index.js']),
+      );
       const { reply, state } = fakeReply();
       await serveFrontendFile(reply as never, dir, 'dist/index.js');
       expect(state.type).toBe('text/javascript; charset=utf-8');
