@@ -69,3 +69,53 @@ describe('CSP allows package stylesheets (contract 05 §5)', () => {
     expect(scriptSrc).not.toContain("'unsafe-inline'");
   });
 });
+
+/**
+ * Regression: a nonce + `'strict-dynamic'` policy in development leaves the SSR
+ * shell completely inert.
+ *
+ * `next dev` emits its Flight/bootstrap inline scripts without the request nonce,
+ * and `'strict-dynamic'` also disables host allowlisting for same-origin
+ * `<script src>` chunks. The page renders but every button, menu, search box,
+ * notification and avatar click does nothing, with no actionable console error.
+ * Dev must therefore allow the dev renderer's own scripts; production must stay
+ * nonce-based.
+ */
+describe('dev CSP keeps the SSR shell interactive', () => {
+  it("dev allows the dev renderer's own inline bootstrap", () => {
+    const scriptSrc = directives(buildCsp('prod-nonce', true)).get('script-src') ?? [];
+    expect(scriptSrc).toContain("'unsafe-inline'");
+  });
+
+  it("dev does not use 'strict-dynamic' (which would drop same-origin chunks)", () => {
+    const scriptSrc = directives(buildCsp('prod-nonce', true)).get('script-src') ?? [];
+    expect(scriptSrc).not.toContain("'strict-dynamic'");
+  });
+
+  it('dev keeps same-origin chunks loadable via host allowlisting', () => {
+    const scriptSrc = directives(buildCsp('prod-nonce', true)).get('script-src') ?? [];
+    expect(scriptSrc).toContain("'self'");
+  });
+
+  it('dev keeps unsupported-eval allowed for the dev renderer', () => {
+    const scriptSrc = directives(buildCsp('prod-nonce', true)).get('script-src') ?? [];
+    expect(scriptSrc).toContain("'unsafe-eval'");
+  });
+
+  it("production still uses the nonce and never 'unsafe-inline'", () => {
+    // Guard the direction of the fix: relaxing dev must not relax production.
+    const scriptSrc = directives(buildCsp('prod-nonce', false)).get('script-src') ?? [];
+    expect(scriptSrc).toContain("'nonce-prod-nonce'");
+    expect(scriptSrc).toContain("'strict-dynamic'");
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(scriptSrc).not.toContain("'unsafe-eval'");
+  });
+
+  it("dev CSS and production CSS both keep style-src 'self' 'unsafe-inline'", () => {
+    for (const isDev of [true, false]) {
+      const styleSrc = directives(buildCsp('n', isDev)).get('style-src') ?? [];
+      expect(styleSrc).toContain("'self'");
+      expect(styleSrc).toContain("'unsafe-inline'");
+    }
+  });
+});

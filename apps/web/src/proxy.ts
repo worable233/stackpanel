@@ -28,16 +28,37 @@ const API_ORIGIN = apiStyleOrigin();
 /**
  * Build the per-request Content-Security-Policy (security audit L-2).
  *
- * Inline scripts are allowed only via a fresh per-request nonce plus
- * `'strict-dynamic'` — the `script-src 'unsafe-inline'` fallback is gone. Next.js
+ * Production: inline scripts are allowed only via a fresh per-request nonce plus
+ * `'strict-dynamic'` — there is no `script-src 'unsafe-inline'` fallback. Next.js
  * reads the nonce back out of the request `Content-Security-Policy` header and
- * applies it to its own scripts and inline bootstrap data automatically, so no
- * tag needs a manual nonce. Inline *styles* keep `'unsafe-inline'` because React
- * and UI libraries legitimately emit `style` attributes, which nonces cannot
- * cover without `'unsafe-hashes'` on every attribute.
+ * applies it to its own scripts and inline bootstrap data, so no tag needs a
+ * manual nonce. Verified against a real `next build` + `next start`: every
+ * emitted `<script src>` carries the nonce, so `'strict-dynamic'` does not
+ * discard the client chunks.
+ *
+ * Development: a nonce-bearing `'strict-dynamic'` policy makes the SSR shell
+ * completely inert. The dev renderer emits its Flight/bootstrap inline scripts
+ * without the request nonce, and under `'strict-dynamic'` the nonce also
+ * disables host allowlisting for same-origin `<script src>` chunks. The result
+ * is HTML that renders but whose buttons, menus, search, notifications and
+ * avatar do nothing, with no useful console error. Dev therefore allows the
+ * dev server's own inline bootstrap and chunks explicitly. This is dev-only:
+ * `isDev` is derived from `NODE_ENV === 'development'`, so a production build
+ * always gets the nonce policy below. Regression coverage lives in
+ * `tests/contract05-csp.test.ts`.
+ *
+ * Inline *styles* keep `'unsafe-inline'` in both modes because React and UI
+ * libraries legitimately emit `style` attributes, which nonces cannot cover
+ * without `'unsafe-hashes'` on every attribute.
  */
 /** Exported for the contract-05 CSP regression test. */
 export function buildCsp(nonce: string, isDev: boolean): string {
+  const scriptSrc = isDev
+    ? // Dev-only: Next's own inline bootstrap is emitted without the nonce, and
+      // `'strict-dynamic'` would additionally drop same-origin chunks.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
+
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -47,7 +68,7 @@ export function buildCsp(nonce: string, isDev: boolean): string {
     `img-src 'self' data: blob:${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
     "font-src 'self' data:",
     `style-src 'self' 'unsafe-inline'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ''}`,
+    scriptSrc,
     `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${isDev ? ' ws: wss:' : ''}`,
   ].join('; ');
 }
