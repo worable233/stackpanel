@@ -2,9 +2,11 @@ import type {
   AuthService,
   CacheService,
   CaptchaService,
+  CurrencyService,
   EventBus,
   FxService,
   IdentityChallengeService,
+  NotificationPolicyService,
   NotificationsService,
   PaymentService,
   StateService,
@@ -18,10 +20,15 @@ import type {
   WalletService,
 } from '@stackpanel/sdk';
 import {
+  CurrencyError,
   DisposableList,
+  findCurrency,
+  formatMinorCurrency,
+  listCurrencies,
   normalizePluginDependencies,
   normalizePluginPermissions,
   runEffect,
+  toMinorUnits,
 } from '@stackpanel/sdk';
 import type { ExtensionTransaction } from '@stackpanel/sdk';
 import { ExtensionValidationError } from '@stackpanel/sdk';
@@ -44,11 +51,42 @@ import {
   type PluginCapabilityEntry,
   type ScopeGovernance,
 } from '../lib/capability-registry.ts';
-import { restartIsolatedPlugin, setIsolatedWorkerExitHandler, stopIsolatedPlugin } from './isolated/host.ts';
+import {
+  restartIsolatedPlugin,
+  setIsolatedWorkerExitHandler,
+  stopIsolatedPlugin,
+} from './isolated/host.ts';
+import { OutboxEventBus, outboxOrigin, serializeOutboxBody } from './events.ts';
 
 /** Tracks an in-flight `ctx.tx` so nested calls fail with a clear error. */
 const txContext = new AsyncLocalStorage<true>();
 const ISOLATED_WORKER_FAILURE_THRESHOLD = 3;
+
+/** True when the bound event bus is the durable outbox bus (kernel default). */
+function isOutboxBus(events: EventBus): events is OutboxEventBus {
+  return events instanceof OutboxEventBus;
+}
+
+/**
+ * Fallback catalog for lifecycle-only runtimes (unit tests, hermetic boots).
+ * It serves the static SDK catalog but cannot persist enable/disable toggles —
+ * the real host always injects the DB-backed `KernelCurrencyService`.
+ */
+const STATIC_CURRENCY_SERVICE: CurrencyService = {
+  list: async () => listCurrencies(),
+  listEnabled: async () => listCurrencies().filter((definition) => definition.enabled),
+  get: async (code) => findCurrency(code),
+  requireEnabled: async (code) => {
+    const definition = findCurrency(code);
+    if (!definition) throw new CurrencyError('currency.invalid', 400, `不支持的币种：${code}`);
+    if (!definition.enabled) {
+      throw new CurrencyError('currency.disabled', 409, `币种 ${definition.code} 已被停用`);
+    }
+    return definition;
+  },
+  toMinor: (value, code) => toMinorUnits(value, code),
+  format: (amountMinor, code, locale) => formatMinorCurrency(amountMinor, code, locale),
+};
 
 export interface PluginRuntimeOptions {
   events: EventBus;
@@ -74,10 +112,16 @@ export interface PluginRuntimeOptions {
   wallet: WalletService;
   /** Kernel-owned FX service exposed to plugins via ctx.fx. */
   fx: FxService;
+  /** Kernel-owned currency catalog + precision via ctx.currency. Optional so
+   * lifecycle-only unit tests can construct a runtime without the full host;
+   * the process-wide host always supplies the DB-backed implementation. */
+  currency?: CurrencyService;
   /** Kernel-owned auth capabilities exposed to plugins via ctx.auth. */
   auth: AuthService;
   /** Kernel-owned notification service exposed to plugins via ctx.notifications. */
   notifications: NotificationsService;
+  /** Kernel-owned two-level notification preference engine exposed via ctx.notificationPolicy. Optional (see `identity`). */
+  notificationPolicy?: NotificationPolicyService;
   /**
    * Kernel-owned identity-challenge service exposed via ctx.identity. Optional
    * so lifecycle-only unit tests can construct a runtime without the host; the
@@ -130,6 +174,7 @@ const KERNEL_SERVICE_ACCESSORS = [
   'fx',
   'auth',
   'notifications',
+  'notificationPolicy',
   'identity',
   'captcha',
   'state',
@@ -163,6 +208,18 @@ const UNAVAILABLE_CAPTCHA: CaptchaService = {
   verify: async () => ({ success: false, reason: 'no_provider' }),
   enforce: async () => undefined,
   clientConfig: () => null,
+};
+
+/** Fallback policy service for lifecycle-only unit tests without a host. */
+const UNAVAILABLE_NOTIFICATION_POLICY: NotificationPolicyService = {
+  listForUser: async () => ({ channels: [], categories: [], types: [] }),
+  updateForUser: async () => undefined,
+  resetForUser: async () => undefined,
+  listPolicy: async () => ({ channels: [], categories: [], types: [] }),
+  updatePolicy: async () => ({ channels: [], categories: [], types: [] }),
+  isEnabled: async () => true,
+  enabledChannels: async () => null,
+  inAppExclusions: async () => null,
 };
 
 /** Kernel service names a plugin may resolve but never override. */
@@ -215,7 +272,9 @@ export class PluginRuntime {
   private readonly lifecycleLocks = new Map<string, Promise<void>>();
 
   constructor(private readonly options: PluginRuntimeOptions) {
-    setIsolatedWorkerExitHandler((id) => { void this.handleWorkerExit(id); });
+    setIsolatedWorkerExitHandler((id) => {
+      void this.handleWorkerExit(id);
+    });
     // ADR-0021 §D3 (minimal): publish the kernel capability services under the
     // reserved `kernel.*` namespace so plugins can resolve them uniformly and
     // cannot squat the names. Registered first, so `provideService` rejects any
@@ -226,7 +285,9 @@ export class PluginRuntime {
           ? (options.identity ?? UNAVAILABLE_IDENTITY)
           : name === 'captcha'
             ? (options.captcha ?? UNAVAILABLE_CAPTCHA)
-            : options[name];
+            : name === 'notificationPolicy'
+              ? (options.notificationPolicy ?? UNAVAILABLE_NOTIFICATION_POLICY)
+              : options[name];
       this.services.set(`${KERNEL_SERVICE_OWNER}.${name}`, {
         pluginId: KERNEL_SERVICE_OWNER,
         implementation,
@@ -241,10 +302,18 @@ export class PluginRuntime {
     plugin.workerFailures += 1;
     if (plugin.workerFailures >= ISOLATED_WORKER_FAILURE_THRESHOLD) {
       plugin.workerCircuitOpen = true;
-      this.options.logger.error(`Plugin worker circuit opened after ${plugin.workerFailures} failures: ${id}`);
+      this.options.logger.error(
+        `Plugin worker circuit opened after ${plugin.workerFailures} failures: ${id}`,
+      );
     }
     plugin.effects.dispose();
-    await this.options.jobs.removeByOwner(id).catch((error) => this.options.logger.error(`Plugin ${id} cleanup after worker exit failed: ${String(error)}`));
+    await this.options.jobs
+      .removeByOwner(id)
+      .catch((error) =>
+        this.options.logger.error(
+          `Plugin ${id} cleanup after worker exit failed: ${String(error)}`,
+        ),
+      );
     this.options.extensions.unregisterModels(id);
     this.options.logger.error(`Plugin worker exited; plugin quarantined: ${id}`);
   }
@@ -276,8 +345,9 @@ export class PluginRuntime {
       ...route,
       handler: (async (...args: unknown[]) => {
         plugin.inFlight += 1;
-        try { return await handler(...args); }
-        finally {
+        try {
+          return await handler(...args);
+        } finally {
           plugin.inFlight -= 1;
           if (plugin.inFlight === 0) {
             for (const resolve of plugin.drainWaiters.splice(0)) resolve();
@@ -356,7 +426,11 @@ export class PluginRuntime {
       // registered lifetime, so they outlive deactivate/reactivate cycles.
       const routes = definition.routes ?? [];
       for (const route of routes) {
-        const dispose = this.options.registerRoute(id, this.wrapRoute(plugin, route), () => plugin.state === 'active');
+        const dispose = this.options.registerRoute(
+          id,
+          this.wrapRoute(plugin, route),
+          () => plugin.state === 'active',
+        );
         plugin.registrations.push(dispose);
       }
       // Open-platform aliases derived from `manifest.capabilities`: the same
@@ -430,11 +504,16 @@ export class PluginRuntime {
         ...(!capability.scope && route.permission ? { permission: route.permission } : {}),
         handler: route.handler,
       };
-      const dispose = this.options.registerRoute(id, this.wrapRoute(plugin, alias), () => plugin.state === 'active', {
-        capabilityId: capability.id,
-        mutating: capability.mutating ?? capability.method !== 'GET',
-        ...(capability.scope ? { scope: capability.scope } : {}),
-      });
+      const dispose = this.options.registerRoute(
+        id,
+        this.wrapRoute(plugin, alias),
+        () => plugin.state === 'active',
+        {
+          capabilityId: capability.id,
+          mutating: capability.mutating ?? capability.method !== 'GET',
+          ...(capability.scope ? { scope: capability.scope } : {}),
+        },
+      );
       plugin.registrations.push(dispose);
 
       entries.push({
@@ -801,59 +880,97 @@ export class PluginRuntime {
         }
         const prisma = this.options.db as PrismaClient;
         return txContext.run(true, () =>
-          prisma.$transaction(async (trx) => {
-            const wallet: ExtensionTransaction['wallet'] = {
-              debit: (userId, amount, currency, ref) =>
-                this.options.wallet.debit(userId, amount, currency, ref, trx),
-              credit: (userId, amount, currency, ref) =>
-                this.options.wallet.credit(userId, amount, currency, ref, trx),
-              hold: (userId, amount, currency, ref, options) =>
-                this.options.wallet.hold(userId, amount, currency, ref, {
-                  ...(options ?? {}),
-                  tx: trx,
-                }),
-              settleHold: (holdId, settledAmount, ref) =>
-                this.options.wallet.settleHold(holdId, settledAmount, ref, trx),
-              releaseHold: (holdId) => this.options.wallet.releaseHold(holdId, trx),
-            };
-            const payments: ExtensionTransaction['payments'] = {
-              createRecord: (input) => this.options.payments.createRecord(input, trx),
-            };
-            return fn({
-              extensions: this.options.extensions.clientWith(
-                trx as unknown as RawDatabase,
-                pluginId,
-                null,
-              ),
-              wallet,
-              payments,
-            });
-          }),
+          prisma
+            .$transaction(async (trx) => {
+              const wallet: ExtensionTransaction['wallet'] = {
+                debit: (userId, amount, currency, ref) =>
+                  this.options.wallet.debit(userId, amount, currency, ref, trx),
+                credit: (userId, amount, currency, ref) =>
+                  this.options.wallet.credit(userId, amount, currency, ref, trx),
+                hold: (userId, amount, currency, ref, options) =>
+                  this.options.wallet.hold(userId, amount, currency, ref, {
+                    ...(options ?? {}),
+                    tx: trx,
+                  }),
+                settleHold: (holdId, settledAmount, ref) =>
+                  this.options.wallet.settleHold(holdId, settledAmount, ref, trx),
+                releaseHold: (holdId) => this.options.wallet.releaseHold(holdId, trx),
+              };
+              const payments: ExtensionTransaction['payments'] = {
+                createRecord: (input) => this.options.payments.createRecord(input, trx),
+              };
+              // W1: buffer events registered via `tx.publish` and flush them into
+              // the outbox on the SAME `trx` after `fn` resolves (before commit).
+              // A rollback discards the buffer, so no orphan event row survives.
+              const pending: Array<{ topic: string; body: string }> = [];
+              const tx: ExtensionTransaction = {
+                extensions: this.options.extensions.clientWith(
+                  trx as unknown as RawDatabase,
+                  pluginId,
+                  null,
+                ),
+                wallet,
+                payments,
+                publish: (topic, payload) => {
+                  pending.push({
+                    topic,
+                    body: serializeOutboxBody(topic, payload, outboxOrigin()),
+                  });
+                },
+              };
+              const result = await fn(tx);
+              for (const event of pending) {
+                await trx.outboxEvent.create({
+                  data: {
+                    topic: event.topic,
+                    payload: { body: event.body },
+                    origin: outboxOrigin(),
+                  },
+                });
+              }
+              return result;
+            })
+            .then((result) => {
+              // Commit succeeded: nudge the relay so latency does not depend on
+              // the poll interval. Delivery itself stays relay-owned (no inline
+              // local deliver) to preserve the single-delivery guarantee.
+              if (isOutboxBus(this.options.events)) {
+                this.options.events.nudgeRelay();
+              }
+              return result;
+            }),
         );
       },
       payments: this.options.payments,
       wallet: this.options.wallet,
       fx: this.options.fx,
+      currency: this.options.currency ?? STATIC_CURRENCY_SERVICE,
       auth: this.options.auth,
       notifications: this.options.notifications,
+      notificationPolicy: this.options.notificationPolicy ?? UNAVAILABLE_NOTIFICATION_POLICY,
       identity: this.options.identity ?? UNAVAILABLE_IDENTITY,
       captcha: this.options.captcha ?? UNAVAILABLE_CAPTCHA,
       state: this.options.state,
       cache: this.options.cache ?? getCacheService(),
       jobs: createKernelJobContext(pluginId, this.options.jobs),
       storage: this.options.storage ?? createStorageService(),
-      media: this.options.media ? (() => {
-        const media = this.options.media as MediaReferenceService;
-        return {
-        register: (input: Parameters<MediaReferenceService['register']>[0]) => media.register({ ...input, ownerPluginId: pluginId }),
-        unregister: (input: Parameters<MediaReferenceService['unregister']>[0]) => media.unregister({ ...input, ownerPluginId: pluginId }),
-        unregisterResource: (resourceType: string, resourceId: string) => media.unregisterResource(resourceType, resourceId, pluginId),
-        };
-      })() : {
-        register: async () => undefined,
-        unregister: async () => undefined,
-        unregisterResource: async () => undefined,
-      },
+      media: this.options.media
+        ? (() => {
+            const media = this.options.media as MediaReferenceService;
+            return {
+              register: (input: Parameters<MediaReferenceService['register']>[0]) =>
+                media.register({ ...input, ownerPluginId: pluginId }),
+              unregister: (input: Parameters<MediaReferenceService['unregister']>[0]) =>
+                media.unregister({ ...input, ownerPluginId: pluginId }),
+              unregisterResource: (resourceType: string, resourceId: string) =>
+                media.unregisterResource(resourceType, resourceId, pluginId),
+            };
+          })()
+        : {
+            register: async () => undefined,
+            unregister: async () => undefined,
+            unregisterResource: async () => undefined,
+          },
       secrets: pluginSecrets(this.options.db as PrismaClient, pluginId),
       effect: (fn) => {
         const dispose = runEffect(fn);
@@ -898,6 +1015,7 @@ declare module 'fastify' {
     payments: PaymentService;
     wallet: WalletService;
     fx: FxService;
+    currency: CurrencyService;
     auth: KernelAuth;
   }
 }

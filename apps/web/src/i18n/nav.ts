@@ -19,7 +19,7 @@ const NAV_KEYS: Record<string, string> = {
   '/admin/notifications': 'nav.notifications',
   '/account': 'nav.dashboard',
   '/account/security': 'nav.security',
-  '/account/api-keys': 'nav.apiKeys',
+  '/account/settings': 'account.settings.title',
   '/account/notifications': 'nav.notifications',
   '/shop': 'nav.shop',
 };

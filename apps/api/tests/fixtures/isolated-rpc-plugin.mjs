@@ -68,6 +68,34 @@ export default {
           await new Promise(() => undefined);
         },
       },
+      {
+        // W4: exercise `ctx.events.publish` (RPC failures must not be silent)
+        // and `ctx.events.intercept` (must throw a clear "unsupported" error).
+        method: 'GET',
+        path: '/events-publish',
+        handler: async () => {
+          pluginContext.events.publish('probe.published', { v: 1 });
+          return { ok: true };
+        },
+      },
+      {
+        method: 'GET',
+        path: '/events-intercept',
+        handler: async () => {
+          const errors = {};
+          try {
+            pluginContext.events.intercept('probe.waterfall', (value) => value);
+          } catch (error) {
+            errors.intercept = error instanceof Error ? error.message : String(error);
+          }
+          try {
+            pluginContext.events.waterfall('probe.waterfall', 1, (value) => value);
+          } catch (error) {
+            errors.waterfall = error instanceof Error ? error.message : String(error);
+          }
+          return errors;
+        },
+      },
     {
       method: 'GET',
       path: '/snapshot',

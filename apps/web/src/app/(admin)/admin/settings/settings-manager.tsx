@@ -1,23 +1,34 @@
 'use client';
+import { NotificationPolicySettings } from '@/components/notification-settings';
+import { CurrencySettings } from '@/components/currency-settings';
+import { AgentSettings } from '@/components/agent-settings';
 import { SectionTitle } from '@stackpanel/ui';
 
-import { useActionState, useTransition, useState } from 'react';
+import { useActionState, useTransition, type ReactNode } from 'react';
+import { SettingsSections } from '@/components/settings-sections';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { PlatformInfo, SigningStatus } from '@stackpanel/sdk';
+import type {
+  AdminCurrencyDefinitionView,
+  AdminFxRateView,
+  PlatformInfo,
+  SettlementCurrencyResponse,
+  SigningStatus,
+} from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Settings, Palette, ShieldCheck, Wrench, ImageIcon } from 'lucide-react';
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-} from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+  Settings,
+  Palette,
+  ShieldCheck,
+  Wrench,
+  ImageIcon,
+  Bot,
+  Plug,
+  Bell,
+  Coins,
+} from 'lucide-react';
 import {
   clearPlatformBrandAction,
   savePlatformBrandAction,
@@ -36,13 +47,18 @@ export function SettingsManager({
   platform,
   signing,
   brand,
+  currency,
+  currencyRates = [],
+  pluginSections = [],
 }: {
   platform: PlatformInfo;
   signing: SigningStatus | null;
   brand: BrandAssets | null;
+  currency?: (SettlementCurrencyResponse & { currencies?: AdminCurrencyDefinitionView[] }) | null;
+  currencyRates?: AdminFxRateView[];
+  pluginSections?: { id: string; title: string; content: ReactNode }[];
 }) {
   const t = useTranslator();
-  const [active, setActive] = useState('platform');
   const sections = [
     {
       id: 'platform',
@@ -62,6 +78,29 @@ export function SettingsManager({
       Icon: ShieldCheck,
       content: <SigningSettings signing={signing} />,
     },
+    ...(currency
+      ? [
+          {
+            id: 'currency',
+            title: t('admin.settings.currency.title'),
+            Icon: Coins,
+            content: <CurrencySettings catalog={currency} rates={currencyRates} />,
+          },
+        ]
+      : []),
+    {
+      id: 'agent',
+      title: 'Agent',
+      Icon: Bot,
+      content: <AgentSettings />,
+    },
+    {
+      id: 'notifications',
+      title: t('notificationSettings.policy'),
+      Icon: Bell,
+      content: <NotificationPolicySettings />,
+    },
+    ...pluginSections.map((section) => ({ ...section, Icon: Plug })),
     {
       id: 'advanced',
       title: t('admin.settings.advanced.title'),
@@ -70,62 +109,7 @@ export function SettingsManager({
     },
   ];
 
-  return (
-    <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-12">
-      <aside className="shrink-0 lg:w-1/5">
-        <div className="md:hidden">
-          <Select value={active} onValueChange={(value) => value && setActive(value)}>
-            <SelectTrigger className="h-12 w-full" aria-label={t('admin.settings.title')}>
-              <SelectValue>{sections.find((section) => section.id === active)?.title}</SelectValue>
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              <SelectGroup>
-                {sections.map(({ id, title, Icon }) => (
-                  <SelectItem key={id} value={id}>
-                    <Icon className="size-4" />
-                    {title}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-        <nav
-          aria-label={t('admin.settings.title')}
-          className="scrollbar-none hidden gap-1 overflow-x-auto p-1 md:flex lg:flex-col"
-        >
-          {sections.map(({ id, title, Icon }) => (
-            <Button
-              key={id}
-              variant="ghost"
-              onClick={() => setActive(id)}
-              aria-pressed={active === id}
-              aria-controls={`settings-${id}`}
-              className={cn(
-                'justify-start gap-3 whitespace-nowrap',
-                active === id ? 'bg-muted hover:bg-accent' : 'hover:underline',
-              )}
-            >
-              <Icon className="size-[18px]" />
-              {title}
-            </Button>
-          ))}
-        </nav>
-      </aside>
-      <div className="min-w-0 flex-1 p-1">
-        {sections.map(({ id, content }) => (
-          <div
-            key={id}
-            id={`settings-${id}`}
-            hidden={active !== id}
-            className="w-full max-w-xl pb-12"
-          >
-            {content}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  return <SettingsSections sections={sections} label={t('admin.settings.title')} />;
 }
 
 function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {

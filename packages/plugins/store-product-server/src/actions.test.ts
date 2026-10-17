@@ -44,7 +44,7 @@ function serviceContext(runtime: unknown = null): ProviderServiceContext {
 }
 
 describe('store-product-server 原生运维动作', () => {
-  it('declares cloud-server actions including reinstall/reset-password/vnc', async () => {
+  it('declares cloud-server actions including reinstall/reset-password', async () => {
     const detail = await captureProductType().getDetail!(serviceContext());
     const ids = (detail.actions ?? []).map((action) => action.id);
     expect(ids).toEqual(
@@ -54,9 +54,10 @@ describe('store-product-server 原生运维动作', () => {
         'reboot',
         'reinstall',
         'reset_password',
-        'vnc',
       ]),
     );
+    // 本地托管实例没有真实 VNC：不得把占位控制台当作可用动作对外声明。
+    expect(ids).not.toContain('vnc');
     const reinstall = detail.actions?.find((action) => action.id === 'reinstall');
     expect(reinstall?.params?.[0]).toMatchObject({ name: 'os', type: 'select', required: true });
   });
@@ -97,16 +98,12 @@ describe('store-product-server 原生运维动作', () => {
     });
   });
 
-  it('vnc returns a console url and persists it for later display', async () => {
-    const provider = captureProductType();
-    const result = await provider.executeAction!('vnc', serviceContext());
-    expect(result?.url).toBeTruthy();
-    expect(result?.runtime).toMatchObject({ consoleUrl: result?.url });
-    // 落库的控制台地址在详情中可见且可点击。
-    const detail = await provider.getDetail!(
-      serviceContext({ consoleUrl: (result?.runtime as { consoleUrl: string }).consoleUrl }),
-    );
-    expect(detail.fields.some((field) => field.label === '控制台地址')).toBe(true);
+  it('refuses VNC instead of returning a placeholder console url', async () => {
+    // 审计 #1：以前返回 `about:blank#vnc-console` 并被持久化到 runtime，
+    // 让「本地模拟」看起来像真实运维闭环。现在必须显式拒绝。
+    await expect(
+      captureProductType().executeAction!('vnc', serviceContext()),
+    ).rejects.toMatchObject({ code: 'store.product.action_unsupported' });
   });
 
   it('rejects unknown actions', async () => {

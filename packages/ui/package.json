@@ -31,7 +31,9 @@
     "class-variance-authority": "^0.7.1",
     "lenis": "^1.3.26",
     "lucide-react": "^0.468.0",
-    "motion": "^13.1.0"
+    "motion": "^13.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^19",

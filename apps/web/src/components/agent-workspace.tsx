@@ -61,7 +61,7 @@ export function AgentWorkspace({ runId, approvalsOnly = false }: { runId?: strin
     createIntent.current = null; setObjective(''); window.location.assign(`/account/agent/runs/${result.run.id}`);
   }
   return <div className="flex flex-col gap-6 p-6">
-    <nav className="flex flex-wrap gap-3"><Link href="/account/agent">Agent 任务</Link><Link href="/account/agent/approvals">待审批</Link><Link href="/account/api-keys">权限密钥</Link></nav>
+    <nav className="flex flex-wrap gap-3"><Link href="/account/agent">Agent 任务</Link><Link href="/account/agent/approvals">待审批</Link><Link href="/account/settings#security">权限密钥</Link></nav>
     <h1>{approvalsOnly ? 'Agent 审批' : run ? run.objective : 'Agent 工作区'}</h1>
     <p>{status?.enabled ? `本站已开启 · 模型提供方：${status.provider?.name ?? '尚未配置'}` : '本站尚未开放 Agent'}</p>
     <FieldError role="alert">{error}</FieldError>

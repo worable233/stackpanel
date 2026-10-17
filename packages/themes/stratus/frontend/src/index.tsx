@@ -1,3 +1,4 @@
+import { formatMinorCurrency } from '@stackpanel/sdk';
 import type { ReactElement } from 'react';
 import type { FrontendLayoutProps, FrontendPackage, FrontendPageProps } from '@stackpanel/sdk';
 import {
@@ -746,10 +747,13 @@ function StratusLayout({
   );
 }
 
-/** Format an amount of minor units into a readable money string. */
+/** Format minor units via the kernel currency catalog (no `CNY` branch, no `/100`). */
 function money(amount: number, currency: string): string {
-  const [units, fraction = ''] = Number(amount).toFixed(2).split('.');
-  return `${currency === 'CNY' ? '¥' : currency} ${Number(units).toLocaleString('zh-CN')}.${fraction}`;
+  try {
+    return formatMinorCurrency(amount, currency, 'zh-CN');
+  } catch {
+    return `${amount} ${currency}`;
+  }
 }
 
 /** Render a product spec table from metadata (key-value), best-effort ordered. */
@@ -2073,7 +2077,7 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
                 <span className="text-sm text-ink-faint">合计</span>
                 <p className="flex items-baseline gap-1">
                   <span className="text-[36px] font-semibold leading-[44px] text-price">
-                    {money(cart?.total ?? 0, 'CNY')}
+                    {money(cart?.total ?? 0, cart?.items[0]?.product?.currency ?? 'CNY')}
                   </span>
                   <span className="text-sm text-ink-faint">元</span>
                 </p>

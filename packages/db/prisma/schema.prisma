@@ -28,6 +28,8 @@ model User {
   groups        UserGroup[]
   notifications Notification[]
   apiTokens     ApiToken[]
+  agentConversations AgentConversation[]
+  notificationPreferences NotificationPreference[]
 
   @@map("users")
 }
@@ -280,6 +282,8 @@ model PaymentMethod {
   enabled    Boolean       @default(true)
   scene      String        @default("PC")
   config     Json          // 商户密钥 / 银行信息 / 收款码 URL
+  /// 该收款方式支持的结算币种（ISO 4217 大写）。空数组 = 支持全部已启用币种。
+  currencies String[]      @default([])
   sortOrder  Int           @default(0)
   channel    SalesChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
   payments   Payment[]
@@ -297,11 +301,27 @@ model FxRate {
   toCurrency   String   @default("CNY")
   rate         Int      // from→to，×1e6
   source       String   @default("manual") // manual | api(预留)
+  /// 可选有效期；过期汇率不得用于新订单（`currency.rate_expired`）。
+  validUntil   DateTime?
   updatedBy    String?
   updatedAt    DateTime @updatedAt
 
   @@map("fx_rates")
   @@unique([fromCurrency, toCurrency])
+}
+
+/// 币种治理状态。目录本身由内核静态白名单（SDK `CURRENCY_CATALOG`）决定，
+/// 本表只保存管理员可变的启用状态与展示元数据；不允许新增/删除代码。
+model CurrencyDefinition {
+  code      String   @id
+  name      String
+  symbol    String
+  minorUnit Int
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("currency_definitions")
 }
 
 /// Immutable wallet ledger. Each business reference can affect a wallet once.
@@ -373,6 +393,51 @@ model Notification {
   @@map("notifications")
   @@index([userId, createdAt])
   @@index([userId, readAt])
+}
+
+/// 外部通知渠道的持久投递意图（审计 §5）。内核拥有收件人授权、幂等键、退避重试与
+/// 失败重放；渠道插件只执行投递。按 (notification, channel) 唯一，重放合并为一行。
+model NotificationDelivery {
+  id             String    @id @default(cuid())
+  notificationId String
+  channelId      String
+  userId         String
+  /// 展开后的通知投影（JSON），避免投递时再查通知表。
+  payload        Json
+  /// PENDING | DELIVERED | FAILED（超过重试上限的死信）
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(5)
+  nextAttemptAt  DateTime  @default(now())
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([notificationId, channelId])
+  @@index([status, nextAttemptAt])
+  @@map("notification_deliveries")
+}
+
+/// 用户级通知偏好（按 类型 × 渠道）。内核owns：目录、管理员策略与最终裁决；
+/// 本表只存用户对「可配置」通道的显式覆盖。仅对已声明（catalog）的类型生效——
+/// 未声明类型没有配置项，永远投递、不可关闭（注册/登录验证码走 identity，
+/// 根本不经过通知服务）。
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  /// 通知类型（catalog type，如 order.paid）。
+  type      String
+  /// `inapp` 或渠道插件 id（如 smtp）。
+  channelId String
+  enabled   Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, channelId])
+  @@index([userId])
+  @@map("notification_preferences")
 }
 
 /// 平台通用 API 凭证（内核级身份能力）。明文只回显一次，库里只存哈希与前缀。
@@ -518,6 +583,7 @@ model AgentApproval {
   /// circular foreign key between the two tables.
   stepId         String
   capabilityId   String
+  capabilityHash String?
   /// 该动作将发送的参数。null = 该能力本身无需参数 —— 与 AgentStep.args 同口径，
   /// 刻意不用 @default("{}")，以免把「无参数」与「参数为空对象」混为一谈。
   args           Json?
@@ -611,15 +677,47 @@ model OutboxEvent {
   lockedBy    String?
   publishedAt DateTime?
   attempts    Int       @default(0)
+  /// 下次可尝试时间（指数退避）；null = 立即可投递。relay 只扫描 due 行。
+  nextAttemptAt DateTime?
+  /// 达到此尝试次数后进入停滞（parked）：不再高频重试，保留可观测。
+  maxAttempts Int       @default(20)
+  /// 停滞时间；非空表示已放弃自动重试（仍不删除、不伪装成功）。
+  parkedAt    DateTime?
   lastError   String?
 
   @@map("outbox_events")
   @@index([publishedAt, createdAt])
   @@index([publishedAt, lockedAt])
+  @@index([publishedAt, nextAttemptAt])
+}
+
+/// 消费幂等原语（ADR-0013：消费幂等）。同一 consumer 对同一 eventId 只处理一次。
+/// 唯一键即去重键；插入冲突 = 已处理。内核与插件消费者共用。
+model ProcessedEvent {
+  consumer  String
+  eventId   String
+  createdAt DateTime @default(now())
+
+  @@id([consumer, eventId])
+  @@map("processed_events")
+}
+
+/// 组级持久消费游标：记录某 consumer 已消费到的 outbox 位置。
+/// 用于「离线副本重启后按游标确认不丢」与「游标落后于保留期」告警。
+model EventCursor {
+  consumer  String    @id
+  lastId    String?
+  /// `createdAt` of the last consumed row; used with `lastId` as a composite
+  /// resume point (ids alone are not guaranteed to be monotonic).
+  lastAt    DateTime?
+  updatedAt DateTime  @updatedAt
+
+  @@map("event_cursors")
 }
 
 /// 内核附件域（ADR-0014 §2）。二进制在对象存储，元数据在主库。
 model Attachment {
+  agentMessages AgentMessageAttachment[]
   id         String   @id @default(cuid())
   key        String   @unique
   filename   String
@@ -728,4 +826,41 @@ model AgentOAuthGrant {
   createdAt DateTime @default(now())
   @@index([expiresAt])
   @@map("agent_oauth_grants")
+}
+
+/// User-owned chat history. Saving a message does not start an Agent run.
+model AgentConversation {
+  id String @id
+  userId String
+  title String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AgentChatMessage[]
+
+  @@index([userId, createdAt, id])
+  @@map("agent_conversations")
+}
+
+model AgentChatMessage {
+  id String @id
+  conversationId String
+  content String
+  reasoning String @default("均衡")
+  createdAt DateTime @default(now())
+  conversation AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments AgentMessageAttachment[]
+
+  @@index([conversationId, createdAt, id])
+  @@map("agent_chat_messages")
+}
+
+model AgentMessageAttachment {
+  messageId String
+  attachmentId String
+  message AgentChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Restrict)
+
+  @@id([messageId, attachmentId])
+  @@map("agent_message_attachments")
 }

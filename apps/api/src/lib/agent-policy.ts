@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import type { McpCapability } from '@stackpanel/sdk';
 import { z } from 'zod';
 import type { AgentAutonomy } from '@stackpanel/sdk';
 
@@ -71,4 +73,9 @@ export function restrictAgentPolicy(
 export function agentDayStart(now = new Date()): Date {
   const offset = 8 * 3600_000;
   return new Date(Math.floor((now.getTime() + offset) / 86400_000) * 86400_000 - offset);
+}
+
+/** Binds human consent to the installed capability definition, not only its name. */
+export function agentCapabilityHash(capability: McpCapability): string {
+  return createHash('sha256').update(JSON.stringify([capability.id,capability.method,capability.path,capability.scope,capability.mutating,capability.destructive ?? capability.mutating,capability.summary])).digest('hex');
 }

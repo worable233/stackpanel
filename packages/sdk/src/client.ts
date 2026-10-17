@@ -9,6 +9,9 @@ import type {
 } from './frontend.js';
 import {
   activeThemeResponseSchema,
+  adminCurrencyDefinitionListResponseSchema,
+  adminFxRateListResponseSchema,
+  adminFxRateViewSchema,
   apiTokenCreateResponseSchema,
   apiTokenListResponseSchema,
   apiTokenScopesResponseSchema,
@@ -21,6 +24,8 @@ import {
   authConfigResponseSchema,
   sendRegisterCodeResponseSchema,
   connectedIdentityListResponseSchema,
+  currencyDefinitionListResponseSchema,
+  currencyDefinitionMutationResponseSchema,
   currentUserResponseSchema,
   developerOverviewResponseSchema,
   frontendAuditResponseSchema,
@@ -66,6 +71,8 @@ import {
   resellerListResponseSchema,
   resellerMutationResponseSchema,
   sessionInfoResponseSchema,
+  settlementCurrencyResponseSchema,
+  setupStatusResponseSchema,
   signingResponseSchema,
   platformInfoResponseSchema,
   platformBrandResponseSchema,
@@ -100,8 +107,15 @@ import type {
   UpstreamSourceListResponse,
   WalletAdjustResponse,
   ConnectedIdentityListResponse,
+  AdminCurrencyDefinitionListResponse,
+  AdminFxRateListResponse,
+  AdminFxRateView,
+  CurrencyDefinitionListResponse,
+  CurrencyDefinitionMutationResponse,
+  SettlementCurrencyResponse,
   CurrentUserResponse,
   SessionInfoResponse,
+  SetupStatusResponse,
   ApiTokenCreateResponse,
   ApiTokenListResponse,
   ApiTokenScopesResponse,
@@ -170,7 +184,7 @@ async function request<T>(
   fetchImpl: typeof fetch,
   url: string,
   init: {
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body: unknown | undefined;
     token: string | undefined;
   },
@@ -276,6 +290,16 @@ export class ApiClient {
       this.#fetch,
       `${this.baseUrl}${path}`,
       { method: 'PATCH', body, token: this.token },
+      this.timeoutMs,
+      schema,
+    );
+  }
+
+  put<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+    return request(
+      this.#fetch,
+      `${this.baseUrl}${path}`,
+      { method: 'PUT', body, token: this.token },
       this.timeoutMs,
       schema,
     );
@@ -387,6 +411,30 @@ export class ApiClient {
 
   login(email: string, password: string): Promise<LoginResponse> {
     return this.post('/login', { email, password }, loginResponseSchema);
+  }
+
+  /** Read the public first-run setup state (never 401s). */
+  getSetupStatus(): Promise<SetupStatusResponse> {
+    return this.get('/setup/status', setupStatusResponseSchema);
+  }
+
+  /**
+   * Claim an uninitialized instance by creating its first administrator. The
+   * `setupToken` is only required when GET /setup/status reports
+   * `tokenRequired`. Returns a session like login, so the caller can sign the
+   * operator straight in.
+   */
+  completeSetup(input: {
+    email: string;
+    password: string;
+    setupToken?: string;
+  }): Promise<LoginResponse> {
+    const { email, password, setupToken } = input;
+    return this.post(
+      '/setup',
+      { email, password, ...(setupToken ? { setupToken } : {}) },
+      loginResponseSchema,
+    );
   }
 
   /**
@@ -925,6 +973,70 @@ export class ApiClient {
   /** Set or clear the stored package signing public key (empty clears). */
   setSigningPublicKey(publicKey: string): Promise<SigningResponse> {
     return this.patch('/admin/signing', { publicKey }, signingResponseSchema);
+  }
+
+  /* ------------------------- 币种治理 ------------------------- */
+
+  /** Public catalog of enabled currencies with display metadata. */
+  getCurrencyDefinitions(): Promise<CurrencyDefinitionListResponse> {
+    return this.get('/currency-definitions', currencyDefinitionListResponseSchema);
+  }
+
+  /** Admin catalog including enabled/referenced/settlement flags. */
+  getAdminCurrencyDefinitions(): Promise<AdminCurrencyDefinitionListResponse> {
+    return this.get('/admin/currency-definitions', adminCurrencyDefinitionListResponseSchema);
+  }
+
+  /** Enable or disable a catalog currency (referenced/settlement ones are refused). */
+  setCurrencyEnabled(
+    code: string,
+    enabled: boolean,
+  ): Promise<CurrencyDefinitionMutationResponse> {
+    return this.patch(
+      `/admin/currency-definitions/${encodeURIComponent(code)}`,
+      { enabled },
+      currencyDefinitionMutationResponseSchema,
+    );
+  }
+
+  /** Read the platform settlement currency and its candidates. */
+  getSettlementCurrency(): Promise<SettlementCurrencyResponse> {
+    return this.get(
+      '/admin/settings/settlement-currency',
+      settlementCurrencyResponseSchema,
+    );
+  }
+
+  /** Change the platform settlement currency after compatibility checks. */
+  setSettlementCurrency(currency: string): Promise<SettlementCurrencyResponse> {
+    return this.put(
+      '/admin/settings/settlement-currency',
+      { currency },
+      settlementCurrencyResponseSchema,
+    );
+  }
+
+  /** Admin FX rate list (direction, source, update time, validity). */
+  getAdminCurrencyRates(): Promise<AdminFxRateListResponse> {
+    return this.get('/admin/currency-rates', adminFxRateListResponseSchema);
+  }
+
+  /** Upsert an FX rate from a catalog currency to the settlement currency. */
+  setCurrencyRate(input: {
+    fromCurrency: string;
+    toCurrency?: string;
+    rate: number;
+    validUntil?: string | null;
+  }): Promise<AdminFxRateView> {
+    return this.put('/admin/currency-rates', input, adminFxRateViewSchema);
+  }
+
+  /** Delete a configured FX rate pair. */
+  deleteCurrencyRate(fromCurrency: string, toCurrency: string): Promise<{ deleted: boolean }> {
+    return this.del(
+      `/admin/currency-rates?fromCurrency=${encodeURIComponent(fromCurrency)}&toCurrency=${encodeURIComponent(toCurrency)}`,
+      z.object({ deleted: z.boolean() }),
+    );
   }
 
   /** Read the current admin-selected theme preview, if any. */

@@ -3,6 +3,8 @@ import { AdminWidget } from '@/components/admin-widget';
 import { BackendDashboard } from '@/components/backend-dashboard';
 import { getAuthedApiClient } from '@/lib/api';
 import { loadAdminOverview } from '@/lib/admin-overview';
+import { getLocale } from '@/i18n/locale';
+import { createTranslator } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +21,7 @@ export default async function AdminHome({
   const sp = await searchParams;
   const from = parseDate(sp.from);
   const to = parseDate(sp.to);
+  const t = createTranslator(await getLocale());
 
   let widgets: Array<{ id: string; title: string; description?: string; pluginId: string }> = [];
   let overview: Awaited<ReturnType<typeof loadAdminOverview>> | null = null;
@@ -45,7 +48,7 @@ export default async function AdminHome({
       {/* Widget 网格 */}
       {widgets.length ? (
         <div>
-          <SectionTitle className="mb-4">快捷入口</SectionTitle>
+          <SectionTitle className="mb-4">{t('adminShell.quickLinks')}</SectionTitle>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {widgets.map((widget) => (
               <section key={`${widget.pluginId}:${widget.id}`} className="min-w-0">

@@ -1,4 +1,4 @@
-import type { ProviderServiceContext } from '@stackpanel/sdk';
+import type { NotificationStatus, ProviderServiceContext } from '@stackpanel/sdk';
 import { context, logger } from './context';
 import {
   claimExpiryStage,
@@ -7,6 +7,7 @@ import {
   listExpiringServices,
   markExpiryFailure,
   patchServiceInstance,
+  resetExpiryStage,
   type ServiceInstanceRecord,
 } from './repository';
 import { providerForProduct } from './fulfillment';
@@ -52,9 +53,12 @@ async function remindUpcoming(nowMs: number): Promise<void> {
   const due = await listDueExpiryReminders(nowMs, windowEnd, EXPIRY_SWEEP_BATCH);
   for (const service of due) {
     if (service.expiryStage) continue; // 已提醒/已进入后续阶段
+    // 先原子认领阶段（防并发重复发送），再写通知；通知失败则**回退阶段**，
+    // 下一轮 sweep 会重试，用户不会永久漏掉提醒（此前先置 reminded 再通知，
+    // 通知失败被吞后阶段不回退，导致不可重投）。
     const claimed = await claimExpiryStage(service.id, null, 'reminded');
     if (!claimed) continue;
-    await notify(service, {
+    const delivered = await notify(service, {
       type: 'service.expiring',
       title: '云服务即将到期',
       body: `「${service.productName}」将于 ${formatDate(service.expiresAt)} 到期，请及时续费。`,
@@ -64,6 +68,11 @@ async function remindUpcoming(nowMs: number): Promise<void> {
         expiresAt: service.expiresAt?.toISOString() ?? null,
       },
     });
+    if (!delivered) {
+      await resetExpiryStage(service.id, 'reminded');
+      logger().warn(`store: expiry reminder not delivered for ${service.id}; stage released for retry`);
+      continue;
+    }
     logger().info(`store: expiry reminder sent for service ${service.id}`);
   }
 }
@@ -187,9 +196,21 @@ async function callProviderHook(
     providerId: service.providerId ?? product?.providerId ?? null,
     fulfillmentType: service.fulfillmentType,
   });
-  if (!provider) return;
-  const hook = action === 'suspend' ? provider.suspend : provider.terminate;
-  if (!hook) return;
+  const hook = provider ? (action === 'suspend' ? provider.suspend : provider.terminate) : undefined;
+  // 该服务是否期望外部生命周期动作：绑定了上游（providerId / providerServiceId）。
+  // 若是，却解析不到提供方或提供方未实现该钩子，说明上游其实**什么都没做**——必须抛出
+  // 以留在「处理中」阶段重试，绝不能静默当作成功（否则会落终态并向用户谎报「已暂停/
+  // 已终止」，属审计 §4 的「上游失败仍报成功」）。本地交付物（无任何上游绑定）无外部
+  // 副作用，保持 no-op 成功。
+  const expectsUpstream = Boolean(service.providerId || service.providerServiceId);
+  if (!provider || !hook) {
+    if (expectsUpstream) {
+      throw new Error(
+        `未找到可执行 ${action} 的上游提供方（providerId=${service.providerId ?? 'null'}）`,
+      );
+    }
+    return;
+  }
   const ctx: ProviderServiceContext = {
     service: {
       id: service.id,
@@ -214,10 +235,14 @@ interface NotifyInput {
   body: string;
   link: string;
   data: Record<string, unknown>;
+  status?: NotificationStatus;
 }
 
-/** 站内通知（通知服务不可用时静默：不影响生命周期推进）。 */
-async function notify(service: ServiceInstanceRecord, input: NotifyInput): Promise<void> {
+/**
+ * 站内通知（通知服务不可用时静默：不影响生命周期推进）。返回是否成功写入，
+ * 供调用方决定是否回退到期阶段以重投（提醒场景）。
+ */
+async function notify(service: ServiceInstanceRecord, input: NotifyInput): Promise<boolean> {
   try {
     await context().notifications.create({
       userId: service.userId,
@@ -226,9 +251,12 @@ async function notify(service: ServiceInstanceRecord, input: NotifyInput): Promi
       body: input.body,
       link: input.link,
       data: input.data,
+      ...(input.status ? { status: input.status } : {}),
     });
+    return true;
   } catch (error) {
     logger().warn(`store: expiry notification failed for ${service.id}: ${messageOf(error)}`);
+    return false;
   }
 }
 

@@ -12,7 +12,7 @@ import type {
   CommerceServicePatch,
 } from '@stackpanel/sdk';
 import { CommerceError } from '@stackpanel/sdk';
-import { bus, extensions, runTransaction } from './context';
+import { extensions, runTransaction } from './context';
 import { orderModel, productModel, serviceInstanceModel, type StoreOrderData } from './data';
 import { applyServiceLifecycleAction } from './fulfillment';
 import type { OrderRecord, ProductRecord, ServiceInstanceRecord } from './repository';
@@ -143,16 +143,18 @@ export const storeOperations: CommerceOperations = {
         currency: product.currency,
         state: 'PAID',
         channelCode: input.channelCode ?? null,
+        // 合作方预付：平台不实际收款，因此没有汇率换算，结算快照与本单原币种
+        // 一致（plan §4.3 的单向换算只用于平台真实收款的订单）。
         settlementCurrency: product.currency,
         settlementTotal: total,
         fxRate: null,
       });
+      tx.publish('order.paid', {
+        orderId: created.name,
+        userId: input.userId,
+        channelCode: created.spec.channelCode ?? null,
+      });
       return toOrder(created);
-    });
-    bus().publish('order.paid', {
-      orderId: order.id,
-      userId: order.userId,
-      channelCode: order.channelCode,
     });
     return toCommerceOrder(order);
   },

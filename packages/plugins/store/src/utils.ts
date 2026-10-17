@@ -178,10 +178,12 @@ export const productSchema = z.object({
   name: z.string().trim().min(1).max(191),
   description: z.string().trim().max(191).optional(),
   price: z.number().int().positive().max(MAX_MINOR_AMOUNT),
-  // Products may be priced in any ISO currency. At checkout the order total is
-  // converted to the settlement currency via the kernel FX service (frozen
-  // snapshot), so non-CNY products remain payable.
-  currency: z.string().length(3).default('CNY'),
+  // Products may be priced in any **catalog** currency (PLAN-currency §4.2).
+  // Free-text 3-letter codes are rejected: the code is validated against the
+  // kernel catalog by `assertCurrency` at the API boundary and in the admin UI.
+  // The legacy 3-char shape is kept here so the error code stays stable; the
+  // actual catalog check happens in `resolveProductCurrency`.
+  currency: z.string().trim().min(1).max(8).default('CNY'),
   stock: z.number().int().nonnegative().max(1_000_000).default(0),
   // 成本（分，可空）：关联上游商品时同步上游价格，仅后台可见。
   cost: z.number().int().nonnegative().max(MAX_MINOR_AMOUNT).nullish(),
@@ -201,7 +203,7 @@ export const productSchema = z.object({
 // 把带默认值的字段（currency/stock/fulfillmentType）重置为默认值。
 // 这里先把它们显式改成可选，再做 partial，保证只更新传入的字段。
 const productUpdateBase = productSchema.extend({
-  currency: z.string().length(3).optional(),
+  currency: z.string().trim().min(1).max(8).optional(),
   stock: z.number().int().nonnegative().max(1_000_000).optional(),
   fulfillmentType: z.string().min(1).max(64).optional(),
 });

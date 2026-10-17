@@ -36,6 +36,12 @@ export interface Metrics {
   jobQueueDepth: Gauge<'state'>;
   /** Undelivered outbox rows awaiting relay (crash-recovery backlog). */
   outboxBacklog: Gauge<string>;
+  /** Outbox rows parked after exceeding the attempt ceiling (needs a human). */
+  outboxParked: Gauge<string>;
+  /** Age (seconds) of the oldest undelivered outbox row. */
+  outboxOldestPendingSeconds: Gauge<string>;
+  /** Durable consumption-cursor lag (seconds) behind newest delivered row. */
+  outboxCursorLagSeconds: Gauge<string>;
 }
 
 export interface CreateMetricsOptions {
@@ -86,6 +92,21 @@ export function createMetrics(options: CreateMetricsOptions = {}): Metrics {
     help: '未投递的 outbox 事件数',
     registers: [registry],
   });
+  const outboxParked = new Gauge({
+    name: 'stackpanel_outbox_parked',
+    help: '超过重试上限、已停滞（parked）的 outbox 事件数',
+    registers: [registry],
+  });
+  const outboxOldestPendingSeconds = new Gauge({
+    name: 'stackpanel_outbox_oldest_pending_seconds',
+    help: '最老的未投递 outbox 事件年龄（秒）',
+    registers: [registry],
+  });
+  const outboxCursorLagSeconds = new Gauge({
+    name: 'stackpanel_outbox_cursor_lag_seconds',
+    help: '持久消费游标落后最新已投递事件的秒数',
+    registers: [registry],
+  });
 
   return {
     registry,
@@ -95,6 +116,9 @@ export function createMetrics(options: CreateMetricsOptions = {}): Metrics {
     rateLimitRejectionsTotal,
     jobQueueDepth,
     outboxBacklog,
+    outboxParked,
+    outboxOldestPendingSeconds,
+    outboxCursorLagSeconds,
   };
 }
 

@@ -17,8 +17,18 @@ export {
   localeOptions,
   formatNumber,
   formatDate,
+  formatDateTime,
   formatCurrency,
   formatMoney,
+  currencyMinorUnit,
+  parseAmountToMinor,
+  formatMinorForInput,
+  formatPercent,
+  formatUnit,
+  formatFileSize,
+  formatRelativeTime,
+  formatList,
+  formatPlural,
 } from './core';
 export type { Translator, MessageParams, CatalogOverrides } from './core';
 

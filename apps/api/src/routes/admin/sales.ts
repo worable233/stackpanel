@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { CurrencyError } from '@stackpanel/sdk';
+import { KernelCurrencyService } from '../../currency/service.ts';
 import type { Prisma } from '@stackpanel/db';
 import { auditContext, writeAudit } from '../../plugins/audit.ts';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
@@ -7,8 +9,31 @@ import { getPrisma } from '../../plugins/prisma.ts';
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
 
+/**
+ * Normalize a payment method's currency allow-list against the catalog. Free
+ * text is refused (plan §4.1/§4.4); an empty list still means "all enabled".
+ */
+async function normalizeMethodCurrencies(codes: string[]): Promise<string[]> {
+  const service = new KernelCurrencyService({ db: getPrisma() });
+  const normalized: string[] = [];
+  for (const code of codes) {
+    const definition = await service.requireEnabled(code);
+    if (!normalized.includes(definition.code)) normalized.push(definition.code);
+  }
+  return normalized;
+}
+
+/** Render a currency error as a stable problem-details body. */
+function currencyErrorBody(error: CurrencyError): { error: string; code: string } {
+  return { error: error.message, code: error.code };
+}
+
 const channelSchema = z.object({
-  code: z.string().min(1).max(64).regex(/^[A-Z][A-Z0-9_]*$/),
+  code: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Z][A-Z0-9_]*$/),
   name: z.string().min(1).max(100),
   terminal: z.enum(['PC', 'MINI_PROGRAM', 'API']).default('PC'),
   enabled: z.boolean().default(true),
@@ -21,6 +46,8 @@ const methodSchema = z.object({
   name: z.string().min(1).max(100),
   enabled: z.boolean().default(true),
   scene: z.string().default('PC'),
+  /** Settlement currencies this method can collect; empty = all enabled. */
+  currencies: z.array(z.string().min(1).max(8)).default([]),
   config: z.json(),
   sortOrder: z.number().int().default(0),
 });
@@ -89,10 +116,20 @@ export async function adminSalesRoutes(app: FastifyInstance): Promise<void> {
   app.post('/admin/payment-methods', { preHandler: adminOnly }, async (request, reply) => {
     const parsed = methodSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: '请求参数无效' });
+    let currencies: string[];
+    try {
+      currencies = await normalizeMethodCurrencies(parsed.data.currencies);
+    } catch (error) {
+      if (error instanceof CurrencyError) {
+        return reply.code(error.status).send(currencyErrorBody(error));
+      }
+      throw error;
+    }
     const prisma = getPrisma();
     const method = await prisma.paymentMethod.create({
       data: {
         ...parsed.data,
+        currencies,
         config: parsed.data.config as Prisma.InputJsonValue,
       },
     });
@@ -110,11 +147,21 @@ export async function adminSalesRoutes(app: FastifyInstance): Promise<void> {
     const body = methodSchema.partial().safeParse(request.body);
     if (!params.success || !body.success) return reply.code(400).send({ error: '请求参数无效' });
     const prisma = getPrisma();
-    const { config, ...rest } = body.data;
+    const { config, currencies, ...rest } = body.data;
     const data: Record<string, unknown> = Object.fromEntries(
       Object.entries(rest).filter(([, v]) => v !== undefined),
     );
     if (config !== undefined) data.config = config as Prisma.InputJsonValue;
+    if (currencies !== undefined) {
+      try {
+        data.currencies = await normalizeMethodCurrencies(currencies);
+      } catch (error) {
+        if (error instanceof CurrencyError) {
+          return reply.code(error.status).send(currencyErrorBody(error));
+        }
+        throw error;
+      }
+    }
     const method = await prisma.paymentMethod.update({
       where: { id: params.data.id },
       data: data as Prisma.PaymentMethodUpdateInput,

@@ -16,6 +16,16 @@ const envSchema = z.object({
   // Server-side per-statement ceiling. 0 disables it (not recommended).
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(30_000),
   STACKPANEL_DATA_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
+  // Stable replica identity used as the key for per-replica durable consumption
+  // cursors (`replica:<id>`). A replica must keep the same id across restarts to
+  // resume its cursor instead of replaying from "now"; a cluster deployment
+  // must give every replica a stable, unique value (k8s: StatefulSet pod name).
+  // Unset falls back to `os.hostname()`.
+  STACKPANEL_INSTANCE_ID: z.preprocess(emptyToUndefined, z.string().min(1).max(128).optional()),
+  // How far back a replica with no cursor replays on first boot. Default 0 means
+  // "only events from now on": replaying all history on every fresh pod would
+  // storm consumers. Set a window (ms) to backfill a bounded recent history.
+  STACKPANEL_OUTBOX_REPLAY_WINDOW_MS: z.coerce.number().int().min(0).default(0),
   AGENT_PUBLIC_ORIGIN: z.preprocess(emptyToUndefined, z.string().url().optional()),
   AGENT_WEB_ORIGIN: z.preprocess(emptyToUndefined, z.string().url().optional()),
   API_HOST: z.string().default('127.0.0.1'),
@@ -59,8 +69,15 @@ const envSchema = z.object({
   AUTH_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_CODE_SEND_PER_HOUR: z.coerce.number().int().min(0).default(5),
   AUTH_CODE_SEND_PER_HOUR_PER_IP: z.coerce.number().int().min(0).default(20),
-  STACKPANEL_BOOTSTRAP_EMAIL: z.preprocess(emptyToUndefined, z.string().email().optional()),
-  STACKPANEL_BOOTSTRAP_PASSWORD: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
+  // First-run setup wizard (ADR: setup page). `auto` (default) lets the operator
+  // claim the instance from the browser at `/setup`; `disabled` turns the wizard
+  // off entirely, so a fresh instance can only be initialized out-of-band.
+  STACKPANEL_SETUP_MODE: z.enum(['auto', 'disabled']).default('auto'),
+  // Optional one-time claim token. When set, `POST /setup` (and the first-admin
+  // election on `/register` / OAuth) requires it, closing the public "squat the
+  // fresh instance" race. When unset the wizard is open — acceptable only when
+  // the instance is on a trusted network until it is claimed.
+  STACKPANEL_SETUP_TOKEN: z.preprocess(emptyToUndefined, z.string().min(16).optional()),
   SETTINGS_ENCRYPTION_KEY: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
   STACKPANEL_API_TOKEN_PREFIX: z.preprocess(emptyToUndefined, z.string().min(2).max(16).optional()),
   // Open platform (/api/v1) per-token limits. RPM default is a generous ceiling

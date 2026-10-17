@@ -13,6 +13,7 @@ import {
   type StorageDriver,
 } from '@stackpanel/db';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
+import { env } from './config/env.ts';
 import { useRedisState } from './state/index.ts';
 import { useRedisCache } from './cache/index.ts';
 import { configureOutboxEventBus } from './plugins/events.ts';
@@ -115,6 +116,8 @@ export async function initInfra(): Promise<void> {
     db: getPrisma() as unknown as Parameters<typeof configureOutboxEventBus>[0]['db'],
     redis,
     production: getInfraConfig().production,
+    ...(env.STACKPANEL_INSTANCE_ID ? { instanceId: env.STACKPANEL_INSTANCE_ID } : {}),
+    replayWindowMs: env.STACKPANEL_OUTBOX_REPLAY_WINDOW_MS,
     logger: {
       warn: (message) => console.warn(message),
       info: (message) => console.info(message),

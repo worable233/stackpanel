@@ -12,12 +12,18 @@ export async function agentHttp(
 ): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }> {
   if (!isPublicHttpUrl(endpoint)) throw new PluginError('agent.network_forbidden', 422, '仅允许公网 HTTPS 地址');
   const url = new URL(endpoint);
-  const addresses = await resolvePublicAddresses(url.hostname);
+  const deadline = AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]);
+  deadline.throwIfAborted();
+  const addresses = await new Promise<Awaited<ReturnType<typeof resolvePublicAddresses>>>((resolve, reject) => {
+    const abort = () => reject(new PluginError('agent.remote_unavailable', 502, '外部服务解析超时或已取消'));
+    deadline.addEventListener('abort', abort, { once: true });
+    resolvePublicAddresses(url.hostname).then(resolve, reject).finally(() => deadline.removeEventListener('abort', abort));
+  });
+  deadline.throwIfAborted();
   const address = addresses?.[0];
   if (!address) throw new PluginError('agent.network_forbidden', 422, '目标地址解析失败或包含受限网络');
   const payload = JSON.stringify(body);
   if (Buffer.byteLength(payload) > 1024 * 1024) throw new PluginError('agent.payload_large', 413, '请求内容过大');
-  const deadline = AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]);
   return new Promise((resolve, reject) => {
     const req = request(url, {
       method: 'POST', signal: deadline,
@@ -35,6 +41,7 @@ export async function agentHttp(
         chunks.push(chunk);
       });
       res.on('error', reject);
+      res.on('close', () => { if (!res.complete) reject(new PluginError('agent.remote_unavailable', 502, '外部服务响应中断')); });
       res.on('end', () => resolve({ status: res.statusCode ?? 502, headers: res.headers, text: Buffer.concat(chunks).toString('utf8') }));
     });
     req.on('error', () => reject(new PluginError('agent.remote_unavailable', 502, '外部服务调用失败，请核对服务状态')));

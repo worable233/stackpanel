@@ -38,6 +38,15 @@
     "forbidden": "Forbidden",
     "invalidRequest": "Invalid request"
   },
+  "adminShell": {
+    "groupUsers": "Users & Permissions",
+    "groupSite": "Site",
+    "groupSystem": "System",
+    "groupDeveloper": "Developer",
+    "groupAccount": "Account",
+    "overview": "Overview",
+    "quickLinks": "Quick links"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "users": "Users",
@@ -97,6 +106,30 @@
       "codeSent": "A verification code has been sent to your email.",
       "codeSentTo": "A code was sent to {email}. It expires in 10 minutes."
     },
+    "setup": {
+      "title": "Initialize your platform",
+      "subtitle": "Create the first administrator account to finish deployment.",
+      "email": "Admin email",
+      "password": "Admin password",
+      "passwordHint": "At least 8 characters",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "token": "Setup token",
+      "tokenHint": "Found in the deploy summary or STACKPANEL_SETUP_TOKEN in .env.",
+      "submit": "Create administrator",
+      "submitting": "Initializing…",
+      "wizard": {
+        "accountTitle": "Create an administrator",
+        "confirmTitle": "Confirm setup",
+        "confirmPassword": "Confirm password",
+        "passwordMismatch": "The passwords do not match.",
+        "showConfirmation": "Show password confirmation",
+        "hideConfirmation": "Hide password confirmation",
+        "back": "Back",
+        "continue": "Continue",
+        "initialize": "Initialize and open dashboard"
+      }
+    },
     "panel": {
       "highlightTitle": "Ready to launch",
       "highlightText": "Pick, order and provision in one flow, with no manual setup to wait on.",
@@ -117,7 +150,8 @@
       "invalidCredentials": "Incorrect email or password",
       "loginFailed": "Sign-in failed, please try again later",
       "registerFailed": "Registration failed, please try again later",
-      "sendCodeFailed": "Could not send the verification code, please try again later"
+      "sendCodeFailed": "Could not send the verification code, please try again later",
+      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
     }
   },
   "localeSwitcher": {
@@ -616,7 +650,34 @@
       },
       "title": "System settings",
       "pageDescription": "Manage platform info and package signing.",
-      "serviceUnavailable": "Settings service unavailable: {error}"
+      "serviceUnavailable": "Settings service unavailable: {error}",
+      "currency": {
+        "title": "Currencies & settlement",
+        "description": "Platform-controlled currency catalog and settlement currency. Entries used by transactions or set as settlement cannot be disabled.",
+        "settlement": "Settlement currency",
+        "settlementHint": "Confirm payment methods, exchange rates and wallet compatibility before changing.",
+        "code": "Code / name",
+        "symbol": "Symbol",
+        "decimals": "Decimals",
+        "sample": "Sample",
+        "status": "Status",
+        "isSettlement": "Settlement currency",
+        "referenced": "Referenced by transactions",
+        "enable": "Enable",
+        "disable": "Disable",
+        "ratesTitle": "Exchange rates (native → settlement)",
+        "ratesDescription": "Only native-to-settlement rates are supported. Expired rates are not used for new orders.",
+        "from": "From",
+        "to": "Settlement",
+        "rate": "Rate",
+        "source": "Source",
+        "updatedAt": "Updated",
+        "validUntil": "Valid until",
+        "noExpiry": "No expiry",
+        "addRate": "Save rate",
+        "delete": "Delete",
+        "noRates": "No exchange rates configured yet."
+      }
     },
     "themes": {
       "previewing": "Previewing: {name}",
@@ -719,7 +780,16 @@
     "developerResellerCreateFailed": "Failed to create the partner",
     "developerResellerUpdateFailed": "Failed to update the partner",
     "developerResellerRotateFailed": "Failed to rotate the partner key",
-    "developerResellerDeleteFailed": "Failed to delete the partner"
+    "developerResellerDeleteFailed": "Failed to delete the partner",
+    "settlementCurrencyRequired": "Choose a settlement currency",
+    "settlementCurrencySaved": "Settlement currency updated to {currency}",
+    "settlementCurrencySaveFailed": "Failed to save the settlement currency",
+    "currencyToggleFailed": "Failed to update the currency status",
+    "currencyRateFromRequired": "Choose the currency to configure",
+    "currencyRateInvalid": "The rate must be a number greater than 0",
+    "currencyRateSaved": "Exchange rate saved",
+    "currencyRateSaveFailed": "Failed to save the exchange rate",
+    "currencyRateDeleteFailed": "Failed to delete the exchange rate"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -751,6 +821,7 @@
       "email_taken": "This email is already registered",
       "rate_limited": "Too many attempts, please try again later",
       "register_failed": "Registration failed, please try again later",
+      "setup_required": "This instance is not initialized yet; complete the setup wizard first",
       "unauthenticated": "Your session has expired, please sign in again",
       "forbidden": "You do not have permission to perform this action",
       "code_missing": "This code is missing or no longer valid. Request a new one.",
@@ -765,6 +836,11 @@
       "captcha_required": "Please complete the human verification",
       "captcha_failed": "Human verification failed, please retry",
       "captcha_unavailable": "Human verification is unavailable"
+    },
+    "setup": {
+      "already_completed": "This instance is already initialized. Please sign in.",
+      "disabled": "The setup wizard is disabled. Contact your deployment administrator.",
+      "token_invalid": "Invalid setup token"
     },
     "validation": {
       "invalid": "Invalid request parameters"
@@ -784,7 +860,12 @@
     "store": {
       "product": {
         "not_found": "Product not found",
-        "config_unsupported": "This product does not support configuration options"
+        "config_unsupported": "This product does not support configuration options",
+        "unavailable": "This product is unavailable or out of stock",
+        "not_purchasable": "This product cannot be purchased right now"
+      },
+      "category": {
+        "not_found": "Category not found"
       },
       "checkout": {
         "config_invalid": "Invalid checkout configuration",
@@ -802,7 +883,10 @@
         "not_cancellable": "The order cannot be cancelled",
         "state_changed": "Order status changed, please refresh and retry",
         "payment_processing": "Payment is still processing and cannot be cancelled",
-        "currency_mismatch": "Items in the order use different currencies, please order separately"
+        "currency_mismatch": "Items in the order use different currencies, please order separately",
+        "amount_too_large": "The order amount is too large",
+        "not_payable": "The order cannot be paid right now",
+        "partner_prepaid_no_refund": "This is a partner-prepaid order and cannot be refunded to the wallet"
       },
       "upstream": {
         "not_enabled": "Upstream does not exist or is disabled"
@@ -811,7 +895,9 @@
         "not_enabled": "Sales channel does not exist or is disabled"
       },
       "service": {
-        "unsupported": "This service does not support this operation"
+        "unsupported": "This service does not support this operation",
+        "already_owned": "This service already belongs to that user",
+        "not_changeable": "This service cannot be changed in its current state"
       },
       "pricing": {
         "failed": "Failed to calculate the product price"
@@ -822,7 +908,9 @@
       },
       "request": {
         "id_required": "Missing required parameters",
-        "params_required": "Missing required parameters"
+        "params_required": "Missing required parameters",
+        "idempotency_conflict": "This request was already used for another operation, please retry",
+        "concurrent_request": "An identical request is already being processed, please wait"
       },
       "task": {
         "not_retryable": "Task does not exist or cannot be retried"
@@ -959,6 +1047,17 @@
     },
     "cms": {
       "not_ready": "Content service is temporarily unavailable, please try again later"
+    },
+    "currency": {
+      "invalid": "Unsupported currency",
+      "disabled": "This currency is disabled",
+      "minor_unit_invalid": "The amount does not match this currency's minor unit",
+      "product_immutable": "This product already has transactions and its currency cannot change",
+      "rate_missing": "No exchange rate is configured for this currency",
+      "rate_expired": "The exchange rate has expired",
+      "settlement_unsupported": "The platform settlement currency does not support this operation",
+      "payment_method_unsupported": "The selected payment method does not support this settlement currency",
+      "referenced": "This currency is referenced by payments or payment methods and cannot be disabled"
     }
   },
   "auditAction": {
@@ -1152,6 +1251,9 @@
     "notifications": {
       "title": "My notifications",
       "description": "Order payments, fulfillment progress and system announcements appear here."
+    },
+    "settings": {
+      "title": "Account settings"
     }
   },
   "apply": {
@@ -1224,8 +1326,55 @@
     "pageNotFound": "Page not found",
     "backHome": "Back to home"
   },
+  "statusBadge": {
+    "operational": "All systems operational",
+    "degraded": "Some systems degraded",
+    "maintenance": "Under maintenance",
+    "outage": "Service unavailable"
+  },
+  "agentConsent": {
+    "title": "Authorize MCP client",
+    "description": "Only permissions you currently hold are granted, and they tighten immediately on revocation. Verify the client and redirect domain.",
+    "client": "Client:",
+    "redirectUri": "Redirect URI:",
+    "approve": "Approve",
+    "deny": "Deny and return",
+    "failed": "Authorization failed"
+  },
+  "agentFrame": {
+    "ariaLabel": "Agent workspace",
+    "dragHint": "Drag the title bar to move the panel"
+  },
   "frontendError": {
     "title": "This page could not be displayed",
     "description": "Please try again later, or return to the home page."
+  },
+  "notificationSettings": {
+    "preferences": "Notification preferences",
+    "policy": "Notification policy",
+    "userHelp": "Choose in-app and external delivery channels independently.",
+    "adminHelp": "Set default delivery channels for each notification. Disabling a type stops all channels; locking prevents users from changing it.",
+    "reset": "Restore defaults",
+    "resetTitle": "Restore notification defaults?",
+    "resetDescription": "Clear your personal choices and use the administrator’s default delivery settings.",
+    "cancel": "Cancel",
+    "managed": "Managed by the system; cannot be changed",
+    "globallyDisabled": "All channels are disabled",
+    "enabled": "Enable notifications",
+    "defaultChannels": "Default delivery channels",
+    "noDefaultChannels": "No default delivery channels selected.",
+    "lock": "Lock delivery settings",
+    "lockHelp": "Users cannot change the delivery channels for this notification.",
+    "catalogLocked": "Users cannot customize delivery for this notification.",
+    "empty": "No configurable notifications",
+    "loading": "Loading notification settings",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "autosave": "Changes are saved automatically.",
+    "retry": "Retry",
+    "failed": "Could not save. Please try again.",
+    "unavailable": "Notification settings are temporarily unavailable. Please try again.",
+    "forbidden": "You do not have permission to manage notification policy.",
+    "invalidRequest": "Invalid request format."
   }
 }

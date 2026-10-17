@@ -60,7 +60,7 @@ import {
 } from '@/components/ui/table';
 import { formatYuan, type AdminOverviewData } from '@/lib/admin-overview-types';
 import { useLocale, useTranslator } from '@/i18n/provider';
-import { formatCurrency } from '@/i18n';
+import { formatMoney } from '@/i18n';
 import { formatNumber, formatDate, type Translator } from '@/i18n/core';
 import type { Locale } from '@/i18n/config';
 
@@ -740,7 +740,7 @@ export function ProductsTable({ data }: { data: AdminOverviewData }) {
                 <TableRow key={product.id}>
                   <TableCell className="max-w-64 truncate font-medium">{product.name}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrency(product.price / 100, product.currency, locale, {
+                    {formatMoney(product.price, product.currency, locale, {
                       maximumFractionDigits: 0,
                     })}
                   </TableCell>

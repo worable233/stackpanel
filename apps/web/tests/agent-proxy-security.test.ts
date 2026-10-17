@@ -3,6 +3,9 @@ import { agentProxyTarget } from '../src/lib/agent-proxy-path';
 describe('Agent BFF allowlist',()=>{
   it('only resolves explicit Agent endpoints',()=>{
     expect(agentProxyTarget('GET',['runs','run_123'])).toBe('/api/v1/agent/runs/run_123');
+    expect(agentProxyTarget('GET',['conversations'])).toBe('/api/v1/agent/conversations');
+    expect(agentProxyTarget('PUT',['conversations','id','messages','message'])).toBe('/api/v1/agent/conversations/id/messages/message');
+    expect(agentProxyTarget('POST',['conversations','id','messages','message'])).toBeNull();
     expect(agentProxyTarget('PUT',['admin','model'])).toBe('/admin/agent/model');
     expect(agentProxyTarget('POST',['approvals','id','decide'])).toBe('/api/v1/agent/approvals/id/decide');
   });

@@ -130,6 +130,7 @@ async function buildFrontendPackageFromSource(pkg) {
   await writeFile(
     probeLinkStub,
     'export default function Link(props) { return props.children ?? null; }\n' +
+      'export function notFound() { throw new Error("NEXT_HTTP_ERROR_FALLBACK;404"); }\n' +
       'export function usePathname() { return "/"; }\n' +
       'export function useSearchParams() { return new URLSearchParams(); }\n',
   );

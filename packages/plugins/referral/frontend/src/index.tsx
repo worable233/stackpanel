@@ -1,8 +1,4 @@
-import type {
-  AccountPageComponentProps,
-  FinderProvider,
-  FrontendPackage,
-} from '@stackpanel/sdk';
+import type { AccountPageComponentProps, FinderProvider, FrontendPackage } from '@stackpanel/sdk';
 import {
   Button,
   Card,
@@ -17,6 +13,7 @@ import {
   StatusBadge,
   type StatusTone,
 } from '@stackpanel/ui';
+import { formatMinorCurrency } from '@stackpanel/sdk';
 import type { ReactElement } from 'react';
 import { Gift, Link2, Share2 } from 'lucide-react';
 import { adminConfigSchema, adminListSchema, mineSchema } from './schemas';
@@ -35,7 +32,13 @@ const INVITER_STATE: Record<string, { label: string; tone: StatusTone }> = {
 };
 
 function money(amount: number, currency: string): string {
-  return `${(amount / 100).toFixed(2)} ${currency}`;
+  // Reward balances are minor units; respect the currency's precision instead
+  // of assuming two decimals.
+  try {
+    return formatMinorCurrency(amount, currency, 'zh-CN');
+  } catch {
+    return `${amount} ${currency}`;
+  }
 }
 
 function formatDate(value: string): string {
@@ -107,9 +110,21 @@ function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
       ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="累计邀请" value={String(stats.totalInvites)} hint={`归因有效期 ${config.cookieDays} 天`} />
-        <StatCard label="已发放邀请" value={String(stats.paidInvites)} hint={`发奖时点：${triggerLabel}`} />
-        <StatCard label="累计奖励" value={money(stats.earnedAmount, currency)} hint="已发放到余额" />
+        <StatCard
+          label="累计邀请"
+          value={String(stats.totalInvites)}
+          hint={`归因有效期 ${config.cookieDays} 天`}
+        />
+        <StatCard
+          label="已发放邀请"
+          value={String(stats.paidInvites)}
+          hint={`发奖时点：${triggerLabel}`}
+        />
+        <StatCard
+          label="累计奖励"
+          value={money(stats.earnedAmount, currency)}
+          hint="已发放到余额"
+        />
         <StatCard label="当前余额" value={money(stats.balance, currency)} />
       </section>
 
@@ -117,8 +132,8 @@ function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
         <CardHeader>
           <SectionTitle icon={<Gift />}>奖励规则</SectionTitle>
           <CardDescription>
-            每成功邀请一位新用户，你可得 {money(config.rewardAmount, currency)}；
-            被邀请人可得 {money(config.inviteeRewardAmount, currency)}。
+            每成功邀请一位新用户，你可得 {money(config.rewardAmount, currency)}； 被邀请人可得{' '}
+            {money(config.inviteeRewardAmount, currency)}。
           </CardDescription>
         </CardHeader>
       </Card>
@@ -327,7 +342,7 @@ export const frontend: FrontendPackage = {
         path: '/referrals',
         component: 'admin/referrals',
         permission: 'store.admin',
-        nav: { label: '推广管理', group: '商店插件' },
+        systemSettings: { label: '推广', order: 120 },
         data: [
           { finder: 'referral.adminList', as: 'referral' },
           { finder: 'referral.adminConfig', as: 'referralConfig' },

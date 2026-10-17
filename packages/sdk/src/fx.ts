@@ -43,6 +43,8 @@ export interface FxRate {
   source: string;
   updatedBy: string | null;
   updatedAt: Date;
+  /** Optional expiry; a rate past it must not be used (`currency.rate_expired`). */
+  validUntil: Date | null;
 }
 
 /** Error thrown by the kernel FX service. Carries an HTTP status + display message. */
@@ -64,6 +66,15 @@ export function isFxError(value: unknown): value is FxError {
 export interface FxService {
   /** Convert `amountMinor` in `from` currency to `to` currency at the active rate. */
   quote(from: string, to: string, amountMinor: number): Promise<FxQuote>;
+  /**
+   * Convert `amountMinor` from `from` to the platform settlement currency.
+   * Throws `currency.settlement_unsupported` when the settlement currency is
+   * unknown/disabled, and `currency.rate_missing` / `currency.rate_expired`
+   * when no usable rate exists.
+   */
+  quoteToSettlement(from: string, amountMinor: number): Promise<FxQuote>;
+  /** The platform settlement currency (from settings, default CNY). */
+  getSettlementCurrency(): Promise<string>;
   /** Read a single active rate (null when not configured). */
   getRate(from: string, to: string): Promise<FxRate | null>;
   /** List all configured rates (for admin views). */

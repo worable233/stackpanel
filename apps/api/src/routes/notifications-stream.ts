@@ -20,7 +20,7 @@ const HEARTBEAT_MS = 25_000;
  * by that user id, so a stream can never observe another user's notifications.
  */
 export async function notificationStreamRoutes(app: FastifyInstance): Promise<void> {
-  const hub = getNotificationStreamHub(getEventBus());
+  const hub = getNotificationStreamHub(getEventBus(), app.notificationPolicy);
 
   app.get('/notifications/stream', { preHandler: requireAuth }, (request, reply) => {
     const userId = currentUser(request).id;

@@ -20,7 +20,11 @@ const STORE_ERROR_CODES: Record<string, string> = {
   '该商品不支持配置选择': 'store.product.config_unsupported',
   '未登录': 'auth.unauthenticated',
   '商品不存在': 'store.product.not_found',
+  '商品不可用': 'store.product.unavailable',
+  '商品不可用或库存不足': 'store.product.unavailable',
+  '商品不可购买': 'store.product.not_purchasable',
   '购物车项不存在': 'store.cart.item_not_found',
+  '分类不存在': 'store.category.not_found',
   '上游不存在或未启用': 'store.upstream.not_enabled',
   '销售渠道不存在或未启用': 'store.channel.not_enabled',
   '库存不足': 'store.stock.insufficient',
@@ -38,6 +42,16 @@ const STORE_ERROR_CODES: Record<string, string> = {
   '服务不存在': 'store.service.not_found',
   '该服务当前状态不可续费': 'store.service.not_renewable',
   '订单金额无效': 'store.order.amount_invalid',
+  '订单金额过大': 'store.order.amount_too_large',
+  '订单不可支付': 'store.order.not_payable',
+  '幂等键已用于不同的请求，请重新提交': 'store.request.idempotency_conflict',
+  '相同请求正在处理中，请稍候': 'store.request.concurrent_request',
+  '商品结账配置无效': 'store.checkout.config_invalid',
+  '商品已产生交易，不能修改币种': 'currency.product_immutable',
+  '商品已停售，无法赠送': 'store.product.unavailable',
+  '服务已属于该用户': 'store.service.already_owned',
+  '该服务当前状态不可变更': 'store.service.not_changeable',
+  '该订单为合作方预付，不支持钱包退款': 'store.order.partner_prepaid_no_refund',
   '订单不可退款': 'store.order.not_refundable',
   '退款金额无效': 'store.refund.amount_invalid',
   '退款金额超过订单金额': 'store.refund.amount_exceeds',
@@ -55,10 +69,13 @@ export class StoreError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Explicit stable code (e.g. kernel `currency.*` errors passed through). */
+    code?: string,
   ) {
     super(message);
     this.name = 'StoreError';
     this.code =
+      code ??
       STORE_ERROR_CODES[message] ??
       STORE_ERROR_PREFIX_CODES[message.split(/[:：]/)[0] ?? ''] ??
       'store.error';

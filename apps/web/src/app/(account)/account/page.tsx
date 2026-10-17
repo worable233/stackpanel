@@ -139,7 +139,7 @@ export default async function AccountHomePage() {
               </div>
             </dl>
             <Link
-              href="/account/security"
+              href="/account/settings#security"
               className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground hover:text-foreground"
             >
               安全中心 <ArrowRight className="size-4" />

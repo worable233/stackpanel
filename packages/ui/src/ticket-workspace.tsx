@@ -21,8 +21,11 @@ interface Ticket {
   priority: string;
   createdAt: string;
   updatedAt: string;
+  userEmail?: string | null;
+  assigneeEmail?: string | null;
 }
 interface TicketDetail extends Ticket {
+  assigneeId?: string | null;
   viewerId?: string | null;
   messages: Array<{ id: string; body: string; authorId: string; authorRole?: string | null; authorEmail?: string | null; createdAt: string }>;
 }
@@ -32,10 +35,18 @@ interface TicketWorkspaceProps {
   mode: 'list' | 'new' | 'detail';
   create?: (data: FormData) => Promise<void>;
   reply?: (data: FormData) => Promise<void>;
+  update?: (data: FormData) => Promise<void>;
+  admin?: boolean;
+  basePath?: string;
+  /**
+   * BCP 47 tag driving date/time presentation (ADR-0016 §6). The host supplies
+   * it; the primitive never hardcodes a locale.
+   */
+  locale?: string;
 }
 const statuses: Record<string, string> = { OPEN: '待处理', IN_PROGRESS: '处理中', RESOLVED: '已解决', CLOSED: '已关闭' };
-function date(value: string, short = false) {
-  return new Date(value).toLocaleString('zh-CN', short ? { month: 'numeric', day: 'numeric' } : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function date(value: string, locale: string | undefined, short = false) {
+  return new Date(value).toLocaleString(locale, short ? { month: 'numeric', day: 'numeric' } : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -43,7 +54,17 @@ function Submit({ label }: { label: string }) {
 }
 
 /** Account support inbox; the plugin owns routes, data and server actions. */
-export function TicketWorkspace({ tickets, ticket, mode, create, reply }: TicketWorkspaceProps) {
+export function TicketWorkspace({
+  tickets,
+  ticket,
+  mode,
+  create,
+  reply,
+  update,
+  admin = false,
+  basePath = '/account/tickets',
+  locale,
+}: TicketWorkspaceProps) {
   const [search, setSearch] = useState('');
   const replyForm = useRef<HTMLFormElement>(null);
   const filtered = tickets.filter((item) => `${item.subject} ${item.id}`.toLowerCase().includes(search.trim().toLowerCase()));
@@ -53,8 +74,8 @@ export function TicketWorkspace({ tickets, ticket, mode, create, reply }: Ticket
       <aside aria-label="工单列表" className={cn('w-full shrink-0 flex-col md:flex md:w-64 lg:w-72', hasPanel ? 'hidden' : 'flex')}>
         <div className="flex flex-col gap-5 pb-5 pt-1">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">工单 <MessagesSquare className="size-4 text-muted-foreground" /></h1>
-            <Button variant="ghost" size="icon" nativeButton={false} render={<Link href="/account/tickets/new" />} aria-label="提交工单"><SquarePen /></Button>
+            <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">{admin ? '工单管理' : '工单'} <MessagesSquare className="size-4 text-muted-foreground" /></h1>
+            {!admin && <Button variant="ghost" size="icon" nativeButton={false} render={<Link href={`${basePath}/new`} />} aria-label="提交工单"><SquarePen /></Button>}
           </div>
           <InputGroup>
             <InputGroupAddon><Search /></InputGroupAddon>
@@ -63,9 +84,9 @@ export function TicketWorkspace({ tickets, ticket, mode, create, reply }: Ticket
         </div>
         <nav aria-label="我的工单" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
           {filtered.map((item) => (
-            <Link key={item.id} href={`/account/tickets/${encodeURIComponent(item.id)}`} aria-current={ticket?.id === item.id ? 'page' : undefined} className={cn('flex flex-col gap-2 rounded-lg px-3 py-3.5 text-sm outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring', ticket?.id === item.id && 'bg-muted')}>
-              <div className="flex items-center justify-between gap-3"><span className="truncate font-medium">{item.subject}</span><time className="shrink-0 text-xs text-muted-foreground" dateTime={item.updatedAt}>{date(item.updatedAt, true)}</time></div>
-              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="flex items-center gap-1.5">{item.status === 'RESOLVED' || item.status === 'CLOSED' ? <Check className="size-3" /> : <span className="size-1.5 rounded-full bg-primary/60" />}{statuses[item.status] ?? item.status}</span><span className="truncate">#{item.id.slice(-8)}</span></div>
+            <Link key={item.id} href={`${basePath}/${encodeURIComponent(item.id)}`} aria-current={ticket?.id === item.id ? 'page' : undefined} className={cn('flex flex-col gap-2 rounded-lg px-3 py-3.5 text-sm outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring', ticket?.id === item.id && 'bg-muted')}>
+              <div className="flex items-center justify-between gap-3"><span className="truncate font-medium">{item.subject}</span><time className="shrink-0 text-xs text-muted-foreground" dateTime={item.updatedAt}>{date(item.updatedAt, locale, true)}</time></div>
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="flex items-center gap-1.5">{item.status === 'RESOLVED' || item.status === 'CLOSED' ? <Check className="size-3" /> : <span className="size-1.5 rounded-full bg-primary/60" />}{statuses[item.status] ?? item.status}</span><span className="truncate">{admin ? (item.userEmail ?? '未知用户') : `#${item.id.slice(-8)}`}</span></div>
             </Link>
           ))}
           {filtered.length === 0 && <div className="flex flex-col items-center gap-3 py-16 text-sm text-muted-foreground"><Inbox className="size-6 opacity-50" /><p>{search ? '未找到工单' : '暂无工单'}</p></div>}
@@ -76,12 +97,12 @@ export function TicketWorkspace({ tickets, ticket, mode, create, reply }: Ticket
           <div className="flex flex-1 flex-col items-center justify-center gap-5 p-8 text-center">
             <MessagesSquare className="size-9 text-muted-foreground/50" />
             <h2 className="text-lg font-semibold">选择工单，查看对话</h2>
-            <Button nativeButton={false} render={<Link href="/account/tickets/new" />}><SquarePen data-icon="inline-start" />提交工单</Button>
+            {!admin && <Button nativeButton={false} render={<Link href={`${basePath}/new`} />}><SquarePen data-icon="inline-start" />提交工单</Button>}
           </div>
         ) : mode === 'new' ? (
           <>
             <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border/60 pb-4 md:pl-8 lg:pl-10">
-              <Button variant="ghost" size="icon" nativeButton={false} render={<Link href="/account/tickets" />} aria-label="返回工单列表" className="md:hidden"><ArrowLeft /></Button>
+              <Button variant="ghost" size="icon" nativeButton={false} render={<Link href={basePath} />} aria-label="返回工单列表" className="md:hidden"><ArrowLeft /></Button>
               <h2 className="text-base font-semibold">提交工单</h2>
             </header>
             {create && <form action={create} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-8 md:pl-8 lg:pl-10">
@@ -95,10 +116,17 @@ export function TicketWorkspace({ tickets, ticket, mode, create, reply }: Ticket
         ) : ticket ? (
           <>
             <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border/60 pb-4 md:pl-8 lg:pl-10">
-              <Button variant="ghost" size="icon" nativeButton={false} render={<Link href="/account/tickets" />} aria-label="返回工单列表" className="md:hidden"><ArrowLeft /></Button>
-              <div className="flex min-w-0 flex-1 flex-col gap-1"><h2 className="truncate text-base font-semibold">{ticket.subject}</h2><p className="text-xs text-muted-foreground">#{ticket.id.slice(-8)}</p></div>
+              <Button variant="ghost" size="icon" nativeButton={false} render={<Link href={basePath} />} aria-label="返回工单列表" className="md:hidden"><ArrowLeft /></Button>
+              <div className="flex min-w-0 flex-1 flex-col gap-1"><h2 className="truncate text-base font-semibold">{ticket.subject}</h2><p className="text-xs text-muted-foreground">{admin ? (ticket.userEmail ?? '未知用户') : `#${ticket.id.slice(-8)}`}</p></div>
               <span className="shrink-0 text-xs text-muted-foreground">{statuses[ticket.status] ?? ticket.status}</span>
             </header>
+            {admin && update ? <form action={update} className="grid gap-3 border-b border-border/60 pb-4 pt-4 md:pl-8 lg:pl-10 sm:grid-cols-3">
+              <input type="hidden" name="id" value={ticket.id} />
+              <label className="grid gap-1.5 text-sm"><span className="font-medium">状态</span><select name="status" defaultValue={ticket.status} className="h-9 rounded-lg border bg-background px-2 text-sm"><option value="OPEN">待处理</option><option value="IN_PROGRESS">处理中</option><option value="RESOLVED">已解决</option><option value="CLOSED">已关闭</option></select></label>
+              <label className="grid gap-1.5 text-sm"><span className="font-medium">优先级</span><select name="priority" defaultValue={ticket.priority} className="h-9 rounded-lg border bg-background px-2 text-sm"><option value="LOW">低</option><option value="NORMAL">普通</option><option value="HIGH">高</option><option value="URGENT">紧急</option></select></label>
+              <label className="grid gap-1.5 text-sm"><span className="font-medium">处理人</span><Input name="assigneeId" defaultValue={ticket.assigneeId ?? ''} placeholder="用户 ID（可选）" className="h-9" /></label>
+              <div className="sm:col-span-3"><Button type="submit" size="sm">保存工单信息</Button></div>
+            </form> : null}
             <MessageScrollerProvider key={ticket.id} autoScroll>
               <MessageScroller>
                 <MessageScrollerViewport>
@@ -109,7 +137,7 @@ export function TicketWorkspace({ tickets, ticket, mode, create, reply }: Ticket
                         <Message align={mine ? 'end' : 'start'}><MessageContent>
                           <MessageHeader>{mine ? '我' : message.authorRole === 'ADMIN' ? '客服' : message.authorEmail ?? '客服'}</MessageHeader>
                           <Bubble variant={mine ? 'default' : 'muted'} align={mine ? 'end' : 'start'}><BubbleContent className="whitespace-pre-wrap">{message.body}</BubbleContent></Bubble>
-                          <MessageFooter><time dateTime={message.createdAt}>{date(message.createdAt)}</time></MessageFooter>
+                          <MessageFooter><time dateTime={message.createdAt}>{date(message.createdAt, locale)}</time></MessageFooter>
                         </MessageContent></Message>
                       </MessageScrollerItem>;
                     })}

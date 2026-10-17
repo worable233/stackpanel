@@ -1,7 +1,12 @@
+import { AdminPluginPage } from '@/components/admin-plugin-page';
+import { getPluginSettingsSections } from '@/lib/admin-frontend';
 import {
   DEFAULT_PLATFORM_INFO,
+  type AdminCurrencyDefinitionView,
+  type AdminFxRateView,
   type PlatformBrand,
   type PlatformInfo,
+  type SettlementCurrencyResponse,
   type SigningStatus,
 } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
@@ -14,22 +19,43 @@ import { createTranslator } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminSettingsPage() {
+export default async function AdminSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const pluginSettings = await getPluginSettingsSections();
+  const { error: actionError } = await searchParams;
   const t = createTranslator(await getLocale());
   let platform: PlatformInfo = DEFAULT_PLATFORM_INFO;
   let signing: SigningStatus | null = null;
   let brand: PlatformBrand | null = null;
+  let currency: (SettlementCurrencyResponse & { currencies?: AdminCurrencyDefinitionView[] }) | null =
+    null;
+  let rates: AdminFxRateView[] = [];
   let error: string | null = null;
   try {
     const api = await getAuthedApiClient();
-    const [platformResult, signingResult, brandResult] = await Promise.all([
+    const [
+      platformResult,
+      signingResult,
+      brandResult,
+      currencyResult,
+      catalogResult,
+      rateResult,
+    ] = await Promise.all([
       api.getAdminPlatformInfo(),
       api.getSigningStatus(),
       api.getPlatformBrand(),
+      api.getSettlementCurrency(),
+      api.getAdminCurrencyDefinitions(),
+      api.getAdminCurrencyRates(),
     ]);
     platform = platformResult.platform;
     signing = signingResult.signing;
     brand = brandResult.brand;
+    currency = { ...currencyResult, currencies: catalogResult.currencies };
+    rates = rateResult.rates;
   } catch (err) {
     error = await apiErrorMessage(err);
   }
@@ -50,7 +76,26 @@ export default async function AdminSettingsPage() {
           {t('admin.settings.serviceUnavailable', { error })}
         </p>
       ) : (
-        <SettingsManager platform={platform} signing={signing} brand={brandAssets} />
+        <SettingsManager
+          platform={platform}
+          signing={signing}
+          brand={brandAssets}
+          currency={currency}
+          currencyRates={rates}
+          pluginSections={pluginSettings.map((section) => ({
+            id: section.id,
+            title: section.title,
+            content: (
+              <AdminPluginPage
+                pluginId={section.pluginId}
+                path={section.path}
+                result={section.result}
+                embedded
+                actionError={actionError?.slice(0, 256)}
+              />
+            ),
+          }))}
+        />
       )}
     </main>
   );

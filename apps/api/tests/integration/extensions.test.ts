@@ -289,6 +289,99 @@ describe.skipIf(!dbAvailable)('Extension 引擎（真实库）', () => {
     expect(await client.get(finalizerModel, item.name)).toBeNull();
   });
 
+  it('并发 update 同一 expectedVersion：恰好一个成功，其余 VersionConflict', async () => {
+    const item = await client.create(widgetModel, {
+      name: 'C',
+      slug: 'concurrent',
+      qty: 1,
+    });
+    // 10 个真实并发连接（不同 pooled 请求）抢同一个版本号。
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) =>
+        client.update(
+          widgetModel,
+          item.name,
+          { name: 'C', slug: 'concurrent', qty: index + 2 },
+          { expectedVersion: item.version },
+        ),
+      ),
+    );
+    const fulfilled = attempts.filter((result) => result.status === 'fulfilled');
+    const rejected = attempts.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(9);
+    for (const failure of rejected) {
+      expect(failure.reason).toBeInstanceOf(ExtensionVersionConflict);
+    }
+    // 版本只前进一步：胜者写一次，败者没有落库。
+    const after = await client.get<{ qty: number }>(widgetModel, item.name);
+    expect(after?.version).toBe(item.version + 1);
+    await client.delete(widgetModel, item.name);
+  });
+
+  it('并发 update 与 updateWhere 交错：版本单调递增且最终值一致', async () => {
+    const item = await client.create(stressModel, {
+      name: 'I',
+      slug: 'interleave',
+      qty: 100,
+    });
+    // update 与 updateWhere 在同一行上交错：update 用乐观锁，updateWhere 直接自增。
+    // 两者都必须让版本号单调 +1，且最终 spec.qty 与列值一致。
+    const ops: Array<Promise<unknown>> = [];
+    for (let index = 0; index < 20; index += 1) {
+      ops.push(
+        client.updateWhere(
+          stressModel,
+          { name: { eq: item.name }, qty: { gte: 1 } },
+          { qty: { dec: 1 } },
+        ),
+      );
+      ops.push(
+        client
+          .update(
+            stressModel,
+            item.name,
+            { name: 'I', slug: 'interleave', qty: 100 - index },
+            { expectedVersion: item.version + index },
+          )
+          .catch((error: unknown) => {
+            // 被 updateWhere 抢先时允许冲突，但必须是明确的乐观锁失败。
+            expect(error).toBeInstanceOf(ExtensionVersionConflict);
+          }),
+      );
+    }
+    await Promise.all(ops);
+
+    const rows = await getPrisma().$queryRawUnsafe<
+      Array<{ version: number; qty: number; spec_qty: number }>
+    >(
+      `SELECT "version", "f_qty" AS "qty", ("spec" ->> 'qty')::int AS "spec_qty"
+         FROM "ext_e1test_stress" WHERE "id" = $1`,
+      item.name,
+    );
+    const row = rows[0];
+    expect(row).toBeDefined();
+    // 版本号没有丢更新：每次成功写入都 +1。
+    expect(row!.version).toBeGreaterThan(item.version);
+    // 索引列与 spec 始终同步（updateWhere 用一次 UPDATE 同时改两者）。
+    expect(row!.spec_qty).toBe(row!.qty);
+    await client.delete(stressModel, item.name);
+  });
+
+  it('updateWhere 未声明为索引的字段 → ExtensionValidationError', async () => {
+    const item = await client.create(widgetModel, { name: 'N', slug: 'noidx', qty: 1 });
+    // `widgetSchema` 里 slug/qty 建了索引，name 是内建字段；这里用未建索引的 `spec` 外字段。
+    await expect(
+      client.updateWhere(widgetModel, { name: { eq: item.name } }, { nope: { set: 1 } }),
+    ).rejects.toBeInstanceOf(ExtensionValidationError);
+    // 行未被触碰。
+    const after = await client.get<{ qty: number }>(widgetModel, item.name);
+    expect(after?.version).toBe(item.version);
+    await client.delete(widgetModel, item.name);
+  });
+
   it('并发 updateWhere 自减：余额不为负且成功次数等于可扣减次数', async () => {
     const item = await client.create(stressModel, { name: 'S', slug: 'stress', qty: 10 });
     const results = await Promise.all(
@@ -421,4 +514,66 @@ describe.skipIf(!dbAvailable)('Extension 事务（ctx.tx）', () => {
 
     await runtime.unregister('e1-tx');
   });
+
+  it('T1/T2 事务内 tx.publish：提交落 outbox，回滚不留行', async () => {
+    const service = new ExtensionService(getPrisma());
+    const events = new EventEmitterEventBus();
+    const silentLogger = { info: () => {}, warn: () => {}, error: () => {} };
+    const runtime = new PluginRuntime({
+      events,
+      logger: silentLogger,
+      db: getPrisma(),
+      extensions: service,
+      registerRoute: () => () => undefined,
+      removeRoutes: () => undefined,
+      payments: {} as never,
+      wallet: {} as never,
+      fx: {} as never,
+      auth: {} as never,
+      notifications: {} as never,
+      state: {} as never,
+      jobs: { removeByOwner: async () => undefined } as never,
+    });
+
+    const state: { ctx?: PluginContext } = {};
+    await runtime.register(
+      definePlugin({
+        manifest: { id: 'e1-tx-outbox', name: 'E1 TX Outbox', version: '1.0.0' },
+        customModels: [txModel],
+        onActivate: (ctx) => {
+          state.ctx = ctx;
+        },
+      }),
+    );
+    await runtime.activate('e1-tx-outbox');
+    const ctx = state.ctx;
+    if (!ctx) throw new Error('插件未激活，ctx 未捕获');
+
+    const commitTopic = `e1tx.commit.${Date.now()}`;
+    // T1: business write + event commit together → both rows exist.
+    await ctx.tx(async (tx) => {
+      await tx.extensions.create(txModel, { name: 'T1', slug: 't1', qty: 1 }, { name: 't1' });
+      tx.publish(commitTopic, { ok: true });
+    });
+    expect(await ctx.extensions.get(txModel, 't1')).not.toBeNull();
+    const committed = await getPrisma().outboxEvent.findFirst({ where: { topic: commitTopic } });
+    expect(committed).not.toBeNull();
+    expect(committed?.publishedAt).toBeNull();
+    expect((committed?.payload as { body: string }).body).toContain('"ok":true');
+
+    // T2: rollback → neither the business row nor the outbox row persists.
+    const rollbackTopic = `e1tx.rollback.${Date.now()}`;
+    await expect(
+      ctx.tx(async (tx) => {
+        await tx.extensions.create(txModel, { name: 'T2', slug: 't2', qty: 2 }, { name: 't2' });
+        tx.publish(rollbackTopic, { ok: false });
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    expect(await ctx.extensions.get(txModel, 't2')).toBeNull();
+    expect(await getPrisma().outboxEvent.findFirst({ where: { topic: rollbackTopic } })).toBeNull();
+
+    await getPrisma().outboxEvent.deleteMany({ where: { topic: commitTopic } });
+    await runtime.unregister('e1-tx-outbox');
+  }, 30_000);
 });

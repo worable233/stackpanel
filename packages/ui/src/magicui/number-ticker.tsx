@@ -11,6 +11,11 @@ interface NumberTickerProps extends ComponentPropsWithoutRef<'span'> {
   direction?: 'up' | 'down';
   delay?: number;
   decimalPlaces?: number;
+  /**
+   * BCP 47 tag for digit grouping (ADR-0016 §6). The host supplies it; when
+   * omitted, `Intl` falls back to the runtime default locale.
+   */
+  locale?: string;
 }
 
 export function NumberTicker({
@@ -20,6 +25,7 @@ export function NumberTicker({
   delay = 0,
   className,
   decimalPlaces = 0,
+  locale,
   ...props
 }: NumberTickerProps) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -50,13 +56,13 @@ export function NumberTicker({
     () =>
       springValue.on('change', (latest) => {
         if (ref.current) {
-          ref.current.textContent = Intl.NumberFormat('en-US', {
+          ref.current.textContent = Intl.NumberFormat(locale, {
             minimumFractionDigits: decimalPlaces,
             maximumFractionDigits: decimalPlaces,
           }).format(Number(latest.toFixed(decimalPlaces)));
         }
       }),
-    [springValue, decimalPlaces],
+    [springValue, decimalPlaces, locale],
   );
 
   return (

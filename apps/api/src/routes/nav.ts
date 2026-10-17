@@ -12,13 +12,11 @@ const KERNEL_NAV: Record<'public' | 'account' | 'admin', NavItem[]> = {
   public: [],
   account: [
     { surface: 'account', label: '账户概览', href: '/account' },
-    { surface: 'account', label: 'API 密钥', href: '/account/api-keys' },
-    { surface: 'account', label: '账户安全', href: '/account/security' },
+    { surface: 'account', label: '账户设置', href: '/account/settings' },
     { surface: 'account', label: '我的通知', href: '/account/notifications' },
   ],
   admin: [
     { surface: 'admin', label: '工作台', href: '/admin' },
-    { surface: 'admin', label: 'Agent 管理', href: '/admin/agent' },
     { surface: 'admin', label: '用户管理', href: '/admin/users' },
     { surface: 'admin', label: '系统设置', href: '/admin/settings' },
     { surface: 'admin', label: '插件管理', href: '/admin/plugins' },

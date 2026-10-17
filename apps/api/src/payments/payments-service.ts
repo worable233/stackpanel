@@ -23,8 +23,15 @@ import type {
   SalesChannelView,
   WalletTopUpView,
 } from '@stackpanel/sdk';
-import { PaymentError, isPaymentError } from '@stackpanel/sdk';
+import {
+  CurrencyError,
+  PaymentError,
+  assertCurrency,
+  isPaymentError,
+  normalizeCurrencyCode,
+} from '@stackpanel/sdk';
 import type { WalletService } from '../wallet/wallet-service.ts';
+import { outboxOrigin, serializeOutboxBody } from '../plugins/events.ts';
 
 const MAX_MINOR_AMOUNT = 2_000_000_000;
 const EXTERNAL_PAYMENT_STATUSES = ['PENDING', 'REVIEW'] as const;
@@ -33,6 +40,31 @@ const CANCEL_PAYMENT_STATUSES = ['PENDING', 'REVIEW', 'CANCELLING'] as const;
 const EXTERNAL_PAYMENT_TTL_MS = 30 * 60 * 1000;
 
 type Tx = Prisma.TransactionClient | PrismaClient;
+
+/**
+ * Register `payment.settled` inside an existing transaction (W1). Writing the
+ * event row with the same `tx` means a crash between commit and an
+ * out-of-transaction publish cannot lose the settlement event.
+ */
+async function enqueueSettlementEvent(
+  tx: Tx,
+  paymentId: string,
+  orderId: string | null,
+): Promise<void> {
+  const payload = { orderId, paymentId };
+  await tx.outboxEvent.create({
+    data: {
+      topic: 'payment.settled',
+      payload: { body: serializeOutboxBody('payment.settled', payload, outboxOrigin()) },
+      origin: outboxOrigin(),
+    },
+  });
+}
+
+/** Nudge the durable relay after a transactional publish (no inline delivery). */
+function nudgeOutbox(events: EventBus): void {
+  (events as { nudgeRelay?: () => void }).nudgeRelay?.();
+}
 
 export interface PaymentServiceOptions {
   db: PrismaClient;
@@ -197,6 +229,21 @@ export class PaymentsService implements PaymentServiceContract {
     }
     const provider = this.providerFor(input.providerId, input.paymentMethod);
     const db = tx ?? this.options.db;
+    // The payment record must state the currency the gateway actually collects.
+    // Validate it against the catalog and, when the method declares a currency
+    // allow-list, against that too (plan §4.4 / §5.3).
+    const currency = assertCurrency(input.currency, { enabledOnly: true });
+    if (input.methodId) {
+      const method = await db.paymentMethod.findUnique({ where: { id: input.methodId } });
+      const supported = method?.currencies ?? [];
+      if (supported.length > 0 && !supported.includes(currency)) {
+        throw new CurrencyError(
+          'currency.payment_method_unsupported',
+          409,
+          `支付方式不支持结算币种 ${currency}`,
+        );
+      }
+    }
     const merchantOrderNo = `sp_${input.purpose === 'TOP_UP' ? 'top' : 'ord'}_${randomUUID().replaceAll('-', '')}`;
     const record = await db.payment.create({
       data: {
@@ -209,8 +256,8 @@ export class PaymentsService implements PaymentServiceContract {
         paymentMethod: input.paymentMethod,
         merchantOrderNo,
         amount: input.amount,
-        currency: input.currency,
-        ...(input.orderCurrency ? { orderCurrency: input.orderCurrency } : {}),
+        currency,
+        ...(input.orderCurrency ? { orderCurrency: assertCurrency(input.orderCurrency) } : {}),
         ...(input.orderAmount !== undefined ? { orderAmount: input.orderAmount } : {}),
         ...(input.fxRate != null ? { fxRate: input.fxRate } : {}),
         status: 'PENDING',
@@ -332,17 +379,23 @@ export class PaymentsService implements PaymentServiceContract {
       where: { merchantOrderNo: input.merchantOrderNo },
     });
     if (!payment) throw new PaymentError(404, '支付记录不存在');
+    // Callback consistency: compare catalog-normalized codes so a gateway that
+    // echoes a legacy alias/lowercase code cannot mismatch a valid payment, and
+    // reject a settlement whose currency or amount differs from the record.
+    const callbackCurrency = normalizeCurrencyCode(input.currency) ?? input.currency;
     if (
       payment.providerId !== input.providerId ||
       payment.amount !== input.amount ||
-      payment.currency !== input.currency
+      payment.currency !== callbackCurrency
     ) {
       throw new PaymentError(409, '结算信息不匹配');
     }
 
     if (payment.purpose === 'TOP_UP') {
       // Top-ups are kernel-owned end to end: settle and credit the wallet in
-      // one transaction (idempotent via the TOP_UP:<paymentId> ledger ref).
+      // one transaction (idempotent via the TOP_UP:<paymentId> ledger ref). The
+      // `payment.settled` event is written in the SAME transaction (W1), so a
+      // crash between commit and an out-of-transaction publish cannot lose it.
       const applied = await this.options.db.$transaction(async (tx) => {
         const gate = await tx.payment.updateMany({
           where: { id: payment.id, status: { in: [...EXTERNAL_PAYMENT_STATUSES] } },
@@ -361,8 +414,10 @@ export class PaymentsService implements PaymentServiceContract {
           },
           tx,
         );
+        await enqueueSettlementEvent(tx, payment.id, payment.orderId);
         return true;
       });
+      if (applied) nudgeOutbox(this.options.events);
       return { applied, purpose: 'TOP_UP' };
     }
 
@@ -672,13 +727,12 @@ export class PaymentsService implements PaymentServiceContract {
           },
           tx,
         );
+        // W1: the event row commits with the credit.
+        await enqueueSettlementEvent(tx, payment.id, payment.orderId);
         return true;
       });
       if (!applied) return { confirmed: false, reason: 'NOT_PENDING' };
-      this.options.events.publish('payment.settled', {
-        orderId: payment.orderId,
-        paymentId: payment.id,
-      });
+      nudgeOutbox(this.options.events);
       return { confirmed: true };
     }
 

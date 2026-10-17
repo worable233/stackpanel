@@ -3,25 +3,36 @@ import { ArrowRight, Layers3, Server, ShieldCheck } from 'lucide-react';
 import { cn } from './cn.js';
 const stories = [
   {
-    text: '从第一个网站，到下一次业务增长。为每个认真做产品的人，提供合适的云资源。',
+    text: '每一个改变，都从一个想法开始。以云承载业务，以 AI 拓展可能，让创新走得更远。',
     label: '轻松起步',
-    detail: '为你的第一个项目选好云',
+    detail: '让创意从云端启程',
     icon: Layers3,
   },
   {
-    text: '业务在成长，云资源也跟着需求走。按当前负载选择配置，为下一次上线做好准备。',
+    text: '从第一行代码，到服务更多客户。选择适合业务阶段的云资源，为下一步发展做好准备。',
     label: '灵活选型',
-    detail: '配置与预算，适合就好',
+    detail: '匹配当下，也面向未来',
     icon: Server,
   },
   {
-    text: '把时间留给产品和客户。云资源的选购与管理，在一个控制台里完成。',
+    text: '让技术服务于业务，让精力回归创造。以统一的云平台，连接资源、应用与智能。',
     label: '专注业务',
-    detail: '云服务，随时查看与管理',
+    detail: '让云成为创新的基础',
     icon: ShieldCheck,
   },
 ];
-export function PlatformStories() {
+export function PlatformStories({
+  items,
+  actionLabel = '了解云产品',
+  actionHref = '#features',
+}: {
+  items?: Array<{ text: string; label: string; detail: string }>;
+  actionLabel?: string;
+  actionHref?: string;
+}) {
+  const content = items
+    ? items.map((item, index) => ({ ...item, icon: stories[index % stories.length]!.icon }))
+    : stories;
   return (
     <div
       data-stories=""
@@ -30,7 +41,7 @@ export function PlatformStories() {
       aria-label="云服务理念"
     >
       <div className="relative min-h-64 md:min-h-80">
-        {stories.map((item, i) => (
+        {content.map((item, i) => (
           <p
             key={item.label}
             data-story-slide=""
@@ -49,7 +60,7 @@ export function PlatformStories() {
       </div>
       <div className="flex flex-col justify-between gap-8 md:flex-row md:items-end">
         <div className="relative h-12 w-full md:w-80">
-          {stories.map((story, i) => (
+          {content.map((story, i) => (
             <div
               key={story.label}
               data-story-meta=""
@@ -70,14 +81,14 @@ export function PlatformStories() {
         </div>
         <div className="flex items-center gap-5">
           <a
-            href="#features"
+            href={actionHref}
             className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-full border border-border bg-transparent px-4 text-sm text-foreground transition duration-300 hover:bg-muted active:translate-y-px motion-reduce:transform-none focus-visible:outline-2 focus-visible:outline-ring"
           >
-            了解云产品
+            {actionLabel}
             <ArrowRight className="size-4" />
           </a>
           <div className="flex gap-4">
-            {stories.map((item, i) => (
+            {content.map((item, i) => (
               <button
                 type="button"
                 key={item.label}

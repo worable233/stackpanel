@@ -6,7 +6,8 @@ import type {
   PluginContext,
   ProviderServiceContext,
 } from '@stackpanel/sdk';
-import { bus, context, logger, runTransaction } from './context';
+import { WALLET_CURRENCY } from '@stackpanel/sdk';
+import { context, logger, runTransaction } from './context';
 import { StoreError, stockItems } from './errors';
 import {
   applyServiceChange,
@@ -15,6 +16,7 @@ import {
   providerServiceContext,
 } from './fulfillment';
 import { resolveCheckoutPrice } from './pricing';
+import { quoteSettlement } from './currency';
 import type { ProductRecord, ServiceInstanceRecord } from './repository';
 import {
   getProduct,
@@ -23,7 +25,12 @@ import {
   toOrder,
   toServiceInstanceData,
 } from './repository';
-import { orderModel, serviceInstanceModel, type StoreOrderData, type StoreServiceInstanceData } from './data';
+import {
+  orderModel,
+  serviceInstanceModel,
+  type StoreOrderData,
+  type StoreServiceInstanceData,
+} from './data';
 import {
   changeQuoteSchema,
   changeServiceSchema,
@@ -223,15 +230,15 @@ export async function changeService(ctx: PluginContext, req: HttpRequest): Promi
         settlementTotal: 0,
         fxRate: null,
       });
+      tx.publish('order.paid', { orderId: created.name, userId });
       return toOrder(created);
     });
-    bus().publish('order.paid', { orderId: order.id, userId });
     return { order, nextPath: '/account/services' };
   }
 
   if (input.paymentMode === 'wallet') {
     const order = await runTransaction(async (tx) => {
-      const fx = await context().fx.quote(product.currency, 'CNY', unit);
+      const fx = await quoteSettlement(context(), product.currency, unit);
       const created = await tx.extensions.create<StoreOrderData>(orderModel, {
         userId,
         items: { items: [line] },
@@ -244,6 +251,15 @@ export async function changeService(ctx: PluginContext, req: HttpRequest): Promi
         fxRate: fx.rate ?? null,
       });
       const orderId = created.name;
+      // The wallet only holds CNY (plan §4.4); refuse a foreign settlement
+      // currency with a stable code instead of an "insufficient balance" error.
+      if (fx.toCurrency !== WALLET_CURRENCY) {
+        throw new StoreError(
+          409,
+          `钱包仅支持 ${WALLET_CURRENCY} 结算，请选择其他支付方式`,
+          'currency.payment_method_unsupported',
+        );
+      }
       await tx.wallet.debit(userId, fx.settlementAmount, fx.toCurrency, {
         type: 'ORDER_PAYMENT',
         referenceType: 'ORDER',
@@ -257,15 +273,15 @@ export async function changeService(ctx: PluginContext, req: HttpRequest): Promi
       );
       const paid = await tx.extensions.get<StoreOrderData>(orderModel, orderId);
       if (!paid) throw new StoreError(503, '商店插件未就绪');
+      tx.publish('order.paid', { orderId: paid.name, userId });
       return toOrder(paid);
     });
-    bus().publish('order.paid', { orderId: order.id, userId });
     return { order, nextPath: '/account/services' };
   }
 
   if (!input.providerId || !input.paymentMethod) throw new StoreError(400, '请选择支付方式');
   const reserved = await runTransaction(async (tx) => {
-    const fx = await context().fx.quote(product.currency, 'CNY', unit);
+    const fx = await quoteSettlement(context(), product.currency, unit);
     const created = await tx.extensions.create<StoreOrderData>(orderModel, {
       userId,
       items: { items: [line] },
@@ -344,9 +360,7 @@ export async function applyChangeOrder(orderId: string): Promise<void> {
         ...(targetProviderProductId !== undefined ? { targetProviderProductId } : {}),
       });
     } catch (error) {
-      logger().error(
-        `store: change hook failed for service ${service.id}: ${messageOf(error)}`,
-      );
+      logger().error(`store: change hook failed for service ${service.id}: ${messageOf(error)}`);
       continue;
     }
     if (rawLine) {

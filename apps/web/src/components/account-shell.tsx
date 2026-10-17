@@ -12,6 +12,7 @@ import {
   Server,
   ShieldCheck,
   ShoppingBag,
+  Settings,
   Tags,
   Wallet,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ import {
 const NAVIGATION_ICONS: Record<string, LucideIcon> = {
   '/account': LayoutDashboard,
   '/account/security': ShieldCheck,
+  '/account/settings': Settings,
   '/account/notifications': Bell,
   '/shop': ShoppingBag,
   '/account/services': Server,

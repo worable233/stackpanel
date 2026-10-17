@@ -19,6 +19,13 @@ export interface FrontendPageProps<P extends Record<string, unknown> = Record<st
    * server-only API origin (see INTERFACES §3.4).
    */
   assetsBaseUrl?: string;
+  /**
+   * Resolved interface locale as a BCP 47 tag, for locale-aware presentation in
+   * shared `@stackpanel/ui` primitives (ADR-0016 §6). Kept a plain string so the
+   * SDK stays decoupled from the kernel's `Locale` union; the host owns
+   * negotiation and passes whatever tag it resolved.
+   */
+  locale?: string;
 }
 
 /** A page component may be stored with the page union and narrowed at render. */
@@ -44,6 +51,8 @@ export interface FrontendCategoryNode {
 
 /** Props supplied to a theme layout by the platform rendering host. */
 export interface FrontendLayoutProps {
+  /** Active theme settings; separate from settings owned by a plugin page. */
+  settings?: FrontendSettings;
   children: ReactNode;
   navigation: FrontendNavigationItem[];
   isAuthenticated: boolean;
@@ -57,6 +66,8 @@ export interface FrontendLayoutProps {
   };
   /** Same-origin BFF base for resolving theme/plugin asset URLs at runtime. */
   assetsBaseUrl?: string;
+  /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
+  locale?: string;
 }
 
 /** One server-side action executor bound to a declared plugin action. */
@@ -482,6 +493,8 @@ export type AccountWidgetComponent = ComponentType<AccountWidgetProps>;
 
 /** Serialized admin route shipped inside a compiled frontend package. */
 export interface AdminRouteDefinition {
+  /** Embed this route in system settings; availability and permission follow the plugin. */
+  systemSettings?: { label: string; order?: number };
   path: string;
   component: string;
   permission?: string;
@@ -515,6 +528,8 @@ export interface AdminMenuDefinition {
 
 /** Props passed to a plugin admin page component. */
 export interface AdminPageComponentProps {
+  /** Hide standalone page chrome when rendered inside system settings. */
+  embedded?: boolean;
   pluginId: string;
   path: string;
   params: Record<string, string>;

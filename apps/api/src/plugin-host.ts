@@ -13,6 +13,7 @@
  */
 import type { PaymentProvider, PaymentSettlementHandler, PluginRoute } from '@stackpanel/sdk';
 import type { CaptchaProvider, IdentityChallengeSender } from '@stackpanel/sdk';
+import type { NotificationChannel, NotificationTypeDefinition } from '@stackpanel/sdk';
 import type { PrismaClient } from '@stackpanel/db';
 import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
@@ -28,17 +29,21 @@ import { PaymentsService } from './payments/payments-service.ts';
 import { ManualPaymentProvider } from './payments/manual-provider.ts';
 import { WalletService } from './wallet/wallet-service.ts';
 import { FxService } from './fx/fx-service.ts';
+import { KernelCurrencyService } from './currency/service.ts';
 import { KernelAuthService } from './auth/auth-service.ts';
 import { KernelNotificationsService } from './notifications/notifications-service.ts';
+import { KernelNotificationPolicyService } from './notifications/policy-service.ts';
 import { KernelIdentityChallengeService } from './auth/identity-challenge-service.ts';
 import { KernelCaptchaService } from './auth/captcha-service.ts';
 import { getStateService } from './state/index.ts';
 import { getCacheService, getDataCache } from './cache/index.ts';
 import { getJobRuntime, registerKernelSweeps, createKernelJobContext } from './jobs/index.ts';
 import { registerBackupJobs } from './backup/jobs.ts';
+import { registerConversationRetentionJobs } from './agent/retention.ts';
 import { registerMediaJobs } from './media/jobs.ts';
 import { AttachmentReferenceService } from './media/references.ts';
 import { setStorageRuntime, refreshStorageDriver } from './infra.ts';
+import { NotificationDispatcher } from './notifications/dispatcher.ts';
 
 export interface PluginHostLogger {
   info: (message: string) => void;
@@ -67,8 +72,10 @@ export interface PluginHost {
   payments: PaymentsService;
   wallet: WalletService;
   fx: FxService;
+  currency: KernelCurrencyService;
   auth: KernelAuthService;
   notifications: KernelNotificationsService;
+  notificationPolicy: KernelNotificationPolicyService;
   identity: KernelIdentityChallengeService;
   captcha: KernelCaptchaService;
   state: ReturnType<typeof getStateService>;
@@ -105,11 +112,26 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     return runtimeRef.current;
   };
   const walletService = new WalletService({ db: getPrisma() });
-  const fxService = new FxService({ db: getPrisma() });
+  const currencyService = new KernelCurrencyService({ db: getPrisma() });
+  const fxService = new FxService({
+    db: getPrisma(),
+    getSettlementCurrency: () => currencyService.getSettlementCurrency(),
+  });
   const authService = new KernelAuthService({ db: getPrisma() });
+  // 两级通知偏好引擎：目录来自内核内建 + `notification.type` 扩展点，
+  // 渠道来自 `notification.channel` 扩展点。需先于通知服务创建（后者读它做站内过滤）。
+  const notificationPolicy = new KernelNotificationPolicyService({
+    db: getPrisma(),
+    getChannels: () =>
+      getRuntime().getExtensions<NotificationChannel>(EXTENSION_POINTS.notificationChannel),
+    getTypeDefinitions: () =>
+      getRuntime().getExtensions<NotificationTypeDefinition>(EXTENSION_POINTS.notificationType),
+    logger: { warn: (message) => logger.warn(message) },
+  });
   const notificationsService = new KernelNotificationsService({
     db: getPrisma(),
     events: getEventBus(),
+    policy: notificationPolicy,
   });
   const stateService = getStateService();
   const cacheService = getCacheService();
@@ -124,6 +146,14 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
   const captchaService = new KernelCaptchaService({
     getProviders: () =>
       getRuntime().getExtensions<CaptchaProvider>(EXTENSION_POINTS.captchaProvider),
+    logger: { warn: (message) => logger.warn(message) },
+  });
+  const notificationDispatcher = new NotificationDispatcher({
+    db: getPrisma(),
+    events: getEventBus(),
+    getChannels: () =>
+      getRuntime().getExtensions<NotificationChannel>(EXTENSION_POINTS.notificationChannel),
+    policy: notificationPolicy,
     logger: { warn: (message) => logger.warn(message) },
   });
   const paymentsService = new PaymentsService({
@@ -148,8 +178,10 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     payments: paymentsService,
     wallet: walletService,
     fx: fxService,
+    currency: currencyService,
     auth: authService,
     notifications: notificationsService,
+    notificationPolicy,
     identity: identityService,
     captcha: captchaService,
     state: stateService,
@@ -168,6 +200,10 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
   setStorageRuntime(runtime);
   getEventBus().subscribe('plugin.activated', () => refreshStorageDriver());
   getEventBus().subscribe('plugin.deactivated', () => refreshStorageDriver());
+
+  // 通知渠道分发底座（审计 §5）：订阅站内通知事件，把通知 fan-out 到外部渠道，
+  // 并写入持久投递记录。渠道由 `notification.channel` 扩展点供给。
+  notificationDispatcher.start();
 
   // S8: cross-replica runtime coherence. Configured here (shared by API +
   // worker); the entrypoints explicitly `start()` the subscriber so hermetic
@@ -189,8 +225,10 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     payments: paymentsService,
     wallet: walletService,
     fx: fxService,
+    currency: currencyService,
     auth: authService,
     notifications: notificationsService,
+    notificationPolicy,
     identity: identityService,
     captcha: captchaService,
     state: stateService,
@@ -242,7 +280,11 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
         paymentSweep: () => paymentsService.sweepExpired().then(() => undefined),
         walletHoldSweep: () => walletService.sweepExpiredHolds().then(() => undefined),
         outboxRelay: () => getOutboxBus().relay(),
-        outboxCleanup: () => getOutboxBus().cleanup().then(() => undefined),
+        outboxCleanup: () =>
+          getOutboxBus()
+            .cleanup()
+            .then(() => undefined),
+        notificationDeliverySweep: () => notificationDispatcher.sweep(),
         logger: { warn: (message) => logger.warn(message) },
       });
       // ADR-0018: export/import run on any consumer (API replicas and worker),
@@ -251,6 +293,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       registerBackupJobs(kernelJobs);
       // MEDIA-ASYNC（ADR-0014 §4 阶段 B）：变体编码任务 + 回填清扫（API 与 worker 共同注册点）。
       registerMediaJobs(kernelJobs);
+      registerConversationRetentionJobs(kernelJobs);
     },
   };
 }

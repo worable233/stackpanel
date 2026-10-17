@@ -18,6 +18,7 @@
 import { PluginError, brandSdkErrorClass, isSdkErrorClass } from './errors.js';
 import type { CustomModelDefinition } from './models.js';
 import type { PaymentService } from './payments.js';
+import type { EventPayload } from './plugin.js';
 import type { WalletService } from './wallet.js';
 
 /** Max `pageSize` accepted by {@link ExtensionClient.list}. */
@@ -191,6 +192,16 @@ export interface ExtensionTransaction {
     'debit' | 'credit' | 'hold' | 'settleHold' | 'releaseHold'
   >;
   readonly payments: Pick<PaymentService, 'createRecord'>;
+  /**
+   * Register a domain event inside the *same* transaction as the business
+   * write. Synchronous: the kernel buffers the event and flushes it into the
+   * outbox with the same `trx` before commit, so a rollback produces no outbox
+   * row. This is what makes "business write + event record" atomic (ADR-0013).
+   *
+   * Callers must NOT `await` this; it returns `void` and is flushed by the
+   * kernel after the `ctx.tx` callback resolves.
+   */
+  publish<K extends string>(topic: K, payload?: EventPayload<K>): void;
 }
 
 /** Base class for engine errors; carries a stable code and HTTP status. */

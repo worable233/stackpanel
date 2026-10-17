@@ -22,6 +22,7 @@ export interface PluginAdminMenu {
 export type PluginAdminRouteResult =
   | {
       status: 'ok';
+      settingsHref?: string;
       pluginId: string;
       componentId: string;
       settings: FrontendSettings;
@@ -39,7 +40,12 @@ export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
   const api = await getAuthedApiClient();
   for (const candidate of candidates) {
     for (const route of candidate.manifest.adminRoutes) {
-      if (!route.nav || (route.permission && !(await isAllowed(api, route.permission)))) continue;
+      if (
+        route.systemSettings ||
+        !route.nav ||
+        (route.permission && !(await isAllowed(api, route.permission)))
+      )
+        continue;
       menus.push({
         pluginId: candidate.id,
         label: route.nav.label,
@@ -57,6 +63,7 @@ export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
 export async function resolvePluginAdminRoute(
   pluginId: string,
   path: string,
+  returnPath?: string,
 ): Promise<PluginAdminRouteResult> {
   const candidates = await listPluginFrontendCandidates();
   const candidate = candidates.find((item) => item.id === pluginId);
@@ -94,6 +101,7 @@ export async function resolvePluginAdminRoute(
   }
   return {
     status: 'ok',
+    settingsHref: route.systemSettings ? pluginSettingsHref(pluginId, route.path) : undefined,
     pluginId,
     componentId: route.component,
     settings,
@@ -101,7 +109,7 @@ export async function resolvePluginAdminRoute(
     actions: bindPluginActions(
       pluginId,
       candidate.manifest.actions,
-      `/admin/plugin/${pluginId}${path}`,
+      returnPath ?? `/admin/plugin/${pluginId}${path}`,
     ),
     params,
   };
@@ -177,4 +185,32 @@ function resolveFinderInput(
         : value,
     ]),
   );
+}
+
+/** Plugin-owned settings reuse the regular route resolver and its authorization gates. */
+export async function getPluginSettingsSections() {
+  const candidates = await listPluginFrontendCandidates();
+  const sections = [];
+  for (const candidate of candidates) {
+    for (const route of candidate.manifest.adminRoutes) {
+      if (!route.systemSettings || /[:*]/.test(route.path)) continue;
+      const href = pluginSettingsHref(candidate.id, route.path);
+      const id = href.split('#')[1]!;
+      const result = await resolvePluginAdminRoute(candidate.id, route.path, href);
+      if (result.status !== 'ok') continue;
+      sections.push({
+        id,
+        title: route.systemSettings.label,
+        order: route.systemSettings.order ?? 100,
+        pluginId: candidate.id,
+        path: route.path,
+        result,
+      });
+    }
+  }
+  return sections.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+
+function pluginSettingsHref(pluginId: string, path: string): string {
+  return `/admin/settings#plugin-${pluginId}-${encodeURIComponent(path)}`;
 }

@@ -57,7 +57,9 @@ export async function savePlatformInfoAction(
     revalidatePath('/', 'layout');
     return { ok: true, message: translate(locale, 'action.platformInfoSaved') };
   } catch (err) {
-    return { error: await apiErrorMessage(err, translate(locale, 'action.platformInfoSaveFailed')) };
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.platformInfoSaveFailed')),
+    };
   }
 }
 
@@ -121,5 +123,103 @@ export async function clearPlatformBrandAction(): Promise<SettingsActionState> {
     return { ok: true, message: translate(locale, 'action.brandImageCleared') };
   } catch (err) {
     return { error: await apiErrorMessage(err, translate(locale, 'action.brandImageClearFailed')) };
+  }
+}
+
+/** Change the platform settlement currency (kernel validates compatibility). */
+export async function saveSettlementCurrencyAction(
+  _prev: SettingsActionState,
+  formData: FormData,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  const currency = formData.get('currency');
+  if (typeof currency !== 'string' || !currency.trim()) {
+    return { error: translate(locale, 'action.settlementCurrencyRequired') };
+  }
+  try {
+    const api = await getAuthedApiClient();
+    const result = await api.setSettlementCurrency(currency.trim());
+    revalidatePath('/admin/settings');
+    return {
+      ok: true,
+      message: translate(locale, 'action.settlementCurrencySaved', {
+        currency: result.settlementCurrency,
+      }),
+    };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.settlementCurrencySaveFailed')),
+    };
+  }
+}
+
+/** Enable or disable a catalog currency (referenced/settlement rows are refused). */
+export async function setCurrencyEnabledAction(
+  code: string,
+  enabled: boolean,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  try {
+    const api = await getAuthedApiClient();
+    await api.setCurrencyEnabled(code, enabled);
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.currencyToggleFailed')),
+    };
+  }
+}
+
+/** Upsert a native → settlement FX rate (kernel validates catalog + direction). */
+export async function saveCurrencyRateAction(
+  _prev: SettingsActionState,
+  formData: FormData,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  const from = formData.get('fromCurrency');
+  const rateText = formData.get('rate');
+  const validUntil = formData.get('validUntil');
+  if (typeof from !== 'string' || !from.trim()) {
+    return { error: translate(locale, 'action.currencyRateFromRequired') };
+  }
+  // The admin types a display rate (e.g. 7.2); the API stores it ×1e6.
+  const displayRate = typeof rateText === 'string' ? Number(rateText) : Number.NaN;
+  if (!Number.isFinite(displayRate) || displayRate <= 0) {
+    return { error: translate(locale, 'action.currencyRateInvalid') };
+  }
+  try {
+    const api = await getAuthedApiClient();
+    await api.setCurrencyRate({
+      fromCurrency: from.trim(),
+      rate: Math.round(displayRate * 1_000_000),
+      ...(typeof validUntil === 'string' && validUntil.trim()
+        ? { validUntil: new Date(validUntil).toISOString() }
+        : {}),
+    });
+    revalidatePath('/admin/settings');
+    return { ok: true, message: translate(locale, 'action.currencyRateSaved') };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.currencyRateSaveFailed')),
+    };
+  }
+}
+
+/** Remove a configured FX rate pair. */
+export async function deleteCurrencyRateAction(
+  fromCurrency: string,
+  toCurrency: string,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  try {
+    const api = await getAuthedApiClient();
+    await api.deleteCurrencyRate(fromCurrency, toCurrency);
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.currencyRateDeleteFailed')),
+    };
   }
 }

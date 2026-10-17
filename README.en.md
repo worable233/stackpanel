@@ -28,20 +28,34 @@ bash scripts/deploy.sh
 # bash scripts/deploy.sh --domain sp.example.com --email you@example.com
 
 # Cluster stack (external PostgreSQL / Redis / object storage):
+# Prepare the external dependencies and put DATABASE_URL / REDIS_URL / STORAGE_S3_*
+# in docker/.env first, then run (`--image` also writes the web/caddy image vars so
+# the cluster stack never fails on a missing variable):
 # bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<digest>
 ```
 
-The first build pulls base images and dependencies, so it takes a while. When it finishes, open `http://localhost:3000`. The initial admin password is generated randomly and printed in the `api` container log; to pin it, set `STACKPANEL_BOOTSTRAP_EMAIL` and `STACKPANEL_BOOTSTRAP_PASSWORD` in `docker/.env` first.
+> The cluster stack bundles no PostgreSQL / Redis / MinIO, and `api`/`web` publish no host ports (only Caddy exposes 80/443). Prepare the external dependencies and configure `docker/.env` first — see [`docker/README.md`](./docker/README.md).
 
-Without Docker (existing local PostgreSQL and Redis, PM2 mode):
+The first build pulls base images and dependencies, so it takes a while. When it finishes, open `http://localhost:3000` and create the first administrator at `/setup` (you choose the email and password; nothing is written to the logs). If the deploy summary printed a setup token, enter it in the wizard.
+
+Without Docker (existing local PostgreSQL + **Redis** + **S3-compatible object storage**, PM2 mode):
 
 ```bash
-pnpm install
-pnpm build
-cp .env.example .env && cp apps/api/.env.example apps/api/.env && cp apps/web/.env.example apps/web/.env
-pnpm --filter @stackpanel/db migrate:deploy
-pnpm pm2:start
+# Recommended: the installer generates strong secrets, writes Redis/object-storage
+# config, builds, and starts under PM2. If REDIS_URL / STORAGE_S3_* are missing it
+# fails fast BEFORE the build (production enforces them, see ADR-0017).
+REDIS_URL=redis://127.0.0.1:6379 \
+STORAGE_DRIVER=s3 \
+STORAGE_S3_ENDPOINT=http://127.0.0.1:9000 \
+STORAGE_S3_BUCKET=stackpanel \
+STORAGE_S3_ACCESS_KEY_ID=<key> \
+STORAGE_S3_SECRET_ACCESS_KEY=<secret> \
+  bash scripts/install.sh
 ```
+
+The installer prints a one-time setup token (also stored as `STACKPANEL_SETUP_TOKEN` in `apps/api/.env`); enter it in the `/setup` wizard when you first open `http://127.0.0.1:3000`.
+
+> Production cannot start without Redis or S3 (multi-replica sessions/state need Redis; object storage may not be on the local disk). If you'd rather not provide these, use the one-shot Docker deploy above, which bundles PG/Redis/MinIO.
 
 Development mode runs each app on its own with hot reload:
 
@@ -49,6 +63,32 @@ Development mode runs each app on its own with hot reload:
 pnpm --filter @stackpanel/api dev   # Fastify
 pnpm --filter @stackpanel/web dev   # Next.js
 ```
+
+## Backup and restore
+
+```bash
+bash scripts/backup.sh    # writes backups/<timestamp>/
+bash scripts/restore.sh backups/<timestamp>
+```
+
+The scripts detect how the app is deployed:
+
+| Deployment | Database | Media objects | Runtime data (plugins/themes/frontend signals) |
+| --- | --- | --- | --- |
+| Docker Compose (default) | `pg_dump` inside the `postgres` container | Every object in the MinIO bucket | `data.tar`, packed from `/app/data` in the `api` container |
+| Docker Compose (cluster) | Executed inside the container | Every object in the external S3 bucket | Same as above |
+| PM2 / manual (`apps/api/.env`) | Host `DATABASE_URL` | S3 objects | `data.tar`; with the `local` driver everything stays in `media.tar` |
+
+So with S3, `media.tar` holds the bucket's objects (attachments, brand images, past export archives) and `data.tar` holds the installed plugin/theme packages on the data volume. `restore.sh` writes both back — skipping either yields an instance whose database references files that do not exist. Force a mode with `SP_BACKUP_MODE=host|compose`.
+
+> `manifest.json` / `checksums.txt` are verified by `restore.sh`, which refuses a corrupted archive. Older backup directories (without `data.tar`) still restore, just without the runtime data volume.
+
+### Changing the domain
+
+Every site URL is relative (`/media/...`, `/api/plugins/...`), so a new domain never breaks previously uploaded images. Only the absolute origins need updating:
+
+1. `STACKPANEL_PUBLIC_URL` / `STACKPANEL_API_PUBLIC_URL` in `docker/.env` (re-running `bash scripts/deploy.sh --domain new.example.com` rewrites them);
+2. `PlatformInfo.url` in the admin platform settings — it takes precedence over `SITE_URL` for canonical URLs, sitemaps and payment callbacks, so update it alongside the domain.
 
 ## Documentation
 

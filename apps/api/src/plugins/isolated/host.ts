@@ -4,8 +4,32 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
-import type { PluginDefinition, PluginManifest, PluginRoute, HttpRequest, HttpReply, RawHttpRequest, RawHttpReply, PluginContext, JobOptions, JobSchedule, ExtensionTransaction, CustomModelDefinition, StorageProvider } from '@stackpanel/sdk';
-import { decodeWire, encodeWire, RPC_MAX_BYTES, RPC_MAX_IN_FLIGHT, RPC_MAX_RAW_STREAMS, RPC_PROTOCOL, RPC_TIMEOUT_MS, RAW_CHUNK_BYTES, wireError } from './protocol.ts';
+import type {
+  PluginDefinition,
+  PluginManifest,
+  PluginRoute,
+  HttpRequest,
+  HttpReply,
+  RawHttpRequest,
+  RawHttpReply,
+  PluginContext,
+  JobOptions,
+  JobSchedule,
+  ExtensionTransaction,
+  CustomModelDefinition,
+  StorageProvider,
+} from '@stackpanel/sdk';
+import {
+  decodeWire,
+  encodeWire,
+  RPC_MAX_BYTES,
+  RPC_MAX_IN_FLIGHT,
+  RPC_MAX_RAW_STREAMS,
+  RPC_PROTOCOL,
+  RPC_TIMEOUT_MS,
+  RAW_CHUNK_BYTES,
+  wireError,
+} from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
 import { dispatchCacheCapability } from '../../cache/index.ts';
 
@@ -15,15 +39,48 @@ type ModelDescriptor = {
   permission?: string;
   readPermission?: string;
   scoped?: boolean;
-  indexes?: Array<{ fields: string[]; unique?: boolean; types: Record<string, 'string' | 'integer' | 'number' | 'boolean'> }>;
+  indexes?: Array<{
+    fields: string[];
+    unique?: boolean;
+    types: Record<string, 'string' | 'integer' | 'number' | 'boolean'>;
+  }>;
   finalizers?: string[];
   retention?: 'delete' | 'retain';
   schema: unknown;
 };
-type Ready = { protocol: 1; pluginId: string; type: 'ready'; routes: Array<Record<string, unknown>>; models?: ModelDescriptor[]; inject?: string[]; unsupported?: string[] };
-type Result = { protocol: 1; pluginId: string; type: 'result'; id: string; value?: unknown; response?: { status?: number; payload?: unknown }; error?: { message: string; code?: string; status?: number } };
-type Capability = { protocol: 1; pluginId: string; type: 'capability'; id: string; capability: string; args: unknown };
-type Lifecycle = { protocol: 1; pluginId: string; type: 'lifecycle'; id: string; phase: 'register' | 'activate' | 'deactivate' };
+type Ready = {
+  protocol: 1;
+  pluginId: string;
+  type: 'ready';
+  routes: Array<Record<string, unknown>>;
+  models?: ModelDescriptor[];
+  inject?: string[];
+  unsupported?: string[];
+};
+type Result = {
+  protocol: 1;
+  pluginId: string;
+  type: 'result';
+  id: string;
+  value?: unknown;
+  response?: { status?: number; payload?: unknown };
+  error?: { message: string; code?: string; status?: number };
+};
+type Capability = {
+  protocol: 1;
+  pluginId: string;
+  type: 'capability';
+  id: string;
+  capability: string;
+  args: unknown;
+};
+type Lifecycle = {
+  protocol: 1;
+  pluginId: string;
+  type: 'lifecycle';
+  id: string;
+  phase: 'register' | 'activate' | 'deactivate';
+};
 type Cancel = { protocol: 1; pluginId: string; type: 'cancel'; id: string };
 
 const SYNC_SERVICE_METHODS: Record<string, readonly string[]> = {
@@ -34,15 +91,21 @@ const SYNC_SERVICE_METHODS: Record<string, readonly string[]> = {
 
 interface IsolatedWorker {
   child: ChildProcess;
-  pending: Map<string, { resolve: (value: Result) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>;
+  pending: Map<
+    string,
+    { resolve: (value: Result) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+  >;
   context?: PluginContext;
   disposers: Map<string, () => void>;
-  transactions: Map<string, {
-    tx: ExtensionTransaction;
-    finish: (commit: boolean) => void;
-    run: Promise<unknown>;
-    timeout: NodeJS.Timeout;
-  }>;
+  transactions: Map<
+    string,
+    {
+      tx: ExtensionTransaction;
+      finish: (commit: boolean) => void;
+      run: Promise<unknown>;
+      timeout: NodeJS.Timeout;
+    }
+  >;
   capabilityRequests: Set<string>;
   models: Map<string, CustomModelDefinition>;
   allowedServices: Set<string>;
@@ -66,15 +129,28 @@ interface RawSession {
 }
 
 const workers = new Map<string, IsolatedWorker>();
-const workerSpecs = new Map<string, { entry: string; manifest: PluginManifest; models: Map<string, CustomModelDefinition>; allowedServices: Set<string>; allowedExtensions: Set<string> }>();
+const workerSpecs = new Map<
+  string,
+  {
+    entry: string;
+    manifest: PluginManifest;
+    models: Map<string, CustomModelDefinition>;
+    allowedServices: Set<string>;
+    allowedExtensions: Set<string>;
+  }
+>();
 let workerExitHandler: ((id: string) => void) | undefined;
-export function setIsolatedWorkerExitHandler(handler: (id: string) => void): void { workerExitHandler = handler; }
+export function setIsolatedWorkerExitHandler(handler: (id: string) => void): void {
+  workerExitHandler = handler;
+}
 const MAX_IPC_BYTES = RPC_MAX_BYTES;
 const MAX_IN_FLIGHT = RPC_MAX_IN_FLIGHT;
 
 function workerModule(): string {
   const js = new URL('./worker.js', import.meta.url);
-  return fileURLToPath(existsSync(fileURLToPath(js)) ? js : new URL('./worker.ts', import.meta.url));
+  return fileURLToPath(
+    existsSync(fileURLToPath(js)) ? js : new URL('./worker.ts', import.meta.url),
+  );
 }
 
 function workerExecArgv(): string[] {
@@ -92,7 +168,9 @@ function workerExecArgv(): string[] {
     }
   }
   if (!allowed.some((arg) => arg.startsWith('--max-old-space-size'))) {
-    allowed.push(`--max-old-space-size=${Math.max(64, Number(process.env.STACKPANEL_PLUGIN_MAX_OLD_SPACE_MB ?? 256))}`);
+    allowed.push(
+      `--max-old-space-size=${Math.max(64, Number(process.env.STACKPANEL_PLUGIN_MAX_OLD_SPACE_MB ?? 256))}`,
+    );
   }
   return allowed;
 }
@@ -125,7 +203,10 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
     },
     execArgv: workerExecArgv(),
   });
-  const pending = new Map<string, { resolve: (value: Result) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
+  const pending = new Map<
+    string,
+    { resolve: (value: Result) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+  >();
   const state: IsolatedWorker = {
     child,
     pending,
@@ -180,22 +261,53 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
         return;
       }
       if (message.type === 'capability') {
-        if (state.capabilityRequests.size >= MAX_IN_FLIGHT || state.capabilityRequests.has(message.id)) {
-          sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, error: { message: 'isolated plugin capability concurrency limit exceeded' } });
+        if (
+          state.capabilityRequests.size >= MAX_IN_FLIGHT ||
+          state.capabilityRequests.has(message.id)
+        ) {
+          sendWorker(state.child, {
+            protocol: 1,
+            pluginId: id,
+            type: 'result',
+            id: message.id,
+            error: { message: 'isolated plugin capability concurrency limit exceeded' },
+          });
           return;
         }
         state.capabilityRequests.add(message.id);
         void Promise.race([
           handleCapability(id, state, message),
-          new Promise<never>((_, reject) => setTimeout(() => {
-            // The worker may still be awaiting this capability. Tell it to
-            // abandon the pending promise before returning the timeout.
-            try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'cancel', id: message.id }); } catch { /* exit path */ }
-            reject(Object.assign(new Error('isolated capability timed out'), { code: 'rpc.timeout', status: 504 }));
-          }, RPC_TIMEOUT_MS)),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => {
+              // The worker may still be awaiting this capability. Tell it to
+              // abandon the pending promise before returning the timeout.
+              try {
+                sendWorker(state.child, {
+                  protocol: RPC_PROTOCOL,
+                  pluginId: id,
+                  type: 'cancel',
+                  id: message.id,
+                });
+              } catch {
+                /* exit path */
+              }
+              reject(
+                Object.assign(new Error('isolated capability timed out'), {
+                  code: 'rpc.timeout',
+                  status: 504,
+                }),
+              );
+            }, RPC_TIMEOUT_MS),
+          ),
         ])
           .catch((error) => {
-            sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'result', id: message.id, error: wireError(error) });
+            sendWorker(state.child, {
+              protocol: RPC_PROTOCOL,
+              pluginId: id,
+              type: 'result',
+              id: message.id,
+              error: wireError(error),
+            });
           })
           .finally(() => state.capabilityRequests.delete(message.id));
         return;
@@ -214,12 +326,14 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
       clearTimeout(request.timer);
       state.pending.delete(message.id);
       if (message.error) {
-        const error = new Error(message.error.message) as Error & { code?: string; status?: number };
+        const error = new Error(message.error.message) as Error & {
+          code?: string;
+          status?: number;
+        };
         if (message.error.code !== undefined) error.code = message.error.code;
         if (message.error.status !== undefined) error.status = message.error.status;
         request.reject(error);
-      }
-      else request.resolve(message);
+      } else request.resolve(message);
     });
     child.once('exit', () => {
       if (!readySettled) {
@@ -244,7 +358,11 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
   });
 }
 
-async function handleCapability(id: string, state: IsolatedWorker, message: Capability): Promise<void> {
+async function handleCapability(
+  id: string,
+  state: IsolatedWorker,
+  message: Capability,
+): Promise<void> {
   const ctx = state.context;
   if (!ctx) throw new Error(`插件 ${id} 尚未激活`);
   const args = message.args as Record<string, unknown>;
@@ -253,12 +371,21 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     const txId = randomUUID();
     let startTransaction!: () => void;
     let finishTransaction!: (commit: boolean) => void;
-    const started = new Promise<void>((resolve) => { startTransaction = resolve; });
-    const finished = new Promise<boolean>((resolve) => { finishTransaction = resolve; });
+    const started = new Promise<void>((resolve) => {
+      startTransaction = resolve;
+    });
+    const finished = new Promise<boolean>((resolve) => {
+      finishTransaction = resolve;
+    });
     let startupError: unknown;
     const timeout = setTimeout(() => finishTransaction(false), 30_000);
     const startGuard = setTimeout(() => startTransaction(), 10_000);
-    const entry = { tx: undefined as unknown as ExtensionTransaction, finish: finishTransaction, run: Promise.resolve() as Promise<unknown>, timeout };
+    const entry = {
+      tx: undefined as unknown as ExtensionTransaction,
+      finish: finishTransaction,
+      run: Promise.resolve() as Promise<unknown>,
+      timeout,
+    };
     state.transactions.set(txId, entry);
     const run = ctx.tx(async (tx) => {
       entry.tx = tx;
@@ -268,7 +395,10 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
       return undefined;
     });
     entry.run = run;
-    void run.catch((error) => { startupError = error; startTransaction(); });
+    void run.catch((error) => {
+      startupError = error;
+      startTransaction();
+    });
     await started;
     clearTimeout(startGuard);
     if (startupError) throw startupError;
@@ -285,32 +415,49 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     const operation = `${transactionMatch[1]}.${transactionMatch[2]}`;
     if (operation === 'wallet.debit') {
       value = await transaction.tx.wallet.debit(
-        String(args.userId), Number(args.amount), String(args.currency), args.ref as never,
+        String(args.userId),
+        Number(args.amount),
+        String(args.currency),
+        args.ref as never,
       );
     } else if (operation === 'wallet.credit') {
       value = await transaction.tx.wallet.credit(
-        String(args.userId), Number(args.amount), String(args.currency), args.ref as never,
+        String(args.userId),
+        Number(args.amount),
+        String(args.currency),
+        args.ref as never,
       );
     } else if (operation === 'wallet.hold') {
       value = await transaction.tx.wallet.hold(
-        String(args.userId), Number(args.amount), String(args.currency), args.ref as never,
+        String(args.userId),
+        Number(args.amount),
+        String(args.currency),
+        args.ref as never,
         args.options as never,
       );
     } else if (operation === 'wallet.settleHold') {
       value = await transaction.tx.wallet.settleHold(
-        String(args.holdId), Number(args.settledAmount), args.ref as never,
+        String(args.holdId),
+        Number(args.settledAmount),
+        args.ref as never,
       );
     } else if (operation === 'wallet.releaseHold') {
       value = await transaction.tx.wallet.releaseHold(String(args.holdId));
     } else if (operation === 'payments.createRecord') {
       value = await transaction.tx.payments.createRecord(args.input as never);
+    } else if (operation === 'events.publish') {
+      // Buffer inside the host-run `ctx.tx`; flushed atomically on commit (W1).
+      transaction.tx.publish(String(args.topic), args.payload as never);
     } else {
       throw new Error(`未知事务操作：${operation}`);
     }
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
-  const extensionMatch = /^(tx\.)?extensions\.(get|list|listAll|page|getMany|create|update|updateWhere|delete)$/.exec(message.capability);
+  const extensionMatch =
+    /^(tx\.)?extensions\.(get|list|listAll|page|getMany|create|update|updateWhere|delete)$/.exec(
+      message.capability,
+    );
   if (extensionMatch) {
     const model = state.models.get(String(args.kind));
     if (!model) throw new Error(`未知或未声明的自定义模型：${String(args.kind)}`);
@@ -322,16 +469,26 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     if (typeof method !== 'function') throw new Error(`未知扩展操作：${message.capability}`);
     const invokeArgs = (() => {
       switch (extensionMatch[2]) {
-        case 'get': return [model, String(args.name)];
-        case 'list': return [model, args.query];
-        case 'listAll': return [model, args.query];
-        case 'page': return [model, args.query];
-        case 'getMany': return [model, Array.isArray(args.names) ? args.names.map(String) : []];
-        case 'create': return [model, args.spec, args.options];
-        case 'update': return [model, String(args.name), args.spec, args.options];
-        case 'updateWhere': return [model, args.where, args.patch];
-        case 'delete': return [model, String(args.name)];
-        default: throw new Error(`未知扩展操作：${message.capability}`);
+        case 'get':
+          return [model, String(args.name)];
+        case 'list':
+          return [model, args.query];
+        case 'listAll':
+          return [model, args.query];
+        case 'page':
+          return [model, args.query];
+        case 'getMany':
+          return [model, Array.isArray(args.names) ? args.names.map(String) : []];
+        case 'create':
+          return [model, args.spec, args.options];
+        case 'update':
+          return [model, String(args.name), args.spec, args.options];
+        case 'updateWhere':
+          return [model, args.where, args.patch];
+        case 'delete':
+          return [model, String(args.name)];
+        default:
+          throw new Error(`未知扩展操作：${message.capability}`);
       }
     })();
     value = await (method as (...input: unknown[]) => Promise<unknown>).apply(client, invokeArgs);
@@ -350,7 +507,13 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
       await invokeWorker(id, 'finalizer', token, instance);
     });
     state.disposers.set(token, () => undefined);
-    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value: undefined });
+    sendWorker(state.child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: message.id,
+      value: undefined,
+    });
     return;
   }
   if (message.capability === 'tx.commit' || message.capability === 'tx.rollback') {
@@ -361,42 +524,81 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     transaction.finish(message.capability === 'tx.commit');
     if (message.capability === 'tx.commit') await transaction.run;
     else await transaction.run.catch(() => undefined);
-    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value: undefined });
+    sendWorker(state.child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: message.id,
+      value: undefined,
+    });
     return;
   }
   const loggerMatch = /^logger\.(info|warn|error)$/.exec(message.capability);
   if (loggerMatch) {
-    const text = typeof args.message === 'string' ? args.message.slice(0, 8192) : String(args.message);
+    const text =
+      typeof args.message === 'string' ? args.message.slice(0, 8192) : String(args.message);
     ctx.logger[loggerMatch[1] as 'info' | 'warn' | 'error'](text);
-    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value: undefined });
+    sendWorker(state.child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: message.id,
+      value: undefined,
+    });
     return;
   }
   if (message.capability === 'services.provide') {
     const token = String(args.token);
-    const implementation = workerProxy(id, token, Array.isArray(args.methods) ? args.methods.map(String) : [], (args.values ?? {}) as Record<string, unknown>);
+    const implementation = workerProxy(
+      id,
+      token,
+      Array.isArray(args.methods) ? args.methods.map(String) : [],
+      (args.values ?? {}) as Record<string, unknown>,
+    );
     const dispose = ctx.provide(String(args.name), implementation);
     state.disposers.set(token, dispose);
-    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value: undefined });
+    sendWorker(state.child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: message.id,
+      value: undefined,
+    });
     return;
   }
-  if (message.capability === 'services.unregister' || message.capability === 'extensions.unregister') {
+  if (
+    message.capability === 'services.unregister' ||
+    message.capability === 'extensions.unregister'
+  ) {
     const token = String(args.token);
     state.disposers.get(token)?.();
     state.disposers.delete(token);
-    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value: undefined });
+    sendWorker(state.child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: message.id,
+      value: undefined,
+    });
     return;
   }
   if (message.capability === 'services.invoke') {
     const serviceName = String(args.name);
-    if (!state.allowedServices.has(serviceName)) throw new Error(`服务未获插件声明授权：${serviceName}`);
+    if (!state.allowedServices.has(serviceName))
+      throw new Error(`服务未获插件声明授权：${serviceName}`);
     const service = ctx.getService<Record<string, unknown>>(serviceName);
     const method = service?.[String(args.method)];
-    if (typeof method !== 'function') throw new Error(`服务方法不可用：${String(args.name)}.${String(args.method)}`);
+    if (typeof method !== 'function')
+      throw new Error(`服务方法不可用：${String(args.name)}.${String(args.method)}`);
     value = await method.apply(service, Array.isArray(args.args) ? args.args : []);
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
-  if (message.capability === 'cache.peek' || message.capability === 'cache.put' || message.capability === 'cache.invalidate') {
+  if (
+    message.capability === 'cache.peek' ||
+    message.capability === 'cache.put' ||
+    message.capability === 'cache.invalidate'
+  ) {
     // 内核托管缓存的跨进程代理。worker 侧没有 loader 之外的状态：命中就地返回，
     // 未命中在 worker 里跑回源后再 put 回来，因此值与机制都留在内核侧（ADR-0022 D3）。
     value = dispatchCacheCapability(message.capability, args);
@@ -405,12 +607,16 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
   }
   if (message.capability === 'state.withLock') {
     const token = String(args.token);
-    const acquired = await ctx.state.withLock(
-      String(args.key),
-      Number(args.ttlMs),
-      async () => { await invokeWorker(id, 'state-lock', token, undefined); },
-    );
-    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value: acquired });
+    const acquired = await ctx.state.withLock(String(args.key), Number(args.ttlMs), async () => {
+      await invokeWorker(id, 'state-lock', token, undefined);
+    });
+    sendWorker(state.child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: message.id,
+      value: acquired,
+    });
     return;
   }
   if (message.capability === 'extensions.invoke') {
@@ -423,22 +629,62 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     const candidates = entries.filter((entry) => entry.pluginId === ownerId);
     const implementation = candidates[Number(args.index)]?.implementation;
     const method = implementation?.[String(args.method)];
-    if (typeof method !== 'function') throw new Error(`扩展方法不可用：${String(args.pointId)}.${String(args.method)}`);
+    if (typeof method !== 'function')
+      throw new Error(`扩展方法不可用：${String(args.pointId)}.${String(args.method)}`);
     value = await method.apply(implementation, Array.isArray(args.args) ? args.args : []);
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
   if (message.capability === 'extensions.register') {
     const token = String(args.token);
-    const implementation = workerProxy(id, token, Array.isArray(args.methods) ? args.methods.map(String) : [], (args.values ?? {}) as Record<string, unknown>);
+    const implementation = workerProxy(
+      id,
+      token,
+      Array.isArray(args.methods) ? args.methods.map(String) : [],
+      (args.values ?? {}) as Record<string, unknown>,
+    );
     const dispose = ctx.registerExtension(String(args.pointId), implementation);
     state.disposers.set(token, dispose);
-    sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value: undefined });
+    sendWorker(state.child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: message.id,
+      value: undefined,
+    });
     return;
   }
-  const serviceMatch = /^([a-z]+)\.([a-zA-Z][a-zA-Z0-9]*)$/.exec(message.capability);
-  if (serviceMatch && ['state', 'auth', 'notifications', 'identity', 'captcha', 'secrets', 'payments', 'wallet', 'fx', 'cache'].includes(serviceMatch[1] ?? '')) {
-    const service = ctx[serviceMatch[1] as 'state' | 'auth' | 'notifications' | 'identity' | 'captcha' | 'secrets' | 'payments' | 'wallet' | 'fx' | 'cache'] as unknown as Record<string, unknown>;
+  const serviceMatch = /^([a-z][a-zA-Z]*)\.([a-zA-Z][a-zA-Z0-9]*)$/.exec(message.capability);
+  if (
+    serviceMatch &&
+    [
+      'state',
+      'auth',
+      'notifications',
+      'notificationPolicy',
+      'identity',
+      'captcha',
+      'secrets',
+      'payments',
+      'wallet',
+      'fx',
+      'cache',
+    ].includes(serviceMatch[1] ?? '')
+  ) {
+    const service = ctx[
+      serviceMatch[1] as
+        | 'state'
+        | 'auth'
+        | 'notifications'
+        | 'notificationPolicy'
+        | 'identity'
+        | 'captcha'
+        | 'secrets'
+        | 'payments'
+        | 'wallet'
+        | 'fx'
+        | 'cache'
+    ] as unknown as Record<string, unknown>;
     const method = service[serviceMatch[2] ?? ''];
     if (typeof method !== 'function') throw new Error(`未知插件服务方法：${message.capability}`);
     value = await method.apply(service, Array.isArray(args) ? args : []);
@@ -446,11 +692,29 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     return;
   }
   switch (message.capability) {
-    case 'media.register': value = await ctx.media.register({ ...(args as Parameters<PluginContext['media']['register']>[0]), ownerPluginId: id }); break;
-    case 'media.unregister': value = await ctx.media.unregister({ ...(args as Parameters<PluginContext['media']['unregister']>[0]), ownerPluginId: id }); break;
-    case 'media.unregisterResource': value = await ctx.media.unregisterResource(String(args.resourceType), String(args.resourceId), id); break;
+    case 'media.register':
+      value = await ctx.media.register({
+        ...(args as Parameters<PluginContext['media']['register']>[0]),
+        ownerPluginId: id,
+      });
+      break;
+    case 'media.unregister':
+      value = await ctx.media.unregister({
+        ...(args as Parameters<PluginContext['media']['unregister']>[0]),
+        ownerPluginId: id,
+      });
+      break;
+    case 'media.unregisterResource':
+      value = await ctx.media.unregisterResource(
+        String(args.resourceType),
+        String(args.resourceId),
+        id,
+      );
+      break;
     case 'storage.backend': {
-      const provider = await ctx.storage.backend(args as Parameters<PluginContext['storage']['backend']>[0]);
+      const provider = await ctx.storage.backend(
+        args as Parameters<PluginContext['storage']['backend']>[0],
+      );
       const token = `storage:${randomUUID()}`;
       state.storageHandles.set(token, provider);
       value = { token, ...implementationShape(provider) };
@@ -467,23 +731,68 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
       );
       break;
     }
-    case 'storage.release': state.storageHandles.delete(String(args.token)); break;
-    case 'events.publish': value = ctx.events.publish(String(args.topic), args.payload); break;
+    case 'storage.release':
+      state.storageHandles.delete(String(args.token));
+      break;
+    case 'events.publish':
+      value = ctx.events.publish(String(args.topic), args.payload);
+      break;
     case 'events.subscribe': {
       const topic = String(args.topic);
       const token = typeof args.token === 'string' ? args.token : `${message.id}:${topic}`;
-      const dispose = ctx.events.subscribe(topic, (payload) => {
-        sendWorker(state.child, { protocol: 1, pluginId: id, type: 'event', token, payload });
+      const dispose = ctx.events.subscribe(topic, (payload, meta) => {
+        // Forward the delivery metadata (eventId) so an isolated subscriber can
+        // dedupe at-least-once redelivery; older workers ignore the extra field.
+        sendWorker(state.child, {
+          protocol: 1,
+          pluginId: id,
+          type: 'event',
+          token,
+          payload,
+          ...(meta ? { meta } : {}),
+        });
       });
       state.disposers.set(token, dispose);
       value = token;
       break;
     }
-    case 'events.unsubscribe': state.disposers.get(String(args.token))?.(); state.disposers.delete(String(args.token)); break;
-    case 'jobs.enqueue': value = await ctx.jobs.enqueue(String(args.name), args.payload, args.options as JobOptions | undefined); break;
-    case 'jobs.schedule': value = await ctx.jobs.schedule(String(args.name), args.schedule as JobSchedule, args.payload); break;
+    case 'events.unsubscribe':
+      state.disposers.get(String(args.token))?.();
+      state.disposers.delete(String(args.token));
+      value = undefined;
+      break;
+    case 'events.runIdempotent': {
+      // Consumer-side dedupe across the process boundary: the worker sends the
+      // key, the host checks/inserts `processed_events` and reports whether the
+      // handler should run. The handler itself stays in the worker.
+      if (typeof ctx.events.runIdempotent !== 'function') {
+        value = true;
+        break;
+      }
+      value = await ctx.events.runIdempotent(
+        String(args.consumer),
+        String(args.eventId),
+        () => undefined,
+      );
+      break;
+    }
+    case 'jobs.enqueue':
+      value = await ctx.jobs.enqueue(
+        String(args.name),
+        args.payload,
+        args.options as JobOptions | undefined,
+      );
+      break;
+    case 'jobs.schedule':
+      value = await ctx.jobs.schedule(
+        String(args.name),
+        args.schedule as JobSchedule,
+        args.payload,
+      );
+      break;
     case 'jobs.handle': {
-      const token = typeof args.token === 'string' ? args.token : `${message.id}:${String(args.name)}`;
+      const token =
+        typeof args.token === 'string' ? args.token : `${message.id}:${String(args.name)}`;
       const dispose = ctx.jobs.handle(String(args.name), async (payload) => {
         await invokeWorker(id, 'job', token, payload);
       });
@@ -491,8 +800,12 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
       value = token;
       break;
     }
-    case 'jobs.unhandle': state.disposers.get(String(args.token))?.(); state.disposers.delete(String(args.token)); break;
-    default: throw new Error(`未知插件能力：${message.capability}`);
+    case 'jobs.unhandle':
+      state.disposers.get(String(args.token))?.();
+      state.disposers.delete(String(args.token));
+      break;
+    default:
+      throw new Error(`未知插件能力：${message.capability}`);
   }
   sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
 }
@@ -517,7 +830,10 @@ function sendWorker(child: ChildProcess, message: Record<string, unknown>): void
   });
 }
 
-function implementationShape(implementation: unknown): { methods: string[]; values: Record<string, unknown> } {
+function implementationShape(implementation: unknown): {
+  methods: string[];
+  values: Record<string, unknown>;
+} {
   if (!implementation || typeof implementation !== 'object') return { methods: [], values: {} };
   const methods = new Set<string>();
   let current: object | null = implementation as object;
@@ -536,47 +852,117 @@ function implementationShape(implementation: unknown): { methods: string[]; valu
   return { methods: [...methods], values };
 }
 
-function workerProxy(id: string, token: string, methods: string[], values: Record<string, unknown>): Record<string, unknown> {
+function workerProxy(
+  id: string,
+  token: string,
+  methods: string[],
+  values: Record<string, unknown>,
+): Record<string, unknown> {
   if (methods.length > 128) throw new Error('isolated implementation method count exceeds limit');
-  const proxy: Record<string, unknown> = Object.assign(Object.create(null) as Record<string, unknown>, values);
+  const proxy: Record<string, unknown> = Object.assign(
+    Object.create(null) as Record<string, unknown>,
+    values,
+  );
   for (const method of methods) {
-    if (!/^[A-Za-z][A-Za-z0-9_$]{0,127}$/.test(method)) throw new Error(`isolated implementation method name is invalid: ${method}`);
+    if (!/^[A-Za-z][A-Za-z0-9_$]{0,127}$/.test(method))
+      throw new Error(`isolated implementation method name is invalid: ${method}`);
     proxy[method] = async (...args: unknown[]) => {
       const options = args[1] as { signal?: AbortSignal; timeoutMs?: number } | undefined;
       const signal = options?.signal instanceof AbortSignal ? options.signal : undefined;
       if (signal?.aborted) throw new Error('isolated service call aborted');
       const input = signal ? [args[0], { ...options, signal: undefined }, ...args.slice(2)] : args;
-      const result = await invokeWorker(id, 'service', token, { method, payload: input }, signal, options?.timeoutMs);
+      const result = await invokeWorker(
+        id,
+        'service',
+        token,
+        { method, payload: input },
+        signal,
+        options?.timeoutMs,
+      );
       return result.value;
     };
   }
   return proxy;
 }
 
-function invokeWorker(id: string, kind: string, token: string, payload: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<Result> {
+function invokeWorker(
+  id: string,
+  kind: string,
+  token: string,
+  payload: unknown,
+  signal?: AbortSignal,
+  timeoutMs?: number,
+): Promise<Result> {
   const state = workers.get(id);
-  if (!state || !state.child.connected) return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
+  if (!state || !state.child.connected)
+    return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
   const requestId = randomUUID();
   return new Promise((resolve, reject) => {
     const abort = () => {
       const pending = state.pending.get(requestId);
       if (!pending) return;
-      clearTimeout(pending.timer); state.pending.delete(requestId);
-      try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'cancel', id: requestId }); } catch { /* disconnected */ }
+      clearTimeout(pending.timer);
+      state.pending.delete(requestId);
+      try {
+        sendWorker(state.child, {
+          protocol: RPC_PROTOCOL,
+          pluginId: id,
+          type: 'cancel',
+          id: requestId,
+        });
+      } catch {
+        /* disconnected */
+      }
       reject(new Error('isolated service call aborted'));
     };
     signal?.addEventListener('abort', abort, { once: true });
-    const done = (result: Result) => { signal?.removeEventListener('abort', abort); resolve(result); };
-    const fail = (error: Error) => { signal?.removeEventListener('abort', abort); reject(error); };
-    const timer = setTimeout(() => {
-      state.pending.delete(requestId);
-      try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'cancel', id: requestId }); } catch { /* exit path */ }
-      fail(Object.assign(new Error(`isolated plugin ${id} timed out`), { code: 'rpc.timeout', status: 504 }));
-    }, Math.min(120_000, Math.max(RPC_TIMEOUT_MS, timeoutMs ?? RPC_TIMEOUT_MS)));
+    const done = (result: Result) => {
+      signal?.removeEventListener('abort', abort);
+      resolve(result);
+    };
+    const fail = (error: Error) => {
+      signal?.removeEventListener('abort', abort);
+      reject(error);
+    };
+    const timer = setTimeout(
+      () => {
+        state.pending.delete(requestId);
+        try {
+          sendWorker(state.child, {
+            protocol: RPC_PROTOCOL,
+            pluginId: id,
+            type: 'cancel',
+            id: requestId,
+          });
+        } catch {
+          /* exit path */
+        }
+        fail(
+          Object.assign(new Error(`isolated plugin ${id} timed out`), {
+            code: 'rpc.timeout',
+            status: 504,
+          }),
+        );
+      },
+      Math.min(120_000, Math.max(RPC_TIMEOUT_MS, timeoutMs ?? RPC_TIMEOUT_MS)),
+    );
     state.pending.set(requestId, { resolve: done, reject: fail, timer });
-    if (signal?.aborted) { abort(); return; }
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
     try {
-      sendWorker(state.child, { protocol: 1, pluginId: id, type: kind, id: requestId, ...(kind === 'lifecycle' ? { phase: token, context: payload } : kind === 'service' ? { token, ...(payload as object) } : { token, payload }) });
+      sendWorker(state.child, {
+        protocol: 1,
+        pluginId: id,
+        type: kind,
+        id: requestId,
+        ...(kind === 'lifecycle'
+          ? { phase: token, context: payload }
+          : kind === 'service'
+            ? { token, ...(payload as object) }
+            : { token, payload }),
+      });
     } catch (error) {
       clearTimeout(timer);
       state.pending.delete(requestId);
@@ -610,7 +996,10 @@ class RawBodyPump {
       if (this.bytes >= RAW_CHUNK_BYTES) body.pause();
       this.wake();
     };
-    this.onEnd = () => { this.ended = true; this.wake(); };
+    this.onEnd = () => {
+      this.ended = true;
+      this.wake();
+    };
     this.onError = (error: unknown) => {
       this.failure = error instanceof Error ? error : new Error(String(error));
       this.ended = true;
@@ -671,10 +1060,17 @@ class RawBodyPump {
  * worker rebuilds the plugin's `RawHttpRequest`/`RawHttpReply`; this side owns
  * the real request body and response, so plugin source needs no changes.
  */
-function invokeRaw(id: string, request: RawHttpRequest, routePath: string, reply: RawHttpReply): Promise<void> {
+function invokeRaw(
+  id: string,
+  request: RawHttpRequest,
+  routePath: string,
+  reply: RawHttpReply,
+): Promise<void> {
   const state = workers.get(id);
-  if (!state || !state.child.connected) return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
-  if (state.raw.size >= RPC_MAX_RAW_STREAMS) return Promise.reject(new Error(`isolated plugin ${id} raw stream limit exceeded`));
+  if (!state || !state.child.connected)
+    return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
+  if (state.raw.size >= RPC_MAX_RAW_STREAMS)
+    return Promise.reject(new Error(`isolated plugin ${id} raw stream limit exceeded`));
   const requestId = randomUUID();
   const child = state.child;
 
@@ -710,9 +1106,30 @@ function invokeRaw(id: string, request: RawHttpRequest, routePath: string, reply
         void pump.next().then((result) => {
           if (settled || session.ended) return;
           try {
-            if (result.error) sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-body-error', id: requestId, message: result.error.message });
-            else if (result.eof) sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-body', id: requestId, eof: true });
-            else sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-body', id: requestId, data: (result.data as Buffer).toString('base64') });
+            if (result.error)
+              sendWorker(child, {
+                protocol: RPC_PROTOCOL,
+                pluginId: id,
+                type: 'raw-body-error',
+                id: requestId,
+                message: result.error.message,
+              });
+            else if (result.eof)
+              sendWorker(child, {
+                protocol: RPC_PROTOCOL,
+                pluginId: id,
+                type: 'raw-body',
+                id: requestId,
+                eof: true,
+              });
+            else
+              sendWorker(child, {
+                protocol: RPC_PROTOCOL,
+                pluginId: id,
+                type: 'raw-body',
+                id: requestId,
+                data: (result.data as Buffer).toString('base64'),
+              });
           } catch (error) {
             finish(error instanceof Error ? error : new Error(String(error)));
           }
@@ -720,7 +1137,17 @@ function invokeRaw(id: string, request: RawHttpRequest, routePath: string, reply
       },
       abort: (reason: string, error?: Error) => {
         if (settled) return;
-        try { sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-abort', id: requestId, reason }); } catch { /* exit path */ }
+        try {
+          sendWorker(child, {
+            protocol: RPC_PROTOCOL,
+            pluginId: id,
+            type: 'raw-abort',
+            id: requestId,
+            reason,
+          });
+        } catch {
+          /* exit path */
+        }
         // A client disconnect is a normal end: resolve so the dispatcher does not
         // log it as a handler failure. A worker crash passes an error to reject.
         finish(error);
@@ -731,7 +1158,15 @@ function invokeRaw(id: string, request: RawHttpRequest, routePath: string, reply
       if (!session.ended) session.abort('client disconnected');
     });
     try {
-      sendWorker(child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-invoke', id: requestId, method: request.method, route: routePath, request: invokeRequest });
+      sendWorker(child, {
+        protocol: RPC_PROTOCOL,
+        pluginId: id,
+        type: 'raw-invoke',
+        id: requestId,
+        method: request.method,
+        route: routePath,
+        request: invokeRequest,
+      });
     } catch (error) {
       finish(error instanceof Error ? error : new Error(String(error)));
     }
@@ -760,11 +1195,22 @@ function handleRawFrame(id: string, state: IsolatedWorker, frame: Record<string,
       const ok = session.reply.write(data);
       const ack = (): void => {
         if (session.ended) return;
-        try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'raw-ack', id: String(frame.id), bytes: data.length }); } catch { /* exit path */ }
+        try {
+          sendWorker(state.child, {
+            protocol: RPC_PROTOCOL,
+            pluginId: id,
+            type: 'raw-ack',
+            id: String(frame.id),
+            bytes: data.length,
+          });
+        } catch {
+          /* exit path */
+        }
       };
       if (ok) ack();
       else {
-        const raw = session.reply.raw as { once?: (event: string, listener: () => void) => void } | undefined;
+        const raw = session.reply.raw as
+          { once?: (event: string, listener: () => void) => void } | undefined;
         if (raw && typeof raw.once === 'function') raw.once('drain', ack);
         else ack();
       }
@@ -786,7 +1232,10 @@ function handleRawFrame(id: string, state: IsolatedWorker, frame: Record<string,
         session.resolve();
         return;
       }
-      const failure = new Error(error?.message ?? 'isolated raw route failed') as Error & { code?: string; status?: number };
+      const failure = new Error(error?.message ?? 'isolated raw route failed') as Error & {
+        code?: string;
+        status?: number;
+      };
       if (error?.code !== undefined) failure.code = error.code;
       if (error?.status !== undefined) failure.status = error.status;
       session.reject(failure);
@@ -799,8 +1248,10 @@ function handleRawFrame(id: string, state: IsolatedWorker, frame: Record<string,
 
 function invoke(id: string, method: string, route: string, request: HttpRequest): Promise<Result> {
   const state = workers.get(id);
-  if (!state || !state.child.connected) return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
-  if (state.pending.size >= MAX_IN_FLIGHT) return Promise.reject(new Error(`isolated plugin ${id} concurrency limit exceeded`));
+  if (!state || !state.child.connected)
+    return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
+  if (state.pending.size >= MAX_IN_FLIGHT)
+    return Promise.reject(new Error(`isolated plugin ${id} concurrency limit exceeded`));
   const serialized = JSON.stringify(request);
   if (Buffer.byteLength(serialized, 'utf8') > MAX_IPC_BYTES) {
     return Promise.reject(new Error(`isolated plugin ${id} request exceeds IPC limit`));
@@ -809,12 +1260,34 @@ function invoke(id: string, method: string, route: string, request: HttpRequest)
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       state.pending.delete(requestId);
-      try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'cancel', id: requestId }); } catch { /* exit path */ }
-      reject(Object.assign(new Error(`isolated plugin ${id} timed out`), { code: 'rpc.timeout', status: 504 }));
+      try {
+        sendWorker(state.child, {
+          protocol: RPC_PROTOCOL,
+          pluginId: id,
+          type: 'cancel',
+          id: requestId,
+        });
+      } catch {
+        /* exit path */
+      }
+      reject(
+        Object.assign(new Error(`isolated plugin ${id} timed out`), {
+          code: 'rpc.timeout',
+          status: 504,
+        }),
+      );
     }, 10_000);
     state.pending.set(requestId, { resolve, reject, timer });
     try {
-      sendWorker(state.child, { protocol: 1, pluginId: id, type: 'invoke', id: requestId, method, route, request });
+      sendWorker(state.child, {
+        protocol: 1,
+        pluginId: id,
+        type: 'invoke',
+        id: requestId,
+        method,
+        route,
+        request,
+      });
     } catch (error) {
       clearTimeout(timer);
       state.pending.delete(requestId);
@@ -823,9 +1296,16 @@ function invoke(id: string, method: string, route: string, request: HttpRequest)
   });
 }
 
-export async function loadIsolatedPluginDefinition(id: string, entry: string, manifest: PluginManifest): Promise<PluginDefinition> {
+export async function loadIsolatedPluginDefinition(
+  id: string,
+  entry: string,
+  manifest: PluginManifest,
+): Promise<PluginDefinition> {
   const ready = await startWorker(id, entry, manifest);
-  const unsupported = ready.unsupported?.filter((item) => item !== 'onRegister' && item !== 'onActivate' && item !== 'onDeactivate') ?? [];
+  const unsupported =
+    ready.unsupported?.filter(
+      (item) => item !== 'onRegister' && item !== 'onActivate' && item !== 'onDeactivate',
+    ) ?? [];
   if (unsupported.length > 0) {
     stopIsolatedPlugin(id);
     throw new Error(`插件 ${id} 的 isolated 能力暂不支持：${unsupported.join('、')}`);
@@ -834,9 +1314,17 @@ export async function loadIsolatedPluginDefinition(id: string, entry: string, ma
   if (!state) throw new Error(`isolated plugin ${id} is unavailable`);
   state.allowedServices = new Set(ready.inject ?? []);
   state.allowedExtensions = new Set(
-    (manifest.consumes ?? []).map((consumer) => `${consumer.extensionPoint}\u0000${consumer.pluginId}`),
+    (manifest.consumes ?? []).map(
+      (consumer) => `${consumer.extensionPoint}\u0000${consumer.pluginId}`,
+    ),
   );
-  workerSpecs.set(id, { entry, manifest, models: new Map(state.models), allowedServices: new Set(state.allowedServices), allowedExtensions: new Set(state.allowedExtensions) });
+  workerSpecs.set(id, {
+    entry,
+    manifest,
+    models: new Map(state.models),
+    allowedServices: new Set(state.allowedServices),
+    allowedExtensions: new Set(state.allowedExtensions),
+  });
   const customModels: CustomModelDefinition[] = [];
   for (const descriptor of ready.models ?? []) {
     try {
@@ -844,7 +1332,9 @@ export async function loadIsolatedPluginDefinition(id: string, entry: string, ma
         kind: descriptor.kind,
         label: descriptor.label,
         ...(descriptor.permission !== undefined ? { permission: descriptor.permission } : {}),
-        ...(descriptor.readPermission !== undefined ? { readPermission: descriptor.readPermission } : {}),
+        ...(descriptor.readPermission !== undefined
+          ? { readPermission: descriptor.readPermission }
+          : {}),
         ...(descriptor.scoped !== undefined ? { scoped: descriptor.scoped } : {}),
         ...(descriptor.indexes !== undefined ? { indexes: descriptor.indexes } : {}),
         ...(descriptor.finalizers !== undefined ? { finalizers: descriptor.finalizers } : {}),
@@ -855,57 +1345,69 @@ export async function loadIsolatedPluginDefinition(id: string, entry: string, ma
       state.models.set(model.kind, model);
     } catch (error) {
       stopIsolatedPlugin(id);
-      throw new Error(`插件 ${id} 的模型 ${descriptor.kind} schema 无法跨进程序列化：${String(error)}`, { cause: error });
+      throw new Error(
+        `插件 ${id} 的模型 ${descriptor.kind} schema 无法跨进程序列化：${String(error)}`,
+        { cause: error },
+      );
     }
   }
-  const lifecycle = (phase: 'register' | 'activate' | 'deactivate') => async (ctx: PluginContext): Promise<void> => {
-    const state = workers.get(id);
-    if (!state) throw new Error(`isolated plugin ${id} is unavailable`);
-    state.context = ctx;
-    try {
-      const services = (ready.inject ?? []).flatMap((name) => {
-        const service = ctx.getService<Record<string, unknown>>(name);
-        if (!service) return [];
-        const shape = implementationShape(service);
-        const syncValues: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-        for (const method of SYNC_SERVICE_METHODS[name] ?? []) {
-          const candidate = service[method];
-          if (typeof candidate === 'function') syncValues[method] = candidate.call(service);
+  const lifecycle =
+    (phase: 'register' | 'activate' | 'deactivate') =>
+    async (ctx: PluginContext): Promise<void> => {
+      const state = workers.get(id);
+      if (!state) throw new Error(`isolated plugin ${id} is unavailable`);
+      state.context = ctx;
+      try {
+        const services = (ready.inject ?? []).flatMap((name) => {
+          const service = ctx.getService<Record<string, unknown>>(name);
+          if (!service) return [];
+          const shape = implementationShape(service);
+          const syncValues: Record<string, unknown> = Object.create(null) as Record<
+            string,
+            unknown
+          >;
+          for (const method of SYNC_SERVICE_METHODS[name] ?? []) {
+            const candidate = service[method];
+            if (typeof candidate === 'function') syncValues[method] = candidate.call(service);
+          }
+          return [
+            { name, ...shape, ...(Object.keys(syncValues).length > 0 ? { syncValues } : {}) },
+          ];
+        });
+        const extensions = (manifest.consumes ?? []).flatMap((consumer) => {
+          const entries = ctx
+            .getExtensionsWithOwner<Record<string, unknown>>(consumer.extensionPoint)
+            .filter((entry) => entry.pluginId === consumer.pluginId);
+          return entries.map((entry, index) => ({
+            pointId: consumer.extensionPoint,
+            ownerId: entry.pluginId,
+            index,
+            ...implementationShape(entry.implementation),
+          }));
+        });
+        const result = await invokeWorker(id, 'lifecycle', phase, { services, extensions });
+        if (result.error) throw new Error(result.error.message);
+      } finally {
+        if (phase === 'deactivate') {
+          for (const dispose of state.disposers.values()) dispose();
+          state.disposers.clear();
+          for (const transaction of state.transactions.values()) {
+            clearTimeout(transaction.timeout);
+            transaction.finish(false);
+          }
+          state.transactions.clear();
+          state.storageHandles.clear();
         }
-        return [{ name, ...shape, ...(Object.keys(syncValues).length > 0 ? { syncValues } : {}) }];
-      });
-      const extensions = (manifest.consumes ?? []).flatMap((consumer) => {
-        const entries = ctx.getExtensionsWithOwner<Record<string, unknown>>(consumer.extensionPoint)
-          .filter((entry) => entry.pluginId === consumer.pluginId);
-        return entries.map((entry, index) => ({
-          pointId: consumer.extensionPoint,
-          ownerId: entry.pluginId,
-          index,
-          ...implementationShape(entry.implementation),
-        }));
-      });
-      const result = await invokeWorker(id, 'lifecycle', phase, { services, extensions });
-      if (result.error) throw new Error(result.error.message);
-    } finally {
-      if (phase === 'deactivate') {
-        for (const dispose of state.disposers.values()) dispose();
-        state.disposers.clear();
-        for (const transaction of state.transactions.values()) {
-          clearTimeout(transaction.timeout);
-          transaction.finish(false);
-        }
-        state.transactions.clear();
-        state.storageHandles.clear();
       }
-    }
-  };
+    };
   const routes: PluginRoute[] = ready.routes.map((route) => {
     if (route.kind === 'raw') {
       const path = String(route.path);
       return {
         ...route,
         kind: 'raw',
-        handler: (request: RawHttpRequest, reply: RawHttpReply) => invokeRaw(id, request, path, reply),
+        handler: (request: RawHttpRequest, reply: RawHttpReply) =>
+          invokeRaw(id, request, path, reply),
       } as unknown as PluginRoute;
     }
     return {
@@ -925,7 +1427,9 @@ export async function loadIsolatedPluginDefinition(id: string, entry: string, ma
     ...(customModels.length > 0 ? { customModels } : {}),
     ...(ready.unsupported?.includes('onRegister') ? {} : { onRegister: lifecycle('register') }),
     ...(ready.unsupported?.includes('onActivate') ? {} : { onActivate: lifecycle('activate') }),
-    ...(ready.unsupported?.includes('onDeactivate') ? {} : { onDeactivate: lifecycle('deactivate') }),
+    ...(ready.unsupported?.includes('onDeactivate')
+      ? {}
+      : { onDeactivate: lifecycle('deactivate') }),
   };
 }
 

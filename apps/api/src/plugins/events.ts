@@ -1,8 +1,79 @@
 import { EventEmitter } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import type { RedisClient } from '@stackpanel/db';
 import { REDIS_KEY_PREFIX } from '@stackpanel/sdk';
-import type { EventBus, EventPayload, WaterfallListener } from '@stackpanel/sdk';
+import type { EventBus, EventHandler, EventMeta, EventPayload, WaterfallListener } from '@stackpanel/sdk';
+
+/**
+ * When the cluster falls this many attempts behind delivering one row, the row
+ * is parked: it is never silently dropped, but it stops being retried on every
+ * relay pass and surfaces in `outboxStats()` for alerting.
+ */
+export const OUTBOX_MAX_ATTEMPTS = 20;
+/** Backoff ceiling for a failed relay attempt (5 min). */
+const OUTBOX_MAX_BACKOFF_MS = 5 * 60 * 1000;
+/** The cluster-wide consumer identity used for the durable consumption cursor. */
+export const OUTBOX_CLUSTER_CONSUMER = '__outbox_cluster__';
+/** Default retention for delivered rows (matches `cleanup`). */
+export const OUTBOX_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+/** Rows read per `catchUp()` batch. */
+const CATCH_UP_BATCH = 50;
+
+/**
+ * Stable replica identity used as the key for this replica's durable
+ * consumption cursor (`replica:<id>`).
+ *
+ * Priority: `STACKPANEL_INSTANCE_ID` → `os.hostname()`. The value is normalized
+ * to `[a-z0-9_-]` (truncated + short hash) so it is safe as a cursor key.
+ * A stable id matters: with a fresh id on every boot the process starts from
+ * "now" (see `CATCH_UP` window) and never resumes its previous position.
+ */
+export function resolveInstanceId(): string {
+  const configured = (process.env.STACKPANEL_INSTANCE_ID ?? '').trim();
+  const raw = configured || hostname() || 'unknown';
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const safe = slug || 'unknown';
+  if (safe.length <= 96) return safe;
+  // Keep it readable but bounded; the hash prevents truncation collisions.
+  return `${safe.slice(0, 88)}-${createHash('sha256').update(raw).digest('hex').slice(0, 6)}`;
+}
+
+/** Cursor consumer name for a replica's durable consumption position. */
+export function replicaConsumer(instanceId: string): string {
+  return `replica:${instanceId}`;
+}
+
+/**
+ * Envelope serializer shared by the process-wide bus and the `ctx.tx`
+ * in-transaction publish path, so a row written from either place decodes
+ * identically. The kernel origin lets a replica skip its own Redis broadcast.
+ */
+type OutboxOrigin = string;
+
+/** Process-wide origin for rows written outside the bus instance (`ctx.tx`). */
+const PROCESS_ORIGIN: OutboxOrigin = randomUUID().slice(0, 8);
+
+/** Serialize a topic/payload into the outbox envelope body (never throws). */
+export function serializeOutboxBody(
+  topic: string,
+  payload: unknown,
+  origin: string,
+): string {
+  try {
+    return JSON.stringify({ topic, payload, origin });
+  } catch {
+    return JSON.stringify({ topic, origin });
+  }
+}
+
+/** The kernel origin string, for writers that persist rows themselves. */
+export function outboxOrigin(): string {
+  return PROCESS_ORIGIN;
+}
 
 /**
  * Single-machine event bus backed by Node's EventEmitter.
@@ -27,20 +98,20 @@ export class EventEmitterEventBus implements EventBus {
    * through here; a failing listener never breaks the caller (the state change
    * already happened, so the request must not turn into a 500).
    */
-  deliver<K extends string>(topic: K, payload?: EventPayload<K>): void {
+  deliver<K extends string>(topic: K, payload?: EventPayload<K>, meta?: EventMeta): void {
     for (const listener of this.emitter.listeners(topic)) {
       try {
-        listener(payload);
+        (listener as EventHandler<K>)(payload as EventPayload<K>, meta);
       } catch (err) {
         console.error(`[events] listener for "${topic}" failed`, err);
       }
     }
   }
 
-  subscribe<K extends string>(topic: K, handler: (payload: EventPayload<K>) => void): () => void {
-    this.emitter.on(topic, handler as (payload: unknown) => void);
+  subscribe<K extends string>(topic: K, handler: EventHandler<K>): () => void {
+    this.emitter.on(topic, handler as (payload: unknown, meta?: EventMeta) => void);
     return () => {
-      this.emitter.off(topic, handler as (payload: unknown) => void);
+      this.emitter.off(topic, handler as (payload: unknown, meta?: EventMeta) => void);
     };
   }
 
@@ -111,16 +182,69 @@ export interface OutboxOptions {
   batchSize?: number;
   /** Claim lease; expired leases are retried by any replica. */
   leaseMs?: number;
+  /** Attempt ceiling before a row is parked; defaults to {@link OUTBOX_MAX_ATTEMPTS}. */
+  maxAttempts?: number;
+  /** Stable replica id for the per-replica cursor; defaults to {@link resolveInstanceId}. */
+  instanceId?: string;
+  /**
+   * Per-replica catch-up poll interval (ms); defaults to 2s.
+   *
+   * This is deliberately **per replica** — never the cluster-singleton BullMQ
+   * `outbox.relay` job — because durable consumption means every replica reads
+   * its own cursor. A cluster-singleton catch-up would only replay for one.
+   */
+  catchUpIntervalMs?: number;
+  /**
+   * On first boot (no cursor) replay at most this far back. Default 0 = only
+   * events created from now on, so a fresh replica never storms history.
+   */
+  replayWindowMs?: number;
+}
+
+/** Point-in-time outbox health used by metrics/alerting (`outboxStats`). */
+export interface OutboxStats {
+  /** Unpublished rows still eligible for retry. */
+  pending: number;
+  /** Unpublished rows parked after exceeding the attempt ceiling. */
+  parked: number;
+  /** Age of the oldest unpublished row; 0 when the outbox is drained. */
+  oldestPendingAgeMs: number;
+  /** Consumption-cursor lag behind the newest published row; 0 when current. */
+  cursorLagMs: number;
+  /** This replica's own cursor lag (durable consumption); 0 when current/unknown. */
+  replicaCursorLagMs: number;
 }
 
 export class OutboxEventBus implements EventBus {
   private readonly local = new EventEmitterEventBus();
   private relayTimer: ReturnType<typeof setInterval> | null = null;
+  private catchUpTimer: ReturnType<typeof setInterval> | null = null;
   private subscriber: RedisClient | null = null;
   private running = false;
+  private catchingUp = false;
+  /** True once `start()` ran (relay + remote subscription). */
+  private started = false;
+
+  /** Whether this bus has been started (relay + subscriptions active). */
+  isStarted(): boolean {
+    return this.started;
+  }
+  /** True once `startConsumption()` ran: per-replica catch-up is active. */
+  private consuming = false;
   private relayPasses = 0;
   private readonly origin = randomUUID().slice(0, 8);
   private options: OutboxOptions | null = null;
+  /** Stable replica identity backing this instance's durable cursor. */
+  private instanceId: string | null = null;
+  /** `replica:<instanceId>`; null until `configure` resolves the identity. */
+  private replicaConsumerName: string | null = null;
+  /**
+   * Recently delivered row ids, so the live routes (relay claim, Redis
+   * broadcast) and the per-replica catch-up do not deliver the same row twice
+   * to this process. Bounded — the durable dedupe guarantee is
+   * `processed_events`, this is only an in-process shortcut.
+   */
+  private readonly deliveredIds = new Set<string>();
 
   /**
    * Bind the outbox backing store. The kernel calls this from `initInfra()`
@@ -129,6 +253,13 @@ export class OutboxEventBus implements EventBus {
    */
   configure(options: OutboxOptions): void {
     this.options = options;
+    this.instanceId = options.instanceId ?? resolveInstanceId();
+    this.replicaConsumerName = replicaConsumer(this.instanceId);
+  }
+
+  /** This replica's durable consumption consumer (`replica:<id>`). */
+  get replicaConsumerId(): string | null {
+    return this.replicaConsumerName;
   }
 
   // --- EventBus surface (delegates to the local engine) ---------------------
@@ -147,7 +278,7 @@ export class OutboxEventBus implements EventBus {
     void this.enqueue(topic, body);
   }
 
-  subscribe<K extends string>(topic: K, handler: (payload: EventPayload<K>) => void): () => void {
+  subscribe<K extends string>(topic: K, handler: EventHandler<K>): () => void {
     return this.local.subscribe(topic, handler);
   }
 
@@ -164,25 +295,69 @@ export class OutboxEventBus implements EventBus {
   /**
    * Start the relay and, when Redis is configured, subscribe to the cross-node
    * channel. Called from `initInfra()` after the DB/Redis are ready.
+   *
+   * Relay ownership converges on the kernel BullMQ periodic job
+   * (`KERNEL_JOBS.outboxRelay`) so there is one scheduler, not two. The
+   * in-process timer is kept only as the dev/no-Redis fallback — without Redis
+   * there is no BullMQ scheduler to own it. The first relay pass always runs so
+   * a fresh process drains the backlog immediately.
    */
-  start(): void {
-    if (this.relayTimer || !this.options) return;
+  async start(): Promise<void> {
+    // `started` guards re-entry: with Redis the relay timer is not created
+    // (BullMQ owns the schedule), so `relayTimer` alone would let a second
+    // call re-subscribe the Pub/Sub channel.
+    if (this.started || !this.options) return;
+    this.started = true;
     const interval = this.options.intervalMs ?? 2000;
     // Retention is enforced roughly hourly (every N relay passes), not on every
     // pass, so the hot path stays a single indexed query.
     const passesPerCleanup = Math.max(1, Math.round((60 * 60 * 1000) / interval));
-    this.relayTimer = setInterval(() => {
-      void this.relay().catch((err) => {
-        this.options?.logger?.warn(`[outbox] relay pass failed: ${String(err)}`);
-      });
-      this.relayPasses += 1;
-      if (this.relayPasses % passesPerCleanup === 0) {
-        void this.cleanup().catch(() => undefined);
-      }
-    }, interval);
-    this.relayTimer.unref?.();
+    if (!this.options.redis) {
+      // No Redis: no BullMQ scheduler exists, so this timer owns the relay.
+      this.relayTimer = setInterval(() => {
+        void this.relay().catch((err) => {
+          this.options?.logger?.warn(`[outbox] relay pass failed: ${String(err)}`);
+        });
+        this.relayPasses += 1;
+        if (this.relayPasses % passesPerCleanup === 0) {
+          void this.cleanup().catch(() => undefined);
+        }
+      }, interval);
+      this.relayTimer.unref?.();
+    }
     void this.relay().catch(() => undefined);
-    void this.subscribeRemote();
+    // Await the subscription so `await start()` really means "ready to receive":
+    // callers (and the cross-node test) can then publish without racing the
+    // SUBSCRIBE handshake.
+    await this.subscribeRemote();
+  }
+
+  /**
+   * Start per-replica durable consumption (W3).
+   *
+   * Deliberately separate from {@link start}: `start` runs in `initInfra()`,
+   * *before* `buildApp()` / `app.ready()` / `syncEnabledPlugins()` — i.e. while
+   * this process has **zero local subscribers**. Starting catch-up there would
+   * advance the replica cursor past rows nobody listened for, so a restarting
+   * replica would permanently lose exactly the events W3 is meant to recover.
+   * The entrypoints therefore call this once plugins are activated.
+   *
+   * Idempotent. No-op (returns false) when the outbox is not bound or
+   * consumption is already running.
+   */
+  startConsumption(): boolean {
+    if (!this.options || this.consuming) return false;
+    this.consuming = true;
+    const catchUpInterval = this.options.catchUpIntervalMs ?? 2000;
+    this.catchUpTimer = setInterval(() => {
+      void this.catchUp().catch((err) => {
+        this.options?.logger?.warn(`[outbox] catch-up pass failed: ${String(err)}`);
+      });
+    }, catchUpInterval);
+    this.catchUpTimer.unref?.();
+    // Resume immediately so a restarting replica catches up without waiting.
+    void this.catchUp().catch(() => undefined);
+    return true;
   }
 
   async stop(): Promise<void> {
@@ -190,6 +365,12 @@ export class OutboxEventBus implements EventBus {
       clearInterval(this.relayTimer);
       this.relayTimer = null;
     }
+    if (this.catchUpTimer) {
+      clearInterval(this.catchUpTimer);
+      this.catchUpTimer = null;
+    }
+    this.consuming = false;
+    this.started = false;
     if (this.subscriber) {
       await this.subscriber.quit().catch(() => undefined);
       this.subscriber = null;
@@ -207,7 +388,13 @@ export class OutboxEventBus implements EventBus {
       const rows = await options.db.outboxEvent.findMany({
         where: {
           publishedAt: null,
-          OR: [{ lockedAt: null }, { lockedAt: { lt: leaseCutoff } }],
+          parkedAt: null,
+          // Backoff gate: only rows whose next attempt is due (`null` = due now,
+          // so fresh rows are never delayed by host/DB clock skew).
+          AND: [
+            { OR: [{ lockedAt: null }, { lockedAt: { lt: leaseCutoff } }] },
+            { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+          ],
         },
         orderBy: { createdAt: 'asc' },
         take: options.batchSize ?? 50,
@@ -220,6 +407,76 @@ export class OutboxEventBus implements EventBus {
     }
   }
 
+  /**
+   * Per-replica durable catch-up (W3): read every outbox row this replica has
+   * not consumed yet — from the replica's own cursor — deliver it locally, then
+   * advance the cursor. This is what makes an offline replica recover the
+   * events it missed (relay only ever reads `publishedAt: null` rows, so a row
+   * delivered while this replica was down is invisible to relay).
+   *
+   * Ordering is deliver-then-advance (at-least-once): a crash between the two
+   * re-delivers on the next pass, absorbed by consumer idempotency
+   * ({@link runIdempotent}). Rows already delivered live (relay claim or a
+   * Redis broadcast) are skipped via {@link markDelivered} so an online replica
+   * does not see the same event twice.
+   *
+   * Returns the number of rows delivered by this pass.
+   */
+  async catchUp(): Promise<number> {
+    const options = this.options;
+    const consumer = this.replicaConsumerName;
+    if (!options || !consumer || this.catchingUp) return 0;
+    this.catchingUp = true;
+    let delivered = 0;
+    try {
+      let cursor = await options.db.eventCursor.findUnique({ where: { consumer } });
+      if (!cursor) {
+        // First boot: start from "now" (minus an optional bounded window) so a
+        // fresh replica never replays the whole history.
+        cursor = await options.db.eventCursor.upsert({
+          where: { consumer },
+          create: {
+            consumer,
+            lastId: null,
+            lastAt: new Date(Date.now() - (options.replayWindowMs ?? 0)),
+          },
+          update: {},
+        });
+      }
+      for (;;) {
+        const after: Date = cursor.lastAt ?? new Date(0);
+        const lastId: string | null = cursor.lastId ?? null;
+        const rows = await options.db.outboxEvent.findMany({
+          where: {
+            OR: lastId
+              ? [{ createdAt: { gt: after } }, { createdAt: after, id: { gt: lastId } }]
+              : [{ createdAt: { gte: after } }],
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          take: CATCH_UP_BATCH,
+        });
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          if (!this.deliveredIds.has(row.id)) {
+            this.local.deliver(row.topic, decodeBody(row.payload), {
+              eventId: row.id,
+              topic: row.topic,
+              ...(row.createdAt ? { createdAt: row.createdAt } : {}),
+            });
+            this.markDelivered(row.id);
+            delivered += 1;
+          }
+          cursor =
+            (await this.advanceReplicaCursor(consumer, row, row.createdAt ?? after)) ?? cursor;
+        }
+        if (rows.length < CATCH_UP_BATCH) break;
+      }
+    } finally {
+      this.catchingUp = false;
+    }
+    return delivered;
+  }
+
   /** Report undelivered backlog (health/metrics). */
   async pendingCount(): Promise<number> {
     if (!this.options) return 0;
@@ -227,17 +484,160 @@ export class OutboxEventBus implements EventBus {
   }
 
   /**
-   * Trim delivered rows older than the retention window. The outbox grows one
-   * row per published event, so unbounded growth would bloat the table; rows are
-   * safe to delete once published. Unpublished rows are never touched.
+   * Point-in-time outbox health: retry backlog, parked (given-up) rows, the age
+   * of the oldest unpublished row, and how far the durable consumption cursor
+   * lags. Surfaced by the metrics collector so stalls are observable rather
+   * than silent (audit §4: attempts have no ceiling/visibility).
    */
-  async cleanup(retentionMs = 7 * 24 * 60 * 60 * 1000): Promise<number> {
+  async outboxStats(): Promise<OutboxStats> {
+    const options = this.options;
+    if (!options) {
+      return {
+        pending: 0,
+        parked: 0,
+        oldestPendingAgeMs: 0,
+        cursorLagMs: 0,
+        replicaCursorLagMs: 0,
+      };
+    }
+    const now = Date.now();
+    const [pending, parked, oldest] = await Promise.all([
+      options.db.outboxEvent.count({ where: { publishedAt: null, parkedAt: null } }),
+      options.db.outboxEvent.count({ where: { publishedAt: null, parkedAt: { not: null } } }),
+      options.db.outboxEvent.findFirst({
+        where: { publishedAt: null },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+    ]);
+    const oldestPendingAgeMs = oldest?.createdAt
+      ? Math.max(0, now - new Date(oldest.createdAt).getTime())
+      : 0;
+    const cursor = await options.db.eventCursor.findUnique({
+      where: { consumer: OUTBOX_CLUSTER_CONSUMER },
+    });
+    // Lag = time since the newest delivered row versus the cursor position. A
+    // cursor that never advanced while rows exist is "fully lagging".
+    let cursorLagMs = 0;
+    if (cursor?.lastAt) {
+      cursorLagMs = Math.max(0, now - new Date(cursor.lastAt).getTime());
+    } else if (pending > 0 || parked > 0) {
+      const newest = await options.db.outboxEvent.findFirst({
+        where: { publishedAt: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      cursorLagMs = newest?.createdAt ? Math.max(0, now - new Date(newest.createdAt).getTime()) : 0;
+    }
+    // Per-replica lag: how far this replica is behind what the cluster has
+    // already delivered (its own durable catch-up position vs. cluster cursor).
+    let replicaCursorLagMs = 0;
+    if (this.replicaConsumerName) {
+      const replica = await options.db.eventCursor.findUnique({
+        where: { consumer: this.replicaConsumerName },
+      });
+      const replicaAt = replica?.lastAt ? new Date(replica.lastAt).getTime() : 0;
+      const clusterAt = cursor?.lastAt ? new Date(cursor.lastAt).getTime() : 0;
+      replicaCursorLagMs = Math.max(0, clusterAt - replicaAt);
+    }
+    return { pending, parked, oldestPendingAgeMs, cursorLagMs, replicaCursorLagMs };
+  }
+
+  /**
+   * Register a consumer's idempotency guard. The handler runs at most once per
+   * `(consumer, eventId)` across the cluster: a duplicate delivery (at-least-once
+   * relay, replayed Redis broadcast) inserts a conflicting `processed_events`
+   * row and is skipped. This is the public "消费幂等原语" (audit §4 / D2a).
+   *
+   * Returns whether the handler actually ran (false = already processed).
+   */
+  async runIdempotent(
+    consumer: string,
+    eventId: string,
+    handler: () => void | Promise<void>,
+  ): Promise<boolean> {
+    if (!this.options) {
+      // No outbox bound (dev/early boot): no dedupe store. Run best-effort so
+      // behaviour matches the in-process fallback of `publish`.
+      await handler();
+      return true;
+    }
+    try {
+      await this.options.db.processedEvent.create({ data: { consumer, eventId } });
+    } catch {
+      // Unique violation (or transient DB error): treat as already processed so
+      // a duplicate never produces a second side effect.
+      return false;
+    }
+    await handler();
+    return true;
+  }
+
+  /**
+   * Persist one event row using an existing Prisma transaction client, so a
+   * business write and its event record commit together (W1). Returns the
+   * serialized body it wrote. Never called by plugins directly — the runtime's
+   * `ctx.tx` buffers and flushes through here.
+   */
+  async publishInTransaction(
+    trx: { outboxEvent: { create(args: unknown): Promise<unknown> } },
+    topic: string,
+    payload: unknown,
+    origin: string,
+  ): Promise<void> {
+    await trx.outboxEvent.create({
+      data: { topic, payload: { body: serializeOutboxBody(topic, payload, origin) }, origin },
+    });
+  }
+
+  /** Nudge the relay without waiting for the poll interval (post-commit). */
+  nudgeRelay(): void {
+    if (!this.options) return;
+    void this.relay().catch(() => undefined);
+    // Once durable consumption is running, also nudge this replica's catch-up:
+    // a transaction-committed event must reach local subscribers promptly even
+    // if the relay pass runs on another replica.
+    if (this.consuming) void this.catchUp().catch(() => undefined);
+  }
+
+  /**
+   * Trim delivered rows older than the retention window. Unpublished rows are
+   * never touched. When the durable consumption cursor lags beyond retention,
+   * warn loudly: the cluster has fallen so far behind that it could lose rows to
+   * cleanup (D5 alignment).
+   */
+  async cleanup(retentionMs = OUTBOX_RETENTION_MS): Promise<number> {
     if (!this.options) return 0;
+    await this.warnIfCursorLagsRetention(retentionMs);
     const cutoff = new Date(Date.now() - retentionMs);
     const { count } = await this.options.db.outboxEvent.deleteMany({
       where: { publishedAt: { not: null, lt: cutoff } },
     });
     return count;
+  }
+
+  private async warnIfCursorLagsRetention(retentionMs: number): Promise<void> {
+    const options = this.options;
+    if (!options) return;
+    const consumers = [
+      OUTBOX_CLUSTER_CONSUMER,
+      ...(this.replicaConsumerName ? [this.replicaConsumerName] : []),
+    ];
+    for (const consumer of consumers) {
+      try {
+        const cursor = await options.db.eventCursor.findUnique({ where: { consumer } });
+        if (!cursor?.lastAt) continue;
+        const lag = Date.now() - new Date(cursor.lastAt).getTime();
+        if (lag >= retentionMs) {
+          options.logger?.warn(
+            `[outbox] consumption cursor "${consumer}" lags retention by ${Math.round(lag / 1000)}s ` +
+              `(retention ${Math.round(retentionMs / 1000)}s); oldest rows may be trimmed before consumption`,
+          );
+        }
+      } catch {
+        // Observability must never break cleanup.
+      }
+    }
   }
 
   // --- Internals ------------------------------------------------------------
@@ -251,6 +651,7 @@ export class OutboxEventBus implements EventBus {
       // Low latency: nudge the relay now instead of waiting for the interval.
       // Bursts coalesce because `relay` is re-entrancy-guarded.
       void this.relay().catch(() => undefined);
+      if (this.consuming) void this.catchUp().catch(() => undefined);
     } catch (err) {
       // Never throw from publish: losing durability is preferable to 500ing a
       // business write, but it is surfaced loudly for alerting.
@@ -278,18 +679,105 @@ export class OutboxEventBus implements EventBus {
 
     const payload = decodeBody(row.payload);
     try {
-      // Re-deliver locally for crash recovery.
-      this.local.deliver(row.topic, payload);
-      await this.publishRemote(row.topic, payload);
+      // Re-deliver locally for crash recovery — unless this process already
+      // delivered the row (e.g. catch-up won the race). Catching up and relaying
+      // both see delivered rows; the first local delivery for this process wins.
+      if (!this.deliveredIds.has(row.id)) {
+        this.local.deliver(row.topic, payload, {
+          eventId: row.id,
+          topic: row.topic,
+          ...(row.createdAt ? { createdAt: row.createdAt } : {}),
+        });
+        this.markDelivered(row.id);
+      }
+      await this.publishRemote(row.topic, payload, row.id);
+      const publishedAt = new Date();
       await options.db.outboxEvent.updateMany({
         where: { id: row.id },
-        data: { publishedAt: new Date(), lockedAt: null, lockedBy: null, lastError: null },
+        data: {
+          publishedAt,
+          lockedAt: null,
+          lockedBy: null,
+          lastError: null,
+        },
       });
+      // Advance the cluster-wide consumption cursor (W3): the cluster has now
+      // consumed up to this row. Used for lag observability and retention alert.
+      // Per-replica progress lives on `replica:<id>` and is advanced by catch-up.
+      await this.advanceCursor(row, publishedAt);
     } catch (err) {
+      // Bounded retry with exponential backoff; on hitting the ceiling the row
+      // is parked (never dropped, never falsely marked published) so it stays
+      // visible to observability.
+      const attempts = Number(row.attempts ?? 0) + 1;
+      const maxAttempts = options.maxAttempts ?? OUTBOX_MAX_ATTEMPTS;
+      const parked = attempts >= maxAttempts;
+      const backoffMs = parked ? OUTBOX_MAX_BACKOFF_MS : Math.min(
+        OUTBOX_MAX_BACKOFF_MS,
+        1000 * 2 ** Math.min(attempts, 12),
+      );
       await options.db.outboxEvent.updateMany({
         where: { id: row.id },
-        data: { lockedAt: null, lockedBy: null, lastError: String(err).slice(0, 1000) },
+        data: {
+          lockedAt: null,
+          lockedBy: null,
+          lastError: String(err).slice(0, 1000),
+          nextAttemptAt: new Date(Date.now() + backoffMs),
+          ...(parked ? { parkedAt: new Date() } : {}),
+        },
       });
+      options.logger?.warn(
+        `[outbox] relay attempt ${attempts}/${maxAttempts} failed for "${row.topic}": ${String(err)}${
+          parked ? ' (parked)' : ''
+        }`,
+      );
+    }
+  }
+
+  private async advanceCursor(row: OutboxRow, at: Date): Promise<void> {
+    const options = this.options;
+    if (!options) return;
+    try {
+      await options.db.eventCursor.upsert({
+        where: { consumer: OUTBOX_CLUSTER_CONSUMER },
+        create: { consumer: OUTBOX_CLUSTER_CONSUMER, lastId: row.id, lastAt: at },
+        update: { lastId: row.id, lastAt: at },
+      });
+    } catch {
+      // Cursor is observability/bookkeeping; never fail delivery on it.
+    }
+  }
+
+  /**
+   * Persist this replica's consumption position. Called after delivery (never
+   * before) so a crash replays rather than skips. Returns the new cursor.
+   */
+  private async advanceReplicaCursor(
+    consumer: string,
+    row: OutboxRow,
+    at: Date,
+  ): Promise<{ lastId: string | null; lastAt: Date | null } | null> {
+    const options = this.options;
+    if (!options) return null;
+    try {
+      return await options.db.eventCursor.upsert({
+        where: { consumer },
+        create: { consumer, lastId: row.id, lastAt: at },
+        update: { lastId: row.id, lastAt: at },
+      });
+    } catch {
+      // Bookkeeping only; the next pass retries from the previous position.
+      return null;
+    }
+  }
+
+  /** Remember a delivered row id for this process (bounded FIFO). */
+  private markDelivered(id: string): void {
+    this.deliveredIds.add(id);
+    if (this.deliveredIds.size > 5000) {
+      // Drop the oldest insertion; the durable guard is `processed_events`.
+      const oldest = this.deliveredIds.values().next().value;
+      if (oldest !== undefined) this.deliveredIds.delete(oldest);
     }
   }
 
@@ -297,28 +785,47 @@ export class OutboxEventBus implements EventBus {
     const redis = this.options?.redis;
     if (!redis) return;
     this.subscriber = redis.duplicate();
-    await this.subscriber.subscribe(channelName());
+    // Attach the listener *before* SUBSCRIBE, otherwise a message that arrives
+    // between the two calls is dropped.
     this.subscriber.on('message', (_channel: string, message: string) => {
       const envelope = safeParse(message);
       if (!envelope) return;
       // Skip our own broadcasts: they were already delivered locally.
       if (envelope.origin === this.origin) return;
-      this.local.deliver(envelope.topic, envelope.payload);
+      // Another replica delivered this row. An online replica must deliver it
+      // locally too (that is the low-latency path), but record it as consumed so
+      // catch-up does not deliver the same row again after the fact.
+      if (envelope.eventId) {
+        if (this.deliveredIds.has(envelope.eventId)) return;
+        this.markDelivered(envelope.eventId);
+        this.local.deliver(envelope.topic, envelope.payload, {
+          eventId: envelope.eventId,
+          topic: envelope.topic,
+        });
+      } else {
+        // Older replicas broadcast without an id (rolling upgrade); deliver
+        // without metadata and let catch-up own the durable path.
+        this.local.deliver(envelope.topic, envelope.payload);
+      }
+      // A broadcast is also a nudge: catching up covers anything Pub/Sub lost.
+      // Only once durable consumption is active — before that the replica has no
+      // local subscribers and must not advance its cursor.
+      if (this.consuming) void this.catchUp().catch(() => undefined);
     });
+    await this.subscriber.subscribe(channelName());
   }
 
-  private async publishRemote(topic: string, payload: unknown): Promise<void> {
+  private async publishRemote(topic: string, payload: unknown, eventId?: string): Promise<void> {
     const redis = this.options?.redis;
     if (!redis) return;
-    await redis.publish(channelName(), JSON.stringify({ topic, payload, origin: this.origin }));
+    await redis.publish(
+      channelName(),
+      JSON.stringify({ topic, payload, origin: this.origin, ...(eventId ? { eventId } : {}) }),
+    );
   }
 
   private serialize(topic: string, payload: unknown): string {
-    try {
-      return JSON.stringify({ topic, payload, origin: this.origin });
-    } catch {
-      return JSON.stringify({ topic, origin: this.origin });
-    }
+    return serializeOutboxBody(topic, payload, this.origin);
   }
 }
 
@@ -327,9 +834,17 @@ interface PrismaClientLike {
   outboxEvent: {
     create(args: { data: Record<string, unknown> }): Promise<unknown>;
     findMany(args: unknown): Promise<OutboxRow[]>;
+    findFirst(args: unknown): Promise<{ createdAt: Date } | null>;
     updateMany(args: unknown): Promise<{ count: number }>;
     count(args: unknown): Promise<number>;
     deleteMany(args: unknown): Promise<{ count: number }>;
+  };
+  processedEvent: {
+    create(args: { data: { consumer: string; eventId: string } }): Promise<unknown>;
+  };
+  eventCursor: {
+    findUnique(args: unknown): Promise<{ lastId: string | null; lastAt: Date | null } | null>;
+    upsert(args: unknown): Promise<{ lastId: string | null; lastAt: Date | null }>;
   };
 }
 
@@ -337,6 +852,8 @@ interface OutboxRow {
   id: string;
   topic: string;
   payload: unknown;
+  attempts?: number;
+  createdAt?: Date;
 }
 
 /** Decode the stored envelope back into the original payload. */
@@ -351,14 +868,22 @@ function decodeBody(payload: unknown): unknown {
   return payload;
 }
 
-function safeParse(value: string): { topic: string; payload: unknown; origin?: string } | null {
+function safeParse(
+  value: string,
+): { topic: string; payload: unknown; origin?: string; eventId?: string } | null {
   try {
-    const parsed = JSON.parse(value) as { topic?: unknown; payload?: unknown; origin?: unknown };
+    const parsed = JSON.parse(value) as {
+      topic?: unknown;
+      payload?: unknown;
+      origin?: unknown;
+      eventId?: unknown;
+    };
     if (typeof parsed.topic !== 'string') return null;
     return {
       topic: parsed.topic,
       payload: parsed.payload,
       ...(typeof parsed.origin === 'string' ? { origin: parsed.origin } : {}),
+      ...(typeof parsed.eventId === 'string' ? { eventId: parsed.eventId } : {}),
     };
   } catch {
     return null;
@@ -394,6 +919,21 @@ export function getOutboxBus(): OutboxEventBus {
  */
 export function configureOutboxEventBus(options: OutboxOptions): OutboxEventBus {
   bus.configure(options);
-  bus.start();
+  // Fire and forget: `initInfra()` must not block on the Redis SUBSCRIBE
+  // handshake. `start()` is idempotent and safe to call again.
+  void bus.start().catch((err) => {
+    options.logger?.warn(`[outbox] start failed: ${String(err)}`);
+  });
   return bus;
+}
+
+/**
+ * Begin per-replica durable consumption. Call from an entrypoint **after**
+ * plugins are activated and their event subscribers registered
+ * (`syncEnabledPlugins()`), never from `initInfra()`: otherwise the boot-time
+ * catch-up would advance this replica's cursor while no local listener exists
+ * (audit 4B · B-1). Idempotent.
+ */
+export function startOutboxConsumption(): boolean {
+  return bus.startConsumption();
 }

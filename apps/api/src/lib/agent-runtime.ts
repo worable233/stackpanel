@@ -1,3 +1,4 @@
+import { agentCapabilityHash } from './agent-policy.ts';
 /**
  * Kernel Agent loop (PLAN-agent-in-kernel §3.2 / §3.4 / §4).
  *
@@ -79,6 +80,7 @@ export interface AgentToolExecution {
  * profile's wall-clock cap.
  */
 export interface AgentRuntimeDeps {
+  actionBudgetLimited?: boolean;
   prisma: PrismaClient;
   provider: LlmProvider;
   /** Caller-scoped capabilities (`mcpCapabilitiesFor`), never the global list. */
@@ -192,6 +194,9 @@ function toolCallIdOf(raw: unknown): string | null {
 export function toRunView(run: AgentRun): AgentRunView {
   return {
     id: run.id,
+    parentId: run.parentId ?? null,
+    rootId: run.rootId ?? null,
+    depth: run.depth ?? 0,
     actorId: run.actorId,
     tokenId: run.tokenId,
     objective: run.objective,
@@ -414,6 +419,7 @@ async function executeToolCall(
     ...apiCall,
     ...(idempotencyKey ? { idempotencyKey } : {}),
   };
+  if (capability.mutating && (ctx.deps.actionBudgetLimited || ctx.deps.budgetMinor > 0)) throw new StopRun('写工具的业务费用无法可靠估算，金额预算下拒绝执行；请使用可计价工具或由本人处理该业务');
   await checkpoint(ctx, 'tool', 1);
   const outcome = await ctx.deps.executor(callWithKey);
   // Preserve the result of an already-started action even when cancellation arrived.
@@ -510,6 +516,7 @@ async function handleToolCall(
         runId: ctx.deps.runId,
         stepId: toolCallStep.id,
         capabilityId: capability.id,
+        capabilityHash: agentCapabilityHash(capability),
         ...(approvalArgs !== undefined ? { args: approvalArgs } : {}),
         idempotencyKey,
         status: 'PENDING',
@@ -546,8 +553,10 @@ async function handleToolCall(
  * different payload.
  */
 async function hasRunScopedGrant(ctx: RunContext, capabilityId: string): Promise<boolean> {
+  const capability = ctx.capabilityById.get(capabilityId);
+  if (!capability) return false;
   const granted = await ctx.deps.prisma.agentApproval.findFirst({
-    where: { runId: ctx.deps.runId, capabilityId, status: 'APPROVED' },
+    where: { runId: ctx.deps.runId, capabilityId, capabilityHash: agentCapabilityHash(capability), status: 'APPROVED' },
     select: { id: true },
   });
   return granted !== null;
@@ -625,6 +634,9 @@ async function resolveOutstanding(ctx: RunContext): Promise<'waiting' | null> {
         }
       }
       if (approval?.status === 'PENDING') return 'waiting';
+    }
+    if (approval && approval.status === 'APPROVED' && approval.capabilityHash !== agentCapabilityHash(capability)) {
+      throw new StopRun('能力定义已变化，旧审批失效，请重新发起任务');
     }
     if (approval && approval.status === 'APPROVED') {
       // Reuse the key persisted at approval-creation time, verbatim (§4.2).

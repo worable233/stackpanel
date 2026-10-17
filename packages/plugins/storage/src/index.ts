@@ -5,19 +5,25 @@ import { loadConfig, saveConfig, SECRET_ACCESS_KEY_ID, SECRET_SECRET_ACCESS_KEY 
 import { bindContext, context, resetContext } from './context';
 import { configModel, type StoragePluginConfig } from './data';
 import { StoragePluginError } from './errors';
-import { createDynamicProvider } from './providers';
+import { createDynamicProvider, backendForConfig } from './providers';
 
 /** Permissions this plugin declares. */
 const PERMISSION = 'storage.admin';
 
 const saveSchema = z.object({
-  kind: z.enum(['env', 'local', 's3']),
+  kind: z.enum(['env', 'local', 's3', 'http']),
   localRoot: z.string().max(1024).optional(),
   s3Endpoint: z.string().max(2048).optional(),
   s3Region: z.string().max(64).optional(),
   s3Bucket: z.string().max(255).optional(),
   s3ForcePathStyle: z.boolean().optional(),
   publicBaseUrl: z.string().max(2048).optional(),
+  httpUploadUrl: z.string().max(2048).optional(),
+  httpPublicBaseUrl: z.string().max(2048).optional(),
+  httpMethod: z.enum(['PUT', 'POST']).optional(),
+  httpFieldName: z.string().max(128).optional(),
+  httpHeaders: z.string().max(4096).optional(),
+  httpDeleteUrlTemplate: z.string().max(2048).optional(),
   /** Write-only: never returned by the read endpoints. */
   accessKeyId: z.string().max(255).optional(),
   secretAccessKey: z.string().max(255).optional(),
@@ -47,6 +53,12 @@ function toView(config: StoragePluginConfig) {
     s3Bucket: config.s3Bucket,
     s3ForcePathStyle: config.s3ForcePathStyle,
     publicBaseUrl: config.publicBaseUrl,
+    httpUploadUrl: config.httpUploadUrl,
+    httpPublicBaseUrl: config.httpPublicBaseUrl,
+    httpMethod: config.httpMethod,
+    httpFieldName: config.httpFieldName,
+    httpHeaders: config.httpHeaders,
+    httpDeleteUrlTemplate: config.httpDeleteUrlTemplate,
     hasCredentials: config.hasCredentials,
     secretsAvailable: context().secrets.isAvailable(),
   };
@@ -88,8 +100,35 @@ const putAdminConfig = async (req: HttpRequest): Promise<unknown> => {
     s3Bucket: input.s3Bucket ?? current.s3Bucket,
     s3ForcePathStyle: input.s3ForcePathStyle ?? current.s3ForcePathStyle,
     publicBaseUrl: input.publicBaseUrl ?? current.publicBaseUrl,
+    httpUploadUrl: input.httpUploadUrl ?? current.httpUploadUrl,
+    httpPublicBaseUrl: input.httpPublicBaseUrl ?? current.httpPublicBaseUrl,
+    httpMethod: input.httpMethod ?? current.httpMethod,
+    httpFieldName: input.httpFieldName ?? current.httpFieldName,
+    httpHeaders: input.httpHeaders ?? current.httpHeaders,
+    httpDeleteUrlTemplate: input.httpDeleteUrlTemplate ?? current.httpDeleteUrlTemplate,
     hasCredentials,
   };
+
+  // Validate the candidate backend *before* persisting. `backendForConfig`
+  // constructs the provider, so a rejected endpoint (e.g. cloud metadata, SSRF)
+  // fails the save. Provisioning (bucket creation) is best-effort: an admin may
+  // legitimately configure a backend that is not reachable yet, so a transient
+  // connectivity error must not block saving — first write retries.
+  let candidate;
+  try {
+    candidate = await backendForConfig(next);
+  } catch (error) {
+    throw new StoragePluginError(
+      422,
+      `存储后端不可用：${String((error as Error)?.message ?? error)}`,
+    );
+  }
+  try {
+    await candidate?.ensureReady?.();
+  } catch (error) {
+    context().logger.warn(`storage: 后端预初始化失败（首写时重试）：${String(error)}`);
+  }
+
   return { config: toView(await saveConfig(next)) };
 };
 
@@ -109,7 +148,7 @@ export const storagePlugin = definePlugin({
     id: 'storage',
     name: '存储插件',
     version: '0.1.0',
-    description: '把对象存储交给本地盘或 S3 兼容后端（MinIO/R2/OSS/AWS）。',
+    description: '把对象存储交给本地盘、S3 兼容后端（MinIO/R2/OSS/AWS）或自定义 HTTP 图床。',
     permissions: [
       {
         key: PERMISSION,

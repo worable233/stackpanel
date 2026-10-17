@@ -4,6 +4,7 @@ import { useEffect, useRef, type ComponentPropsWithoutRef } from 'react';
 import { useInView, useMotionValue, useSpring } from 'motion/react';
 
 import { cn } from '@/lib/utils';
+import { useLocale } from '@/i18n/provider';
 
 interface NumberTickerProps extends ComponentPropsWithoutRef<'span'> {
   value: number;
@@ -22,6 +23,7 @@ export function NumberTicker({
   decimalPlaces = 0,
   ...props
 }: NumberTickerProps) {
+  const locale = useLocale();
   const ref = useRef<HTMLSpanElement>(null);
   const motionValue = useMotionValue(direction === 'down' ? value : startValue);
   const springValue = useSpring(motionValue, {
@@ -50,13 +52,13 @@ export function NumberTicker({
     () =>
       springValue.on('change', (latest) => {
         if (ref.current) {
-          ref.current.textContent = Intl.NumberFormat('en-US', {
+          ref.current.textContent = Intl.NumberFormat(locale, {
             minimumFractionDigits: decimalPlaces,
             maximumFractionDigits: decimalPlaces,
           }).format(Number(latest.toFixed(decimalPlaces)));
         }
       }),
-    [springValue, decimalPlaces],
+    [springValue, decimalPlaces, locale],
   );
 
   return (

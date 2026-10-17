@@ -88,6 +88,12 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # ADR-0016 / PLAN-i18n-completion 阶段 0: refuse new unregistered UI
+      # literals. The ratchet baseline may only shrink as copy migrates into the
+      # message catalogs; a fresh literal fails the gate with file + line.
+      - name: i18n literal gate
+        run: pnpm i18n:check
+
       # G2: refuse OpenAPI changes that break the committed contract snapshot
       # (removed routes/methods, newly required auth/params/body, dropped
       # response codes). Pure function of the capability registry — no DB.

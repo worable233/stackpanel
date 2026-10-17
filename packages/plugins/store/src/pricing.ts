@@ -3,9 +3,11 @@ import type {
   CheckoutPriceContext,
   CheckoutPriceResult,
   CheckoutSelection,
+  FxQuote,
   HttpRequest,
 } from '@stackpanel/sdk';
 import { StoreError } from './errors';
+import { context } from './context';
 import { getProduct } from './repository';
 import { providerForProduct } from './fulfillment';
 import { parseCheckoutSelection } from './utils';
@@ -82,12 +84,24 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
   const config = parseCheckoutSelection(body['config']);
   const quantity = typeof body['quantity'] === 'number' ? body['quantity'] : 1;
   const { unit, result } = await resolveCheckoutPrice(product, quantity, config);
+  const total = unit * quantity;
+  // Settlement preview (plan §5): show the original amount *and* what the buyer
+  // will actually be charged. A missing rate must not break the preview — the
+  // authoritative gate is order creation, which fails closed.
+  const settlement = await previewSettlement(product.currency, total);
   return {
     productId: id,
     price: unit,
     currency: product.currency,
     quantity,
-    total: unit * quantity,
+    total,
+    ...(settlement
+      ? {
+          settlementCurrency: settlement.toCurrency,
+          settlementTotal: settlement.settlementAmount,
+          fxRate: settlement.rate,
+        }
+      : {}),
     ...(result
       ? {
           renewPrice: result.renewPrice ?? unit,
@@ -96,4 +110,16 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
         }
       : {}),
   };
+}
+
+/** Best-effort settlement quote for the public price preview. */
+async function previewSettlement(
+  currency: string,
+  totalMinor: number,
+): Promise<FxQuote | null> {
+  try {
+    return await context().fx.quoteToSettlement(currency, totalMinor);
+  } catch {
+    return null;
+  }
 }

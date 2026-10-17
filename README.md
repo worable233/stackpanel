@@ -28,20 +28,34 @@ bash scripts/deploy.sh
 # bash scripts/deploy.sh --domain sp.example.com --email you@example.com
 
 # 集群档（外部 PostgreSQL / Redis / 对象存储）：
+# 先备好外部依赖并写入 docker/.env 的 DATABASE_URL / REDIS_URL / STORAGE_S3_*，
+# 再执行（`--image` 会一并写入 web/caddy 镜像变量，避免集群档缺变量报错）：
 # bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<digest>
 ```
 
-首次构建需要拉取基础镜像与依赖，耗时较长。完成后访问 `http://localhost:3000`。初始管理员密码默认随机生成并打印在 `api` 容器日志中；如需固定，先在 `docker/.env` 设置 `STACKPANEL_BOOTSTRAP_EMAIL` 与 `STACKPANEL_BOOTSTRAP_PASSWORD`。
+> 集群档不内置 PostgreSQL / Redis / MinIO，且 `api`/`web` 不发布宿主机端口（仅 Caddy 暴露 80/443）；
+> 请先准备外部依赖并配置 `docker/.env`，详见 [`docker/README.md`](./docker/README.md)。
 
-不使用 Docker（本机已有 PostgreSQL 与 Redis，PM2 模式）：
+首次构建需要拉取基础镜像与依赖，耗时较长。完成后访问 `http://localhost:3000`，按引导在 `/setup` 创建第一个管理员（自行设置邮箱与密码，密码不会写入日志）。若部署摘要打印了 `初始化令牌`，请在向导中填入。
+
+不使用 Docker（本机已有 PostgreSQL + **Redis** + **S3 兼容对象存储**，PM2 模式）：
 
 ```bash
-pnpm install
-pnpm build
-cp .env.example .env && cp apps/api/.env.example apps/api/.env && cp apps/web/.env.example apps/web/.env
-pnpm --filter @stackpanel/db migrate:deploy
-pnpm pm2:start
+# 推荐：安装脚本会生成强随机密钥、写入 Redis/对象存储配置、构建并用 PM2 启动。
+# 未提供 REDIS_URL / STORAGE_S3_* 时会在构建前直接报错（生产环境强制要求，见 ADR-0017）。
+REDIS_URL=redis://127.0.0.1:6379 \
+STORAGE_DRIVER=s3 \
+STORAGE_S3_ENDPOINT=http://127.0.0.1:9000 \
+STORAGE_S3_BUCKET=stackpanel \
+STORAGE_S3_ACCESS_KEY_ID=<key> \
+STORAGE_S3_SECRET_ACCESS_KEY=<secret> \
+  bash scripts/install.sh
 ```
+
+安装脚本会在构建前后打印一次性 `初始化令牌`（也存于 `apps/api/.env` 的 `STACKPANEL_SETUP_TOKEN`），首次打开 `http://127.0.0.1:3000` 时在 `/setup` 向导里填入。
+
+> 生产环境不提供 Redis 或 S3 时无法启动（多副本会话/状态需 Redis，对象存储不能落本地盘）。
+> 若不想自备这些依赖，请改用上面内置 PG/Redis/MinIO 的一键 Docker 部署。
 
 开发模式按应用单独启动，均带热重载：
 
@@ -49,6 +63,32 @@ pnpm pm2:start
 pnpm --filter @stackpanel/api dev   # Fastify
 pnpm --filter @stackpanel/web dev   # Next.js
 ```
+
+## 备份与恢复
+
+```bash
+bash scripts/backup.sh    # 归档到 backups/<时间戳>/
+bash scripts/restore.sh backups/<时间戳>
+```
+
+脚本会自动识别部署形态：
+
+| 部署 | 数据库 | 媒体对象 | 运行数据（插件/主题/前端信号） |
+| --- | --- | --- | --- |
+| Docker Compose（默认档） | 在 `postgres` 容器内 `pg_dump` | MinIO 桶内全部对象 | `data.tar`，从 `api` 容器打包 `/app/data` |
+| Docker Compose（集群档） | 容器内执行 | 外部 S3 桶内全部对象 | 同上 |
+| PM2 / 手动（`apps/api/.env`） | 宿主机直连 `DATABASE_URL` | S3 桶内对象 | `data.tar`；`local` 驱动则统一进 `media.tar` |
+
+在 S3 部署下 `media.tar` 是桶内对象（附件、品牌图、历史导出归档），`data.tar` 是数据卷里的插件/主题包；两者都会由 `restore.sh` 写回，缺任何一个都会恢复出「数据库有记录、文件不存在」的实例。需要强制指定形态时用 `SP_BACKUP_MODE=host|compose`。
+
+> 备份目录里的 `manifest.json` / `checksums.txt` 会被 `restore.sh` 校验，损坏即拒绝恢复。老的备份目录（没有 `data.tar`）仍可恢复，只是不含运行数据卷。
+
+### 换域名
+
+站点地址全部走相对路径（`/media/...`、`/api/plugins/...`），更换域名不会让已上传的图片失效。需要同步修改的只有对外绝对地址：
+
+1. `docker/.env` 的 `STACKPANEL_PUBLIC_URL` / `STACKPANEL_API_PUBLIC_URL`（重新执行 `bash scripts/deploy.sh --domain 新域名` 会自动改写）；
+2. 后台「平台设置」里的 `PlatformInfo.url`——它优先于 `SITE_URL`，用于 canonical / sitemap / 支付回调等绝对 URL，改了域名记得一起改。
 
 ## 文档
 

@@ -41,6 +41,21 @@ async function readCredentials(): Promise<S3Credentials | null> {
   }
 }
 
+/** Parse the newline-separated `Name: value` header block into a record. */
+function parseHeaders(raw: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const index = trimmed.indexOf(':');
+    if (index <= 0) continue;
+    const name = trimmed.slice(0, index).trim();
+    const value = trimmed.slice(index + 1).trim();
+    if (name) out[name] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Translate the stored config into a generic backend spec. */
 function toSpec(
   config: StoragePluginConfig,
@@ -63,25 +78,57 @@ function toSpec(
       ...(config.publicBaseUrl ? { publicBaseUrl: config.publicBaseUrl } : {}),
     };
   }
+  if (config.kind === 'http') {
+    if (!config.httpUploadUrl || !config.httpPublicBaseUrl) return undefined;
+    const headers = parseHeaders(config.httpHeaders);
+    return {
+      driver: 'http',
+      uploadUrl: config.httpUploadUrl,
+      publicBaseUrl: config.httpPublicBaseUrl,
+      method: config.httpMethod,
+      fieldName: config.httpFieldName || 'file',
+      ...(headers ? { headers } : {}),
+      ...(config.httpDeleteUrlTemplate ? { deleteUrlTemplate: config.httpDeleteUrlTemplate } : {}),
+    };
+  }
   return undefined;
+}
+
+/**
+ * Build the kernel backend for an explicit config (not necessarily persisted).
+ *
+ * Used both by the registered provider (reads current config on every call) and
+ * by the admin save route (to provision/validate the config the admin is about
+ * to persist). Returns `undefined` for `env` or an incomplete S3 config, which
+ * means "stand aside and let the kernel use its env driver".
+ */
+export async function backendForConfig(
+  config: StoragePluginConfig,
+): Promise<StorageProvider | undefined> {
+  if (config.kind === 'env') return undefined;
+  const credentials = config.kind === 's3' ? await readCredentials() : null;
+  const spec = toSpec(config, credentials);
+  if (!spec) return undefined;
+  // Rebuild per call so admin changes take effect immediately. Cheap: the
+  // kernel backend factory only constructs a client.
+  return context().storage.backend(spec);
 }
 
 /**
  * The provider registered on the kernel extension point. `byteMode` is nominal:
  * the kernel infers the actual channel from what `beginPut` returns, so a runtime
  * switch between local and S3 works without re-resolving the extension point.
+ *
+ * A `proxy` write spans several calls (`beginPut` → `writeChunk`* → `commitPut`),
+ * so the backend instance chosen by `beginPut` is kept keyed by object key until
+ * the write commits or aborts — otherwise each call would rebuild a backend and
+ * lose the partial upload.
  */
 export function createDynamicProvider(): StorageProvider {
-  const backend = async (): Promise<StorageProvider | undefined> => {
-    const config = await loadConfig();
-    if (config.kind === 'env') return undefined;
-    const credentials = config.kind === 's3' ? await readCredentials() : null;
-    const spec = toSpec(config, credentials);
-    if (!spec) return undefined;
-    // Rebuild per call so admin changes take effect immediately. Cheap: the
-    // kernel backend factory only constructs a client.
-    return context().storage.backend(spec);
-  };
+  const backend = (): Promise<StorageProvider | undefined> =>
+    loadConfig().then((config) => backendForConfig(config));
+  /** Backend instance currently handling a `proxy` write, keyed by object key. */
+  const writing = new Map<string, StorageProvider>();
 
   return {
     id: 'storage',
@@ -93,13 +140,39 @@ export function createDynamicProvider(): StorageProvider {
       // Configured as 'env' (or S3 without credentials yet): stand aside and
       // let the kernel use its env-configured driver.
       if (!active) return {};
-      return active.beginPut(input);
+      const target = await active.beginPut(input);
+      if (target.proxy) writing.set(input.key, active);
+      return target;
+    },
+
+    async writeChunk(input) {
+      const active = writing.get(input.key);
+      if (!active) throw new Error('存储写入会话不存在');
+      await active.writeChunk?.(input);
+    },
+
+    async commitPut({ key }) {
+      const active = writing.get(key);
+      writing.delete(key);
+      await active?.commitPut?.({ key });
+    },
+
+    async abortPut({ key }) {
+      const active = writing.get(key);
+      writing.delete(key);
+      await active?.abortPut?.({ key });
     },
 
     async prepareGet(key, expiresInSeconds) {
       const active = await backend();
       if (!active) throw new Error('存储后端未配置');
       return active.prepareGet(key, expiresInSeconds);
+    },
+
+    async readChunk(input) {
+      const active = await backend();
+      if (!active?.readChunk) throw new Error('存储后端未配置');
+      return active.readChunk(input);
     },
 
     async delete(key) {

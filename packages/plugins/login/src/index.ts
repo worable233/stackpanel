@@ -1,6 +1,28 @@
-import { definePlugin, isPluginError, PluginError } from '@stackpanel/sdk';
-import type { AuthUser, HttpReply, HttpRequest, PluginContext } from '@stackpanel/sdk';
+import { createHash } from 'node:crypto';
+import { definePlugin, EXTENSION_POINTS, isPluginError, PluginError } from '@stackpanel/sdk';
+import type {
+  AuthUser,
+  HttpReply,
+  HttpRequest,
+  NotificationTypeDefinition,
+  PluginContext,
+} from '@stackpanel/sdk';
 import { z } from 'zod';
+
+/**
+ * 本插件发出的通知类型（`notification.type` 扩展点，供内核偏好目录展示）。
+ * 安全提醒属重要但不涉密，用户可关闭（关闭后仅不再收到提醒，不影响登录本身）。
+ */
+export const LOGIN_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
+  {
+    type: 'security.login',
+    category: 'security',
+    label: '管理员登录提醒',
+    audience: 'admin',
+    order: 10,
+  },
+  { type: 'security.new-device', category: 'security', label: '新设备登录提醒', order: 20 },
+];
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -92,6 +114,69 @@ function clientIp(req: HttpRequest): string | undefined {
   return req.ip ?? undefined;
 }
 
+/** One-way fingerprint of the source, so a notice never persists a raw IP/UA. */
+function sourceFingerprint(ip: string | undefined, userAgent: string | undefined): string {
+  return createHash('sha256')
+    .update(`${ip ?? 'unknown'}|${userAgent ?? 'unknown'}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/**
+ * Security notice on a successful login (audit §5).
+ *
+ * Two signals, both deduped so a repeated visit from the same source stays
+ * quiet rather than spamming the inbox:
+ *   - the account holds an admin permission → always worth a "new admin
+ *     sign-in" record;
+ *   - a source (IP + User-Agent) not seen for this account in the observation
+ *     window → a "new device / abnormal source" notice.
+ *
+ * Known sources are tracked in kernel shared state (Redis-ready) keyed by a
+ * one-way fingerprint, so no raw IP is stored and multi-replica installs share
+ * one view. Notification failure never blocks the login.
+ */
+async function notifySuccessfulLogin(input: {
+  user: AuthUser;
+  ip: string | undefined;
+  userAgent: string | undefined;
+}): Promise<void> {
+  try {
+    const { user } = input;
+    const fingerprint = sourceFingerprint(input.ip, input.userAgent);
+    const knownKey = `login:known-source:${user.id}:${fingerprint}`;
+    const isKnownSource = (await auth().state.get(knownKey)) !== null;
+    // Remember this source for 90 days; this is what makes a *repeat* login quiet.
+    await auth().state.set(knownKey, '1', 90 * 24 * 60 * 60 * 1000);
+    const isAdmin = await auth().auth.hasPermission(user.id, 'platform.admin');
+    const source = input.ip ?? '未知来源';
+
+    if (isAdmin) {
+      await auth().notifications.upsert({
+        userId: user.id,
+        dedupeKey: `login:admin:${fingerprint}`,
+        type: 'security.login',
+        title: '管理员登录',
+        body: `你的管理员账号刚刚从 ${source} 登录。如非本人操作，请立即修改密码并撤销会话。`,
+        link: '/account',
+      });
+    }
+    if (!isKnownSource && !isAdmin) {
+      await auth().notifications.upsert({
+        userId: user.id,
+        dedupeKey: `login:new-source:${fingerprint}`,
+        type: 'security.new-device',
+        title: '新设备登录',
+        body: `你的账号刚刚从新来源 ${source} 登录。如非本人操作，请立即修改密码并撤销会话。`,
+        link: '/account',
+      });
+    }
+  } catch (error) {
+    // A security notice is advisory: never fail the login over it.
+    auth().logger.warn(`login: security notice failed: ${String(error)}`);
+  }
+}
+
 const login = handle(async (req: HttpRequest, reply: HttpReply) => {
   if (!(await allow('ip', req.ip ?? 'unknown', rateLimits().login))) {
     throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
@@ -120,6 +205,11 @@ const login = handle(async (req: HttpRequest, reply: HttpReply) => {
     resourceId: user.id,
     meta: { provider: 'password' },
     ...(req.ip ? { ip: req.ip } : {}),
+  });
+  await notifySuccessfulLogin({
+    user,
+    ip: req.ip ?? undefined,
+    userAgent: req.headers['user-agent'] ? String(req.headers['user-agent']) : undefined,
   });
   return { token, user };
 });
@@ -215,6 +305,9 @@ const register = handle(async (req: HttpRequest, reply: HttpReply) => {
     user = await auth().auth.registerUser({ email, password, emailVerified: requireVerification });
   } catch (error) {
     const message = (error as Error).message ?? '';
+    if ((error as { code?: string }).code === 'setup.required') {
+      throw new PluginError('auth.setup_required', 409, message);
+    }
     if (message.includes('邮箱已被使用')) {
       throw new PluginError('auth.email_taken', 409, message);
     }
@@ -294,6 +387,10 @@ export const loginPlugin = definePlugin({
   ],
   onActivate: (pluginCtx) => {
     ctx = pluginCtx;
+    // 声明本插件发出的通知类型，供内核偏好目录展示（未声明不可关闭）。
+    for (const def of LOGIN_NOTIFICATION_TYPES) {
+      pluginCtx.registerExtension(EXTENSION_POINTS.notificationType, def);
+    }
     pluginCtx.logger.info('login: activated');
   },
   onDeactivate: (pluginCtx) => {

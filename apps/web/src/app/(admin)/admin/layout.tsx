@@ -16,6 +16,22 @@ const FALLBACK_NAV: BackendNavigationItem[] = [
   { label: 'nav.themes', href: '/admin/themes' },
 ];
 /**
+ * Kernel hrefs mapped to a stable group id. The shell resolves the display label
+ * from the message catalog (`adminShell.group*`), so navigation never carries
+ * human copy across the API boundary (ADR-0016 §2/§3).
+ */
+const KERNEL_GROUPS: Record<string, string> = {
+  '/admin/users': 'users',
+  '/admin/rbac': 'users',
+  '/admin/settings': 'site',
+  '/admin/themes': 'site',
+  '/admin/notifications': 'site',
+  '/admin/plugins': 'system',
+  '/admin/market': 'system',
+  '/admin/audit': 'system',
+  '/admin/developer': 'developer',
+};
+/**
  * Admin shell with a two-row top navigation: toolbar + horizontal menu.
  * Navigation aggregates kernel defaults (`GET /nav/admin`) and active plugin contributions.
  */
@@ -45,19 +61,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // Fallback shell if the API is unreachable.
   }
 
-  const kernelGroups: Record<string, string> = {
-    '/admin/users': '用户与权限',
-    '/admin/rbac': '用户与权限',
-    '/admin/settings': '站点',
-    '/admin/themes': '站点',
-    '/admin/notifications': '站点',
-    '/admin/plugins': '系统',
-    '/admin/market': '系统',
-    '/admin/audit': '系统',
-    '/admin/developer': '开发者',
-  };
   const navigationItems: BackendNavigationItem[] = [
-    ...nav.map((item) => ({ ...item, group: kernelGroups[item.href] })),
+    ...nav.map((item) => ({ ...item, group: KERNEL_GROUPS[item.href] })),
     ...pluginMenus.map((item) => ({ ...item, group: item.group ?? item.pluginId })),
   ];
 

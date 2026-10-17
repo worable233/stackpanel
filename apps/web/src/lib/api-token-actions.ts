@@ -5,7 +5,7 @@ import { translate } from '@/i18n/core';
 import { getAuthedApiClient } from './api';
 import { apiErrorMessage } from './api-errors';
 
-/** Server actions for the account-center API token page (session stays server-side). */
+/** Server actions for the account-center API token settings (session stays server-side). */
 
 export interface ApiTokenActionResult {
   error?: string;
@@ -27,10 +27,12 @@ export async function createApiTokenAction(input: {
   try {
     const api = await getAuthedApiClient();
     const result = await api.createApiToken({ name: input.name.trim(), scopes: input.scopes });
-    revalidatePath('/account/api-keys');
+    revalidatePath('/account/settings');
     return { ok: true, token: result.token, id: result.apiToken.id };
   } catch (error) {
-    return { error: await apiErrorMessage(error, translate(locale, 'action.apiTokenCreateFailed')) };
+    return {
+      error: await apiErrorMessage(error, translate(locale, 'action.apiTokenCreateFailed')),
+    };
   }
 }
 
@@ -40,10 +42,12 @@ export async function revokeApiTokenAction(id: string): Promise<ApiTokenActionRe
   try {
     const api = await getAuthedApiClient();
     await api.revokeApiToken(id);
-    revalidatePath('/account/api-keys');
+    revalidatePath('/account/settings');
     return { ok: true };
   } catch (error) {
-    return { error: await apiErrorMessage(error, translate(locale, 'action.apiTokenRevokeFailed')) };
+    return {
+      error: await apiErrorMessage(error, translate(locale, 'action.apiTokenRevokeFailed')),
+    };
   }
 }
 
@@ -56,9 +60,11 @@ export async function updateApiTokenAction(
   try {
     const api = await getAuthedApiClient();
     await api.updateApiToken(id, input);
-    revalidatePath('/account/api-keys');
+    revalidatePath('/account/settings');
     return { ok: true };
   } catch (error) {
-    return { error: await apiErrorMessage(error, translate(locale, 'action.apiTokenUpdateFailed')) };
+    return {
+      error: await apiErrorMessage(error, translate(locale, 'action.apiTokenUpdateFailed')),
+    };
   }
 }

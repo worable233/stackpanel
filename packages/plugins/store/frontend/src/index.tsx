@@ -1,4 +1,9 @@
 import { SectionTitle } from '@stackpanel/ui';
+import {
+  formatMinorCurrency,
+  minorUnitFor,
+  minorUnitsToPlainString,
+} from '@stackpanel/sdk';
 import type {
   AccountPageComponentProps,
   AdminWidgetProps,
@@ -77,6 +82,9 @@ interface PricePreview {
   currency: string;
   quantity: number;
   total: number;
+  settlementCurrency?: string;
+  settlementTotal?: number;
+  fxRate?: number | null;
   renewPrice?: number;
   breakdown?: Array<{ label: string; value: string; price?: number }>;
   summary?: string;
@@ -94,6 +102,9 @@ interface StoreOrder {
   id: string;
   total: number;
   currency: string;
+  /** Frozen settlement snapshot (plan §5.2). */
+  settlementCurrency?: string;
+  settlementTotal?: number;
   status: string;
   payment?: StorePayment | null;
 }
@@ -169,6 +180,31 @@ const storeProductSchema = z.object({
   providerProductId: z.string().nullable(),
 });
 
+/**
+ * 公开展厅 / 账户商城商品 DTO（`PublicProduct` / `PurchasableProduct`）。
+ * 公开接口不下发成本价、上游 provider 标识与内部 metadata（PLAN §4.3），
+ * 因此这里必须是独立的最小 schema，不能复用管理端 `storeProductSchema`。
+ */
+const storePublicProductSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  price: z.number(),
+  currency: z.string(),
+  stock: z.number(),
+  status: z.string(),
+  metadata: z.record(z.string(), z.unknown()).nullable(),
+  originalPrice: z.number().nullable(),
+  discount: z.number().nullable(),
+  fulfillmentType: z.string(),
+  categoryId: z.string().nullable(),
+});
+
+const storePurchasableProductSchema = storePublicProductSchema.extend({
+  purchasable: z.boolean(),
+  unavailableReason: z.enum(['inactive', 'out_of_stock', 'forbidden']).nullable(),
+});
+
 const cartSchema = z.object({
   items: z.array(
     z.object({
@@ -198,6 +234,10 @@ const pricePreviewSchema = z.object({
   currency: z.string(),
   quantity: z.number(),
   total: z.number(),
+  // Settlement preview: absent when no usable FX rate is configured.
+  settlementCurrency: z.string().optional(),
+  settlementTotal: z.number().optional(),
+  fxRate: z.number().nullable().optional(),
   renewPrice: z.number().optional(),
   breakdown: z
     .array(z.object({ label: z.string(), value: z.string(), price: z.number().optional() }))
@@ -209,6 +249,8 @@ const storeOrderSchema = z.object({
   id: z.string(),
   total: z.number(),
   currency: z.string(),
+  settlementCurrency: z.string().optional(),
+  settlementTotal: z.number().optional(),
   status: z.string(),
   payment: z
     .object({
@@ -239,8 +281,21 @@ const paymentMethodsSchema = z.object({
   ),
 });
 
+const currencyDefinitionSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  symbol: z.string(),
+  minorUnit: z.number(),
+});
+const currencyDefinitionListSchema = z.object({ currencies: z.array(currencyDefinitionSchema) });
+
 const productListSchema = z.object({ products: z.array(storeProductSchema) });
-const productSchema = z.object({ product: storeProductSchema });
+const publicProductListSchema = z.object({ products: z.array(storePublicProductSchema) });
+const publicProductSchema = z.object({ product: storePublicProductSchema });
+const purchasableProductListSchema = z.object({
+  products: z.array(storePurchasableProductSchema),
+});
+const purchasableProductSchema = z.object({ product: storePurchasableProductSchema });
 const orderListSchema = z.object({ orders: z.array(storeOrderSchema) });
 
 const changeQuoteSchema = z.object({
@@ -440,8 +495,13 @@ function Icon({ name }: { name: string }): ReactElement {
   );
 }
 
+/** Format minor units via the kernel catalog (never `/100` or a CNY branch). */
 function money(amount: number, currency: string): string {
-  return `${(amount / 100).toFixed(2)} ${currency}`;
+  try {
+    return formatMinorCurrency(amount, currency, 'zh-CN');
+  } catch {
+    return `${amount} ${currency}`;
+  }
 }
 
 const FULFILLMENT_LABELS: Record<string, string> = {
@@ -460,12 +520,20 @@ function fulfillmentLabel(type: string): string {
 }
 
 function PriceTag({ amount, currency }: { amount: number; currency: string }): ReactElement {
-  const [int, dec] = (amount / 100).toFixed(2).split('.');
+  const minorUnit = (() => {
+    try {
+      return minorUnitFor(currency);
+    } catch {
+      return 2;
+    }
+  })();
+  const plain = minorUnitsToPlainString(amount, currency);
+  const [int, dec] = minorUnit > 0 ? plain.split('.') : [plain, ''];
   return (
     <span className="font-mono font-bold tracking-tight tabular-nums">
       <span className="align-super text-[0.65em] font-medium opacity-80">{currency} </span>
       <span>{int}</span>
-      <span className="text-[0.75em] opacity-80">.{dec}</span>
+      {minorUnit > 0 ? <span className="text-[0.75em] opacity-80">.{dec}</span> : null}
     </span>
   );
 }
@@ -1046,6 +1114,17 @@ function CheckoutPricePreview({
         <span className="text-muted-foreground">配置价格</span>
         <span className="text-xl font-semibold">{money(preview.total, currency)}</span>
       </div>
+      {preview.settlementCurrency &&
+      preview.settlementTotal !== undefined &&
+      preview.settlementCurrency !== currency ? (
+        <div className="mt-2 flex items-baseline justify-between gap-3 border-t pt-2 text-xs text-muted-foreground">
+          <span>结算金额（{preview.settlementCurrency}）</span>
+          <span className="tabular-nums">
+            {money(preview.settlementTotal, preview.settlementCurrency)}
+            {preview.fxRate ? ` · 汇率 ${(preview.fxRate / 1_000_000).toFixed(6)}` : ''}
+          </span>
+        </div>
+      ) : null}
       {preview.summary ? (
         <p className="mt-1 text-xs text-muted-foreground">{preview.summary}</p>
       ) : null}
@@ -1357,7 +1436,7 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
             <div className="flex items-baseline justify-between">
               <span className="text-sm text-muted-foreground">合计</span>
               <div className="text-2xl">
-                <PriceTag amount={cart?.total ?? 0} currency="CNY" />
+                <PriceTag amount={cart?.total ?? 0} currency={cart?.items[0]?.product.currency ?? 'CNY'} />
               </div>
             </div>
             <div className="mt-6 space-y-3 border-t pt-5">
@@ -1499,7 +1578,16 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
               className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_8rem_8rem_auto] sm:items-center sm:px-6"
             >
               <span className="truncate font-mono text-xs text-muted-foreground">{order.id}</span>
-              <span className="font-mono font-semibold">{money(order.total, order.currency)}</span>
+              <span className="flex flex-col gap-0.5">
+                <span className="font-mono font-semibold">{money(order.total, order.currency)}</span>
+                {order.settlementCurrency &&
+                order.settlementTotal !== undefined &&
+                order.settlementCurrency !== order.currency ? (
+                  <span className="text-xs text-muted-foreground">
+                    结算 {money(order.settlementTotal, order.settlementCurrency)}
+                  </span>
+                ) : null}
+              </span>
               <OrderStatus status={order.status} />
               <span className="flex items-center gap-3">
                 {order.payment?.paymentUrl && order.status === 'PENDING' ? (
@@ -2183,7 +2271,7 @@ const storeFinders: Record<string, FinderProvider> = {
       (
         await ctx.api.get(
           `/products?page=${typeof input.page === 'number' ? input.page : 1}&pageSize=${typeof input.pageSize === 'number' ? input.pageSize : 20}`,
-          productListSchema,
+          publicProductListSchema,
         )
       ).products,
   },
@@ -2192,7 +2280,26 @@ const storeFinders: Record<string, FinderProvider> = {
       (
         await ctx.api.get(
           `/products/${encodeURIComponent(typeof input.id === 'string' ? input.id : '')}`,
-          productSchema,
+          publicProductSchema,
+        )
+      ).product,
+  },
+  // 账户商城：可购买目录与详情（需登录 + store.view）。服务端给出 purchasable。
+  'store.accountProducts': {
+    handler: async (input, ctx) =>
+      (
+        await ctx.api.get(
+          `/store/account/products?page=${typeof input.page === 'number' ? input.page : 1}&pageSize=${typeof input.pageSize === 'number' ? input.pageSize : 20}`,
+          purchasableProductListSchema,
+        )
+      ).products,
+  },
+  'store.accountProduct': {
+    handler: async (input, ctx) =>
+      (
+        await ctx.api.get(
+          `/store/account/products/${encodeURIComponent(typeof input.id === 'string' ? input.id : '')}`,
+          purchasableProductSchema,
         )
       ).product,
   },
@@ -2286,7 +2393,7 @@ const storeFinders: Record<string, FinderProvider> = {
       if (!service.productId) return null;
       const { product } = await ctx.api.get(
         `/products/${encodeURIComponent(service.productId)}`,
-        productSchema,
+        publicProductSchema,
       );
       const config = readCheckoutConfig(product.metadata);
       const runtime = (service.runtime ?? {}) as Record<string, unknown>;
@@ -2362,6 +2469,11 @@ const storeFinders: Record<string, FinderProvider> = {
   'store.productTypes': {
     handler: async (_input, ctx) =>
       (await ctx.api.get('/store/product-types', productTypeListSchema)).types,
+  },
+  /** Enabled currencies from the kernel catalog (admin product editor picker). */
+  'store.currencies': {
+    handler: async (_input, ctx) =>
+      (await ctx.api.get('/currency-definitions', currencyDefinitionListSchema)).currencies,
   },
   'store.upstreamSources': {
     handler: async (_input, ctx) =>
@@ -2667,6 +2779,7 @@ export const frontend: FrontendPackage = {
           { finder: 'store.productTypes', as: 'productTypes' },
           { finder: 'store.upstreamSources', as: 'upstreamSources' },
           { finder: 'catalog.adminCategories', as: 'categories' },
+          { finder: 'store.currencies', as: 'currencies' },
         ],
       },
       {
@@ -2683,6 +2796,7 @@ export const frontend: FrontendPackage = {
           { finder: 'store.productTypes', as: 'productTypes' },
           { finder: 'store.upstreamSources', as: 'upstreamSources' },
           { finder: 'catalog.adminCategories', as: 'categories' },
+          { finder: 'store.currencies', as: 'currencies' },
         ],
       },
     ],

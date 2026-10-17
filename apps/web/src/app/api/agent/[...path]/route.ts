@@ -22,7 +22,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     if (request.headers.get('content-length') && Number(request.headers.get('content-length')) > 1024 * 1024) return Response.json({ detail: '请求过大' }, { status: 413 });
     const body = request.method === 'GET' ? undefined : await request.text();
     if (body && new TextEncoder().encode(body).length > 1024 * 1024) return Response.json({ detail: '请求过大' }, { status: 413 });
-    const headers: Record<string, string> = { authorization: `Bearer ${key ?? session}`, 'content-type': 'application/json' };
+    const headers: Record<string, string> = { authorization: `Bearer ${key ?? session}`, ...(body ? { 'content-type': 'application/json' } : {}) };
     const idempotency = request.headers.get('idempotency-key'); if (idempotency) headers['idempotency-key'] = idempotency;
     // No automatic write retry: a timeout can mean the operation already completed.
     const response = await fetch(`${base}${target}${request.nextUrl.search}`, { method: request.method, headers, ...(body ? { body } : {}), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(120000) });

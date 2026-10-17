@@ -1,4 +1,4 @@
-import type { EventBus, NotificationView } from '@stackpanel/sdk';
+import type { EventBus, NotificationPolicyService, NotificationView } from '@stackpanel/sdk';
 
 /**
  * Server-Sent Events fan-out for the per-user notification stream.
@@ -23,7 +23,10 @@ export class NotificationStreamHub {
   private readonly byUser = new Map<string, Set<NotificationSink>>();
   private dispose: (() => void) | null = null;
 
-  constructor(private readonly events: EventBus) {}
+  constructor(
+    private readonly events: EventBus,
+    private readonly policy?: NotificationPolicyService,
+  ) {}
 
   /** Begin observing the event bus. Idempotent. */
   start(): void {
@@ -65,6 +68,21 @@ export class NotificationStreamHub {
     if (!notification || !userId) return;
     const sinks = this.byUser.get(userId);
     if (!sinks) return;
+    if (!this.policy) {
+      this.emit(sinks, notification);
+      return;
+    }
+    // 两级偏好：用户可在 inapp 渠道关闭某类型（或整类前缀）。查询失败时宁多勿少。
+    void this.policy
+      .inAppExclusions(userId)
+      .then((exclusions) => {
+        if (exclusions && isExcluded(notification.type, exclusions)) return;
+        this.emit(sinks, notification);
+      })
+      .catch(() => this.emit(sinks, notification));
+  }
+
+  private emit(sinks: Set<NotificationSink>, notification: NotificationView): void {
     for (const sink of sinks) {
       try {
         sink(notification);
@@ -75,16 +93,28 @@ export class NotificationStreamHub {
   }
 }
 
+function isExcluded(type: string, exclusions: { exact: string[]; prefixes: string[] }): boolean {
+  if (exclusions.exact.includes(type)) return true;
+  return exclusions.prefixes.some((prefix) => type.startsWith(prefix));
+}
+
 /** Process-wide hub. */
 let hub: NotificationStreamHub | null = null;
 
 /**
  * Lazily create and start the singleton hub. Multiple `buildApp()` instances in
  * one process share it, matching the process-wide event bus semantics.
+ *
+ * `policy` is captured on first creation (the process-wide host is built once);
+ * later callers with a different instance observe the same hub, which matches
+ * how the event bus itself is process-wide.
  */
-export function getNotificationStreamHub(events: EventBus): NotificationStreamHub {
+export function getNotificationStreamHub(
+  events: EventBus,
+  policy?: NotificationPolicyService,
+): NotificationStreamHub {
   if (!hub) {
-    hub = new NotificationStreamHub(events);
+    hub = new NotificationStreamHub(events, policy);
     hub.start();
   }
   return hub;

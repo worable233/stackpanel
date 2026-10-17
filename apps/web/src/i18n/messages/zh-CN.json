@@ -38,6 +38,15 @@
     "forbidden": "无权限",
     "invalidRequest": "请求参数无效"
   },
+  "adminShell": {
+    "groupUsers": "用户与权限",
+    "groupSite": "站点",
+    "groupSystem": "系统",
+    "groupDeveloper": "开发者",
+    "groupAccount": "账户",
+    "overview": "概览",
+    "quickLinks": "快捷入口"
+  },
   "nav": {
     "dashboard": "工作台",
     "users": "用户管理",
@@ -97,6 +106,30 @@
       "codeSent": "验证码已发送，请查收邮箱。",
       "codeSentTo": "验证码已发送至 {email}，请查收（有效期 10 分钟）。"
     },
+    "setup": {
+      "title": "初始化你的平台",
+      "subtitle": "创建第一个管理员账户以完成部署。",
+      "email": "管理员邮箱",
+      "password": "管理员密码",
+      "passwordHint": "至少 8 位",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "token": "初始化令牌",
+      "tokenHint": "见部署摘要或 .env 中的 STACKPANEL_SETUP_TOKEN。",
+      "submit": "创建管理员",
+      "submitting": "初始化中…",
+      "wizard": {
+        "accountTitle": "创建管理员",
+        "confirmTitle": "确认初始化",
+        "confirmPassword": "确认密码",
+        "passwordMismatch": "两次输入的密码不一致。",
+        "showConfirmation": "显示确认密码",
+        "hideConfirmation": "隐藏确认密码",
+        "back": "上一步",
+        "continue": "下一步",
+        "initialize": "初始化并进入后台"
+      }
+    },
     "panel": {
       "highlightTitle": "开箱即用",
       "highlightText": "选型、下单、开通一条链路走完，无需等待人工配置。",
@@ -117,7 +150,8 @@
       "invalidCredentials": "邮箱或密码错误",
       "loginFailed": "登录失败，请稍后再试",
       "registerFailed": "注册失败，请稍后再试",
-      "sendCodeFailed": "验证码发送失败，请稍后再试"
+      "sendCodeFailed": "验证码发送失败，请稍后再试",
+      "setupFailed": "初始化失败：请确认实例尚未初始化，且令牌正确"
     }
   },
   "localeSwitcher": {
@@ -616,7 +650,34 @@
       },
       "title": "系统设置",
       "pageDescription": "管理平台信息与包签名配置。",
-      "serviceUnavailable": "设置服务不可用：{error}"
+      "serviceUnavailable": "设置服务不可用：{error}",
+      "currency": {
+        "title": "币种与结算",
+        "description": "平台受控的币种目录与结算币种。已产生交易或被设为结算币种的条目不可停用。",
+        "settlement": "平台结算币种",
+        "settlementHint": "修改前请确认支付方式、汇率与钱包兼容性。",
+        "code": "代码 / 名称",
+        "symbol": "符号",
+        "decimals": "小数位",
+        "sample": "示例",
+        "status": "状态",
+        "isSettlement": "结算币种",
+        "referenced": "已被交易引用",
+        "enable": "启用",
+        "disable": "停用",
+        "ratesTitle": "汇率（原币种 → 结算币种）",
+        "ratesDescription": "仅支持换算到平台结算币种。过期汇率不会被新订单采用。",
+        "from": "原币种",
+        "to": "结算币种",
+        "rate": "汇率",
+        "source": "来源",
+        "updatedAt": "更新时间",
+        "validUntil": "有效期至",
+        "noExpiry": "长期有效",
+        "addRate": "保存汇率",
+        "delete": "删除",
+        "noRates": "尚未配置汇率。"
+      }
     },
     "themes": {
       "previewing": "正在预览：{name}",
@@ -719,7 +780,16 @@
     "developerResellerCreateFailed": "创建渠道失败",
     "developerResellerUpdateFailed": "更新渠道失败",
     "developerResellerRotateFailed": "轮换渠道密钥失败",
-    "developerResellerDeleteFailed": "删除渠道失败"
+    "developerResellerDeleteFailed": "删除渠道失败",
+    "settlementCurrencyRequired": "请选择结算币种",
+    "settlementCurrencySaved": "结算币种已更新为 {currency}",
+    "settlementCurrencySaveFailed": "结算币种保存失败",
+    "currencyToggleFailed": "币种状态更新失败",
+    "currencyRateFromRequired": "请选择要配置汇率的币种",
+    "currencyRateInvalid": "汇率必须是大于 0 的数字",
+    "currencyRateSaved": "汇率已保存",
+    "currencyRateSaveFailed": "汇率保存失败",
+    "currencyRateDeleteFailed": "汇率删除失败"
   },
   "user": {
     "emailRequired": "请填写邮箱",
@@ -751,6 +821,7 @@
       "email_taken": "该邮箱已被注册",
       "rate_limited": "尝试太频繁，请稍后再试",
       "register_failed": "注册失败，请稍后再试",
+      "setup_required": "实例尚未初始化，请先完成初始化向导",
       "unauthenticated": "登录已过期，请重新登录",
       "forbidden": "没有权限执行此操作",
       "code_missing": "验证码不存在或已失效，请重新获取",
@@ -765,6 +836,11 @@
       "captcha_required": "请完成人机验证",
       "captcha_failed": "人机验证未通过，请重试",
       "captcha_unavailable": "人机验证服务不可用"
+    },
+    "setup": {
+      "already_completed": "实例已完成初始化，请直接登录",
+      "disabled": "初始化向导已关闭，请联系部署管理员",
+      "token_invalid": "初始化令牌无效"
     },
     "validation": {
       "invalid": "请求参数无效"
@@ -784,7 +860,12 @@
     "store": {
       "product": {
         "not_found": "商品不存在",
-        "config_unsupported": "该商品不支持配置选择"
+        "config_unsupported": "该商品不支持配置选择",
+        "unavailable": "商品已下架或库存不足",
+        "not_purchasable": "该商品当前不可购买"
+      },
+      "category": {
+        "not_found": "分类不存在"
       },
       "checkout": {
         "config_invalid": "商品结账配置无效",
@@ -802,7 +883,10 @@
         "not_cancellable": "订单无法取消",
         "state_changed": "订单状态已变更，请刷新后重试",
         "payment_processing": "支付仍在处理中，无法取消",
-        "currency_mismatch": "订单商品币种不一致，请分开下单"
+        "currency_mismatch": "订单商品币种不一致，请分开下单",
+        "amount_too_large": "订单金额过大",
+        "not_payable": "订单当前无法支付",
+        "partner_prepaid_no_refund": "该订单为合作方预付，不支持钱包退款"
       },
       "upstream": {
         "not_enabled": "上游不存在或未启用"
@@ -811,7 +895,9 @@
         "not_enabled": "销售渠道不存在或未启用"
       },
       "service": {
-        "unsupported": "该服务不支持此操作"
+        "unsupported": "该服务不支持此操作",
+        "already_owned": "该服务已属于该用户",
+        "not_changeable": "该服务当前状态不可变更"
       },
       "pricing": {
         "failed": "商品价格计算失败"
@@ -822,7 +908,9 @@
       },
       "request": {
         "id_required": "缺少必要参数",
-        "params_required": "缺少必要参数"
+        "params_required": "缺少必要参数",
+        "idempotency_conflict": "该请求已用于其他操作，请重试",
+        "concurrent_request": "相同请求正在处理中，请稍候"
       },
       "task": {
         "not_retryable": "任务不存在或不可重试"
@@ -959,6 +1047,17 @@
     },
     "cms": {
       "not_ready": "内容服务暂不可用，请稍后重试"
+    },
+    "currency": {
+      "invalid": "不支持的币种",
+      "disabled": "该币种已被停用",
+      "minor_unit_invalid": "金额的小数位不符合该币种的最小单位",
+      "product_immutable": "商品已产生交易，不能修改币种",
+      "rate_missing": "未配置该币种的汇率，请联系管理员",
+      "rate_expired": "汇率已过期，请联系管理员更新",
+      "settlement_unsupported": "平台结算币种配置不支持该操作",
+      "payment_method_unsupported": "所选支付方式不支持该结算币种",
+      "referenced": "该币种已被支付记录或支付方式引用，不能停用"
     }
   },
   "auditAction": {
@@ -1152,6 +1251,9 @@
     "notifications": {
       "title": "我的通知",
       "description": "订单支付、履约进度和系统公告都会出现在这里。"
+    },
+    "settings": {
+      "title": "账户设置"
     }
   },
   "apply": {
@@ -1171,17 +1273,17 @@
     "labeled": "「{label}」",
     "install": {
       "failed": "安装{noun}{label}失败",
-      "succeeded": "{noun}{label}安装完成",
+      "succeeded": "{nounCap}{label}安装完成",
       "inProgress": "正在安装{noun}{label}"
     },
     "update": {
       "failed": "升级{noun}{label}失败",
-      "succeeded": "{noun}{label}升级完成",
+      "succeeded": "{nounCap}{label}升级完成",
       "inProgress": "正在升级{noun}{label}"
     },
     "remove": {
       "failed": "卸载{noun}{label}失败",
-      "succeeded": "{noun}{label}卸载完成",
+      "succeeded": "{nounCap}{label}卸载完成",
       "inProgress": "正在卸载{noun}{label}"
     }
   },
@@ -1224,8 +1326,55 @@
     "pageNotFound": "页面不存在",
     "backHome": "返回首页"
   },
+  "statusBadge": {
+    "operational": "所有服务正常运行",
+    "degraded": "部分服务性能下降",
+    "maintenance": "系统维护中",
+    "outage": "服务暂时不可用"
+  },
+  "agentConsent": {
+    "title": "授权 MCP 客户端",
+    "description": "只授权当前用户拥有的权限，权限撤回后立即收紧。请核对客户端与回调域名。",
+    "client": "客户端：",
+    "redirectUri": "回调地址：",
+    "approve": "同意授权",
+    "deny": "拒绝并返回",
+    "failed": "授权失败"
+  },
+  "agentFrame": {
+    "ariaLabel": "Agent 工作区",
+    "dragHint": "拖动标题栏移动面板"
+  },
   "frontendError": {
     "title": "页面加载失败",
     "description": "页面暂时无法显示，请稍后重试或返回首页。"
+  },
+  "notificationSettings": {
+    "preferences": "通知偏好",
+    "policy": "通知策略",
+    "userHelp": "分别选择站内通知和其他接收渠道，互不影响。",
+    "adminHelp": "设置各类通知的默认接收方式。关闭通知将停用所有渠道；锁定后用户无法修改。",
+    "reset": "恢复默认",
+    "resetTitle": "恢复默认通知偏好？",
+    "resetDescription": "清除你的个人选择，恢复管理员设置的默认接收方式。",
+    "cancel": "取消",
+    "managed": "由系统统一管理，不可修改",
+    "globallyDisabled": "已关闭所有渠道",
+    "enabled": "启用通知",
+    "defaultChannels": "默认接收渠道",
+    "noDefaultChannels": "未选择默认接收渠道。",
+    "lock": "锁定接收方式",
+    "lockHelp": "用户无法更改此通知的接收渠道。",
+    "catalogLocked": "此通知不允许用户修改接收方式。",
+    "empty": "暂无可配置通知",
+    "loading": "正在加载通知设置",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "autosave": "更改自动保存。",
+    "retry": "重试",
+    "failed": "保存失败，请重试。",
+    "unavailable": "暂时无法加载通知设置，请稍后重试。",
+    "forbidden": "你没有管理通知策略的权限。",
+    "invalidRequest": "请求格式无效。"
   }
 }

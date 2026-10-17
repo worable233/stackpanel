@@ -12,6 +12,7 @@ import {
   SectionTitle,
   WalletRecharge,
 } from '@stackpanel/ui';
+import { formatMinorCurrency } from '@stackpanel/sdk';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
@@ -101,7 +102,13 @@ function Icon({ name }: { name: string }): ReactElement {
 }
 
 function money(amount: number, currency: string): string {
-  return `${(amount / 100).toFixed(2)} ${currency}`;
+  // Wallet balances are minor units; render through the catalog so a future
+  // non-CNY wallet cannot silently divide by 100.
+  try {
+    return formatMinorCurrency(amount, currency, 'zh-CN');
+  } catch {
+    return `${amount} ${currency}`;
+  }
 }
 
 function formatDate(value: string): string {

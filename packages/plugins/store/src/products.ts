@@ -23,6 +23,8 @@ import {
   productUpdateSchema,
   validateCheckoutConfig,
 } from './utils';
+import { toPublicProduct, toPurchasableProduct } from './contracts';
+import { assertCurrencyMutable, resolveProductCurrency } from './currency';
 
 /** Read-only product summary exposed to other plugins. */
 export interface StoreProductRead {
@@ -78,12 +80,46 @@ export interface StoreProductSummary {
 
 const toSummary = (record: ProductRecord): StoreProductSummary => ({ ...record });
 
+/**
+ * 公开目录：只返回公开展厅 DTO，绝不外泄成本价、上游 provider 标识与内部
+ * metadata（PLAN §4.3）。管理端字段白名单在 `listAdminProducts` 另行处理。
+ */
 export async function listProducts(req: HttpRequest): Promise<unknown> {
   const { page, pageSize } = parsePagination(req.query);
   const categoryId =
     typeof req.query['categoryId'] === 'string' ? req.query['categoryId'] : undefined;
   const { items, total } = await listActiveProductsPage(page, pageSize, categoryId);
-  return { products: items.map(toSummary), total, page, pageSize };
+  return { products: items.map(toPublicProduct), total, page, pageSize };
+}
+
+/**
+ * 账户商城目录：登录用户可购买列表。返回 `PurchasableProduct`，服务端结合
+ * 商品状态、库存与调用者 `store.buy` 资格判定 `purchasable`。
+ */
+export async function listPurchasableProducts(req: HttpRequest): Promise<unknown> {
+  const { page, pageSize } = parsePagination(req.query);
+  const categoryId =
+    typeof req.query['categoryId'] === 'string' ? req.query['categoryId'] : undefined;
+  const { items, total } = await listActiveProductsPage(page, pageSize, categoryId);
+  const canBuy = await canBuyProducts(req);
+  return { products: items.map((item) => toPurchasableProduct(item, canBuy)), total, page, pageSize };
+}
+
+/** 账户商城商品详情：单件可购买视图。 */
+export async function getPurchasableProduct(req: HttpRequest): Promise<unknown> {
+  const id = req.params['id'];
+  if (!id) throw new StoreError(400, '缺少 ID');
+  const product = await getProductRecord(id);
+  if (!product || product.status !== 'ACTIVE') throw new StoreError(404, '商品不存在');
+  const canBuy = await canBuyProducts(req);
+  return { product: toPurchasableProduct(product, canBuy) };
+}
+
+/** 调用者是否持有购买资格；未登录或无权限均视为不可购买。 */
+async function canBuyProducts(req: HttpRequest): Promise<boolean> {
+  const userId = req.user?.id;
+  if (!userId) return false;
+  return context().auth.hasPermission(userId, 'store.buy');
 }
 
 export async function getProduct(req: HttpRequest): Promise<unknown> {
@@ -91,19 +127,7 @@ export async function getProduct(req: HttpRequest): Promise<unknown> {
   if (!id) throw new StoreError(400, '缺少 ID');
   const product = await getProductRecord(id);
   if (!product || product.status !== 'ACTIVE') throw new StoreError(404, '商品不存在');
-  return { product: { ...toSummary(product), metadata: publicMetadata(product.metadata) } };
-}
-
-/** 公开商品只暴露面向顾客的字段（specs/checkoutConfig），隐藏上游同步内部数据。 */
-function publicMetadata(metadata: unknown): Record<string, unknown> | null {
-  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
-  const record = metadata as Record<string, unknown>;
-  const keys = Object.keys(record);
-  if (keys.length === 0) return null;
-  const keep: Record<string, unknown> = {};
-  if (record['specs'] !== undefined) keep['specs'] = record['specs'];
-  if (record['checkoutConfig'] !== undefined) keep['checkoutConfig'] = record['checkoutConfig'];
-  return keep;
+  return { product: toPublicProduct(product) };
 }
 
 export async function listAllProducts(): Promise<StoreProductSummary[]> {
@@ -127,11 +151,14 @@ export async function updateProductStock(productId: string, stock: number): Prom
 export async function createProductForSync(
   input: StoreProductMutation,
 ): Promise<StoreProductSummary> {
+  // Upstream sync must never write a currency outside the catalog: an unknown
+  // code is a hard error, not a silently accepted product (plan §4.2).
+  const currency = await resolveProductCurrency(input.currency);
   const product = await createProductInstance({
     name: input.name,
     description: input.description ?? null,
     price: input.price,
-    currency: input.currency.toUpperCase(),
+    currency,
     cost: input.cost ?? null,
     originalPrice: null,
     discount: null,
@@ -153,6 +180,7 @@ export async function updateProductForSync(
 ): Promise<StoreProductSummary | null> {
   const existing = await getProductRecord(productId);
   if (!existing) return null;
+  const nextCurrency = patch.currency !== undefined ? await resolveProductCurrency(patch.currency) : undefined;
   const next = {
     ...toProductData(existing),
     ...(patch.name !== undefined ? { name: patch.name } : {}),
@@ -160,7 +188,7 @@ export async function updateProductForSync(
     ...(patch.price !== undefined ? { price: patch.price } : {}),
     ...(patch.stock !== undefined ? { stock: patch.stock } : {}),
     ...(patch.cost !== undefined ? { cost: patch.cost ?? null } : {}),
-    ...(patch.currency !== undefined ? { currency: patch.currency.toUpperCase() } : {}),
+    ...(nextCurrency ? { currency: nextCurrency } : {}),
     ...(patch.status !== undefined ? { status: patch.status } : {}),
     ...(patch.metadata !== undefined ? { metadata: patch.metadata ?? null } : {}),
     ...(patch.fulfillmentType !== undefined ? { fulfillmentType: patch.fulfillmentType } : {}),
@@ -191,13 +219,16 @@ export async function createProduct(req: HttpRequest, reply: HttpReply): Promise
   const body = coerceMetadataBody(req.body);
   const parsed = productSchema.safeParse(body);
   if (!parsed.success) throw new StoreError(400, '请求参数无效');
+  // Catalog validation happens here (not just in the admin UI): free-text codes
+  // and disabled currencies are rejected with a stable code (plan §4.2).
+  const currency = await resolveProductCurrency(parsed.data.currency);
   validateCheckoutConfig(parsed.data.metadata ?? null);
   validateTypeConfig(parsed.data.fulfillmentType, parsed.data.metadata);
   const product = await createProductInstance({
     name: parsed.data.name,
     description: parsed.data.description ?? null,
     price: parsed.data.price,
-    currency: parsed.data.currency.toUpperCase(),
+    currency,
     cost: parsed.data.cost ?? null,
     originalPrice: parsed.data.originalPrice ?? null,
     discount: parsed.data.discount ?? null,
@@ -226,13 +257,20 @@ export async function updateProduct(req: HttpRequest): Promise<unknown> {
   const existing = await getProductRecord(id);
   if (!existing) throw new StoreError(404, '商品不存在');
   const patch = parsed.data;
+  // 币种治理（plan §4.2）：已产生订单/购物车/服务实例的商品禁止改币种；
+  // 未售商品改币种时同样走目录校验（不接受任意三字符文本）。
+  let nextCurrency: string | undefined;
+  if (patch.currency !== undefined) {
+    nextCurrency = await resolveProductCurrency(patch.currency);
+    if (nextCurrency !== existing.currency) await assertCurrencyMutable(id);
+  }
   const next = {
     ...toProductData(existing),
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
     ...(patch.price !== undefined ? { price: patch.price } : {}),
     ...(patch.stock !== undefined ? { stock: patch.stock } : {}),
-    ...(patch.currency !== undefined ? { currency: patch.currency.toUpperCase() } : {}),
+    ...(nextCurrency ? { currency: nextCurrency } : {}),
     ...(patch.cost !== undefined ? { cost: patch.cost ?? null } : {}),
     ...(patch.originalPrice !== undefined ? { originalPrice: patch.originalPrice ?? null } : {}),
     ...(patch.discount !== undefined ? { discount: patch.discount ?? null } : {}),

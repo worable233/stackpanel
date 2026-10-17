@@ -31,6 +31,12 @@ export function encodeWire(value: unknown, seen = new WeakSet<object>()): unknow
   if (typeof value === 'bigint') return { __spType: 'bigint', value: value.toString() };
   if (value instanceof Date) return { __spType: 'date', value: value.toISOString() };
   if (Buffer.isBuffer(value)) return { __spType: 'buffer', value: value.toString('base64') };
+  // `Buffer` is a `Uint8Array`, but a plain `Uint8Array` (e.g. a storage proxy
+  // chunk sliced out of a larger buffer) is not a `Buffer`. Without this branch
+  // it would serialize as `{ "0": 1, "1": 2, ... }` and blow up the message size.
+  if (value instanceof Uint8Array) {
+    return { __spType: 'buffer', value: Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('base64') };
+  }
   if (!value || typeof value !== 'object') return value;
   if (seen.has(value)) throw new TypeError('circular RPC value');
   seen.add(value);

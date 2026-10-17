@@ -12,11 +12,13 @@ export function AdminPluginPage({
   path,
   result,
   actionError,
+  embedded = false,
 }: {
   pluginId: string;
   path: string;
   result: PluginAdminRouteResult;
   actionError?: string;
+  embedded?: boolean;
 }): ReactElement {
   const t = useTranslator();
   if (result.status === 'not-found') {
@@ -45,6 +47,7 @@ export function AdminPluginPage({
     );
   }
   const props = {
+    embedded,
     pluginId: result.pluginId,
     path,
     params: result.params,

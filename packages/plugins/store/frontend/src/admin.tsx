@@ -4,6 +4,12 @@ import { SectionTitle } from '@stackpanel/ui';
 import { useCallback, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import {
+  formatMinorCurrency,
+  minorUnitFor,
+  minorUnitsToPlainString,
+  toMinorUnits,
+} from '@stackpanel/sdk';
 import type { AdminPageComponentProps, ProductConfigField } from '@stackpanel/sdk';
 import {
   FeatureOverview,
@@ -48,6 +54,13 @@ function upstreamSourcePrice(product: ProductRow): number | null {
   return typeof value === 'number' ? value : null;
 }
 
+interface CurrencyOption {
+  code: string;
+  name: string;
+  symbol: string;
+  minorUnit: number;
+}
+
 interface ProductTypeInfo {
   id: string;
   label: string;
@@ -71,8 +84,33 @@ interface UpstreamItem {
   sourceRef?: string;
 }
 
+/** Format minor units through the kernel catalog (no `/100`, no CNY branch). */
 function money(n: number, currency: string): string {
-  return `${(n / 100).toFixed(2)} ${currency}`;
+  try {
+    return formatMinorCurrency(n, currency, 'zh-CN');
+  } catch {
+    return `${n} ${currency}`;
+  }
+}
+
+/** Parse a major-unit input using the currency's catalog precision. */
+function amountToMinor(value: string, currency: string): number | null {
+  try {
+    return toMinorUnits(value, currency);
+  } catch {
+    return null;
+  }
+}
+
+/** Seed an editable input from stored minor units. */
+function minorToInput(n: number, currency: string): string {
+  try {
+    return minorUnitsToPlainString(n, currency);
+  } catch {
+    // Unknown legacy currency: show the raw minor amount rather than assume 2
+    // decimals (the currency itself cannot be resolved).
+    return String(n);
+  }
 }
 
 /** store 内建商品类型的中文展示名（无类型插件认领时的回退）。 */
@@ -442,6 +480,7 @@ function ProductForm({
   sources,
   categories,
   initialCategoryIds,
+  currencies,
   onDone,
 }: {
   editing: ProductRow | null;
@@ -449,6 +488,7 @@ function ProductForm({
   sources: UpstreamSourceInfo[];
   categories: CategoryNode[];
   initialCategoryIds: string[];
+  currencies: CurrencyOption[];
   onDone: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -457,11 +497,17 @@ function ProductForm({
 
   const [name, setName] = useState(editing?.name ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
-  const [price, setPrice] = useState(editing ? String(editing.price / 100) : '');
+  // Currency drives every amount's precision. Editing an existing product keeps
+  // its currency; new products default to the first enabled option (CNY).
+  const initialCurrency = editing?.currency ?? currencies[0]?.code ?? 'CNY';
+  const [currency, setCurrency] = useState(initialCurrency);
+  const [price, setPrice] = useState(editing ? minorToInput(editing.price, editing.currency) : '');
   const [stock, setStock] = useState(editing ? String(editing.stock) : '0');
-  const [cost, setCost] = useState(editing?.cost != null ? String(editing.cost / 100) : '');
+  const [cost, setCost] = useState(
+    editing?.cost != null ? minorToInput(editing.cost, editing.currency) : '',
+  );
   const [originalPrice, setOriginalPrice] = useState(
-    editing?.originalPrice != null ? String(editing.originalPrice / 100) : '',
+    editing?.originalPrice != null ? minorToInput(editing.originalPrice, editing.currency) : '',
   );
   const [discount, setDiscount] = useState(
     editing?.discount != null ? String(editing.discount) : '',
@@ -517,7 +563,7 @@ function ProductForm({
     if (item.name) setName(item.name);
     if (item.description) setDescription(item.description);
     if (item.icon) setIcon(item.icon);
-    if (item.price != null) setCost(String(item.price / 100));
+    if (item.price != null) setCost(minorToInput(item.price, item.currency ?? currency));
     if (item.specs) {
       setConfigData((prev) => {
         const next = { ...prev };
@@ -572,21 +618,26 @@ function ProductForm({
       setError('请填写商品名称');
       return;
     }
-    const parsedPrice = Number(price);
-    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+    const parsedPrice = amountToMinor(price, currency);
+    if (parsedPrice === null || parsedPrice <= 0) {
       setError('请填写有效的售卖价格');
       return;
     }
     setError(null);
-    const optionalAmount = (value: string) =>
-      value.trim() ? Math.round(Number(value) * 100) : null;
+    const minorUnit = minorUnitFor(currency);
+    const optionalAmount = (value: string): number | null => {
+      if (!value.trim()) return null;
+      const parsed = amountToMinor(value, currency);
+      return parsed;
+    };
+    // Validate cost/original price against this currency's precision, not `/100`.
     const amounts = [cost, originalPrice];
     if (
       amounts.some(
-        (value) => value.trim() && (!Number.isFinite(Number(value)) || Number(value) < 0),
+        (value) => value.trim() && (optionalAmount(value) === null || optionalAmount(value)! < 0),
       )
     ) {
-      setError('成本与原价须为有效的非负金额');
+      setError(`成本与原价须为有效的非负金额（${currency} 最多 ${minorUnit} 位小数）`);
       return;
     }
     if (!Number.isInteger(Number(stock)) || Number(stock) < 0 || Number(stock) > 1000000) {
@@ -605,11 +656,11 @@ function ProductForm({
     const body = {
       name: name.trim(),
       description: description.trim(),
-      price: Math.round(parsedPrice * 100),
-      currency: editing?.currency ?? 'CNY',
+      price: parsedPrice,
+      currency,
       stock: Number(stock),
-      cost: optionalAmount(cost),
-      originalPrice: optionalAmount(originalPrice),
+      cost: optionalAmount(cost ?? ''),
+      originalPrice: optionalAmount(originalPrice ?? ''),
       discount: discount.trim() ? Number(discount) : null,
       ...(typeId ? { fulfillmentType: typeId } : {}),
       providerId: providerId || null,
@@ -730,16 +781,37 @@ function ProductForm({
             <CardContent>
               <FieldGroup className="grid sm:grid-cols-2">
                 <Field>
-                  <Label htmlFor="product-price">售卖价格（元）*</Label>
+                  <Label htmlFor="product-price">售卖价格 *</Label>
                   <Input
                     id="product-price"
                     required
                     type="number"
-                    step="0.01"
-                    min="0.01"
+                    step={minorUnitFor(currency) === 0 ? "1" : "0.01"}
+                    min={minorUnitFor(currency) === 0 ? "1" : "0.01"}
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                   />
+                </Field>
+                <Field>
+                  <Label htmlFor="product-currency">币种 *</Label>
+                  <Select
+                    id="product-currency"
+                    value={currency}
+                    disabled={Boolean(editing)}
+                    onChange={(e) => {
+                      if (editing) return; // currency is immutable once created
+                      setCurrency(e.target.value);
+                    }}
+                  >
+                    {currencies.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.code} · {option.name}（{option.symbol}，{option.minorUnit} 位小数）
+                      </option>
+                    ))}
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    币种创建后不可更改；已产生交易的商品如需换币种，请复制为新商品。
+                  </p>
                 </Field>
                 <Field>
                   <Label htmlFor="product-stock">库存</Label>
@@ -752,11 +824,11 @@ function ProductForm({
                   />
                 </Field>
                 <Field>
-                  <Label htmlFor="product-cost">成本（元，人工维护）</Label>
+                  <Label htmlFor="product-cost">成本（人工维护）</Label>
                   <Input
                     id="product-cost"
                     type="number"
-                    step="0.01"
+                    step={minorUnitFor(currency) === 0 ? "1" : "0.01"}
                     min="0"
                     value={cost}
                     onChange={(e) => setCost(e.target.value)}
@@ -772,7 +844,7 @@ function ProductForm({
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => setCost(String(source / 100))}
+                              onClick={() => setCost(minorToInput(source, editing.currency))}
                             >
                               采用上游价
                             </Button>
@@ -782,11 +854,11 @@ function ProductForm({
                     : null}
                 </Field>
                 <Field>
-                  <Label htmlFor="product-original-price">原价（元，可选，划线展示）</Label>
+                  <Label htmlFor="product-original-price">原价（可选，划线展示）</Label>
                   <Input
                     id="product-original-price"
                     type="number"
-                    step="0.01"
+                    step={minorUnitFor(currency) === 0 ? "1" : "0.01"}
                     min="0"
                     value={originalPrice}
                     onChange={(e) => setOriginalPrice(e.target.value)}
@@ -959,7 +1031,7 @@ function ProductForm({
                               <p className="text-xs text-muted-foreground">
                                 {item.id}
                                 {item.price != null
-                                  ? ` · 成本 ${money(item.price, item.currency ?? 'CNY')}`
+                                  ? ` · 成本 ${money(item.price, item.currency ?? currency)}`
                                   : ''}
                               </p>
                             </div>
@@ -1001,7 +1073,7 @@ function ProductForm({
                     <dt className="text-muted-foreground">售价</dt>
                     <dd className="font-medium tabular-nums">
                       {price && Number.isFinite(Number(price))
-                        ? `${Number(price).toFixed(2)} ${editing?.currency ?? 'CNY'}`
+                        ? `${price || '0'} ${currency}`
                         : '待设置'}
                     </dd>
                   </div>
@@ -1245,6 +1317,7 @@ export function StoreAdminProductEditorPage(props: AdminPageComponentProps) {
     <ProductForm
       key={editing?.id ?? 'new'}
       editing={editing}
+      currencies={(props.data.currencies as CurrencyOption[] | undefined) ?? []}
       types={(props.data.productTypes as ProductTypeInfo[] | undefined) ?? []}
       sources={(props.data.upstreamSources as UpstreamSourceInfo[] | undefined) ?? []}
       categories={categories}

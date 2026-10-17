@@ -10,8 +10,11 @@ import type { CacheService } from './cache.js';
 import type { EffectResult, Disposable } from './effect.js';
 import type { ExtensionClient, ExtensionTransaction } from './extensions.js';
 import type { FxService } from './fx.js';
+import type { CurrencyService } from './currency.js';
 import type { JobContext } from './jobs.js';
 import type { NotificationsService } from './notifications.js';
+import type { NotificationPolicyService } from './notifications.js';
+import type { NotificationTypeDefinition } from './notifications.js';
 import type { NotificationView } from './notifications.js';
 import type { CaptchaService, IdentityChallengeService } from './identity.js';
 import type { PaymentService } from './payments.js';
@@ -236,12 +239,36 @@ export type EventPayload<K extends string> = K extends keyof PlatformEvents
  */
 export type WaterfallListener<T> = (value: T, next: (value: T) => T) => T;
 
+/**
+ * Delivery metadata handed to subscribers as the optional second argument.
+ *
+ * Event delivery is **at-least-once**: a replica that was offline catches up
+ * from its own cursor, and a relay crash re-delivers a claimed row. `eventId` is
+ * the stable outbox row id, so a consumer that must not run twice can dedupe on
+ * `(consumer, eventId)` (kernel: `ctx.events.runIdempotent`). Subscribers that
+ * only take the payload keep working — the argument is additive.
+ */
+export interface EventMeta {
+  /** Stable id of the outbox row that produced this delivery. */
+  eventId: string;
+  /** The topic this delivery came from. */
+  topic: string;
+  /** When the event row was created (null for purely local publishes). */
+  createdAt?: Date;
+}
+
+/** A subscriber may ignore the metadata argument; existing handlers still type-check. */
+export type EventHandler<K extends string> = (
+  payload: EventPayload<K>,
+  meta?: EventMeta,
+) => void;
+
 /** Event bus contract shared by the kernel and plugins. */
 export interface EventBus {
   /** Broadcast a fact. Subscribers observe; failures are isolated per listener. */
   publish<K extends string>(topic: K, payload?: EventPayload<K>): void;
   /** Observe a topic. Returns a disposer that removes the listener. */
-  subscribe<K extends string>(topic: K, handler: (payload: EventPayload<K>) => void): () => void;
+  subscribe<K extends string>(topic: K, handler: EventHandler<K>): () => void;
   /**
    * Intercept a topic's waterfall: this is policy, not observation. Listeners
    * run around `next` in registration order, so an interceptor can rewrite the
@@ -257,6 +284,21 @@ export interface EventBus {
    * and therefore strictly synchronous.
    */
   waterfall<T>(topic: string, value: T, terminal: (value: T) => T): T;
+  /**
+   * Consumer-side idempotency guard (at-least-once ⇒ a handler may see the same
+   * `eventId` more than once: relay crash-redelivery, or a replica catching up
+   * after being offline). Runs `handler` at most once per `(consumer, eventId)`
+   * across the cluster and reports whether it actually ran.
+   *
+   * Optional: a plain in-process bus (dev/tests) has no dedupe store and simply
+   * runs the handler. Registered consumers should always route side effects
+   * through it rather than assuming a single delivery.
+   */
+  runIdempotent?(
+    consumer: string,
+    eventId: string,
+    handler: () => void | Promise<void>,
+  ): Promise<boolean>;
 }
 
 /** HTTP method set exposed to plugins. */
@@ -434,6 +476,13 @@ export const EXTENSION_POINTS = {
   upstreamServiceSource: 'upstream.service.source',
   /** External notification channels (email/webhook/push) subscribed to `notification.created`. */
   notificationChannel: 'notification.channel',
+  /**
+   * Notification type declarations. A plugin registers a
+   * {@link NotificationTypeDefinition} for each `type` it emits so the kernel
+   * can surface it in the preference catalog (user + admin). Undeclared types
+   * are always delivered and cannot be disabled.
+   */
+  notificationType: 'notification.type',
   /**
    * Verification-code delivery channels (email/SMS) the kernel invokes through
    * `ctx.identity`. Deliberately separate from `notification.channel`: a
@@ -614,10 +663,24 @@ export interface PluginContext {
   readonly wallet: WalletService;
   /** Kernel-owned FX service (multi-currency pricing → settlement conversion). */
   readonly fx: FxService;
+  /**
+   * Kernel-owned currency catalog + minor-unit precision. Use this instead of
+   * hard-coding `/100`, `CNY` branches or free-text 3-letter codes.
+   */
+  readonly currency: CurrencyService;
   /** Kernel-owned auth capabilities (verify password, issue session, permissions). */
   readonly auth: AuthService;
   /** Kernel-owned in-app notification service (create/list/mark-read for users). */
   readonly notifications: NotificationsService;
+  /**
+   * Kernel-owned two-level notification preference engine. Read the effective
+   * verdict for a `(user, type, channel)` or list a user's resolved preferences.
+   * Plugins that emit notifications should register a
+   * {@link NotificationTypeDefinition} on `EXTENSION_POINTS.notificationType` so
+   * the type appears in the preference catalog; undeclared types are always
+   * delivered and cannot be disabled.
+   */
+  readonly notificationPolicy: NotificationPolicyService;
   /**
    * Kernel-owned identity-challenge service: issue/consume email verification
    * codes for registration and other identity flows. Fresh users have no
@@ -635,10 +698,11 @@ export interface PluginContext {
   readonly media: MediaReferenceService;
   /**
    * Kernel-owned storage capability (ADR-0014 extension). A plugin builds a
-   * `StorageProvider` for a generic backend (local filesystem or S3-compatible
-   * API) and registers it on `EXTENSION_POINTS.storageProvider`. The kernel
-   * keeps all byte-transfer, presigning and credential machinery on its side of
-   * the boundary, so the plugin never imports kernel packages.
+   * `StorageProvider` for a generic backend (local filesystem, S3-compatible
+   * API, or a custom HTTP image host) and registers it on
+   * `EXTENSION_POINTS.storageProvider`. The kernel keeps all byte-transfer,
+   * presigning and credential machinery on its side of the boundary, so the
+   * plugin never imports kernel packages.
    */
   readonly storage: StorageService;
   /**

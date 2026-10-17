@@ -214,6 +214,70 @@ describe.skipIf(!dbAvailable)('store plugin wallet and settlement integration (r
     expect((res.json() as { product: { currency: string } }).product.currency).toBe('USD');
   });
 
+  it('never leaks cost, provider ids or upstream metadata on public product endpoints', async () => {
+    const create = await app.inject({
+      method: 'POST',
+      url: '/store/admin/products',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        name: 'Leaky Product',
+        price: 5000,
+        cost: 1000,
+        stock: 2,
+        providerId: 'zjmf',
+        providerProductId: 'up-99',
+        fulfillmentType: 'upstream_service',
+        metadata: JSON.stringify({
+          specs: { CPU: '1' },
+          upstream: { sourceRef: 'zjmf:99', productId: 'up-99', sourcePrice: 1000 },
+        }),
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const id = (create.json() as { product: { id: string } }).product.id;
+
+    const list = await app.inject({ method: 'GET', url: '/products' });
+    const listed = (list.json() as { products: Array<Record<string, unknown>> }).products.find(
+      (p) => p['id'] === id,
+    );
+    expect(listed).toBeTruthy();
+    expect(listed).not.toHaveProperty('cost');
+    expect(listed).not.toHaveProperty('providerId');
+    expect(listed).not.toHaveProperty('providerProductId');
+    expect((listed?.['metadata'] as Record<string, unknown> | null)?.['upstream']).toBeUndefined();
+    expect((listed?.['metadata'] as Record<string, unknown> | null)?.['specs']).toEqual({ CPU: '1' });
+
+    const detail = await app.inject({ method: 'GET', url: `/products/${id}` });
+    const product = (detail.json() as { product: Record<string, unknown> }).product;
+    expect(product).not.toHaveProperty('cost');
+    expect(product).not.toHaveProperty('providerId');
+    expect((product['metadata'] as Record<string, unknown> | null)?.['upstream']).toBeUndefined();
+
+    await getPrisma().$executeRawUnsafe(`DELETE FROM "${PRODUCT_TABLE}" WHERE "id" = $1`, id);
+  });
+
+  it('requires auth for the account store catalog and reports purchasability', async () => {
+    expect(
+      (await app.inject({ method: 'GET', url: '/store/account/products' })).statusCode,
+    ).toBe(401);
+    expect(
+      (await app.inject({ method: 'GET', url: `/store/account/products/${productId}` }))
+        .statusCode,
+    ).toBe(401);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/store/account/products/${productId}`,
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const product = (res.json() as { product: Record<string, unknown> }).product;
+    expect(product['purchasable']).toBe(true);
+    expect(product['unavailableReason']).toBeNull();
+    expect(product).not.toHaveProperty('cost');
+    expect(product).not.toHaveProperty('providerId');
+  });
+
   it('rejects wallet payment without balance and preserves stock', async () => {
     const res = await app.inject({
       method: 'POST',

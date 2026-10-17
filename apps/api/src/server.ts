@@ -1,7 +1,8 @@
 import { buildApp } from './app.ts';
 import { env } from './config/env.ts';
-import { ensureBootstrapAdmin } from './lib/bootstrap.ts';
+import { setupStatus } from './auth/install-claim.ts';
 import { initInfra } from './infra.ts';
+import { startOutboxConsumption } from './plugins/events.ts';
 import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence.ts';
 import { startTracing, stopTracing } from './observability/index.ts';
 import { FrontendBuilder } from './lib/frontend-build.ts';
@@ -49,17 +50,26 @@ function startFrontendBuilderIfSoleProcess(): void {
 
 async function start(): Promise<void> {
   try {
-    const bootstrap = await ensureBootstrapAdmin();
-    if (bootstrap.created) {
-      app.log.info(`Bootstrap admin created: ${bootstrap.email}`);
-      if (bootstrap.generatedPassword) {
-        app.log.warn(`Bootstrap password (shown once): ${bootstrap.generatedPassword}`);
-      }
+    // First-run guidance: no admin is auto-created. A fresh instance is claimed
+    // from the browser at `/setup` (or by an installed plugin/seed that
+    // provisions an admin out-of-band). We only announce the state; the wizard
+    // itself is authoritative and self-disables once an admin exists.
+    const setup = await setupStatus();
+    if (setup.required) {
+      app.log.warn(
+        '[setup] 实例尚未初始化：请打开 Web 站点按引导创建首个管理员（/setup）。' +
+          (setup.tokenRequired ? ' 本次认领需要 .env 中的 STACKPANEL_SETUP_TOKEN。' : ''),
+      );
     }
     // Ready first so onReady hooks register discovered plugins and seed themes
     // before we apply persisted plugin enable states.
     await app.ready();
     await app.pluginHost.syncEnabledPlugins();
+    // W3 (audit 4B · B-1): begin per-replica durable catch-up only *after* the
+    // plugins above have subscribed. Starting it in initInfra() would advance
+    // this replica's cursor with zero local listeners and lose a restarting
+    // replica's missed events.
+    startOutboxConsumption();
     // S8: subscribe to cross-replica runtime invalidation once the runtime has
     // registered all installed plugins (after ready/plugin discovery).
     await startRuntimeCoherence();

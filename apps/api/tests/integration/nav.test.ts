@@ -91,7 +91,8 @@ describe.skipIf(!dbAvailable)('plugin nav + my orders integration (real DB)', ()
     const body = res.json() as { items: Array<{ label: string; href: string }> };
     const labels = body.items.map((i) => i.label);
     expect(labels).toContain('账户概览');
-    expect(labels).toContain('账户安全');
+    expect(labels).toContain('账户设置');
+    expect(body.items.some((item) => item.href === '/account/api-keys')).toBe(false);
     expect(labels).not.toContain('我的订单');
   });
 

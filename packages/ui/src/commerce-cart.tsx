@@ -39,11 +39,16 @@ export interface CommerceCartProps {
   updateQuantity?: (data: FormData) => Promise<void>;
   removeItem?: (data: FormData) => Promise<void>;
   continueShopping: ReactNode;
+  /**
+   * BCP 47 tag driving number/currency presentation (ADR-0016 §6). The host
+   * supplies it — the primitive never guesses a locale or reads cookies.
+   */
+  locale?: string;
 }
 
-function formatMoney(amount: number, currency: string) {
+function formatMoney(amount: number, currency: string, locale?: string) {
   if (!/^[A-Z]{3}$/.test(currency)) return `${(amount / 100).toFixed(2)} ${currency}`;
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency }).format(amount / 100);
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount / 100);
 }
 
 function CartMutation({
@@ -86,6 +91,7 @@ export function CommerceCart({
   updateQuantity,
   removeItem,
   continueShopping,
+  locale,
 }: CommerceCartProps) {
   const eligible = items.filter((item) => item.available && item.stock >= item.quantity);
   const [checked, setChecked] = useState(() => eligible.slice(0, 50).map((item) => item.id));
@@ -212,7 +218,7 @@ export function CommerceCart({
                       <span className="text-sm text-muted-foreground">数量 × {item.quantity}</span>
                     )}
                     <span className="text-lg font-medium tabular-nums">
-                      {formatMoney(item.total, item.currency)}
+                      {formatMoney(item.total, item.currency, locale)}
                     </span>
                   </div>
                 </article>
@@ -252,7 +258,7 @@ export function CommerceCart({
                       key={currency}
                       className="text-4xl font-semibold tracking-tight tabular-nums"
                     >
-                      {formatMoney(total, currency)}
+                      {formatMoney(total, currency, locale)}
                     </p>
                   ))
                 ) : (

@@ -2,8 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createTranslator,
   formatCurrency,
+  formatDate,
+  formatDateTime,
+  formatFileSize,
+  formatList,
   formatMessage,
   formatMoney,
+  formatPercent,
+  formatPlural,
+  formatRelativeTime,
+  formatUnit,
   lookupMessage,
   lookupTranslation,
   translate,
@@ -111,5 +119,93 @@ describe('formatMoney', () => {
   it('follows the locale for grouping and symbol placement', () => {
     expect(formatMoney(123456789, 'CNY', 'zh-CN')).toBe('¥1,234,567.89');
     expect(formatMoney(123456789, 'CNY', 'en-US')).toBe('CN¥1,234,567.89');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('matches formatDate for the same value and options', () => {
+    const value = new Date('2026-01-02T03:04:00Z');
+    const options: Intl.DateTimeFormatOptions = {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+    };
+    expect(formatDateTime(value, 'en-US', options)).toBe(formatDate(value, 'en-US', options));
+    expect(formatDateTime(value, 'zh-CN', options)).toBe('2026年1月2日');
+  });
+});
+
+describe('formatPercent', () => {
+  it('renders a ratio as a percentage per locale', () => {
+    expect(formatPercent(0.42, 'en-US')).toBe('42%');
+    expect(formatPercent(0.42, 'zh-CN')).toBe('42%');
+  });
+
+  it('accepts Intl options (e.g. fixed fraction digits)', () => {
+    expect(formatPercent(0.1234, 'en-US', { maximumFractionDigits: 1 })).toBe('12.3%');
+  });
+});
+
+describe('formatUnit', () => {
+  it('localises the unit name', () => {
+    expect(formatUnit(3, 'kilometer', 'en-US')).toBe('3 km');
+    expect(formatUnit(3, 'kilometer', 'zh-CN')).toBe('3公里');
+  });
+});
+
+describe('formatFileSize', () => {
+  it('scales to the largest unit that keeps the number >= 1', () => {
+    expect(formatFileSize(512, 'en-US')).toBe('512B');
+    expect(formatFileSize(1536, 'en-US')).toBe('1.5 kB');
+    expect(formatFileSize(5 * 1024 ** 2, 'en-US')).toBe('5 MB');
+    expect(formatFileSize(2 * 1024 ** 3, 'en-US')).toBe('2 GB');
+  });
+
+  it('renders the same values under either shipped locale', () => {
+    // zh-CN and en-US share Latin unit abbreviations for short display; the
+    // byte unit narrow form differs in spacing.
+    expect(formatFileSize(2 * 1024 ** 2, 'zh-CN')).toBe('2 MB');
+    expect(formatFileSize(512, 'zh-CN')).toBe('512 B');
+    expect(formatFileSize(512, 'en-US')).toBe('512B');
+  });
+});
+
+describe('formatRelativeTime', () => {
+  const now = new Date('2026-01-10T12:00:00Z');
+
+  it('uses the largest whole unit and the supplied reference time', () => {
+    expect(formatRelativeTime(new Date('2026-01-10T09:00:00Z'), 'en-US', { now })).toBe(
+      '3 hours ago',
+    );
+  });
+
+  it('localises direction and unit', () => {
+    expect(formatRelativeTime(new Date('2026-01-10T09:00:00Z'), 'zh-CN', { now })).toBe('3小时前');
+    expect(formatRelativeTime(new Date('2026-01-11T12:00:00Z'), 'en-US', { now })).toBe(
+      'in 1 day',
+    );
+  });
+});
+
+describe('formatList', () => {
+  it('joins items with locale-aware separators', () => {
+    expect(formatList(['a', 'b', 'c'], 'en-US')).toBe('a, b, and c');
+    expect(formatList(['a', 'b', 'c'], 'zh-CN')).toBe('a、b和c');
+  });
+});
+
+describe('formatPlural', () => {
+  const variants = { one: 'one item', other: '{n} items' } as Record<
+    Intl.LDMLPluralRule,
+    string
+  >;
+
+  it('selects by the locale plural rules', () => {
+    expect(formatPlural(1, 'en-US', variants)).toBe('one item');
+    expect(formatPlural(2, 'en-US', variants)).toBe('{n} items');
+  });
+
+  it('falls back to `other` for categories a locale does not use', () => {
+    // Chinese has only `other`; count 1 resolves to `other`.
+    expect(formatPlural(1, 'zh-CN', variants)).toBe('{n} items');
   });
 });

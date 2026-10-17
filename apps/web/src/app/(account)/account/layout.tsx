@@ -44,7 +44,7 @@ async function loadAccountShell(): Promise<{
       ...navResult.items.map((item) => ({
         label: item.label,
         href: item.href,
-        group: item.href === '/account' ? undefined : '账户',
+        group: item.href === '/account' ? undefined : 'account',
       })),
       ...sortPluginMenus(pluginMenus),
     ];

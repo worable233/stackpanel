@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import { PluginError } from '@stackpanel/sdk';
 export function parseAgent<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
   const result = schema.safeParse(input);

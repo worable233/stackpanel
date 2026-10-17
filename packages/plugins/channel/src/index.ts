@@ -195,10 +195,17 @@ export const channelPlugin = definePlugin({
 
     // store `order.paid` → 渠道签名回调。可逆订阅。
     ctx.effect(() =>
-      ctx.events.subscribe('order.paid', (payload) => {
+      ctx.events.subscribe('order.paid', (payload, meta) => {
         const event = payload as OrderPaidEvent | null;
         if (!event?.orderId) return;
-        void notifyPartnerOfOrder(event).catch(() => undefined);
+        const notify = () => notifyPartnerOfOrder(event);
+        // at-least-once 投递（relay 重投 / 离线 catch-up）→ 按 eventId 去重，
+        // 保证同一事件只为同一伙伴生成一条回调投递记录。
+        const run =
+          meta?.eventId && typeof ctx.events.runIdempotent === 'function'
+            ? ctx.events.runIdempotent('channel.order-paid', meta.eventId, notify)
+            : notify();
+        void Promise.resolve(run).catch(() => undefined);
       }),
     );
 

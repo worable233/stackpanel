@@ -161,7 +161,7 @@ function startClarityMotion(startRays: typeof startHeroRays) {
         const controls = Array.from(
           element.querySelectorAll<HTMLButtonElement>('[data-story-control]'),
         );
-        if (slides.length !== 3 || controls.length !== 3 || metadata.length !== 3) continue;
+        if (!slides.length || controls.length !== slides.length || metadata.length !== slides.length) continue;
         const effects = new Map<Element, Animation>();
         const select = (next: number) => {
           index = next;

@@ -96,6 +96,22 @@ export interface SessionInfoResponse {
   user: SessionInfo | null;
 }
 
+/** Public first-run setup state (GET /setup/status). */
+export interface SetupStatusResponse {
+  /** True while the instance has no administrator and `/setup` is enabled. */
+  required: boolean;
+  /** True when completion requires the operator-configured claim token. */
+  tokenRequired: boolean;
+}
+
+/** Input to POST /setup — claims an uninitialized instance. */
+export interface CompleteSetupInput {
+  email: string;
+  password: string;
+  /** Required only when GET /setup/status reports `tokenRequired`. */
+  setupToken?: string;
+}
+
 /** A non-secret third-party identity bound to the current account. */
 export interface ConnectedIdentity {
   id: string;
@@ -885,4 +901,58 @@ export interface ResellerMutationResponse {
 
 export interface ResellerDeleteResponse {
   deleted: boolean;
+}
+
+/* ----------------------------- 币种治理 ----------------------------- */
+
+/** 启用的币种及显示元数据（`GET /currency-definitions`）。 */
+export interface CurrencyDefinitionView {
+  code: string;
+  name: string;
+  symbol: string;
+  minorUnit: number;
+}
+
+export interface CurrencyDefinitionListResponse {
+  currencies: CurrencyDefinitionView[];
+}
+
+/** 管理端币种条目：含启用状态、引用状态与是否结算币种。 */
+export interface AdminCurrencyDefinitionView extends CurrencyDefinitionView {
+  enabled: boolean;
+  referenced: boolean;
+  settlement: boolean;
+  /** 该币种下的示例格式化结果，便于后台核对小数位。 */
+  sample: string;
+}
+
+export interface AdminCurrencyDefinitionListResponse {
+  currencies: AdminCurrencyDefinitionView[];
+  settlementCurrency: string;
+}
+
+export interface CurrencyDefinitionMutationResponse {
+  currency: AdminCurrencyDefinitionView;
+}
+
+/** 平台结算币种（`GET/PUT /admin/settings/settlement-currency`）。 */
+export interface SettlementCurrencyResponse {
+  settlementCurrency: string;
+  candidates?: CurrencyDefinitionView[] | undefined;
+}
+
+/** 管理端汇率行（含来源、更新时间和有效期）。 */
+export interface AdminFxRateView {
+  id: string;
+  fromCurrency: string;
+  toCurrency: string;
+  rate: number;
+  source: string;
+  validUntil: string | null;
+  updatedAt: string;
+}
+
+export interface AdminFxRateListResponse {
+  settlementCurrency: string;
+  rates: AdminFxRateView[];
 }

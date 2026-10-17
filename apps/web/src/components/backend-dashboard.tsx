@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatYuan, type AdminOverviewData } from '@/lib/admin-overview-types';
+import { formatMoney } from '@/i18n';
 import { OrdersTable, ProductsTable } from '@/components/admin-finance/sections';
 import { PageHeader, Spotlight } from '@stackpanel/ui';
 
@@ -47,12 +48,15 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
   ];
   return (
     <div className="backend-dashboard flex flex-col gap-7">
-      <PageHeader title={t('nav.dashboard')} actions={
-        <Button variant="outline" render={<Link href="/admin/settings" />}>
-          <Settings2 data-icon="inline-start" />
-          {t('admin.overview.settings')}
-        </Button>
-      } />
+      <PageHeader
+        title={t('nav.dashboard')}
+        actions={
+          <Button variant="outline" render={<Link href="/admin/settings" />}>
+            <Settings2 data-icon="inline-start" />
+            {t('admin.overview.settings')}
+          </Button>
+        }
+      />
       <Tabs defaultValue="overview" className="gap-6">
         <TabsList variant="line">
           <TabsTrigger value="overview">{t('admin.overview.tabOverview')}</TabsTrigger>
@@ -98,7 +102,7 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
                     <BarChart
                       data={data.revenueSeries.map((d) => ({
                         month: d.month.slice(5),
-                        revenue: d.paid / 100,
+                        revenue: d.paid,
                       }))}
                     >
                       <CartesianGrid vertical={false} strokeDasharray="3 5" />
@@ -107,7 +111,12 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
                         tickLine={false}
                         axisLine={false}
                         fontSize={12}
-                        tickFormatter={(value) => `¥${value}`}
+                        tickFormatter={(value) =>
+                          formatMoney(value, 'CNY', locale, {
+                            notation: 'compact',
+                            maximumFractionDigits: 1,
+                          })
+                        }
                       />
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Bar

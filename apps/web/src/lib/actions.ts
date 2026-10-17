@@ -1,4 +1,5 @@
 'use server';
+import { ApiError } from '@stackpanel/sdk';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getLocale } from '@/i18n/locale';
@@ -139,4 +140,46 @@ export async function sendRegisterCodeAction(
   } catch (error) {
     return { error: await apiErrorMessage(error, translate(locale, 'auth.error.sendCodeFailed')) };
   }
+}
+
+/**
+ * Server action: claim an uninitialized instance from the setup wizard. Creates
+ * the first administrator, signs it in with a fresh session cookie, and routes
+ * to the admin workspace. The API enforces the single-use claim under an
+ * advisory lock; this action only carries the operator's input.
+ */
+export async function setupAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
+  const locale = await getLocale();
+  const email = formData.get('email');
+  const password = formData.get('password');
+  const setupToken = formData.get('setupToken');
+  if (typeof email !== 'string' || typeof password !== 'string') {
+    return { error: translate(locale, 'auth.validation.emailPasswordRequired') };
+  }
+  if (password.length < 8) {
+    return { error: translate(locale, 'auth.validation.passwordMin') };
+  }
+  try {
+    const result = await getApiClient().completeSetup({
+      email: email.trim(),
+      password,
+      ...(typeof setupToken === 'string' && setupToken.trim()
+        ? { setupToken: setupToken.trim() }
+        : {}),
+    });
+    const store = await cookies();
+    store.set(process.env.SESSION_COOKIE_NAME ?? 'sp_session', result.token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
+    });
+  } catch (error) {
+    if (error instanceof ApiError && ['setup.already_completed', 'setup.disabled'].includes(error.code ?? '')) {
+      redirect('/login');
+    }
+    return { error: await apiErrorMessage(error, translate(locale, 'auth.error.setupFailed')) };
+  }
+  redirect('/admin');
 }

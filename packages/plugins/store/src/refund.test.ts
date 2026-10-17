@@ -128,6 +128,7 @@ function createFakeExtensions() {
 function makeCtx(
   fake: ReturnType<typeof createFakeExtensions>,
   credit: ReturnType<typeof vi.fn>,
+  publish: (topic: string, payload?: unknown) => void = () => {},
 ): PluginContext {
   return {
     manifest: { id: 'store', name: '商店插件', version: '0.3.0' },
@@ -144,6 +145,7 @@ function makeCtx(
         extensions: fake.client,
         wallet: { debit: vi.fn(), credit },
         payments: { createRecord: vi.fn() },
+        publish,
       })) as never,
     secrets: {
       isAvailable: () => true,
@@ -154,8 +156,17 @@ function makeCtx(
     payments: {} as never,
     wallet: {} as never,
     fx: {} as never,
+    currency: {} as never,
     auth: {} as never,
-    notifications: {} as never,
+    notifications: {
+      create: async () => ({}) as never,
+      upsert: async () => ({}) as never,
+      notifyPermissionHolders: async () => 0,
+    } as never,
+    notificationPolicy: {} as never,
+    identity: {} as never,
+    captcha: {} as never,
+    storage: {} as never,
     state: {} as never,
     jobs: {} as never,
     cache: {} as never,
@@ -383,5 +394,37 @@ describe('refundOrder', () => {
     // 未入账、未改状态。
     expect(credit).not.toHaveBeenCalled();
     expect(fake.all(ORDER)[0]!.spec.state).toBe('PAID');
+  });
+
+  it('F-3: publishes order.refunded inside the transaction (atomic with the state change)', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: { items: [{ productId: 'p', quantity: 1 }] },
+        total: 10000,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 10000,
+        fxRate: null,
+      },
+      'order-tx',
+    );
+    const published: Array<{ topic: string; payload: unknown }> = [];
+    const credit = vi.fn(async () => ({}));
+    bindContext(makeCtx(fake, credit, (topic, payload) => published.push({ topic, payload })));
+
+    await refundOrder({
+      params: { id: 'order-tx' },
+      body: {},
+      user: { id: 'a', role: 'ADMIN' },
+    } as never);
+
+    expect(published).toEqual([
+      { topic: 'order.refunded', payload: { orderId: 'order-tx', amount: 10000, userId: 'user-1' } },
+    ]);
   });
 });

@@ -167,4 +167,5 @@ export const KERNEL_JOBS = {
   paymentSweep: 'payments.sweep-expired',
   walletHoldSweep: 'wallet.sweep-holds',
   outboxRelay: 'outbox.relay',
+  notificationDeliverySweep: 'notifications.sweep-deliveries',
 } as const;

@@ -1,3 +1,5 @@
+import { agentSettingsRoutes } from '../agent/settings.ts';
+import { agentConversationRoutes } from '../agent/conversations.ts';
 import { parseAgent } from '../agent/validation.ts';
 import { actionRoutes, actionCapabilities } from '../agent/actions.ts';
 import { agentOAuthRoutes } from '../agent/oauth.ts';
@@ -26,6 +28,7 @@ import {
   policyFromProfile,
   restrictAgentPolicy,
   agentDayStart,
+  agentCapabilityHash,
 } from '../lib/agent-policy.ts';
 import type { AgentPolicy } from '../lib/agent-policy.ts';
 import { enforceTokenQuota } from '../lib/open-api-guard.ts';
@@ -209,7 +212,11 @@ async function buildDeps(
       if (ancestor.policy) Object.assign(caps,restrictAgentPolicy(caps,agentPolicySchema.parse(ancestor.policy)));
       ancestor = ancestor.parentId ? await getPrisma().agentRun.findUnique({where:{id:ancestor.parentId}}) : null;
     }
-    const root = run.rootId ? await getPrisma().agentRun.findUnique({ where: { id: run.rootId } }) : run;
+    // The first child can execute before its queued root. Start the shared clock
+    // atomically, otherwise each child could obtain a fresh full time budget.
+    const rootId = run.rootId ?? run.id;
+    await getPrisma().agentRun.updateMany({ where: { id: rootId, startedAt: null, status: { notIn: ['DONE', 'FAILED', 'CANCELLED'] } }, data: { startedAt: new Date() } });
+    const root = await getPrisma().agentRun.findUnique({ where: { id: rootId } });
     if (!root || ['FAILED', 'CANCELLED'].includes(root.status)) throw new PluginError('agent.parent_stopped', 409, '主任务已停止');
     const family = await getPrisma().agentRun.findMany({ where: { OR: [{ id: root.id }, { rootId: root.id }] }, select: { id: true } });
     const familySteps = await getPrisma().agentStep.count({ where: { runId: { in: family.map((row) => row.id) } } });
@@ -226,6 +233,7 @@ async function buildDeps(
       throw new PluginError('agent.daily_limit', 429, '今日 Agent 额度已用尽');
     }
     return {
+      actionBudgetLimited: caps.budgetMinor !== null || caps.dailyBudgetMinor !== null,
       autonomy: caps.autonomy,
       maxSteps: caps.maxSteps,
       maxRunSeconds: caps.maxRunSeconds,
@@ -251,6 +259,7 @@ async function buildDeps(
     autonomy: caps.autonomy,
     maxSteps: caps.maxSteps,
     budgetMinor: caps.budgetMinor ?? 0,
+    actionBudgetLimited: caps.budgetMinor !== null || caps.dailyBudgetMinor !== null,
     allowedModels: caps.allowedModels,
     grantedScopes: mcpGrantedScopes(request),
     maxRunSeconds: caps.maxRunSeconds,
@@ -367,6 +376,8 @@ export function requireOriginalAgentToken(
 }
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
+  await app.register(agentConversationRoutes);
+  await app.register(agentSettingsRoutes);
   await app.register(actionRoutes);
   await app.register(externalAgentRoutes);
   await app.register(agentOAuthRoutes);
@@ -704,6 +715,8 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return {
       approvals: page.map((row) => ({
         ...toApprovalView(row),
+        destructive: caps.find((cap)=>cap.id===row.capabilityId)?.destructive ?? true,
+        confirmationScope: (caps.find((cap)=>cap.id===row.capabilityId)?.destructive ?? true) ? 'once' : 'run',
         run: { id: row.run.id, actorId: row.run.actorId, objective: row.run.objective },
       })),
       nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
@@ -724,6 +737,8 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const capability = await findCapability(request, approval.capabilityId);
     if (!capability)
       throw new PluginError('agent.approval.capability_unavailable', 409, '该能力已不可用');
+    if (user.viaApiToken && capability.mutating && (capability.destructive ?? true)) throw new PluginError('agent.approval.human_required',403,'高风险操作必须由本人登录会话确认');
+    if (approval.capabilityHash !== agentCapabilityHash(capability)) throw new PluginError('agent.approval.definition_changed',409,'能力定义已变化，旧审批不可批准');
     const denied = approvalEligibility({
       approverId: user.id,
       runActorId: approval.run.actorId,

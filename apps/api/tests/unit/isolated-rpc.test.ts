@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadIsolatedPluginDefinition, stopIsolatedPlugin } from '../../src/plugins/isolated/host.ts';
-import type { PluginManifest, RawHttpReply, RawHttpRequest } from '@stackpanel/sdk';
+import type { PluginManifest, RawHttpReply, RawHttpRequest, LlmProvider, PluginContext } from '@stackpanel/sdk';
 
 type Message = {
   protocol: 1;
@@ -546,6 +546,116 @@ describe('isolated worker RPC protocol', () => {
     });
   });
 
+  it('T8/T9 publish failures are not silent; intercept/waterfall report unsupported', async () => {
+    const id = 'isolated-events-test';
+    const child = fork(worker, [], {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      execArgv: execArgv(),
+      env: {
+        ...process.env,
+        STACKPANEL_PLUGIN_ID: id,
+        STACKPANEL_PLUGIN_ENTRY: entry,
+        STACKPANEL_PLUGIN_MANIFEST: JSON.stringify({ id, name: 'Events test', version: '1.0.0' }),
+      },
+    });
+    children.push(child);
+
+    const ready = await nextMessage(child);
+    expect(ready).toMatchObject({ protocol: 1, pluginId: id, type: 'ready' });
+
+    // Activate: echo the subscribe token, ack every other registration.
+    const lifecycleId = randomUUID();
+    send(child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'lifecycle',
+      id: lifecycleId,
+      phase: 'activate',
+      context: {},
+    });
+    for (;;) {
+      const message = await nextMessage(child);
+      if (message.type === 'result' && message.id === lifecycleId) break;
+      if (message.type === 'capability') {
+        const token = (message.args as { token?: string } | undefined)?.token;
+        send(child, {
+          protocol: 1,
+          pluginId: id,
+          type: 'result',
+          id: messageId(message),
+          value: message.capability === 'events.subscribe' ? token : undefined,
+        });
+      }
+    }
+
+    // T8: a failing `events.publish` RPC must produce a `logger.error`, not be
+    // silently swallowed.
+    const publishId = randomUUID();
+    send(child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'invoke',
+      id: publishId,
+      method: 'GET',
+      route: '/events-publish',
+      request: { params: {}, query: {}, body: null, headers: {} },
+    });
+    const publishRequest = await nextMessage(child);
+    expect(publishRequest).toMatchObject({ type: 'capability', capability: 'events.publish' });
+    // Reject the RPC out-of-band; the worker should report via logger.error. The
+    // handler does not await `publish`, so the invoke result and the async error
+    // report can interleave — drain until the error surfaces.
+    send(child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: messageId(publishRequest),
+      error: { message: 'kernel link down' },
+    });
+    let publishResult: Message | undefined;
+    let publishError: Message | undefined;
+    for (let seen = 0; seen < 6 && !(publishResult && publishError); seen += 1) {
+      const message = await nextMessage(child);
+      if (message.type === 'capability' && message.capability === 'logger.error') {
+        publishError = message;
+      } else if (message.type === 'result' && message.id === publishId) {
+        publishResult = message;
+      } else if (message.type === 'capability') {
+        send(child, { protocol: 1, pluginId: id, type: 'result', id: messageId(message), value: undefined });
+      }
+    }
+    expect(publishError).toBeDefined();
+    expect(String((publishError?.args as { message?: string }).message)).toContain(
+      'events.publish failed',
+    );
+    send(child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'result',
+      id: messageId(publishError as Message),
+      value: undefined,
+    });
+    expect(publishResult).toMatchObject({ type: 'result', id: publishId });
+
+    // T9: intercept/waterfall are unsupported across the process boundary and
+    // must say so clearly (publish/subscribe remain available).
+    const interceptId = randomUUID();
+    send(child, {
+      protocol: 1,
+      pluginId: id,
+      type: 'invoke',
+      id: interceptId,
+      method: 'GET',
+      route: '/events-intercept',
+      request: { params: {}, query: {}, body: null, headers: {} },
+    });
+    const interceptResult = await nextMessage(child);
+    expect(interceptResult).toMatchObject({ type: 'result', id: interceptId });
+    const errors = (interceptResult.value ?? {}) as Record<string, string>;
+    expect(errors.intercept).toContain('暂不支持');
+    expect(errors.waterfall).toContain('暂不支持');
+  }, 20_000);
+
   it('streams a raw request body through the isolated bridge', async () => {
     const id = 'isolated-raw-echo';
     const manifest: PluginManifest = { id, name: 'Raw echo', version: '1.0.0' };
@@ -690,19 +800,20 @@ describe('isolated worker RPC protocol', () => {
 it('invokes an isolated model provider with unwrapped results and propagates cancellation',async()=>{
   const id=`agent-provider-${randomUUID()}`;
   const plugin=await loadIsolatedPluginDefinition(id,fileURLToPath(new URL('../fixtures/agent-provider-rpc-plugin.mjs',import.meta.url)),{id,name:'Agent fixture',version:'1.0.0'});
-  let provider: import('@stackpanel/sdk').LlmProvider & {aborted():Promise<boolean>};
+  let provider: (LlmProvider & {aborted():Promise<boolean>}) | undefined;
   const context={registerExtension:(_point:string,value:typeof provider)=>{provider=value;return()=>undefined;}};
   try {
-    await plugin.onRegister?.(context as unknown as import('@stackpanel/sdk').PluginContext);
-    expect((await provider!.listModels())[0]?.id).toBe('fixture');
+    await plugin.onRegister?.(context as unknown as PluginContext);
+    if (!provider) throw new Error('模型扩展未注册');
+    expect((await provider.listModels())[0]?.id).toBe('fixture');
     const options={callId:'stable-id',runId:'run-id',actorId:'owner'};
-    const answer=await provider!.complete({model:'fixture',messages:[]},options);
+    const answer=await provider.complete({model:'fixture',messages:[]},options);
     expect(answer.parts).toEqual([{type:'text',text:'stable-id'}]);
     const controller=new AbortController();
-    const result=provider!.complete({model:'wait',messages:[]},{...options,signal:controller.signal});
+    const result=provider.complete({model:'wait',messages:[]},{...options,signal:controller.signal});
     setTimeout(()=>controller.abort(),50);
     await expect(result).rejects.toThrow('aborted');
     await new Promise((resolve)=>setTimeout(resolve,50));
-    expect(await provider!.aborted()).toBe(true);
+    expect(await provider.aborted()).toBe(true);
   } finally {stopIsolatedPlugin(id);}
 },15000);

@@ -81,3 +81,7 @@ export { SectionTitle } from './section-title.js';
 export type { SectionTitleProps } from './section-title.js';
 export { WalletRecharge } from './wallet-recharge.js';
 export type { WalletRechargeMethod } from './wallet-recharge.js';
+
+export { ArticleBody } from './article-body.js';
+export { ErrorPage } from './error-page.js';
+export type { ErrorPageKind } from './error-page.js';

@@ -1,7 +1,9 @@
 /**
- * StatusBadge - 状态指示徽章
- * 
- * 用于显示系统运行状态，带动画效果的指示灯
+ * StatusBadge - 系统运行状态徽章
+ *
+ * Copy-free presentational primitive: the caller supplies the already-localised
+ * label (ADR-0016). Keeping copy out of the component lets the kernel, themes
+ * and plugins share it without a hard dependency on any message catalog.
  */
 
 import { cn } from '@/lib/utils';
@@ -11,8 +13,8 @@ export type StatusType = 'operational' | 'degraded' | 'maintenance' | 'outage';
 export interface StatusBadgeProps {
   /** 状态类型 */
   status?: StatusType;
-  /** 自定义状态文本 */
-  label?: string;
+  /** 已本地化的状态文本 */
+  label: string;
   /** 自定义类名 */
   className?: string;
 }
@@ -20,28 +22,23 @@ export interface StatusBadgeProps {
 const statusConfig: Record<
   StatusType,
   {
-    label: string;
     dotColor: string;
     pingColor: string;
   }
 > = {
   operational: {
-    label: '所有服务正常运行',
     dotColor: 'bg-green-500',
     pingColor: 'bg-green-400',
   },
   degraded: {
-    label: '部分服务性能下降',
     dotColor: 'bg-yellow-500',
     pingColor: 'bg-yellow-400',
   },
   maintenance: {
-    label: '系统维护中',
     dotColor: 'bg-blue-500',
     pingColor: 'bg-blue-400',
   },
   outage: {
-    label: '服务暂时不可用',
     dotColor: 'bg-red-500',
     pingColor: 'bg-red-400',
   },
@@ -49,7 +46,6 @@ const statusConfig: Record<
 
 export function StatusBadge({ status = 'operational', label, className }: StatusBadgeProps) {
   const config = statusConfig[status];
-  const displayLabel = label || config.label;
 
   return (
     <div
@@ -73,7 +69,7 @@ export function StatusBadge({ status = 'operational', label, className }: Status
       </span>
 
       {/* 状态文本 */}
-      <span className="font-medium text-neutral-700 dark:text-neutral-300">{displayLabel}</span>
+      <span className="font-medium text-neutral-700 dark:text-neutral-300">{label}</span>
     </div>
   );
 }

@@ -42,8 +42,11 @@ export function createMetricsCollector(metrics: Metrics): MetricsCollector {
   }
 
   async function collectOutboxBacklog(): Promise<void> {
-    const pending = await getOutboxBus().pendingCount();
-    metrics.outboxBacklog.set(pending);
+    const stats = await getOutboxBus().outboxStats();
+    metrics.outboxBacklog.set(stats.pending);
+    metrics.outboxParked.set(stats.parked);
+    metrics.outboxOldestPendingSeconds.set(Math.round(stats.oldestPendingAgeMs / 1000));
+    metrics.outboxCursorLagSeconds.set(Math.round(stats.cursorLagMs / 1000));
   }
 
   return {

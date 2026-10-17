@@ -1,4 +1,4 @@
-import { formatCurrency, type Locale } from '@/i18n';
+import { formatMoney, type Locale } from '@/i18n';
 
 /**
  * Aggregated admin dashboard payload. Everything is derived from real platform
@@ -73,7 +73,7 @@ export interface AdminOverviewData {
   }>;
 }
 
-/** Money is stored in fen; render a locale-aware CNY amount (ADR-0016 §6). */
+/** Money is stored in minor units; render a locale-aware CNY amount (ADR-0016 §6). */
 export function formatYuan(amount: number, locale: Locale = 'zh-CN'): string {
-  return formatCurrency(amount / 100, 'CNY', locale, { maximumFractionDigits: 0 });
+  return formatMoney(amount, 'CNY', locale, { maximumFractionDigits: 0 });
 }

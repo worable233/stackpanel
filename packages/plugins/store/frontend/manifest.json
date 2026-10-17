@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "beb9d9527961",
+  "revision": "f6a0022051eb",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -81,6 +81,8 @@
   "finders": [
     "store.products",
     "store.product",
+    "store.accountProducts",
+    "store.accountProduct",
     "store.paymentMethods",
     "store.pricePreview",
     "store.pendingOrderCount",
@@ -96,6 +98,7 @@
     "store.adminProduct",
     "store.adminProductCategoryIds",
     "store.productTypes",
+    "store.currencies",
     "store.upstreamSources",
     "store.cart",
     "store.viewer"
@@ -170,6 +173,10 @@
         {
           "finder": "catalog.adminCategories",
           "as": "categories"
+        },
+        {
+          "finder": "store.currencies",
+          "as": "currencies"
         }
       ]
     },
@@ -203,6 +210,10 @@
         {
           "finder": "catalog.adminCategories",
           "as": "categories"
+        },
+        {
+          "finder": "store.currencies",
+          "as": "currencies"
         }
       ]
     }

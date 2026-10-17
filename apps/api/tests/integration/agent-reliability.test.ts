@@ -471,6 +471,9 @@ describe('Agent complete plan boundaries', () => {
     await db.agentProfile.upsert({where:{apiTokenId:tokenId},create:{apiTokenId:tokenId,autonomy:'act'},update:{autonomy:'act'}});
     script=[answer(true)];const before=effects;const created=await create();
     expect(created.json().run.status).toBe('WAITING_APPROVAL');expect(effects).toBe(before);
+    const approval=await db.agentApproval.findFirstOrThrow({where:{runId:created.json().run.id}});
+    const robotic=await app.inject({method:'POST',url:`/api/v1/agent/approvals/${approval.id}/decide`,headers:{authorization:`Bearer ${token}`},payload:{approve:true}});
+    expect(robotic.statusCode,robotic.body).toBe(403);
     await db.agentProfile.update({where:{apiTokenId:tokenId},data:{autonomy:'read'}});
   });
   it('shares a finite step allowance with children and refuses a sibling credential',async()=>{
@@ -482,6 +485,17 @@ describe('Agent complete plan boundaries', () => {
     const detail=await app.inject({url:`/api/v1/agent/runs/${id}`,headers:auth()});expect(detail.json().family.length).toBe(2);
     const refused=await app.inject({method:'POST',url:'/api/v1/agent/runs',headers:{authorization:`Bearer ${sibling}`,'idempotency-key':`child-invalid-${suiteId}`},payload:{objective:'越界子任务',model:'test-model',parentId:id}});
     expect(refused.statusCode,refused.body).toBe(409);
+    await app.inject({method:'POST',url:`/api/v1/agent/runs/${id}/cancel`,headers:auth(),payload:{}});
+  });
+  it('starts the shared family clock when a child runs before its queued parent', async () => {
+    const parent = await background(); const id = parent.json().run.id;
+    script = [answer()];
+    const makeChild = () => app.inject({method:'POST',url:'/api/v1/agent/runs',headers:headers(),payload:{objective:'共享时间子任务',model:'test-model',parentId:id}});
+    const first = await makeChild(); expect(first.json().run.status).toBe('DONE');
+    expect((await db.agentRun.findUniqueOrThrow({where:{id}})).startedAt).not.toBeNull();
+    await db.agentRun.update({where:{id},data:{startedAt:new Date(0)}});
+    const count = calls; const second = await makeChild();
+    expect(second.json().run.status).toBe('FAILED'); expect(calls).toBe(count);
     await app.inject({method:'POST',url:`/api/v1/agent/runs/${id}/cancel`,headers:auth(),payload:{}});
   });
   it('rejects changed external tools and invalid arguments before sending any traffic',async()=>{
@@ -529,6 +543,8 @@ describe('Agent complete plan boundaries', () => {
   });
   it('accepts OAuth credentials at MCP and refuses direct platform API reuse',async()=>{
     const mcp=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${access}`},payload:{jsonrpc:'2.0',id:'1',method:'initialize',params:{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'fixture',version:'1'}}}});expect(mcp.statusCode,mcp.body).toBe(200);
+    const tool = await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${access}`},payload:{jsonrpc:'2.0',id:'tool',method:'tools/call',params:{name:'agent_run_list',arguments:{}}}});
+    expect(tool.statusCode,tool.body).toBe(200); expect(tool.json().result.isError).not.toBe(true);
     expect((await app.inject({url:'/api/v1/agent/credential',headers:{authorization:`Bearer ${access}`}})).statusCode).toBe(401);
   });
   it('rotates refresh tokens and revokes the full family on replay',async()=>{
@@ -537,6 +553,27 @@ describe('Agent complete plan boundaries', () => {
     expect((await app.inject({method:'POST',url:'/oauth/token',payload:{grant_type:'refresh_token',client_id:clientId,refresh_token:oldRefresh}})).statusCode).toBe(400);
     expect((await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${access}`},payload:{jsonrpc:'2.0',id:'1',method:'tools/list'}})).statusCode).toBe(401);
     expect((await app.inject({method:'POST',url:'/oauth/token',payload:{grant_type:'refresh_token',client_id:clientId,refresh_token:refresh}})).statusCode).toBe(400);
+  });
+  it('revokes the refresh family after concurrent replay and disables active client credentials', async () => {
+    const issue = async () => {
+      const consent = await app.inject({method:'POST',url:'/api/v1/agent/oauth/authorize',headers:auth(),payload:authorization()});
+      expect(consent.statusCode,consent.body).toBe(200);
+      const issued = await app.inject({method:'POST',url:'/oauth/token',payload:{grant_type:'authorization_code',client_id:clientId,code:new URL(consent.json().redirectUri).searchParams.get('code'),redirect_uri:authorization().redirect_uri,code_verifier:verifier}});
+      expect(issued.statusCode,issued.body).toBe(200);return issued.json();
+    };
+    const issued = await issue();
+    const payload = {grant_type:'refresh_token',client_id:clientId,refresh_token:issued.refresh_token};
+    const raced = await Promise.all([app.inject({method:'POST',url:'/oauth/token',payload}),app.inject({method:'POST',url:'/oauth/token',payload})]);
+    expect(raced.map(row=>row.statusCode).sort()).toEqual([200,400]);
+    const winner = raced.find(row=>row.statusCode===200);
+    if (!winner) throw new Error('缺少刷新响应');
+    const check = (accessToken:string) => app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${accessToken}`},payload:{jsonrpc:'2.0',id:'1',method:'tools/list'}});
+    expect((await check(winner.json().access_token)).statusCode).toBe(401);
+    const fresh = await issue();
+    const disabled = await app.inject({method:'PUT',url:`/admin/agent/oauth-clients/${clientId}`,headers:admin(),payload:{name:'Fixture OAuth',redirectUris:[authorization().redirect_uri],enabled:false}});
+    expect(disabled.statusCode,disabled.body).toBe(200);
+    expect((await check(fresh.access_token)).statusCode).toBe(401);
+    expect((await app.inject({method:'POST',url:'/oauth/token',payload:{grant_type:'refresh_token',client_id:clientId,refresh_token:fresh.refresh_token}})).statusCode).toBe(400);
   });
   it('replays a completed inference journal without paying a second time',async()=>{
     const {journaledProvider}=await import('../../src/agent/metering.ts');const {DEFAULT_AGENT_POLICY}=await import('../../src/lib/agent-policy.ts');
@@ -554,6 +591,25 @@ describe('Agent complete plan boundaries', () => {
 
 it.runIf(Boolean(process.env.AGENT_TEST_SANDBOX_IMAGE))('runs a real digest-pinned sandbox without network/root/write access',async()=>{
   const { runSandbox } = await import('../../src/agent/actions.ts');
-  const result=await runSandbox({name:'fixture',enabled:true,image:process.env.AGENT_TEST_SANDBOX_IMAGE!,timeoutSeconds:10,inputSchema:{type:'object'},argv:['node','-e',`const fs=require('fs'),os=require('os'); let readOnly=false; try{fs.writeFileSync('/escape','bad')}catch{readOnly=true}; process.stdout.write(JSON.stringify({uid:process.getuid(),readOnly,interfaces:Object.keys(os.networkInterfaces())}));`]},{});
+  const result=await runSandbox({name:'fixture',enabled:true,image:String(process.env.AGENT_TEST_SANDBOX_IMAGE),timeoutSeconds:30,inputSchema:{type:'object'},argv:['node','-e',`const fs=require('fs'),os=require('os'); let readOnly=false; try{fs.writeFileSync('/escape','bad')}catch{readOnly=true}; process.stdout.write(JSON.stringify({uid:process.getuid(),readOnly,interfaces:Object.keys(os.networkInterfaces())}));`]},{});
   expect(JSON.parse(result.stdout)).toEqual({uid:65534,readOnly:true,interfaces:['lo']});
 },15000);
+
+it('applies a root step ceiling across independently requested child runs',async()=>{
+  const parent=await app.inject({method:'POST',url:'/api/v1/agent/runs',headers:headers(),payload:{objective:'共享额度',model:'test-model',execution:'background',maxSteps:1}});expect(parent.statusCode,parent.body).toBe(202);
+  const id=parent.json().run.id;script=[answer()];
+  const spawn=()=>app.inject({method:'POST',url:'/api/v1/agent/runs',headers:headers(),payload:{objective:'受限子任务',model:'test-model',parentId:id,maxSteps:50}});
+  const child=await spawn();expect(child.json().run.status).toBe('DONE');const before=calls;
+  const second=await spawn();expect(second.json().run.status).toBe('FAILED');expect(calls).toBe(before);
+  await app.inject({method:'POST',url:`/api/v1/agent/runs/${id}/cancel`,headers:{authorization:`Bearer ${session}`},payload:{}});
+});
+it('retains and retries a failed notification intent without duplicating its inbox record',async()=>{
+  const {notifyAgent,retryAgentNotices}=await import('../../src/notifications/agent-notifications.ts');
+  const run=await db.agentRun.create({data:{actorId:userId,tokenId,objective:'通知故障'}});
+  await notifyAgent({upsert:async()=>{throw new Error('temporary failure');}} as never,userId,run.id,{key:'retry',type:'agent.test',title:'测试通知',body:'测试'});
+  const delivery=await db.agentDelivery.findFirstOrThrow({where:{runId:run.id}});expect(delivery.deliveredAt).toBeNull();
+  await db.agentDelivery.update({where:{id:delivery.id},data:{nextAttemptAt:new Date(0)}});
+  await retryAgentNotices(app.notifications);await retryAgentNotices(app.notifications);
+  expect((await db.agentDelivery.findUniqueOrThrow({where:{id:delivery.id}})).deliveredAt).not.toBeNull();
+  expect(await db.notification.count({where:{userId,dedupeKey:`agent:${run.id}:retry`}})).toBe(1);
+});

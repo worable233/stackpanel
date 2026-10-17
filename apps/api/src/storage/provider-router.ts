@@ -14,8 +14,9 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { EXTENSION_POINTS } from '@stackpanel/sdk';
+import { EXTENSION_POINTS, STORAGE_PROXY_CHUNK_BYTES } from '@stackpanel/sdk';
 import type { StorageProvider } from '@stackpanel/sdk';
+import { isMetadataHostname } from '@stackpanel/net-guard';
 import {
   assertSafeStorageKey,
   type PutObjectOptions,
@@ -26,6 +27,31 @@ import {
 /** Directory for one-time spool files handed to a provider. */
 function spoolRoot(): string {
   return join(tmpdir(), 'stackpanel-spool');
+}
+
+/**
+ * Reject a provider-supplied `redirect` URL pointed at a cloud-metadata service.
+ *
+ * The URL comes from plugin code (possibly a third-party isolated plugin), and
+ * the *kernel* is what follows it — so an unguarded URL is an SSRF primitive: a
+ * malicious provider could make the kernel GET/PUT to `169.254.169.254` and read
+ * instance credentials. Consistent with the endpoint guard (`backend.ts`), this
+ * blocks only link-local/metadata targets and non-http(s) schemes; private and
+ * loopback hosts stay allowed because self-hosted MinIO commonly lives there.
+ */
+function assertSafeRedirect(rawUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error(`存储 provider 返回了非法 URL：${rawUrl}`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`存储 provider 返回了非 http(s) URL：${url.protocol}`);
+  }
+  if (isMetadataHostname(url.hostname)) {
+    throw new Error(`存储 provider 返回了云元数据地址，已拒绝：${url.hostname}`);
+  }
 }
 
 export class KernelStorageRouter implements StorageDriver {
@@ -46,13 +72,16 @@ export class KernelStorageRouter implements StorageDriver {
     });
     // An empty target means the provider is standing aside (e.g. configured to
     // 'env'); hand the write to the env driver.
-    if (!target.uploadUrl && !target.spoolPath) {
+    if (!target.uploadUrl && !target.spoolPath && !target.proxy) {
       return this.fallback.put(key, data, options);
     }
     try {
       // The channel is inferred from what the provider returned, not from a
       // static declaration: a provider may switch backends at runtime.
-      if (target.uploadUrl) {
+      if (target.proxy) {
+        await this.putProxy(key, data);
+      } else if (target.uploadUrl) {
+        assertSafeRedirect(target.uploadUrl);
         const response = await fetch(target.uploadUrl, {
           method: 'PUT',
           headers: {
@@ -83,13 +112,42 @@ export class KernelStorageRouter implements StorageDriver {
     }
   }
 
+  /**
+   * `proxy` write: stream the object into the provider in bounded chunks. Each
+   * chunk is one control call, so an object never becomes a single over-limit
+   * message (the reason `proxy` is safe over the isolated transport).
+   */
+  private async putProxy(key: string, data: Uint8Array): Promise<void> {
+    const writeChunk = this.provider.writeChunk;
+    if (!writeChunk) {
+      throw new Error('存储 provider 声明了 proxy 字节通道但未实现 writeChunk');
+    }
+    for (let offset = 0; offset < data.length; offset += STORAGE_PROXY_CHUNK_BYTES) {
+      const end = Math.min(offset + STORAGE_PROXY_CHUNK_BYTES, data.length);
+      await writeChunk.call(this.provider, {
+        key,
+        offset,
+        data: data.subarray(offset, end),
+        size: data.length,
+      });
+    }
+    // Empty objects still need one call so the provider creates the key.
+    if (data.length === 0) {
+      await writeChunk.call(this.provider, { key, offset: 0, data: new Uint8Array(0), size: 0 });
+    }
+  }
+
   async get(key: string): Promise<Uint8Array | null> {
     assertSafeStorageKey(key);
     const stat = await this.provider.stat(key).catch(() => null);
     // Provider does not have it: serve a historical object from the env driver.
     if (!stat) return this.fallback.get(key);
     const target = await this.provider.prepareGet(key);
+    if ('proxy' in target) {
+      return this.getProxy(key, stat.size);
+    }
     if ('url' in target) {
+      assertSafeRedirect(target.url);
       const response = await fetch(target.url);
       if (!response.ok) return null;
       return new Uint8Array(await response.arrayBuffer());
@@ -99,6 +157,44 @@ export class KernelStorageRouter implements StorageDriver {
     const buffer = await readFile(target.spoolPath).catch(() => null);
     if (!buffer) return null;
     return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  }
+
+  /**
+   * `proxy` read: pull the object from the provider in bounded chunks until it
+   * returns fewer bytes than asked for (or `null`). Bounded per call for the
+   * same reason as {@link putProxy}.
+   */
+  private async getProxy(key: string, size: number): Promise<Uint8Array | null> {
+    const readChunk = this.provider.readChunk;
+    if (!readChunk) {
+      throw new Error('存储 provider 声明了 proxy 字节通道但未实现 readChunk');
+    }
+    const parts: Uint8Array[] = [];
+    let offset = 0;
+    // Bound the loop: prefer the stat size; fall back to a hard ceiling when the
+    // provider reports no size, so a misbehaving provider cannot loop forever.
+    const maxChunks = size > 0 ? Math.ceil(size / STORAGE_PROXY_CHUNK_BYTES) + 1 : 4096;
+    for (let index = 0; index < maxChunks; index += 1) {
+      const chunk = await readChunk.call(this.provider, {
+        key,
+        offset,
+        length: STORAGE_PROXY_CHUNK_BYTES,
+      });
+      if (!chunk || chunk.byteLength === 0) break;
+      parts.push(chunk);
+      offset += chunk.byteLength;
+      if (chunk.byteLength < STORAGE_PROXY_CHUNK_BYTES) break;
+      if (size > 0 && offset >= size) break;
+    }
+    if (parts.length === 0 && size > 0) return null;
+    const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
+    const out = new Uint8Array(total);
+    let cursor = 0;
+    for (const part of parts) {
+      out.set(part, cursor);
+      cursor += part.byteLength;
+    }
+    return out;
   }
 
   async delete(key: string): Promise<void> {
@@ -140,7 +236,10 @@ export class KernelStorageRouter implements StorageDriver {
     assertSafeStorageKey(key);
     try {
       const target = await this.provider.prepareGet(key, expiresInSeconds);
-      if ('url' in target) return target.url;
+      if ('url' in target) {
+        assertSafeRedirect(target.url);
+        return target.url;
+      }
     } catch {
       // fall through
     }

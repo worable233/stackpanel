@@ -10,7 +10,10 @@
 #   - 目录形态会校验 manifest.json 的 engine 与 checksums.txt 的 sha256，损坏拒绝恢复。
 #   - 恢复会 **覆盖** 目标库中的同名对象（pg_restore --clean --if-exists），
 #     并在覆盖前用 pg_dump 对现场做一次安全快照（可选，见 SKIP_SAFETY_DUMP=1）。
-#   - media 会解压覆盖现有运行数据目录（选择性导出未含 media 时跳过）。
+#   - media 会写回实际存储：S3 驱动逐对象 PUT 回桶（scripts/storage-tar.mjs），
+#     local 驱动解压覆盖 $DATA_DIR（选择性导出未含 media 时跳过）。
+#   - S3 备份还会带 data.tar（数据卷里的插件/主题/前端信号），一并写回。
+#   - 运行形态与 backup.sh 相同：自动识别 compose 栈，可用 SP_BACKUP_MODE 强制。
 #   - 归档含加密密钥时提示：导入方需持有同一 SETTINGS_ENCRYPTION_KEY。
 #   - 存储引擎唯一为 PostgreSQL（ADR-0019）；见 ADR-0018。
 #
@@ -19,8 +22,36 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-common.sh"
 
 load_env
-require_database_url
-require_tool pg_restore
+
+# ---- 运行形态：宿主机直跑 vs docker compose（口径同 backup.sh）-------------
+COMPOSE=""
+if [[ "${SP_BACKUP_MODE:-}" != "host" ]]; then
+  COMPOSE="$(compose_file || true)"
+fi
+MODE="$(resolve_mode "$COMPOSE")"
+if [[ "$MODE" == "compose" && -z "$COMPOSE" ]]; then
+  echo "错误：SP_BACKUP_MODE=compose，但未检测到运行中的 compose 栈。" >&2
+  echo "      请先 \`docker compose up -d\`，或改用 SP_BACKUP_MODE=host。" >&2
+  exit 1
+fi
+[[ "$MODE" == "compose" ]] || COMPOSE=""
+
+if [[ "$MODE" == "compose" ]]; then
+  log "检测到运行中的 compose 部署：$(basename "$COMPOSE")"
+  DATABASE_URL="$(compose_database_url "$COMPOSE")"
+  [[ -n "$DATABASE_URL" ]] || {
+    echo "错误：compose 配置中未找到 api 的 DATABASE_URL。" >&2
+    exit 1
+  }
+  STORAGE_DRIVER_IN_STACK="$(compose_service_env "$COMPOSE" api STORAGE_DRIVER)"
+else
+  require_database_url
+  require_tool pg_restore
+  STORAGE_DRIVER_IN_STACK="${STORAGE_DRIVER:-local}"
+  if [[ "$STORAGE_DRIVER_IN_STACK" == "s3" ]]; then
+    require_tool node "S3 恢复需要 Node.js 才能写回对象存储。"
+  fi
+fi
 
 if [[ $# -lt 1 ]]; then
   echo "用法：bash scripts/restore.sh <备份目录>" >&2
@@ -30,6 +61,7 @@ fi
 BASE="$1"
 DB_DUMP=""
 MEDIA_FILE=""
+DATA_FILE=""
 OUT_DIR=""
 MANIFEST_JSON=""
 
@@ -37,6 +69,7 @@ if [[ -d "$BASE" ]]; then
   OUT_DIR="$BASE"
   [[ -f "$OUT_DIR/database.dump" ]] && DB_DUMP="$OUT_DIR/database.dump"
   [[ -f "$OUT_DIR/media.tar" ]] && MEDIA_FILE="$OUT_DIR/media.tar"
+  [[ -f "$OUT_DIR/data.tar" ]] && DATA_FILE="$OUT_DIR/data.tar"
   [[ -f "$OUT_DIR/manifest.json" ]] && MANIFEST_JSON="$OUT_DIR/manifest.json"
 elif [[ -f "$BASE-stackpanel.pg.dump" ]]; then
   DB_DUMP="$BASE-stackpanel.pg.dump"
@@ -113,7 +146,16 @@ if [[ "${SKIP_SAFETY_DUMP:-0}" != "1" ]]; then
   SNAP_DIR="$BACKUP_DIR/$(date +%Y%m%d-%H%M%S)-prerestore"
   echo "==> 恢复前安全快照 -> $SNAP_DIR"
   mkdir -p "$SNAP_DIR"
-  if ! pg_dump --format=custom --no-owner --file="$SNAP_DIR/database.dump" "$DATABASE_URL"; then
+  snap_ok=0
+  if [[ -n "$COMPOSE" ]]; then
+    compose_exec "$COMPOSE" api pg_dump --format=custom --no-owner --dbname="$DATABASE_URL" \
+      > "$SNAP_DIR/database.dump" && snap_ok=1
+  else
+    pg_dump --format=custom --no-owner --file="$SNAP_DIR/database.dump" "$DATABASE_URL" \
+      && snap_ok=1
+  fi
+  if [[ "$snap_ok" != "1" ]]; then
+    rm -f "$SNAP_DIR/database.dump"
     echo "错误：恢复前安全快照失败，已中止恢复。确认无需回滚可用 SKIP_SAFETY_DUMP=1 跳过。" >&2
     exit 1
   fi
@@ -121,16 +163,48 @@ fi
 
 # ---- 恢复数据库 -------------------------------------------------------------
 echo "==> 恢复 PostgreSQL $DB_DUMP -> $DATABASE_URL"
-pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$DATABASE_URL" "$DB_DUMP"
+if [[ -n "$COMPOSE" ]]; then
+  # Stream the dump into the container: the file lives on the host, and the
+  # stack publishes no PostgreSQL port for a host-side pg_restore.
+  compose_exec "$COMPOSE" api pg_restore --clean --if-exists --no-owner --no-privileges \
+    --dbname="$DATABASE_URL" < "$DB_DUMP"
+else
+  pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$DATABASE_URL" "$DB_DUMP"
+fi
 
-# ---- 解压运行数据 -----------------------------------------------------------
+# ---- 恢复对象存储 -----------------------------------------------------------
 # 空归档（选择性导出未含 media）不应覆盖现场，故仅在有实际成员时展开。
 if [[ -n "$MEDIA_FILE" && -f "$MEDIA_FILE" ]] && tar tf "$MEDIA_FILE" 2>/dev/null | grep -q .; then
-  echo "==> 恢复运行数据 $MEDIA_FILE -> $DATA_DIR"
-  mkdir -p "$DATA_DIR"
-  tar xf "$MEDIA_FILE" -C "$DATA_DIR"
+  if [[ "$STORAGE_DRIVER_IN_STACK" == "s3" ]]; then
+    echo "==> 恢复对象存储（S3/MinIO）$MEDIA_FILE"
+    if [[ -n "$COMPOSE" ]]; then
+      compose_exec "$COMPOSE" api node scripts/storage-tar.mjs import < "$MEDIA_FILE"
+    else
+      node "$ROOT_DIR/scripts/storage-tar.mjs" import < "$MEDIA_FILE"
+    fi
+  elif [[ -n "$COMPOSE" ]]; then
+    echo "==> 恢复容器内运行数据卷 $MEDIA_FILE -> /app/data"
+    compose_exec "$COMPOSE" api tar xf - -C /app/data < "$MEDIA_FILE"
+  else
+    echo "==> 恢复运行数据 $MEDIA_FILE -> $DATA_DIR"
+    mkdir -p "$DATA_DIR"
+    tar xf "$MEDIA_FILE" -C "$DATA_DIR"
+  fi
 else
   warn "未找到配套的运行数据归档（或为空），跳过。"
+fi
+
+# ---- 恢复运行数据目录（S3 部署的插件/主题）----------------------------------
+# 旧归档没有这个成员，缺失时静默跳过；选择性导出未含 media 时也不写。
+if [[ -n "$DATA_FILE" && -f "$DATA_FILE" ]] && tar tf "$DATA_FILE" 2>/dev/null | grep -q .; then
+  if [[ -n "$COMPOSE" ]]; then
+    echo "==> 恢复容器内运行数据卷 $DATA_FILE -> /app/data"
+    compose_exec "$COMPOSE" api tar xf - -C /app/data < "$DATA_FILE"
+  else
+    echo "==> 恢复运行数据 $DATA_FILE -> $DATA_DIR"
+    mkdir -p "$DATA_DIR"
+    tar xf "$DATA_FILE" -C "$DATA_DIR"
+  fi
 fi
 
 echo "完成。"

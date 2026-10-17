@@ -22,8 +22,15 @@ import type {
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
   ApiTokenView,
+  AdminCurrencyDefinitionListResponse,
+  AdminCurrencyDefinitionView,
+  AdminFxRateListResponse,
+  AdminFxRateView,
   ConnectedIdentity,
   ConnectedIdentityListResponse,
+  CurrencyDefinitionListResponse,
+  CurrencyDefinitionMutationResponse,
+  CurrencyDefinitionView,
   CurrentUserResponse,
   Health,
   LoginResponse,
@@ -39,6 +46,8 @@ import type {
   PluginFrontendsResponse,
   Readiness,
   SessionInfoResponse,
+  SettlementCurrencyResponse,
+  SetupStatusResponse,
   ThemeInfo,
   ThemesResponse,
   ActiveThemeResponse,
@@ -170,6 +179,11 @@ export const sessionInfoSchema = z.object({
 export const sessionInfoResponseSchema = z.object({
   user: sessionInfoSchema.nullable(),
 }) satisfies z.ZodType<SessionInfoResponse>;
+
+export const setupStatusResponseSchema = z.object({
+  required: z.boolean(),
+  tokenRequired: z.boolean(),
+}) satisfies z.ZodType<SetupStatusResponse>;
 
 export const connectedIdentitySchema = z.object({
   id: z.string(),
@@ -635,6 +649,7 @@ export const adminMenuSchema = z.object({
 });
 
 export const adminRouteSchema = z.object({
+  systemSettings: z.object({ label: z.string().min(1).max(80), order: z.number().finite().optional() }).optional(),
   path: z.string().startsWith('/').min(1),
   component: z.string().min(1),
   permission: z.string().optional(),
@@ -1115,3 +1130,52 @@ export const resellerMutationResponseSchema = z.object({
 export const resellerDeleteResponseSchema = z.object({
   deleted: z.boolean(),
 }) satisfies z.ZodType<ResellerDeleteResponse>;
+
+/* ----------------------------- 币种治理 ----------------------------- */
+
+export const currencyDefinitionViewSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  symbol: z.string(),
+  minorUnit: z.number().int(),
+}) satisfies z.ZodType<CurrencyDefinitionView>;
+
+export const currencyDefinitionListResponseSchema = z.object({
+  currencies: z.array(currencyDefinitionViewSchema),
+}) satisfies z.ZodType<CurrencyDefinitionListResponse>;
+
+export const adminCurrencyDefinitionViewSchema = currencyDefinitionViewSchema.extend({
+  enabled: z.boolean(),
+  referenced: z.boolean(),
+  settlement: z.boolean(),
+  sample: z.string(),
+}) satisfies z.ZodType<AdminCurrencyDefinitionView>;
+
+export const adminCurrencyDefinitionListResponseSchema = z.object({
+  currencies: z.array(adminCurrencyDefinitionViewSchema),
+  settlementCurrency: z.string(),
+}) satisfies z.ZodType<AdminCurrencyDefinitionListResponse>;
+
+export const currencyDefinitionMutationResponseSchema = z.object({
+  currency: adminCurrencyDefinitionViewSchema,
+}) satisfies z.ZodType<CurrencyDefinitionMutationResponse>;
+
+export const settlementCurrencyResponseSchema = z.object({
+  settlementCurrency: z.string(),
+  candidates: z.array(currencyDefinitionViewSchema).optional(),
+}) satisfies z.ZodType<SettlementCurrencyResponse>;
+
+export const adminFxRateViewSchema = z.object({
+  id: z.string(),
+  fromCurrency: z.string(),
+  toCurrency: z.string(),
+  rate: z.number().int(),
+  source: z.string(),
+  validUntil: z.string().nullable(),
+  updatedAt: z.string(),
+}) satisfies z.ZodType<AdminFxRateView>;
+
+export const adminFxRateListResponseSchema = z.object({
+  settlementCurrency: z.string(),
+  rates: z.array(adminFxRateViewSchema),
+}) satisfies z.ZodType<AdminFxRateListResponse>;

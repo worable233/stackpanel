@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "5400db5aab77",
+  "revision": "5d550bf78eb4",
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
@@ -10,9 +10,8 @@
       "path": "/storage",
       "component": "admin/storage",
       "permission": "storage.admin",
-      "nav": {
+      "systemSettings": {
         "label": "存储",
-        "group": "系统",
         "order": 100
       },
       "data": [
@@ -25,6 +24,12 @@
   ],
   "adminActions": [],
   "actions": [
+    {
+      "id": "storage.test-connection",
+      "method": "POST",
+      "path": "/storage/admin/test",
+      "permission": "storage.admin"
+    },
     {
       "id": "storage.save-config",
       "method": "POST",
@@ -40,21 +45,25 @@
         {
           "name": "localRoot",
           "type": "string",
+          "default": "",
           "maxLength": 1024
         },
         {
           "name": "s3Endpoint",
           "type": "string",
+          "default": "",
           "maxLength": 2048
         },
         {
           "name": "s3Region",
           "type": "string",
+          "default": "",
           "maxLength": 64
         },
         {
           "name": "s3Bucket",
           "type": "string",
+          "default": "",
           "maxLength": 255
         },
         {
@@ -64,6 +73,43 @@
         {
           "name": "publicBaseUrl",
           "type": "string",
+          "default": "",
+          "maxLength": 2048
+        },
+        {
+          "name": "httpUploadUrl",
+          "type": "string",
+          "default": "",
+          "maxLength": 2048
+        },
+        {
+          "name": "httpPublicBaseUrl",
+          "type": "string",
+          "default": "",
+          "maxLength": 2048
+        },
+        {
+          "name": "httpMethod",
+          "type": "string",
+          "default": "",
+          "maxLength": 8
+        },
+        {
+          "name": "httpFieldName",
+          "type": "string",
+          "default": "",
+          "maxLength": 128
+        },
+        {
+          "name": "httpHeaders",
+          "type": "string",
+          "default": "",
+          "maxLength": 4096
+        },
+        {
+          "name": "httpDeleteUrlTemplate",
+          "type": "string",
+          "default": "",
           "maxLength": 2048
         },
         {

@@ -1,2 +1,4 @@
 import { redirect } from 'next/navigation';
-export default function Page() { redirect('/admin/agent'); }
+export default function Page() {
+  redirect('/admin/settings#agent');
+}

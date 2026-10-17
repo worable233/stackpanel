@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "dd5b54843c28",
+  "revision": "48407864c55c",
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
@@ -10,9 +10,9 @@
       "path": "/referrals",
       "component": "admin/referrals",
       "permission": "store.admin",
-      "nav": {
-        "label": "推广管理",
-        "group": "商店插件"
+      "systemSettings": {
+        "label": "推广",
+        "order": 120
       },
       "data": [
         {

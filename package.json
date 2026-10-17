@@ -13,6 +13,9 @@
     "typecheck": "pnpm build:frontend && pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "test": "pnpm -r --if-present test",
+    "i18n:scan": "node scripts/scan-i18n-literals.mjs",
+    "i18n:check": "node scripts/scan-i18n-literals.mjs --check",
+    "i18n:baseline": "node scripts/scan-i18n-literals.mjs --update-baseline",
     "verify:s2": "node scripts/verify-s2.mjs",
     "smoke:cluster": "node scripts/smoke-cluster.mjs",
     "verify:lb": "node scripts/verify-lb.mjs",
@@ -41,7 +44,8 @@
     "pm2:stop": "pm2 stop ecosystem.config.cjs && pm2 delete ecosystem.config.cjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "e2e:install": "playwright install"
+    "e2e:install": "playwright install",
+    "probe:v10": "node scripts/probe-zjmf-v10.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

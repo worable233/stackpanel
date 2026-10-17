@@ -70,7 +70,7 @@ export async function executePluginAction(
   await api
     .recordFrontendAudit('frontend.action.execute', pluginId, actionId, { method: action.method })
     .catch(() => undefined);
-  revalidatePath(returnPath);
+  revalidatePath(new URL(returnPath, 'http://stackpanel.local').pathname);
   // Only redirect when the action declares an explicit destination. A bare
   // `redirect(returnPath)` on success would reject the server-action promise
   // (Next's reducer rejects on redirect), which plugin frontends that `await`
@@ -105,7 +105,7 @@ function coerceActionInput(
     }
     const raw = formData.get(field.name);
     const value = raw === null || raw === '' ? field.default : raw;
-    if (value === undefined || value === null || value === '') {
+    if (value === undefined || value === null || (value === '' && field.default !== '')) {
       if (field.required) throw new Error(`Missing ${field.name}`);
       continue;
     }
@@ -209,5 +209,5 @@ function actionFailure(returnPath: string, actionId: string, message: string): n
   const url = new URL(returnPath, 'http://stackpanel.local');
   url.searchParams.set('action', actionId);
   url.searchParams.set('error', message);
-  redirect(`${url.pathname}${url.search}`);
+  redirect(`${url.pathname}${url.search}${url.hash}`);
 }

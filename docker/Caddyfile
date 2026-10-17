@@ -3,7 +3,30 @@
 # Environment variables are substituted by Caddy at startup.
 
 {
-	email {$STACKPANEL_EMAIL}
+	# Quote the value: an empty env var must still adapt to an empty `email`
+	# argument. Unquoted `email {$...}` with an empty value drops the argument and
+	# Caddy aborts with "wrong argument count" (breaking `--domain` without
+	# `--email`). Quoting keeps an empty string a valid argument.
+	email "{$STACKPANEL_EMAIL}"
+
+	# CDN / external load balancer support (off by default).
+	#
+	# When a CDN (Cloudflare, CloudFront, ALB, …) or another reverse proxy sits in
+	# front of Caddy, the immediate peer is that proxy, so Caddy would otherwise
+	# forward the proxy's own address in `X-Forwarded-For` — the API then sees one
+	# IP for the whole internet, collapsing per-IP rate limits and audit trails.
+	#
+	# Enable by setting STACKPANEL_TRUSTED_PROXIES to the CDN's egress CIDRs
+	# (space/comma separated, e.g. `173.245.48.0/20 103.21.244.0/22`). Never set
+	# this to a range clients can join, or they can spoof `X-Forwarded-For` and
+	# evade rate limits. The default `0.0.0.0/32` trusts nothing.
+	#
+	# `trusted_proxies_strict` parses right-to-left, which is required for CDNs
+	# that APPEND the real client IP (Cloudflare/ALB/CloudFront).
+	servers {
+		trusted_proxies static {$STACKPANEL_TRUSTED_PROXIES:0.0.0.0/32}
+		trusted_proxies_strict
+	}
 }
 
 {$STACKPANEL_DOMAIN} {

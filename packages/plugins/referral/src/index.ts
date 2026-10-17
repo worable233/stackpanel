@@ -1,10 +1,5 @@
-import type {
-  ExtensionInstance,
-  HttpReply,
-  HttpRequest,
-  JobContext,
-} from '@stackpanel/sdk';
-import { PluginError, definePlugin } from '@stackpanel/sdk';
+import type { ExtensionInstance, HttpReply, HttpRequest, JobContext } from '@stackpanel/sdk';
+import { PluginError, WALLET_CURRENCY, definePlugin } from '@stackpanel/sdk';
 import { z } from 'zod';
 import { attributeRegistration } from './attribution';
 import { createCode, listCodes, updateCode } from './codes';
@@ -187,9 +182,7 @@ const listAdminRecords = async (): Promise<unknown> => {
     );
   }
   const inviterIds = [...new Set(items.map((item) => item.spec.inviterId))];
-  const users = inviterIds.length
-    ? await context().auth.listUsersByIds(inviterIds)
-    : [];
+  const users = inviterIds.length ? await context().auth.listUsersByIds(inviterIds) : [];
   const emailById = new Map(users.map((user) => [user.id, user.email]));
   return {
     total,
@@ -211,7 +204,21 @@ const getAdminConfig = async (): Promise<unknown> => ({ config: await loadConfig
 const putAdminConfig = async (req: HttpRequest): Promise<unknown> => {
   const parsed = configInputSchema.safeParse(req.body ?? {});
   if (!parsed.success) throw new ReferralPluginError(400, '无效的配置');
-  return { config: await saveConfig(parsed.data as ReferralConfig) };
+  // Rewards are credited to the wallet, which only holds CNY today, and the
+  // currency must come from the kernel catalog rather than free text.
+  let currency: string;
+  try {
+    currency = (await context().currency.requireEnabled(parsed.data.currency)).code;
+  } catch (error) {
+    if (error instanceof PluginError) throw error;
+    throw new ReferralPluginError(400, '不支持的币种');
+  }
+  if (currency !== WALLET_CURRENCY) {
+    throw new ReferralPluginError(400, `推广奖励只能使用 ${WALLET_CURRENCY} 结算`);
+  }
+  return {
+    config: await saveConfig({ ...(parsed.data as ReferralConfig), currency }),
+  };
 };
 
 /** 管理员手动调账兜底（奖励漏发 / 误发时人工修正）。 */
@@ -327,9 +334,12 @@ export const referralPlugin = definePlugin({
     {
       topic: 'user.registered',
       handler: (payload) => {
-        const event = payload as
-          | { userId?: string; email?: string; affid?: string | null; ip?: string | null }
-          | null;
+        const event = payload as {
+          userId?: string;
+          email?: string;
+          affid?: string | null;
+          ip?: string | null;
+        } | null;
         if (!event?.userId) return;
         void loadConfig()
           .then((config) =>

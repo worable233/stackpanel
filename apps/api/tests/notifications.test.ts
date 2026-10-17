@@ -27,6 +27,10 @@ function createFakeDb() {
   };
 
   const api = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(api)),
+    outboxEvent: {
+      create: vi.fn(async () => ({})),
+    },
     notification: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = stamp(data);

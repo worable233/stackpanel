@@ -819,3 +819,17 @@ describe('agent reliability regressions', () => {
     expect(h.exec.calls).toHaveLength(0);
   });
 });
+
+it('invalidates human approval when the installed capability definition changes',async()=>{
+  const h=await harness({script:[completion([toolCall('risk','order_cancel',{params:{id:'o_1'}})],'tool_calls')]});
+  await runAgentUntilBlocked(h.deps);
+  const approval=must(h.approvalRows()[0]);approval['status']='APPROVED';
+  h.deps.capabilities=h.deps.capabilities.map((cap)=>cap.id==='order.cancel'?{...cap,path:'/changed/:id'}:cap);
+  const result=await resumeAgent(h.deps,h.deps.runId);
+  expect(result.status).toBe('FAILED');expect(h.exec.calls).toHaveLength(0);
+});
+it('refuses an unpriced write when a monetary budget is active',async()=>{
+  const h=await harness({autonomy:'act',budgetMinor:100,script:[completion([toolCall('risk','order_cancel',{params:{id:'o_1'}})],'tool_calls')]});
+  const result=await runAgentUntilBlocked(h.deps);
+  expect(result.status).toBe('FAILED');expect(h.exec.calls).toHaveLength(0);
+});

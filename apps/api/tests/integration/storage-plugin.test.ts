@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, readdir } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import path from 'node:path';
 import { S3Driver } from '@stackpanel/db';
 import type { FastifyInstance } from 'fastify';
@@ -210,6 +211,211 @@ describe.skipIf(!dbAvailable)('storage plugin (real kernel + real backend)', () 
       });
       expect(content.statusCode, 'historical object must remain readable').toBe(200);
       expect(content.rawPayload.equals(png0)).toBe(true);
+    });
+  });
+
+  describe('P0-2: S3 endpoint SSRF guard', () => {
+    it('rejects an endpoint pointed at the cloud metadata service', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/storage/admin/config',
+        headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+        payload: {
+          kind: 's3',
+          s3Endpoint: 'http://169.254.169.254',
+          s3Region: 'us-east-1',
+          s3Bucket: 'sp-test',
+          accessKeyId: 'minioadmin',
+          secretAccessKey: 'minioadmin123',
+        },
+      });
+      expect(res.statusCode, res.body).toBe(422);
+      expect(res.body).toMatch(/元数据|metadata/i);
+    });
+
+    it('rejects a metadata hostname too', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/storage/admin/config',
+        headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+        payload: {
+          kind: 's3',
+          s3Endpoint: 'http://metadata.google.internal',
+          s3Region: 'us-east-1',
+          s3Bucket: 'sp-test',
+          accessKeyId: 'minioadmin',
+          secretAccessKey: 'minioadmin123',
+        },
+      });
+      expect(res.statusCode, res.body).toBe(422);
+    });
+
+    it('still allows a private/loopback endpoint (self-hosted MinIO)', async () => {
+      // A private endpoint must pass the guard; the failure (if any) is
+      // connectivity, not a policy rejection. Point at an unreachable port and
+      // assert it is NOT a 422 policy error.
+      const res = await app.inject({
+        method: 'POST',
+        url: '/storage/admin/config',
+        headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+        payload: {
+          kind: 's3',
+          s3Endpoint: 'http://127.0.0.1:1',
+          s3Region: 'us-east-1',
+          s3Bucket: 'sp-test',
+          accessKeyId: 'minioadmin',
+          secretAccessKey: 'minioadmin123',
+        },
+      });
+      // Not rejected by policy (the endpoint is link-local-free), so either it
+      // saved (200, if no provisioning error) or failed as unreachable — never 422.
+      expect(res.statusCode).not.toBe(422);
+    });
+  });
+
+  describe('custom HTTP image host backend (proxy byte channel)', () => {
+    /** A tiny real image host: PUT stores, HEAD/GET (Range) serves. */
+    async function startImageHost(): Promise<{
+      url: string;
+      files: Map<string, Buffer>;
+      close: () => Promise<void>;
+    }> {
+      const files = new Map<string, Buffer>();
+      const server = createServer((req, res) => {
+        const key = decodeURIComponent((req.url ?? '/').replace(/^\//, ''));
+        const method = req.method ?? 'GET';
+        if (method === 'PUT') {
+          const chunks: Buffer[] = [];
+          req.on('data', (chunk: Buffer) => chunks.push(chunk));
+          req.on('end', () => {
+            files.set(key, Buffer.concat(chunks));
+            res.statusCode = 200;
+            res.end('ok');
+          });
+          return;
+        }
+        if (method === 'HEAD') {
+          const body = files.get(key);
+          if (!body) { res.statusCode = 404; res.end(); return; }
+          res.setHeader('content-length', String(body.length));
+          res.statusCode = 200;
+          res.end();
+          return;
+        }
+        if (method === 'GET') {
+          const body = files.get(key);
+          if (!body) { res.statusCode = 404; res.end(); return; }
+          const range = req.headers['range'];
+          if (typeof range === 'string') {
+            const match = /^bytes=(\d+)-(\d+)?$/.exec(range);
+            if (match) {
+              const start = Number(match[1]);
+              const end = match[2] ? Number(match[2]) : body.length - 1;
+              const slice = body.subarray(start, end + 1);
+              res.statusCode = 206;
+              res.setHeader('content-length', String(slice.length));
+              res.end(slice);
+              return;
+            }
+          }
+          res.statusCode = 200;
+          res.end(body);
+          return;
+        }
+        res.statusCode = 405;
+        res.end();
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      return {
+        url: `http://127.0.0.1:${port}`,
+        files,
+        close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+      };
+    }
+
+    it('routes uploads through the proxy channel to a real image host', async () => {
+      const host = await startImageHost();
+      try {
+        await saveConfig({
+          kind: 'http',
+          httpUploadUrl: `${host.url}/{key}`,
+          httpPublicBaseUrl: host.url,
+          httpMethod: 'PUT',
+        });
+
+        const png0 = await realPng(40, 40);
+        const { id, key } = await upload(adminToken, png0);
+
+        // The bytes really reached the external image host, under the same key.
+        const stored = host.files.get(key);
+        expect(stored, `expected ${key} at the image host`).toBeDefined();
+        expect(Buffer.from(stored as Buffer).equals(png0)).toBe(true);
+
+        // And `/media/:id/content` streams them back through proxy reads.
+        const content = await app.inject({
+          method: 'GET',
+          url: `/media/${id}/content`,
+          headers: { authorization: `Bearer ${adminToken}` },
+        });
+        expect(content.statusCode, content.body).toBe(200);
+        expect(content.rawPayload.equals(png0)).toBe(true);
+      } finally {
+        await host.close();
+      }
+    });
+
+    it('rejects an image-host upload URL pointed at cloud metadata on save', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/storage/admin/config',
+        headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+        payload: {
+          kind: 'http',
+          httpUploadUrl: 'http://169.254.169.254/upload',
+          httpPublicBaseUrl: 'http://example.test',
+        },
+      });
+      expect(res.statusCode, res.body).toBe(422);
+      expect(res.body).toMatch(/元数据|metadata/i);
+    });
+  });
+
+  describe.skipIf(!s3Endpoint)('P0-1: provisioning a fresh bucket', () => {
+    it('creates a missing bucket on save (plugin backend becomes ready)', async () => {
+      // A unique bucket that does not exist yet.
+      const freshBucket = `sp-provision-${Date.now()}`;
+      const res = await app.inject({
+        method: 'POST',
+        url: '/storage/admin/config',
+        headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+        payload: {
+          kind: 's3',
+          s3Endpoint,
+          s3Region: 'us-east-1',
+          s3Bucket: freshBucket,
+          s3ForcePathStyle: true,
+          accessKeyId: s3AccessKey,
+          secretAccessKey: s3SecretKey,
+        },
+      });
+      expect(res.statusCode, res.body).toBe(200);
+
+      // The bucket now exists and an upload works end-to-end.
+      const png0 = await realPng(20, 20);
+      const { id, key } = await upload(adminToken, png0);
+      expect(key).toMatch(/^media\//);
+      const content = await app.inject({
+        method: 'GET',
+        url: `/media/${id}/content`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+      expect(content.statusCode).toBe(200);
+      expect(content.rawPayload.equals(png0)).toBe(true);
+
+      // Clean up: drop the row (the object is invisible without it).
+      await getPrisma().attachment.deleteMany({ where: { id } });
     });
   });
 

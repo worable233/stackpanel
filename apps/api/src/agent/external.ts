@@ -68,7 +68,12 @@ export async function externalRpc(actorId: string, serverId: string, method: str
     if (typeof session === 'string') headers['mcp-session-id'] = session;
     return notification ? undefined : rpcResult(res.text, id);
   };
-  await send('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'stackpanel-agent', version: '1.0.0' } });
+  const initialized = await send('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'stackpanel-agent', version: '1.0.0' } });
+  const version = (initialized as { protocolVersion?: unknown } | null)?.protocolVersion;
+  if (typeof version !== 'string' || !['2025-06-18', '2025-03-26', '2024-11-05'].includes(version)) {
+    throw new PluginError('agent.mcp_protocol', 502, '外部 MCP 协议版本不兼容');
+  }
+  headers['mcp-protocol-version'] = version;
   await send('notifications/initialized', {}, true);
   return send(method, params);
 }

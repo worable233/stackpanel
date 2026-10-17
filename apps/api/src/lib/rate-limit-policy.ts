@@ -29,6 +29,11 @@ export const RATE_LIMIT = {
   credentialWrite: { max: 30, timeWindow: '1 minute' },
   /** Admin mutating endpoints (secrets, signing, platform identity, executors). */
   adminWrite: { max: 60, timeWindow: '1 minute' },
+  /**
+   * First-run setup claim. Deliberately tight: the endpoint is public and
+   * token-adjacent, and a legit operator completes it exactly once.
+   */
+  setup: { max: 5, timeWindow: '1 minute' },
   /** Authenticated user-originated writes that are cheap but abusable (frontend audit). */
   userWrite: { max: 120, timeWindow: '1 minute' },
   /** Resource uploads (plugins, themes, media) — heavier ceilings. */
@@ -81,6 +86,7 @@ export const RATE_LIMIT_COVERAGE: ReadonlyArray<{
   { surface: 'OAuth 授权 / 回调 / 提供方列表', preset: 'oauth' },
   { surface: 'API Token 签发 / 轮换 / 撤销', preset: 'credentialWrite' },
   { surface: '管理端密钥 / 签名 / 平台身份写入', preset: 'adminWrite' },
+  { surface: '首次初始化认领（/setup）', preset: 'setup' },
   { surface: '插件 / 主题 / 媒体上传', preset: 'upload' },
   { surface: '匿名重读端点（媒体内容 / 主题与插件资源 / SEO 订阅）', preset: 'publicRead' },
 ];

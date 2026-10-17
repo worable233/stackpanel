@@ -1,3 +1,4 @@
+import { formatMinorCurrency, minorUnitFor, minorUnitsToPlainString } from '@stackpanel/sdk';
 import type { FrontendPageComponent, FrontendPageProps } from '@stackpanel/sdk';
 import {
   CommerceCart,
@@ -170,8 +171,13 @@ function Icon({ name }: { name: string }): ReactElement {
   );
 }
 
+/** Format integer minor units using the kernel currency catalog (no `/100`). */
 function money(amount: number, currency: string): string {
-  return `${(amount / 100).toFixed(2)} ${currency}`;
+  try {
+    return formatMinorCurrency(amount, currency, 'zh-CN');
+  } catch {
+    return `${amount} ${currency}`;
+  }
 }
 
 const FULFILLMENT_LABELS: Record<string, string> = {
@@ -190,12 +196,22 @@ function fulfillmentLabel(type: string): string {
 }
 
 function PriceTag({ amount, currency }: { amount: number; currency: string }): ReactElement {
-  const [int, dec] = (amount / 100).toFixed(2).split('.');
+  // Split on the catalog's minor unit, not a hard-coded 2 decimals, so JPY
+  // renders "￥1234" (no fraction) while CNY/USD keep cents.
+  const minorUnit = (() => {
+    try {
+      return minorUnitFor(currency);
+    } catch {
+      return 2;
+    }
+  })();
+  const plain = minorUnitsToPlainString(amount, currency);
+  const [int, dec] = minorUnit > 0 ? plain.split('.') : [plain, ''];
   return (
     <span className="font-mono font-bold tracking-tight tabular-nums">
       <span className="align-super text-[0.65em] font-medium opacity-80">{currency} </span>
       <span>{int}</span>
-      <span className="text-[0.75em] opacity-80">.{dec}</span>
+      {minorUnit > 0 ? <span className="text-[0.75em] opacity-80">.{dec}</span> : null}
     </span>
   );
 }
@@ -1081,6 +1097,7 @@ export function StoreCartPage(props: FrontendPageProps): ReactElement {
           payments={payments}
           updateQuantity={props.actions['store.update-cart-item']}
           removeItem={props.actions['store.remove-cart-item']}
+          locale={props.locale}
           continueShopping={
             <Link
               href="/shop"

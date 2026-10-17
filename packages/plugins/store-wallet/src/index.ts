@@ -1,10 +1,10 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
-import { PluginError, definePlugin } from '@stackpanel/sdk';
+import { PluginError, WALLET_CURRENCY, definePlugin } from '@stackpanel/sdk';
 import { z } from 'zod';
 import { bindContext, context, resetContext } from './context';
 import { WalletPluginError } from './errors';
 
-const CURRENCY = 'CNY';
+const CURRENCY = WALLET_CURRENCY;
 
 const topUpSchema = z.object({
   amount: z.number().int().min(100).max(2_000_000_000),

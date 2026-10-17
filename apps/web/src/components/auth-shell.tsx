@@ -21,7 +21,7 @@ export interface AuthPost {
 }
 
 export interface AuthShellProps {
-  mode: 'login' | 'register';
+  mode: 'login' | 'register' | 'setup';
   platformName: string;
   platformDescription?: string;
   logoSrc?: string | null;
@@ -43,8 +43,13 @@ export function AuthShell({
   const locale = useLocale();
   const t = useTranslator();
   const isLogin = mode === 'login';
-  const title = t(isLogin ? 'auth.login.title' : 'auth.register.title');
-  const subtitle = t(isLogin ? 'auth.login.subtitle' : 'auth.register.subtitle');
+  const isSetup = mode === 'setup';
+  const title = t(
+    isSetup ? 'auth.setup.title' : isLogin ? 'auth.login.title' : 'auth.register.title',
+  );
+  const subtitle = t(
+    isSetup ? 'auth.setup.subtitle' : isLogin ? 'auth.login.subtitle' : 'auth.register.subtitle',
+  );
   const crossPrompt = t(isLogin ? 'auth.login.noAccount' : 'auth.register.hasAccount');
   const crossAction = t(isLogin ? 'auth.login.register' : 'auth.register.login');
   const crossHref = isLogin ? '/register' : '/login';
@@ -61,9 +66,11 @@ export function AuthShell({
   return (
     <div className="grid min-h-svh w-full flex-1 p-3 lg:grid-cols-2 lg:gap-3">
       <div className="relative flex h-full flex-col">
-        <div className="absolute right-6 top-5 hidden text-sm text-muted-foreground sm:block">
-          {crossPrompt} {crossLink}
-        </div>
+        {!isSetup ? (
+          <div className="absolute right-6 top-5 hidden text-sm text-muted-foreground sm:block">
+            {crossPrompt} {crossLink}
+          </div>
+        ) : null}
 
         <div className="flex flex-1 items-center justify-center px-5 pb-24 pt-28 sm:px-12 sm:py-28">
           <Reveal className="w-full max-w-[350px]">
@@ -72,7 +79,7 @@ export function AuthShell({
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             </div>
 
-            {providers.length > 0 ? (
+            {!isSetup && providers.length > 0 ? (
               <div className="mb-6 flex flex-col gap-4">
                 <div className="grid gap-2">
                   {providers.map((provider) => (
@@ -101,9 +108,11 @@ export function AuthShell({
 
             {children}
 
-            <p className="mt-6 text-center text-sm text-muted-foreground sm:hidden">
-              {crossPrompt} {crossLink}
-            </p>
+            {!isSetup ? (
+              <p className="mt-6 text-center text-sm text-muted-foreground sm:hidden">
+                {crossPrompt} {crossLink}
+              </p>
+            ) : null}
           </Reveal>
         </div>
 

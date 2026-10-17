@@ -10,6 +10,8 @@ export default defineConfig({
       'tests/unit/agent-policy.test.ts',
       'tests/unit/isolated-rpc.test.ts',
       'tests/unit/agent-transport.test.ts',
+      'tests/unit/agent-external.test.ts',
+      'tests/unit/contract-snapshot.test.ts',
       'tests/unit/llm-provider.test.ts',
     ],
   },

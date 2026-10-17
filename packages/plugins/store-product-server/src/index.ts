@@ -374,13 +374,16 @@ const localProvider: FulfillmentProvider = {
             },
           ],
         },
-        { id: 'vnc', label: '打开控制台（VNC）' },
       ],
     };
   },
 
   /**
-   * 本平台托管的云服务器运维动作：只更新 runtime 的模拟状态（电源、系统、密码）。
+   * 本平台托管的云服务器运维动作：**仅更新本地 runtime 状态，不触达真实基础设施**。
+   *
+   * 审计 #1 边界：这些动作（电源/重装/改密）只是本地「交付记录」，不等于完成真实
+   * 运维；真实运维必须由外部云 provider 的 `productType` 实现。VNC 无真实实现，
+   * 因此既不出现在 `actions()` 里，也会显式拒绝（见下方 `vnc` 分支）。
    */
   async executeAction(
     actionId: string,
@@ -416,12 +419,13 @@ const localProvider: FulfillmentProvider = {
         };
       }
       case 'vnc': {
-        const consoleUrl = 'about:blank#vnc-console';
-        return {
-          message: '控制台会话已就绪',
-          url: consoleUrl,
-          runtime: { ...runtime, consoleUrl },
-        };
+        // 本地托管模拟不提供真实远程控制台。以前这里返回 `about:blank#vnc-console`
+        // 占位地址，会被当成可用的运维闭环（审计 #1）。宁可直接拒绝，也不伪造。
+        throw new PluginError(
+          'store.product.action_unsupported',
+          501,
+          '本地托管实例未接入真实 VNC 控制台，请配置上游云 provider 后再使用',
+        );
       }
       default:
         throw new PluginError('store.product.action_unsupported', 400, '不支持的运维动作');

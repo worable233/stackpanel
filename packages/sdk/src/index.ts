@@ -64,12 +64,26 @@ export type {
 } from './upstream.js';
 export type {
   CreateNotificationInput,
+  NotificationChannel,
+  NotificationChannelInfo,
+  NotificationChannelPreference,
+  NotificationCategoryInfo,
+  NotificationDispatch,
   NotificationListResult,
+  NotificationPolicyPatch,
+  NotificationPolicyService,
+  NotificationPolicyView,
+  NotificationPreferenceItem,
+  NotificationPreferencesView,
   NotificationStatus,
+  NotificationTypeDefinition,
+  NotificationTypePolicy,
+  NotificationTypePreference,
   NotificationView,
   NotificationsService,
   UpsertNotificationInput,
 } from './notifications.js';
+export { INAPP_CHANNEL_ID } from './notifications.js';
 export type {
   CaptchaProvider,
   CaptchaService,
@@ -153,6 +167,8 @@ export type {
   ManualPaymentInstructions,
   EventBus,
   EventPayload,
+  EventHandler,
+  EventMeta,
   WaterfallListener,
   ExtensionPoint,
   ExtensionPointId,
@@ -209,6 +225,24 @@ export type {
 } from './payments.js';
 export { PaymentError, isPaymentError } from './payments.js';
 export { FxError, isFxError } from './fx.js';
+export {
+  CURRENCY_ALIASES,
+  CURRENCY_CATALOG,
+  CurrencyError,
+  DEFAULT_SETTLEMENT_CURRENCY,
+  WALLET_CURRENCY,
+  assertCurrency,
+  convertMinorUnits,
+  findCurrency,
+  formatMinorCurrency,
+  isCurrencyError,
+  listCurrencies,
+  minorUnitFor,
+  minorUnitsToPlainString,
+  normalizeCurrencyCode,
+  toMajorUnits,
+  toMinorUnits,
+} from './currency.js';
 export type {
   AuthService,
   AuthUser,
@@ -228,6 +262,7 @@ export type {
   SessionResult,
 } from './auth.js';
 export type { FxQuote, FxRate, FxService } from './fx.js';
+export type { CurrencyDefinition, CurrencyErrorCode, CurrencyService } from './currency.js';
 export type { StateCandidate, StateLease, StateService } from './state.js';
 export type { CacheReadOptions, CacheService } from './cache.js';
 export type { MediaReferenceService } from './media.js';
@@ -239,8 +274,11 @@ export type {
   StorageProvider,
   StorageProviderObjectStat,
   StoragePutTarget,
+  StorageReadChunkInput,
   StorageService,
+  StorageWriteChunkInput,
 } from './storage.js';
+export { STORAGE_PROXY_CHUNK_BYTES } from './storage.js';
 export type { JobContext, JobHandler, JobOptions, JobSchedule } from './jobs.js';
 export type { ChannelTerminal, PaymentMethodInstance, SalesChannel } from './sales.js';
 export { CommerceError, isCommerceError } from './commerce.js';

@@ -30,6 +30,7 @@ import { toPublicUser } from '../lib/user.ts';
 import { permissionsOf } from '../plugins/auth.ts';
 import { getSessionStore } from './session-store.ts';
 import { isFirstUser } from './first-user.ts';
+import { firstAdminElectionGuarded, SetupRequiredError } from './install-claim.ts';
 import { writeAudit } from '../plugins/audit.ts';
 
 export interface AuthServiceOptions {
@@ -94,6 +95,10 @@ export class KernelAuthService implements AuthService {
         // Elect the first admin *inside* the transaction under an advisory lock
         // so concurrent registrations cannot both win (security audit L-4).
         const isFirst = await isFirstUser(tx);
+        // Hardened mode: the first admin may only be created via the setup
+        // wizard. Refuse rather than silently granting admin, so the claim
+        // token cannot be bypassed by self-service signup.
+        if (isFirst && firstAdminElectionGuarded()) throw new SetupRequiredError();
         const created = await tx.user.create({
           data: {
             email,

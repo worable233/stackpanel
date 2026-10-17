@@ -3,6 +3,7 @@
 import { useEffect, useRef, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
+import { useTranslator } from '@/i18n/provider';
 
 type Bounds = { x: number; y: number; width: number; height: number };
 type Action = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -28,6 +29,7 @@ function fit(b: Bounds): Bounds {
 }
 
 export function AgentFloatingFrame({ open, header, children }: { open: boolean; header: ReactNode; children: ReactNode }) {
+  const t = useTranslator();
   const panel = useRef<HTMLElement>(null);
   const bounds = useRef<Bounds | null>(null);
   const animation = useRef<Animation | null>(null);
@@ -71,9 +73,9 @@ export function AgentFloatingFrame({ open, header, children }: { open: boolean; 
   const end = () => { gesture.current = null; };
   if (!open) return null;
   return createPortal(
-    <aside ref={panel} id="agent-workspace" aria-label="Agent 工作区" onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} className="fixed left-0 top-0 z-40 flex h-dvh w-full flex-col border border-border/70 bg-background shadow-2xl shadow-foreground/15 sm:left-auto sm:right-3 sm:top-20 sm:h-[700px] sm:w-[460px] sm:rounded-2xl">
+    <aside ref={panel} id="agent-workspace" aria-label={t('agentFrame.ariaLabel')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} className="fixed left-0 top-0 z-40 flex h-dvh w-full flex-col border border-border/70 bg-background shadow-2xl shadow-foreground/15 sm:left-auto sm:right-3 sm:top-20 sm:h-[700px] sm:w-[460px] sm:rounded-2xl">
       {handles.map(([edge, classes]) => <div key={edge} aria-hidden="true" onPointerDown={(event) => start(event, edge)} className={cn('absolute hidden touch-none sm:block', classes)} />)}
-      <header title="拖动标题栏移动面板" onPointerDown={(event) => start(event, 'move')} className="flex h-13 shrink-0 items-center justify-between gap-3 px-4 sm:cursor-grab sm:touch-none sm:select-none sm:active:cursor-grabbing">{header}</header>
+      <header title={t('agentFrame.dragHint')} onPointerDown={(event) => start(event, 'move')} className="flex h-13 shrink-0 items-center justify-between gap-3 px-4 sm:cursor-grab sm:touch-none sm:select-none sm:active:cursor-grabbing">{header}</header>
       {children}
     </aside>, document.body,
   );

@@ -185,6 +185,8 @@ function createFakeExtensions() {
 }
 
 const notifications: Array<Record<string, unknown>> = [];
+/** When true, the notification stub throws (to exercise reliability fallbacks). */
+let notificationsFail = false;
 
 function makeCtx(
   fake: ReturnType<typeof createFakeExtensions>,
@@ -211,6 +213,7 @@ function makeCtx(
         extensions: fake.client,
         wallet: { debit: async () => ({}), credit: async () => ({}) },
         payments: { createRecord: async () => ({}) },
+        publish: () => {},
       })) as never,
     secrets,
     payments: {} as never,
@@ -223,14 +226,33 @@ function makeCtx(
         settlementAmount: amount,
         rate: null,
       }),
+      quoteToSettlement: async (from: string, amount: number) => ({
+        fromCurrency: from,
+        toCurrency: 'CNY',
+        amount,
+        settlementAmount: amount,
+        rate: null,
+      }),
     } as never,
+    currency: {} as never,
     auth: {} as never,
     notifications: {
       create: async (input: Record<string, unknown>) => {
+        if (notificationsFail) throw new Error('notifications unavailable');
         notifications.push(input);
         return {} as never;
       },
+      upsert: async (input: Record<string, unknown>) => {
+        if (notificationsFail) throw new Error('notifications unavailable');
+        notifications.push(input);
+        return {} as never;
+      },
+      notifyPermissionHolders: async () => 0,
     } as never,
+    notificationPolicy: {} as never,
+    identity: {} as never,
+    captcha: {} as never,
+    storage: {} as never,
     state: {} as never,
     jobs: {} as never,
     cache: {} as never,
@@ -335,6 +357,67 @@ describe('renewal', () => {
     expect(svc.spec.expiryStage).toBeNull();
     expect(new Date(svc.spec.expiresAt as string).toISOString().slice(0, 7)).toBe('2099-05');
     expect(svc.spec.expiresAtMs).toBe(new Date(svc.spec.expiresAt as string).getTime());
+    // 续费成功通知用户，且用幂等键（重放合并为一条）。
+    const renewed = notifications.filter((n) => n.type === 'service.renewed');
+    expect(renewed).toHaveLength(1);
+    expect(renewed[0]!.dedupeKey).toBe('store:renew:order-renew-1:svc-1');
+    expect(renewed[0]!.status).toBe('success');
+  });
+
+  it('E-3: renewal notification is idempotent across replays (single deduped row)', async () => {
+    const fake = createFakeExtensions();
+    const expiry = new Date('2099-02-01T00:00:00Z');
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'prod-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        providerServiceId: 'svc-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 9900,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-1',
+    );
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: {
+          items: [{ productId: 'prod-1', quantity: 1, renewalServiceId: 'svc-1', renewMonths: 1 }],
+        },
+        total: 9900,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 9900,
+        fxRate: null,
+      },
+      'order-renew-idem',
+    );
+    bindContext(makeCtx(fake));
+
+    await applyRenewalOrder('order-renew-idem');
+    const afterFirst = notifications.filter((n) => n.type === 'service.renewed').length;
+
+    await applyRenewalOrder('order-renew-idem');
+    const afterSecond = notifications.filter((n) => n.type === 'service.renewed').length;
+
+    // 第二次 apply 因 renewalApplied 幂等标记跳过；通知幂等键稳定。
+    expect(afterFirst).toBe(1);
+    expect(afterSecond).toBe(1);
   });
 
   it('recognizes an order containing a renewal line', () => {
@@ -588,6 +671,7 @@ describe('expiry sweep', () => {
   beforeEach(() => {
     resetContext();
     notifications.length = 0;
+    notificationsFail = false;
   });
 
   it('reminds a service inside the reminder window and marks it reminded', async () => {
@@ -1168,6 +1252,90 @@ describe('expiry sweep', () => {
     expect(svc.spec.expiryStage).toBe('suspended');
     expect(suspendCalls).toBe(1);
     expect(notifications.filter((n) => n.type === 'service.suspended')).toHaveLength(1);
+  });
+
+  it('E-1: reminder is retried when notification delivery fails (stage released)', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // inside window
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        providerServiceId: null,
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: null,
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-r-retry',
+    );
+    bindContext(makeCtx(fake));
+
+    notificationsFail = true;
+    await runExpirySweep(now);
+    // Delivery failed: stage must NOT remain 'reminded', so a later sweep retries.
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBeNull();
+    expect(notifications).toHaveLength(0);
+
+    notificationsFail = false;
+    await runExpirySweep(now);
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('reminded');
+    expect(notifications.filter((n) => n.type === 'service.expiring')).toHaveLength(1);
+  });
+
+  it('E-2: suspend fails loudly (stays retryable) when an upstream-bound service has no provider', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    const expiry = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000); // > grace
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf', // bound upstream, but the provider is not registered
+        providerServiceId: 'svc-1',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage: 'reminded',
+        expiryAttempts: 0,
+        expiryLastError: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-no-provider',
+    );
+    bindContext(makeCtx(fake)); // no provider registered
+
+    await runExpirySweep(now);
+
+    const svc = fake.all(SERVICE)[0]!;
+    // Must NOT report success: state stays ACTIVE, stage stays retryable, no false通知.
+    expect(svc.spec.state).toBe('ACTIVE');
+    expect(svc.spec.expiryStage).toBe('suspending');
+    expect(svc.spec.expiryAttempts).toBe(1);
+    expect(notifications.filter((n) => n.type === 'service.suspended')).toHaveLength(0);
   });
 
   it('F-2: patchServiceInstance abandons the write when the row changed since it was read', async () => {

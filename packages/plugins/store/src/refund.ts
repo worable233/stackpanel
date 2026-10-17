@@ -1,10 +1,12 @@
 import type { HttpRequest } from '@stackpanel/sdk';
-import { bus, logger, runTransaction } from './context';
+import { logger, runTransaction } from './context';
 import { StoreError, stockItems } from './errors';
 import { getOrder } from './repository';
 import type { OrderRecord } from './repository';
 import { orderModel, productModel } from './data';
 import { refundOrderSchema } from './utils';
+import { notifyUser } from './notifications';
+import { formatStoreMoney } from './currency';
 
 /**
  * 退款（refund）。
@@ -85,6 +87,9 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
         );
       }
     }
+    // W1（审计 F-3）：`order.refunded` 必须与退款状态同事务落库——发布在事务外时，
+    // 提交成功但进程在 publish 前崩溃会永久丢失该事实。
+    tx.publish('order.refunded', { orderId: id, amount, userId: order.userId });
   });
 
   // 全额退款：撤销续费行顺延的到期时间（best-effort，失败不影响退款本身）。
@@ -99,9 +104,24 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
     });
   }
 
-  bus().publish('order.refunded', { orderId: id, amount, userId: order.userId });
+  // `order.refunded` 已在退款事务内发布（W1，审计 F-3）。
+  await notifyUser({
+    userId: order.userId,
+    type: 'order.refunded',
+    title: '订单已退款',
+    body: `订单 ${id} 已退款 ${formatMinor(amount, order.settlementCurrency)} 到你的钱包。`,
+    link: `/account/orders`,
+    data: { orderId: id, amount, currency: order.settlementCurrency, full: isFull },
+    status: 'success',
+    dedupeKey: `store:order:${id}:refunded`,
+  });
   const updated = await getOrder(id);
   return { order: updated, refunded: amount, currency: order.settlementCurrency };
+}
+
+/** 金额格式化（最小单位 → 本地化货币字符串，按币种小数位）。退款通知展示用。 */
+function formatMinor(amount: number, currency: string): string {
+  return formatStoreMoney(amount, currency);
 }
 
 /** 解析退款金额：显式 amount 优先，否则全额（结算金额）。越界即拒绝。 */

@@ -9,13 +9,19 @@ import { z } from 'zod';
 
 export const adminConfigSchema = z.object({
   config: z.object({
-    kind: z.enum(['env', 'local', 's3']),
+    kind: z.enum(['env', 'local', 's3', 'http']),
     localRoot: z.string(),
     s3Endpoint: z.string(),
     s3Region: z.string(),
     s3Bucket: z.string(),
     s3ForcePathStyle: z.boolean(),
     publicBaseUrl: z.string(),
+    httpUploadUrl: z.string(),
+    httpPublicBaseUrl: z.string(),
+    httpMethod: z.enum(['PUT', 'POST']),
+    httpFieldName: z.string(),
+    httpHeaders: z.string(),
+    httpDeleteUrlTemplate: z.string(),
     hasCredentials: z.boolean(),
     secretsAvailable: z.boolean(),
   }),

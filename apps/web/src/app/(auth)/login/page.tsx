@@ -30,6 +30,11 @@ export default async function LoginPage({
   }
   const nextPath = safeNext ?? undefined;
   const api = getApiClient();
+  // A fresh instance has no admin yet: route the operator to the wizard instead
+  // of a login form that cannot succeed. Best-effort — an unreachable API just
+  // renders login as before.
+  const setup = await api.getSetupStatus().catch(() => null);
+  if (setup?.required) redirect('/setup');
   const [providers, platform, brand, posts] = await Promise.all([
     api
       .getOAuthProviders()

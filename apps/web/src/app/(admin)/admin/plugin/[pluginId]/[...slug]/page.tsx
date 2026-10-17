@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { AdminActions } from '@/components/admin-actions';
 import { AdminPluginPage } from '@/components/admin-plugin-page';
 import { resolvePluginAdminRoute } from '@/lib/admin-frontend';
@@ -15,6 +16,7 @@ export default async function PluginAdminRoute({
   const path = `/${slug.join('/')}`;
   const result = await resolvePluginAdminRoute(pluginId, path);
   const { error } = await searchParams;
+  if (result.status === 'ok' && result.settingsHref) redirect(result.settingsHref);
   return (
     <>
       <AdminPluginPage

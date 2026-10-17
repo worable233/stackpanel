@@ -55,6 +55,11 @@ const GROUP_MESSAGE_KEYS: Record<string, string> = {
   services: 'nav.services',
   models: 'nav.models',
   billing: 'nav.billing',
+  users: 'adminShell.groupUsers',
+  site: 'adminShell.groupSite',
+  system: 'adminShell.groupSystem',
+  developer: 'adminShell.groupDeveloper',
+  account: 'adminShell.groupAccount',
 };
 
 export interface BackendUser {
@@ -124,13 +129,13 @@ function UserDropdown({
             账户概览
           </DropdownMenuItem>
           <DropdownMenuItem
-            render={<Link href="/account/security" className="flex items-center gap-2" />}
+            render={<Link href="/account/settings" className="flex items-center gap-2" />}
           >
             <Settings className="size-4" />
             账户设置
           </DropdownMenuItem>
           <DropdownMenuItem
-            render={<Link href="/account/api-keys" className="flex items-center gap-2" />}
+            render={<Link href="/account/settings#security" className="flex items-center gap-2" />}
           >
             <KeyRound className="size-4" />
             访问凭证
@@ -300,7 +305,7 @@ export function BackendShell({
   const activeItem = resolveBackendActiveItem(pathname, items, rootHref);
   const activeHref = activeItem?.href ?? null;
   const label = (item: BackendNavigationItem): string => {
-    if (isBackendOverview(item)) return locale === 'en-US' ? 'Overview' : '概览';
+    if (isBackendOverview(item)) return t('adminShell.overview');
     const key = navMessageKey(item.href);
     return key ? t(key) : item.label;
   };

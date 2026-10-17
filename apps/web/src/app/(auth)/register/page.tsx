@@ -23,6 +23,10 @@ export default async function RegisterPage({
     normalizeAffiliateCode((await cookies()).get(AFFILIATE_COOKIE)?.value) ??
     normalizeAffiliateCode(typeof raw === 'string' ? raw : null);
   const api = getApiClient();
+  // Canonical first-admin path: while the instance is unclaimed, send visitors
+  // to the wizard rather than letting a self-service signup elect an admin.
+  const setup = await api.getSetupStatus().catch(() => null);
+  if (setup?.required) redirect('/setup');
   const [providers, platform, brand, authConfig] = await Promise.all([
     api
       .getOAuthProviders()

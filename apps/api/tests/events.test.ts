@@ -7,7 +7,7 @@ describe('EventEmitterEventBus', () => {
     const handler = vi.fn();
     bus.subscribe('user.created', handler);
     bus.publish('user.created', { id: 'u1' });
-    expect(handler).toHaveBeenCalledWith({ id: 'u1' });
+    expect(handler).toHaveBeenCalledWith({ id: 'u1' }, undefined);
   });
 
   it('does not deliver to other topics', () => {

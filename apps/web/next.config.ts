@@ -26,6 +26,19 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname, '../..'),
   },
+  /**
+   * Kernel media URLs are same-origin paths (`/media/<id>/content`) returned by
+   * the API and rendered by plugin frontends. Under the bundled Caddy profile
+   * `/media/*` is proxied to the API, but a plain `http://host:3000` deployment
+   * (no reverse proxy) has no such route on the web origin, so every image
+   * 404s. Proxying here makes the default deployment behave the same without
+   * requiring Caddy. The destination is a fixed server-side base URL, never
+   * user-controlled.
+   */
+  async rewrites() {
+    const api = (process.env.API_BASE_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '');
+    return [{ source: '/media/:path*', destination: `${api}/media/:path*` }];
+  },
   async headers() {
     return [
       {

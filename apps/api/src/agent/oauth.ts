@@ -21,12 +21,13 @@ export function mcpChallenge(): string {
 const authorization = z.object({ client_id: z.string().min(1).max(191), redirect_uri: z.string().url(), response_type: z.literal('code'),
   scope: z.string().max(4000).default(''), state: z.string().min(16).max(512),
   code_challenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/), code_challenge_method: z.literal('S256'), resource: z.string().url().optional() });
+const secureOrigin = (text: string) => { const url = new URL(text); return url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost','127.0.0.1','[::1]'].includes(url.hostname)); };
 const redirectSchema = z.string().url().refine((text) => { const url = new URL(text); return !url.hash && !url.username && !url.password &&
   (url.protocol === 'https:' || (url.protocol === 'http:' && ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname))); }, '回调地址必须为 HTTPS 或本机回环 HTTP');
 
 export async function agentOAuthRoutes(app: FastifyInstance): Promise<void> {
   const db = getPrisma();
-  const issuer = () => { const origin = oauthOrigin(); if (!origin || !env.AGENT_WEB_ORIGIN) throw new PluginError('agent.oauth_unconfigured', 503, '需配置 AGENT_PUBLIC_ORIGIN 与 AGENT_WEB_ORIGIN'); return origin; };
+  const issuer = () => { const origin = oauthOrigin(); if (origin && !secureOrigin(origin)) throw new PluginError('agent.oauth_origin_insecure',503,'OAuth 公开域名必须使用 HTTPS'); if (!origin || !env.AGENT_WEB_ORIGIN || !secureOrigin(env.AGENT_WEB_ORIGIN)) throw new PluginError('agent.oauth_unconfigured', 503, '需配置 AGENT_PUBLIC_ORIGIN 与 AGENT_WEB_ORIGIN'); return origin; };
   const metadata = async () => { const origin = issuer(); return { issuer: origin, authorization_endpoint: `${new URL(env.AGENT_WEB_ORIGIN as string).origin}/account/agent/authorize`,
     token_endpoint: `${origin}/oauth/token`, revocation_endpoint: `${origin}/oauth/revoke`, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'] }; };
@@ -39,16 +40,21 @@ export async function agentOAuthRoutes(app: FastifyInstance): Promise<void> {
     if (currentUser(request).impersonatorId) throw new PluginError('agent.impersonation_forbidden', 403, '冒用会话不能管理授权客户端');
     const id = parseAgent(z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/) }), request.params).id;
     const value = parseAgent(z.object({ name: z.string().min(1).max(120), redirectUris: z.array(redirectSchema).min(1).max(20), enabled: z.boolean().default(true) }).strict(), request.body);
-    const client = await db.agentOAuthClient.upsert({ where: { id }, create: { id, ...value }, update: value });
-    if (!value.enabled) {
-      const issued = await db.agentOAuthGrant.findMany({ where: { clientId: id, tokenId: { not: null } }, select: { tokenId: true } });
-      await db.apiToken.updateMany({ where: { id: { in: issued.flatMap((row) => row.tokenId ? [row.tokenId] : []) } }, data: { status: 'REVOKED' } });
-      await db.agentOAuthGrant.updateMany({ where: { clientId: id }, data: { consumedAt: new Date() } });
-    }
+    const client = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'oauth-client:' + id}))`;
+      const result = await tx.agentOAuthClient.upsert({ where: { id }, create: { id, ...value }, update: value });
+      if (!value.enabled) {
+        const issued = await tx.agentOAuthGrant.findMany({ where: { clientId: id, tokenId: { not: null } }, select: { tokenId: true } });
+        await tx.apiToken.updateMany({ where: { id: { in: issued.flatMap((row) => row.tokenId ? [row.tokenId] : []) } }, data: { status: 'REVOKED' } });
+        await tx.agentOAuthGrant.updateMany({ where: { clientId: id }, data: { consumedAt: new Date() } });
+      }
+      return result;
+    });
     await writeAudit({ action: 'agent.oauth.client.update', resource: 'oauth.client', resourceId: id, ...auditContext(request) });
     return { client };
   });
   const inspect = async (raw: unknown, userId: string) => {
+    issuer();
     const value = parseAgent(authorization, raw); const client = await db.agentOAuthClient.findUnique({ where: { id: value.client_id } });
     if (!client?.enabled || !Array.isArray(client.redirectUris) || !client.redirectUris.includes(value.redirect_uri)) throw new PluginError('oauth.invalid_client', 400, '客户端或回调地址无效');
     if (value.resource && value.resource !== `${issuer()}/mcp`) throw new PluginError('oauth.invalid_target', 400, '授权资源无效');
@@ -102,6 +108,7 @@ export async function agentOAuthRoutes(app: FastifyInstance): Promise<void> {
     const access = generateApiToken(), refresh = secret();
     try {
       await db.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'oauth-client:' + client.id}))`;
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${grant.familyId}))`;
         const currentClient = await tx.agentOAuthClient.findUnique({where:{id:client.id}});
         if (!currentClient?.enabled) throw new Error('disabled');
@@ -122,8 +129,9 @@ export async function agentOAuthRoutes(app: FastifyInstance): Promise<void> {
     return { access_token: access.plaintext, token_type: 'Bearer', expires_in: 3600, refresh_token: refresh, scope: scopes.join(' ') };
   });
   app.post('/oauth/revoke', async (request, reply) => {
+    if (await getStateService().incr(`agent:oauth-revoke:${request.ip}:${Math.floor(Date.now()/60000)}`,65000) > 60) return reply.code(429).send({error:'temporarily_unavailable'});
     reply.header('cache-control', 'no-store');
-    const input = z.object({ client_id: z.string(), token: z.string().max(8192) }).safeParse(request.body);
+    const input = z.object({ client_id: z.string().min(1).max(191), token: z.string().max(8192) }).safeParse(request.body);
     if (!input.success) return reply.code(400).send({ error: 'invalid_request' });
     const grant = await db.agentOAuthGrant.findUnique({ where: { hash: hash(input.data.token) } });
     if (grant?.clientId === input.data.client_id) {

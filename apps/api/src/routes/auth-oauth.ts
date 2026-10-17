@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { toPublicUser } from '../lib/user.ts';
 import { isFirstUser } from '../auth/first-user.ts';
+import { firstAdminElectionGuarded, SetupRequiredError } from '../auth/install-claim.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { getStateService } from '../state/index.ts';
@@ -180,30 +181,41 @@ export async function authOAuthRoutes(app: FastifyInstance): Promise<void> {
           });
           return reply.code(409).send({ error: '该邮箱已在本平台注册' });
         }
-        const created = await prisma.$transaction(async (tx) => {
-          // Serialize the first-admin election against concurrent sign-ups
-          // (security audit L-4).
-          const isFirst = await isFirstUser(tx);
-          const user = await tx.user.create({
-            data: {
-              email,
-              passwordHash: null,
-              status: 'ACTIVE',
-              groups: {
-                create: { groupId: isFirst ? 'group_admin' : 'group_user' },
-              },
-              identities: {
-                create: {
-                  providerId: provider.id,
-                  externalId: identity.externalId,
-                  ...(identity.email ? { email: identity.email.toLowerCase() } : {}),
-                  ...(identity.displayName ? { displayName: identity.displayName } : {}),
+        let created: { id: string };
+        try {
+          created = await prisma.$transaction(async (tx) => {
+            // Serialize the first-admin election against concurrent sign-ups
+            // (security audit L-4).
+            const isFirst = await isFirstUser(tx);
+            // Hardened mode: never elect the first admin via OAuth signup; that
+            // must go through the token-gated setup wizard.
+            if (isFirst && firstAdminElectionGuarded()) throw new SetupRequiredError();
+            const user = await tx.user.create({
+              data: {
+                email,
+                passwordHash: null,
+                status: 'ACTIVE',
+                groups: {
+                  create: { groupId: isFirst ? 'group_admin' : 'group_user' },
+                },
+                identities: {
+                  create: {
+                    providerId: provider.id,
+                    externalId: identity.externalId,
+                    ...(identity.email ? { email: identity.email.toLowerCase() } : {}),
+                    ...(identity.displayName ? { displayName: identity.displayName } : {}),
+                  },
                 },
               },
-            },
+            });
+            return user;
           });
-          return user;
-        });
+        } catch (error) {
+          if (error instanceof SetupRequiredError) {
+            return reply.code(409).send({ error: error.message, code: 'auth.setup_required' });
+          }
+          throw error;
+        }
         userId = created.id;
       }
 

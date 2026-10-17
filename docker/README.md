@@ -11,6 +11,10 @@
 docker build --target runtime -t stackpanel:local .
 
 # 或用 compose（默认档会顺带起 PG/Redis/MinIO）
+# 推荐：用 deploy.sh 自动生成随机密钥，无需手填
+bash scripts/deploy.sh
+# 手动方式（必须自己填 JWT_SECRET / SETTINGS_ENCRYPTION_KEY 等 >=32 位随机值，
+# 空值会让 API 容器拒绝启动）：
 cp docker/.env.example docker/.env    # 填密钥
 docker compose --env-file docker/.env up -d --build
 ```

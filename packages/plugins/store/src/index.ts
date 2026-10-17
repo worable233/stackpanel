@@ -16,10 +16,12 @@ import {
   deleteProduct,
   getProduct,
   getProductById,
+  getPurchasableProduct,
   listAdminProducts,
   listAllProducts,
   listProducts,
   listProductsByIds,
+  listPurchasableProducts,
   removeProductForSync,
   updateProduct,
   updateProductForSync,
@@ -27,6 +29,7 @@ import {
 } from './products';
 import type { StoreProductRead, StoreProductUpdate } from './products';
 import { addToCart, listCart, removeCartItem, updateCartQuantity } from './cart';
+import { withIdempotency } from './idempotency';
 import {
   getMyService,
   getMyServiceMetrics,
@@ -46,6 +49,7 @@ import {
 import { createCategory, deleteCategory, listCategories, updateCategory } from './categories';
 import { storeOperations } from './operations';
 import { renewService } from './renewal';
+import { STORE_NOTIFICATION_TYPES } from './notifications';
 import { changeService, quoteServiceChange, transferService } from './changes';
 import { refundOrder } from './refund';
 import { runExpirySweep, EXPIRY_SWEEP_INTERVAL_MS } from './expiry';
@@ -57,6 +61,7 @@ import {
   searchUpstreamProducts,
 } from './product-types';
 import { calculateProductPrice } from './pricing';
+import { listCurrencyIssues, normalizeLegacyProductCurrencies } from './currency-migration';
 import {
   cartItemModel,
   categoryModel,
@@ -148,6 +153,20 @@ export const storePlugin = definePlugin({
         summary: 'Read one product by id',
       },
       {
+        id: 'store.account.products.list',
+        method: 'GET',
+        route: '/store/account/products',
+        path: '/api/v1/store/account/products',
+        summary: "Purchasable products for the authenticated user's catalog",
+      },
+      {
+        id: 'store.account.product.read',
+        method: 'GET',
+        route: '/store/account/products/:id',
+        path: '/api/v1/store/account/products/:id',
+        summary: 'Read one purchasable product for the account store',
+      },
+      {
         id: 'store.orders.list',
         method: 'GET',
         route: '/orders',
@@ -160,6 +179,13 @@ export const storePlugin = definePlugin({
         route: '/store/admin/products',
         path: '/api/v1/store/admin/products',
         summary: 'List all products for administration',
+      },
+      {
+        id: 'store.admin.currencyIssues',
+        method: 'GET',
+        route: '/store/admin/currency-issues',
+        path: '/api/v1/store/admin/currency-issues',
+        summary: 'Products withheld by the legacy currency migration',
       },
       {
         id: 'store.admin.products.create',
@@ -356,6 +382,21 @@ export const storePlugin = definePlugin({
   routes: [
     { method: 'GET', path: '/products', auth: 'public', handler: handle(listProducts) },
     { method: 'GET', path: '/products/:id', auth: 'public', handler: handle(getProduct) },
+    // 账户商城：登录用户的可购买目录与详情（返回 PurchasableProduct）。
+    {
+      method: 'GET',
+      path: '/store/account/products',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle(listPurchasableProducts),
+    },
+    {
+      method: 'GET',
+      path: '/store/account/products/:id',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle(getPurchasableProduct),
+    },
     {
       method: 'GET',
       path: '/payment-methods',
@@ -373,14 +414,18 @@ export const storePlugin = definePlugin({
       path: '/orders',
       auth: 'user',
       permission: 'store.buy',
-      handler: handle((req) => createOrder(context(), req)),
+      handler: handle((req) =>
+        withIdempotency(req, 'order.create', () => createOrder(context(), req)),
+      ),
     },
     {
       method: 'POST',
       path: '/cart/checkout',
       auth: 'user',
       permission: 'store.buy',
-      handler: handle((req) => checkoutCart(context(), req)),
+      handler: handle((req) =>
+        withIdempotency(req, 'cart.checkout', () => checkoutCart(context(), req)),
+      ),
     },
     {
       method: 'GET',
@@ -430,6 +475,13 @@ export const storePlugin = definePlugin({
       auth: 'admin',
       permission: 'store.admin',
       handler: handle(listAdminProducts),
+    },
+    {
+      method: 'GET',
+      path: '/store/admin/currency-issues',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(async () => ({ issues: await listCurrencyIssues() })),
     },
     {
       method: 'POST',
@@ -561,7 +613,9 @@ export const storePlugin = definePlugin({
       path: '/services/:id/change',
       auth: 'user',
       permission: 'store.buy',
-      handler: handle((req) => changeService(context(), req)),
+      handler: handle((req) =>
+        withIdempotency(req, 'service.change', () => changeService(context(), req)),
+      ),
     },
     // 续费：针对已购服务再下一单（支付成功后顺延到期时间）
     {
@@ -569,7 +623,9 @@ export const storePlugin = definePlugin({
       path: '/services/:id/renew',
       auth: 'user',
       permission: 'store.buy',
-      handler: handle((req) => renewService(context(), req)),
+      handler: handle((req) =>
+        withIdempotency(req, 'service.renew', () => renewService(context(), req)),
+      ),
     },
     // 商品类型 + 上游关联（商品表单用）
     {
@@ -658,6 +714,10 @@ export const storePlugin = definePlugin({
     for (const item of NAV_ITEMS) ctx.registerExtension<NavItem>(EXTENSION_POINTS.webNav, item);
     ctx.registerExtension(EXTENSION_POINTS.paymentSettlement, settlementHandler);
     ctx.registerExtension(EXTENSION_POINTS.commerce, storeOperations);
+    // 声明本插件发出的通知类型，供内核偏好目录展示（未声明不可关闭）。
+    for (const def of STORE_NOTIFICATION_TYPES) {
+      ctx.registerExtension(EXTENSION_POINTS.notificationType, def);
+    }
     ctx.registerExtension<AdminDashboardWidgetMeta>(EXTENSION_POINTS.adminDashboard, {
       id: 'store-summary',
       title: '商店概览',
@@ -673,6 +733,13 @@ export const storePlugin = definePlugin({
       create: createProductForSync,
       update: updateProductForSync,
       remove: removeProductForSync,
+    });
+    // 存量币种修复（plan §6 阶段 4）：一次性的幂等扫描，别名/小写就地规范
+    // 化，无法识别的商品停售并记录原因，绝不猜测转换。失败不能阻塞插件启动。
+    ctx.effect(() => {
+      void normalizeLegacyProductCurrencies().catch((error: unknown) => {
+        ctx.logger.warn(`store: currency migration skipped: ${String(error)}`);
+      });
     });
     // 履约体系：付款后异步交付 + 队列轮询。轮询改为内核任务（ctx.jobs），
     // 集群下只由一个 worker 执行，不再每副本各起一个定时器。

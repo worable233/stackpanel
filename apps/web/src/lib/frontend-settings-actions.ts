@@ -1,6 +1,7 @@
 'use server';
 
 import type { FrontendSettings } from '@stackpanel/sdk';
+import { revalidatePath } from 'next/cache';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
 import { getAuthedApiClient } from './api';
@@ -19,6 +20,7 @@ export async function saveThemeSettingsAction(
   try {
     const api = await getAuthedApiClient();
     await api.updateThemeSettings(id, settings);
+    revalidatePath('/', 'layout');
     return { ok: true };
   } catch (err) {
     const locale = await getLocale();

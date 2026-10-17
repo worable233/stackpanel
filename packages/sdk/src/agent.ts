@@ -47,6 +47,9 @@ export type AgentBudgetWindow = 'daily' | 'monthly';
 
 /** One run of the kernel Agent loop, as exposed to clients. */
 export interface AgentRunView {
+  parentId?: string | null;
+  rootId?: string | null;
+  depth?: number;
   id: string;
   /** Owner the run acts for; effective permissions are intersected with this. */
   actorId: string;
@@ -62,7 +65,7 @@ export interface AgentRunView {
   model: string | null;
   /** Steps taken so far. */
   steps: number;
-  /** Accumulated model + action spend in minor units; never billed twice. */
+  /** Accumulated inference spend in minor units; business tool charges remain in their own ledgers. */
   spendMinor: number;
   tokensIn: number;
   tokensOut: number;

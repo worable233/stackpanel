@@ -1,5 +1,6 @@
 import type { HttpRequest, PluginContext } from '@stackpanel/sdk';
-import { bus, context, logger, runTransaction } from './context';
+import { WALLET_CURRENCY } from '@stackpanel/sdk';
+import { context, logger, runTransaction } from './context';
 import { StoreError, stockItems } from './errors';
 import { applyServiceLifecycleAction } from './fulfillment';
 import {
@@ -17,6 +18,8 @@ import {
   type StoreServiceInstanceData,
 } from './data';
 import { monthsForCycle, readCycles, renewOrderSchema } from './utils';
+import { notifyUser } from './notifications';
+import { quoteSettlement } from './currency';
 
 /**
  * 续费（renew）。
@@ -93,7 +96,7 @@ export async function renewService(ctx: PluginContext, req: HttpRequest): Promis
 
   if (input.paymentMode === 'wallet') {
     const order = await runTransaction(async (tx) => {
-      const quote = await context().fx.quote(product.currency, 'CNY', unit);
+      const quote = await quoteSettlement(context(), product.currency, unit);
       const created = await tx.extensions.create<StoreOrderData>(orderModel, {
         userId,
         items: { items: [line] },
@@ -106,6 +109,16 @@ export async function renewService(ctx: PluginContext, req: HttpRequest): Promis
         fxRate: quote.rate ?? null,
       });
       const orderId = created.name;
+      // The wallet only holds CNY (plan §4.4): a foreign settlement currency
+      // cannot be debited, so fail with a stable code instead of a confusing
+      // "insufficient balance".
+      if (quote.toCurrency !== WALLET_CURRENCY) {
+        throw new StoreError(
+          409,
+          `钱包仅支持 ${WALLET_CURRENCY} 结算，请选择其他支付方式`,
+          'currency.payment_method_unsupported',
+        );
+      }
       await tx.wallet.debit(userId, quote.settlementAmount, quote.toCurrency, {
         type: 'ORDER_PAYMENT',
         referenceType: 'ORDER',
@@ -119,16 +132,16 @@ export async function renewService(ctx: PluginContext, req: HttpRequest): Promis
       );
       const paid = await tx.extensions.get<StoreOrderData>(orderModel, orderId);
       if (!paid) throw new StoreError(503, '商店插件未就绪');
+      tx.publish('order.paid', { orderId: paid.name, userId });
       return toOrder(paid);
     });
-    bus().publish('order.paid', { orderId: order.id, userId: order.userId });
     return { order, nextPath: '/account/services' };
   }
 
   // 外部支付：创建订单 + 支付记录，由网关结算回调发布 order.paid。
   if (!input.providerId || !input.paymentMethod) throw new StoreError(400, '请选择支付方式');
   const reserved = await runTransaction(async (tx) => {
-    const quote = await context().fx.quote(product.currency, 'CNY', unit);
+    const quote = await quoteSettlement(context(), product.currency, unit);
     const created = await tx.extensions.create<StoreOrderData>(orderModel, {
       userId,
       items: { items: [line] },
@@ -262,6 +275,17 @@ export async function applyRenewalOrder(orderId: string): Promise<void> {
       await recordRenewalNotifyFailure(service, message);
     });
     logger().info(`store: renewed service ${service.id} to ${nextExpiry.toISOString()}`);
+    // 续费成功通知用户（幂等键按订单+服务，重放合并为一条）。
+    await notifyUser({
+      userId: service.userId,
+      type: 'service.renewed',
+      title: '服务续费成功',
+      body: `「${service.productName}」已续费 ${months} 个月，新的到期时间为 ${nextExpiry.toISOString().slice(0, 10)}。`,
+      link: `/account/services/${service.id}`,
+      data: { serviceId: service.id, orderId, expiresAt: nextExpiry.toISOString() },
+      status: 'success',
+      dedupeKey: `store:renew:${orderId}:${service.id}`,
+    });
   }
 }
 
@@ -303,10 +327,7 @@ function messageOf(error: unknown): string {
  * `runtime` 未声明为索引字段，内核 `updateWhere` 不接受它，因此重新读取当前行后整行
  * 写回（避免用续费前的陈旧快照覆盖刚写入的 expiresAt/expiryStage）。
  */
-async function recordRenewalNotifyFailure(
-  service: { id: string },
-  message: string,
-): Promise<void> {
+async function recordRenewalNotifyFailure(service: { id: string }, message: string): Promise<void> {
   try {
     const current = await getService(service.id);
     if (!current) return;

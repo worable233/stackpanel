@@ -676,6 +676,20 @@ export async function claimExpiryStage(
   return updated > 0;
 }
 
+/**
+ * 回退到期阶段为「未进入」：仅当当前阶段匹配 `from` 时置 NULL，返回是否命中。
+ * 用于「认领阶段 → 副作用失败」时把阶段释放回可重试状态（如提醒写入失败）。
+ */
+export async function resetExpiryStage(id: string, from: string): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    serviceInstanceModel,
+    { name: { eq: id }, expiryStage: { eq: from } },
+    // `set: null` 编译为 SQL NULL（与 claimExpiryStage 的 `eq: null` 对称）。
+    { expiryStage: { set: null } },
+  );
+  return updated > 0;
+}
+
 /** 列出「已到期／临近到期」的活跃服务（按 expiresAtMs 升序，上限 take）。 */
 export async function listExpiringServices(
   nowMs: number,

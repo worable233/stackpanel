@@ -28,12 +28,14 @@ import { createPluginHost } from './plugin-host.ts';
 import { adminAuditRoutes } from './routes/admin/audit.ts';
 import { adminBackupRoutes } from './routes/admin-backup.ts';
 import { adminJobsRoutes } from './routes/admin/jobs.ts';
+import { adminNotificationRoutes } from './routes/admin/notifications.ts';
 import { adminMarketRoutes } from './routes/admin/market.ts';
 import { adminPluginRoutes } from './routes/admin/plugins.ts';
 import { adminAgentModelRoutes } from './routes/admin/agent-model.ts';
 import { adminSecretsRoutes } from './routes/admin/secrets.ts';
 import { adminSettingsRoutes } from './routes/admin/settings.ts';
 import { adminCurrencyRoutes } from './routes/admin/currency-rates.ts';
+import { currencyDefinitionRoutes } from './routes/currency-definitions.ts';
 import { adminPaymentsRoutes } from './routes/admin/payments.ts';
 import { adminSalesRoutes } from './routes/admin/sales.ts';
 import { adminPermissionGroupRoutes } from './routes/admin/permission-groups.ts';
@@ -43,6 +45,7 @@ import { adminUiRoutes } from './routes/admin/ui.ts';
 import { adminUserRoutes } from './routes/admin/users.ts';
 import { authRoutes } from './routes/auth.ts';
 import { authOAuthRoutes } from './routes/auth-oauth.ts';
+import { setupRoutes } from './routes/setup.ts';
 import { apiTokenRoutes } from './routes/api-tokens.ts';
 import { healthRoutes } from './routes/health.ts';
 import { registerMediaRoutes } from './media/index.ts';
@@ -359,6 +362,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.decorate('fx', host.fx);
   app.decorate('auth', host.auth);
   app.decorate('notifications', host.notifications);
+  app.decorate('notificationPolicy', host.notificationPolicy);
   app.decorate('state', host.state);
   // Kernel sweeps run as BullMQ recurring jobs (S6) so they execute once across
   // the cluster instead of once per replica. Registration is synchronous into
@@ -375,6 +379,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(registerMediaRoutes);
   void app.register(authRoutes);
   void app.register(authOAuthRoutes);
+  // First-run setup wizard. Registered before the plugin dispatcher catch-alls so
+  // its `/setup*` paths are never shadowed by a plugin route.
+  void app.register(setupRoutes);
   void app.register(navRoutes);
   void app.register(notificationRoutes);
   // Live notification stream (SSE): same inbox, pushed instead of polled. Kept
@@ -409,6 +416,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminUserRoutes);
   void app.register(adminAuditRoutes);
   void app.register(adminJobsRoutes);
+  void app.register(adminNotificationRoutes);
   void app.register(adminMarketRoutes);
   void app.register(adminSettingsRoutes);
   void app.register(adminSecretsRoutes);
@@ -416,6 +424,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminSigningRoutes);
   void app.register(adminPluginRoutes);
   void app.register(adminUiRoutes);
+  void app.register(currencyDefinitionRoutes);
   void app.register(adminCurrencyRoutes);
   void app.register(adminPaymentsRoutes);
   void app.register(adminSalesRoutes);

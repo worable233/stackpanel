@@ -6,6 +6,7 @@ const STORAGE_PLUGIN_ERROR_CODES: Record<string, string> = {
   '无效的参数': 'validation.invalid',
   '无效的配置': 'storage.config_invalid',
   '存储后端未配置': 'storage.not_configured',
+  '存储写入会话不存在': 'storage.write_session_missing',
   '密钥存储不可用：请先配置 SETTINGS_ENCRYPTION_KEY': 'storage.secrets_unavailable',
 };
 

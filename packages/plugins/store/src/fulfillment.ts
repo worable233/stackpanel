@@ -11,6 +11,7 @@ import type {
 } from '@stackpanel/sdk';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { bus, context, logger } from './context';
+import { notifyAdmins, notifyUser } from './notifications';
 import { StoreError } from './errors';
 import { stockItems } from './errors';
 import { productTypeById } from './product-types';
@@ -256,6 +257,21 @@ async function runTask(taskId: string): Promise<void> {
       serviceId: service.id,
       error: null,
     });
+    // 开通结果通知用户（幂等键按订单+商品，重放/重试合并为一条）。异步开通（PENDING）
+    // 标注「开通中」，真正终态由上游回调或后续同步更新，这里不做虚假承诺。
+    await notifyUser({
+      userId: task.userId,
+      type: result.status === 'ACTIVE' ? 'service.provisioned' : 'service.provisioning',
+      title: result.status === 'ACTIVE' ? '服务已开通' : '服务开通中',
+      body:
+        result.status === 'ACTIVE'
+          ? `「${task.productName}」已开通，可在「我的服务」中查看。`
+          : `「${task.productName}」正在开通，完成后会再次通知你。`,
+      link: `/account/services/${service.id}`,
+      data: { serviceId: service.id, orderId: task.orderId, status: service.status },
+      status: result.status === 'ACTIVE' ? 'success' : 'active',
+      dedupeKey: `store:provision:${task.orderId}:${task.productId}`,
+    });
   } catch (error) {
     const message = messageOf(error);
     if (task.attempts >= task.maxAttempts) {
@@ -275,6 +291,24 @@ async function runTask(taskId: string): Promise<void> {
         currency: snapshot.currency ?? product.currency,
         provisionedAt: null,
       }).catch(() => undefined);
+      // 最终开通失败：通知用户并同步告知授权管理员（审计 §5）。
+      await notifyUser({
+        userId: task.userId,
+        type: 'service.provision.failed',
+        title: '服务开通失败',
+        body: `「${task.productName}」开通失败：${message}。已通知管理员处理。`,
+        link: `/account/orders`,
+        data: { orderId: task.orderId, productId: task.productId, error: message },
+        status: 'error',
+        dedupeKey: `store:provision:${task.orderId}:${task.productId}`,
+      });
+      await notifyAdmins({
+        type: 'admin.service.provision.failed',
+        title: '订单开通失败',
+        body: `订单 ${task.orderId} 的「${task.productName}」开通失败：${message}，需人工介入。`,
+        link: `/admin/store/orders`,
+        data: { orderId: task.orderId, productId: task.productId, userId: task.userId },
+      });
     } else {
       const backoff = Date.now() + Math.min(task.attempts, 6) * 30_000;
       await replaceTask(taskId, {
@@ -738,10 +772,19 @@ function messageOf(error: unknown): string {
 
 /** 在 order.paid 时触发履约。由 store 激活时订阅。 */
 export function subscribeOrderPaid(): () => void {
-  return bus().subscribe('order.paid', (payload) => {
+  return bus().subscribe('order.paid', (payload, meta) => {
     const orderId = (payload as { orderId?: string } | null)?.orderId;
     if (!orderId) return;
-    void enqueueOrderFulfillment(orderId).catch((error) => {
+    const enqueue = () => enqueueOrderFulfillment(orderId);
+    // `order.paid` 是 at-least-once（relay 崩溃重投 + 副本离线后 catch-up 补齐）。
+    // 入队本身已按 (orderId, productId) 去重，这里再按 eventId 去重，避免同一事件
+    // 重复执行整个扫描（以及重放导致的额外日志/DB 读）。
+    const busRef = bus();
+    const run =
+      meta?.eventId && typeof busRef.runIdempotent === 'function'
+        ? busRef.runIdempotent(`store.fulfillment`, meta.eventId, enqueue)
+        : enqueue();
+    void Promise.resolve(run).catch((error) => {
       logger().error(`store: enqueue fulfillment failed for ${orderId}: ${messageOf(error)}`);
     });
   });

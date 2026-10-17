@@ -37,7 +37,7 @@ const transport = resilience.enabled
  * `app/api/plugins/[...path]/route.ts` forwards `/api/plugins/<kernel-path>` to
  * `{API_BASE_URL}/<kernel-path>` (same-origin, binary-safe, session-aware).
  */
-const KERNEL_BFF_PREFIX = '/api/plugins';
+export const KERNEL_BFF_PREFIX = '/api/plugins';
 
 /**
  * Resolve a kernel-relative resource path (e.g. `/themes/x/assets/logo.svg`) to a

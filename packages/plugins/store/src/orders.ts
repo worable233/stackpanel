@@ -1,3 +1,4 @@
+import { WALLET_CURRENCY } from '@stackpanel/sdk';
 import type {
   ExtensionTransaction,
   HttpRequest,
@@ -35,6 +36,9 @@ import {
   parsePagination,
 } from './utils';
 import { resolveCheckoutPrice } from './pricing';
+import { formatAmountPair, quoteSettlement, sameCurrency } from './currency';
+import { notifyUser } from './notifications';
+import { auditActor, recordStoreAudit, STORE_AUDIT_ACTIONS } from './audit';
 
 interface OrderLine {
   productId: string;
@@ -90,7 +94,7 @@ async function reserve(
     }
     // Enforce a single currency per order: summing amounts of different
     // currencies into one total would be financially incorrect.
-    if (orderCurrency !== null && product.currency !== orderCurrency) {
+    if (orderCurrency !== null && !sameCurrency(product.currency, orderCurrency)) {
       throw new StoreError(409, '订单商品币种不一致，请分开下单');
     }
     orderCurrency = product.currency;
@@ -147,8 +151,14 @@ async function reserve(
       ...(configSummary ? { description: configSummary } : {}),
     });
   }
-  const currency = orderCurrency ?? 'CNY';
-  const quote = await context().fx.quote(currency, 'CNY', total);
+  // Empty carts are rejected elsewhere; if a caller still reaches here without
+  // a line, fall back to the platform settlement currency rather than a
+  // hard-coded CNY.
+  const currency = orderCurrency ?? (await context().fx.getSettlementCurrency());
+  // Settlement currency comes from platform settings (never hard-coded CNY).
+  // The quote freezes the rate; a missing/expired rate or unsupported
+  // settlement currency aborts the order before any stock is consumed.
+  const quote = await quoteSettlement(context(), currency, total);
   const created = await tx.extensions.create<StoreOrderData>(orderModel, {
     userId,
     items: { items: resolved },
@@ -211,6 +221,16 @@ async function placeOrder(
         options,
         discount,
       );
+      // The wallet only holds CNY this phase (plan §4.4). Refuse a foreign
+      // settlement currency explicitly instead of surfacing a confusing
+      // "insufficient balance" for an account that cannot exist.
+      if (settlementCurrency !== WALLET_CURRENCY) {
+        throw new StoreError(
+          409,
+          `钱包仅支持 ${WALLET_CURRENCY} 结算，请选择其他支付方式或调整结算币种`,
+          'currency.payment_method_unsupported',
+        );
+      }
       await tx.wallet.debit(userId, settlementTotal, settlementCurrency, {
         type: 'ORDER_PAYMENT',
         referenceType: 'ORDER',
@@ -225,9 +245,39 @@ async function placeOrder(
       await removeCartInTx(tx, userId, cart);
       const paid = await tx.extensions.get<StoreOrderData>(orderModel, orderId);
       if (!paid) throw new StoreError(503, '商店插件未就绪');
+      // W1: the event commits with the order state change (same transaction).
+      tx.publish('order.paid', { orderId: paid.name, userId });
       return toOrder(paid);
     });
-    bus().publish('order.paid', { orderId: order.id, userId: order.userId });
+    await notifyUser({
+      userId: order.userId,
+      type: 'order.paid',
+      title: '订单支付成功',
+      body: `订单 ${order.id} 已支付成功（${formatAmountPair(order)}），正在为你开通服务。`,
+      link: `/account/orders`,
+      data: {
+        orderId: order.id,
+        total: order.settlementTotal,
+        currency: order.settlementCurrency,
+        orderTotal: order.total,
+        orderCurrency: order.currency,
+      },
+      status: 'success',
+      dedupeKey: `store:order:${order.id}:paid`,
+    });
+    // 审计：记录订单支付结果（金额/币种/商品数），不含任何支付凭据。
+    await recordStoreAudit({
+      action: STORE_AUDIT_ACTIONS.orderPaid,
+      resource: 'store/order',
+      resourceId: order.id,
+      ...auditActor(req),
+      meta: {
+        paymentMode: 'wallet',
+        total: order.total,
+        currency: order.currency,
+        itemCount: lines.length,
+      },
+    });
     return { order, nextPath: '/account/orders' };
   }
 
@@ -263,6 +313,37 @@ async function placeOrder(
     logger().warn(`store: cart cleanup failed for order ${reserved.orderId}: ${String(error)}`);
   });
   const order = await getOrder(reserved.orderId);
+  if (order) {
+    await notifyUser({
+      userId: order.userId,
+      type: 'order.pending',
+      title: '订单待支付',
+      body: `订单 ${order.id} 已创建（${formatAmountPair(order)}），请在支付页面完成付款。`,
+      link: `/account/orders`,
+      data: {
+        orderId: order.id,
+        total: order.settlementTotal,
+        currency: order.settlementCurrency,
+        orderTotal: order.total,
+        orderCurrency: order.currency,
+      },
+      status: 'info',
+      dedupeKey: `store:order:${order.id}:pending`,
+    });
+    // 审计：外部支付待付款订单创建（仅金额/币种/商品数，不含凭据）。
+    await recordStoreAudit({
+      action: STORE_AUDIT_ACTIONS.orderPending,
+      resource: 'store/order',
+      resourceId: order.id,
+      ...auditActor(req),
+      meta: {
+        paymentMode: 'external',
+        total: order.total,
+        currency: order.currency,
+        itemCount: lines.length,
+      },
+    });
+  }
   return { order, payment };
 }
 
@@ -387,6 +468,14 @@ export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise
     }
     return true;
   });
+  // 审计：订单取消（含库存回补语义）；仅记 id 与结果，不含支付凭据。
+  await recordStoreAudit({
+    action: STORE_AUDIT_ACTIONS.orderCancelled,
+    resource: 'store/order',
+    resourceId: order.id,
+    ...auditActor(req),
+    meta: { cancelled },
+  });
   return { cancelled };
 }
 
@@ -407,7 +496,32 @@ export const settlementHandler: PaymentSettlementHandler = {
     if (payment.purpose !== 'ORDER' || !payment.orderId)
       return { applied: false, purpose: 'ORDER' };
     try {
-      const applied = await changeOrderState(payment.orderId, 'PENDING', 'PAID');
+      // Callback consistency (plan §4.4 / §6): a settlement whose currency or
+      // amount differs from the order's frozen snapshot must never mark it
+      // paid. The kernel already reconciles against the payment record; this is
+      // the second, order-side check that catches a stale/edited order.
+      const snapshot = await getOrder(payment.orderId);
+      if (!snapshot) throw new StoreError(404, '订单不存在');
+      if (
+        snapshot.settlementCurrency !== payment.currency ||
+        snapshot.settlementTotal !== payment.amount
+      ) {
+        throw new StoreError(409, '结算币种或金额与订单不一致', 'currency.settlement_unsupported');
+      }
+      // W1: the state change and the `order.paid` event commit together.
+      const applied = await runTransaction(async (tx) => {
+        const { updated } = await tx.extensions.updateWhere(
+          orderModel,
+          { name: { eq: payment.orderId as string }, state: { eq: 'PENDING' } },
+          { state: { set: 'PAID' } },
+        );
+        if (updated === 0) return false;
+        tx.publish('order.paid', {
+          orderId: payment.orderId as string,
+          userId: payment.userId,
+        });
+        return true;
+      });
       if (!applied) {
         // The order was not PENDING. If it is already PAID the settlement has
         // effectively happened (e.g. a replayed callback after a crash between
@@ -418,7 +532,28 @@ export const settlementHandler: PaymentSettlementHandler = {
         if (current?.status === 'PAID') return { applied: true, purpose: 'ORDER' };
         throw new StoreError(409, '订单不可支付');
       }
-      bus().publish('order.paid', { orderId: payment.orderId, userId: payment.userId });
+      await notifyUser({
+        userId: payment.userId,
+        type: 'order.paid',
+        title: '订单支付成功',
+        body: `订单 ${payment.orderId} 已支付成功，正在为你开通服务。`,
+        link: `/account/orders`,
+        data: {
+          orderId: payment.orderId,
+          total: payment.amount,
+          currency: payment.currency,
+        },
+        status: 'success',
+        dedupeKey: `store:order:${payment.orderId}:paid`,
+      });
+      // 审计：外部支付回调结算成功（不含支付凭据 / provider 内部字段）。
+      await recordStoreAudit({
+        action: STORE_AUDIT_ACTIONS.orderPaid,
+        resource: 'store/order',
+        resourceId: payment.orderId,
+        actorId: payment.userId,
+        meta: { paymentMode: 'external', purpose: payment.purpose },
+      });
       return { applied, purpose: 'ORDER' };
     } catch (error) {
       // A deactivated plugin (context reset) must not 503 the payment kernel:

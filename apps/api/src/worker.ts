@@ -15,8 +15,10 @@
  * handler is not registered on the replica that receives it fails fast and is
  * retried on another replica.
  */
-import { createPluginHost } from './plugin-host.ts';
+import { buildApp } from './app.ts';
+import type { FastifyInstance } from 'fastify';
 import { initInfra } from './infra.ts';
+import { startOutboxConsumption } from './plugins/events.ts';
 import { getJobRuntime } from './jobs/index.ts';
 import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence.ts';
 import { FrontendBuilder } from './lib/frontend-build.ts';
@@ -38,12 +40,13 @@ async function main(): Promise<void> {
   // and start the job backend/worker.
   await initInfra();
 
-  const host = createPluginHost({ logger });
-  // Kernel sweeps are shared by every replica that consumes; register them here
-  // too so a sweep job routed to this worker is handled instead of retried.
-  host.registerKernelJobs();
-  await host.registerPlugins();
-  await host.syncEnabledPlugins();
+  // Build the same guarded HTTP stack without listening on a socket. Agent jobs
+  // dispatch with the original credential through inject(), including on a dedicated worker.
+  workerApp = buildApp({redis:peekRedis()});
+  await workerApp.ready();
+  await workerApp.pluginHost.syncEnabledPlugins();
+  // W3 (audit 4B · B-1): durable consumption only after plugins subscribed.
+  startOutboxConsumption();
 
   // S8: keep plugin runtime state coherent when an API replica (or another
   // worker) activates/deactivates/reloads a plugin. The worker consumes jobs,
@@ -59,6 +62,7 @@ async function main(): Promise<void> {
 }
 
 let builder: FrontendBuilder | null = null;
+let workerApp: FastifyInstance | null = null;
 
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
@@ -70,6 +74,7 @@ async function shutdown(signal: string): Promise<void> {
     await builder?.stop();
     await stopRuntimeCoherence();
     await getJobRuntime().stop();
+    await workerApp?.close();
     await stopTracing().catch(() => undefined);
   } catch (err) {
     logger.error(`[worker] 停止失败：${String(err)}`);
