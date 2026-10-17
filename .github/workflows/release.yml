@@ -130,7 +130,7 @@ jobs:
       # 不发布未签名内核清单（生产自动更新不允许跳过验签）。
       - name: Setup pnpm
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         if: startsWith(github.ref, 'refs/tags/v')
