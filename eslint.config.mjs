@@ -15,11 +15,21 @@ export function baseConfig(extraIgnores = []) {
         '**/build/**',
         '**/.next/**',
         '**/coverage/**',
+        // Runtime data directories (gitignored): databases, uploaded media,
+        // local probe scripts. Never source.
+        '**/data/**',
         ...extraIgnores,
       ],
     },
     js.configs.recommended,
     ...tseslint.configs.recommended,
+    {
+      // Node globals apply to every file kind, not just TS: plain `.mjs`
+      // fixtures and scripts are linted too.
+      languageOptions: {
+        globals: { ...globals.node },
+      },
+    },
     {
       files: ['**/*.{ts,tsx}'],
       languageOptions: {
