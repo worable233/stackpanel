@@ -20,6 +20,9 @@ vi.mock('@/lib/api', () => ({
   }),
 }));
 vi.mock('@/lib/frontend-plugin-actions', () => ({ bindPluginActions: mocks.bindActions }));
+// Menu / system-settings labels are resolved through the package catalog for the
+// request locale; these unit tests run outside a request scope (ADR-0016 §5).
+vi.mock('@/i18n/locale', () => ({ getLocale: async () => 'zh-CN' }));
 import { getPluginSettingsSections, getPluginAdminMenus } from '@/lib/admin-frontend';
 import { adminRouteSchema } from '@stackpanel/sdk';
 

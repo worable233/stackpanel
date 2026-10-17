@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { getLocale } from '@/i18n/locale';
 import type { Locale } from '@/i18n/config';
 import { createTranslator, formatDate, type Translator } from '@/i18n/core';

@@ -16,13 +16,15 @@ import {
 import { useActionState, useState, type ReactElement } from 'react';
 import { Check, LoaderCircle, PlugZap } from 'lucide-react';
 import type { AdminConfigData } from './schemas';
+import { messages, t } from './i18n.js';
 
 type Config = AdminConfigData['config'];
+/** `value` is the persisted contract; `key` is display copy. */
 const KIND_OPTIONS = [
-  { value: 'env', label: '跟随环境变量' },
-  { value: 'local', label: '服务器本地盘' },
-  { value: 's3', label: 'S3 兼容存储' },
-  { value: 'http', label: '自定义 HTTP 图床' },
+  { value: 'env', key: 'kind.env' },
+  { value: 'local', key: 'kind.local' },
+  { value: 's3', key: 'kind.s3' },
+  { value: 'http', key: 'kind.http' },
 ];
 const httpUrl = (value: string) => {
   try {
@@ -36,10 +38,12 @@ function ConfigForm({
   config,
   action,
   canTest,
+  tr,
 }: {
   config: Config;
   action?: (formData: FormData) => Promise<void>;
   canTest: boolean;
+  tr: ReturnType<typeof t>;
 }): ReactElement {
   const [draft, setDraft] = useState({ ...config, accessKeyId: '', secretAccessKey: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -50,27 +54,27 @@ function ConfigForm({
     if (!action) return '';
     const next: Record<string, string> = {};
     if (draft.kind === 's3') {
-      if (!draft.s3Bucket.trim()) next.s3Bucket = '请输入存储桶名称。';
+      if (!draft.s3Bucket.trim()) next.s3Bucket = tr('error.bucketRequired');
       if (draft.s3Endpoint && !httpUrl(draft.s3Endpoint))
-        next.s3Endpoint = '请输入完整的 HTTP 或 HTTPS 地址。';
+        next.s3Endpoint = tr('error.httpUrl');
       if ((draft.accessKeyId || draft.secretAccessKey) && !config.secretsAvailable)
-        next.accessKeyId = '服务器尚未配置密钥加密，请先配置 SETTINGS_ENCRYPTION_KEY。';
+        next.accessKeyId = tr('error.encryptionMissing');
       if (!config.hasCredentials && (!draft.accessKeyId || !draft.secretAccessKey))
-        next.secretAccessKey = '首次配置请填写完整的访问密钥。';
+        next.secretAccessKey = tr('error.credentialsRequired');
     }
     if (draft.kind === 'http') {
       for (const key of ['httpUploadUrl', 'httpPublicBaseUrl'] as const) {
-        if (!httpUrl(draft[key])) next[key] = '请输入完整的 HTTP 或 HTTPS 地址。';
+        if (!httpUrl(draft[key])) next[key] = tr('error.httpUrl');
       }
       if (draft.httpDeleteUrlTemplate && !httpUrl(draft.httpDeleteUrlTemplate))
-        next.httpDeleteUrlTemplate = '请输入完整的 HTTP 或 HTTPS 地址，可包含 {key}。';
+        next.httpDeleteUrlTemplate = tr('error.httpUrlTemplate');
     }
     if (
       draft.publicBaseUrl &&
       !draft.publicBaseUrl.startsWith('/') &&
       !httpUrl(draft.publicBaseUrl)
     )
-      next.publicBaseUrl = '请输入 HTTP(S) 地址或以 / 开头的相对路径。';
+      next.publicBaseUrl = tr('error.publicBaseUrl');
     setErrors(next);
     if (Object.keys(next).length) return '';
     // Failure redirects are handled by Next and the host. Never catch a redirect as a normal error.
@@ -78,7 +82,7 @@ function ConfigForm({
     setDraft((value) => ({ ...value, accessKeyId: '', secretAccessKey: '' }));
     setEdited(false);
     setTest(null);
-    return '已保存';
+    return tr('status.saved');
   }, '');
 
   function update<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
@@ -131,12 +135,10 @@ function ConfigForm({
       const ok = response.ok && result.ok === true;
       setTest({
         ok,
-        message: ok
-          ? '连接测试通过'
-          : result.error || '连接测试未通过，请检查已保存的配置和服务状态。',
+        message: ok ? tr('test.ok') : (result.error || tr('test.failed')),
       });
     } catch {
-      setTest({ ok: false, message: '连接测试请求失败或超时，请稍后重试。' });
+      setTest({ ok: false, message: tr('test.requestFailed') });
     } finally {
       setTesting(false);
     }
@@ -145,8 +147,8 @@ function ConfigForm({
   return (
     <section className="flex flex-col gap-6">
       <div className="flex flex-col gap-1 border-b pb-4">
-        <SectionTitle>存储</SectionTitle>
-        <p className="text-sm text-muted-foreground">管理媒体、品牌和备份文件的存储位置。</p>
+        <SectionTitle>{tr('title')}</SectionTitle>
+        <p className="text-sm text-muted-foreground">{tr('description')}</p>
       </div>
       <form action={save} className="flex flex-col gap-8">
         {/* Submit all draft fields so switching providers preserves values and blank optional fields can be cleared. */}
@@ -163,7 +165,7 @@ function ConfigForm({
           <div className="flex flex-col gap-8">
             <FieldGroup>
               <Field>
-                <Label htmlFor="storage-kind">存储后端</Label>
+                <Label htmlFor="storage-kind">{tr('backend.label')}</Label>
                 <Select
                   id="storage-kind"
                   value={draft.kind}
@@ -171,60 +173,70 @@ function ConfigForm({
                 >
                   {KIND_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {tr(option.key)}
                     </option>
                   ))}
                 </Select>
                 <FieldDescription>
-                  当前已保存：{KIND_OPTIONS.find((item) => item.value === config.kind)?.label}
-                  。切换后仅影响新文件，历史文件仍可读取，不会自动迁移。
+                  {tr('backend.current', {
+                    kind: tr(
+                      KIND_OPTIONS.find((item) => item.value === config.kind)?.key ?? 'kind.env',
+                    ),
+                  })}
                 </FieldDescription>
               </Field>
               {draft.kind === 'env' && (
-                <FieldDescription>
-                  使用服务器的 STORAGE_DRIVER
-                  等环境变量。本插件不接管存储；保存此选项会清除插件中保存的 S3 密钥。
-                </FieldDescription>
+                <FieldDescription>{tr('backend.envHint')}</FieldDescription>
               )}
             </FieldGroup>
             {draft.kind === 'local' && (
               <FieldGroup>
-                <SectionTitle>本地存储</SectionTitle>
+                <SectionTitle>{tr('local.title')}</SectionTitle>
                 {text(
                   'localRoot',
-                  '存储目录',
-                  '留空使用数据目录下的 storage。目录位于运行服务的服务器上。',
-                  '/var/lib/stackpanel/storage',
+                  tr('local.root'),
+                  tr('local.rootHint'),
+                  tr('local.rootPlaceholder'),
                   false,
                   1024,
                 )}
-                {text('publicBaseUrl', '公开访问前缀', '用于生成文件的访问地址。', '/storage')}
+                {text(
+                  'publicBaseUrl',
+                  tr('local.publicBaseUrl'),
+                  tr('local.publicBaseUrlHint'),
+                  '/storage',
+                )}
               </FieldGroup>
             )}
             {draft.kind === 's3' && (
               <>
                 <FieldGroup>
-                  <SectionTitle>连接配置</SectionTitle>
-                  <FieldDescription>
-                    支持 AWS S3、MinIO、Cloudflare R2 和兼容 S3 协议的对象存储。
-                  </FieldDescription>
+                  <SectionTitle>{tr('s3.connectTitle')}</SectionTitle>
+                  <FieldDescription>{tr('s3.connectHint')}</FieldDescription>
                   {text(
                     's3Endpoint',
-                    '端点地址',
-                    'AWS S3 可留空，其他服务填写其 S3 API 端点。',
+                    tr('s3.endpoint'),
+                    tr('s3.endpointHint'),
                     'https://s3.example.com',
                   )}
                   {text(
                     's3Region',
-                    '区域',
-                    '填写服务商提供的区域；R2 通常使用 auto。',
+                    tr('s3.region'),
+                    tr('s3.regionHint'),
                     'us-east-1',
                     false,
                     64,
                   )}
-                  {text('s3Bucket', '存储桶', undefined, 'your-bucket', false, 255)}
+                  {text(
+                    's3Bucket',
+                    tr('s3.bucket'),
+                    undefined,
+                    tr('s3.bucketPlaceholder'),
+                    false,
+                    255,
+                  )}
                   <Field>
-                    <Label htmlFor="storage-addressing">寻址方式</Label>
+                    <Label htmlFor="storage-addressing">{tr('s3.addressing')}</Label>
                     <Select
                       id="storage-addressing"
                       value={String(draft.s3ForcePathStyle)}
@@ -232,46 +244,46 @@ function ConfigForm({
                         update('s3ForcePathStyle', event.target.value === 'true')
                       }
                     >
-                      <option value="true">Path-style（MinIO / 自建网关）</option>
-                      <option value="false">Virtual-hosted（AWS / R2）</option>
+                      <option value="true">{tr('s3.pathStyle')}</option>
+                      <option value="false">{tr('s3.virtualHosted')}</option>
                     </Select>
                   </Field>
                 </FieldGroup>
                 <FieldGroup>
-                  <SectionTitle>访问密钥</SectionTitle>
+                  <SectionTitle>{tr('s3.keysTitle')}</SectionTitle>
                   <FieldDescription>
-                    {config.hasCredentials
-                      ? '已配置访问密钥，留空保留原值。密钥不会回显。'
-                      : '密钥将加密保存，不会在读取配置时返回。'}
+                    {config.hasCredentials ? tr('s3.keysConfigured') : tr('s3.keysNew')}
                   </FieldDescription>
                   {!config.secretsAvailable && (
-                    <FieldError>
-                      密钥存储尚未启用，请先在服务器配置 SETTINGS_ENCRYPTION_KEY 后重启服务。
-                    </FieldError>
+                    <FieldError>{tr('s3.encryptionMissing')}</FieldError>
                   )}
                   {text(
                     'accessKeyId',
-                    'Access Key ID',
+                    tr('s3.accessKeyId'),
                     undefined,
-                    config.hasCredentials ? '已配置，留空保留' : '输入 Access Key ID',
+                    config.hasCredentials
+                      ? tr('s3.accessKeyIdKeep')
+                      : tr('s3.accessKeyIdPlaceholder'),
                     true,
                     255,
                   )}
                   {text(
                     'secretAccessKey',
-                    'Secret Access Key',
+                    tr('s3.secretKey'),
                     undefined,
-                    config.hasCredentials ? '已配置，留空保留' : '输入 Secret Access Key',
+                    config.hasCredentials
+                      ? tr('s3.accessKeyIdKeep')
+                      : tr('s3.secretKeyPlaceholder'),
                     true,
                     255,
                   )}
                 </FieldGroup>
                 <FieldGroup>
-                  <SectionTitle>文件访问</SectionTitle>
+                  <SectionTitle>{tr('s3.filesTitle')}</SectionTitle>
                   {text(
                     'publicBaseUrl',
-                    '公开访问基址',
-                    '可填写 CDN 或自定义域名，留空从端点和存储桶推导。',
+                    tr('s3.publicBaseUrl'),
+                    tr('s3.publicBaseUrlHint'),
                     'https://cdn.example.com',
                   )}
                 </FieldGroup>
@@ -280,22 +292,22 @@ function ConfigForm({
             {draft.kind === 'http' && (
               <>
                 <FieldGroup>
-                  <SectionTitle>上传与读取</SectionTitle>
-                  <FieldDescription>文件经服务器转发至图床，不支持预签名直传。</FieldDescription>
+                  <SectionTitle>{tr('http.uploadTitle')}</SectionTitle>
+                  <FieldDescription>{tr('http.uploadHint')}</FieldDescription>
                   {text(
                     'httpUploadUrl',
-                    '上传地址',
+                    tr('http.uploadUrl'),
                     undefined,
                     'https://img.example.com/api/upload',
                   )}
                   {text(
                     'httpPublicBaseUrl',
-                    '读取基址',
-                    '文件地址为读取基址与对象键的组合。',
+                    tr('http.publicBaseUrl'),
+                    tr('http.publicBaseUrlHint'),
                     'https://img.example.com/files',
                   )}
                   <Field>
-                    <Label htmlFor="storage-method">上传方式</Label>
+                    <Label htmlFor="storage-method">{tr('http.method')}</Label>
                     <Select
                       id="storage-method"
                       value={draft.httpMethod}
@@ -303,17 +315,24 @@ function ConfigForm({
                         update('httpMethod', event.target.value as Config['httpMethod'])
                       }
                     >
-                      <option value="PUT">PUT · 原始文件内容</option>
-                      <option value="POST">POST · 表单上传</option>
+                      <option value="PUT">{tr('http.methodPut')}</option>
+                      <option value="POST">{tr('http.methodPost')}</option>
                     </Select>
                   </Field>
                   {draft.httpMethod === 'POST' &&
-                    text('httpFieldName', '文件字段名', '留空使用 file。', 'file', false, 128)}
+                    text(
+                      'httpFieldName',
+                      tr('http.fieldName'),
+                      tr('http.fieldNameHint'),
+                      tr('http.fieldNamePlaceholder'),
+                      false,
+                      128,
+                    )}
                 </FieldGroup>
                 <FieldGroup>
-                  <SectionTitle>请求设置</SectionTitle>
+                  <SectionTitle>{tr('http.requestTitle')}</SectionTitle>
                   <Field>
-                    <Label htmlFor="storage-headers">附加请求头</Label>
+                    <Label htmlFor="storage-headers">{tr('http.headers')}</Label>
                     <textarea
                       id="storage-headers"
                       value={draft.httpHeaders}
@@ -323,15 +342,12 @@ function ConfigForm({
                       placeholder={'Authorization: Bearer <token>'}
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     />
-                    <FieldDescription>
-                      每行一个请求头，格式为 Header:
-                      value。这些内容属于普通配置，请使用权限受限的凭据。
-                    </FieldDescription>
+                    <FieldDescription>{tr('http.headersHint')}</FieldDescription>
                   </Field>
                   {text(
                     'httpDeleteUrlTemplate',
-                    '删除地址模板',
-                    '可用 {key} 代入对象键。留空向文件读取地址发送 DELETE 请求。',
+                    tr('http.deleteUrl'),
+                    tr('http.deleteUrlHint'),
                     'https://img.example.com/api/delete/{key}',
                   )}
                 </FieldGroup>
@@ -342,7 +358,7 @@ function ConfigForm({
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={!action || saving || testing}>
             {saving && <LoaderCircle className="animate-spin" data-icon="inline-start" />}
-            {saving ? '保存中…' : '保存配置'}
+            {saving ? tr('save.saving') : tr('save.submit')}
           </Button>
           {!edited && state && (
             <span role="status" className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -350,14 +366,14 @@ function ConfigForm({
               {state}
             </span>
           )}
-          {!action && <FieldError>当前无法保存配置，请检查权限或重新登录。</FieldError>}
+          {!action && <FieldError>{tr('save.noPermission')}</FieldError>}
         </div>
       </form>
       <div className="flex flex-col gap-3 border-t pt-6">
-        <SectionTitle>连接测试</SectionTitle>
+        <SectionTitle>{tr('test.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">
-          测试已保存的配置。
-          {edited ? '当前有未保存的修改，请先保存再测试。' : '测试通过仅表示当前连接可用。'}
+          {tr('test.description')}
+          {edited ? tr('test.dirty') : tr('test.hint')}
         </p>
         <div>
           <Button
@@ -371,7 +387,7 @@ function ConfigForm({
             ) : (
               <PlugZap data-icon="inline-start" />
             )}
-            {testing ? '测试中…' : '测试连接'}
+            {testing ? tr('test.testing') : tr('test.submit')}
           </Button>
         </div>
         {test &&
@@ -388,19 +404,21 @@ function ConfigForm({
 }
 
 function StorageAdminPage(props: AdminPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const config = (props.data.storageConfig as AdminConfigData | undefined)?.config;
   return (
     <div className="flex w-full flex-col gap-8">
-      {!props.embedded && <PageHeader title="存储" />}
+      {!props.embedded && <PageHeader title={tr('title')} />}
       {config ? (
         <ConfigForm
           config={config}
           action={props.actions?.['storage.save-config']}
           canTest={!!props.actions?.['storage.test-connection']}
+          tr={tr}
         />
       ) : (
         <p role="alert" className="text-sm text-muted-foreground">
-          存储配置暂时无法加载，请刷新重试。
+          {tr('page.unavailable')}
         </p>
       )}
     </div>

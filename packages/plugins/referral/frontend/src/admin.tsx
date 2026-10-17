@@ -20,24 +20,27 @@ import type { ReactElement } from 'react';
 import { BarChart3, Settings, Users } from 'lucide-react';
 import { useState } from 'react';
 import type { AdminConfigData, AdminListData } from './schemas';
+import { t } from './i18n.js';
 
+/** Trigger options: `value` is the persisted contract, `key` is display copy. */
 const TRIGGER_OPTIONS = [
-  { value: 'register', label: '注册即发' },
-  { value: 'first_order', label: '首单支付后发（默认）' },
-  { value: 'register_frozen', label: '冻结 N 天后解冻发' },
+  { value: 'register', key: 'trigger.register' },
+  { value: 'first_order', key: 'trigger.firstOrderOption' },
+  { value: 'register_frozen', key: 'trigger.registerFrozen' },
 ];
 
-const INVITER_STATE: Record<string, { label: string; tone: StatusTone }> = {
-  pending: { label: '待发放', tone: 'warn' },
-  paid: { label: '已发放', tone: 'ok' },
-  rejected: { label: '已拒绝', tone: 'error' },
+/** Invitee state → message id + tone. Codes are API values, not copy. */
+const INVITER_STATE: Record<string, { key: string; tone: StatusTone }> = {
+  pending: { key: 'state.pending', tone: 'warn' },
+  paid: { key: 'state.paid', tone: 'ok' },
+  rejected: { key: 'state.rejected', tone: 'error' },
 };
 
-function money(amount: number, currency: string): string {
+function money(amount: number, currency: string, locale?: string): string {
   // Reward balances are minor units; respect the currency's precision instead
   // of assuming two decimals.
   try {
-    return formatMinorCurrency(amount, currency, 'zh-CN');
+    return formatMinorCurrency(amount, currency, locale);
   } catch {
     return `${amount} ${currency}`;
   }
@@ -61,24 +64,26 @@ function amountInput(value: number, currency: string): string {
   }
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('zh-CN');
+function formatDate(value: string, locale?: string): string {
+  return new Date(value).toLocaleString(locale);
 }
 
 function ConfigForm({
   config,
   action,
+  tr,
 }: {
   config: AdminConfigData['config'];
   action?: ((formData: FormData) => Promise<void>) | undefined;
+  tr: ReturnType<typeof t>;
 }): ReactElement {
   const [trigger, setTrigger] = useState(config.trigger);
   if (!action) {
     return (
       <Card>
         <CardHeader>
-          <SectionTitle icon={<Settings />}>推广配置</SectionTitle>
-          <CardDescription>当前无法保存配置（缺少权限或未登录）。</CardDescription>
+          <SectionTitle icon={<Settings />}>{tr('admin.config.title')}</SectionTitle>
+          <CardDescription>{tr('admin.config.noPermission')}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -86,8 +91,8 @@ function ConfigForm({
   return (
     <Card>
       <CardHeader>
-        <SectionTitle icon={<Settings />}>推广配置</SectionTitle>
-        <CardDescription>设置邀请奖励和归因规则，保存后立即对新邀请生效。</CardDescription>
+        <SectionTitle icon={<Settings />}>{tr('admin.config.title')}</SectionTitle>
+        <CardDescription>{tr('admin.config.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={action} className="flex flex-col gap-7">
@@ -95,21 +100,19 @@ function ConfigForm({
           <input type="hidden" name="inviteeRewardAmount" value={config.inviteeRewardAmount} />
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-enabled">启用推广</Label>
+              <Label htmlFor="cfg-enabled">{tr('admin.config.enabled')}</Label>
               <Select
                 id="cfg-enabled"
                 name="enabled"
                 defaultValue={config.enabled ? 'true' : 'false'}
               >
-                <option value="true">启用</option>
-                <option value="false">停用</option>
+                <option value="true">{tr('admin.config.enabledOn')}</option>
+                <option value="false">{tr('admin.config.enabledOff')}</option>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                关闭后不会生成新的奖励，已有记录不受影响。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.enabledHint')}</p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-trigger">什么时候发放奖励</Label>
+              <Label htmlFor="cfg-trigger">{tr('admin.config.trigger')}</Label>
               <Select
                 id="cfg-trigger"
                 name="trigger"
@@ -118,18 +121,16 @@ function ConfigForm({
               >
                 {TRIGGER_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {tr(option.key)}
                   </option>
                 ))}
               </Select>
-              <p className="text-xs text-muted-foreground">
-                建议选择“首单支付后发”，可减少无效注册。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.triggerHint')}</p>
             </div>
           </div>
           <div className="grid gap-4 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-reward-yuan">推广人奖励（元）</Label>
+              <Label htmlFor="cfg-reward-yuan">{tr('admin.config.reward')}</Label>
               <Input
                 id="cfg-reward-yuan"
                 type="number"
@@ -148,10 +149,10 @@ function ConfigForm({
                     ).value = String(minor);
                 }}
               />
-              <p className="text-xs text-muted-foreground">邀请成功后，发给推广人的余额奖励。</p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.rewardHint')}</p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-invitee-reward-yuan">新用户奖励（元）</Label>
+              <Label htmlFor="cfg-invitee-reward-yuan">{tr('admin.config.inviteeReward')}</Label>
               <Input
                 id="cfg-invitee-reward-yuan"
                 type="number"
@@ -171,21 +172,19 @@ function ConfigForm({
                 }}
               />
               <p className="text-xs text-muted-foreground">
-                被邀请的新用户获得的余额奖励，填 0 即不发放。
+                {tr('admin.config.inviteeRewardHint')}
               </p>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-currency">结算币种</Label>
+              <Label htmlFor="cfg-currency">{tr('admin.config.currency')}</Label>
               {/* Rewards are paid into the CNY wallet; keep it fixed but visible. */}
               <Input id="cfg-currency" name="currency" value={config.currency} readOnly />
-              <p className="text-xs text-muted-foreground">
-                推广奖励进入钱包，当前钱包仅支持 CNY。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.currencyHint')}</p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-freeze">冻结天数</Label>
+              <Label htmlFor="cfg-freeze">{tr('admin.config.freezeDays')}</Label>
               {trigger !== 'register_frozen' ? (
                 <input type="hidden" name="freezeDays" value={config.freezeDays} />
               ) : null}
@@ -199,10 +198,10 @@ function ConfigForm({
                 required
                 disabled={trigger !== 'register_frozen'}
               />
-              <p className="text-xs text-muted-foreground">仅在选择“冻结后发”时使用。</p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.freezeDaysHint')}</p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-cookie">邀请链接有效期（天）</Label>
+              <Label htmlFor="cfg-cookie">{tr('admin.config.cookieDays')}</Label>
               <Input
                 id="cfg-cookie"
                 name="cookieDays"
@@ -212,12 +211,10 @@ function ConfigForm({
                 defaultValue={config.cookieDays}
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                点击邀请链接后，多少天内注册仍算有效。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.cookieDaysHint')}</p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-max-invites">每位用户最多邀请</Label>
+              <Label htmlFor="cfg-max-invites">{tr('admin.config.maxInvites')}</Label>
               <Input
                 id="cfg-max-invites"
                 name="maxInvitesPerUser"
@@ -227,10 +224,10 @@ function ConfigForm({
                 defaultValue={config.maxInvitesPerUser}
                 required
               />
-              <p className="text-xs text-muted-foreground">填写 0 表示不限制人数。</p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.maxInvitesHint')}</p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cfg-same-ip">同一网络最多计入</Label>
+              <Label htmlFor="cfg-same-ip">{tr('admin.config.sameIp')}</Label>
               <Input
                 id="cfg-same-ip"
                 name="sameIpLimit"
@@ -240,13 +237,11 @@ function ConfigForm({
                 defaultValue={config.sameIpLimit}
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                用于减少自邀刷奖励，填写 0 表示不限制。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr('admin.config.sameIpHint')}</p>
             </div>
           </div>
           <div className="flex items-end sm:col-span-2 lg:col-span-3">
-            <Button type="submit">保存配置</Button>
+            <Button type="submit">{tr('admin.config.save')}</Button>
           </div>
         </form>
       </CardContent>
@@ -257,17 +252,17 @@ function ConfigForm({
 function AdjustmentForm({
   action,
   currency,
+  tr,
 }: {
   action?: ((formData: FormData) => Promise<void>) | undefined;
   currency: string;
+  tr: ReturnType<typeof t>;
 }): ReactElement {
   return (
     <Card>
       <CardHeader>
-        <SectionTitle icon={<Users />}>手动调账</SectionTitle>
-        <CardDescription>
-          奖励漏发或误发时人工修正：按邮箱给用户余额加减金额（正数增加、负数扣减）。
-        </CardDescription>
+        <SectionTitle icon={<Users />}>{tr('admin.adjust.title')}</SectionTitle>
+        <CardDescription>{tr('admin.adjust.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {action ? (
@@ -281,11 +276,11 @@ function AdjustmentForm({
             className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem_minmax(0,1.4fr)_auto]"
           >
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="adj-email">用户邮箱</Label>
+              <Label htmlFor="adj-email">{tr('admin.adjust.email')}</Label>
               <Input id="adj-email" name="email" type="email" required maxLength={191} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="adj-amount">金额（元，{currency}）</Label>
+              <Label htmlFor="adj-amount">{tr('admin.adjust.amount', { currency })}</Label>
               <Input
                 id="adj-amount"
                 name="amountYuan"
@@ -297,23 +292,23 @@ function AdjustmentForm({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="adj-note">备注</Label>
+              <Label htmlFor="adj-note">{tr('admin.adjust.note')}</Label>
               <Input
                 id="adj-note"
                 name="note"
                 required
                 maxLength={191}
-                placeholder="例如：补发 2026-10 奖励"
+                placeholder={tr('admin.adjust.amountPlaceholder')}
               />
             </div>
             <div className="flex items-end">
               <Button type="submit" variant="outline">
-                提交调账
+                {tr('admin.adjust.submit')}
               </Button>
             </div>
           </form>
         ) : (
-          <p className="text-sm text-muted-foreground">当前无法调账（缺少权限或未登录）。</p>
+          <p className="text-sm text-muted-foreground">{tr('admin.adjust.noPermission')}</p>
         )}
       </CardContent>
     </Card>
@@ -321,6 +316,7 @@ function AdjustmentForm({
 }
 
 function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const list = props.data.referral as AdminListData | undefined;
   const configData = props.data.referralConfig as AdminConfigData | undefined;
   const currency = configData?.config.currency ?? list?.currency ?? 'CNY';
@@ -329,7 +325,7 @@ function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
 
   return (
     <main className="flex w-full flex-col gap-8">
-      {props.embedded ? null : <PageHeader title="推广管理" />}
+      {props.embedded ? null : <PageHeader title={tr('admin.title')} />}
 
       {list ? (
         <section className="grid gap-3 sm:grid-cols-3">
@@ -337,7 +333,7 @@ function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
             <CardContent className="flex items-center gap-3">
               <BarChart3 className="size-4 text-muted-foreground" />
               <div>
-                <p className="text-xs text-muted-foreground">累计归因</p>
+                <p className="text-xs text-muted-foreground">{tr('admin.stat.attributed')}</p>
                 <p className="text-xl font-semibold tabular-nums">{list.total}</p>
               </div>
             </CardContent>
@@ -346,14 +342,14 @@ function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
             <CardContent className="flex items-center gap-3">
               <Users className="size-4 text-muted-foreground" />
               <div>
-                <p className="text-xs text-muted-foreground">推广人</p>
+                <p className="text-xs text-muted-foreground">{tr('admin.stat.inviters')}</p>
                 <p className="text-xl font-semibold tabular-nums">{inviters.length}</p>
               </div>
             </CardContent>
           </Card>
           <Card className="py-4">
             <CardContent>
-              <p className="text-xs text-muted-foreground">当前结算币种</p>
+              <p className="text-xs text-muted-foreground">{tr('admin.stat.currency')}</p>
               <p className="text-xl font-semibold">{currency}</p>
             </CardContent>
           </Card>
@@ -361,18 +357,22 @@ function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
       ) : null}
 
       {configData ? (
-        <ConfigForm config={configData.config} action={props.actions?.['referral.save-config']} />
+        <ConfigForm
+          config={configData.config}
+          action={props.actions?.['referral.save-config']}
+          tr={tr}
+        />
       ) : null}
 
       <section className="flex flex-col gap-4">
-        <SectionTitle icon={<Users />}>推广人汇总</SectionTitle>
+        <SectionTitle icon={<Users />}>{tr('admin.inviters.title')}</SectionTitle>
         {inviters.length ? (
           <div className="overflow-x-auto rounded-xl border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">推广人</th>
-                  <th className="px-4 py-2.5 font-medium">已发奖励</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.inviters.colInviter')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.inviters.colPaid')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -380,7 +380,7 @@ function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
                   <tr key={inviter.inviterId} className="border-t">
                     <td className="px-4 py-2.5">{inviter.inviterEmail || inviter.inviterId}</td>
                     <td className="px-4 py-2.5 tabular-nums">
-                      {money(inviter.paidAmount, currency)}
+                      {money(inviter.paidAmount, currency, props.locale)}
                     </td>
                   </tr>
                 ))}
@@ -388,44 +388,45 @@ function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
             </table>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">暂无已发奖励的推广人。</p>
+          <p className="text-sm text-muted-foreground">{tr('admin.inviters.empty')}</p>
         )}
       </section>
 
       <section className="flex flex-col gap-4">
-        <SectionTitle icon={<Users />}>归因明细（共 {list?.total ?? 0} 条）</SectionTitle>
+        <SectionTitle icon={<Users />}>
+          {tr('admin.records.title', { count: list?.total ?? 0 })}
+        </SectionTitle>
         {records.length ? (
           <div className="overflow-x-auto rounded-xl border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">推广人</th>
-                  <th className="px-4 py-2.5 font-medium">被邀请人</th>
-                  <th className="px-4 py-2.5 font-medium">码</th>
-                  <th className="px-4 py-2.5 font-medium">奖励</th>
-                  <th className="px-4 py-2.5 font-medium">状态</th>
-                  <th className="px-4 py-2.5 font-medium">时间</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.records.colInviter')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.records.colInvitee')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.records.colCode')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.records.colReward')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.records.colState')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('admin.records.colTime')}</th>
                 </tr>
               </thead>
               <tbody>
                 {records.map((record) => {
-                  const state = INVITER_STATE[record.inviterState] ?? {
-                    label: record.inviterState,
-                    tone: 'neutral' as StatusTone,
-                  };
+                  const state = INVITER_STATE[record.inviterState];
                   return (
                     <tr key={record.id} className="border-t">
                       <td className="px-4 py-2.5">{record.inviterEmail || record.inviterId}</td>
                       <td className="px-4 py-2.5">{record.inviteeEmail || record.inviteeId}</td>
                       <td className="px-4 py-2.5 font-mono text-xs">{record.code}</td>
                       <td className="px-4 py-2.5 tabular-nums">
-                        {money(record.rewardAmount, currency)}
+                        {money(record.rewardAmount, currency, props.locale)}
                       </td>
                       <td className="px-4 py-2.5">
-                        <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+                        <StatusBadge tone={state?.tone ?? 'neutral'}>
+                          {state ? tr(state.key) : record.inviterState}
+                        </StatusBadge>
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                        {formatDate(record.paidAt ?? record.createdAt)}
+                        {formatDate(record.paidAt ?? record.createdAt, props.locale)}
                       </td>
                     </tr>
                   );
@@ -434,12 +435,12 @@ function ReferralAdminPage(props: AdminPageComponentProps): ReactElement {
             </table>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">暂无归因记录。</p>
+          <p className="text-sm text-muted-foreground">{tr('admin.records.empty')}</p>
         )}
       </section>
 
       {list ? (
-        <AdjustmentForm action={props.actions?.['referral.adjust']} currency={currency} />
+        <AdjustmentForm action={props.actions?.['referral.adjust']} currency={currency} tr={tr} />
       ) : null}
     </main>
   );

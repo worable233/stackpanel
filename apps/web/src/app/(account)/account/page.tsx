@@ -26,7 +26,8 @@ interface CountSummary {
 }
 
 export default async function AccountHomePage() {
-  const t = createTranslator(await getLocale());
+  const locale = await getLocale();
+  const t = createTranslator(locale);
   const api = await getAuthedApiClient();
   const [userResult, widgets] = await Promise.all([
     api.getCurrentUser(),
@@ -73,69 +74,77 @@ export default async function AccountHomePage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {pendingOrders !== undefined ? (
           <SummaryCard
-            title="待付订单"
+            title={t('account.home.pendingOrders')}
             value={pendingOrders}
-            unit="条"
+            unit={t('account.home.unitOrders')}
             icon={<ClipboardList />}
             tone="text-primary"
             href="/account/orders"
-            footer="全部订单"
+            footer={t('account.home.allOrders')}
           />
         ) : null}
         {servicesData !== null ? (
           <SummaryCard
-            title="正在运行"
+            title={t('account.home.running')}
             value={activeServices}
-            unit="台"
+            unit={t('account.home.unitInstances')}
             icon={<Server />}
             tone="text-success"
             href="/account/services"
-            footer="管理实例"
-            secondary={{ label: '新建实例', href: '/shop' }}
+            footer={t('account.home.manageInstances')}
+            secondary={{ label: t('account.home.newInstance'), href: '/shop' }}
           />
         ) : null}
         {servicesData !== null ? (
           <SummaryCard
-            title="7 天内到期"
+            title={t('account.home.expiringSoon')}
             value={expiringServices}
-            unit="台"
+            unit={t('account.home.unitInstances')}
             icon={<Clock3 />}
             tone="text-destructive"
             href="/account/services"
-            footer="全部产品"
+            footer={t('account.home.allProducts')}
           />
         ) : null}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {pendingTickets !== undefined ? (
           <SummaryCard
-            title="待处理工单"
+            title={t('account.home.pendingTickets')}
             value={pendingTickets}
             icon={<Headphones />}
             href="/account/tickets"
-            footer="全部工单"
-            secondary={{ label: '提交工单', href: '/account/tickets/new' }}
+            footer={t('account.home.allTickets')}
+            secondary={{ label: t('account.home.newTicket'), href: '/account/tickets/new' }}
           />
         ) : null}
         <Card className="min-h-52">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-lg">
               <ShieldCheck className="size-5 text-success" />
-              账户安全
+              {t('account.home.securityTitle')}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-6">
             <dl className="grid flex-1 grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <dt className="text-sm text-muted-foreground">账户状态</dt>
+                <dt className="text-sm text-muted-foreground">
+                  {t('account.home.accountStatus')}
+                </dt>
                 <dd className="font-medium">
-                  {userResult.user.status === 'ACTIVE' ? '正常' : '受限'}
+                  {userResult.user.status === 'ACTIVE'
+                    ? t('account.home.statusActive')
+                    : t('account.home.statusRestricted')}
                 </dd>
               </div>
               <div className="flex flex-col gap-2">
-                <dt className="text-sm text-muted-foreground">已绑定身份</dt>
+                <dt className="text-sm text-muted-foreground">
+                  {t('account.home.linkedIdentities')}
+                </dt>
                 <dd className="font-medium">
-                  {identities ? `${identities.identities.length} 个` : '暂不可用'}
+                  {identities
+                    ? t('account.home.identityCount', { count: identities.identities.length })
+                    : t('account.home.unavailable')}
                 </dd>
               </div>
             </dl>
@@ -143,7 +152,7 @@ export default async function AccountHomePage() {
               href="/account/settings#security"
               className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground hover:text-foreground"
             >
-              安全中心 <ArrowRight className="size-4" />
+              {t('account.home.securityCenter')} <ArrowRight className="size-4" />
             </Link>
           </CardContent>
         </Card>
@@ -160,6 +169,7 @@ export default async function AccountHomePage() {
                 pluginId: widget.pluginId,
                 user,
                 settings: widget.settings,
+                locale,
               })}
             </FrontendScopeRoot>
           ))}

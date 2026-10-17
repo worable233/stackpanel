@@ -45,7 +45,9 @@
     "groupDeveloper": "开发者",
     "groupAccount": "账户",
     "overview": "概览",
-    "quickLinks": "快捷入口"
+    "quickLinks": "快捷入口",
+    "workspaceAdmin": "管理员工作区",
+    "workspaceAccount": "账户工作区"
   },
   "nav": {
     "dashboard": "工作台",
@@ -72,7 +74,9 @@
     "roleAdmin": "管理员",
     "roleUser": "普通用户",
     "homeAriaLabel": "回到首页",
-    "updates": "升级"
+    "updates": "升级",
+    "accountOverview": "账户概览",
+    "credentials": "访问凭证"
   },
   "auth": {
     "login": {
@@ -129,14 +133,18 @@
         "back": "上一步",
         "continue": "下一步",
         "initialize": "初始化并进入后台"
-      }
+      },
+      "pageTitle": "初始化"
     },
     "panel": {
       "highlightTitle": "开箱即用",
       "highlightText": "选型、下单、开通一条链路走完，无需等待人工配置。",
       "helpTitle": "需要帮助？",
       "helpText": "查看上云指南，或随时联系我们的支持团队。",
-      "helpLink": "上云指南"
+      "helpLink": "上云指南",
+      "heroLine1": "你的业务，",
+      "heroLine2": "即刻上云。",
+      "latestPosts": "最新文章"
     },
     "legal": {
       "copyrightCompact": "© {name}，保留所有权利。"
@@ -255,7 +263,9 @@
         "expiresAria": "到期时间",
         "selectUpstream": "请选择上游服务",
         "confirmUnbind": "确定解绑该服务？仅解除本账号的绑定，不影响上游已购服务。",
-        "confirmDelete": "确定删除该用户的这个服务？删除后不可恢复。"
+        "confirmDelete": "确定删除该用户的这个服务？删除后不可恢复。",
+        "upstreamEmpty": "上游暂无已购服务，请先确认上游账号中有可绑定的服务。",
+        "noUpstreamPlugin": "暂无可用的上游插件，请先启用提供服务绑定能力的插件。"
       },
       "orders": {
         "title": "订单",
@@ -264,7 +274,13 @@
         "colId": "订单号",
         "colAmount": "金额",
         "colStatus": "状态",
-        "colCreatedAt": "创建时间"
+        "colCreatedAt": "创建时间",
+        "totalCount": "共 {total} 笔订单",
+        "rowsPerPage": "{size} 条 / 页",
+        "rowsPerPageAria": "每页订单数",
+        "pageOf": "第 {page} / {pages} 页",
+        "prevPage": "上一页订单",
+        "nextPage": "下一页订单"
       },
       "serviceStatus": {
         "PENDING_PROVISION": "待开通",
@@ -731,7 +747,35 @@
     "updates": {
       "title": "更新中心",
       "pageDescription": "通过独立执行器求解并应用内核/插件升级。",
-      "serviceUnavailable": "更新中心不可用：{error}"
+      "serviceUnavailable": "更新中心不可用：{error}",
+      "currentDeployment": "当前部署",
+      "generation": "代次",
+      "digest": "摘要",
+      "activeTask": "进行中任务",
+      "idle": "空闲",
+      "statusUnreadable": "独立执行器状态不可读（可能未运行）。",
+      "catalogLine": "远程目录：{catalog}｜渠道：{channel}｜自动更新：{autoUpdate}｜实例：{instance}",
+      "catalogConfiguredExpired": "已配置（快照过期）",
+      "catalogConfigured": "已配置",
+      "catalogMissing": "未配置（离线）",
+      "catalogMissingHint": "未配置远程目录，无法求解远程升级计划。",
+      "solvePlan": "求解升级计划",
+      "submitWithAuthorization": "确认并投递（含授权变更）",
+      "submit": "投递升级任务",
+      "planBlocked": "计划被阻止：",
+      "planDigest": "计划摘要：{digest}",
+      "planDigestWithAuthorization": "计划摘要：{digest}（含需人工授权的变更）",
+      "includesKernel": "含内核自身升级：{version}",
+      "includesKernelMigration": "含内核自身升级：{version}（迁移 {migration}）",
+      "colComponent": "组件",
+      "colFrom": "从",
+      "colTo": "到",
+      "colPermissions": "权限",
+      "colReversible": "可回退",
+      "addsPermissions": "新增",
+      "noPermissions": "无",
+      "dispatched": "升级任务已投递（{taskKey}…）",
+      "blockDetail": "{component}：{detail}"
     }
   },
   "locale": {
@@ -1064,7 +1108,8 @@
       "settlement_unsupported": "平台结算币种配置不支持该操作",
       "payment_method_unsupported": "所选支付方式不支持该结算币种",
       "referenced": "该币种已被支付记录或支付方式引用，不能停用"
-    }
+    },
+    "circuit_open": "上游接口连续失败，已熔断以保护本站"
   },
   "auditAction": {
     "auth": {
@@ -1240,7 +1285,27 @@
       "balance": "账户余额",
       "activeServices": "已开通服务",
       "security": "账户安全",
-      "protected": "已保护"
+      "protected": "已保护",
+      "pendingOrders": "待付订单",
+      "allOrders": "全部订单",
+      "running": "正在运行",
+      "unitInstances": "台",
+      "manageInstances": "管理实例",
+      "newInstance": "新建实例",
+      "expiringSoon": "7 天内到期",
+      "allProducts": "全部产品",
+      "pendingTickets": "待处理工单",
+      "allTickets": "全部工单",
+      "newTicket": "提交工单",
+      "securityTitle": "账户安全",
+      "accountStatus": "账户状态",
+      "statusActive": "正常",
+      "statusRestricted": "受限",
+      "linkedIdentities": "已绑定身份",
+      "identityCount": "{count} 个",
+      "unavailable": "暂不可用",
+      "securityCenter": "安全中心",
+      "unitOrders": "条"
     },
     "permission": "账户权限",
     "page": {
@@ -1259,7 +1324,71 @@
       "description": "订单支付、履约进度和系统公告都会出现在这里。"
     },
     "settings": {
-      "title": "账户设置"
+      "title": "账户设置",
+      "label": "账户设置",
+      "sections": {
+        "profile": "账户信息",
+        "appearance": "外观与语言",
+        "access": "访问凭证",
+        "agent": "Agent"
+      },
+      "profile": {
+        "loginEmail": "登录邮箱",
+        "emailVerified": "邮箱已验证。",
+        "emailUnverified": "邮箱尚未验证。",
+        "emailChangeHint": "如需更换登录邮箱，请联系管理员。",
+        "accountId": "账户 ID",
+        "accountIdHint": "联系支持人员时，可提供此 ID 协助定位账户。",
+        "status": "账户状态",
+        "statusActive": "正常",
+        "statusDisabled": "已停用",
+        "createdAt": "注册时间",
+        "lastLoginAt": "最近登录",
+        "none": "暂无记录"
+      },
+      "appearance": {
+        "theme": "界面主题",
+        "themeSystem": "跟随系统",
+        "themeLight": "浅色",
+        "themeDark": "深色",
+        "themeHint": "立即应用，保存在当前浏览器中。",
+        "language": "显示语言",
+        "languageHint": "切换本站支持的界面语言，保存在当前浏览器中。",
+        "languageSaveFailed": "语言设置未保存，请重试。",
+        "switching": "正在切换语言…",
+        "autosave": "更改自动保存，无需再次提交。"
+      },
+      "access": {
+        "apiKeys": "API 密钥",
+        "apiKeysHint": "管理应用和 Agent 使用的权限密钥，可按用途创建或撤销。",
+        "linkedMethods": "已绑定的登录方式",
+        "loadFailed": "暂时无法读取登录方式，请刷新后重试。",
+        "bound": "已绑定",
+        "empty": "暂无绑定",
+        "keysLoadFailed": "暂时无法加载 API 密钥，请刷新后重试。"
+      },
+      "agent": {
+        "toolsTitle": "工具授权",
+        "history": "任务记录",
+        "toolsHint": "为可用的外部工具配置个人访问凭证。凭证加密保存在服务器中，保存后不会回显。",
+        "retry": "重试",
+        "loading": "加载中…",
+        "noTools": "暂无可用工具",
+        "loadFailed": "加载失败",
+        "credential": "访问凭证",
+        "credentialReplace": "输入新凭证以替换现有凭证",
+        "credentialPlaceholder": "填写该服务的访问令牌",
+        "authorized": "已授权",
+        "unauthorized": "未授权",
+        "save": "保存凭证",
+        "saving": "处理中…",
+        "saveFailed": "保存失败",
+        "saved": "凭证已保存",
+        "remove": "移除授权",
+        "removed": "授权已移除",
+        "removeTitle": "移除工具授权？",
+        "removeDescription": "将删除 {name} 的个人凭证。重新保存凭证后才能继续使用此工具。"
+      }
     }
   },
   "upload": {
@@ -1320,6 +1449,261 @@
     "ariaLabel": "Agent 工作区",
     "dragHint": "拖动标题栏移动面板"
   },
+  "agent": {
+    "effort": {
+      "aria": "模型与思考强度",
+      "reset": "重置思考强度",
+      "slider": "思考强度",
+      "defaultModel": "默认模型",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "extraHigh": "极高"
+    },
+    "workspace": {
+      "navTasks": "Agent 任务",
+      "navApprovals": "待审批",
+      "navApiKeys": "权限密钥",
+      "titleApprovals": "Agent 审批",
+      "titleWorkspace": "Agent 工作区",
+      "statusEnabled": "本站已开启 · 模型提供方：{provider}",
+      "statusNotConfigured": "尚未配置",
+      "statusDisabled": "本站尚未开放 Agent",
+      "continueTitle": "继续执行与子任务",
+      "newTitle": "新建任务",
+      "formHint": "权限取决于所用 API Key。危险写操作始终需要本人确认。后台授权加密保管原 Key，最长一小时，到期停止。",
+      "keyLabel": "本人的权限 API Key",
+      "keyHint": "仅保留在当前页面内存；切换页面后需重新输入。模型密钥由站长管理。",
+      "subObjectiveLabel": "子任务目标",
+      "objectiveLabel": "任务目标",
+      "modelLabel": "模型（留空使用默认）",
+      "executionLabel": "执行方式",
+      "executionRequest": "本次请求推进",
+      "executionBackground": "授权后台持续执行（一小时）",
+      "autonomyLabel": "自主度（受 Key 策略上限约束）",
+      "autonomyRead": "只读，写入需确认",
+      "autonomyPropose": "提议后确认写入",
+      "autonomyAct": "自动执行普通写入",
+      "createSubtask": "创建子任务",
+      "start": "开始任务",
+      "resume": "使用原 Key 继续",
+      "cancel": "取消任务",
+      "replayTitle": "执行回放",
+      "replayMeta": "{steps} 步 · 模型费用 {spend} 最小货币单位 · {model}",
+      "replayStep": "第 {index} 步 · {kind} {tool}",
+      "runsTitle": "任务记录",
+      "runsEmpty": "暂无任务",
+      "loadMoreRuns": "加载更多任务",
+      "approvalsTitle": "待确认操作",
+      "approvalsHint": "批准仅记录决定。请求执行模式需原 Key 继续；已授权的后台任务会自动推进。请核对工具、参数和副作用。",
+      "approvalReason": "审批说明",
+      "approvalsEmpty": "暂无待审批操作",
+      "expires": "到期：{date}",
+      "approve": "确认本次操作",
+      "reject": "拒绝",
+      "viewRun": "查看任务",
+      "loadMoreApprovals": "加载更多审批",
+      "credentialsTitle": "外部服务凭证",
+      "credentialsHint": "服务清单由站长审核；权限通过普通权限组授予。密钥保存后不回显。",
+      "credentialsEmpty": "暂无可用外部服务",
+      "configured": "已配置",
+      "unconfigured": "未配置",
+      "saveCredential": "保存凭证",
+      "clearCredential": "清除凭证",
+      "keyRequired": "请填写本人的权限 API Key"
+    },
+    "chat": {
+      "contextDefault": "当前工作区",
+      "suggestionStatus": "检查云产品的运行状态",
+      "suggestionTickets": "整理待处理工单",
+      "suggestionOrders": "汇总最近的订单",
+      "collapseSidebar": "收起对话侧边栏",
+      "expandSidebar": "展开对话侧边栏",
+      "searchConversations": "搜索对话",
+      "searchPlaceholder": "搜索对话…",
+      "newConversation": "新建对话",
+      "history": "对话记录",
+      "conversationOptions": "对话选项 {title}",
+      "rename": "重命名",
+      "deleteConversation": "删除对话",
+      "loadingList": "正在加载…",
+      "noMatch": "没有匹配的对话",
+      "emptyList": "暂无对话",
+      "loadMore": "加载更多",
+      "savedHere": "对话保存在当前账户中",
+      "deleteTitle": "删除对话",
+      "renameTitle": "重命名对话",
+      "deleteDescription": "删除后无法恢复该对话及消息记录。",
+      "renameDescription": "设置一个便于查找的名称。",
+      "nameLabel": "名称",
+      "processing": "处理中…",
+      "openAgent": "打开 Agent",
+      "closeAgent": "关闭 Agent",
+      "retryLoad": "重试加载",
+      "loadingConversation": "正在加载对话…",
+      "loadEarlier": "加载更早的消息",
+      "messageSaved": "消息已保存 · 尚未启动 Agent 执行",
+      "emptyTitle": "有什么需要帮忙的？",
+      "emptyHint": "描述你想完成的任务。",
+      "addImage": "添加图片",
+      "removeImage": "移除图片 {name}",
+      "objectiveLabel": "Agent 任务目标",
+      "composerPlaceholder": "向 Agent 提问…",
+      "addAttachment": "添加附件或上下文",
+      "executionPermission": "执行权限",
+      "saveOnly": "当前仅保存对话，不执行操作",
+      "send": "发送消息",
+      "uploading": "正在上传私有图片…",
+      "attachmentRules": "最多选择 4 张 PNG、JPEG、GIF 或 WebP 图片，每张不超过 5 MB。",
+      "uploadFailed": "图片上传失败",
+      "readFailed": "图片读取失败，请重试。",
+      "imageConversation": "图片对话",
+      "loadFailed": "无法加载对话，请重试",
+      "saveFailedRetained": "{reason}。输入内容已保留，可重试保存。"
+    },
+    "admin": {
+      "statusLoading": "加载中",
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "retry": "重试",
+      "serviceTitle": "Agent",
+      "serviceLabel": "开放 Agent 服务",
+      "optionOff": "关闭",
+      "optionOn": "开启",
+      "serviceHint": "开启后，用户可在后台调用 Agent。关闭不会删除已有对话；已有记录仍可查看。",
+      "serviceSaved": "服务设置已保存",
+      "modelTitle": "模型服务",
+      "keySaved": "密钥已保存",
+      "keyPending": "待配置",
+      "modelHint": "连接 OpenAI 兼容接口，模型费用由站点承担。安装了模型提供方插件时，会优先使用插件提供的服务。",
+      "baseUrlLabel": "接口地址",
+      "baseUrlHint": "填写服务商提供的公网 HTTPS API 地址，通常以 /v1 结尾。",
+      "modelNameLabel": "默认模型",
+      "modelNamePlaceholder": "填写服务商支持的模型 ID",
+      "apiKeyLabel": "API 密钥",
+      "apiKeyPlaceholderSaved": "已保存，留空保留原密钥",
+      "apiKeyPlaceholderNew": "粘贴服务商提供的 API Key",
+      "apiKeyHint": "密钥加密保存在服务器，不会向用户公开。",
+      "saving": "保存中…",
+      "saveModel": "保存模型配置",
+      "clearConfig": "清除配置",
+      "modelSaved": "模型配置已保存",
+      "retentionTitle": "对话记录",
+      "totalConversations": "对话总数",
+      "totalMessages": "消息总数",
+      "retentionDaysLabel": "保留时长",
+      "retentionForever": "永久保留",
+      "daysCount": "{count} 天",
+      "yearsOne": "1 年",
+      "retentionDaysHint": "按最后一次更新计算，超过时长且未再更新的对话将被删除。",
+      "retentionCapLabel": "每位用户的对话上限",
+      "capUnlimited": "不限制",
+      "capCount": "{count} 个",
+      "retentionCapHint": "超过上限时，优先清理最久未更新的对话。",
+      "cleanupPolicy": "后台每小时检查一次，每次最多清理 500 个对话。删除后无法恢复，同时移除其中的消息与图片关联；媒体库中的原文件和任务执行审计不会被删除。",
+      "lastCleanup": "上次检查：{date}，清理 {deleted} 个对话{more}。",
+      "lastCleanupMore": "，剩余记录将在后续批次继续处理",
+      "neverCleaned": "尚未执行自动清理。默认永久保留，不会自动删除现有记录。",
+      "saveRetention": "保存保留规则",
+      "retentionSaved": "保留规则已保存，将在下一次自动清理时应用",
+      "cleanupNow": "立即清理",
+      "saveFirst": "请先保存规则，再执行立即清理。",
+      "cleanupTitle": "按当前规则清理对话？",
+      "clearTitle": "清除模型配置？",
+      "cleanupDescription": "仅清理已符合保存规则的历史对话，每批最多 500 个。被清理的对话和消息无法恢复。",
+      "clearDescription": "接口地址、默认模型和已保存的密钥将被移除。若没有模型提供方插件，Agent 将无法执行新任务。",
+      "cleaned": "已清理 {count} 个对话",
+      "cleared": "模型配置已清除",
+      "processing": "处理中…",
+      "loadFailed": "加载失败"
+    },
+    "advanced": {
+      "title": "高级设置",
+      "expand": "展开",
+      "save": "保存配置",
+      "saving": "处理中…",
+      "newConfig": "新建配置",
+      "saved": "配置已保存",
+      "readPolicy": "读取策略",
+      "readPolicyHint": "已读取当前策略",
+      "readPolicyFallback": "该密钥尚未设置策略，已载入默认值",
+      "existing": "已有配置",
+      "chooseExisting": "选择配置进行编辑",
+      "profileId": "API 密钥 ID",
+      "configId": "配置标识",
+      "discoverTools": "读取远端工具",
+      "discoverHint": "先启用并保存服务，使用当前管理员的服务凭证读取工具。新工具默认按高风险写入处理，保存前请逐一核对。",
+      "discovered": "已读取工具，请审核操作方式后保存",
+      "noTools": "远端未返回工具列表",
+      "reviewedTools": "已审核工具（{count}）",
+      "remove": "移除",
+      "toolRisk": "操作方式",
+      "riskRead": "只读",
+      "riskWrite": "普通写入",
+      "riskDanger": "高风险写入",
+      "actionsHint": "新动作默认不接收参数；已有动作会保留其已审核的参数定义。此处修改名称、运行方式或限额不会重写参数定义。",
+      "oauthEnvHint": "部署前需设置 AGENT_PUBLIC_ORIGIN（API 公开地址）和 AGENT_WEB_ORIGIN（网站地址）。",
+      "defs": {
+        "profiles": {
+          "title": "执行策略",
+          "description": "为某个 API 密钥设置执行上限。这些限制不会增加密钥原本没有的权限；高风险操作仍需确认。",
+          "idHelp": "在 API 密钥管理中复制密钥 ID（tokenId），不是密钥内容。",
+          "autonomyLabel": "允许的操作方式",
+          "autonomyRead": "只读，写入需确认",
+          "autonomyPropose": "提出操作，由用户确认",
+          "autonomyAct": "自动执行普通操作",
+          "maxSteps": "单次任务最多步骤",
+          "maxRunSeconds": "单次任务最长时间（秒）",
+          "dailySteps": "每日最多步骤",
+          "budgetMinor": "单次费用上限（最小货币单位）",
+          "budgetMinorHelp": "留空不设金额上限。模型提供方必须支持计价，否则设定金额限制后任务会被拒绝。",
+          "dailyBudgetMinor": "每日费用上限（最小货币单位）",
+          "allowedModels": "允许使用的模型",
+          "allowedModelsHelp": "每行一个模型 ID，留空允许所有可用模型。",
+          "approvalNotify": "额外审批通知接收人 ID",
+          "approvalNotifyHelp": "可选。用户本人仍会收到通知。"
+        },
+        "mcpServers": {
+          "title": "外部工具",
+          "description": "连接 MCP 服务，为 Agent 提供额外工具。先保存服务，再读取远端工具并审核；用户需获得对应权限并配置个人凭证。",
+          "idHelp": "使用小写字母开头的英文标识，例如 cloud-tools；保存后请勿修改标识。",
+          "name": "服务名称",
+          "url": "MCP 地址",
+          "urlPlaceholder": "https://example.com/mcp",
+          "urlHelp": "仅支持可解析的公网 HTTPS 地址。",
+          "status": "服务状态",
+          "statusOff": "停用",
+          "statusOn": "启用"
+        },
+        "oauthClients": {
+          "title": "应用授权",
+          "description": "登记可以通过 OAuth 连接本站 MCP 的应用。只接受已登记的完整回调地址，停用应用会撤销已签发的令牌。",
+          "idHelp": "填写应用约定的 client_id，仅限英文、数字、下划线和连字符。",
+          "name": "应用名称",
+          "redirectUris": "授权回调地址",
+          "redirectUrisHelp": "每行一个完整 HTTPS 地址。本地调试可使用 localhost 或回环 HTTP 地址。",
+          "status": "应用状态",
+          "statusOff": "停用",
+          "statusOn": "启用"
+        },
+        "actions": {
+          "title": "脚本动作",
+          "description": "运行预先审核的 Docker 脚本。需要服务器已安装 Docker 并拉取固定摘要镜像；动作禁网、以非 root 用户运行，每次调用均需用户确认。",
+          "idHelp": "使用小写字母开头的英文标识，例如 check-service；权限项为 agent.action.标识。",
+          "name": "动作名称",
+          "image": "镜像（固定摘要）",
+          "imagePlaceholder": "registry/image@sha256:…",
+          "imageHelp": "使用完整的 sha256 摘要，不能使用 latest 等可变标签。",
+          "argv": "执行程序与参数",
+          "argvHelp": "第一行填写程序路径，之后每行一个参数，不支持 shell 命令拼接。输入数据由标准输入传入。",
+          "timeoutSeconds": "超时时间（秒）",
+          "status": "动作状态",
+          "statusOff": "停用",
+          "statusOn": "启用"
+        }
+      }
+    }
+  },
   "frontendError": {
     "title": "页面加载失败",
     "description": "页面暂时无法显示，请稍后重试或返回首页。"
@@ -1351,5 +1735,48 @@
     "unavailable": "暂时无法加载通知设置，请稍后重试。",
     "forbidden": "你没有管理通知策略的权限。",
     "invalidRequest": "请求格式无效。"
+  },
+  "errorPage": {
+    "unauthorized": {
+      "title": "需要登录",
+      "description": "登录后即可继续访问这个页面。"
+    },
+    "forbidden": {
+      "title": "无权访问",
+      "description": "你的账户没有访问这个页面的权限。"
+    },
+    "notFound": {
+      "title": "页面不存在",
+      "description": "你访问的地址不存在，或内容已经被移除。"
+    },
+    "serverError": {
+      "title": "服务暂时不可用",
+      "description": "服务器遇到了一点问题，请稍后再试。"
+    },
+    "maintenance": {
+      "title": "系统维护中",
+      "description": "服务正在进行维护，完成后会自动恢复。"
+    },
+    "back": "返回上一页",
+    "home": "回到首页"
+  },
+  "scrollbar": {
+    "track": "页面滚动轨道",
+    "thumb": "页面滚动"
+  },
+  "agentRoute": {
+    "notFound": "接口不存在",
+    "unauthenticated": "请先登录",
+    "adminOnly": "仅管理员可访问",
+    "badOrigin": "请求来源无效",
+    "invalidKey": "API Key 格式无效",
+    "foreignKey": "请使用本人持有的 API Key",
+    "payloadTooLarge": "请求过大",
+    "unconfirmed": "请求结果未确认，请刷新任务记录后再决定是否继续",
+    "unsupportedImage": "仅支持 PNG、JPEG、GIF 和 WebP 图片",
+    "imageTooLarge": "图片不能超过 5 MB",
+    "missingImage": "缺少图片",
+    "invalidImage": "图片格式无效",
+    "uploadFailed": "图片上传失败，请重试"
   }
 }

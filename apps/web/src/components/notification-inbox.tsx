@@ -143,6 +143,11 @@ export function NotificationInbox({ title, description }: { title: string; descr
     <div ref={visibleRows} className="space-y-6">
       <PageHeader
         title={title}
+        eyebrow={
+          description ? (
+            <p className="mb-1 text-sm text-muted-foreground">{description}</p>
+          ) : undefined
+        }
         actions={
           <>
             <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
@@ -208,7 +213,7 @@ export function NotificationInbox({ title, description }: { title: string; descr
                     {item.title}
                   </p>
                   {!item.readAt ? (
-                    <span className="size-1.5 rounded-full bg-primary" aria-label="未读" />
+                    <span className="size-1.5 rounded-full bg-primary" aria-label={t('notification.unread')} />
                   ) : null}
                 </div>
                 {item.body ? (

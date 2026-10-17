@@ -7,7 +7,7 @@ import type { PluginAdminRouteResult } from '@/lib/admin-frontend';
 import { getClientAdminPages } from '@/lib/frontend-client-registry';
 import { RuntimeAdminPage } from './runtime-admin-page';
 import { FrontendScopeRoot } from './frontend-scope';
-import { useTranslator } from '@/i18n/provider';
+import { useLocale, useTranslator } from '@/i18n/provider';
 
 /**
  * Render the result of a plugin admin route resolution on the client.
@@ -35,6 +35,7 @@ export function AdminPluginPage({
   embedded?: boolean;
 }): ReactElement {
   const t = useTranslator();
+  const locale = useLocale();
   if (result.status === 'not-found') {
     return (
       <main className="mx-auto w-full max-w-3xl">
@@ -85,6 +86,7 @@ export function AdminPluginPage({
     settings: result.settings,
     data: result.data,
     actions: result.actions,
+    locale,
   } as AdminPageComponentProps;
   return (
     <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="block space-y-6">

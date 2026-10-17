@@ -2,7 +2,18 @@
 
 import { Button } from './button.js';
 
-export function ErrorPageActions() {
+export interface ErrorPageActionsLabels {
+  back: string;
+  home: string;
+}
+
+/**
+ * Default "go back / go home" pair for an error page.
+ *
+ * Copy comes from the caller: `@stackpanel/ui` does not ship interface
+ * translations (ADR-0016 §6).
+ */
+export function ErrorPageActions({ labels }: { labels: ErrorPageActionsLabels }) {
   return (
     <>
       <Button
@@ -13,10 +24,10 @@ export function ErrorPageActions() {
           else window.location.assign('/');
         }}
       >
-        返回上一页
+        {labels.back}
       </Button>
       <Button size="lg" render={<a href="/" />}>
-        返回首页
+        {labels.home}
       </Button>
     </>
   );

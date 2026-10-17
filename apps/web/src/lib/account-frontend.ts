@@ -17,6 +17,9 @@ import {
   readPluginSettings,
 } from './slots';
 import { bindPluginActions } from './frontend-plugin-actions';
+import { getLocale } from '@/i18n/locale';
+import { DEFAULT_LOCALE } from '@/i18n/config';
+import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
 
 export interface PluginAccountMenu {
   pluginId: string;
@@ -52,17 +55,26 @@ export interface PluginAccountWidget {
 export async function getPluginAccountMenus(): Promise<PluginAccountMenu[]> {
   const candidates = await listPluginFrontendCandidates();
   const api = await getAuthedApiClient();
+  const locale = await getLocale();
   const menus: PluginAccountMenu[] = [];
   for (const candidate of candidates) {
+    const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const route of candidate.manifest.accountRoutes) {
       if (!route.nav || !(await isAllowed(api, route.permission))) continue;
+      const group = packageLabel(
+        messages,
+        locale,
+        route.nav.groupKey,
+        route.nav.group,
+        [DEFAULT_LOCALE],
+      );
       menus.push({
         pluginId: candidate.id,
-        label: route.nav.label,
+        label: packageLabel(messages, locale, route.nav.labelKey, route.nav.label, [DEFAULT_LOCALE]),
         href: accountHref(route.path),
         order: route.nav.order,
         activePaths: route.nav.activePaths?.map(accountHref),
-        ...(route.nav.group ? { group: route.nav.group } : {}),
+        ...(group ? { group } : {}),
       });
     }
   }
@@ -152,11 +164,13 @@ export async function resolvePluginAccountRoute(
 export async function getPluginAccountWidgets(): Promise<PluginAccountWidget[]> {
   const candidates = await listPluginFrontendCandidates();
   const api = await getAuthedApiClient();
+  const locale = await getLocale();
   const widgets: PluginAccountWidget[] = [];
   for (const candidate of candidates) {
     if (!candidateAdmitsServerExecution(candidate)) continue;
     const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest, candidate.revision);
     if (!pkg) continue;
+    const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const definition of candidate.manifest.accountWidgets) {
       if (!(await isAllowed(api, definition.permission))) continue;
       const component = pkg.ui?.accountWidgetComponents?.[definition.component];
@@ -164,7 +178,7 @@ export async function getPluginAccountWidgets(): Promise<PluginAccountWidget[]> 
       widgets.push({
         id: definition.id,
         pluginId: candidate.id,
-        title: definition.title,
+        title: packageLabel(messages, locale, definition.titleKey, definition.title, [DEFAULT_LOCALE]),
         component,
         settings: await readPluginSettings(candidate.id),
       });

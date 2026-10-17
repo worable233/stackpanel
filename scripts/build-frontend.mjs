@@ -286,6 +286,13 @@ async function buildFrontendPackageFromSource(pkg) {
     ...(Array.isArray(frontendPackage.locales) && frontendPackage.locales.length > 0
       ? { locales: frontendPackage.locales }
       : {}),
+    // ADR-0016 §5: serialize the package's catalogs next to the manifest so the
+    // host can resolve package metadata (nav labels, system-settings labels)
+    // without importing the package's module graph. Catalogs are plain JSON,
+    // validated by the host before use (size/depth/key shape).
+    ...(frontendPackage.messages && Object.keys(frontendPackage.messages).length > 0
+      ? { messages: frontendPackage.messages }
+      : {}),
     ...(frontendPackage.overrides && Object.keys(frontendPackage.overrides).length > 0
       ? { overrides: frontendPackage.overrides }
       : {}),

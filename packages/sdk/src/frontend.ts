@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { z } from 'zod';
 import type { ApiClient } from './client.js';
+import type { PackageCatalogs } from './i18n.js';
 import type { SeoEntityMeta } from './seo.js';
 import type { PlatformInfo } from './types.js';
 
@@ -258,57 +259,73 @@ export type FrontendSettingsField =
   | {
       type: 'text' | 'textarea' | 'color';
       name: string;
-      label: string;
+      /** Literal fallback; `labelKey` wins when the host resolves it. */
+      label?: string;
+      /** Message id in the owning package's catalog (ADR-0016 §5). */
+      labelKey?: string;
       default?: string;
       placeholder?: string;
+      placeholderKey?: string;
       help?: string;
+      helpKey?: string;
       required?: boolean;
     }
   | {
       type: 'number';
       name: string;
-      label: string;
+      label?: string;
+      labelKey?: string;
       default?: number;
       min?: number;
       max?: number;
       step?: number;
       help?: string;
+      helpKey?: string;
       required?: boolean;
     }
   | {
       type: 'boolean';
       name: string;
-      label: string;
+      label?: string;
+      labelKey?: string;
       default?: boolean;
       help?: string;
+      helpKey?: string;
       required?: boolean;
     }
   | {
       type: 'select' | 'radio';
       name: string;
-      label: string;
+      label?: string;
+      labelKey?: string;
       default?: string;
-      options: Array<{ label: string; value: string }>;
+      options: Array<{ label?: string; labelKey?: string; value: string }>;
       help?: string;
+      helpKey?: string;
       required?: boolean;
     }
   | {
       /** Repeatable group of sub-fields. Persists as an array of row objects. */
       type: 'list';
       name: string;
-      label: string;
+      label?: string;
+      labelKey?: string;
       fields: FrontendSettingsScalarField[];
       default?: FrontendSettingsListItem[];
       /** Sub-field used as the collapsed row title in the admin form. */
       itemLabelField?: string;
       help?: string;
+      helpKey?: string;
       required?: boolean;
     };
 
 /** A labelled group rendered as a settings section in the admin form. */
 export interface FrontendSettingsGroup {
   id: string;
-  label: string;
+  /** Literal fallback; `labelKey` wins when the host resolves it. */
+  label?: string;
+  /** Message id in the owning package's catalog (ADR-0016 §5). */
+  labelKey?: string;
   fields: FrontendSettingsField[];
 }
 
@@ -341,8 +358,22 @@ export interface FrontendManifest {
    */
   styles?: string[];
   settingsSchema?: FrontendSettingsSchema;
-  /** Interface locales this package ships messages for (ADR-0016 §5). */
+  /**
+   * Interface locales this package ships messages for (ADR-0016 §5).
+   *
+   * Only used for display/probing: the actual catalogs travel in `messages`, so
+   * a host can resolve package metadata (nav labels, system-settings labels)
+   * without importing the package's module graph.
+   */
   locales?: string[];
+  /**
+   * The package's message catalogs, keyed by BCP 47 tag (ADR-0016 §5).
+   *
+   * Keys are flat and package-local. The host never merges these into the
+   * kernel catalog: it resolves them through the package's own namespace, so a
+   * package cannot shadow a kernel message id.
+   */
+  messages?: PackageCatalogs;
   /** Theme-only: plugin page path -> theme component id overrides. */
   overrides?: Record<string, string>;
 }
@@ -356,8 +387,20 @@ export interface FrontendPackage {
   finders?: Record<string, FinderProvider>;
   settingsSchema?: FrontendSettingsSchema;
   ui?: FrontendUi;
-  /** Interface locales this package ships messages for (ADR-0016 §5). */
+  /**
+   * Interface locales this package ships messages for (ADR-0016 §5).
+   *
+   * The catalogs themselves are in `messages`; this list lets the host report
+   * which locales a package covers without opening the catalogs.
+   */
   locales?: string[];
+  /**
+   * The package's message catalogs, keyed by BCP 47 tag (ADR-0016 §5).
+   *
+   * Keys are flat and package-local. The host resolves them through the
+   * package's own namespace and never merges them into the kernel catalog.
+   */
+  messages?: PackageCatalogs;
   /**
    * Theme-only: override plugin-provided pages so the theme owns the visual
    * shell while the plugin keeps supplying data and actions.
@@ -403,6 +446,18 @@ export interface FrontendUi {
   actions?: PluginActionDefinition[];
 }
 
+/**
+ * A label that can be localized by the host (ADR-0016 §5).
+ *
+ * `label` stays the fallback for packages built before message ids existed and
+ * for locales the package does not ship; `labelKey` is resolved against the
+ * package's own catalog in the host's current locale.
+ */
+export interface LocalizedLabel {
+  label: string;
+  labelKey?: string;
+}
+
 /** A route contributed by a plugin to the signed-in user's account center. */
 export interface AccountRouteDefinition {
   path: string;
@@ -446,20 +501,35 @@ export interface PluginActionDefinition {
 /** A compact account overview module contributed by an active plugin. */
 export interface AccountWidgetDefinition {
   id: string;
-  title: string;
+  /**
+   * Literal fallback for locales this package does not ship. Optional when
+   * `titleKey` is present, which is the normal case for a localized package
+   * (ADR-0016 §5).
+   */
+  title?: string;
+  /** Message id in this package's catalog; takes precedence over `title`. */
+  titleKey?: string;
   component: string;
   permission?: string;
 }
 
 /** A navigation item shown in the account-center sidebar. */
 export interface AccountMenuDefinition {
-  label: string;
+  /**
+   * Literal fallback for locales this package does not ship. Optional when
+   * `labelKey` is present (ADR-0016 §5).
+   */
+  label?: string;
+  /** Message id in this package's catalog; takes precedence over `label`. */
+  labelKey?: string;
   /** Stable ordering within the declared functional group. */
   order?: number;
   /** Additional route prefixes owned by this entry (e.g. hidden editor pages). */
   activePaths?: string[];
   /** Functional group shared with related plugins; omitted items use their plugin id. */
   group?: string;
+  /** Message id in this package's catalog; takes precedence over `group`. */
+  groupKey?: string;
 }
 
 /** Minimal authenticated identity exposed to trusted account frontend packages. */
@@ -485,6 +555,12 @@ export interface AccountPageComponentProps {
   data: Record<string, unknown>;
   user: AccountUser;
   actions: FrontendActionExecutors;
+  /**
+   * Resolved interface locale as a BCP 47 tag (ADR-0016 §6). Same contract as
+   * `FrontendPageProps.locale`: a plain string so the SDK stays decoupled from
+   * the kernel's `Locale` union; the host owns negotiation.
+   */
+  locale?: string;
 }
 
 export type AccountPageComponent = ComponentType<AccountPageComponentProps>;
@@ -494,6 +570,8 @@ export interface AccountWidgetProps {
   pluginId: string;
   user: AccountUser;
   settings: FrontendSettings;
+  /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
+  locale?: string;
 }
 
 export type AccountWidgetComponent = ComponentType<AccountWidgetProps>;
@@ -501,7 +579,7 @@ export type AccountWidgetComponent = ComponentType<AccountWidgetProps>;
 /** Serialized admin route shipped inside a compiled frontend package. */
 export interface AdminRouteDefinition {
   /** Embed this route in system settings; availability and permission follow the plugin. */
-  systemSettings?: { label: string; order?: number };
+  systemSettings?: { label?: string; labelKey?: string; order?: number };
   path: string;
   component: string;
   permission?: string;
@@ -520,17 +598,27 @@ export interface AdminActionDefinition {
 /** Props passed to a plugin admin action component. */
 export interface AdminActionComponentProps {
   pluginId: string;
+  /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
+  locale?: string;
 }
 
 export type AdminActionComponent = ComponentType<AdminActionComponentProps>;
 
 /** Admin sidebar menu contributed by a plugin frontend package. */
 export interface AdminMenuDefinition {
-  label: string;
+  /**
+   * Literal fallback for locales this package does not ship. Optional when
+   * `labelKey` is present (ADR-0016 §5).
+   */
+  label?: string;
+  /** Message id in this package's catalog; takes precedence over `label`. */
+  labelKey?: string;
   order?: number;
   /** Additional plugin-relative route prefixes owned by this entry. */
   activePaths?: string[];
   group?: string;
+  /** Message id in this package's catalog; takes precedence over `group`. */
+  groupKey?: string;
 }
 
 /** Props passed to a plugin admin page component. */
@@ -543,6 +631,8 @@ export interface AdminPageComponentProps {
   settings: FrontendSettings;
   data: Record<string, unknown>;
   actions: FrontendActionExecutors;
+  /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
+  locale?: string;
 }
 
 export type AdminPageComponent = ComponentType<AdminPageComponentProps>;

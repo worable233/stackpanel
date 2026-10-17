@@ -7,23 +7,23 @@ const types = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   const token = await getSessionToken();
-  if (!user || !token) return Response.json({ detail: '请先登录' }, { status: 401 });
-  if (request.headers.get('origin') !== request.nextUrl.origin) return Response.json({ detail: '请求来源无效' }, { status: 403 });
+  if (!user || !token) return Response.json({ code: 'agentRoute.unauthenticated' }, { status: 401 });
+  if (request.headers.get('origin') !== request.nextUrl.origin) return Response.json({ code: 'agentRoute.badOrigin' }, { status: 403 });
   const type = request.headers.get('content-type') ?? '';
-  if (!types.includes(type)) return Response.json({ detail: '仅支持 PNG、JPEG、GIF 和 WebP 图片' }, { status: 422 });
-  if (Number(request.headers.get('content-length')) > limit) return Response.json({ detail: '图片不能超过 5 MB' }, { status: 413 });
+  if (!types.includes(type)) return Response.json({ code: 'agentRoute.unsupportedImage' }, { status: 422 });
+  if (Number(request.headers.get('content-length')) > limit) return Response.json({ code: 'agentRoute.imageTooLarge' }, { status: 413 });
   const reader = request.body?.getReader();
-  if (!reader) return Response.json({ detail: '缺少图片' }, { status: 422 });
+  if (!reader) return Response.json({ code: 'agentRoute.missingImage' }, { status: 422 });
   try {
     const chunks: Uint8Array[] = []; let length = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       length += value.length;
-      if (length > limit) { await reader.cancel(); return Response.json({ detail: '图片不能超过 5 MB' }, { status: 413 }); }
+      if (length > limit) { await reader.cancel(); return Response.json({ code: 'agentRoute.imageTooLarge' }, { status: 413 }); }
       chunks.push(value);
     }
-    if (!length) return Response.json({ detail: '缺少图片' }, { status: 422 });
+    if (!length) return Response.json({ code: 'agentRoute.missingImage' }, { status: 422 });
     const body = new Uint8Array(length); let offset = 0;
     for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.length; }
     const filename = new URL(request.url).searchParams.get('filename')?.slice(0, 191) || 'image';
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     if (!response.ok) return Response.json(data, { status: response.status });
     const file = data.attachment;
-    if (!types.includes(file.mime)) return Response.json({ detail: '图片格式无效' }, { status: 422 });
+    if (!types.includes(file.mime)) return Response.json({ code: 'agentRoute.invalidImage' }, { status: 422 });
     return Response.json({ attachment: { id: file.id, name: file.filename, url: `/api/agent/attachments/${file.id}` } }, { status: 201 });
-  } catch { return Response.json({ detail: '图片上传失败，请重试' }, { status: 502 }); }
+  } catch { return Response.json({ code: 'agentRoute.uploadFailed' }, { status: 502 }); }
 }

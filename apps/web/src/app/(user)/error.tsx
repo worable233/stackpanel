@@ -20,12 +20,17 @@ export default function UserError({
   const t = useTranslator();
 
   useEffect(() => {
-    console.error('[frontend] 用户站点源渲染失败', error);
+    // i18n-exempt — developer console log, never rendered to the user.
+    console.error('[frontend] public site render failed', error);
   }, [error]);
 
   return (
     <ErrorPage
       kind="server-error"
+      content={{
+        title: t('errorPage.serverError.title'),
+        description: t('errorPage.serverError.description'),
+      }}
       actions={
         <>
           <Button variant="default" size="sm" onClick={() => reset()}>

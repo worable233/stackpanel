@@ -5,6 +5,9 @@ import { getAuthedApiClient } from '@/lib/api';
 import { saveThemeSettingsAction } from '@/lib/frontend-settings-actions';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
+import { DEFAULT_LOCALE } from '@/i18n/config';
+import { localizeSettingsSchema, readPackageMessages } from '@/i18n/package-messages';
+import { themeFrontendCandidate } from '@/lib/slots';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,13 +17,21 @@ export default async function AdminThemeSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const t = createTranslator(await getLocale());
+  const locale = await getLocale();
+  const t = createTranslator(locale);
   const api = await getAuthedApiClient();
-  const [schemaResult, settingsResult] = await Promise.all([
+  const [schemaResult, settingsResult, candidate] = await Promise.all([
     api.getThemeSettingsSchema(id),
     api.getThemeSettings(id),
+    themeFrontendCandidate(id),
   ]);
-  const schema = schemaResult.schema;
+  // The schema's labels are declared by the theme; resolve them through the
+  // theme's own catalog so the admin form follows the interface language
+  // (ADR-0016 §5).
+  const { messages } = readPackageMessages(id, candidate?.manifest.messages);
+  const schema = schemaResult.schema
+    ? localizeSettingsSchema(schemaResult.schema, messages, locale, [DEFAULT_LOCALE])
+    : null;
 
   return (
     <main className="w-full space-y-6">

@@ -4,6 +4,20 @@ import { ArrowUpRight, CircleDashed } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './card.js';
 import { PageHeader } from './page-header.js';
 
+/**
+ * Fixed copy for the shared overview composition.
+ *
+ * `@stackpanel/ui` ships no interface translations (ADR-0016 §6): the plugin
+ * that owns the page resolves these from its own catalog.
+ */
+export interface FeatureOverviewLabels {
+  unavailable: string;
+  manageTitle: string;
+  manageDescription: string;
+  activityDescription: string;
+  empty: string;
+}
+
 export interface FeatureOverviewProps {
   title: string;
   description: string;
@@ -11,6 +25,8 @@ export interface FeatureOverviewProps {
   links: Array<{ label: string; description: string; href: string }>;
   activity?: { title: string; items: Array<{ label: string; detail?: string; href?: string }> };
   unavailable?: boolean;
+  /** Localized copy. See {@link FeatureOverviewLabels}. */
+  labels: FeatureOverviewLabels;
 }
 
 /** Shared composition, with business data and destinations supplied by the owning plugin. */
@@ -20,13 +36,14 @@ export function FeatureOverview({
   links,
   activity,
   unavailable,
+  labels,
 }: FeatureOverviewProps) {
   return (
     <div className="flex min-w-0 flex-col gap-8">
       <PageHeader title={title} />
       {unavailable ? (
         <p role="status" className="text-sm text-muted-foreground">
-          暂时无法读取数据，请稍后刷新。
+          {labels.unavailable}
         </p>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -49,8 +66,8 @@ export function FeatureOverview({
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>管理</CardTitle>
-            <CardDescription>查看和管理相关资源。</CardDescription>
+            <CardTitle>{labels.manageTitle}</CardTitle>
+            <CardDescription>{labels.manageDescription}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col">
             {links.map((link) => (
@@ -72,7 +89,7 @@ export function FeatureOverview({
           <Card>
             <CardHeader>
               <CardTitle>{activity.title}</CardTitle>
-              <CardDescription>当前功能的最近记录。</CardDescription>
+              <CardDescription>{labels.activityDescription}</CardDescription>
             </CardHeader>
             <CardContent>
               {activity.items.length ? (
@@ -100,7 +117,7 @@ export function FeatureOverview({
               ) : (
                 <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-muted-foreground">
                   <CircleDashed className="size-6 opacity-50" />
-                  <span className="text-sm">暂无记录</span>
+                  <span className="text-sm">{labels.empty}</span>
                 </div>
               )}
             </CardContent>

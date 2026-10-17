@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { z } from 'zod';
 import { ArrowLeft, Clock, Plus, Wallet } from 'lucide-react';
 import { overviewSchema, WalletOverviewPage } from './overview';
+import { messages, t } from './i18n.js';
 
 interface WalletEntry {
   id: string;
@@ -101,18 +102,18 @@ function Icon({ name }: { name: string }): ReactElement {
   );
 }
 
-function money(amount: number, currency: string): string {
+function money(amount: number, currency: string, locale?: string): string {
   // Wallet balances are minor units; render through the catalog so a future
   // non-CNY wallet cannot silently divide by 100.
   try {
-    return formatMinorCurrency(amount, currency, 'zh-CN');
+    return formatMinorCurrency(amount, currency, locale);
   } catch {
     return `${amount} ${currency}`;
   }
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('zh-CN');
+function formatDate(value: string, locale?: string): string {
+  return new Date(value).toLocaleString(locale);
 }
 
 function Empty({ text }: { text: string }): ReactElement {
@@ -126,7 +127,8 @@ function Empty({ text }: { text: string }): ReactElement {
   );
 }
 
-function WalletAccountWidget(_props: AccountWidgetProps): ReactElement {
+function WalletAccountWidget(props: AccountWidgetProps): ReactElement {
+  const tr = t(props.locale);
   return (
     <Link
       href="/account/balance"
@@ -135,13 +137,14 @@ function WalletAccountWidget(_props: AccountWidgetProps): ReactElement {
       <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
         <Icon name="wallet" />
       </span>
-      <p className="mt-4 text-sm font-semibold">余额</p>
-      <p className="mt-1.5 text-sm text-muted-foreground">管理余额、充值与人工调整。</p>
+      <p className="mt-4 text-sm font-semibold">{tr('widget.title')}</p>
+      <p className="mt-1.5 text-sm text-muted-foreground">{tr('widget.description')}</p>
     </Link>
   );
 }
 
 function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
   return (
     <main className="flex flex-col gap-6">
@@ -149,12 +152,12 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
         <Button
           variant="ghost"
           size="icon"
-          aria-label="返回概览"
+          aria-label={tr('balance.back')}
           render={<Link href="/account/billing" />}
         >
           <ArrowLeft />
         </Button>
-        <PageHeader title="充值" />
+        <PageHeader title={tr('balance.title')} />
       </div>
       <Card className="max-w-5xl">
         <CardContent>
@@ -170,14 +173,23 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
                 })),
               )}
               action={props.actions?.['wallet.create-topup']}
+              currency={wallet.account.currency}
+              labels={{
+                amountLabel: tr('recharge.amountLabel'),
+                presetsAria: tr('recharge.presetsAria'),
+                paymentMethod: tr('recharge.paymentMethod'),
+                noMethods: tr('recharge.noMethods'),
+                submitting: tr('recharge.submitting'),
+                submit: tr('recharge.submit'),
+              }}
               cancelLink={
                 <Button variant="ghost" render={<Link href="/account/billing" />}>
-                  取消
+                  {tr('balance.cancel')}
                 </Button>
               }
             />
           ) : (
-            <p className="text-sm text-muted-foreground">支付方式暂时无法加载，请刷新重试。</p>
+            <p className="text-sm text-muted-foreground">{tr('balance.unavailable')}</p>
           )}
         </CardContent>
       </Card>
@@ -186,21 +198,31 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
 }
 
 function WalletAccountRecordsPage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
   return (
     <main className="flex flex-col gap-6">
-      <PageHeader title="资金记录" />
+      <PageHeader title={tr('records.title')} />
       {wallet ? (
         <>
           <Ledger
-            title="充值记录"
+            title={tr('records.topups')}
+            titleKey="records.topups"
             rows={wallet.topUps}
             cancel={props.actions?.['wallet.cancel-topup']}
+            tr={tr}
+            locale={props.locale}
           />
-          <Ledger title="余额流水" rows={wallet.entries} />
+          <Ledger
+            title={tr('records.ledger')}
+            titleKey="records.ledger"
+            rows={wallet.entries}
+            tr={tr}
+            locale={props.locale}
+          />
         </>
       ) : (
-        <p className="text-sm text-muted-foreground">资金记录暂时无法加载，请刷新重试。</p>
+        <p className="text-sm text-muted-foreground">{tr('records.unavailable')}</p>
       )}
     </main>
   );
@@ -208,15 +230,22 @@ function WalletAccountRecordsPage(props: AccountPageComponentProps): ReactElemen
 
 function Ledger({
   title,
+  titleKey,
   rows,
   cancel,
+  tr,
+  locale,
 }: {
   title: string;
+  /** Stable id used for the `#ledger` anchor, independent of the display language. */
+  titleKey: 'records.topups' | 'records.ledger';
   rows: Array<WalletTopUp | WalletEntry>;
   cancel?: ((formData: FormData) => Promise<void>) | undefined;
+  tr: ReturnType<typeof t>;
+  locale?: string;
 }): ReactElement {
   return (
-    <section id={title === '余额流水' ? 'ledger' : undefined} className="scroll-mt-24">
+    <section id={titleKey === 'records.ledger' ? 'ledger' : undefined} className="scroll-mt-24">
       <SectionTitle icon={<Clock />} className="mb-3">
         {title}
       </SectionTitle>
@@ -231,9 +260,11 @@ function Ledger({
                 <p className="truncate">
                   {'type' in row
                     ? (row.note ?? row.type)
-                    : `${row.providerId ?? '支付渠道'} · ${row.status}`}
+                    : `${row.providerId ?? tr('records.provider')} · ${row.status}`}
                 </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(row.createdAt)}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {formatDate(row.createdAt, locale)}
+                </p>
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 <span
@@ -244,19 +275,19 @@ function Ledger({
                   }
                 >
                   {'type' in row
-                    ? `${row.amount > 0 ? '+' : ''}${money(row.amount, row.currency)}`
-                    : money(row.amount, row.currency)}
+                    ? `${row.amount > 0 ? '+' : ''}${money(row.amount, row.currency, locale)}`
+                    : money(row.amount, row.currency, locale)}
                 </span>
                 {'paymentUrl' in row && row.paymentUrl && row.status === 'PENDING' ? (
                   <a href={row.paymentUrl} className="text-primary hover:underline">
-                    继续付款
+                    {tr('records.continuePayment')}
                   </a>
                 ) : null}
                 {'paymentUrl' in row && cancel && ['PENDING', 'REVIEW'].includes(row.status) ? (
                   <form action={cancel}>
                     <input type="hidden" name="id" value={row.id} />
                     <button type="submit" className="text-muted-foreground hover:text-destructive">
-                      取消
+                      {tr('records.cancel')}
                     </button>
                   </form>
                 ) : null}
@@ -265,7 +296,7 @@ function Ledger({
           ))}
         </ul>
       ) : (
-        <Empty text="暂无记录" />
+        <Empty text={tr('records.empty')} />
       )}
     </section>
   );
@@ -284,6 +315,8 @@ const walletFinders: Record<string, FinderProvider> = {
 };
 
 export const frontend: FrontendPackage = {
+  locales: ['zh-CN', 'en-US'],
+  messages,
   finders: walletFinders,
   pages: [],
   pageComponents: {},
@@ -314,14 +347,18 @@ export const frontend: FrontendPackage = {
         path: '/overview',
         component: 'admin/summary',
         permission: 'store.admin',
-        nav: { label: '概览', group: '财务', order: 0 },
+        nav: {
+          labelKey: 'nav.overview',
+          groupKey: 'nav.groupFinance',
+          order: 0,
+        },
         data: [{ finder: 'wallet.adminAccounts', as: 'wallets' }],
       },
     ],
     accountWidgets: [
       {
         id: 'wallet-balance',
-        title: '余额',
+        titleKey: 'widget.title',
         component: 'account/balance',
         permission: 'store.wallet',
       },
@@ -331,7 +368,12 @@ export const frontend: FrontendPackage = {
         path: '/billing',
         component: 'account/overview',
         permission: 'store.wallet',
-        nav: { label: '概览', group: '费用', order: 0, activePaths: ['/balance'] },
+        nav: {
+          labelKey: 'nav.overview',
+          groupKey: 'nav.groupBilling',
+          order: 0,
+          activePaths: ['/balance'],
+        },
         data: [{ finder: 'wallet.overview', as: 'overview' }],
       },
       {

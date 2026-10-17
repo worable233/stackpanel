@@ -45,7 +45,9 @@
     "groupDeveloper": "Developer",
     "groupAccount": "Account",
     "overview": "Overview",
-    "quickLinks": "Quick links"
+    "quickLinks": "Quick links",
+    "workspaceAdmin": "Admin workspace",
+    "workspaceAccount": "Account workspace"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -72,7 +74,9 @@
     "roleAdmin": "Administrator",
     "roleUser": "User",
     "homeAriaLabel": "Back to home",
-    "updates": "Updates"
+    "updates": "Updates",
+    "accountOverview": "Account overview",
+    "credentials": "Credentials"
   },
   "auth": {
     "login": {
@@ -129,14 +133,18 @@
         "back": "Back",
         "continue": "Continue",
         "initialize": "Initialize and open dashboard"
-      }
+      },
+      "pageTitle": "Initial setup"
     },
     "panel": {
       "highlightTitle": "Ready to launch",
       "highlightText": "Pick, order and provision in one flow, with no manual setup to wait on.",
       "helpTitle": "Need help?",
       "helpText": "Read the onboarding guide, or reach our support team any time.",
-      "helpLink": "Onboarding guide"
+      "helpLink": "Onboarding guide",
+      "heroLine1": "Your business,",
+      "heroLine2": "live in minutes.",
+      "latestPosts": "Latest posts"
     },
     "legal": {
       "copyrightCompact": "© {name}. All rights reserved."
@@ -255,7 +263,9 @@
         "expiresAria": "Expiry",
         "selectUpstream": "Please select an upstream service",
         "confirmUnbind": "Unbind this service? This only removes the account binding; the upstream purchase is untouched.",
-        "confirmDelete": "Delete this service for the user? This cannot be undone."
+        "confirmDelete": "Delete this service for the user? This cannot be undone.",
+        "upstreamEmpty": "The upstream account has no purchased services yet. Confirm it owns services you can bind.",
+        "noUpstreamPlugin": "No upstream plugin is available. Enable a plugin that provides service binding first."
       },
       "orders": {
         "title": "Orders",
@@ -264,7 +274,13 @@
         "colId": "Order no.",
         "colAmount": "Amount",
         "colStatus": "Status",
-        "colCreatedAt": "Created"
+        "colCreatedAt": "Created",
+        "totalCount": "{total} orders",
+        "rowsPerPage": "{size} per page",
+        "rowsPerPageAria": "Orders per page",
+        "pageOf": "Page {page} of {pages}",
+        "prevPage": "Previous page of orders",
+        "nextPage": "Next page of orders"
       },
       "serviceStatus": {
         "PENDING_PROVISION": "Pending",
@@ -731,7 +747,35 @@
     "updates": {
       "title": "Updates",
       "pageDescription": "Solve and apply kernel/plugin updates through the independent updater.",
-      "serviceUnavailable": "Update center unavailable: {error}"
+      "serviceUnavailable": "Update center unavailable: {error}",
+      "currentDeployment": "Current deployment",
+      "generation": "Generation",
+      "digest": "Digest",
+      "activeTask": "Active task",
+      "idle": "Idle",
+      "statusUnreadable": "The updater status is unreadable (it may not be running).",
+      "catalogLine": "Catalog: {catalog} | Channel: {channel} | Auto-update: {autoUpdate} | Instance: {instance}",
+      "catalogConfiguredExpired": "Configured (snapshot expired)",
+      "catalogConfigured": "Configured",
+      "catalogMissing": "Not configured (offline)",
+      "catalogMissingHint": "No remote catalog is configured, so a remote update plan cannot be solved.",
+      "solvePlan": "Solve update plan",
+      "submitWithAuthorization": "Confirm and submit (includes authorization changes)",
+      "submit": "Submit update task",
+      "planBlocked": "Plan blocked:",
+      "planDigest": "Plan digest: {digest}",
+      "planDigestWithAuthorization": "Plan digest: {digest} (includes changes requiring manual authorization)",
+      "includesKernel": "Includes a kernel upgrade: {version}",
+      "includesKernelMigration": "Includes a kernel upgrade: {version} (migration {migration})",
+      "colComponent": "Component",
+      "colFrom": "From",
+      "colTo": "To",
+      "colPermissions": "Permissions",
+      "colReversible": "Reversible",
+      "addsPermissions": "Added",
+      "noPermissions": "None",
+      "dispatched": "Update task submitted ({taskKey}…)",
+      "blockDetail": "{component}: {detail}"
     }
   },
   "locale": {
@@ -1064,7 +1108,8 @@
       "settlement_unsupported": "The platform settlement currency does not support this operation",
       "payment_method_unsupported": "The selected payment method does not support this settlement currency",
       "referenced": "This currency is referenced by payments or payment methods and cannot be disabled"
-    }
+    },
+    "circuit_open": "The upstream service keeps failing, so requests are temporarily blocked"
   },
   "auditAction": {
     "auth": {
@@ -1240,7 +1285,27 @@
       "balance": "Balance",
       "activeServices": "Active services",
       "security": "Security",
-      "protected": "Protected"
+      "protected": "Protected",
+      "pendingOrders": "Unpaid orders",
+      "allOrders": "All orders",
+      "running": "Running",
+      "unitInstances": "instances",
+      "manageInstances": "Manage instances",
+      "newInstance": "New instance",
+      "expiringSoon": "Expiring in 7 days",
+      "allProducts": "All products",
+      "pendingTickets": "Open tickets",
+      "allTickets": "All tickets",
+      "newTicket": "Submit ticket",
+      "securityTitle": "Account security",
+      "accountStatus": "Account status",
+      "statusActive": "Active",
+      "statusRestricted": "Restricted",
+      "linkedIdentities": "Linked identities",
+      "identityCount": "{count} linked",
+      "unavailable": "Unavailable",
+      "securityCenter": "Security center",
+      "unitOrders": "orders"
     },
     "permission": "Account permission",
     "page": {
@@ -1259,7 +1324,71 @@
       "description": "Order payments, fulfillment progress and system announcements appear here."
     },
     "settings": {
-      "title": "Account settings"
+      "title": "Account settings",
+      "label": "Account settings",
+      "sections": {
+        "profile": "Profile",
+        "appearance": "Appearance & language",
+        "access": "Access credentials",
+        "agent": "Agent"
+      },
+      "profile": {
+        "loginEmail": "Sign-in email",
+        "emailVerified": "Email verified.",
+        "emailUnverified": "Email not verified yet.",
+        "emailChangeHint": "Contact an administrator to change your sign-in email.",
+        "accountId": "Account ID",
+        "accountIdHint": "Share this ID with support to help locate your account.",
+        "status": "Account status",
+        "statusActive": "Active",
+        "statusDisabled": "Disabled",
+        "createdAt": "Registered",
+        "lastLoginAt": "Last sign-in",
+        "none": "No records"
+      },
+      "appearance": {
+        "theme": "Theme",
+        "themeSystem": "Follow system",
+        "themeLight": "Light",
+        "themeDark": "Dark",
+        "themeHint": "Applied immediately and stored in this browser.",
+        "language": "Display language",
+        "languageHint": "Switch the interface language for this site; stored in this browser.",
+        "languageSaveFailed": "The language setting was not saved. Please try again.",
+        "switching": "Switching language…",
+        "autosave": "Changes save automatically; no submit needed."
+      },
+      "access": {
+        "apiKeys": "API keys",
+        "apiKeysHint": "Manage permission keys used by apps and agents; create or revoke them per purpose.",
+        "linkedMethods": "Linked sign-in methods",
+        "loadFailed": "Could not load sign-in methods. Refresh and try again.",
+        "bound": "Linked",
+        "empty": "None linked",
+        "keysLoadFailed": "Could not load API keys right now. Refresh and try again."
+      },
+      "agent": {
+        "toolsTitle": "Tool authorization",
+        "history": "Task history",
+        "toolsHint": "Configure personal credentials for available external tools. Credentials are encrypted on the server and never shown again.",
+        "retry": "Retry",
+        "loading": "Loading…",
+        "noTools": "No tools available",
+        "loadFailed": "Failed to load",
+        "credential": "Access credential",
+        "credentialReplace": "Enter a new credential to replace the current one",
+        "credentialPlaceholder": "Enter this service's access token",
+        "authorized": "Authorized",
+        "unauthorized": "Not authorized",
+        "save": "Save credential",
+        "saving": "Working…",
+        "saveFailed": "Failed to save",
+        "saved": "Credential saved",
+        "remove": "Remove authorization",
+        "removed": "Authorization removed",
+        "removeTitle": "Remove tool authorization?",
+        "removeDescription": "This deletes the personal credential for {name}. You must save a credential again to keep using this tool."
+      }
     }
   },
   "upload": {
@@ -1320,6 +1449,261 @@
     "ariaLabel": "Agent workspace",
     "dragHint": "Drag the title bar to move the panel"
   },
+  "agent": {
+    "effort": {
+      "aria": "Model and reasoning effort",
+      "reset": "Reset reasoning effort",
+      "slider": "Reasoning effort",
+      "defaultModel": "Default model",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "extraHigh": "Extra high"
+    },
+    "workspace": {
+      "navTasks": "Agent tasks",
+      "navApprovals": "Approvals",
+      "navApiKeys": "Permission keys",
+      "titleApprovals": "Agent approvals",
+      "titleWorkspace": "Agent workspace",
+      "statusEnabled": "Enabled on this site · Provider: {provider}",
+      "statusNotConfigured": "not configured",
+      "statusDisabled": "Agent is not enabled on this site",
+      "continueTitle": "Continue run and subtasks",
+      "newTitle": "New task",
+      "formHint": "Permissions depend on the API key you use. Risky writes always require your confirmation. Background authorization stores the original key encrypted for up to one hour, then stops.",
+      "keyLabel": "Your permission API key",
+      "keyHint": "Kept in this page's memory only; re-enter it after navigating away. Model keys are managed by the site owner.",
+      "subObjectiveLabel": "Subtask objective",
+      "objectiveLabel": "Objective",
+      "modelLabel": "Model (leave blank for the default)",
+      "executionLabel": "Execution mode",
+      "executionRequest": "Advance with this request",
+      "executionBackground": "Authorize background execution (one hour)",
+      "autonomyLabel": "Autonomy (bounded by the key policy)",
+      "autonomyRead": "Read-only; writes need confirmation",
+      "autonomyPropose": "Propose first, write after confirmation",
+      "autonomyAct": "Automatically perform ordinary writes",
+      "createSubtask": "Create subtask",
+      "start": "Start task",
+      "resume": "Continue with the original key",
+      "cancel": "Cancel task",
+      "replayTitle": "Execution replay",
+      "replayMeta": "{steps} steps · model cost {spend} in minor units · {model}",
+      "replayStep": "Step {index} · {kind} {tool}",
+      "runsTitle": "Task history",
+      "runsEmpty": "No tasks yet",
+      "loadMoreRuns": "Load more tasks",
+      "approvalsTitle": "Pending confirmations",
+      "approvalsHint": "Approving only records the decision. Request mode needs the original key to continue; authorized background tasks advance automatically. Check the tool, arguments and side effects.",
+      "approvalReason": "Approval note",
+      "approvalsEmpty": "No pending approvals",
+      "expires": "Expires: {date}",
+      "approve": "Confirm this action",
+      "reject": "Reject",
+      "viewRun": "View task",
+      "loadMoreApprovals": "Load more approvals",
+      "credentialsTitle": "External service credentials",
+      "credentialsHint": "The site owner approves the service list; permissions come from regular permission groups. Keys are never shown again after saving.",
+      "credentialsEmpty": "No external services available",
+      "configured": "Configured",
+      "unconfigured": "Not configured",
+      "saveCredential": "Save credential",
+      "clearCredential": "Clear credential",
+      "keyRequired": "Enter your own permission API key"
+    },
+    "chat": {
+      "contextDefault": "Current workspace",
+      "suggestionStatus": "Check how my cloud products are running",
+      "suggestionTickets": "Triage pending tickets",
+      "suggestionOrders": "Summarize recent orders",
+      "collapseSidebar": "Collapse conversation sidebar",
+      "expandSidebar": "Expand conversation sidebar",
+      "searchConversations": "Search conversations",
+      "searchPlaceholder": "Search conversations…",
+      "newConversation": "New conversation",
+      "history": "Conversation history",
+      "conversationOptions": "Conversation options for {title}",
+      "rename": "Rename",
+      "deleteConversation": "Delete conversation",
+      "loadingList": "Loading…",
+      "noMatch": "No matching conversations",
+      "emptyList": "No conversations yet",
+      "loadMore": "Load more",
+      "savedHere": "Conversations are saved to this account",
+      "deleteTitle": "Delete conversation",
+      "renameTitle": "Rename conversation",
+      "deleteDescription": "This permanently deletes the conversation and its messages.",
+      "renameDescription": "Give it a name you can find later.",
+      "nameLabel": "Name",
+      "processing": "Working…",
+      "openAgent": "Open Agent",
+      "closeAgent": "Close Agent",
+      "retryLoad": "Retry",
+      "loadingConversation": "Loading conversation…",
+      "loadEarlier": "Load earlier messages",
+      "messageSaved": "Message saved · no Agent run started",
+      "emptyTitle": "What can I help with?",
+      "emptyHint": "Describe the task you want done.",
+      "addImage": "Add image",
+      "removeImage": "Remove image {name}",
+      "objectiveLabel": "Agent task objective",
+      "composerPlaceholder": "Ask the Agent…",
+      "addAttachment": "Add attachment or context",
+      "executionPermission": "Execution permission",
+      "saveOnly": "Currently conversations are only saved, not executed",
+      "send": "Send message",
+      "uploading": "Uploading private images…",
+      "attachmentRules": "Up to 4 PNG, JPEG, GIF or WebP images, each no larger than 5 MB.",
+      "uploadFailed": "Image upload failed",
+      "readFailed": "Could not read the image. Please try again.",
+      "imageConversation": "Image conversation",
+      "loadFailed": "Could not load the conversation. Please try again.",
+      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving."
+    },
+    "admin": {
+      "statusLoading": "Loading",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "retry": "Retry",
+      "serviceTitle": "Agent",
+      "serviceLabel": "Enable the Agent service",
+      "optionOff": "Off",
+      "optionOn": "On",
+      "serviceHint": "When enabled, users can call the Agent from the account area. Disabling does not delete existing conversations; past records stay viewable.",
+      "serviceSaved": "Service setting saved",
+      "modelTitle": "Model service",
+      "keySaved": "Key saved",
+      "keyPending": "Not configured",
+      "modelHint": "Connect an OpenAI-compatible endpoint; model costs are paid by the site. If a model-provider plugin is installed, its service takes priority.",
+      "baseUrlLabel": "Endpoint URL",
+      "baseUrlHint": "Enter the provider's public HTTPS API address, usually ending in /v1.",
+      "modelNameLabel": "Default model",
+      "modelNamePlaceholder": "Enter a model ID the provider supports",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholderSaved": "Saved — leave blank to keep the current key",
+      "apiKeyPlaceholderNew": "Paste the API key from your provider",
+      "apiKeyHint": "The key is encrypted on the server and never exposed to users.",
+      "saving": "Saving…",
+      "saveModel": "Save model settings",
+      "clearConfig": "Clear settings",
+      "modelSaved": "Model settings saved",
+      "retentionTitle": "Conversation history",
+      "totalConversations": "Conversations",
+      "totalMessages": "Messages",
+      "retentionDaysLabel": "Retention period",
+      "retentionForever": "Keep forever",
+      "daysCount": "{count} days",
+      "yearsOne": "1 year",
+      "retentionDaysHint": "Counted from the last update; conversations not updated within the period are deleted.",
+      "retentionCapLabel": "Conversations per user",
+      "capUnlimited": "Unlimited",
+      "capCount": "{count}",
+      "retentionCapHint": "When over the cap, the least recently updated conversations are cleaned first.",
+      "cleanupPolicy": "A background job checks hourly and cleans at most 500 conversations per run. Deletion is permanent and also removes the messages and image links; original files in the media library and task execution audits are kept.",
+      "lastCleanup": "Last check: {date}, cleaned {deleted} conversations{more}.",
+      "lastCleanupMore": "; remaining records will be handled in later batches",
+      "neverCleaned": "Automatic cleanup has not run yet. Records are kept forever by default and are never deleted automatically.",
+      "saveRetention": "Save retention rules",
+      "retentionSaved": "Retention rules saved; they apply at the next automatic cleanup",
+      "cleanupNow": "Clean up now",
+      "saveFirst": "Save the rules before running a cleanup.",
+      "cleanupTitle": "Clean up conversations using the current rules?",
+      "clearTitle": "Clear model settings?",
+      "cleanupDescription": "Only conversations that already meet the retention rules are cleaned, up to 500 per batch. Removed conversations and messages cannot be restored.",
+      "clearDescription": "The endpoint URL, default model and saved key will be removed. Without a model-provider plugin, the Agent cannot run new tasks.",
+      "cleaned": "Cleaned {count} conversations",
+      "cleared": "Model settings cleared",
+      "processing": "Working…",
+      "loadFailed": "Failed to load"
+    },
+    "advanced": {
+      "title": "Advanced settings",
+      "expand": "Expand",
+      "save": "Save configuration",
+      "saving": "Working…",
+      "newConfig": "New configuration",
+      "saved": "Configuration saved",
+      "readPolicy": "Load policy",
+      "readPolicyHint": "Loaded the current policy",
+      "readPolicyFallback": "This key has no policy yet; defaults were loaded",
+      "existing": "Existing configurations",
+      "chooseExisting": "Choose a configuration to edit",
+      "profileId": "API key ID",
+      "configId": "Configuration ID",
+      "discoverTools": "Load remote tools",
+      "discoverHint": "Enable and save the service first; tools are loaded using the current administrator's service credential. New tools default to risky writes — review each one before saving.",
+      "discovered": "Tools loaded; review how each is handled before saving",
+      "noTools": "The remote did not return a tool list",
+      "reviewedTools": "Reviewed tools ({count})",
+      "remove": "Remove",
+      "toolRisk": "Handling",
+      "riskRead": "Read-only",
+      "riskWrite": "Ordinary write",
+      "riskDanger": "Risky write",
+      "actionsHint": "New actions accept no arguments by default; existing actions keep their reviewed argument schema. Changing the name, run mode or limits here does not rewrite the schema.",
+      "oauthEnvHint": "Before deploying, set AGENT_PUBLIC_ORIGIN (public API address) and AGENT_WEB_ORIGIN (site address).",
+      "defs": {
+        "profiles": {
+          "title": "Execution policy",
+          "description": "Set execution limits for a given API key. These limits never grant permissions the key does not already have; risky operations still need confirmation.",
+          "idHelp": "Copy the key ID (tokenId) from API key management, not the key itself.",
+          "autonomyLabel": "Allowed handling",
+          "autonomyRead": "Read-only; writes need confirmation",
+          "autonomyPropose": "Propose actions for the user to confirm",
+          "autonomyAct": "Automatically perform ordinary actions",
+          "maxSteps": "Maximum steps per task",
+          "maxRunSeconds": "Maximum task duration (seconds)",
+          "dailySteps": "Maximum steps per day",
+          "budgetMinor": "Cost limit per task (minor units)",
+          "budgetMinorHelp": "Leave blank for no amount limit. The model provider must support pricing; otherwise tasks are rejected once an amount limit is set.",
+          "dailyBudgetMinor": "Daily cost limit (minor units)",
+          "allowedModels": "Allowed models",
+          "allowedModelsHelp": "One model ID per line; leave blank to allow all available models.",
+          "approvalNotify": "Extra approval notification recipient ID",
+          "approvalNotifyHelp": "Optional. The user still receives their own notification."
+        },
+        "mcpServers": {
+          "title": "External tools",
+          "description": "Connect MCP services to give the Agent extra tools. Save the service first, then load and review its remote tools; users need the matching permission and their own credential.",
+          "idHelp": "Use an identifier starting with a lowercase letter, e.g. cloud-tools; do not change it after saving.",
+          "name": "Service name",
+          "url": "MCP address",
+          "urlPlaceholder": "https://example.com/mcp",
+          "urlHelp": "Only resolvable public HTTPS addresses are supported.",
+          "status": "Service status",
+          "statusOff": "Disabled",
+          "statusOn": "Enabled"
+        },
+        "oauthClients": {
+          "title": "App authorization",
+          "description": "Register apps that may connect to this site's MCP over OAuth. Only registered, full redirect URIs are accepted; disabling an app revokes issued tokens.",
+          "idHelp": "Enter the client_id agreed with the app; letters, digits, underscores and hyphens only.",
+          "name": "App name",
+          "redirectUris": "Authorized redirect URIs",
+          "redirectUrisHelp": "One full HTTPS URI per line. For local debugging, localhost or loopback HTTP addresses are allowed.",
+          "status": "App status",
+          "statusOff": "Disabled",
+          "statusOn": "Enabled"
+        },
+        "actions": {
+          "title": "Script actions",
+          "description": "Run pre-reviewed Docker scripts. The server must have Docker installed and the pinned-digest image pulled; actions run without network access as a non-root user, and every call needs user confirmation.",
+          "idHelp": "Use an identifier starting with a lowercase letter, e.g. check-service; the permission is agent.action.<id>.",
+          "name": "Action name",
+          "image": "Image (pinned digest)",
+          "imagePlaceholder": "registry/image@sha256:…",
+          "imageHelp": "Use the full sha256 digest; mutable tags such as latest are not allowed.",
+          "argv": "Program and arguments",
+          "argvHelp": "The first line is the program path, then one argument per line. Shell composition is not supported. Input data arrives on stdin.",
+          "timeoutSeconds": "Timeout (seconds)",
+          "status": "Action status",
+          "statusOff": "Disabled",
+          "statusOn": "Enabled"
+        }
+      }
+    }
+  },
   "frontendError": {
     "title": "This page could not be displayed",
     "description": "Please try again later, or return to the home page."
@@ -1351,5 +1735,48 @@
     "unavailable": "Notification settings are temporarily unavailable. Please try again.",
     "forbidden": "You do not have permission to manage notification policy.",
     "invalidRequest": "Invalid request format."
+  },
+  "errorPage": {
+    "unauthorized": {
+      "title": "Sign in required",
+      "description": "Sign in to continue to this page."
+    },
+    "forbidden": {
+      "title": "No access",
+      "description": "Your account is not allowed to view this page."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "description": "This address does not exist, or its content has been removed."
+    },
+    "serverError": {
+      "title": "Service unavailable",
+      "description": "The server hit a problem. Try again in a moment."
+    },
+    "maintenance": {
+      "title": "Under maintenance",
+      "description": "The service is under maintenance and will recover automatically."
+    },
+    "back": "Go back",
+    "home": "Back to home"
+  },
+  "scrollbar": {
+    "track": "Page scroll track",
+    "thumb": "Page scroll"
+  },
+  "agentRoute": {
+    "notFound": "Endpoint not found",
+    "unauthenticated": "Please sign in",
+    "adminOnly": "Administrators only",
+    "badOrigin": "Invalid request origin",
+    "invalidKey": "Invalid API key format",
+    "foreignKey": "Use an API key you own",
+    "payloadTooLarge": "Request too large",
+    "unconfirmed": "The result is unconfirmed. Refresh the run before deciding whether to continue.",
+    "unsupportedImage": "Only PNG, JPEG, GIF and WebP images are supported",
+    "imageTooLarge": "Images must be 5 MB or smaller",
+    "missingImage": "Missing image",
+    "invalidImage": "Invalid image format",
+    "uploadFailed": "Image upload failed. Try again."
   }
 }

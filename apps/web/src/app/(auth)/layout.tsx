@@ -1,8 +1,13 @@
 import { DocumentScrollbar } from '@stackpanel/ui';
 import { activeThemeCandidate } from '@/lib/slots';
+import { getLocale } from '@/i18n/locale';
+import { createTranslator } from '@/i18n/core';
 
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
-  const theme = await activeThemeCandidate();
+  const [theme, t] = await Promise.all([
+    activeThemeCandidate(),
+    getLocale().then((locale) => createTranslator(locale)),
+  ]);
   return (
     <main
       className={
@@ -12,7 +17,11 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
       }
     >
       {children}
-      {theme?.id === 'default' ? <DocumentScrollbar /> : null}
+      {theme?.id === 'default' ? (
+        <DocumentScrollbar
+          labels={{ track: t('scrollbar.track'), thumb: t('scrollbar.thumb') }}
+        />
+      ) : null}
     </main>
   );
 }

@@ -11,7 +11,7 @@ import type { AdminPageComponentProps } from '@stackpanel/sdk';
 import { FrontendAbiBridge } from './frontend-abi-bridge';
 import { FrontendScopeRoot } from './frontend-scope';
 import { useRuntimeModule } from '@/lib/use-runtime-module';
-import { useTranslator } from '@/i18n/provider';
+import { useLocale, useTranslator } from '@/i18n/provider';
 
 /**
  * 主计划 §5 阶段 4 M2：固定客户端容器 + 运行期浏览器模块。
@@ -43,6 +43,7 @@ export function RuntimeAdminPage({
   actionError?: string;
 }): ReactElement {
   const t = useTranslator();
+  const locale = useLocale();
   const state = useRuntimeModule(moduleUrl);
   const adminPages = useMemo(() => extractAdminPages(state.data), [state.data]);
   const Component = adminPages?.[result.componentId] as
@@ -81,6 +82,7 @@ export function RuntimeAdminPage({
     settings: result.settings,
     data: result.data,
     actions: result.actions,
+    locale,
   } as unknown as AdminPageComponentProps;
   return (
     <>

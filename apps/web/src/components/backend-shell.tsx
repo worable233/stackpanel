@@ -126,19 +126,19 @@ function UserDropdown({
         <DropdownMenuGroup>
           <DropdownMenuItem render={<Link href="/account" className="flex items-center gap-2" />}>
             <User className="size-4" />
-            账户概览
+            {t('nav.accountOverview')}
           </DropdownMenuItem>
           <DropdownMenuItem
             render={<Link href="/account/settings" className="flex items-center gap-2" />}
           >
             <Settings className="size-4" />
-            账户设置
+            {t('account.settings.title')}
           </DropdownMenuItem>
           <DropdownMenuItem
             render={<Link href="/account/settings#security" className="flex items-center gap-2" />}
           >
             <KeyRound className="size-4" />
-            访问凭证
+            {t('nav.credentials')}
           </DropdownMenuItem>
           {backLink ? (
             <DropdownMenuItem
@@ -165,15 +165,15 @@ function UserDropdown({
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => setTheme('system')}>
             <Monitor className="size-4" />
-            跟随系统
+            {t('theme.system')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setTheme('light')}>
             <Sun className="size-4" />
-            亮色
+            {t('theme.light')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setTheme('dark')}>
             <Moon className="size-4" />
-            暗色
+            {t('theme.dark')}
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
@@ -238,8 +238,8 @@ function NavDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button
-            variant="ghost"
+          <button
+            type="button"
             className={cn(
               'relative h-9 gap-1.5 rounded-xl bg-transparent px-3 text-sm font-medium shadow-none hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent transition-colors duration-200 motion-reduce:transition-none',
               anyActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
@@ -247,7 +247,7 @@ function NavDropdown({
           >
             <span className="truncate">{groupLabel}</span>
             <ChevronDown className="size-3.5 opacity-60" />
-          </Button>
+          </button>
         }
       />
       <DropdownMenuContent align="start" className="min-w-40">
@@ -380,7 +380,11 @@ export function BackendShell({
                   : undefined,
               }))}
             />
-            <AgentSidebar open={agentOpen} onOpenChange={setAgentOpen} contextLabel={rootHref === '/admin' ? '管理员工作区' : '账户工作区'} />
+            <AgentSidebar open={agentOpen} onOpenChange={setAgentOpen} contextLabel={
+                rootHref === '/admin'
+                  ? t('adminShell.workspaceAdmin')
+                  : t('adminShell.workspaceAccount')
+              } />
             <NotificationBell inboxHref={`${rootHref}/notifications`} />
             <LocaleSwitcher
               locale={locale}

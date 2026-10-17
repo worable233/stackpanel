@@ -8,6 +8,7 @@ import {
   formatMinorCurrency,
   minorUnitFor,
   minorUnitsToPlainString,
+  PACKAGE_FALLBACK_LOCALE,
   toMinorUnits,
 } from '@stackpanel/sdk';
 import type { AdminPageComponentProps, ProductConfigField } from '@stackpanel/sdk';
@@ -28,6 +29,7 @@ import {
   Select,
 } from '@stackpanel/ui';
 import { ArrowLeft, Package, Pencil, Plus, RefreshCw, Save, Search } from 'lucide-react';
+import { t } from './i18n.js';
 
 interface ProductRow {
   id: string;
@@ -85,9 +87,10 @@ interface UpstreamItem {
 }
 
 /** Format minor units through the kernel catalog (no `/100`, no CNY branch). */
-function money(n: number, currency: string): string {
+function money(n: number, currency: string, locale: string | undefined): string {
   try {
-    return formatMinorCurrency(n, currency, 'zh-CN');
+    // The host negotiates the locale; zh-CN is the same catalog fallback `t()` uses.
+    return formatMinorCurrency(n, currency, locale ?? PACKAGE_FALLBACK_LOCALE);
   } catch {
     return `${n} ${currency}`;
   }
@@ -113,10 +116,15 @@ function minorToInput(n: number, currency: string): string {
   }
 }
 
-/** store 内建商品类型的中文展示名（无类型插件认领时的回退）。 */
+/** Built-in product type -> message id (fallback when no type plugin claims it). */
 const BUILTIN_TYPE_LABELS: Record<string, string> = {
-  delivery: '手动发货',
+  delivery: 'adminType.delivery',
 };
+
+function builtinTypeLabel(type: string, tr: ReturnType<typeof t>): string | undefined {
+  const key = BUILTIN_TYPE_LABELS[type];
+  return key ? tr(key) : undefined;
+}
 
 /** 把点路径写进嵌套对象：setPath(obj, 'specs.cpu', 2) → obj.specs.cpu = 2 */
 function setPath(target: Record<string, unknown>, path: string, value: unknown): void {
@@ -157,10 +165,12 @@ function ConfigFieldControl({
   field,
   value,
   onChange,
+  tr,
 }: {
   field: ProductConfigField;
   value: unknown;
   onChange: (value: unknown) => void;
+  tr: ReturnType<typeof t>;
 }) {
   const text = value === undefined || value === null ? '' : String(value);
   if (field.type === 'textarea' || field.type === 'json') {
@@ -192,7 +202,7 @@ function ConfigFieldControl({
   if (field.type === 'select') {
     return (
       <Select value={text} onChange={(e) => onChange(e.target.value)}>
-        <option value="">请选择</option>
+        <option value="">{tr('common.select')}</option>
         {(field.options ?? []).map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -258,7 +268,7 @@ function ConfigFieldControl({
               .filter(Boolean),
           )
         }
-        placeholder={field.placeholder ?? '用逗号分隔'}
+        placeholder={field.placeholder ?? tr('editor.tagsPlaceholder')}
       />
     );
   }
@@ -287,10 +297,12 @@ function ConfigFields({
   fields,
   scope,
   onChange,
+  tr,
 }: {
   fields: ProductConfigField[];
   scope: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  tr: ReturnType<typeof t>;
 }) {
   // 按 `group` 标签把字段归入分组卡片（连续同名的合并），未命名的原位渲染。
   const buckets: Array<{ group: string | null; fields: ProductConfigField[] }> = [];
@@ -312,7 +324,7 @@ function ConfigFields({
           return (
             <fieldset key={`group-${bucket.group}`} className="rounded-lg border bg-muted/30 p-4">
               <legend className="px-1 text-sm font-medium">{bucket.group}</legend>
-              <FieldList fields={bucket.fields} scope={scope} onChange={onChange} />
+              <FieldList fields={bucket.fields} scope={scope} onChange={onChange} tr={tr} />
             </fieldset>
           );
         }
@@ -322,6 +334,7 @@ function ConfigFields({
             fields={bucket.fields}
             scope={scope}
             onChange={onChange}
+            tr={tr}
           />
         );
       })}
@@ -334,10 +347,12 @@ function FieldList({
   fields,
   scope,
   onChange,
+  tr,
 }: {
   fields: ProductConfigField[];
   scope: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  tr: ReturnType<typeof t>;
 }) {
   function update(name: string, value: unknown): void {
     const next = { ...scope };
@@ -356,7 +371,7 @@ function FieldList({
           return (
             <fieldset key={field.name} className={`rounded-lg border bg-muted/30 p-4 ${span}`}>
               <legend className="px-1 text-sm font-medium">{field.label}</legend>
-              <ConfigFields fields={field.fields ?? []} scope={scope} onChange={onChange} />
+              <ConfigFields fields={field.fields ?? []} scope={scope} onChange={onChange} tr={tr} />
             </fieldset>
           );
         }
@@ -379,11 +394,11 @@ function FieldList({
                   onClick={() => update(field.name, [...items, {}])}
                 >
                   <Plus className="size-3.5" />
-                  {field.itemLabel ?? '新增一项'}
+                  {field.itemLabel ?? tr('editor.addItem')}
                 </Button>
               </div>
               {items.length === 0 ? (
-                <p className="text-xs text-muted-foreground">暂无条目。</p>
+                <p className="text-xs text-muted-foreground">{tr('editor.noItems')}</p>
               ) : null}
               {items.map((item, index) => (
                 <div key={index} className="rounded-lg border bg-background p-3">
@@ -399,7 +414,7 @@ function FieldList({
                         )
                       }
                     >
-                      删除
+                      {tr('editor.delete')}
                     </Button>
                   </div>
                   <ConfigFields
@@ -415,6 +430,7 @@ function FieldList({
                         items.map((current, i) => (i === index ? nextItem : current)),
                       )
                     }
+                    tr={tr}
                   />
                 </div>
               ))}
@@ -436,6 +452,7 @@ function FieldList({
             <ConfigFieldControl
               field={field}
               value={getPath(scope, field.name)}
+              tr={tr}
               onChange={(value) => {
                 const next = { ...scope };
                 setPath(next, field.name, value);
@@ -482,6 +499,8 @@ function ProductForm({
   initialCategoryIds,
   currencies,
   onDone,
+  tr,
+  locale,
 }: {
   editing: ProductRow | null;
   types: ProductTypeInfo[];
@@ -490,6 +509,8 @@ function ProductForm({
   initialCategoryIds: string[];
   currencies: CurrencyOption[];
   onDone: () => void;
+  tr: ReturnType<typeof t>;
+  locale: string | undefined;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -551,11 +572,11 @@ function ProductForm({
       setError(null);
     } catch {
       setSearchResults([]);
-      setError('上游搜索失败，请稍后再试');
+      setError(tr('editor.upstreamSearchFailed'));
     } finally {
       setSearching(false);
     }
-  }, [searchSource, searchQuery]);
+  }, [searchSource, searchQuery, tr]);
 
   async function pickUpstream(item: UpstreamItem) {
     setProviderId(searchSource);
@@ -606,7 +627,7 @@ function ProductForm({
       try {
         metadata.checkoutConfig = JSON.parse(trimmed) as unknown;
       } catch {
-        setError('结账配置不是合法的 JSON');
+        setError(tr('editor.invalidCheckoutConfig'));
         return null;
       }
     }
@@ -615,12 +636,12 @@ function ProductForm({
 
   function submit() {
     if (!name.trim()) {
-      setError('请填写商品名称');
+      setError(tr('editor.nameRequired'));
       return;
     }
     const parsedPrice = amountToMinor(price, currency);
     if (parsedPrice === null || parsedPrice <= 0) {
-      setError('请填写有效的售卖价格');
+      setError(tr('editor.priceRequired'));
       return;
     }
     setError(null);
@@ -637,18 +658,18 @@ function ProductForm({
         (value) => value.trim() && (optionalAmount(value) === null || optionalAmount(value)! < 0),
       )
     ) {
-      setError(`成本与原价须为有效的非负金额（${currency} 最多 ${minorUnit} 位小数）`);
+      setError(tr('editor.amountInvalid', { currency, digits: minorUnit }));
       return;
     }
     if (!Number.isInteger(Number(stock)) || Number(stock) < 0 || Number(stock) > 1000000) {
-      setError('库存须为 0 至 1000000 的整数');
+      setError(tr('editor.stockInvalid'));
       return;
     }
     if (
       discount.trim() &&
       (!Number.isInteger(Number(discount)) || Number(discount) < 0 || Number(discount) > 99)
     ) {
-      setError('折扣须为 0 至 99 的整数');
+      setError(tr('editor.discountInvalid'));
       return;
     }
     const metadata = buildMetadata();
@@ -683,14 +704,14 @@ function ProductForm({
           error?: string;
         };
         if (!response.ok || !result.product)
-          throw new Error(result.message || result.error || '商品保存失败');
+          throw new Error(result.message || result.error || tr('editor.saveFailed'));
         // 分类请求失败后保留新建商品 ID，再次保存只会更新，不会重复创建。
         setSavedId(result.product.id);
         if (categories.length > 0)
-          await saveProductCategories(result.product.id, selectedCategoryIds);
+          await saveProductCategories(result.product.id, selectedCategoryIds, tr);
         onDone();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : '保存失败，请重试');
+        setError(cause instanceof Error ? cause.message : tr('editor.saveFailedRetry'));
       }
     });
   }
@@ -712,15 +733,15 @@ function ProductForm({
             size="icon"
             nativeButton={false}
             render={<Link href="/admin/plugin/store/products" />}
-            aria-label="返回商店管理"
+            aria-label={tr('editor.back')}
           >
             <ArrowLeft />
           </Button>
-          <PageHeader title={editing ? '编辑商品' : '新建商品'} />
+          <PageHeader title={editing ? tr('editor.titleEdit') : tr('editor.titleNew')} />
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" type="button" onClick={onDone} disabled={isPending}>
-            取消
+            {tr('common.cancel')}
           </Button>
           <Button type="submit" disabled={isPending}>
             {isPending ? (
@@ -728,7 +749,7 @@ function ProductForm({
             ) : (
               <Save data-icon="inline-start" />
             )}
-            {isPending ? '保存中…' : '保存商品'}
+            {isPending ? tr('editor.saving') : tr('editor.save')}
           </Button>
         </div>
       </div>
@@ -740,34 +761,34 @@ function ProductForm({
         <div className="flex min-w-0 flex-col gap-6">
           <Card id="basic">
             <CardHeader>
-              <SectionTitle as="h3">基础信息</SectionTitle>
-              <CardDescription>展示给用户的商品名称、简介与图标。</CardDescription>
+              <SectionTitle as="h3">{tr('editor.basicTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.basicDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup>
                 <Field>
-                  <Label htmlFor="product-name">名称 *</Label>
+                  <Label htmlFor="product-name">{tr('editor.nameLabel')}</Label>
                   <Input
                     id="product-name"
                     required
                     maxLength={191}
-                    placeholder="例如：香港云服务器"
+                    placeholder={tr('editor.namePlaceholder')}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
                 </Field>
                 <Field>
-                  <Label htmlFor="product-description">简介</Label>
+                  <Label htmlFor="product-description">{tr('editor.descriptionLabel')}</Label>
                   <Input
                     id="product-description"
                     maxLength={191}
-                    placeholder="简要描述产品规格与用途"
+                    placeholder={tr('editor.descriptionPlaceholder')}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                   />
                 </Field>
                 <Field>
-                  <Label htmlFor="product-icon">图标（emoji 或 URL）</Label>
+                  <Label htmlFor="product-icon">{tr('editor.iconLabel')}</Label>
                   <Input id="product-icon" value={icon} onChange={(e) => setIcon(e.target.value)} />
                 </Field>
               </FieldGroup>
@@ -775,25 +796,25 @@ function ProductForm({
           </Card>
           <Card id="pricing">
             <CardHeader>
-              <SectionTitle as="h3">价格与库存</SectionTitle>
-              <CardDescription>设置销售价格、成本和库存数量。</CardDescription>
+              <SectionTitle as="h3">{tr('editor.pricingTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.pricingDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               <FieldGroup className="grid sm:grid-cols-2">
                 <Field>
-                  <Label htmlFor="product-price">售卖价格 *</Label>
+                  <Label htmlFor="product-price">{tr('editor.priceLabel')}</Label>
                   <Input
                     id="product-price"
                     required
                     type="number"
-                    step={minorUnitFor(currency) === 0 ? "1" : "0.01"}
-                    min={minorUnitFor(currency) === 0 ? "1" : "0.01"}
+                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
+                    min={minorUnitFor(currency) === 0 ? '1' : '0.01'}
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                   />
                 </Field>
                 <Field>
-                  <Label htmlFor="product-currency">币种 *</Label>
+                  <Label htmlFor="product-currency">{tr('editor.currencyLabel')}</Label>
                   <Select
                     id="product-currency"
                     value={currency}
@@ -805,16 +826,19 @@ function ProductForm({
                   >
                     {currencies.map((option) => (
                       <option key={option.code} value={option.code}>
-                        {option.code} · {option.name}（{option.symbol}，{option.minorUnit} 位小数）
+                        {tr('editor.currencyOption', {
+                          code: option.code,
+                          name: option.name,
+                          symbol: option.symbol,
+                          digits: option.minorUnit,
+                        })}
                       </option>
                     ))}
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    币种创建后不可更改；已产生交易的商品如需换币种，请复制为新商品。
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tr('editor.currencyHint')}</p>
                 </Field>
                 <Field>
-                  <Label htmlFor="product-stock">库存</Label>
+                  <Label htmlFor="product-stock">{tr('editor.stockLabel')}</Label>
                   <Input
                     id="product-stock"
                     type="number"
@@ -824,11 +848,11 @@ function ProductForm({
                   />
                 </Field>
                 <Field>
-                  <Label htmlFor="product-cost">成本（人工维护）</Label>
+                  <Label htmlFor="product-cost">{tr('editor.costLabel')}</Label>
                   <Input
                     id="product-cost"
                     type="number"
-                    step={minorUnitFor(currency) === 0 ? "1" : "0.01"}
+                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
                     min="0"
                     value={cost}
                     onChange={(e) => setCost(e.target.value)}
@@ -839,14 +863,18 @@ function ProductForm({
                         if (source == null) return null;
                         return (
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>上游源价 {money(source, editing.currency)}</span>
+                            <span>
+                              {tr('editor.upstreamPrice', {
+                                price: money(source, editing.currency, locale),
+                              })}
+                            </span>
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
                               onClick={() => setCost(minorToInput(source, editing.currency))}
                             >
-                              采用上游价
+                              {tr('editor.useUpstreamPrice')}
                             </Button>
                           </div>
                         );
@@ -854,18 +882,18 @@ function ProductForm({
                     : null}
                 </Field>
                 <Field>
-                  <Label htmlFor="product-original-price">原价（可选，划线展示）</Label>
+                  <Label htmlFor="product-original-price">{tr('editor.originalPriceLabel')}</Label>
                   <Input
                     id="product-original-price"
                     type="number"
-                    step={minorUnitFor(currency) === 0 ? "1" : "0.01"}
+                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
                     min="0"
                     value={originalPrice}
                     onChange={(e) => setOriginalPrice(e.target.value)}
                   />
                 </Field>
                 <Field>
-                  <Label htmlFor="product-discount">商品折扣（%，可选）</Label>
+                  <Label htmlFor="product-discount">{tr('editor.discountLabel')}</Label>
                   <Input
                     id="product-discount"
                     type="number"
@@ -880,16 +908,14 @@ function ProductForm({
           </Card>
           <Card id="configuration">
             <CardHeader>
-              <SectionTitle as="h3">产品配置</SectionTitle>
-              <CardDescription>选择商品类型，并设置对应的交付参数。</CardDescription>
+              <SectionTitle as="h3">{tr('editor.configTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.configDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="product-type">商品类型</Label>
+                <Label htmlFor="product-type">{tr('editor.typeLabel')}</Label>
                 {types.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    未安装商品类型插件（如 store-product-server / store-product-card）。
-                  </p>
+                  <p className="text-sm text-muted-foreground">{tr('editor.noTypePlugins')}</p>
                 ) : (
                   <Select
                     id="product-type"
@@ -906,15 +932,15 @@ function ProductForm({
                       }));
                     }}
                   >
-                    <option value="">请选择商品类型</option>
+                    <option value="">{tr('editor.typePlaceholder')}</option>
                     {types.map((type) => (
                       <option key={type.id} value={type.id}>
                         {type.label}
                       </option>
                     ))}
-                    {!types.some((type) => type.id === typeId) && BUILTIN_TYPE_LABELS[typeId] ? (
+                    {!types.some((type) => type.id === typeId) && builtinTypeLabel(typeId, tr) ? (
                       <option key={typeId} value={typeId}>
-                        {BUILTIN_TYPE_LABELS[typeId]}
+                        {builtinTypeLabel(typeId, tr)}
                       </option>
                     ) : null}
                   </Select>
@@ -925,6 +951,7 @@ function ProductForm({
                       fields={currentType.configFields}
                       scope={configData}
                       onChange={setConfigData}
+                      tr={tr}
                     />
                   </div>
                 ) : null}
@@ -933,53 +960,49 @@ function ProductForm({
           </Card>
           <Card id="checkout">
             <CardHeader>
-              <SectionTitle as="h3">结账配置</SectionTitle>
-              <CardDescription>配置购买周期与用户可选的产品规格。</CardDescription>
+              <SectionTitle as="h3">{tr('editor.checkoutTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.checkoutDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Field>
-                <Label htmlFor="product-checkout-config">结账配置（可配置商品，JSON，可选）</Label>
+                <Label htmlFor="product-checkout-config">{tr('editor.checkoutLabel')}</Label>
                 <textarea
                   id="product-checkout-config"
                   value={checkoutConfigJson}
                   onChange={(e) => setCheckoutConfigJson(e.target.value)}
                   rows={6}
                   spellCheck={false}
-                  placeholder={
-                    '{\n  "cycles": [{ "id": "onetime", "label": "一次性", "price": 1000 }],\n  "options": [\n    { "id": "cpu", "label": "CPU", "type": "select", "choices": [{ "id": "c1", "label": "1核", "price": 0 }] }\n  ]\n}'
-                  }
+                  placeholder={tr('editor.checkoutPlaceholder')}
                   className="w-full rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
-                <p className="text-xs text-muted-foreground">
-                  定义结账时可选周期与配置项（金额单位为分）。留空表示非可配置商品；上游关联商品由同步自动生成。
-                </p>
+                <p className="text-xs text-muted-foreground">{tr('editor.checkoutHelp')}</p>
               </Field>
             </CardContent>
           </Card>
           {sources.length > 0 ? (
             <Card id="upstream">
               <CardHeader>
-                <SectionTitle as="h3">上游关联</SectionTitle>
-                <CardDescription>关联上游商品，填充规格与结账配置。</CardDescription>
+                <SectionTitle as="h3">{tr('editor.upstreamTitle')}</SectionTitle>
+                <CardDescription>{tr('editor.upstreamDescription')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {providerId && providerProductId ? (
                   <div className="flex items-center justify-between rounded-lg border bg-primary/5 px-4 py-3 text-sm">
                     <span>
-                      已关联：
+                      {tr('editor.linked')}
                       {sources.find((source) => source.id === providerId)?.name ?? providerId}
                       {' · '}
                       {providerProductId}
                     </span>
                     <Button type="button" variant="ghost" size="sm" onClick={clearUpstream}>
-                      取消关联
+                      {tr('editor.unlink')}
                     </Button>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4">
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="flex min-w-40 flex-1 flex-col gap-1.5">
-                        <Label>上游</Label>
+                        <Label>{tr('editor.upstream')}</Label>
                         <Select
                           value={searchSource}
                           onChange={(e) => setSearchSource(e.target.value)}
@@ -992,7 +1015,7 @@ function ProductForm({
                         </Select>
                       </div>
                       <div className="flex min-w-48 flex-1 flex-col gap-1.5">
-                        <Label>关键词</Label>
+                        <Label>{tr('editor.keyword')}</Label>
                         <Input
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
@@ -1002,7 +1025,7 @@ function ProductForm({
                               void runSearch();
                             }
                           }}
-                          placeholder="搜索上游商品"
+                          placeholder={tr('editor.searchPlaceholder')}
                         />
                       </div>
                       <Button
@@ -1016,7 +1039,7 @@ function ProductForm({
                         ) : (
                           <Search className="size-4" />
                         )}
-                        搜索
+                        {tr('editor.search')}
                       </Button>
                     </div>
                     {searchResults.length > 0 ? (
@@ -1031,7 +1054,9 @@ function ProductForm({
                               <p className="text-xs text-muted-foreground">
                                 {item.id}
                                 {item.price != null
-                                  ? ` · 成本 ${money(item.price, item.currency ?? currency)}`
+                                  ? tr('editor.costInline', {
+                                      price: money(item.price, item.currency ?? currency, locale),
+                                    })
                                   : ''}
                               </p>
                             </div>
@@ -1041,14 +1066,16 @@ function ProductForm({
                               size="sm"
                               onClick={() => pickUpstream(item)}
                             >
-                              选择
+                              {tr('editor.selectItem')}
                             </Button>
                           </li>
                         ))}
                       </ul>
                     ) : null}
                     {!searching && searchResults.length === 0 && searchQuery !== '' ? (
-                      <p className="text-sm text-muted-foreground">没有匹配的上游商品。</p>
+                      <p className="text-sm text-muted-foreground">
+                        {tr('editor.noUpstreamMatches')}
+                      </p>
                     ) : null}
                   </div>
                 )}
@@ -1059,31 +1086,37 @@ function ProductForm({
         <aside className="flex min-w-0 flex-col gap-6 xl:sticky xl:top-24">
           <Card id="summary">
             <CardHeader>
-              <SectionTitle as="h3">商品概览</SectionTitle>
-              <CardDescription>当前编辑的商品信息。</CardDescription>
+              <SectionTitle as="h3">{tr('editor.summaryTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.summaryDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-5">
                 <div className="flex items-center gap-3">
                   <Package className="size-5 text-muted-foreground" />
-                  <p className="min-w-0 break-words font-medium">{name.trim() || '未命名商品'}</p>
+                  <p className="min-w-0 break-words font-medium">
+                    {name.trim() || tr('editor.unnamed')}
+                  </p>
                 </div>
                 <dl className="flex flex-col gap-3 text-sm">
                   <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">售价</dt>
+                    <dt className="text-muted-foreground">{tr('editor.summaryPrice')}</dt>
                     <dd className="font-medium tabular-nums">
                       {price && Number.isFinite(Number(price))
                         ? `${price || '0'} ${currency}`
-                        : '待设置'}
+                        : tr('editor.pendingValue')}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">库存</dt>
+                    <dt className="text-muted-foreground">{tr('editor.summaryStock')}</dt>
                     <dd className="tabular-nums">{stock || '0'}</dd>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">商品类型</dt>
-                    <dd>{currentType?.label || BUILTIN_TYPE_LABELS[typeId] || '未选择'}</dd>
+                    <dt className="text-muted-foreground">{tr('editor.summaryType')}</dt>
+                    <dd>
+                      {currentType?.label ||
+                        builtinTypeLabel(typeId, tr) ||
+                        tr('editor.notSelected')}
+                    </dd>
                   </div>
                 </dl>
               </div>
@@ -1091,8 +1124,8 @@ function ProductForm({
           </Card>
           <Card id="categories">
             <CardHeader>
-              <SectionTitle as="h3">商品分类</SectionTitle>
-              <CardDescription>选择商品在前台展示的分类。</CardDescription>
+              <SectionTitle as="h3">{tr('editor.categoriesTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.categoriesDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               {categories.length > 0 ? (
@@ -1126,11 +1159,13 @@ function ProductForm({
                       );
                     })}
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">未分类商品默认不在前台展示。</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {tr('editor.categoriesHint')}
+                  </p>
                 </div>
               ) : null}
               {categories.length === 0 ? (
-                <p className="text-sm text-muted-foreground">暂无分类</p>
+                <p className="text-sm text-muted-foreground">{tr('editor.categoriesEmpty')}</p>
               ) : null}
             </CardContent>
           </Card>
@@ -1138,7 +1173,7 @@ function ProductForm({
       </fieldset>
       <div className="flex items-center justify-end gap-2 pb-2">
         <Button variant="outline" type="button" onClick={onDone} disabled={isPending}>
-          取消
+          {tr('common.cancel')}
         </Button>
         <Button type="submit" disabled={isPending}>
           {isPending ? (
@@ -1146,7 +1181,7 @@ function ProductForm({
           ) : (
             <Save data-icon="inline-start" />
           )}
-          {isPending ? '保存中…' : '保存商品'}
+          {isPending ? tr('editor.saving') : tr('editor.save')}
         </Button>
       </div>
     </form>
@@ -1164,7 +1199,11 @@ interface CategoryNode {
 }
 
 /** 调用 web BFF 通用代理为商品设置分类（带登录态）。 */
-async function saveProductCategories(productId: string, categoryIds: string[]): Promise<void> {
+async function saveProductCategories(
+  productId: string,
+  categoryIds: string[],
+  tr: ReturnType<typeof t>,
+): Promise<void> {
   const response = await fetch(
     `/api/plugins/catalog/admin/products/${encodeURIComponent(productId)}`,
     {
@@ -1174,7 +1213,7 @@ async function saveProductCategories(productId: string, categoryIds: string[]): 
     },
   );
   if (!response.ok) {
-    throw new Error(`分类保存失败：${response.status}`);
+    throw new Error(tr('editor.categorySaveFailed', { status: response.status }));
   }
 }
 
@@ -1195,17 +1234,18 @@ function flattenCategoryOptions(
 }
 
 export function StoreAdminProductsPage(props: AdminPageComponentProps) {
+  const tr = t(props.locale);
   const products = (props.data.products as ProductRow[] | undefined) ?? [];
   const types = (props.data.productTypes as ProductTypeInfo[] | undefined) ?? [];
 
   return (
     <main className="w-full space-y-8">
       <PageHeader
-        title="商品"
+        title={tr('list.title')}
         actions={
           <Button nativeButton={false} render={<Link href="/admin/plugin/store/products/new" />}>
             <Plus className="size-4" />
-            新建商品
+            {tr('list.new')}
           </Button>
         }
       />
@@ -1214,13 +1254,13 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-left text-muted-foreground">
             <tr>
-              <th className="px-4 py-2.5 font-medium">商品</th>
-              <th className="px-4 py-2.5 font-medium">类型</th>
-              <th className="px-4 py-2.5 font-medium">售价</th>
-              <th className="px-4 py-2.5 font-medium">成本</th>
-              <th className="px-4 py-2.5 font-medium">库存</th>
-              <th className="px-4 py-2.5 font-medium">状态</th>
-              <th className="px-4 py-2.5 font-medium">操作</th>
+              <th className="px-4 py-2.5 font-medium">{tr('list.colProduct')}</th>
+              <th className="px-4 py-2.5 font-medium">{tr('list.colType')}</th>
+              <th className="px-4 py-2.5 font-medium">{tr('list.colPrice')}</th>
+              <th className="px-4 py-2.5 font-medium">{tr('list.colCost')}</th>
+              <th className="px-4 py-2.5 font-medium">{tr('list.colStock')}</th>
+              <th className="px-4 py-2.5 font-medium">{tr('list.colStatus')}</th>
+              <th className="px-4 py-2.5 font-medium">{tr('list.colActions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1239,11 +1279,13 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                       </span>
                     ) : (
                       <span className="text-muted-foreground">
-                        {BUILTIN_TYPE_LABELS[product.fulfillmentType] ?? product.fulfillmentType}
+                        {builtinTypeLabel(product.fulfillmentType, tr) ?? product.fulfillmentType}
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5">{money(product.price, product.currency)}</td>
+                  <td className="px-4 py-2.5">
+                    {money(product.price, product.currency, props.locale)}
+                  </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
                     {(() => {
                       const source = upstreamSourcePrice(product);
@@ -1251,11 +1293,15 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                       return (
                         <div className="flex flex-col gap-0.5">
                           <span>
-                            {product.cost != null ? money(product.cost, product.currency) : '—'}
+                            {product.cost != null
+                              ? money(product.cost, product.currency, props.locale)
+                              : '—'}
                           </span>
                           {source != null && diff ? (
                             <span className="text-xs text-amber-600">
-                              上游 {money(source, product.currency)}
+                              {tr('list.upstreamBadge', {
+                                price: money(source, product.currency, props.locale),
+                              })}
                             </span>
                           ) : null}
                         </div>
@@ -1264,7 +1310,7 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                   </td>
                   <td className="px-4 py-2.5">{product.stock}</td>
                   <td className="px-4 py-2.5">
-                    {product.status === 'ACTIVE' ? '在售' : product.status}
+                    {product.status === 'ACTIVE' ? tr('list.onSale') : product.status}
                   </td>
                   <td className="px-4 py-2.5">
                     <Button
@@ -1278,7 +1324,7 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                       }
                     >
                       <Pencil className="size-3.5" />
-                      编辑
+                      {tr('list.edit')}
                     </Button>
                   </td>
                 </tr>
@@ -1287,7 +1333,7 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
             {products.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  暂无商品。
+                  {tr('list.empty')}
                 </td>
               </tr>
             ) : null}
@@ -1299,6 +1345,7 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
 }
 
 export function StoreAdminProductEditorPage(props: AdminPageComponentProps) {
+  const tr = t(props.locale);
   const router = useRouter();
   const editing = (props.data.product as ProductRow | null | undefined) ?? null;
   const categories = (props.data.categories as CategoryNode[] | undefined) ?? [];
@@ -1306,9 +1353,9 @@ export function StoreAdminProductEditorPage(props: AdminPageComponentProps) {
   if (props.params.id && !editing) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="商品不存在" />
+        <PageHeader title={tr('editor.notFound')} />
         <Button nativeButton={false} render={<Link href="/admin/plugin/store/products" />}>
-          返回商店管理
+          {tr('editor.back')}
         </Button>
       </div>
     );
@@ -1322,6 +1369,8 @@ export function StoreAdminProductEditorPage(props: AdminPageComponentProps) {
       sources={(props.data.upstreamSources as UpstreamSourceInfo[] | undefined) ?? []}
       categories={categories}
       initialCategoryIds={categoryIds}
+      tr={tr}
+      locale={props.locale}
       onDone={() => {
         router.push('/admin/plugin/store/products');
         router.refresh();
@@ -1331,29 +1380,37 @@ export function StoreAdminProductEditorPage(props: AdminPageComponentProps) {
 }
 
 function StoreAdminOverviewPage(props: AdminPageComponentProps) {
+  const tr = t(props.locale);
   const summary = props.data.summary as { total: number; products: ProductRow[] } | undefined;
   const types = props.data.productTypes as ProductTypeInfo[] | undefined;
   return (
     <FeatureOverview
-      title="概览"
-      description="查看商品规模与最近商品。"
+      title={tr('overview.title')}
+      description={tr('overview.description')}
       unavailable={!summary}
+      labels={{
+        unavailable: tr('overview.unavailable'),
+        manageTitle: tr('overview.manageTitle'),
+        manageDescription: tr('overview.manageDescription'),
+        activityDescription: tr('overview.activityDescription'),
+        empty: tr('overview.empty'),
+      }}
       metrics={[
-        { label: '商品总数', value: summary?.total ?? '—' },
-        { label: '产品类型', value: types?.length ?? '—' },
+        { label: tr('overview.metricTotal'), value: summary?.total ?? '—' },
+        { label: tr('overview.metricTypes'), value: types?.length ?? '—' },
       ]}
       links={[
         {
-          label: '商品',
-          description: '管理商品、库存与售价。',
+          label: tr('overview.linkProducts'),
+          description: tr('overview.linkProductsDescription'),
           href: '/admin/plugin/store/products',
         },
       ]}
       activity={{
-        title: '最近商品',
+        title: tr('overview.activityTitle'),
         items: (summary?.products ?? []).map((product) => ({
           label: product.name,
-          detail: money(product.price, product.currency),
+          detail: money(product.price, product.currency, props.locale),
           href: `/admin/plugin/store/products/${product.id}/edit`,
         })),
       }}

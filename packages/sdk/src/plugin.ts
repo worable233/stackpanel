@@ -14,7 +14,6 @@ import type { CurrencyService } from './currency.js';
 import type { JobContext } from './jobs.js';
 import type { NotificationsService } from './notifications.js';
 import type { NotificationPolicyService } from './notifications.js';
-import type { NotificationTypeDefinition } from './notifications.js';
 import type { NotificationView } from './notifications.js';
 import type { CaptchaService, IdentityChallengeService } from './identity.js';
 import type { PaymentService } from './payments.js';

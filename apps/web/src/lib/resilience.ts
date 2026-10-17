@@ -268,7 +268,9 @@ export function createResilientFetch(options: ResilienceOptions = {}): typeof fe
   ): Promise<Response> => {
     const idempotent = IDEMPOTENT_METHODS.has(readMethod(request, requestInit));
     if (!breaker.tryAcquire()) {
-      throw new ApiError('上游接口连续失败，已熔断以保护本站', {
+      // i18n-exempt — developer-facing fallback; the UI renders
+      // `error.circuit_open` from the stable code below (ADR-0016 §2).
+      throw new ApiError('Upstream keeps failing; circuit open', {
         status: 0,
         code: 'circuit_open',
       });

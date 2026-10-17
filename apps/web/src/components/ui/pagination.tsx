@@ -53,11 +53,12 @@ function PaginationLink({ className, isActive, size = 'icon', ...props }: Pagina
 function PaginationPrevious({
   className,
   text,
+  ariaLabel,
   ...props
-}: PaginationLinkProps & { text?: string }) {
+}: PaginationLinkProps & { text?: string; ariaLabel?: string }) {
   return (
     <PaginationLink
-      aria-label="Go to previous page"
+      aria-label={ariaLabel}
       size="default"
       className={cn('pl-1.5', className)}
       {...props}
@@ -68,10 +69,15 @@ function PaginationPrevious({
   );
 }
 
-function PaginationNext({ className, text, ...props }: PaginationLinkProps & { text?: string }) {
+function PaginationNext({
+  className,
+  text,
+  ariaLabel,
+  ...props
+}: PaginationLinkProps & { text?: string; ariaLabel?: string }) {
   return (
     <PaginationLink
-      aria-label="Go to next page"
+      aria-label={ariaLabel}
       size="default"
       className={cn('pr-1.5', className)}
       {...props}

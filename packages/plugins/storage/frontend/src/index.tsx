@@ -1,5 +1,6 @@
 import type { FrontendPackage, FinderProvider } from '@stackpanel/sdk';
 import { adminConfigSchema } from './schemas';
+import { messages } from './i18n.js';
 
 /**
  * 存储插件前端：仅一个管理页。
@@ -15,6 +16,8 @@ const finders: Record<string, FinderProvider> = {
 };
 
 export const frontend: FrontendPackage = {
+  locales: ['zh-CN', 'en-US'],
+  messages,
   finders,
   pages: [],
   pageComponents: {},
@@ -55,7 +58,7 @@ export const frontend: FrontendPackage = {
         path: '/storage',
         component: 'admin/storage',
         permission: 'storage.admin',
-        systemSettings: { label: '存储', order: 100 },
+        systemSettings: { labelKey: 'admin.systemSettings', order: 100 },
         data: [{ finder: 'storage.adminConfig', as: 'storageConfig' }],
       },
     ],

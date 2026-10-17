@@ -14,6 +14,9 @@ import {
   readPluginSettings,
 } from './slots';
 import { runtimeAdminModuleUrl, runtimeFrontendLoadingEnabled } from './frontend-runtime';
+import { getLocale } from '@/i18n/locale';
+import { DEFAULT_LOCALE } from '@/i18n/config';
+import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
 import { bindPluginActions } from './frontend-plugin-actions';
 
 export interface PluginAdminMenu {
@@ -50,7 +53,9 @@ export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
   const candidates = await listPluginFrontendCandidates();
   const menus: PluginAdminMenu[] = [];
   const api = await getAuthedApiClient();
+  const locale = await getLocale();
   for (const candidate of candidates) {
+    const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const route of candidate.manifest.adminRoutes) {
       if (
         route.systemSettings ||
@@ -58,13 +63,22 @@ export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
         (route.permission && !(await isAllowed(api, route.permission)))
       )
         continue;
+      // Labels are resolved through the package's own catalog (ADR-0016 §5).
+      // The literal `label` stays the fallback for locales the package omits.
+      const group = packageLabel(
+        messages,
+        locale,
+        route.nav.groupKey,
+        route.nav.group,
+        [DEFAULT_LOCALE],
+      );
       menus.push({
         pluginId: candidate.id,
-        label: route.nav.label,
+        label: packageLabel(messages, locale, route.nav.labelKey, route.nav.label, [DEFAULT_LOCALE]),
         href: pluginAdminHref(candidate.id, route.path),
         order: route.nav.order,
         activePaths: route.nav.activePaths?.map((path) => pluginAdminHref(candidate.id, path)),
-        ...(route.nav.group ? { group: route.nav.group } : {}),
+        ...(group ? { group } : {}),
       });
     }
   }
@@ -208,8 +222,10 @@ function resolveFinderInput(
 /** Plugin-owned settings reuse the regular route resolver and its authorization gates. */
 export async function getPluginSettingsSections() {
   const candidates = await listPluginFrontendCandidates();
+  const locale = await getLocale();
   const sections = [];
   for (const candidate of candidates) {
+    const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const route of candidate.manifest.adminRoutes) {
       if (!route.systemSettings || /[:*]/.test(route.path)) continue;
       const href = pluginSettingsHref(candidate.id, route.path);
@@ -218,7 +234,13 @@ export async function getPluginSettingsSections() {
       if (result.status !== 'ok') continue;
       sections.push({
         id,
-        title: route.systemSettings.label,
+        title: packageLabel(
+          messages,
+          locale,
+          route.systemSettings.labelKey,
+          route.systemSettings.label,
+          [DEFAULT_LOCALE],
+        ),
         order: route.systemSettings.order ?? 100,
         pluginId: candidate.id,
         path: route.path,

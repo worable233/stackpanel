@@ -4,12 +4,13 @@ import { cn } from './cn.js';
 export interface StepperProps {
   steps: readonly string[];
   currentStep: number;
-  label?: string;
+  /** Accessible name of the progress list; supplied by the caller (ADR-0016 §6). */
+  label: string;
   className?: string;
 }
 
 /** Read-only progress indicator; future steps are not navigation controls. */
-export function Stepper({ steps, currentStep, label = '进度', className }: StepperProps) {
+export function Stepper({ steps, currentStep, label, className }: StepperProps) {
   return (
     <ol aria-label={label} className={cn('flex items-start', className)}>
       {steps.map((step, index) => (

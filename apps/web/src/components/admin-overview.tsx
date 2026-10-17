@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@stackpanel/ui';
 import type { AdminOverviewData } from '@/lib/admin-overview-types';
-import { useLocale, useTranslator } from '@/i18n/provider';
-import { formatDate } from '@/i18n/core';
+import { useTranslator } from '@/i18n/provider';
 
 import {
   OrderStatusCard,
@@ -36,14 +35,6 @@ import {
  */
 export function AdminOverview({ data }: { data: AdminOverviewData }) {
   const t = useTranslator();
-  const locale = useLocale();
-  const today = formatDate(new Date(), locale, {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title={t('nav.dashboard')} />

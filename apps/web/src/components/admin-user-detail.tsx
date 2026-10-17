@@ -4,8 +4,21 @@ import { useState, useTransition } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { SectionTitle } from '@stackpanel/ui';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+} from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuCheckboxItem,
+} from '@/components/ui/dropdown-menu';
 import type {
   AdminUpstreamServiceItem,
   AdminUserDetailResponse,
@@ -98,7 +111,9 @@ function SectionCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <SectionTitle>{title}</SectionTitle>
-          {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
+          {description ? (
+            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+          ) : null}
         </div>
         {action}
       </div>
@@ -142,12 +157,26 @@ function BasicInfoSection({ user }: { user: AdminUserDetailResponse['user'] }) {
             {t('admin.userDetail.status')}
           </dt>
           <dd className="mt-0.5 flex items-center gap-2">
-            <Select value={status} onValueChange={(value) => { if (value) setStatus(value); }} disabled={isPending}>
-              <SelectTrigger className="w-32" aria-label={t('admin.userDetail.statusAria')}><SelectValue>{status === 'ACTIVE' ? t('admin.userDetail.statusActive') : t('admin.userDetail.statusDisabled')}</SelectValue></SelectTrigger>
-              <SelectContent><SelectGroup>
-                <SelectItem value="ACTIVE">{t('admin.userDetail.statusActive')}</SelectItem>
-                <SelectItem value="DISABLED">{t('admin.userDetail.statusDisabled')}</SelectItem>
-              </SelectGroup></SelectContent>
+            <Select
+              value={status}
+              onValueChange={(value) => {
+                if (value) setStatus(value);
+              }}
+              disabled={isPending}
+            >
+              <SelectTrigger className="w-32" aria-label={t('admin.userDetail.statusAria')}>
+                <SelectValue>
+                  {status === 'ACTIVE'
+                    ? t('admin.userDetail.statusActive')
+                    : t('admin.userDetail.statusDisabled')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="ACTIVE">{t('admin.userDetail.statusActive')}</SelectItem>
+                  <SelectItem value="DISABLED">{t('admin.userDetail.statusDisabled')}</SelectItem>
+                </SelectGroup>
+              </SelectContent>
             </Select>
             {status !== user.status ? (
               <Button size="sm" variant="outline" onClick={() => void save()} disabled={isPending}>
@@ -189,8 +218,7 @@ function GroupsSection({
   const [selected, setSelected] = useState<Set<string>>(new Set(currentGroupIds));
   const [state, setState] = useState<UserActionResult | null>(null);
   const dirty = !(
-    selected.size === currentGroupIds.length &&
-    currentGroupIds.every((id) => selected.has(id))
+    selected.size === currentGroupIds.length && currentGroupIds.every((id) => selected.has(id))
   );
 
   function toggle(id: string) {
@@ -224,13 +252,29 @@ function GroupsSection({
       }
     >
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" disabled={isPending} className="max-w-full" />}>
-          <span className="truncate">{groups.filter((group) => selected.has(group.id)).map((group) => group.name).join('、') || t('admin.userDetail.groups.title')}</span>
+        <DropdownMenuTrigger
+          render={<Button variant="outline" disabled={isPending} className="max-w-full" />}
+        >
+          <span className="truncate">
+            {groups
+              .filter((group) => selected.has(group.id))
+              .map((group) => group.name)
+              .join('、') || t('admin.userDetail.groups.title')}
+          </span>
           <ChevronDown data-icon="inline-end" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-52">
           <DropdownMenuGroup>
-            {groups.map((group) => <DropdownMenuCheckboxItem key={group.id} checked={selected.has(group.id)} onCheckedChange={() => toggle(group.id)} closeOnClick={false}>{group.name}</DropdownMenuCheckboxItem>)}
+            {groups.map((group) => (
+              <DropdownMenuCheckboxItem
+                key={group.id}
+                checked={selected.has(group.id)}
+                onCheckedChange={() => toggle(group.id)}
+                closeOnClick={false}
+              >
+                {group.name}
+              </DropdownMenuCheckboxItem>
+            ))}
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -297,7 +341,9 @@ function WalletSection({
               <DialogTitle>{t('admin.userDetail.wallet.adjust')}</DialogTitle>
               <DialogDescription>
                 {t('admin.userDetail.wallet.current', {
-                  amount: wallet ? money(wallet.balance, wallet.currency, locale) : money(0, 'CNY', locale),
+                  amount: wallet
+                    ? money(wallet.balance, wallet.currency, locale)
+                    : money(0, 'CNY', locale),
                 })}
               </DialogDescription>
             </DialogHeader>
@@ -356,12 +402,12 @@ function WalletSection({
             <tbody>
               {ledger.map((entry) => (
                 <tr key={entry.id} className="border-t">
-                  <td className="px-3 py-2 text-muted-foreground">{formatDate(entry.createdAt, locale)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {formatDate(entry.createdAt, locale)}
+                  </td>
                   <td
                     className={
-                      entry.amount > 0
-                        ? 'px-3 py-2 text-success'
-                        : 'px-3 py-2 text-destructive'
+                      entry.amount > 0 ? 'px-3 py-2 text-success' : 'px-3 py-2 text-destructive'
                     }
                   >
                     {entry.amount > 0 ? '+' : ''}
@@ -424,23 +470,27 @@ function ServicesSection({
     setSelected('');
     setCandidates([]);
     setBindLoading(true);
-    void listUpstreamServicesAction(userId).then((result) => {
-      if (result.error || !result.data) {
-        setBindError(result.error ?? t('admin.userDetail.services.bindLoadFailed'));
-      } else {
-        setHasSources(result.data.sources.length > 0);
-        setCandidates(result.data.services);
-        const first = result.data.services.find(
-          (item) => !item.boundServiceId && !item.boundUserId,
-        );
-        if (first) setSelected(`${first.sourceId}:${first.id}`);
-      }
-    }).catch(() => setBindError(t('admin.userDetail.services.bindLoadFailed')))
+    void listUpstreamServicesAction(userId)
+      .then((result) => {
+        if (result.error || !result.data) {
+          setBindError(result.error ?? t('admin.userDetail.services.bindLoadFailed'));
+        } else {
+          setHasSources(result.data.sources.length > 0);
+          setCandidates(result.data.services);
+          const first = result.data.services.find(
+            (item) => !item.boundServiceId && !item.boundUserId,
+          );
+          if (first) setSelected(`${first.sourceId}:${first.id}`);
+        }
+      })
+      .catch(() => setBindError(t('admin.userDetail.services.bindLoadFailed')))
       .finally(() => setBindLoading(false));
   }
 
   function bind() {
-    const item = candidates.find((candidate) => `${candidate.sourceId}:${candidate.id}` === selected);
+    const item = candidates.find(
+      (candidate) => `${candidate.sourceId}:${candidate.id}` === selected,
+    );
     if (!item) {
       setState({ error: t('admin.userDetail.services.selectUpstream') });
       return;
@@ -462,9 +512,7 @@ function ServicesSection({
   function saveEdit(serviceId: string) {
     run(() =>
       updateServiceAction(userId, serviceId, {
-        ...(editExpiresAt
-          ? { expiresAt: `${editExpiresAt}T00:00:00.000Z` }
-          : { expiresAt: null }),
+        ...(editExpiresAt ? { expiresAt: `${editExpiresAt}T00:00:00.000Z` } : { expiresAt: null }),
         ...(editStatus ? { status: editStatus } : {}),
       }),
     );
@@ -512,43 +560,56 @@ function ServicesSection({
                   {t('admin.userDetail.services.bindLoading')}
                 </p>
               ) : bindError ? (
-                <div className="flex flex-col items-start gap-3"><p role="alert" className="text-sm text-destructive">{bindError}</p><Button variant="outline" size="sm" onClick={() => openBind(true)}>重试</Button></div>
+                <div className="flex flex-col items-start gap-3">
+                  <p role="alert" className="text-sm text-destructive">
+                    {bindError}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => openBind(true)}>
+                    {t('common.retry')}
+                  </Button>
+                </div>
               ) : candidates.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  {hasSources ? '上游暂无已购服务，请先确认上游账号中有可绑定的服务。' : '暂无可用的上游插件，请先启用提供服务绑定能力的插件。'}
+                  {hasSources
+                    ? t('admin.userDetail.services.upstreamEmpty')
+                    : t('admin.userDetail.services.noUpstreamPlugin')}
                 </p>
               ) : (
                 <div className="flex flex-col gap-1">
                   <Label htmlFor="bind-service">
                     {t('admin.userDetail.services.upstreamService')}
                   </Label>
-                  <Select
-                    value={selected}
-                    onValueChange={(value) => setSelected(value ?? '')}
-                  >
-                    <SelectTrigger id="bind-service" className="w-full"><SelectValue>{candidates.find((item) => `${item.sourceId}:${item.id}` === selected)?.name ?? '选择上游服务'}</SelectValue></SelectTrigger>
-                    <SelectContent><SelectGroup>
-                    {candidates.map((item) => {
-                      const boundMine = Boolean(item.boundServiceId);
-                      const boundOther = Boolean(item.boundUserId);
-                      const suffix = boundMine
-                        ? ` · ${t('admin.userDetail.services.alreadyBound')}`
-                        : boundOther
-                          ? ` · ${t('admin.userDetail.services.boundElsewhere')}`
-                          : '';
-                      return (
-                        <SelectItem
-                          key={`${item.sourceId}:${item.id}`}
-                          value={`${item.sourceId}:${item.id}`}
-                          disabled={boundMine || boundOther}
-                        >
-                          {item.name}
-                          {item.host ? ` · ${item.host}` : ''}
-                          {suffix}
-                        </SelectItem>
-                      );
-                    })}
-                    </SelectGroup></SelectContent>
+                  <Select value={selected} onValueChange={(value) => setSelected(value ?? '')}>
+                    <SelectTrigger id="bind-service" className="w-full">
+                      <SelectValue>
+                        {candidates.find((item) => `${item.sourceId}:${item.id}` === selected)
+                          ?.name ?? t('admin.userDetail.services.selectUpstream')}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {candidates.map((item) => {
+                          const boundMine = Boolean(item.boundServiceId);
+                          const boundOther = Boolean(item.boundUserId);
+                          const suffix = boundMine
+                            ? ` · ${t('admin.userDetail.services.alreadyBound')}`
+                            : boundOther
+                              ? ` · ${t('admin.userDetail.services.boundElsewhere')}`
+                              : '';
+                          return (
+                            <SelectItem
+                              key={`${item.sourceId}:${item.id}`}
+                              value={`${item.sourceId}:${item.id}`}
+                              disabled={boundMine || boundOther}
+                            >
+                              {item.name}
+                              {item.host ? ` · ${item.host}` : ''}
+                              {suffix}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectGroup>
+                    </SelectContent>
                   </Select>
                 </div>
               )}
@@ -582,8 +643,12 @@ function ServicesSection({
                 <th className="px-3 py-2 font-medium">
                   {t('admin.userDetail.services.colProduct')}
                 </th>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.services.colStatus')}</th>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.services.colAmount')}</th>
+                <th className="px-3 py-2 font-medium">
+                  {t('admin.userDetail.services.colStatus')}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {t('admin.userDetail.services.colAmount')}
+                </th>
                 <th className="px-3 py-2 font-medium">
                   {t('admin.userDetail.services.colExpiresAt')}
                 </th>
@@ -615,14 +680,18 @@ function ServicesSection({
                           value={editStatus}
                           onValueChange={(value) => setEditStatus(value ?? '')}
                         >
-                          <SelectTrigger aria-label={t('admin.userDetail.services.statusAria')}><SelectValue>{serviceStatusLabel(editStatus, t)}</SelectValue></SelectTrigger>
-                          <SelectContent><SelectGroup>
-                          {Object.keys(SERVICE_STATUS_KEYS).map((value) => (
-                            <SelectItem key={value} value={value}>
-                              {serviceStatusLabel(value, t)}
-                            </SelectItem>
-                          ))}
-                          </SelectGroup></SelectContent>
+                          <SelectTrigger aria-label={t('admin.userDetail.services.statusAria')}>
+                            <SelectValue>{serviceStatusLabel(editStatus, t)}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {Object.keys(SERVICE_STATUS_KEYS).map((value) => (
+                                <SelectItem key={value} value={value}>
+                                  {serviceStatusLabel(value, t)}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
                         </Select>
                       ) : (
                         serviceStatusLabel(service.status, t)
@@ -641,14 +710,22 @@ function ServicesSection({
                           aria-label={t('admin.userDetail.services.expiresAria')}
                         />
                       ) : (
-                        <span className="text-muted-foreground">{formatDate(service.expiresAt, locale)}</span>
+                        <span className="text-muted-foreground">
+                          {formatDate(service.expiresAt, locale)}
+                        </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground">{formatDate(service.createdAt, locale)}</td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {formatDate(service.createdAt, locale)}
+                    </td>
                     <td className="px-3 py-2">
                       {editing ? (
                         <div className="flex items-center gap-1">
-                          <Button size="sm" onClick={() => void saveEdit(service.id)} disabled={isPending}>
+                          <Button
+                            size="sm"
+                            onClick={() => void saveEdit(service.id)}
+                            disabled={isPending}
+                          >
                             {t('common.save')}
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
@@ -666,9 +743,7 @@ function ServicesSection({
                             onClick={() => void remove(service.id)}
                             disabled={isPending}
                           >
-                            {bound
-                              ? t('admin.userDetail.services.unbind')
-                              : t('common.delete')}
+                            {bound ? t('admin.userDetail.services.unbind') : t('common.delete')}
                           </Button>
                         </div>
                       )}
@@ -693,7 +768,13 @@ function boundServiceIds(services: AdminUserDetailResponse['services']): Set<str
   );
 }
 
-function OrdersSection({ orders, pagination }: { orders: AdminUserDetailResponse['orders']; pagination: AdminUserDetailResponse['ordersPagination'] }) {
+function OrdersSection({
+  orders,
+  pagination,
+}: {
+  orders: AdminUserDetailResponse['orders'];
+  pagination: AdminUserDetailResponse['ordersPagination'];
+}) {
   const t = useTranslator();
   const locale = useLocale();
   const router = useRouter();
@@ -709,9 +790,7 @@ function OrdersSection({ orders, pagination }: { orders: AdminUserDetailResponse
     startTransition(() => router.replace(`${pathname}?${query}`, { scroll: false }));
   };
   return (
-    <SectionCard
-      title={t('admin.userDetail.orders.title')}
-    >
+    <SectionCard title={t('admin.userDetail.orders.title')}>
       {orders.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
           {t('admin.userDetail.orders.empty')}
@@ -737,7 +816,9 @@ function OrdersSection({ orders, pagination }: { orders: AdminUserDetailResponse
                     {money(order.total, order.currency, locale)}
                   </td>
                   <td className="px-3 py-2">{order.status}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{formatDate(order.createdAt, locale)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {formatDate(order.createdAt, locale)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -745,15 +826,53 @@ function OrdersSection({ orders, pagination }: { orders: AdminUserDetailResponse
         </div>
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-busy={pending}>
-        <span className="text-sm text-muted-foreground">共 {total} 笔订单</span>
+        <span className="text-sm text-muted-foreground">
+          {t('admin.userDetail.orders.totalCount', { total })}
+        </span>
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={String(pageSize)} onValueChange={(value) => { if (value) navigate(1, Number(value)); }} disabled={pending}>
-            <SelectTrigger aria-label="每页订单数"><SelectValue>{pageSize} 条 / 页</SelectValue></SelectTrigger>
-            <SelectContent><SelectGroup>{[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} 条 / 页</SelectItem>)}</SelectGroup></SelectContent>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => {
+              if (value) navigate(1, Number(value));
+            }}
+            disabled={pending}
+          >
+            <SelectTrigger aria-label={t('admin.userDetail.orders.rowsPerPageAria')}>
+              <SelectValue>
+                {t('admin.userDetail.orders.rowsPerPage', { size: pageSize })}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {[10, 20, 50, 100].map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {t('admin.userDetail.orders.rowsPerPage', { size })}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
           </Select>
-          <span className="text-sm tabular-nums">第 {page} / {pages} 页</span>
-          <Button size="icon-sm" variant="outline" aria-label="上一页订单" disabled={pending || page <= 1} onClick={() => navigate(page - 1)}><ChevronLeft /></Button>
-          <Button size="icon-sm" variant="outline" aria-label="下一页订单" disabled={pending || page >= pages} onClick={() => navigate(page + 1)}><ChevronRight /></Button>
+          <span className="text-sm tabular-nums">
+            {t('admin.userDetail.orders.pageOf', { page, pages })}
+          </span>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            aria-label={t('admin.userDetail.orders.prevPage')}
+            disabled={pending || page <= 1}
+            onClick={() => navigate(page - 1)}
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            aria-label={t('admin.userDetail.orders.nextPage')}
+            disabled={pending || page >= pages}
+            onClick={() => navigate(page + 1)}
+          >
+            <ChevronRight />
+          </Button>
         </div>
       </div>
     </SectionCard>

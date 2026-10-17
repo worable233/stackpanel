@@ -10,6 +10,7 @@ import { apiAssetUrl, getApiClient, KERNEL_BFF_PREFIX } from '@/lib/api';
 import { getSessionToken } from '@/lib/auth';
 import { resolveFallbackRoute, resolveFrontendRoute, type PageResolution } from '@/lib/pages';
 import { getLocale } from '@/i18n/locale';
+import { createTranslator } from '@/i18n/core';
 import { ErrorPage } from '@stackpanel/ui';
 
 const categoryNodeSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -184,5 +185,14 @@ async function renderPublicLayout(
 
 /** Platform default 404 panel, shown when no theme declares a fallback page. */
 export async function DefaultNotFound(): Promise<ReactElement> {
-  return <ErrorPage kind="not-found" />;
+  const t = createTranslator(await getLocale());
+  return (
+    <ErrorPage
+      kind="not-found"
+      content={{
+        title: t('errorPage.notFound.title'),
+        description: t('errorPage.notFound.description'),
+      }}
+    />
+  );
 }

@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import type { FrontendPackage, FinderProvider, PluginActionDefinition } from '@stackpanel/sdk';
+import { messages } from './i18n.js';
 
 const marketPackageSchema = z.object({
   id: z.string(),
@@ -68,6 +69,8 @@ const marketActions: PluginActionDefinition[] = [
 ];
 
 export const frontend: FrontendPackage = {
+  locales: ['zh-CN', 'en-US'],
+  messages,
   finders: marketFinders,
   ui: {
     actions: marketActions,
@@ -76,7 +79,7 @@ export const frontend: FrontendPackage = {
         path: '/',
         component: 'admin/market',
         permission: 'market.admin',
-        nav: { label: '应用市场', group: '平台' },
+        nav: { labelKey: 'nav.label', groupKey: 'nav.group' },
         data: [
           { finder: 'market.adminPlugins', as: 'plugins' },
           { finder: 'market.adminThemes', as: 'themes' },

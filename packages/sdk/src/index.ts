@@ -443,3 +443,10 @@ export type {
   AgentStepKind,
   AgentStepView,
 } from './agent.js';
+export { createPackageTranslator, formatPackageMessage, PACKAGE_FALLBACK_LOCALE } from './i18n.js';
+export type {
+  PackageCatalog,
+  PackageCatalogs,
+  PackageMessageParams,
+  PackageTranslator,
+} from './i18n.js';

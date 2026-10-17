@@ -1,0 +1,21 @@
+{
+  "status.installed": "已安装",
+  "status.upgradable": "可升级至 {version}",
+  "status.otherVersion": "已安装其他版本",
+  "status.notInstalled": "未安装",
+  "badge.builtin": "内置",
+  "row.pages": " · 前端页面 {count}",
+  "row.install": "安装",
+  "row.reinstall": "重新安装",
+  "row.upgrade": "升级到 {version}",
+  "row.working": "处理中…",
+  "error.actionUnavailable": "安装动作不可用",
+  "error.installFailed": "安装失败，请重试",
+  "section.empty": "暂无可安装条目。",
+  "section.plugins": "插件",
+  "section.themes": "主题",
+  "page.title": "应用市场",
+  "page.description": "浏览本地与已签名远程目录，安装或升级插件与主题。",
+  "nav.label": "应用市场",
+  "nav.group": "平台"
+}

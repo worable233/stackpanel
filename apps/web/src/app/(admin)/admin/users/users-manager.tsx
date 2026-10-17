@@ -437,6 +437,7 @@ export function UsersManager({
                 <PaginationItem>
                   <PaginationPrevious
                     text=""
+                    ariaLabel={t('common.prevPage')}
                     disabled={currentPage <= 1 || isPending}
                     onClick={() =>
                       setParams({ page: currentPage - 1 > 1 ? String(currentPage - 1) : null })
@@ -469,6 +470,7 @@ export function UsersManager({
                 <PaginationItem>
                   <PaginationNext
                     text=""
+                    ariaLabel={t('common.nextPage')}
                     disabled={currentPage >= pageCount || isPending}
                     onClick={() => setParams({ page: String(currentPage + 1) })}
                   />

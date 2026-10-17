@@ -94,6 +94,12 @@ jobs:
       - name: i18n literal gate
         run: pnpm i18n:check
 
+      # ADR-0016 §5: every package catalog must declare the same key set and the
+      # same {placeholders} in every locale, otherwise a missing translation
+      # silently renders the key name on one language only.
+      - name: i18n package catalogs
+        run: pnpm i18n:packages
+
       # G2: refuse OpenAPI changes that break the committed contract snapshot
       # (removed routes/methods, newly required auth/params/body, dropped
       # response codes). Pure function of the capability registry — no DB.

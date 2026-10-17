@@ -12,6 +12,12 @@ import {
 import type { ReactElement } from 'react';
 import Link from 'next/link';
 import Form from 'next/form';
+import { t } from './i18n.js';
+
+type Translator = ReturnType<typeof t>;
+
+/** Neutral Intl tag used only when the host did not resolve a locale. */
+const INTL_FALLBACK_LOCALE = 'en';
 interface StoreProduct {
   id: string;
   name: string;
@@ -172,28 +178,41 @@ function Icon({ name }: { name: string }): ReactElement {
 }
 
 /** Format integer minor units using the kernel currency catalog (no `/100`). */
-function money(amount: number, currency: string): string {
+function money(amount: number, currency: string, locale?: string): string {
   try {
-    return formatMinorCurrency(amount, currency, 'zh-CN');
+    // The host normally supplies a BCP 47 tag; when it does not, fall back to a
+    // neutral tag rather than assuming a market-specific one.
+    return formatMinorCurrency(amount, currency, locale ?? INTL_FALLBACK_LOCALE);
   } catch {
     return `${amount} ${currency}`;
   }
 }
 
+/** Fulfillment type → message id. The stored value itself stays unchanged. */
 const FULFILLMENT_LABELS: Record<string, string> = {
-  upstream_service: '云服务器',
-  card: '发卡',
-  instant: '即时发放',
-  api_token: 'API 额度',
-  membership: '会员',
-  physical: '实物',
-  donation: '赞助',
-  topup: '流量卡',
+  upstream_service: 'store.fulfillment.upstreamService',
+  card: 'store.fulfillment.card',
+  instant: 'store.fulfillment.instant',
+  api_token: 'store.fulfillment.apiToken',
+  membership: 'store.fulfillment.membership',
+  physical: 'store.fulfillment.physical',
+  donation: 'store.fulfillment.donation',
+  topup: 'store.fulfillment.topup',
 };
 
-function fulfillmentLabel(type: string): string {
-  return FULFILLMENT_LABELS[type] ?? type;
+function fulfillmentLabel(type: string, tr: Translator): string {
+  const key = FULFILLMENT_LABELS[type];
+  return key ? tr(key) : type;
 }
+
+/** Billing cycle code → message id; the metadata value is never translated. */
+const CYCLE_KEYS: Record<string, string> = {
+  monthly: 'store.billingCycle.monthly',
+  quarterly: 'store.billingCycle.quarterly',
+  semiannually: 'store.billingCycle.semiannually',
+  annually: 'store.billingCycle.annually',
+  yearly: 'store.billingCycle.annually',
+};
 
 function PriceTag({ amount, currency }: { amount: number; currency: string }): ReactElement {
   // Split on the catalog's minor unit, not a hard-coded 2 decimals, so JPY
@@ -216,21 +235,21 @@ function PriceTag({ amount, currency }: { amount: number; currency: string }): R
   );
 }
 
-function StockBadge({ stock }: { stock: number }): ReactElement {
+function StockBadge({ stock, tr }: { stock: number; tr: Translator }): ReactElement {
   return stock > 0 ? (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
       <span className="size-1.5 rounded-full bg-current" />
-      有货
+      {tr('store.inStock')}
     </span>
   ) : (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
       <span className="size-1.5 rounded-full bg-current" />
-      暂时缺货
+      {tr('store.outOfStock')}
     </span>
   );
 }
 
-function ProductCard({ product }: { product: StoreProduct }): ReactElement {
+function ProductCard({ product, tr }: { product: StoreProduct; tr: Translator }): ReactElement {
   const specs = product.metadata?.specs;
   const rows =
     specs && typeof specs === 'object' && !Array.isArray(specs)
@@ -239,18 +258,7 @@ function ProductCard({ product }: { product: StoreProduct }): ReactElement {
         )
       : [];
   const cycle = product.metadata?.billingCycle;
-  const cycleLabel =
-    typeof cycle === 'string'
-      ? (
-          {
-            monthly: '月',
-            quarterly: '季',
-            semiannually: '半年',
-            annually: '年',
-            yearly: '年',
-          } as Record<string, string>
-        )[cycle]
-      : undefined;
+  const cycleLabel = typeof cycle === 'string' ? CYCLE_KEYS[cycle] : undefined;
   const available = product.stock > 0 && product.status === 'ACTIVE';
   return (
     <Reveal className="h-full">
@@ -263,7 +271,7 @@ function ProductCard({ product }: { product: StoreProduct }): ReactElement {
               </Link>
             </h2>
             <span className="shrink-0 border-l border-foreground/10 pl-3 text-xs tabular-nums text-muted-foreground">
-              {available ? `库存 ${product.stock}` : '已售罄'}
+              {available ? tr('store.stock', { count: product.stock }) : tr('store.soldOut')}
             </span>
           </div>
           <div className="flex flex-1 flex-col gap-6 p-5">
@@ -290,16 +298,14 @@ function ProductCard({ product }: { product: StoreProduct }): ReactElement {
                 ))}
               </dl>
             ) : (
-              <p className="text-xs leading-6 text-muted-foreground">
-                详细配置与可选项请查看产品说明。
-              </p>
+              <p className="text-xs leading-6 text-muted-foreground">{tr('store.specsHint')}</p>
             )}
             <div className="mt-auto flex flex-wrap items-baseline gap-2 border-t border-foreground/10 pt-5">
               <span className="text-3xl text-primary">
                 <PriceTag amount={product.price} currency={product.currency} />
               </span>
               {cycleLabel ? (
-                <span className="text-xs text-muted-foreground">/ {cycleLabel}</span>
+                <span className="text-xs text-muted-foreground">/ {tr(cycleLabel)}</span>
               ) : null}
             </div>
           </div>
@@ -308,14 +314,14 @@ function ProductCard({ product }: { product: StoreProduct }): ReactElement {
               href={`/shop/${product.id}`}
               className="flex h-12 items-center justify-center gap-2 border-t border-primary/20 bg-primary/10 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
             >
-              选择配置 <ArrowRight className="size-4" />
+              {tr('store.chooseConfig')} <ArrowRight className="size-4" />
             </Link>
           ) : (
             <span
               aria-disabled="true"
               className="flex h-12 items-center justify-center border-t border-foreground/10 bg-muted/30 text-sm text-muted-foreground"
             >
-              暂时售罄
+              {tr('store.soldOutShort')}
             </span>
           )}
         </article>
@@ -344,6 +350,7 @@ function specIcon(label: string): ReactElement {
 }
 
 export function ProductListPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const products = (props.data.products as StoreProduct[] | undefined) ?? [];
   const categories = (props.data.categories as CatalogCategoryNode[] | undefined) ?? [];
   const catalogResult = props.data.catalogProducts as CatalogProductsResult | undefined;
@@ -358,18 +365,18 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
   const settings = props.settings as { shop?: { showAllProducts?: boolean } };
   const showAll = settings.shop?.showAllProducts === true;
   const categoryNav = (
-    <nav aria-label="商品分类" className="px-1 py-2">
+    <nav aria-label={tr('store.categoriesAria')} className="px-1 py-2">
       <SidebarMenu>
         {showAll || !hasCatalog ? (
           <li>
             <SidebarMenuLink render={<Link href="/shop?showAll=1" />} active={!activeId}>
               <Layers aria-hidden />
-              <span>全部产品</span>
+              <span>{tr('store.allProducts')}</span>
             </SidebarMenuLink>
           </li>
         ) : null}
         {categories.map((node) => (
-          <CategoryLink key={node.id} node={node} activeId={activeId} />
+          <CategoryLink key={node.id} node={node} activeId={activeId} tr={tr} />
         ))}
       </SidebarMenu>
     </nav>
@@ -379,14 +386,14 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
       <Reveal className="flex flex-wrap items-center justify-between gap-5 border-b border-foreground/10 pb-7">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-            {activeCategory?.name ?? '选择你的云产品'}
+            {activeCategory?.name ?? tr('store.chooseProducts')}
           </h1>
         </div>
         <Link
           href="/shop/cart"
           className="inline-flex h-10 items-center gap-2 rounded-full border border-foreground/10 bg-foreground/5 px-5 text-sm transition-colors hover:border-primary/40 hover:bg-primary/10"
         >
-          <ShoppingCart className="size-4" /> 购物车 <ArrowRight className="size-4" />
+          <ShoppingCart className="size-4" /> {tr('store.cart')} <ArrowRight className="size-4" />
         </Link>
       </Reveal>
       <div className="mt-7 grid items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -400,7 +407,7 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
                   className="mb-5 flex flex-col gap-3 px-1"
                 >
                   <label htmlFor="catalog-search" className="text-xs text-muted-foreground">
-                    查找云产品
+                    {tr('store.searchLabel')}
                   </label>
                   {activeId ? (
                     <input type="hidden" name="categoryId" value={activeId} />
@@ -416,7 +423,7 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
                       id="catalog-search"
                       name="q"
                       defaultValue={query}
-                      placeholder="产品名称 / 关键词"
+                      placeholder={tr('store.searchPlaceholder')}
                       className="h-10 pl-9"
                     />
                   </div>
@@ -424,17 +431,19 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
                     type="submit"
                     className="h-9 rounded-lg border border-foreground/10 text-xs transition-colors hover:bg-primary/10"
                   >
-                    搜索当前分类
+                    {tr('store.searchSubmit')}
                   </button>
                 </Form>
               ) : null}
               <div className="hidden lg:block">
-                <p className="px-4 pb-2 text-xs font-medium text-muted-foreground/70">产品分类</p>
+                <p className="px-4 pb-2 text-xs font-medium text-muted-foreground/70">
+                  {tr('store.productCategories')}
+                </p>
                 {categoryNav}
               </div>
               <details className="group/mobile rounded-lg border border-foreground/10 bg-foreground/[0.015] lg:hidden">
                 <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm [&::-webkit-details-marker]:hidden">
-                  产品分类{' '}
+                  {tr('store.productCategories')}{' '}
                   <ChevronDown className="size-4 transition-transform group-open/mobile:rotate-180" />
                 </summary>
                 {categoryNav}
@@ -442,9 +451,11 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
             </div>
           </Reveal>
         </aside>
-        <section className="min-w-0" aria-label="云产品套餐">
+        <section className="min-w-0" aria-label={tr('store.productsAria')}>
           <Reveal className="mb-5">
-            {activeId ? <CategoryBreadcrumb categories={categories} activeId={activeId} /> : null}
+            {activeId ? (
+              <CategoryBreadcrumb categories={categories} activeId={activeId} tr={tr} />
+            ) : null}
             {activeCategory?.description ? (
               <div className="mb-5 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/[0.06] px-5 py-4 text-sm leading-7">
                 <Info className="mt-1 size-4 shrink-0 text-primary" />
@@ -453,16 +464,17 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
               <p>
-                {query ? `“${query}” · ` : ''}共 {total} 款产品
+                {query ? tr('store.resultQuery', { query }) : ''}
+                {tr('store.productCount', { count: total })}
               </p>
-              <span>选择产品后配置并购买</span>
+              <span>{tr('store.configureHint')}</span>
             </div>
           </Reveal>
           {entries.length ? (
             <>
               <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {entries.map((product) => (
-                  <ProductCard key={product.id} product={product} />
+                  <ProductCard key={product.id} product={product} tr={tr} />
                 ))}
               </div>
               {catalogResult ? (
@@ -473,11 +485,12 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
                   categoryId={activeId}
                   query={query}
                   showAll={showAll}
+                  tr={tr}
                 />
               ) : null}
             </>
           ) : (
-            <Empty text={query ? '未找到相关产品' : '暂无产品'} />
+            <Empty text={query ? tr('store.noResults') : tr('store.emptyProducts')} />
           )}
         </section>
       </div>
@@ -529,9 +542,11 @@ function findCategoryPathInTree(
 function CategoryLink({
   node,
   activeId,
+  tr,
 }: {
   node: CatalogCategoryNode;
-  activeId?: string;
+  activeId?: string | undefined;
+  tr: Translator;
 }): ReactElement {
   const isActive = activeId === node.id;
   const link = (
@@ -559,7 +574,7 @@ function CategoryLink({
           className="group/category"
         >
           <summary
-            aria-label={`展开或收起${node.name}`}
+            aria-label={tr('store.toggleCategoryAria', { name: node.name })}
             className="absolute right-1 top-0.5 flex size-8 cursor-pointer list-none items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
           >
             <ChevronDown
@@ -569,7 +584,7 @@ function CategoryLink({
           </summary>
           <SidebarMenu className="mb-1 ml-5 mt-1 border-l border-foreground/10 pl-2">
             {node.children.map((child) => (
-              <CategoryLink key={child.id} node={child} activeId={activeId} />
+              <CategoryLink key={child.id} node={child} activeId={activeId} tr={tr} />
             ))}
           </SidebarMenu>
         </details>
@@ -581,19 +596,21 @@ function CategoryLink({
 function CategoryBreadcrumb({
   categories,
   activeId,
+  tr,
 }: {
   categories: readonly CatalogCategoryNode[];
   activeId: string;
+  tr: Translator;
 }): ReactElement | null {
   const path = findCategoryPath(categories, activeId);
   if (!path) return null;
   return (
     <nav
-      aria-label="面包屑"
+      aria-label={tr('store.breadcrumbAria')}
       className="mb-4 flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
     >
       <Link href="/shop" className="hover:text-foreground hover:underline">
-        全部服务
+        {tr('store.allServices')}
       </Link>
       {path.map((node) =>
         node.id === activeId ? (
@@ -624,13 +641,15 @@ function Pager({
   categoryId,
   query,
   showAll,
+  tr,
 }: {
   page: number;
   pageSize: number;
   total: number;
-  categoryId?: string;
-  query?: string;
-  showAll?: boolean;
+  categoryId?: string | undefined;
+  query?: string | undefined;
+  showAll?: boolean | undefined;
+  tr: Translator;
 }): ReactElement | null {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (pages <= 1) return null;
@@ -642,7 +661,7 @@ function Pager({
   return (
     <nav className="mt-8 flex items-center justify-between border-t pt-4 text-sm">
       <span className="text-muted-foreground">
-        共 {total} 件 · 第 {page} / {pages} 页
+        {tr('store.pagerSummary', { total, page, pages })}
       </span>
       <div className="flex items-center gap-2">
         {page > 1 ? (
@@ -653,14 +672,14 @@ function Pager({
             <span className="rotate-180">
               <Icon name="arrow" />
             </span>
-            上一页
+            {tr('store.previousPage')}
           </Link>
         ) : (
           <span className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-muted px-3.5 text-sm text-muted-foreground">
             <span className="rotate-180 opacity-50">
               <Icon name="arrow" />
             </span>
-            上一页
+            {tr('store.previousPage')}
           </span>
         )}
         {page < pages ? (
@@ -668,12 +687,12 @@ function Pager({
             href={`/shop?${categoryQuery}page=${page + 1}`}
             className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-card px-3.5 text-sm font-medium shadow-sm transition-colors hover:bg-muted"
           >
-            下一页
+            {tr('store.nextPage')}
             <Icon name="arrow" />
           </Link>
         ) : (
           <span className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-muted px-3.5 text-sm text-muted-foreground">
-            下一页
+            {tr('store.nextPage')}
             <span className="opacity-50">
               <Icon name="arrow" />
             </span>
@@ -724,10 +743,14 @@ function CheckoutConfigForm({
   product,
   config,
   selection,
+  tr,
+  locale,
 }: {
   product: StoreProduct;
   config: CheckoutConfig;
   selection: Selection | null;
+  tr: Translator;
+  locale?: string | undefined;
 }): ReactElement {
   const sel = selection?.selections ?? {};
   const cycle = selection?.cycle ?? config.cycles[0]?.id ?? '';
@@ -735,7 +758,7 @@ function CheckoutConfigForm({
     <Form action={`/shop/${product.id}`} className="mt-6 space-y-4 border-t pt-5">
       <div className="grid gap-1.5">
         <label htmlFor="checkout-cycle" className="text-sm font-medium">
-          计费周期
+          {tr('store.billingCycle')}
         </label>
         <select
           id="checkout-cycle"
@@ -745,7 +768,10 @@ function CheckoutConfigForm({
         >
           {config.cycles.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.label}（{money(item.price, product.currency)}）
+              {tr('store.cyclePrice', {
+                label: item.label,
+                price: money(item.price, product.currency, locale),
+              })}
             </option>
           ))}
         </select>
@@ -756,8 +782,9 @@ function CheckoutConfigForm({
           return (
             <div key={option.id} className="grid gap-1.5">
               <label htmlFor={`checkout-${option.id}`} className="text-sm font-medium">
-                {option.label}
-                {option.unit ? `（${option.unit}）` : ''}
+                {option.unit
+                  ? tr('store.optionWithUnit', { label: option.label, unit: option.unit })
+                  : option.label}
               </label>
               <input
                 id={`checkout-${option.id}`}
@@ -796,7 +823,7 @@ function CheckoutConfigForm({
         type="submit"
         className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
       >
-        计算价格
+        {tr('store.calculatePrice')}
       </button>
     </Form>
   );
@@ -806,13 +833,17 @@ function CheckoutConfigForm({
 function CheckoutPricePreview({
   preview,
   currency,
+  tr,
+  locale,
 }: {
   preview: PricePreview;
   currency: string;
+  tr: Translator;
+  locale?: string | undefined;
 }): ReactElement | null {
   return (
     <div className="mt-4 rounded-xl border bg-muted/40 p-4 text-sm">
-      <p className="text-xs font-medium text-muted-foreground">已选配置</p>
+      <p className="text-xs font-medium text-muted-foreground">{tr('store.selectedConfig')}</p>
       {preview.summary ? (
         <p className="mt-1 text-xs text-muted-foreground">{preview.summary}</p>
       ) : null}
@@ -820,10 +851,8 @@ function CheckoutPricePreview({
         <ul className="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
           {preview.breakdown.map((item, index) => (
             <li key={index} className="flex justify-between gap-3">
-              <span>
-                {item.label}：{item.value}
-              </span>
-              {item.price != null ? <span>{money(item.price, currency)}</span> : null}
+              <span>{tr('store.breakdownItem', { label: item.label, value: item.value })}</span>
+              {item.price != null ? <span>{money(item.price, currency, locale)}</span> : null}
             </li>
           ))}
         </ul>
@@ -833,10 +862,11 @@ function CheckoutPricePreview({
 }
 
 export const ProductDetailPage: FrontendPageComponent = (props) => {
+  const tr = t(props.locale);
   const product = props.data.product as StoreProduct | undefined;
   const methods = props.data.methods as
     { providers: Array<{ id: string; methods: Array<{ id: string; label: string }> }> } | undefined;
-  if (!product) return <ProductNotFound />;
+  if (!product) return <ProductNotFound tr={tr} />;
   const walletPurchase = props.actions['store.create-order-wallet'];
   const externalPurchase = props.actions['store.create-order-external'];
   const addToCart = props.actions['store.add-to-cart'];
@@ -862,14 +892,14 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
           <span className="rotate-180">
             <Icon name="arrow" />
           </span>
-          返回服务目录
+          {tr('store.backToCatalog')}
         </Link>
         <Link
           href="/shop/cart"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <Icon name="cart" />
-          购物车
+          {tr('store.cart')}
         </Link>
       </div>
 
@@ -891,14 +921,16 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
           </div>
           <div className="p-6 sm:p-8">
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-xs font-semibold uppercase tracking-widest text-primary">服务</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+                {tr('store.service')}
+              </p>
               <div className="flex items-center gap-2">
                 {product.fulfillmentType ? (
                   <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                    {fulfillmentLabel(product.fulfillmentType)}
+                    {fulfillmentLabel(product.fulfillmentType, tr)}
                   </span>
                 ) : null}
-                <StockBadge stock={product.stock} />
+                <StockBadge stock={product.stock} tr={tr} />
               </div>
             </div>
             <h1 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
@@ -929,6 +961,8 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
                 product={product}
                 config={checkoutConfig}
                 selection={currentSelection}
+                tr={tr}
+                locale={props.locale}
               />
             ) : null}
           </div>
@@ -939,7 +973,7 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
           className="h-fit rounded-xl border border-foreground/10 bg-foreground/[0.035] p-6 text-foreground backdrop-blur-xl lg:sticky lg:top-24"
         >
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            价格
+            {tr('store.price')}
           </p>
           <div className="mt-2 flex flex-wrap items-baseline gap-2 text-3xl">
             <PriceTag amount={pricePreview?.total ?? product.price} currency={product.currency} />
@@ -947,25 +981,32 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
               <>
                 {product.originalPrice != null && product.originalPrice > product.price ? (
                   <span className="text-base text-muted-foreground/60 line-through">
-                    {money(product.originalPrice, product.currency)}
+                    {money(product.originalPrice, product.currency, props.locale)}
                   </span>
                 ) : null}
                 {product.discount != null && product.discount > 0 ? (
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    {product.discount}% 折扣
+                    {tr('store.discount', { percent: product.discount })}
                   </span>
                 ) : null}
               </>
             )}
           </div>
           {checkoutConfig && !pricePreview ? (
-            <p className="mt-2 text-xs text-muted-foreground">配置价格将在选择后计算。</p>
+            <p className="mt-2 text-xs text-muted-foreground">{tr('store.priceAfterSelection')}</p>
           ) : null}
           {pricePreview ? (
-            <CheckoutPricePreview preview={pricePreview} currency={product.currency} />
+            <CheckoutPricePreview
+              preview={pricePreview}
+              currency={product.currency}
+              tr={tr}
+              locale={props.locale}
+            />
           ) : null}
           <p className="mt-4 text-sm text-muted-foreground">
-            {product.stock > 0 ? `库存 ${product.stock} 件` : '暂时缺货，请稍后再来'}
+            {product.stock > 0
+              ? tr('store.stockCount', { count: product.stock })
+              : tr('store.outOfStockRetry')}
           </p>
           {product.stock > 0 ? (
             <div className="mt-6 space-y-3 border-t pt-5">
@@ -974,13 +1015,13 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
                   <form action={addToCart}>
                     <input type="hidden" name="productId" value={product.id} />
                     {configJson ? <input type="hidden" name="config" value={configJson} /> : null}
-                    <Quantity />
+                    <Quantity tr={tr} />
                     <button
                       type="submit"
                       className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
                     >
                       <Icon name="cart" />
-                      加入购物车
+                      {tr('store.addToCart')}
                     </button>
                   </form>
                 ) : (
@@ -989,7 +1030,7 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
                     className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
                   >
                     <Icon name="cart" />
-                    登录后加入购物车
+                    {tr('store.loginToAddToCart')}
                   </Link>
                 )
               ) : null}
@@ -997,13 +1038,13 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
                 <form action={walletPurchase}>
                   <input type="hidden" name="productId" value={product.id} />
                   {configJson ? <input type="hidden" name="config" value={configJson} /> : null}
-                  <Quantity />
+                  <Quantity tr={tr} />
                   <button
                     type="submit"
                     className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-opacity hover:opacity-90"
                   >
                     <Icon name="wallet" />
-                    余额支付
+                    {tr('store.payWithBalance')}
                   </button>
                 </form>
               ) : null}
@@ -1017,7 +1058,7 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
                         {configJson ? (
                           <input type="hidden" name="config" value={configJson} />
                         ) : null}
-                        <Quantity />
+                        <Quantity tr={tr} />
                         <button
                           type="submit"
                           className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
@@ -1037,6 +1078,7 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
 };
 
 export function StoreCartPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const cart = props.data.cart as CartPayload | undefined;
   const items = cart?.items ?? [];
   const methods = props.data.methods as
@@ -1044,7 +1086,7 @@ export function StoreCartPage(props: FrontendPageProps): ReactElement {
   const wallet = props.actions['store.checkout-wallet'];
   const external = props.actions['store.checkout-external'];
   const payments = [
-    ...(wallet ? [{ id: 'wallet', label: '账户余额', action: wallet }] : []),
+    ...(wallet ? [{ id: 'wallet', label: tr('store.walletBalance'), action: wallet }] : []),
     ...(external
       ? (methods?.providers ?? []).flatMap((provider) =>
           provider.methods.map((method) => ({
@@ -1065,10 +1107,10 @@ export function StoreCartPage(props: FrontendPageProps): ReactElement {
       />
       <Reveal className="relative">
         <div className="flex flex-col gap-8 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">购物车</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{tr('store.cart')}</h1>
           <Stepper
-            label="购买步骤"
-            steps={['购物车', '确认订单', '完成支付']}
+            label={tr('store.stepsAria')}
+            steps={[tr('store.stepCart'), tr('store.stepConfirm'), tr('store.stepPayment')]}
             currentStep={0}
             className="w-full sm:w-80 lg:w-96"
           />
@@ -1098,13 +1140,41 @@ export function StoreCartPage(props: FrontendPageProps): ReactElement {
           updateQuantity={props.actions['store.update-cart-item']}
           removeItem={props.actions['store.remove-cart-item']}
           locale={props.locale}
+          labels={{
+            selectAllAria: tr('store.cart.selectAllAria'),
+            selectAll: tr('store.cart.selectAll'),
+            productCount: tr('store.cart.productCount'),
+            selectItemAria: tr('store.cart.selectItemAria'),
+            unavailable: tr('store.cart.unavailable'),
+            outOfStock: tr('store.cart.outOfStock'),
+            stockLow: tr('store.cart.stockLow'),
+            notCheckoutable: tr('store.cart.notCheckoutable'),
+            removeAria: tr('store.cart.removeAria'),
+            updateAria: tr('store.cart.updateAria'),
+            update: tr('store.cart.update'),
+            quantity: tr('store.cart.quantity'),
+            quantityValue: tr('store.cart.quantityValue'),
+            priceDisclaimer: tr('store.cart.priceDisclaimer'),
+            summary: tr('store.cart.summary'),
+            selectedItems: tr('store.cart.selectedItems'),
+            selectedCount: tr('store.cart.selectedCount'),
+            amountDue: tr('store.cart.amountDue'),
+            pickProducts: tr('store.cart.pickProducts'),
+            paymentMethod: tr('store.cart.paymentMethod'),
+            noPaymentMethods: tr('store.cart.noPaymentMethods'),
+            submitting: tr('store.cart.submitting'),
+            checkout: tr('store.cart.checkout'),
+            mixedCurrencies: tr('store.cart.mixedCurrencies'),
+            itemLimit: tr('store.cart.itemLimit'),
+            reviewHint: tr('store.cart.reviewHint'),
+          }}
           continueShopping={
             <Link
               href="/shop"
               className="inline-flex items-center gap-2 transition-colors hover:text-foreground"
             >
               <ArrowRight className="size-4 rotate-180" />
-              继续选购
+              {tr('store.continueShopping')}
             </Link>
           }
         />
@@ -1117,7 +1187,7 @@ export function StoreCartPage(props: FrontendPageProps): ReactElement {
                 className="size-8 text-muted-foreground/60"
                 strokeWidth={1.5}
               />
-              <h2 className="text-lg font-semibold">暂无产品</h2>
+              <h2 className="text-lg font-semibold">{tr('store.emptyProducts')}</h2>
             </section>
           </Spotlight>
         </Reveal>
@@ -1126,10 +1196,10 @@ export function StoreCartPage(props: FrontendPageProps): ReactElement {
   );
 }
 
-function Quantity(): ReactElement {
+function Quantity({ tr }: { tr: Translator }): ReactElement {
   return (
     <label className="block text-xs text-muted-foreground">
-      数量
+      {tr('store.quantity')}
       <input
         name="quantity"
         type="number"
@@ -1141,18 +1211,18 @@ function Quantity(): ReactElement {
     </label>
   );
 }
-function ProductNotFound(): ReactElement {
+function ProductNotFound({ tr }: { tr: Translator }): ReactElement {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 pb-24 pt-40 text-center">
       <p className="bg-linear-to-r from-primary to-primary/40 bg-clip-text font-mono text-5xl font-bold text-transparent">
         404
       </p>
-      <p className="mt-4 text-sm text-muted-foreground">服务不存在或已下架。</p>
+      <p className="mt-4 text-sm text-muted-foreground">{tr('store.productNotFound')}</p>
       <Link
         href="/shop"
         className="mt-8 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-opacity hover:opacity-90"
       >
-        返回服务目录
+        {tr('store.backToCatalog')}
         <Icon name="arrow" />
       </Link>
     </main>

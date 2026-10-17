@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { SectionTitle } from '@stackpanel/ui';
 import { toast } from 'sonner';
 import { agentFetch } from './agent-workspace';
+import { agentErrorText } from '@/lib/agent-errors';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import type { Translator } from '@/i18n/core';
+import { useTranslator } from '@/i18n/provider';
 
 type Config = Record<string, unknown>;
 type FieldSpec = {
@@ -40,158 +43,177 @@ type Definition = {
   listKey?: string;
   idHelp: string;
 };
-const definitions: Definition[] = [
-  {
-    key: 'profiles',
-    title: '执行策略',
-    description:
-      '为某个 API 密钥设置执行上限。这些限制不会增加密钥原本没有的权限；高风险操作仍需确认。',
-    idHelp: '在 API 密钥管理中复制密钥 ID（tokenId），不是密钥内容。',
-    defaults: {
-      autonomy: 'read',
-      maxSteps: 50,
-      maxRunSeconds: 600,
-      dailySteps: 500,
-      budgetMinor: null,
-      dailyBudgetMinor: null,
-      allowedModels: [],
-      approvalNotify: null,
+
+/** Config definitions, translated at render time so the tab labels follow the locale. */
+function definitions(t: Translator): Definition[] {
+  const d = (name: string, key: string) => t(`agent.advanced.defs.${name}.${key}`);
+  return [
+    {
+      key: 'profiles',
+      title: d('profiles', 'title'),
+      description: d('profiles', 'description'),
+      idHelp: d('profiles', 'idHelp'),
+      defaults: {
+        autonomy: 'read',
+        maxSteps: 50,
+        maxRunSeconds: 600,
+        dailySteps: 500,
+        budgetMinor: null,
+        dailyBudgetMinor: null,
+        allowedModels: [],
+        approvalNotify: null,
+      },
+      fields: [
+        {
+          key: 'autonomy',
+          label: d('profiles', 'autonomyLabel'),
+          options: [
+            ['read', d('profiles', 'autonomyRead')],
+            ['propose', d('profiles', 'autonomyPropose')],
+            ['act', d('profiles', 'autonomyAct')],
+          ],
+        },
+        {
+          key: 'maxSteps',
+          label: d('profiles', 'maxSteps'),
+          type: 'number',
+          min: 1,
+          max: 200,
+        },
+        {
+          key: 'maxRunSeconds',
+          label: d('profiles', 'maxRunSeconds'),
+          type: 'number',
+          min: 1,
+          max: 3600,
+        },
+        { key: 'dailySteps', label: d('profiles', 'dailySteps'), type: 'number', min: 1, max: 10000 },
+        {
+          key: 'budgetMinor',
+          label: d('profiles', 'budgetMinor'),
+          type: 'optionalNumber',
+          min: 1,
+          max: 2147483647,
+          help: d('profiles', 'budgetMinorHelp'),
+        },
+        {
+          key: 'dailyBudgetMinor',
+          label: d('profiles', 'dailyBudgetMinor'),
+          type: 'optionalNumber',
+          min: 1,
+          max: 2147483647,
+        },
+        {
+          key: 'allowedModels',
+          label: d('profiles', 'allowedModels'),
+          type: 'lines',
+          help: d('profiles', 'allowedModelsHelp'),
+        },
+        {
+          key: 'approvalNotify',
+          label: d('profiles', 'approvalNotify'),
+          type: 'optionalText',
+          help: d('profiles', 'approvalNotifyHelp'),
+        },
+      ],
     },
-    fields: [
-      {
-        key: 'autonomy',
-        label: '允许的操作方式',
-        options: [
-          ['read', '只读，写入需确认'],
-          ['propose', '提出操作，由用户确认'],
-          ['act', '自动执行普通操作'],
-        ],
-      },
-      { key: 'maxSteps', label: '单次任务最多步骤', type: 'number', min: 1, max: 200 },
-      { key: 'maxRunSeconds', label: '单次任务最长时间（秒）', type: 'number', min: 1, max: 3600 },
-      { key: 'dailySteps', label: '每日最多步骤', type: 'number', min: 1, max: 10000 },
-      {
-        key: 'budgetMinor',
-        label: '单次费用上限（最小货币单位）',
-        type: 'optionalNumber',
-        min: 1,
-        max: 2147483647,
-        help: '留空不设金额上限。模型提供方必须支持计价，否则设定金额限制后任务会被拒绝。',
-      },
-      {
-        key: 'dailyBudgetMinor',
-        label: '每日费用上限（最小货币单位）',
-        type: 'optionalNumber',
-        min: 1,
-        max: 2147483647,
-      },
-      {
-        key: 'allowedModels',
-        label: '允许使用的模型',
-        type: 'lines',
-        help: '每行一个模型 ID，留空允许所有可用模型。',
-      },
-      {
-        key: 'approvalNotify',
-        label: '额外审批通知接收人 ID',
-        type: 'optionalText',
-        help: '可选。用户本人仍会收到通知。',
-      },
-    ],
-  },
-  {
-    key: 'mcp-servers',
-    title: '外部工具',
-    listKey: 'servers',
-    description:
-      '连接 MCP 服务，为 Agent 提供额外工具。先保存服务，再读取远端工具并审核；用户需获得对应权限并配置个人凭证。',
-    idHelp: '使用小写字母开头的英文标识，例如 cloud-tools；保存后请勿修改标识。',
-    defaults: { name: '', url: '', enabled: false, tools: [] },
-    fields: [
-      { key: 'name', label: '服务名称' },
-      {
-        key: 'url',
-        label: 'MCP 地址',
-        placeholder: 'https://example.com/mcp',
-        help: '仅支持可解析的公网 HTTPS 地址。',
-      },
-      {
-        key: 'enabled',
-        label: '服务状态',
-        options: [
-          ['false', '停用'],
-          ['true', '启用'],
-        ],
-      },
-    ],
-  },
-  {
-    key: 'oauth-clients',
-    title: '应用授权',
-    listKey: 'clients',
-    description:
-      '登记可以通过 OAuth 连接本站 MCP 的应用。只接受已登记的完整回调地址，停用应用会撤销已签发的令牌。',
-    idHelp: '填写应用约定的 client_id，仅限英文、数字、下划线和连字符。',
-    defaults: { name: '', enabled: false, redirectUris: [] },
-    fields: [
-      { key: 'name', label: '应用名称' },
-      {
-        key: 'redirectUris',
-        label: '授权回调地址',
-        type: 'lines',
-        help: '每行一个完整 HTTPS 地址。本地调试可使用 localhost 或回环 HTTP 地址。',
-      },
-      {
-        key: 'enabled',
-        label: '应用状态',
-        options: [
-          ['false', '停用'],
-          ['true', '启用'],
-        ],
-      },
-    ],
-  },
-  {
-    key: 'actions',
-    title: '脚本动作',
-    listKey: 'actions',
-    description:
-      '运行预先审核的 Docker 脚本。需要服务器已安装 Docker 并拉取固定摘要镜像；动作禁网、以非 root 用户运行，每次调用均需用户确认。',
-    idHelp: '使用小写字母开头的英文标识，例如 check-service；权限项为 agent.action.标识。',
-    defaults: {
-      name: '',
-      enabled: false,
-      image: '',
-      argv: [],
-      timeoutSeconds: 30,
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    {
+      key: 'mcp-servers',
+      title: d('mcpServers', 'title'),
+      listKey: 'servers',
+      description: d('mcpServers', 'description'),
+      idHelp: d('mcpServers', 'idHelp'),
+      defaults: { name: '', url: '', enabled: false, tools: [] },
+      fields: [
+        { key: 'name', label: d('mcpServers', 'name') },
+        {
+          key: 'url',
+          label: d('mcpServers', 'url'),
+          placeholder: d('mcpServers', 'urlPlaceholder'),
+          help: d('mcpServers', 'urlHelp'),
+        },
+        {
+          key: 'enabled',
+          label: d('mcpServers', 'status'),
+          options: [
+            ['false', d('mcpServers', 'statusOff')],
+            ['true', d('mcpServers', 'statusOn')],
+          ],
+        },
+      ],
     },
-    fields: [
-      { key: 'name', label: '动作名称' },
-      {
-        key: 'image',
-        label: '镜像（固定摘要）',
-        placeholder: 'registry/image@sha256:…',
-        help: '使用完整的 sha256 摘要，不能使用 latest 等可变标签。',
+    {
+      key: 'oauth-clients',
+      title: d('oauthClients', 'title'),
+      listKey: 'clients',
+      description: d('oauthClients', 'description'),
+      idHelp: d('oauthClients', 'idHelp'),
+      defaults: { name: '', enabled: false, redirectUris: [] },
+      fields: [
+        { key: 'name', label: d('oauthClients', 'name') },
+        {
+          key: 'redirectUris',
+          label: d('oauthClients', 'redirectUris'),
+          type: 'lines',
+          help: d('oauthClients', 'redirectUrisHelp'),
+        },
+        {
+          key: 'enabled',
+          label: d('oauthClients', 'status'),
+          options: [
+            ['false', d('oauthClients', 'statusOff')],
+            ['true', d('oauthClients', 'statusOn')],
+          ],
+        },
+      ],
+    },
+    {
+      key: 'actions',
+      title: d('actions', 'title'),
+      listKey: 'actions',
+      description: d('actions', 'description'),
+      idHelp: d('actions', 'idHelp'),
+      defaults: {
+        name: '',
+        enabled: false,
+        image: '',
+        argv: [],
+        timeoutSeconds: 30,
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       },
-      {
-        key: 'argv',
-        label: '执行程序与参数',
-        type: 'lines',
-        help: '第一行填写程序路径，之后每行一个参数，不支持 shell 命令拼接。输入数据由标准输入传入。',
-      },
-      { key: 'timeoutSeconds', label: '超时时间（秒）', type: 'number', min: 1, max: 60 },
-      {
-        key: 'enabled',
-        label: '动作状态',
-        options: [
-          ['false', '停用'],
-          ['true', '启用'],
-        ],
-      },
-    ],
-  },
-];
+      fields: [
+        { key: 'name', label: d('actions', 'name') },
+        {
+          key: 'image',
+          label: d('actions', 'image'),
+          placeholder: d('actions', 'imagePlaceholder'),
+          help: d('actions', 'imageHelp'),
+        },
+        {
+          key: 'argv',
+          label: d('actions', 'argv'),
+          type: 'lines',
+          help: d('actions', 'argvHelp'),
+        },
+        {
+          key: 'timeoutSeconds',
+          label: d('actions', 'timeoutSeconds'),
+          type: 'number',
+          min: 1,
+          max: 60,
+        },
+        {
+          key: 'enabled',
+          label: d('actions', 'status'),
+          options: [
+            ['false', d('actions', 'statusOff')],
+            ['true', d('actions', 'statusOn')],
+          ],
+        },
+      ],
+    },
+  ];
+}
 
 function ConfigField({
   spec,
@@ -273,6 +295,7 @@ type Tool = {
   destructive: boolean;
 };
 function ConfigForm({ definition: d }: { definition: Definition }) {
+  const t = useTranslator();
   const [rows, setRows] = useState<{ id: string; name?: string; config?: Config }[]>([]);
   const [id, setId] = useState('');
   const [config, setConfig] = useState<Config>(d.defaults);
@@ -285,7 +308,14 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
     setRows(list[d.listKey] ?? []);
   }
   useEffect(() => {
-    void refresh().catch((cause: Error) => setError(cause.message));
+    // `refresh` awaits the list before setState (see agent-settings.tsx).
+    void (async () => {
+      try {
+        await refresh();
+      } catch (cause) {
+        setError(agentErrorText(t, cause, t('common.operationFailed')));
+      }
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   async function act(fn: () => Promise<void>) {
     setBusy(true);
@@ -293,7 +323,7 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
     try {
       await fn();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '操作失败');
+      setError(agentErrorText(t, cause, t('common.operationFailed')));
     } finally {
       setBusy(false);
     }
@@ -317,19 +347,17 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
           await agentFetch(`admin/${d.key}/${encodeURIComponent(id)}`, 'PUT', payload);
           setLoadedId(id);
           await refresh();
-          toast.success('配置已保存');
+          toast.success(t('agent.advanced.saved'));
         });
       }}
     >
       <p className="text-sm text-muted-foreground">{d.description}</p>
       {d.key === 'oauth-clients' && (
-        <p className="text-sm text-muted-foreground">
-          部署前需设置 AGENT_PUBLIC_ORIGIN（API 公开地址）和 AGENT_WEB_ORIGIN（网站地址）。
-        </p>
+        <p className="text-sm text-muted-foreground">{t('agent.advanced.oauthEnvHint')}</p>
       )}
       {rows.length > 0 && (
         <Field>
-          <Label htmlFor={`existing-${d.key}`}>已有配置</Label>
+          <Label htmlFor={`existing-${d.key}`}>{t('agent.advanced.existing')}</Label>
           <Select
             value={loadedId}
             onValueChange={(value) => {
@@ -343,7 +371,8 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
           >
             <SelectTrigger id={`existing-${d.key}`} className="w-full">
               <SelectValue>
-                {rows.find((row) => row.id === loadedId)?.name ?? (loadedId || '选择配置进行编辑')}
+                {rows.find((row) => row.id === loadedId)?.name ??
+                  (loadedId || t('agent.advanced.chooseExisting'))}
               </SelectValue>
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
@@ -360,7 +389,9 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
       )}
       <FieldGroup>
         <Field>
-          <Label htmlFor={`id-${d.key}`}>{d.key === 'profiles' ? 'API 密钥 ID' : '配置标识'}</Label>
+          <Label htmlFor={`id-${d.key}`}>
+            {d.key === 'profiles' ? t('agent.advanced.profileId') : t('agent.advanced.configId')}
+          </Label>
           <div className="flex gap-2">
             <Input
               id={`id-${d.key}`}
@@ -384,12 +415,14 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
                     setConfig(cleanConfig(response.policy));
                     setLoadedId(id);
                     toast.success(
-                      response.configured ? '已读取当前策略' : '该密钥尚未设置策略，已载入默认值',
+                      response.configured
+                        ? t('agent.advanced.readPolicyHint')
+                        : t('agent.advanced.readPolicyFallback'),
                     );
                   })
                 }
               >
-                读取策略
+                {t('agent.advanced.readPolicy')}
               </Button>
             )}
           </div>
@@ -408,7 +441,7 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
       {d.key === 'mcp-servers' && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <Label>已审核工具（{tools.length}）</Label>
+            <Label>{t('agent.advanced.reviewedTools', { count: tools.length })}</Label>
             <Button
               variant="outline"
               type="button"
@@ -420,7 +453,8 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
                     'POST',
                     {},
                   );
-                  if (!Array.isArray(response.result.tools)) throw new Error('远端未返回工具列表');
+                  if (!Array.isArray(response.result.tools))
+                    throw new Error(t('agent.advanced.noTools'));
                   setConfig({
                     ...config,
                     tools: response.result.tools.map((tool) => ({
@@ -431,16 +465,14 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
                       destructive: true,
                     })),
                   });
-                  toast.success('已读取工具，请审核操作方式后保存');
+                  toast.success(t('agent.advanced.discovered'));
                 })
               }
             >
-              读取远端工具
+              {t('agent.advanced.discoverTools')}
             </Button>
           </div>
-          <p className="text-sm text-muted-foreground">
-            先启用并保存服务，使用当前管理员的服务凭证读取工具。新工具默认按高风险写入处理，保存前请逐一核对。
-          </p>
+          <p className="text-sm text-muted-foreground">{t('agent.advanced.discoverHint')}</p>
           {tools.map((tool, index) => (
             <div key={tool.name} className="flex flex-col gap-2 rounded-lg border p-3">
               <div className="flex items-center justify-between gap-3">
@@ -453,7 +485,7 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
                     setConfig({ ...config, tools: tools.filter((_, i) => i !== index) })
                   }
                 >
-                  移除
+                  {t('agent.advanced.remove')}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">{tool.description}</p>
@@ -461,11 +493,11 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
                 prefix={`tool-${index}`}
                 spec={{
                   key: 'risk',
-                  label: '操作方式',
+                  label: t('agent.advanced.toolRisk'),
                   options: [
-                    ['read', '只读'],
-                    ['write', '普通写入'],
-                    ['danger', '高风险写入'],
+                    ['read', t('agent.advanced.riskRead')],
+                    ['write', t('agent.advanced.riskWrite')],
+                    ['danger', t('agent.advanced.riskDanger')],
                   ],
                 }}
                 value={tool.readOnly ? 'read' : tool.destructive ? 'danger' : 'write'}
@@ -485,9 +517,7 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
         </div>
       )}
       {d.key === 'actions' && (
-        <p className="text-sm text-muted-foreground">
-          新动作默认不接收参数；已有动作会保留其已审核的参数定义。此处修改名称、运行方式或限额不会重写参数定义。
-        </p>
+        <p className="text-sm text-muted-foreground">{t('agent.advanced.actionsHint')}</p>
       )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -495,7 +525,9 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
         </p>
       )}
       <div className="flex gap-2">
-        <Button disabled={busy || !id}>{busy ? '处理中…' : '保存配置'}</Button>
+        <Button disabled={busy || !id}>
+          {busy ? t('agent.advanced.saving') : t('agent.advanced.save')}
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -507,7 +539,7 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
             setError('');
           }}
         >
-          新建配置
+          {t('agent.advanced.newConfig')}
         </Button>
       </div>
     </form>
@@ -515,24 +547,26 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
 }
 
 export function AgentAdvancedSettings() {
+  const t = useTranslator();
+  const specs = definitions(t);
   return (
     <details className="group">
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-3">
-          <SectionTitle>高级设置</SectionTitle>
-          <Badge variant="outline">展开</Badge>
+          <SectionTitle>{t('agent.advanced.title')}</SectionTitle>
+          <Badge variant="outline">{t('agent.advanced.expand')}</Badge>
         </div>
       </summary>
       <div className="pt-5">
         <Tabs defaultValue="profiles">
           <TabsList className="flex h-auto w-full flex-wrap">
-            {definitions.map((d) => (
+            {specs.map((d) => (
               <TabsTrigger key={d.key} value={d.key}>
                 {d.title}
               </TabsTrigger>
             ))}
           </TabsList>
-          {definitions.map((d) => (
+          {specs.map((d) => (
             <TabsContent key={d.key} value={d.key}>
               <ConfigForm definition={d} />
             </TabsContent>

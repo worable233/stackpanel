@@ -155,14 +155,16 @@ export function AuthShell({
           </Reveal>
           <Reveal className="flex flex-1 flex-col justify-center py-10">
             <h2 className="text-4xl font-medium leading-tight tracking-tight xl:text-5xl">
-              你的业务，
+              {t('auth.panel.heroLine1')}
               <br />
-              <span className="text-muted-foreground">即刻上云。</span>
+              <span className="text-muted-foreground">{t('auth.panel.heroLine2')}</span>
             </h2>
           </Reveal>
           {posts.length > 0 ? (
             <Reveal className="flex flex-col gap-4">
-              <p className="text-xs font-medium text-muted-foreground">最新文章</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {t('auth.panel.latestPosts')}
+              </p>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                 {posts.slice(0, 2).map((post) => (
                   <Link

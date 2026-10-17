@@ -35,12 +35,16 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
-  closeLabel = '关闭',
+  closeLabel,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
-  /** Accessible name for the close button; the caller localises it. */
-  closeLabel?: string;
+  /**
+   * Accessible name for the close button. Required: `@stackpanel/ui` has no
+   * access to the host's catalogs, so the caller must supply localized copy
+   * (ADR-0016 §6).
+   */
+  closeLabel: string;
 }) {
   return (
     <DialogPortal>

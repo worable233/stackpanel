@@ -2,8 +2,14 @@
 
 import { useEffect, useRef } from 'react';
 
+/** Accessible names for the scroll affordance; supplied by the caller. */
+export interface DocumentScrollbarLabels {
+  track: string;
+  thumb: string;
+}
+
 /** Document scrolling stays native; this overlay replaces only its desktop chrome. */
-export function DocumentScrollbar() {
+export function DocumentScrollbar({ labels }: { labels: DocumentScrollbarLabels }) {
   const track = useRef<HTMLDivElement>(null);
   const thumb = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; scroll: number } | null>(null);
@@ -47,7 +53,7 @@ export function DocumentScrollbar() {
   return (
     <div
       ref={track}
-      aria-label="页面滚动轨道"
+      aria-label={labels.track}
       className="group/scroll fixed inset-y-1 right-0 z-[60] w-3 touch-none bg-[var(--clarity-background)] [@media(pointer:coarse)]:hidden"
       onPointerDown={(event) => {
         if (event.target === thumb.current) return;
@@ -62,7 +68,7 @@ export function DocumentScrollbar() {
         ref={thumb}
         role="scrollbar"
         tabIndex={0}
-        aria-label="页面滚动"
+        aria-label={labels.thumb}
         aria-orientation="vertical"
         aria-valuemin={0}
         aria-valuemax={100}
