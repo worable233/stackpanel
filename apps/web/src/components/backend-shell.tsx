@@ -315,21 +315,20 @@ export function BackendShell({
       <BackendRouteProgress />
       <NotificationToaster />
       <div className="backend-shell__glow pointer-events-none absolute inset-x-0 top-0 z-0 h-96" />
-      <div className="backend-shell__header sticky top-0 z-30 bg-background/55 backdrop-blur-2xl">
+      <div className="backend-shell__header sticky top-0 z-30 overflow-hidden rounded-b-2xl border-b border-border/40 bg-background/80 shadow-[0_1px_12px_color-mix(in_oklab,var(--foreground)_4%,transparent)] backdrop-blur-2xl">
         <header
           className={cn(
-            'relative mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-4 px-4 sm:px-6 lg:px-8 xl:h-16',
-            contentMaxWidth,
+            'relative mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-5 px-5 sm:px-8 lg:px-12 xl:h-[72px]',
           )}
         >
           <Link
             href={rootHref}
-            className="my-4 flex size-8 items-center justify-center overflow-hidden"
+            className="my-3 flex size-9 items-center justify-center overflow-hidden"
             aria-label={t('nav.homeAriaLabel')}
           >
             {brandLogoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={brandLogoUrl} alt="" className="size-8 object-contain" />
+              <img src={brandLogoUrl} alt="" className="size-9 object-contain" />
             ) : (
               <PanelsTopLeft className="size-4" />
             )}

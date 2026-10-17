@@ -50,7 +50,7 @@ export function BackendSearch({
         aria-label={t('common.search')}
         aria-keyshortcuts="Meta+K Control+K"
         onClick={() => setOpen(true)}
-        className="h-8 w-8 justify-center bg-muted/25 px-0 text-muted-foreground shadow-none has-[>svg]:px-0 md:w-40 md:justify-start md:gap-2 md:px-3 md:has-[>svg]:px-3 2xl:w-52"
+        className="h-9 w-9 justify-center rounded-xl border-border/70 bg-muted/25 px-0 text-muted-foreground shadow-none has-[>svg]:px-0 md:w-44 md:justify-start md:gap-2 md:px-3 md:has-[>svg]:px-3 2xl:w-52"
       >
         <Search className="size-4" />
         <span className="hidden md:inline">{t('common.search')}</span>
