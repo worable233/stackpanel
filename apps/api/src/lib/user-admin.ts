@@ -11,7 +11,7 @@
  * error handler renders the RFC 7807 problem (ADR-0012).
  */
 import { Prisma, type PrismaClient } from '@stackpanel/db';
-import { isCommerceError, PluginError } from '@stackpanel/sdk';
+import { isCommerceError, isPluginError, PluginError } from '@stackpanel/sdk';
 import type {
   CommerceOperations,
   CommerceOrder,
@@ -297,14 +297,7 @@ export class UserAdminService {
     };
   }
 
-  /**
-   * Admin user detail with server-side order pagination.
-   *
-   * The order list is paginated at the source (store plugin) rather than
-   * truncated after the fact, so an operator can page through a user's full
-   * order history instead of only ever seeing the newest twenty.
-   */
-  async getUserDetail(id: string, page = 1, pageSize = 20) {
+  async getUserDetail(id: string, orderPage = 1, orderPageSize = 20) {
     const user = await this.db.user.findUnique({
       where: { id },
       include: { groups: { include: { group: true } } },
@@ -315,8 +308,14 @@ export class UserAdminService {
       this.deps.wallet.listLedger(id, 20),
     ]);
     const services: CommerceService[] = this.commerce ? await this.commerce.listServices(id) : [];
-    const orderPage = this.commerce ? await this.commerce.listOrders(id, page, pageSize) : null;
-    const orders: CommerceOrder[] = orderPage?.items ?? [];
+    // The detail page paginates orders server-side; a fixed first page would
+    // silently hide everything older than 20 records from admins.
+    const page = Math.max(1, Math.trunc(orderPage));
+    const pageSize = Math.min(100, Math.max(1, Math.trunc(orderPageSize)));
+    const orderPageResult = this.commerce
+      ? await this.commerce.listOrders(id, page, pageSize)
+      : { items: [] as CommerceOrder[], total: 0 };
+    const orders: CommerceOrder[] = orderPageResult.items;
     return {
       user: {
         ...toPublicUser(user),
@@ -324,6 +323,7 @@ export class UserAdminService {
       },
       wallet: wallet ? { balance: wallet.balance, currency: wallet.currency } : null,
       services: services.map(toAdminService),
+      ordersPagination: { page, pageSize, total: orderPageResult.total },
       orders: orders.map((order) => ({
         id: order.id,
         status: order.status,
@@ -331,7 +331,6 @@ export class UserAdminService {
         currency: order.currency,
         createdAt: order.createdAt.toISOString(),
       })),
-      ordersPagination: { page, pageSize, total: orderPage?.total ?? 0 },
       ledger: ledger.map((entry) => ({
         id: entry.id,
         amount: entry.amount,
@@ -609,7 +608,28 @@ export class UserAdminService {
     }
     const services = [];
     for (const source of sources) {
-      const items = await source.list({ limit: 100 }).catch(() => []);
+      let items: UpstreamServiceItem[];
+      try {
+        items = await source.list({ limit: 100 });
+      } catch (error) {
+        // Never disguise an upstream failure as an empty list: the admin needs
+        // the actionable reason (credentials, network, disabled upstream).
+        if (isPluginError(error)) throw error;
+        const status =
+          typeof error === 'object' && error && 'status' in error
+            ? Number((error as { status: unknown }).status)
+            : 502;
+        const code =
+          typeof error === 'object' && error && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : 'upstream.list_failed';
+        const detail = error instanceof Error ? error.message : '上游服务列表获取失败';
+        throw new PluginError(
+          code,
+          Number.isInteger(status) && status >= 400 && status <= 599 ? status : 502,
+          detail,
+        );
+      }
       const bound = new Map(
         (boundByProvider.get(source.id) ?? [])
           .filter((service) => service.providerServiceId)
