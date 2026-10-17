@@ -333,6 +333,13 @@ export interface FrontendManifest {
   accountRoutes: AccountRouteDefinition[];
   accountWidgets: AccountWidgetDefinition[];
   files: string[];
+  /**
+   * Pre-compiled CSS files this package ships, each a path relative to the
+   * frontend package root (contract 05 §3.2). Distinct from `theme.css`, which
+   * stays a restricted token channel. Every entry must also be whitelisted in
+   * `files`.
+   */
+  styles?: string[];
   settingsSchema?: FrontendSettingsSchema;
   /** Interface locales this package ships messages for (ADR-0016 §5). */
   locales?: string[];
@@ -544,6 +551,12 @@ export type AdminPageComponent = ComponentType<AdminPageComponentProps>;
 export interface FrontendDescriptor {
   available: boolean;
   manifest: FrontendManifest | null;
+  /**
+   * Active content-addressed revision (contract 04 §1). Present when the
+   * package has been published to the immutable revision store; the versioned
+   * asset base is `/…/frontend/<revision>/`.
+   */
+  revision?: string;
 }
 
 /** API response for settings schema endpoints. */

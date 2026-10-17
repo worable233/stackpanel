@@ -17,9 +17,8 @@ ENV COREPACK_HOME=/opt/corepack
 # and `pnpm exec`. With the devDependencies stripped (see `prod-deps`) that
 # install re-resolves the full lockfile, re-runs the workspace `prepare` hooks
 # and aborts on `tsc: command not found` — which would break the entrypoints'
-# `pnpm --filter @stackpanel/db migrate:deploy` and the worker's
-# `pnpm build:frontend`. The modules tree in this image is intentionally frozen
-# at build time, so the check is disabled for every stage.
+# `pnpm --filter @stackpanel/db migrate:deploy`. The modules tree in this image is
+# intentionally frozen at build time, so the check is disabled for every stage.
 ENV PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false
 RUN corepack enable && corepack prepare pnpm@11.5.1 --activate
 WORKDIR /app
@@ -45,10 +44,10 @@ RUN pnpm build
 # ---- prod-deps ----------------------------------------------------------
 # Strip devDependencies from the built tree before it is shipped. The runtime
 # roles only need the handful of tools that run in production — the Prisma CLI
-# behind `pnpm --filter @stackpanel/db migrate:deploy`, and the frontend builder
-# the worker drives (`pnpm build:frontend` plus `next build`) — so those are
-# declared as regular dependencies and survive this step. Everything else
-# (eslint, vitest, playwright, pm2, license-checker, …) stays out of the image.
+# behind `pnpm --filter @stackpanel/db migrate:deploy` and the Next server that
+# only the web role invokes — so those are declared as regular dependencies and
+# survive this step. Everything else (eslint, vitest, playwright, pm2,
+# license-checker, …) stays out of the image.
 FROM build AS prod-deps
 # Rebuild the modules directory from the lockfile as production-only. Running
 # `pnpm install --prod` over the tree the `build` stage already populated is NOT

@@ -57,6 +57,10 @@ import type {
   AdminPlugin,
   AdminPluginsResponse,
   FrontendApplyStatusResponse,
+  UpdateStatusResponse,
+  UpdatePolicyView,
+  UpdatePlanResponse,
+  UpdateSubmitResponse,
   PluginDependencyStatus,
   PluginConsumesStatus,
   AdminDashboardWidgetsResponse,
@@ -723,17 +727,26 @@ export const frontendManifestSchema = z.object({
   accountRoutes: z.array(accountRouteSchema).default([]),
   accountWidgets: z.array(accountWidgetSchema).default([]),
   files: z.array(z.string()),
+  // Contract 05 §3.2: pre-compiled CSS the package ships, each a path relative
+  // to the frontend package root (e.g. `frontend/dist/<id>.css`). Distinct from
+  // the theme token channel (`theme.css`).
+  styles: z.array(z.string()).default([]),
   settingsSchema: frontendSettingsSchema.optional(),
 });
 
 export const frontendDescriptorSchema = z.object({
   available: z.boolean(),
   manifest: frontendManifestSchema.nullable(),
+  revision: z.string().optional(),
 }) as z.ZodType<FrontendDescriptor>;
 
 export const pluginFrontendDescriptorSchema = z.object({
   id: z.string(),
   manifest: frontendManifestSchema,
+  builtin: z.boolean(),
+  execution: z.enum(['trusted', 'isolated']),
+  serverExecution: z.enum(['allowed', 'declarative']),
+  revision: z.string().optional(),
 });
 
 export const pluginFrontendsResponseSchema = z.object({
@@ -856,6 +869,91 @@ export const frontendAuditResponseSchema = z.object({
 export const adminPluginsResponseSchema = z.object({
   plugins: z.array(adminPluginSchema),
 }) as z.ZodType<AdminPluginsResponse>;
+
+const updatePolicyViewSchema = z.object({
+  autoUpdate: z.boolean(),
+  channel: z.enum(['stable', 'beta']),
+  autoUpdateKernel: z.boolean(),
+  excluded: z.array(z.string()),
+  pinned: z.record(z.string(), z.string()),
+  maintenanceWindow: z.object({ startHour: z.number(), endHour: z.number() }).optional(),
+  allowPermissionIncrease: z.boolean(),
+  allowIrreversibleMigration: z.boolean(),
+  updatedAt: z.string().optional(),
+  updatedBy: z.string().nullable().optional(),
+});
+
+const updateBlockReasonSchema = z.object({
+  code: z.string(),
+  detail: z.string(),
+  component: z.object({ kind: z.string(), id: z.string() }).optional(),
+});
+
+export const updateStatusResponseSchema = z.object({
+  status: z
+    .object({
+      generation: z.number(),
+      digest: z.string().nullable(),
+      activeTask: z.string().nullable(),
+      recent: z.array(
+        z.object({ idempotencyKey: z.string(), result: z.object({ phase: z.string() }) }),
+      ),
+      updatedAt: z.string(),
+    })
+    .nullable(),
+  policy: updatePolicyViewSchema,
+  catalogConfigured: z.boolean(),
+  catalogExpired: z.boolean().nullable(),
+  instanceId: z.string(),
+}) as unknown as z.ZodType<UpdateStatusResponse>;
+
+export const updatePolicyResponseSchema = z.object({
+  policy: updatePolicyViewSchema,
+}) as unknown as z.ZodType<{ policy: UpdatePolicyView }>;
+
+export const updatePlanResponseSchema = z.object({
+  ok: z.boolean(),
+  blocks: z.array(updateBlockReasonSchema).optional(),
+  planDigest: z.string().optional(),
+  plan: z
+    .object({
+      kernel: z.object({ version: z.string(), digest: z.string(), migration: z.string() }),
+      packages: z.array(
+        z.object({
+          kind: z.enum(['plugin', 'theme']),
+          id: z.string(),
+          fromVersion: z.string().nullable(),
+          toVersion: z.string(),
+          revision: z.string(),
+          addsPermissions: z.boolean(),
+          reversible: z.boolean(),
+        }),
+      ),
+    })
+    .optional(),
+  includesKernel: z.boolean().optional(),
+  task: z
+    .object({
+      instanceId: z.string(),
+      baselineGeneration: z.number(),
+      targetDigest: z.string(),
+      idempotencyKey: z.string(),
+    })
+    .optional(),
+  requiresAuthorization: z.boolean().optional(),
+}) as unknown as z.ZodType<UpdatePlanResponse>;
+
+export const updateSubmitResponseSchema = z.object({
+  submitted: z.boolean(),
+  idempotencyKey: z.string(),
+  planDigest: z.string(),
+}) as unknown as z.ZodType<UpdateSubmitResponse>;
+
+export const updateResultsResponseSchema = z.object({
+  results: z.array(
+    z.object({ idempotencyKey: z.string(), result: z.object({ phase: z.string() }) }),
+  ),
+});
 
 export const frontendApplyStatusSchema = z.object({
   state: z.enum(['pending', 'building', 'restarting', 'succeeded', 'failed']),

@@ -384,6 +384,183 @@ export function buildPlanDigestInput(
   return { kernelVersion, packages, frontendAbi, schemaRange };
 }
 
+/** 单个内核升级计划的求解结果。 */
+export type KernelUpgradePlan =
+  | { ok: true; target: KernelManifest; path: KernelManifest[]; digest: string }
+  | { ok: false; blocks: BlockReasonLike[] };
+
+export interface KernelUpgradeInput {
+  /** 当前内核版本（产品版本）。 */
+  currentVersion: string;
+  /** 当前部署平台（如 `linux/amd64`）；缺省用第一个候选镜像。 */
+  platform?: string;
+  /** 可选的内核候选清单（已按发布者/信任链预过滤，且已剔除撤回）。 */
+  candidates: KernelManifest[];
+  /** 采纳渠道；只考虑该渠道的内核清单。 */
+  channel: 'stable' | 'beta';
+  /** 显式指定目标版本；缺省自动选最高可升级版本。 */
+  targetVersion?: string;
+  /** 允许降级的目标版本（显式请求时）；缺省禁止降级。 */
+  allowDowngrade?: boolean;
+}
+
+/**
+ * 求解内核自身升级（PLAN-github-distribution-and-updates §4、§13-4）。
+ *
+ * 与扩展求解对应：给定当前内核版本与签名目录中的内核清单，选出**目标内核**、校验
+ * 平台镜像存在、并据 `migrationPath` 生成**有序中间版本**（跨版本跳升仅在存在可验证
+ * 迁移路径时允许，否则阻止）。内核清单的签发/校验与包同一套信任链；本函数只做
+ * 「选哪个版本、怎么走」，不接触网络与签名。
+ */
+export function resolveKernelUpgrade(input: KernelUpgradeInput): KernelUpgradePlan {
+  const candidates = input.candidates
+    .filter((manifest) => manifest.channel === input.channel)
+    .filter((manifest) => manifest.kind === 'kernel');
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      blocks: [{ code: 'incompatible_kernel', detail: `没有可用的${input.channel}内核候选` }],
+    };
+  }
+
+  const current = parseSemver(input.currentVersion);
+  const pickForVersion = (version: string): KernelManifest | undefined =>
+    candidates.find((manifest) => manifest.version === version);
+  // 候选必须**自身声明**接受从当前版本升级（`upgradeFrom`），否则不得作为目标。
+  const acceptsCurrent = (manifest: KernelManifest): boolean =>
+    !current || satisfiesRange(input.currentVersion, manifest.upgradeFrom);
+
+  let target: KernelManifest | undefined;
+  if (input.targetVersion) {
+    target = pickForVersion(input.targetVersion);
+    if (!target) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'incompatible_kernel',
+            detail: `指定的内核版本 ${input.targetVersion} 不在候选目录中`,
+          },
+        ],
+      };
+    }
+    if (!acceptsCurrent(target)) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'incompatible_kernel',
+            detail: `目标内核 ${target.version} 声明不接受来自 ${input.currentVersion} 的升级（upgradeFrom ${target.upgradeFrom}）`,
+          },
+        ],
+      };
+    }
+    const targetSemver = parseSemver(target.version);
+    if (
+      current &&
+      targetSemver &&
+      compareSemver(targetSemver, current) < 0 &&
+      !input.allowDowngrade
+    ) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'downgrade',
+            detail: `${input.currentVersion} → ${target.version} 为降级，默认禁止`,
+          },
+        ],
+      };
+    }
+  } else {
+    const upgrades = candidates.filter((manifest) => {
+      const version = parseSemver(manifest.version);
+      if (!version || !current) return false;
+      if (compareSemver(version, current) <= 0) return false;
+      if (!acceptsCurrent(manifest)) return false;
+      return true;
+    });
+    const best = maxSatisfying(
+      upgrades.map((manifest) => manifest.version),
+      '*',
+    );
+    target = best ? pickForVersion(best) : undefined;
+  }
+
+  if (!target) {
+    return { ok: false, blocks: [{ code: 'incompatible_kernel', detail: '没有可升级的内核版本' }] };
+  }
+
+  // 平台镜像必须存在（以 digest 安装，禁止依赖 latest）。
+  const platform = input.platform ?? target.images[0]?.platform;
+  const image = platform
+    ? target.images.find((candidate) => candidate.platform === platform)
+    : undefined;
+  if (!image || !image.digest) {
+    return {
+      ok: false,
+      blocks: [
+        {
+          code: 'incompatible_kernel',
+          detail: `目标内核 ${target.version} 没有平台 ${platform ?? '（未知）'} 的镜像 digest`,
+        },
+      ],
+    };
+  }
+  if (target.updateProtocol > UPDATE_PROTOCOL_MAX) {
+    return {
+      ok: false,
+      blocks: [
+        {
+          code: 'incompatible_kernel',
+          detail: `目标内核要求升级协议 ${target.updateProtocol}，当前执行器最高支持 ${UPDATE_PROTOCOL_MAX}`,
+        },
+      ],
+    };
+  }
+
+  // 迁移路径：direct 或有序中间版本链。跨版本时逐步校验每一步都在候选中。
+  const path = resolveKernelPath(target, pickForVersion);
+  if (!path.ok) return path;
+
+  return { ok: true, target, path: path.path, digest: image.digest };
+}
+
+/** 当前内核/执行器支持的升级协议上界（单一来源，见 update-protocol）。 */
+export const UPDATE_PROTOCOL_MAX = 1;
+
+function resolveKernelPath(
+  target: KernelManifest,
+  pick: (version: string) => KernelManifest | undefined,
+): { ok: true; path: KernelManifest[] } | { ok: false; blocks: BlockReasonLike[] } {
+  if (target.migrationPath === 'direct') {
+    return { ok: true, path: [target] };
+  }
+  const path: KernelManifest[] = [];
+  for (const version of target.migrationPath) {
+    const step = version === target.version ? target : pick(version);
+    if (!step) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'irreversible_migration',
+            detail: `迁移路径缺少中间版本 ${version}`,
+          },
+        ],
+      };
+    }
+    path.push(step);
+  }
+  if (path.length === 0) {
+    return {
+      ok: false,
+      blocks: [{ code: 'irreversible_migration', detail: '迁移路径为空，缺可验证路径' }],
+    };
+  }
+  return { ok: true, path };
+}
+
 // —— 内部：版本比较（复用 semver 契约，无循环依赖） ——
 
 function parseTriple(version: string): [number, number, number] {

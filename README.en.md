@@ -10,7 +10,7 @@ The kernel does six things — users & RBAC, plugin runtime, theme engine, event
 
 - **Business domains as plugins.** A plugin can declare its own routes, permissions, admin pages, account pages, event listeners, and data models, and can extend other plugins. Install, upgrade, enable, disable, and uninstall take effect without restarting the API process.
 - **API first.** The admin console and the open API share one set of endpoints; anything the UI can do, a script can do.
-- **Plugin frontends build automatically.** After a change, the worker runs `build:frontend` and `next build` for a plugin's bundled UI, and each web replica restarts on its own; manual `pnpm build` is only needed when `STACKPANEL_FRONTEND_AUTOBUILD` is off.
+- **Plugin frontends load at runtime.** A plugin's bundled UI is loaded by the web process on demand after install/upgrade — no rebuild or restart; reinstalls, uninstalls and rollbacks likewise take effect immediately.
 - **Themes are ZIPs.** A theme is a configuration-driven ZIP package. Plugin frontends are type-safe React components sharing the same React runtime as the kernel. Page routes, named layouts, and typed finders are declared by the frontend package and rendered by the platform.
 - **Credentials never exceed their owner.** Users can self-issue scoped API credentials; a credential's effective permissions are always a subset of the holder's current permissions. Downgrade a user and every credential they hold narrows with them.
 - **Self-hosted and portable.** Production and development both use PostgreSQL; clustering relies on Redis and S3-compatible object storage. Backup is `pg_dump` plus asset packaging.
@@ -149,7 +149,7 @@ StackPanel/
     ├── ui/             # Shared components
     ├── db/             # Prisma schema, migrations, and client
     ├── net-guard/      # Shared network-guard primitives (SSRF checks, etc.)
-    ├── plugins/        # Built-in plugins: auth, store and product types, wallet
+    ├── plugins/        # Built-in plugins: auth, store and product types, wallet, market
     ├── themes/         # Configurable themes
     └── mcp/            # MCP Server (stdio / HTTP)
 ```

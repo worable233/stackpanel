@@ -82,6 +82,20 @@ export interface PluginManifest {
   capabilities?: PluginCapability[];
   /** Execution boundary. Third-party packages default to isolated. */
   execution?: 'trusted' | 'isolated';
+  /**
+   * Platform-admission level for server-side execution in the WEB process
+   * (contract 03 §3.1). Default `declarative`; `server` is an explicit grant.
+   * Built-ins are always admitted regardless of this field.
+   */
+  frontendExecutions?: 'declarative' | 'server';
+  /**
+   * Host frontend ABI slots this package's frontend depends on, with a
+   * compatibility semver range each (contract 02 §5). The kernel validates this
+   * against its own host versions at install time (market and upload share the
+   * same check). Slots are frozen in `@stackpanel/spec`'s
+   * `HOST_FRONTEND_ABI_SLOTS`.
+   */
+  frontendExternals?: Record<string, string>;
 }
 
 /**

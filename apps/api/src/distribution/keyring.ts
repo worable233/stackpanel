@@ -36,8 +36,8 @@ function assertTrustedKey(value: unknown, index: number): asserts value is Trust
   if (typeof value.keyId !== 'string' || value.keyId.length === 0) {
     throw new KeyringError(`keyring.keys[${index}].keyId 缺失`);
   }
-  if (value.purpose !== 'catalog' && value.purpose !== 'package') {
-    throw new KeyringError(`keyring.keys[${index}].purpose 必须是 catalog 或 package`);
+  if (value.purpose !== 'catalog' && value.purpose !== 'package' && value.purpose !== 'kernel') {
+    throw new KeyringError(`keyring.keys[${index}].purpose 必须是 catalog、package 或 kernel`);
   }
   if (typeof value.publicKeyPem !== 'string' || value.publicKeyPem.length === 0) {
     throw new KeyringError(`keyring.keys[${index}].publicKeyPem 缺失`);

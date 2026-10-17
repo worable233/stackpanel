@@ -66,6 +66,10 @@ export interface KernelSweepDeps {
   walletHoldSweep: () => Promise<void>;
   /** Retry due external-notification channel deliveries (audit §5). */
   notificationDeliverySweep: () => Promise<void>;
+  /** 目录刷新（PLAN §10）。缺省为无操作：未配置目录仓的实例完全离线。 */
+  catalogRefresh?: () => Promise<void>;
+  /** 自动更新评估（§13-6）。缺省为无操作：未配置目录仓或策略关闭时完全离线。 */
+  autoUpdate?: () => Promise<void>;
   logger: { warn: (m: string) => void };
 }
 
@@ -78,6 +82,8 @@ const OUTBOX_RELAY_MS = 2_000;
 const NOTIFICATION_DELIVERY_SWEEP_MS = 30_000;
 /** Run outbox retention roughly hourly (every N relay passes). */
 const OUTBOX_CLEANUP_EVERY = Math.max(1, Math.round((60 * 60_000) / OUTBOX_RELAY_MS));
+/** §10: catalog refresh cadence (jitter applied by the service's `isDue`). */
+const CATALOG_REFRESH_MS = 6 * 60 * 60_000;
 
 /**
  * Register the kernel's recurring jobs. Missing handlers are simply absent on a
@@ -120,6 +126,26 @@ export async function registerKernelSweeps(
     { everyMs: NOTIFICATION_DELIVERY_SWEEP_MS },
     undefined,
   );
+  // §10：目录刷新每 6 小时 + 抖动（抖动在服务内部按 isDue 施加）。未配置目录仓的
+  // 实例不注册处理器也不排期，保持零出网。
+  if (deps.catalogRefresh) {
+    jobs.handle(KERNEL_JOBS.catalogRefresh, async () => {
+      await deps.catalogRefresh?.();
+    });
+    await jobs.schedule(
+      KERNEL_JOBS.catalogRefresh,
+      { everyMs: CATALOG_REFRESH_MS },
+      undefined,
+    );
+  }
+  // §13-6：目录刷新后评估自动更新。与刷新同频（刷新内部按 isDue 施加抖动与离线短路）；
+  // 未配置目录仓时 deps.autoUpdate 为 undefined，不注册、零出网。
+  if (deps.catalogRefresh && deps.autoUpdate) {
+    jobs.handle(KERNEL_JOBS.autoUpdate, async () => {
+      await deps.autoUpdate?.();
+    });
+    await jobs.schedule(KERNEL_JOBS.autoUpdate, { everyMs: CATALOG_REFRESH_MS }, undefined);
+  }
 }
 
 /** One dead-lettered job (failed past its attempt budget). */

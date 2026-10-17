@@ -10,12 +10,12 @@
 const NAV_KEYS: Record<string, string> = {
   '/admin': 'nav.dashboard',
   '/admin/users': 'nav.users',
-  '/admin/market': 'nav.market',
   '/admin/settings': 'nav.settings',
   '/admin/plugins': 'nav.plugins',
   '/admin/rbac': 'nav.rbac',
   '/admin/audit': 'nav.audit',
   '/admin/themes': 'nav.themes',
+  '/admin/updates': 'nav.updates',
   '/admin/notifications': 'nav.notifications',
   '/account': 'nav.dashboard',
   '/account/security': 'nav.security',

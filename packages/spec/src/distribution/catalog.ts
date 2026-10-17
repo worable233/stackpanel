@@ -26,6 +26,31 @@ export interface CatalogEntry extends PackageManifest {
   revoked?: boolean;
 }
 
+/**
+ * 目录对**内核版本清单**的引用（PLAN-github-distribution-and-updates §2、§3.2、§13-4）。
+ *
+ * 内核清单比包清单多出多架构 digest、迁移路径、updateProtocol 等字段，形状不同，
+ * 故不塞进 {@link CatalogEntry}。目录只**引用**内核 Release 中的
+ * `kernel-manifest.json` / `kernel-manifest.sig`（仓库、tag、asset、清单摘要、
+ * 签名 keyId），实例端取回后按 keyring 独立验签（keyId 用途 `kernel`）。
+ */
+export interface CatalogKernelRef {
+  /** 内核产品版本 `X.Y.Z`。 */
+  version: string;
+  channel: ReleaseChannel;
+  source: {
+    repository: string;
+    tag: string;
+    asset: string;
+  };
+  /** `kernel-manifest.json` 的 SHA-256（十六进制），与清单签名相互独立。 */
+  digest: string;
+  /** 签名 keyId（对应信任根中用途为 `kernel` 的公钥）。 */
+  keyId: string;
+  /** 是否已被撤回（撤回版本从候选中移除）。 */
+  revoked?: boolean;
+}
+
 /** 渠道指针：把 stable/beta 映射到某个已签名的目录 sequence。 */
 export interface ChannelPointer {
   channel: ReleaseChannel;
@@ -53,6 +78,11 @@ export interface CatalogSnapshot {
   publishers: CatalogPublisher[];
   /** 组件版本条目。 */
   entries: CatalogEntry[];
+  /**
+   * 内核版本引用（可选；缺省表示本目录不含内核更新）。见 {@link CatalogKernelRef}。
+   * 为向后兼容设为可选：旧目录快照无此字段仍合法。
+   */
+  kernels?: CatalogKernelRef[];
 }
 
 export interface CatalogPublisher {
@@ -182,6 +212,49 @@ export function validateCatalogSnapshot(input: unknown): CatalogIssue[] {
       }
     });
   }
+
+  if (catalog.kernels !== undefined) {
+    if (!Array.isArray(catalog.kernels)) {
+      issues.push({ path: 'kernels', message: '必须是数组' });
+    } else {
+      catalog.kernels.forEach((kernel, index) => {
+        issues.push(...validateKernelRef(kernel, `kernels[${index}]`));
+      });
+    }
+  }
+  return issues;
+}
+
+/** 内核引用结构校验（不验证签名——签名由 keyring 单独校验）。 */
+function validateKernelRef(input: unknown, path: string): CatalogIssue[] {
+  const issues: CatalogIssue[] = [];
+  if (!isPlainObject(input)) return [{ path, message: '必须是对象' }];
+  const ref = input as Record<string, unknown>;
+  if (typeof ref.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/.test(ref.version)) {
+    issues.push({ path: `${path}.version`, message: '必须是 X.Y.Z 版本' });
+  }
+  if (ref.channel !== 'stable' && ref.channel !== 'beta') {
+    issues.push({ path: `${path}.channel`, message: '必须是 stable 或 beta' });
+  }
+  if (!isPlainObject(ref.source)) {
+    issues.push({ path: `${path}.source`, message: '必须是对象' });
+  } else {
+    for (const key of ['repository', 'tag', 'asset'] as const) {
+      const value = (ref.source as Record<string, unknown>)[key];
+      if (typeof value !== 'string' || value.length === 0) {
+        issues.push({ path: `${path}.source.${key}`, message: '必须是非空字符串' });
+      }
+    }
+  }
+  if (typeof ref.digest !== 'string' || !/^[0-9a-f]{64}$/.test(ref.digest)) {
+    issues.push({ path: `${path}.digest`, message: '必须是 64 位小写十六进制' });
+  }
+  if (typeof ref.keyId !== 'string' || ref.keyId.length === 0) {
+    issues.push({ path: `${path}.keyId`, message: '必须是非空字符串' });
+  }
+  if (ref.revoked !== undefined && typeof ref.revoked !== 'boolean') {
+    issues.push({ path: `${path}.revoked`, message: '必须是布尔值' });
+  }
   return issues;
 }
 
@@ -263,4 +336,14 @@ export function catalogCandidates(
   return catalog.entries.filter(
     (entry) => entry.kind === kind && entry.id === id && !entry.revoked,
   );
+}
+
+/** 目录中的内核引用（未撤回），按渠道过滤、版本降序。 */
+export function catalogKernelRefs(
+  catalog: CatalogSnapshot,
+  channel?: ReleaseChannel,
+): CatalogKernelRef[] {
+  return (catalog.kernels ?? [])
+    .filter((ref) => !ref.revoked && (channel === undefined || ref.channel === channel))
+    .sort((a, b) => (a.version < b.version ? 1 : a.version > b.version ? -1 : 0));
 }

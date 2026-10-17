@@ -239,7 +239,7 @@ export function OrderSummaryNote({ data }: { data: AdminOverviewData }) {
         </ItemDescription>
       </ItemContent>
       <ItemActions>
-        <Button size="sm" variant="outline" render={<Link href="/admin/market" />}>
+        <Button size="sm" variant="outline" render={<Link href="/admin/plugin/market" />}>
           {t('admin.overview.viewDetails')}
         </Button>
       </ItemActions>
@@ -490,7 +490,7 @@ export function RecentOrdersCard({ data }: { data: AdminOverviewData }) {
         <Separator />
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{t('admin.overview.ordersTotal', { count: data.totals.orderCount })}</span>
-          <Link href="/admin/market" className="font-medium text-primary hover:underline">
+          <Link href="/admin/plugin/market" className="font-medium text-primary hover:underline">
             {t('admin.overview.viewDetails')}
           </Link>
         </div>
@@ -552,9 +552,9 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
     new Set(data.recentOrders.map((order) => order.customer).filter(Boolean)),
   ).slice(0, 4);
   const shortcuts = [
-    { label: t('admin.overview.shortcutOrders'), href: '/admin/market', icon: Receipt },
+    { label: t('admin.overview.shortcutOrders'), href: '/admin/plugin/market', icon: Receipt },
     { label: t('admin.overview.shortcutUsers'), href: '/admin/users', icon: Users },
-    { label: t('admin.overview.shortcutProducts'), href: '/admin/market', icon: Package },
+    { label: t('admin.overview.shortcutProducts'), href: '/admin/plugin/market', icon: Package },
     { label: t('admin.overview.shortcutPlugins'), href: '/admin/plugins', icon: Blocks },
     { label: t('admin.overview.shortcutRbac'), href: '/admin/rbac', icon: UserCog },
     { label: t('admin.overview.shortcutAudit'), href: '/admin/audit', icon: ScrollText },

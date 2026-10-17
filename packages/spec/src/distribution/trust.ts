@@ -10,7 +10,7 @@
  */
 
 /** 密钥用途。 */
-export type KeyPurpose = 'package' | 'catalog';
+export type KeyPurpose = 'package' | 'catalog' | 'kernel';
 
 /** 信任根中的一把公钥。 */
 export interface TrustedKey {

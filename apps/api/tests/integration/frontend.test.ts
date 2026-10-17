@@ -321,38 +321,81 @@ describe.skipIf(!dbAvailable)('frontend package integration (real DB)', () => {
     ).toBe(false);
   });
 
-  it('serves compiled frontend assets with the versioned transport contract', async () => {
-    // Versioned path (head == manifest.revision): immutable + ETag + JS MIME.
+  it('exposes versioned frontend assets pinned to the active revision (contract 04)', async () => {
+    // The descriptor publishes the kernel-authoritative revision digest.
+    const descriptor = await app.inject({
+      method: 'GET',
+      url: '/plugins/frontend-plugin/frontend',
+    });
+    expect(descriptor.statusCode).toBe(200);
+    const revision = (descriptor.json() as { revision?: string }).revision;
+    expect(revision).toMatch(/^[a-f0-9]{12}$/);
+
+    // Versioned asset resolves from the immutable revision store, with JS MIME
+    // and a content-addressed (immutable) cache validator.
     const versioned = await app.inject({
       method: 'GET',
-      url: '/themes/frontend-theme/frontend/a1b2c3d4e5f6/dist/index.js',
+      url: `/plugins/frontend-plugin/frontend/${revision}/dist/index.js`,
     });
     expect(versioned.statusCode).toBe(200);
     expect(versioned.headers['content-type']).toContain('text/javascript');
     expect(versioned.headers['cache-control']).toContain('immutable');
-    expect(versioned.headers['etag']).toContain('a1b2c3d4e5f6');
+    expect(versioned.headers['etag']).toContain(revision);
+    expect(versioned.body).toContain('export const frontend');
 
-    // Legacy path: revalidated, still whitelisted.
-    const legacy = await app.inject({
+    // The flat (legacy) route still works and serves identical bytes, but is
+    // revalidated because the active revision may change.
+    const flat = await app.inject({
       method: 'GET',
-      url: '/themes/frontend-theme/frontend/dist/index.js',
+      url: '/plugins/frontend-plugin/frontend/dist/index.js',
     });
-    expect(legacy.statusCode).toBe(200);
-    expect(legacy.headers['cache-control']).toContain('must-revalidate');
+    expect(flat.statusCode).toBe(200);
+    expect(flat.body).toBe(versioned.body);
+    expect(flat.headers['cache-control']).toContain('must-revalidate');
 
-    // A stale/forged revision head must not fall back to another version.
+    // An unknown revision 404s rather than falling back to the live copy.
+    const unknown = await app.inject({
+      method: 'GET',
+      url: '/plugins/frontend-plugin/frontend/000000000000/dist/index.js',
+    });
+    expect(unknown.statusCode).toBe(404);
+
+    // A file not declared in manifest.files is rejected.
+    const undeclared = await app.inject({
+      method: 'GET',
+      url: '/plugins/frontend-plugin/frontend/dist/secret.js',
+    });
+    expect(undeclared.statusCode).toBe(404);
+
+    // A traversal attempt inside a revision is rejected.
+    const traversal = await app.inject({
+      method: 'GET',
+      url: `/plugins/frontend-plugin/frontend/${revision}/../../manifest.json`,
+    });
+    expect([400, 404]).toContain(traversal.statusCode);
+  });
+
+  it('exposes versioned theme frontend assets (contract 04)', async () => {
+    const descriptor = await app.inject({
+      method: 'GET',
+      url: '/themes/frontend-theme/frontend',
+    });
+    expect(descriptor.statusCode).toBe(200);
+    const revision = (descriptor.json() as { revision?: string }).revision;
+    expect(revision).toMatch(/^[a-f0-9]{12}$/);
+    const versioned = await app.inject({
+      method: 'GET',
+      url: `/themes/frontend-theme/frontend/${revision}/dist/index.js`,
+    });
+    expect(versioned.statusCode).toBe(200);
+    expect(versioned.headers['content-type']).toContain('text/javascript');
+
+    // A forged/stale revision head must not fall back to another version.
     const forged = await app.inject({
       method: 'GET',
       url: '/themes/frontend-theme/frontend/ffffffffffff/dist/index.js',
     });
     expect(forged.statusCode).toBe(404);
-
-    // A file not declared in manifest.files is rejected.
-    const undeclared = await app.inject({
-      method: 'GET',
-      url: '/themes/frontend-theme/frontend/dist/secret.js',
-    });
-    expect(undeclared.statusCode).toBe(404);
 
     // Traversal is rejected.
     const traversal = await app.inject({

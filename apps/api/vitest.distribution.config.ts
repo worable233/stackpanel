@@ -5,9 +5,16 @@ export default defineConfig({
     include: [
       'tests/unit/distribution-source.test.ts',
       'tests/unit/distribution-package.test.ts',
+      'tests/unit/distribution-kernel-source.test.ts',
       'tests/unit/distribution-keyring.test.ts',
+      'tests/unit/distribution-refresh.test.ts',
+      'tests/unit/distribution-catalog-consumer.test.ts',
+      'tests/unit/distribution-market.test.ts',
+      'tests/unit/distribution-runtime.test.ts',
       'tests/unit/package-transaction.test.ts',
       'tests/unit/frontend-assets.test.ts',
+      'tests/unit/updates-plan.test.ts',
+      'tests/unit/updates-auto.test.ts',
     ],
     environment: 'node',
     // `env.ts` is parsed at import time; supply the required values so pure

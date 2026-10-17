@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "f6a0022051eb",
+  "revision": "e2b34313d7de",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -857,6 +857,8 @@
   "files": [
     "frontend/dist/admin.js",
     "frontend/dist/admin.js.map",
+    "frontend/dist/admin.runtime.js",
+    "frontend/dist/admin.runtime.js.map",
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],

@@ -10,7 +10,12 @@ import type {
 } from '@stackpanel/sdk';
 import { matchFrontendPagePath } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
-import { importFrontendPackage, listPluginFrontendCandidates, readPluginSettings } from './slots';
+import {
+  candidateAdmitsServerExecution,
+  importFrontendPackage,
+  listPluginFrontendCandidates,
+  readPluginSettings,
+} from './slots';
 import { bindPluginActions } from './frontend-plugin-actions';
 
 export interface PluginAccountMenu {
@@ -75,7 +80,8 @@ export async function executeAccountFinder(
 ): Promise<unknown | null> {
   const candidates = await listPluginFrontendCandidates();
   for (const candidate of candidates) {
-    const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest);
+    if (!candidateAdmitsServerExecution(candidate)) continue;
+    const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest, candidate.revision);
     if (!pkg?.finders || !pkg.finders[finderId]) continue;
     const settings = await readPluginSettings(candidate.id);
     try {
@@ -114,13 +120,16 @@ export async function resolvePluginAccountRoute(
   if (!(await isAllowed(api, route.permission))) {
     return { status: 'denied', permission: route.permission ?? 'account.permission' };
   }
-  const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest);
+  const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest, candidate.revision);
   const component = pkg?.ui?.accountPages?.[route.component];
   if (!component) return { status: 'not-found' };
 
   const settings = await readPluginSettings(candidate.id);
   const params = capturePathParams(route.path, path);
-  const data = await executeRouteData(route.data ?? [], pkg.finders ?? {}, params, settings, user);
+  // Trust boundary (contract 03 §3.1): an unauthorized package's finders must
+  // not execute in the web process.
+  const finders = candidateAdmitsServerExecution(candidate) ? (pkg.finders ?? {}) : {};
+  const data = await executeRouteData(route.data ?? [], finders, params, settings, user);
   try {
     await api.recordFrontendAudit('frontend.account.route.render', candidate.id, path, {
       route: route.path,
@@ -145,7 +154,8 @@ export async function getPluginAccountWidgets(): Promise<PluginAccountWidget[]> 
   const api = await getAuthedApiClient();
   const widgets: PluginAccountWidget[] = [];
   for (const candidate of candidates) {
-    const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest);
+    if (!candidateAdmitsServerExecution(candidate)) continue;
+    const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest, candidate.revision);
     if (!pkg) continue;
     for (const definition of candidate.manifest.accountWidgets) {
       if (!(await isAllowed(api, definition.permission))) continue;

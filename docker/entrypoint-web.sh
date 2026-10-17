@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-# Ensure the shared data directory exists so the supervisor can read/write the
-# frontend-apply signal files (mounted as the `stackpanel-data` volume).
+# Plugin/theme frontends are loaded at runtime from the shared data directory
+# (`STACKPANEL_DATA_DIR`, mounted as the `stackpanel-data` volume), so the web
+# tier no longer rebuilds or restarts on install — it just runs `next start`.
+# Ensure the data directory exists (it may be empty on a fresh volume).
 mkdir -p "${STACKPANEL_DATA_DIR:-/app/data}"
 
-# The supervisor runs `next start` and, when the kernel requests it, rebuilds
-# the frontend registry + Next bundle and restarts. Set
-# STACKPANEL_FRONTEND_AUTOBUILD=0 to fall back to a plain `next start`.
-exec node /app/scripts/frontend-supervisor.mjs
+cd /app/apps/web
+exec node node_modules/next/dist/bin/next start -p "${WEB_PORT:-3000}"

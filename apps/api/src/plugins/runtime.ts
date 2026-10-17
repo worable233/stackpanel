@@ -42,6 +42,7 @@ import type { JobRuntime } from '../jobs/types.ts';
 import type { PluginExtensionRuntime } from '../extensions/service.ts';
 import type { RawDatabase } from '../extensions/client.ts';
 import type { MediaReferenceService } from '@stackpanel/sdk';
+import type { MarketService } from '../market/service.ts';
 import type { StorageService } from '@stackpanel/sdk';
 import { createStorageService } from '../storage/backend.ts';
 import { getCacheService } from '../cache/index.ts';
@@ -149,6 +150,14 @@ export interface PluginRuntimeOptions {
   /** Kernel-owned attachment reference index. */
   media?: MediaReferenceService;
   /**
+  /**
+   * 市场分发安全原语（ADR-0020 D3）。市场业务面在内置插件 `market`；内核保留
+   * 验签目录 / 统一安装事务 / 运行时激活，并以 `kernel.market` 暴露。
+   *
+   * Optional so unit tests can build a bare runtime; production always supplies it.
+   */
+  market?: MarketService;
+  /**
    * Kernel-owned storage capability (`ctx.storage`, ADR-0014 extension):
    * builds a `StorageProvider` for a generic backend while keeping all
    * byte/presign machinery on the kernel side. Defaults to the standard factory.
@@ -179,6 +188,11 @@ const KERNEL_SERVICE_ACCESSORS = [
   'captcha',
   'state',
   'cache',
+  /**
+   * 市场分发安全原语（ADR-0020 D3）。市场业务面在内置插件 `market`，内核只
+   * 保留验签目录 / 安装事务 / 运行时激活，并以 `kernel.market` 暴露给插件消费。
+   */
+  'market',
 ] as const;
 
 const KERNEL_SERVICE_OWNER = 'kernel';
@@ -288,6 +302,10 @@ export class PluginRuntime {
             : name === 'notificationPolicy'
               ? (options.notificationPolicy ?? UNAVAILABLE_NOTIFICATION_POLICY)
               : options[name];
+      // Optional services (e.g. `market`) stay absent when a bare runtime is
+      // constructed in unit tests; plugins declaring them in `inject` then fail
+      // activation loudly instead of resolving `undefined`.
+      if (implementation === undefined) continue;
       this.services.set(`${KERNEL_SERVICE_OWNER}.${name}`, {
         pluginId: KERNEL_SERVICE_OWNER,
         implementation,
@@ -382,6 +400,12 @@ export class PluginRuntime {
     permissions: string[];
     roleTemplates: PluginRoleTemplate[];
     locales: string[];
+    /** Kernel-derived built-in flag (same source as the backend execution decision). */
+    builtin: boolean;
+    /** Execution mode applied by `loadPluginDefinition`. */
+    execution: 'trusted' | 'isolated';
+    /** Explicit platform grant for web-process server execution (contract 03 §3.1). */
+    frontendExecutions: 'declarative' | 'server';
   }> {
     return [...this.plugins.values()].map((p) => ({
       id: p.definition.manifest.id,
@@ -397,6 +421,13 @@ export class PluginRuntime {
       ),
       roleTemplates: p.definition.manifest.roleTemplates ?? [],
       locales: p.definition.manifest.locales ?? [],
+      builtin: p.definition.manifest.builtin === true,
+      // Mirror `loadPluginDefinition` (plugins.ts): built-ins are always
+      // trusted; a non-built-in defaults to isolated in production.
+      execution:
+        p.definition.manifest.execution ??
+        (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted'),
+      frontendExecutions: p.definition.manifest.frontendExecutions ?? 'declarative',
     }));
   }
 

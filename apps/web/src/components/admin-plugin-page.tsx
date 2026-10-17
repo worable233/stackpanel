@@ -5,9 +5,23 @@ import type { ReactElement } from 'react';
 import type { AdminPageComponentProps } from '@stackpanel/sdk';
 import type { PluginAdminRouteResult } from '@/lib/admin-frontend';
 import { getClientAdminPages } from '@/lib/frontend-client-registry';
+import { RuntimeAdminPage } from './runtime-admin-page';
+import { FrontendScopeRoot } from './frontend-scope';
 import { useTranslator } from '@/i18n/provider';
 
-/** Render the result of a plugin admin route resolution on the client. */
+/**
+ * Render the result of a plugin admin route resolution on the client.
+ *
+ * Stage 5 has two co-existing client paths (the server sets `runtimeAdminModuleUrl`
+ * on the result when runtime loading is enabled — the **default**; opt out with
+ * `STACKPANEL_FRONTEND_RUNTIME_LOAD=0`):
+ *
+ * - **Runtime loading** (default): `RuntimeAdminPage` dynamically imports the plugin's
+ *   compiled admin entry at request time (host ABI via the controlled adapter).
+ * - **Build-time registry** (`STACKPANEL_FRONTEND_RUNTIME_LOAD=0`): the plugin's admin
+ *   entry was statically imported by the generated client registry and is looked up
+ *   synchronously.
+ */
 export function AdminPluginPage({
   path,
   result,
@@ -37,6 +51,23 @@ export function AdminPluginPage({
       </main>
     );
   }
+  if (result.runtimeAdminModuleUrl) {
+    return (
+      <RuntimeAdminPage
+        moduleUrl={result.runtimeAdminModuleUrl}
+        result={{
+          pluginId: result.pluginId,
+          path,
+          componentId: result.componentId,
+          settings: result.settings as unknown as Record<string, unknown>,
+          data: result.data,
+          actions: result.actions as unknown as Record<string, unknown>,
+          params: result.params,
+        }}
+        actionError={actionError}
+      />
+    );
+  }
   const adminPages = getClientAdminPages('plugins', result.pluginId);
   const Component = adminPages?.[result.componentId];
   if (!Component) {
@@ -56,7 +87,7 @@ export function AdminPluginPage({
     actions: result.actions,
   } as AdminPageComponentProps;
   return (
-    <div className="space-y-6">
+    <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="block space-y-6">
       {actionError ? (
         <p
           role="alert"
@@ -66,6 +97,6 @@ export function AdminPluginPage({
         </p>
       ) : null}
       {createElement(Component, props as never) as unknown as ReactElement}
-    </div>
+    </FrontendScopeRoot>
   );
 }

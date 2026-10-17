@@ -4,6 +4,8 @@ import type { ReactElement } from 'react';
 import { z } from 'zod';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { notFound } from 'next/navigation';
+import { FrontendScopeRoot } from '@/components/frontend-scope';
+import { FrontendRenderBoundary } from '@/components/frontend-render-boundary';
 import { apiAssetUrl, getApiClient, KERNEL_BFF_PREFIX } from '@/lib/api';
 import { getSessionToken } from '@/lib/auth';
 import { resolveFallbackRoute, resolveFrontendRoute, type PageResolution } from '@/lib/pages';
@@ -92,16 +94,32 @@ async function renderResolution(
   ) : (
     content
   );
-  if (!resolved.layout) return page;
+  // Contract 05 §3.3: wrap the package's render root in a stable scope marker so
+  // its `styles[]` selectors can be scoped to its own DOM. `display: contents`
+  // means the wrapper generates no box, so the package's layout is unchanged.
+  // Contract 05 §3.5: the provider also routes the package's portals into a
+  // scope-marked container so overlays stay inside its style scope.
+  const scoped = resolved.owner ? (
+    <FrontendScopeRoot scope={`${resolved.owner.kind}:${resolved.owner.id}`}>
+      {/* Contract 06 §1.3: a package that throws while rendering degrades to an
+          inline notice instead of taking down the host shell. */}
+      <FrontendRenderBoundary label={`${resolved.owner.kind}:${resolved.owner.id}`}>
+        {page}
+      </FrontendRenderBoundary>
+    </FrontendScopeRoot>
+  ) : (
+    page
+  );
+  if (!resolved.layout) return scoped;
   const shared = await getPublicThemeLayout();
-  if (!standalone && resolved.layout === shared) return page;
-  return renderPublicLayout(resolved.layout, page, resolved.assetsBaseUrl, locale, themeId);
+  if (!standalone && resolved.layout === shared) return scoped;
+  return renderPublicLayout(resolved.layout, scoped, resolved.assetsBaseUrl, locale, themeId);
 }
 
 export const getPublicThemeLayout = cache(async () => {
   const candidate = await activeThemeCandidate();
   if (!candidate) return undefined;
-  const pkg = await importFrontendPackage(candidate.kind, candidate.id, candidate.manifest);
+  const pkg = await importFrontendPackage(candidate.kind, candidate.id, candidate.manifest, candidate.revision);
   return pkg?.layouts?.theme;
 });
 

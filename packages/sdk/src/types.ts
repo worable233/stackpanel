@@ -555,6 +555,30 @@ export interface ThemePreviewMutationResponse {
 export interface PluginFrontendDescriptor {
   id: string;
   manifest: FrontendManifest;
+  /**
+   * Whether the package is a kernel built-in (trusted). Derived by the kernel
+   * from the package's `stackpanel.builtin` metadata — the SAME source the
+   * backend `execution` decision uses (plugins.ts loadPluginDefinition).
+   */
+  builtin: boolean;
+  /**
+   * The backend execution mode this plugin runs under, mirroring
+   * `plugins.ts` `loadPluginDefinition`: built-in → `trusted`, otherwise
+   * `isolated` in production. Whether the plugin is admitted to execute in the
+   * web process is decided by `serverExecution`, NOT by this field.
+   */
+  execution: 'trusted' | 'isolated';
+  /**
+   * Kernel-computed admission decision for server-side execution in the web
+   * process (contract 03 §3.1): `allowed` = built-in OR explicitly authorized
+   * (`frontendExecutions: 'server'`); `declarative` = not admitted (default).
+   */
+  serverExecution: 'allowed' | 'declarative';
+  /**
+   * Active content-addressed revision (contract 04 §1). Present when the kernel
+   * has published the plugin frontend to the immutable revision store.
+   */
+  revision?: string;
 }
 
 /** Response of GET /plugins/frontends. */
@@ -570,6 +594,83 @@ export interface PermissionCheckResponse {
 /** Response of GET /admin/plugins. */
 export interface AdminPluginsResponse {
   plugins: AdminPlugin[];
+}
+
+/** Update channel. */
+export type UpdateChannel = 'stable' | 'beta';
+
+/** Update strategy (GET /admin/updates/status · PUT /admin/updates/policy). */
+export interface UpdatePolicyView {
+  autoUpdate: boolean;
+  channel: UpdateChannel;
+  autoUpdateKernel: boolean;
+  excluded: string[];
+  pinned: Record<string, string>;
+  maintenanceWindow?: { startHour: number; endHour: number };
+  allowPermissionIncrease: boolean;
+  allowIrreversibleMigration: boolean;
+  updatedAt?: string;
+  updatedBy?: string | null;
+}
+
+/** Block reason returned when a deployment plan cannot be solved. */
+export interface UpdateBlockReason {
+  code: string;
+  detail: string;
+  component?: { kind: string; id: string };
+}
+
+/** One planned component upgrade. */
+export interface UpdatePlannedPackage {
+  kind: 'plugin' | 'theme';
+  id: string;
+  fromVersion: string | null;
+  toVersion: string;
+  revision: string;
+  addsPermissions: boolean;
+  reversible: boolean;
+}
+
+/** Updater status projection (GET /admin/updates/status). */
+export interface UpdateUpdaterStatus {
+  generation: number;
+  digest: string | null;
+  activeTask: string | null;
+  recent: Array<{ idempotencyKey: string; result: { phase: string } }>;
+  updatedAt: string;
+}
+
+export interface UpdateStatusResponse {
+  status: UpdateUpdaterStatus | null;
+  policy: UpdatePolicyView;
+  catalogConfigured: boolean;
+  catalogExpired: boolean | null;
+  instanceId: string;
+}
+
+export interface UpdatePlanResponse {
+  ok: boolean;
+  blocks?: UpdateBlockReason[];
+  planDigest?: string;
+  plan?: {
+    kernel: { version: string; digest: string; migration: string };
+    packages: UpdatePlannedPackage[];
+  };
+  /** Whether the plan includes a kernel self-upgrade (target kernel != running). */
+  includesKernel?: boolean;
+  task?: {
+    instanceId: string;
+    baselineGeneration: number;
+    targetDigest: string;
+    idempotencyKey: string;
+  };
+  requiresAuthorization?: boolean;
+}
+
+export interface UpdateSubmitResponse {
+  submitted: boolean;
+  idempotencyKey: string;
+  planDigest: string;
 }
 
 /** Progress of the web tier's plugin-frontend rebuild/reload (GET /admin/plugins/frontend-status). */
@@ -863,11 +964,7 @@ export interface DeveloperOverviewResponse {
 
 /** 渠道可授予的能力 scope（与 `/sp/v1` 一致）。 */
 export type DeveloperSpScope =
-  | 'catalog:read'
-  | 'order:read'
-  | 'order:write'
-  | 'service:read'
-  | 'service:write';
+  'catalog:read' | 'order:read' | 'order:write' | 'service:read' | 'service:write';
 
 /** 新建渠道请求体。 */
 export interface CreateResellerInput {

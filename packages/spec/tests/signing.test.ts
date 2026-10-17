@@ -8,11 +8,14 @@ import {
   type CatalogSnapshot,
 } from '../src/distribution/catalog.js';
 import {
+  kernelManifestBytes,
   packageSignaturePayload,
   parsePackageSignatureFile,
   signCatalog,
+  signKernelManifest,
   signPackageFiles,
   verifyCatalogSignatureBytes,
+  verifyKernelManifestSignature,
   verifyPackageSignatureBound,
   DistributionSignatureError,
 } from '../src/distribution/signing.js';
@@ -227,5 +230,73 @@ describe('catalog tag', () => {
     expect(catalogReleaseTag(7)).toBe('catalog-v1/7');
     const bytes = canonicalizeCatalogSnapshot(catalog());
     expect(catalogDigest(bytes)).toBe(createHash('sha256').update(bytes).digest('hex'));
+  });
+});
+
+describe('kernel manifest signing round-trip (§13-4)', () => {
+  const manifest = {
+    formatVersion: 1,
+    kind: 'kernel',
+    version: '0.3.0',
+    images: [{ platform: 'linux/amd64', digest: `ghcr.io/x/y@sha256:${'a'.repeat(64)}` }],
+  };
+
+  it('signs and verifies; rejects purpose mismatch, tampering and wrong repository', () => {
+    const { publicKeyPem, privateKeyPem } = keypair();
+    const keyring: Keyring = {
+      formatVersion: 1,
+      keys: [
+        {
+          keyId: 'kernel-2026',
+          purpose: 'kernel',
+          publicKeyPem,
+          allowedRepositories: ['worable233/stackpanel'],
+        },
+      ],
+    };
+    const bytes = kernelManifestBytes(manifest);
+    const signature = signKernelManifest(bytes, privateKeyPem, 'kernel-2026');
+    expect(() =>
+      verifyKernelManifestSignature({
+        manifestBytes: bytes,
+        signature,
+        keyring,
+        repository: 'worable233/stackpanel',
+      }),
+    ).not.toThrow();
+
+    // Tampered manifest.
+    expect(() =>
+      verifyKernelManifestSignature({
+        manifestBytes: kernelManifestBytes({ ...manifest, version: '9.9.9' }),
+        signature,
+        keyring,
+      }),
+    ).toThrow(/摘要/);
+
+    // Wrong repository.
+    expect(() =>
+      verifyKernelManifestSignature({
+        manifestBytes: bytes,
+        signature,
+        keyring,
+        repository: 'evil/stackpanel',
+      }),
+    ).toThrow(/仓库/);
+
+    // A package-purpose key must not verify a kernel manifest.
+    const packageKeyring: Keyring = {
+      formatVersion: 1,
+      keys: [{ keyId: 'kernel-2026', purpose: 'package', publicKeyPem }],
+    };
+    expect(() =>
+      verifyKernelManifestSignature({ manifestBytes: bytes, signature, keyring: packageKeyring }),
+    ).toThrow(/未被信任/);
+  });
+
+  it('canonical kernel bytes are key-order independent', () => {
+    const a = kernelManifestBytes({ b: 1, a: 2 });
+    const b = kernelManifestBytes({ a: 2, b: 1 });
+    expect(new TextDecoder().decode(a)).toBe(new TextDecoder().decode(b));
   });
 });

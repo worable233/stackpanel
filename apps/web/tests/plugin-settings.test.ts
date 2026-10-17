@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => ({
   bindActions: vi.fn(() => ({})),
 }));
 vi.mock('@/lib/slots', () => ({
+  candidateAdmitsServerExecution: () => true,
   listPluginFrontendCandidates: async () => mocks.candidates,
   importFrontendPackage: async () => ({ finders: { config: { handler: mocks.finder } } }),
   readPluginSettings: async () => ({}),
 }));
 vi.mock('@/lib/api', () => ({
+  apiAssetUrl: (path: string) => path,
   getAuthedApiClient: async () => ({
     checkPermission: mocks.checkPermission,
     recordFrontendAudit: async () => undefined,

@@ -1,0 +1,70 @@
+{
+  "version": "0.1.0",
+  "revision": "0ed4b2522c92",
+  "entry": "frontend/dist/index.js",
+  "pages": [],
+  "layouts": [],
+  "finders": ["market.adminPlugins", "market.adminThemes"],
+  "adminRoutes": [
+    {
+      "path": "/",
+      "component": "admin/market",
+      "permission": "market.admin",
+      "nav": {
+        "label": "应用市场",
+        "group": "平台"
+      },
+      "data": [
+        {
+          "finder": "market.adminPlugins",
+          "as": "plugins"
+        },
+        {
+          "finder": "market.adminThemes",
+          "as": "themes"
+        }
+      ]
+    }
+  ],
+  "adminActions": [],
+  "actions": [
+    {
+      "id": "market.install-plugin",
+      "method": "POST",
+      "path": "/market/admin/plugins/:id/install",
+      "permission": "market.admin",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        }
+      ]
+    },
+    {
+      "id": "market.install-theme",
+      "method": "POST",
+      "path": "/market/admin/themes/:id/install",
+      "permission": "market.admin",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        }
+      ]
+    }
+  ],
+  "accountRoutes": [],
+  "accountWidgets": [],
+  "files": [
+    "frontend/dist/admin.js",
+    "frontend/dist/admin.js.map",
+    "frontend/dist/admin.runtime.js",
+    "frontend/dist/admin.runtime.js.map",
+    "frontend/dist/index.js",
+    "frontend/dist/index.js.map"
+  ]
+}

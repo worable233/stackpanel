@@ -120,6 +120,23 @@ jobs:
           pnpm --filter @stackpanel/spec build
           pnpm release:rehearse
 
+      # §13-7: offline clean-machine update drill. Builds the updater with its
+      # drill entry and drives the real engine + Compose adapter through the
+      # nine-step success path and the §6 failure-recovery matrix with an
+      # injected host-command runner. No Docker required; the real-Docker
+      # clean-machine acceptance is a separate, host-gated run.
+      - name: Updater drill (engine + compose adapter, no Docker)
+        run: |
+          pnpm --filter @stackpanel/updater build
+          pnpm release:updater-drill
+
+      # §13: the acceptance report re-runs both offline drills and prints the
+      # per-row acceptance table with replayable commands and residual limits.
+      # It never claims real-host rows passed; gated rows stay gated so the
+      # evidence boundary is explicit on every CI run.
+      - name: Acceptance report (offline rows only; gated rows stay gated)
+        run: pnpm release:acceptance-report
+
       - name: Test
         run: pnpm test
 

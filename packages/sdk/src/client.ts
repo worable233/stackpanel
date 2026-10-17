@@ -30,6 +30,11 @@ import {
   developerOverviewResponseSchema,
   frontendAuditResponseSchema,
   frontendApplyStatusResponseSchema,
+  updateStatusResponseSchema,
+  updatePolicyResponseSchema,
+  updatePlanResponseSchema,
+  updateSubmitResponseSchema,
+  updateResultsResponseSchema,
   frontendDescriptorSchema,
   healthSchema,
   loginResponseSchema,
@@ -92,6 +97,10 @@ import type {
   AuditLogResponse,
   AdminPluginsResponse,
   FrontendApplyStatusResponse,
+  UpdateStatusResponse,
+  UpdatePolicyView,
+  UpdatePlanResponse,
+  UpdateSubmitResponse,
   AdminThemesResponse,
   AdminProductsResponse,
   AdminServiceMutationResponse,
@@ -352,6 +361,41 @@ export class ApiClient {
   /** Read plugin-frontend rebuild/reload progress of the web tier. */
   getFrontendApplyStatus(): Promise<FrontendApplyStatusResponse> {
     return this.get('/admin/plugins/frontend-status', frontendApplyStatusResponseSchema);
+  }
+
+  /** Read the update center status (policy, updater projection, catalog state). */
+  getUpdateStatus(): Promise<UpdateStatusResponse> {
+    return this.get('/admin/updates/status', updateStatusResponseSchema);
+  }
+
+  /** Update the auto-update policy. */
+  updateUpdatePolicy(patch: Partial<UpdatePolicyView>): Promise<{ policy: UpdatePolicyView }> {
+    return request(
+      this.#fetch,
+      `${this.baseUrl}/admin/updates/policy`,
+      { method: 'PUT', body: patch, token: this.token },
+      this.timeoutMs,
+      updatePolicyResponseSchema,
+    );
+  }
+
+  /** Solve a full deployment plan from the signed catalog (no state change). */
+  planUpdate(): Promise<UpdatePlanResponse> {
+    return this.post('/admin/updates/plan', {}, updatePlanResponseSchema);
+  }
+
+  /** Submit an update task to the instance-private channel. */
+  submitUpdate(
+    input: { acknowledge?: boolean; idempotencyKey?: string } = {},
+  ): Promise<UpdateSubmitResponse> {
+    return this.post('/admin/updates/submit', input, updateSubmitResponseSchema);
+  }
+
+  /** List recent update task results projected by the updater. */
+  listUpdateResults(): Promise<{
+    results: Array<{ idempotencyKey: string; result: { phase: string } }>;
+  }> {
+    return this.get('/admin/updates/results', updateResultsResponseSchema);
   }
 
   /** Read the append-only audit trail (admin only). */
@@ -1054,29 +1098,32 @@ export class ApiClient {
     return this.del('/admin/themes/preview', z.void());
   }
 
-  /** List installable plugins from the local application market. */
+  /**
+   * List installable plugins. The market is a built-in plugin (ADR-0020 D3), so
+   * these paths are served by the `market` plugin, not the kernel.
+   */
   getMarketPlugins(): Promise<MarketPluginsResponse> {
-    return this.get('/admin/market/plugins', marketPluginsResponseSchema);
+    return this.get('/market/admin/plugins', marketPluginsResponseSchema);
   }
 
-  /** List installable themes from the local application market. */
+  /** List installable themes from the application market plugin. */
   getMarketThemes(): Promise<MarketThemesResponse> {
-    return this.get('/admin/market/themes', marketThemesResponseSchema);
+    return this.get('/market/admin/themes', marketThemesResponseSchema);
   }
 
-  /** Install or upgrade a plugin from the local application market. */
+  /** Install or upgrade a plugin from the application market plugin. */
   installMarketPlugin(id: string): Promise<MarketInstallResponse> {
     return this.post(
-      `/admin/market/plugins/${encodeURIComponent(id)}/install`,
+      `/market/admin/plugins/${encodeURIComponent(id)}/install`,
       {},
       marketInstallResponseSchema,
     );
   }
 
-  /** Install or upgrade a theme from the local application market. */
+  /** Install or upgrade a theme from the application market plugin. */
   installMarketTheme(id: string): Promise<MarketInstallResponse> {
     return this.post(
-      `/admin/market/themes/${encodeURIComponent(id)}/install`,
+      `/market/admin/themes/${encodeURIComponent(id)}/install`,
       {},
       marketInstallResponseSchema,
     );

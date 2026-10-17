@@ -36,7 +36,8 @@ const API_ORIGIN = apiStyleOrigin();
  * and UI libraries legitimately emit `style` attributes, which nonces cannot
  * cover without `'unsafe-hashes'` on every attribute.
  */
-function buildCsp(nonce: string, isDev: boolean): string {
+/** Exported for the contract-05 CSP regression test. */
+export function buildCsp(nonce: string, isDev: boolean): string {
   return [
     "default-src 'self'",
     "base-uri 'self'",

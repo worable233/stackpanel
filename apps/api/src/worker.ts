@@ -5,10 +5,10 @@
  * and activates the same plugins as the API (via the shared {@link
  * createPluginHost}), and consumes the BullMQ queue. It serves no HTTP.
  *
- * Why a separate process: task/queue load and (later) frontend builds must not
- * compete with request handling, and API replicas can roll independently of the
- * worker. BullMQ guarantees each job is fetched by exactly one worker, so
- * running this alongside N API replicas (which also consume) stays correct.
+ * Why a separate process: task/queue load must not compete with request
+ * handling, and API replicas can roll independently of the worker. BullMQ
+ * guarantees each job is fetched by exactly one worker, so running this
+ * alongside N API replicas (which also consume) stays correct.
  *
  * Plugin handlers are registered here through the same `PluginContext` the API
  * uses, because both processes are built by `createPluginHost`. A job whose
@@ -21,7 +21,6 @@ import { initInfra } from './infra.ts';
 import { startOutboxConsumption } from './plugins/events.ts';
 import { getJobRuntime } from './jobs/index.ts';
 import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence.ts';
-import { FrontendBuilder } from './lib/frontend-build.ts';
 import { startTracing, stopTracing } from './observability/index.ts';
 import { peekRedis } from '@stackpanel/db';
 import { stopAllIsolatedPlugins } from './plugins/isolated/host.ts';
@@ -53,15 +52,9 @@ async function main(): Promise<void> {
   // so it must not serve stale plugin handlers.
   await startRuntimeCoherence();
 
-  // S7: the worker is the single frontend builder. Each web replica only picks
-  // up the new artifact signature and restarts itself.
-  builder = new FrontendBuilder({ redis: peekRedis(), logger });
-  builder.start();
-
   logger.info('[worker] 已就绪，等待任务');
 }
 
-let builder: FrontendBuilder | null = null;
 let workerApp: FastifyInstance | null = null;
 
 let shuttingDown = false;
@@ -71,7 +64,6 @@ async function shutdown(signal: string): Promise<void> {
   logger.info(`[worker] 收到 ${signal}，正在停止`);
   try {
     stopAllIsolatedPlugins();
-    await builder?.stop();
     await stopRuntimeCoherence();
     await getJobRuntime().stop();
     await workerApp?.close();

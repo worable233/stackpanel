@@ -168,4 +168,8 @@ export const KERNEL_JOBS = {
   walletHoldSweep: 'wallet.sweep-holds',
   outboxRelay: 'outbox.relay',
   notificationDeliverySweep: 'notifications.sweep-deliveries',
+  /** 目录刷新（§10：六小时 + 抖动；未配置目录仓时处理器为空操作）。 */
+  catalogRefresh: 'distribution.catalog-refresh',
+  /** 自动更新评估（§13-6：目录刷新后按策略决定是否自动投递升级任务）。 */
+  autoUpdate: 'distribution.auto-update',
 } as const;

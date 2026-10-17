@@ -124,7 +124,99 @@ jobs:
             echo "- 验签：\`bash scripts/verify-image.sh $IMAGE_DIGEST_REF\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # 仅在 v* 标签推送时建 Release；生成的 Release Notes 由 GitHub 提交历史自动汇总。
+      # 生成并签名内核版本清单（§3.2、§13-4）。清单声明多架构镜像 digest、最低
+      # updater 协议、允许升级来源、迁移路径、schema 范围与平台。用受保护环境的
+      # `KERNEL_MANIFEST_SIGNING_KEY`（Ed25519 私钥）签名；无该密钥时**跳过**并告警，
+      # 不发布未签名内核清单（生产自动更新不允许跳过验签）。
+      - name: Setup pnpm
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: pnpm install --frozen-lockfile
+
+      - name: 生成并签名内核版本清单
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ steps.ns.outputs.owner }}/${{ env.IMAGE_NAME }}
+          SIGNING_KEY: ${{ secrets.KERNEL_MANIFEST_SIGNING_KEY }}
+          SIGNING_KEY_ID: ${{ vars.KERNEL_MANIFEST_SIGNING_KEY_ID }}
+        run: |
+          if [ -z "$SIGNING_KEY" ] || [ -z "$SIGNING_KEY_ID" ]; then
+            echo "::warning::缺少 KERNEL_MANIFEST_SIGNING_KEY(_ID)，跳过内核清单发布（生产必须配置）"
+            exit 0
+          fi
+          if [ -z "${{ vars.KERNEL_DATABASE_MIGRATION }}" ]; then
+            echo "::error::缺少 KERNEL_DATABASE_MIGRATION（本次发布所需的数据库迁移标识）；拒绝发布含空迁移的内核清单"
+            exit 1
+          fi
+          mkdir -p kernel-out
+          printf '%s' "$SIGNING_KEY" > kernel-signing.pem
+          IMAGE_REF="$IMAGE_REPOSITORY@${{ steps.build.outputs.digest }}"
+          cat > kernel.meta.json <<EOF
+          {
+            "kind": "kernel",
+            "version": "${GITHUB_REF_NAME#v}",
+            "channel": "${{ contains(github.ref_name, '-') && 'beta' || 'stable' }}",
+            "kernelApi": "${{ vars.KERNEL_API_VERSION || '0.4.0' }}",
+            "frontendAbi": "1.0.0",
+            "updateProtocol": 1,
+            "upgradeFrom": "${{ vars.KERNEL_UPGRADE_FROM || '>=0.1.0' }}",
+            "migrationPath": "direct",
+            "schemaRange": "${{ vars.KERNEL_SCHEMA_RANGE || '*' }}",
+            "images": [
+              { "platform": "linux/amd64", "digest": "$IMAGE_REF" },
+              { "platform": "linux/arm64", "digest": "$IMAGE_REF" }
+            ],
+            "corePackages": [],
+            "supportedPlatforms": ["linux/amd64","linux/arm64"],
+            "smokeProbeVersion": 1,
+            "databaseMigration": "${{ vars.KERNEL_DATABASE_MIGRATION || '' }}",
+            "source": {
+              "repository": "${{ github.repository }}",
+              "tag": "${{ github.ref_name }}",
+              "asset": "kernel-manifest.json"
+            }
+          }
+          EOF
+          pnpm --filter @stackpanel/spec build
+          node scripts/release/build-kernel-manifest.mjs \
+            --input kernel.meta.json \
+            --key-file kernel-signing.pem \
+            --key-id "$SIGNING_KEY_ID" \
+            --out kernel-out
+          rm -f kernel-signing.pem
+
+      - name: 上传内核清单产物
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('kernel-out/kernel-manifest.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-manifest
+          path: |
+            kernel-out/kernel-manifest.json
+            kernel-out/kernel-manifest.sig
+            kernel-out/kernel-ref.json
+
+      # 把已签名内核清单作为 Release 资产发布（§13-4）。目录只引用该资产的摘要与 keyId。
+      - name: 发布内核清单资产
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('kernel-out/kernel-manifest.json') != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            kernel-out/kernel-manifest.json
+            kernel-out/kernel-manifest.sig
+
+      # 生成 GitHub Release（Release Notes 由提交历史自动汇总）。内核清单资产已在上一步
+      # 以相同 tag 发布，会被 GitHub 合并到同一 Release。
       - name: 生成 GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2

@@ -17,6 +17,7 @@ export * from './catalog.js';
 export * from './signing.js';
 export * from './revision.js';
 export * from './update-protocol.js';
+export * from './update-channel.js';
 export * from './trust.js';
 export * from './install.js';
 export * from './compatibility.js';

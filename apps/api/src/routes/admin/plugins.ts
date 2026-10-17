@@ -10,11 +10,6 @@ import {
   frontendSummary,
   readFrontendManifest,
 } from '../../lib/frontend.ts';
-import {
-  readFrontendApplyRequest,
-  readFrontendApplyStatus,
-  requestFrontendApply,
-} from '../../lib/frontend-apply.ts';
 import { resolvedFrontendSettings, updateFrontendSettings } from '../../lib/frontend-service.ts';
 import { settingsErrorToMessage } from '../../lib/frontend-settings.ts';
 import { notifyLifecycle } from '../../notifications/lifecycle-notifications.ts';
@@ -157,36 +152,6 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  /** Frontend apply status: whether the web container is rebuilding/restarting. */
-  app.get('/admin/plugins/frontend-status', { preHandler: adminOnly }, async () => {
-    const [stored, request] = await Promise.all([
-      readFrontendApplyStatus(),
-      readFrontendApplyRequest(),
-    ]);
-    // A queued-but-unconsumed request is surfaced as `pending` so the admin UI
-    // can show work is in flight (with the right step text) before the web
-    // container picks it up. Once the supervisor writes a status carrying the
-    // same `requestedAt`, that status wins — the supervisor removes the request
-    // file only at the very end, so mere existence of the file is not enough to
-    // conclude it is still queued.
-    const handled =
-      request != null && stored?.requestedAt != null && stored.requestedAt === request.requestedAt;
-    const status =
-      request && !handled
-        ? {
-            state: 'pending' as const,
-            at: stored?.at ?? new Date().toISOString(),
-            requestedAt: request.requestedAt,
-            ...(request.label ? { label: request.label } : {}),
-            target: request.target,
-            action: request.action,
-            step: 1,
-            steps: request.steps,
-          }
-        : stored;
-    return { status };
-  });
-
   app.post(
     '/admin/plugins/upload',
     {
@@ -240,9 +205,6 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
         wasUpgrade = upgraded;
         const previousDefinition = upgraded ? await loadPluginDefinition(manifest.id) : null;
         const wasActive = upgraded && runtime.isActive(manifest.id);
-        const previousHadFrontend = upgraded
-          ? Boolean(await readFrontendManifest(pluginPackageDir(manifest.id)))
-          : false;
         const fileWrite = await writePluginFiles(manifest.id, files);
         let oldUnregistered = false;
         let newRegistered = false;
@@ -292,37 +254,21 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
         });
         // S8: converge other replicas onto the new definition/state.
         await publishRuntimeChange({ kind: 'plugin', id: manifest.id, action: 'reload' });
-        // 有前端产物时，通知 web 容器重建 registry 并重启；否则无需动前端。
-        const hasFrontend =
-          previousHadFrontend || Boolean(await readFrontendManifest(pluginPackageDir(manifest.id)));
-        let frontendApply: { requestedAt: string } | null = null;
-        if (hasFrontend) {
-          const applyRequest = await requestFrontendApply({
-            reason: upgraded ? 'plugin.upgrade' : 'plugin.install',
-            requestedBy: request.user?.id ?? null,
-            target: 'plugin',
-            action: upgraded ? 'update' : 'install',
-            label: manifest.name,
-            rebuild: true,
-          });
-          frontendApply = { requestedAt: applyRequest.requestedAt };
-        } else {
-          // 无前端产物：不会有实况构建通知，补一条一次性生命周期通知。
-          await notifyLifecycle(request.user?.id, {
-            target: 'plugin',
-            action: upgraded ? 'update' : 'install',
-            label: manifest.name,
-            id: manifest.id,
-            version: manifest.version,
-            ok: true,
-          });
-        }
+        // 运行期装载：前端产物在写入时即已 materialize，无需构建/重启；
+        // 只需给操作者写一条一次性生命周期通知。
+        await notifyLifecycle(request.user?.id, {
+          target: 'plugin',
+          action: upgraded ? 'update' : 'install',
+          label: manifest.name,
+          id: manifest.id,
+          version: manifest.version,
+          ok: true,
+        });
         return reply.code(201).send({
           installed: true,
           live: true,
           upgraded,
           id: manifest.id,
-          frontendApply,
         });
       } catch (err) {
         if (err instanceof PluginError) {
@@ -460,7 +406,6 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: '内置插件不可删除' });
       }
       const runtime = app.pluginRuntime;
-      const hadFrontend = Boolean(await readFrontendManifest(pluginPackageDir(id)));
       const removedName = runtime.list().find((p) => p.id === id)?.name ?? id;
       try {
         await runtime.unregister(id);
@@ -478,25 +423,14 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
       });
       // S8: remove the plugin from every replica's runtime.
       await publishRuntimeChange({ kind: 'plugin', id, action: 'remove' });
-      if (hadFrontend) {
-        await requestFrontendApply({
-          reason: 'plugin.uninstall',
-          requestedBy: request.user?.id ?? null,
-          target: 'plugin',
-          action: 'remove',
-          label: removedName,
-          rebuild: true,
-        });
-      } else {
-        // 无前端产物：补一条一次性卸载通知。
-        await notifyLifecycle(request.user?.id, {
-          target: 'plugin',
-          action: 'uninstall',
-          label: removedName,
-          id,
-          ok: true,
-        });
-      }
+      // 运行期装载：卸载后产物即时失效，无需构建/重启，补一条一次性卸载通知。
+      await notifyLifecycle(request.user?.id, {
+        target: 'plugin',
+        action: 'uninstall',
+        label: removedName,
+        id,
+        ok: true,
+      });
       return reply.code(204).send();
     },
   );

@@ -19,6 +19,9 @@ import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { loadPluginDefinition, scanPlugins, seedBuiltinPlugins } from './lib/plugins.ts';
 import { packageManager } from './packages/manager.ts';
+import { MarketService } from './market/service.ts';
+import { getCatalogRefresh } from './distribution/runtime.ts';
+import { runAutoUpdate } from './updates/auto-run.ts';
 import { env } from './config/env.ts';
 import { configureRuntimeCoherence, type RuntimeCoherence } from './runtime/coherence.ts';
 import { getEventBus, getOutboxBus } from './plugins/events.ts';
@@ -69,6 +72,8 @@ export interface PluginHostOptions {
 
 export interface PluginHost {
   runtime: PluginRuntime;
+  /** 市场分发安全原语（内置插件 `market` 经 `kernel.market` 消费）。 */
+  market: MarketService;
   payments: PaymentsService;
   wallet: WalletService;
   fx: FxService;
@@ -171,6 +176,17 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
 
   const extensions = options.extensions ?? new ExtensionService(getPrisma(), getDataCache());
   const media = new AttachmentReferenceService(getPrisma());
+  // `market` is a kernel capability service consumed by the built-in `market`
+  // plugin. It needs the plugin runtime (to register/activate after install),
+  // but the runtime needs every capability service up front — forward lazily.
+  const market = new MarketService({
+    runtime: {
+      has: (id) => getRuntime().has(id),
+      register: (definition) => getRuntime().register(definition),
+      unregister: (id, opts) => getRuntime().unregister(id, opts),
+      activate: (id) => getRuntime().activate(id),
+    },
+  });
   const runtime = new PluginRuntime({
     events: getEventBus(),
     db: getPrisma(),
@@ -188,6 +204,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     cache: cacheService,
     jobs: getJobRuntime(),
     media,
+    market,
     logger,
     registerRoute: options.registerRoute ?? (() => () => undefined),
     removeRoutes: options.removeRoutes ?? (() => undefined),
@@ -222,6 +239,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
 
   return {
     runtime,
+    market,
     payments: paymentsService,
     wallet: walletService,
     fx: fxService,
@@ -275,6 +293,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     },
     registerKernelJobs(): void {
       const kernelJobs = createKernelJobContext('kernel', getJobRuntime());
+      const catalogRefresh = getCatalogRefresh();
       void registerKernelSweeps(kernelJobs, {
         stateSweep: () => stateService.sweep(),
         paymentSweep: () => paymentsService.sweepExpired().then(() => undefined),
@@ -285,6 +304,30 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
             .cleanup()
             .then(() => undefined),
         notificationDeliverySweep: () => notificationDispatcher.sweep(),
+        // §10：后台目录刷新。未配置目录仓时为 undefined（不注册、零出网）。
+        ...(catalogRefresh
+          ? {
+              catalogRefresh: async () => {
+                const result = await catalogRefresh.refresh();
+                if (result.failure) {
+                  logger.warn(
+                    `[distribution] 目录刷新失败（${result.failure.kind}）：${result.failure.message}`,
+                  );
+                }
+              },
+              // §13-6：刷新后按策略评估自动更新。默认策略关闭，只有显式开启才投递。
+              autoUpdate: async () => {
+                const result = await runAutoUpdate({ prisma: getPrisma() });
+                if (result.submitted) {
+                  logger.info(
+                    `[distribution] 自动更新已投递（${result.idempotencyKey ?? ''}）：${result.reason}`,
+                  );
+                } else if (result.reason !== 'auto-disabled') {
+                  logger.info(`[distribution] 自动更新跳过：${result.reason} ${result.detail ?? ''}`);
+                }
+              },
+            }
+          : {}),
         logger: { warn: (message) => logger.warn(message) },
       });
       // ADR-0018: export/import run on any consumer (API replicas and worker),
