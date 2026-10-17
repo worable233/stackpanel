@@ -16,6 +16,10 @@ export interface MarketInstallResult {
   upgraded: boolean;
   /** `local` = 随内核发布的包；`catalog` = 从已签名 GitHub 目录安装。 */
   source: 'local' | 'catalog';
+  /** 远程目录安装时的发布者（审计留痕用；本地来源为空）。 */
+  publisher?: string;
+  /** 远程目录安装时实际用于验签的 keyId（审计留痕用；本地来源为空）。 */
+  keyId?: string;
 }
 
 /**

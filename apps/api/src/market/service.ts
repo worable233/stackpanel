@@ -171,6 +171,8 @@ export class MarketService implements MarketServiceContract {
         version: prepared.version,
         upgraded: prepared.upgraded,
         source: 'catalog',
+        publisher: prepared.publisher,
+        keyId: prepared.keyId,
       };
     } catch (err) {
       // 文件已暂存但运行时/DB 未提交：恢复旧目录，避免半切换（§7.6）。

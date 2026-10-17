@@ -57,7 +57,12 @@ async function install(req: HttpRequest, kind: 'plugin' | 'theme', id: string) {
       resource: kind,
       resourceId: id,
       ...(req.user ? { actorId: req.user.id } : {}),
-      meta: { version: result.version, source: result.source },
+      meta: {
+        version: result.version,
+        source: result.source,
+        ...(result.publisher ? { publisher: result.publisher } : {}),
+        ...(result.keyId ? { keyId: result.keyId } : {}),
+      },
     });
     return result;
   } catch (error) {
