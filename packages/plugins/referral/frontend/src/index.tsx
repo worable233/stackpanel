@@ -18,31 +18,33 @@ import type { ReactElement } from 'react';
 import { Gift, Link2, Share2 } from 'lucide-react';
 import { adminConfigSchema, adminListSchema, mineSchema } from './schemas';
 import { CopyLinkButton } from './route-progress.js';
+import { messages, t } from './i18n.js';
 
-const TRIGGER_LABELS: Record<string, string> = {
-  register: '注册即发',
-  first_order: '首单后发',
-  register_frozen: '冻结后发',
+/** Invitee state → message id + tone. Codes are API values, not copy. */
+const INVITER_STATE: Record<string, { key: string; tone: StatusTone }> = {
+  pending: { key: 'state.pending', tone: 'warn' },
+  paid: { key: 'state.paid', tone: 'ok' },
+  rejected: { key: 'state.rejected', tone: 'error' },
 };
 
-const INVITER_STATE: Record<string, { label: string; tone: StatusTone }> = {
-  pending: { label: '待发放', tone: 'warn' },
-  paid: { label: '已发放', tone: 'ok' },
-  rejected: { label: '已拒绝', tone: 'error' },
+const TRIGGER_KEYS: Record<string, string> = {
+  register: 'trigger.register',
+  first_order: 'trigger.firstOrder',
+  register_frozen: 'trigger.frozenShort',
 };
 
-function money(amount: number, currency: string): string {
+function money(amount: number, currency: string, locale?: string): string {
   // Reward balances are minor units; respect the currency's precision instead
   // of assuming two decimals.
   try {
-    return formatMinorCurrency(amount, currency, 'zh-CN');
+    return formatMinorCurrency(amount, currency, locale);
   } catch {
     return `${amount} ${currency}`;
   }
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('zh-CN');
+function formatDate(value: string, locale?: string): string {
+  return new Date(value).toLocaleString(locale);
 }
 
 function StatCard({
@@ -79,6 +81,7 @@ function Empty({ text }: { text: string }): ReactElement {
 }
 
 function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const referral = props.data.referral as ReturnType<typeof mineSchema.parse> | undefined;
   const createCode = props.actions?.['referral.create-code'];
   const toggleCode = props.actions?.['referral.toggle-code'];
@@ -86,86 +89,92 @@ function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
   if (!referral) {
     return (
       <main className="flex flex-col gap-6">
-        <PageHeader title="我的推广" />
-        <p className="text-sm text-muted-foreground">推广数据暂时无法加载，请刷新重试。</p>
+        <PageHeader title={tr('page.title')} />
+        <p className="text-sm text-muted-foreground">{tr('page.loadFailed')}</p>
       </main>
     );
   }
 
   const { config, codes, invites, stats } = referral;
   const currency = config.currency;
-  const triggerLabel = TRIGGER_LABELS[config.trigger] ?? config.trigger;
+  const triggerKey = TRIGGER_KEYS[config.trigger];
+  const triggerLabel = triggerKey ? tr(triggerKey) : config.trigger;
 
   return (
     <main className="flex flex-col gap-6">
-      <PageHeader title="我的推广" />
+      <PageHeader title={tr('page.title')} />
 
       {!config.enabled ? (
         <p
           role="status"
           className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-300"
         >
-          推广功能当前已关闭，新建的链接暂不会产生奖励。
+          {tr('notice.disabled')}
         </p>
       ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="累计邀请"
+          label={tr('stat.totalInvites')}
           value={String(stats.totalInvites)}
-          hint={`归因有效期 ${config.cookieDays} 天`}
+          hint={tr('stat.totalInvitesHint', { days: config.cookieDays })}
         />
         <StatCard
-          label="已发放邀请"
+          label={tr('stat.paidInvites')}
           value={String(stats.paidInvites)}
-          hint={`发奖时点：${triggerLabel}`}
+          hint={tr('stat.paidInvitesHint', { trigger: triggerLabel })}
         />
         <StatCard
-          label="累计奖励"
-          value={money(stats.earnedAmount, currency)}
-          hint="已发放到余额"
+          label={tr('stat.earned')}
+          value={money(stats.earnedAmount, currency, props.locale)}
+          hint={tr('stat.earnedHint')}
         />
-        <StatCard label="当前余额" value={money(stats.balance, currency)} />
+        <StatCard
+          label={tr('stat.balance')}
+          value={money(stats.balance, currency, props.locale)}
+        />
       </section>
 
       <Card>
         <CardHeader>
-          <SectionTitle icon={<Gift />}>奖励规则</SectionTitle>
+          <SectionTitle icon={<Gift />}>{tr('rules.title')}</SectionTitle>
           <CardDescription>
-            每成功邀请一位新用户，你可得 {money(config.rewardAmount, currency)}； 被邀请人可得{' '}
-            {money(config.inviteeRewardAmount, currency)}。
+            {tr('rules.body', {
+              inviter: money(config.rewardAmount, currency, props.locale),
+              invitee: money(config.inviteeRewardAmount, currency, props.locale),
+            })}
           </CardDescription>
         </CardHeader>
       </Card>
 
       <section className="flex flex-col gap-4">
-        <SectionTitle icon={<Link2 />}>我的推广码</SectionTitle>
+        <SectionTitle icon={<Link2 />}>{tr('codes.title')}</SectionTitle>
 
         <Card>
           <CardContent className="pt-6">
             {createCode ? (
               <form action={createCode} className="flex flex-col gap-4 sm:flex-row sm:items-end">
                 <div className="flex flex-1 flex-col gap-1.5">
-                  <Label htmlFor="referral-label">渠道备注</Label>
+                  <Label htmlFor="referral-label">{tr('codes.labelField')}</Label>
                   <Input
                     id="referral-label"
                     name="label"
                     maxLength={40}
-                    placeholder="例如：微博、给朋友的链接"
+                    placeholder={tr('codes.labelPlaceholder')}
                   />
                 </div>
                 <div className="flex w-full flex-col gap-1.5 sm:w-48">
-                  <Label htmlFor="referral-reward">单码奖励（分，可选）</Label>
+                  <Label htmlFor="referral-reward">{tr('codes.rewardField')}</Label>
                   <Input
                     id="referral-reward"
                     name="rewardAmount"
                     type="number"
                     min={0}
                     max={2000000000}
-                    placeholder="留空用默认"
+                    placeholder={tr('codes.rewardPlaceholder')}
                   />
                 </div>
-                <Button type="submit">新建推广码</Button>
+                <Button type="submit">{tr('codes.create')}</Button>
               </form>
             ) : null}
           </CardContent>
@@ -179,16 +188,23 @@ function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
                   <p className="flex items-center gap-2 font-mono font-semibold tracking-wide">
                     {code.code}
                     <StatusBadge tone={code.state === 'active' ? 'ok' : 'neutral'}>
-                      {code.state === 'active' ? '启用' : '停用'}
+                      {code.state === 'active' ? tr('codes.active') : tr('codes.disabled')}
                     </StatusBadge>
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {code.label || '未备注'} · 已注册 {code.signupCount} 人 · 奖励{' '}
-                    {money(code.rewardAmount, currency)}
+                    {tr('codes.summary', {
+                      label: code.label || tr('codes.noLabel'),
+                      count: code.signupCount,
+                      amount: money(code.rewardAmount, currency, props.locale),
+                    })}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <CopyLinkButton code={code.code} />
+                  <CopyLinkButton
+                    code={code.code}
+                    copyLabel={tr('codes.copy')}
+                    copiedLabel={tr('codes.copied')}
+                  />
                   {toggleCode ? (
                     <form action={toggleCode}>
                       <input type="hidden" name="id" value={code.id} />
@@ -201,7 +217,7 @@ function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
                         type="submit"
                         className="text-xs text-muted-foreground transition-colors hover:text-foreground"
                       >
-                        {code.state === 'active' ? '停用' : '启用'}
+                        {code.state === 'active' ? tr('codes.disabled') : tr('codes.active')}
                       </button>
                     </form>
                   ) : null}
@@ -210,42 +226,41 @@ function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
             ))}
           </ul>
         ) : (
-          <Empty text="还没有推广码，先新建一个吧。" />
+          <Empty text={tr('codes.empty')} />
         )}
       </section>
 
       <section className="flex flex-col gap-4">
-        <SectionTitle icon={<Share2 />}>邀请记录</SectionTitle>
+        <SectionTitle icon={<Share2 />}>{tr('invites.title')}</SectionTitle>
         {invites.length ? (
           <div className="overflow-x-auto rounded-2xl border bg-card shadow-sm">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">被邀请人</th>
-                  <th className="px-4 py-2.5 font-medium">推广码</th>
-                  <th className="px-4 py-2.5 font-medium">奖励</th>
-                  <th className="px-4 py-2.5 font-medium">状态</th>
-                  <th className="px-4 py-2.5 font-medium">时间</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('invites.colInvitee')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('invites.colCode')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('invites.colReward')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('invites.colState')}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr('invites.colTime')}</th>
                 </tr>
               </thead>
               <tbody>
                 {invites.map((invite) => {
-                  const state = INVITER_STATE[invite.inviterState] ?? {
-                    label: invite.inviterState,
-                    tone: 'neutral' as StatusTone,
-                  };
+                  const state = INVITER_STATE[invite.inviterState];
                   return (
                     <tr key={invite.id} className="border-t">
                       <td className="px-4 py-2.5">{invite.inviteeEmail || invite.inviteeId}</td>
                       <td className="px-4 py-2.5 font-mono text-xs">{invite.code}</td>
                       <td className="px-4 py-2.5 tabular-nums">
-                        {money(invite.rewardAmount, currency)}
+                        {money(invite.rewardAmount, currency, props.locale)}
                       </td>
                       <td className="px-4 py-2.5">
-                        <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+                        <StatusBadge tone={state?.tone ?? 'neutral'}>
+                          {state ? tr(state.key) : invite.inviterState}
+                        </StatusBadge>
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                        {formatDate(invite.paidAt ?? invite.createdAt)}
+                        {formatDate(invite.paidAt ?? invite.createdAt, props.locale)}
                       </td>
                     </tr>
                   );
@@ -254,7 +269,7 @@ function ReferralAccountPage(props: AccountPageComponentProps): ReactElement {
             </table>
           </div>
         ) : (
-          <Empty text="还没有人通过你的链接注册。" />
+          <Empty text={tr('invites.empty')} />
         )}
       </section>
     </main>
@@ -274,6 +289,8 @@ const referralFinders: Record<string, FinderProvider> = {
 };
 
 export const frontend: FrontendPackage = {
+  locales: ['zh-CN', 'en-US'],
+  messages,
   finders: referralFinders,
   pages: [],
   pageComponents: {},
@@ -333,7 +350,7 @@ export const frontend: FrontendPackage = {
         path: '/referral',
         component: 'account/referral',
         permission: 'store.referral',
-        nav: { label: '我的推广', group: '推广', order: 20 },
+        nav: { labelKey: 'nav.label', groupKey: 'nav.group', order: 20 },
         data: [{ finder: 'referral.mine', as: 'referral' }],
       },
     ],
@@ -342,7 +359,10 @@ export const frontend: FrontendPackage = {
         path: '/referrals',
         component: 'admin/referrals',
         permission: 'store.admin',
-        systemSettings: { label: '推广', order: 120 },
+        systemSettings: {
+          labelKey: 'admin.systemSettings',
+          order: 120,
+        },
         data: [
           { finder: 'referral.adminList', as: 'referral' },
           { finder: 'referral.adminConfig', as: 'referralConfig' },

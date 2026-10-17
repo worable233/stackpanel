@@ -2,14 +2,21 @@
 import { useId, useState } from 'react';
 import { Tooltip } from '@base-ui/react/tooltip';
 import { Info } from 'lucide-react';
-export function PricingInfo({ text }: { text: string }) {
+export function PricingInfo({
+  text,
+  ariaLabel,
+}: {
+  text: string;
+  /** Accessible name of the trigger; supplied by the caller (ADR-0016 §6). */
+  ariaLabel: string;
+}) {
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
     <Tooltip.Provider delay={100}>
       <Tooltip.Root open={open} onOpenChange={setOpen}>
         <Tooltip.Trigger
-          aria-label="查看服务说明"
+          aria-label={ariaLabel}
           aria-describedby={open ? id : undefined}
           onClick={() => setOpen((value) => !value)}
           className="inline-flex size-6 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-current"

@@ -8,6 +8,8 @@ export interface UpdateCenterState {
   ok?: boolean;
   error?: string;
   message?: string;
+  /** Stable id of a submitted task; the UI composes the localized message. */
+  taskKey?: string;
   plan?: UpdatePlanResponse;
   status?: UpdateStatusResponse;
 }
@@ -39,7 +41,7 @@ export async function submitUpdateAction(acknowledge: boolean): Promise<UpdateCe
   try {
     const api = await getAuthedApiClient();
     const result = await api.submitUpdate({ acknowledge });
-    return { ok: true, message: `升级任务已投递（${result.idempotencyKey.slice(0, 12)}…）` };
+    return { ok: true, taskKey: result.idempotencyKey.slice(0, 12) };
   } catch (err) {
     return { error: await apiErrorMessage(err) };
   }

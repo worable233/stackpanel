@@ -4,13 +4,17 @@ import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { SetupForm } from './setup-form';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
+import { getLocale } from '@/i18n/locale';
+import { translate } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: '初始化',
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: translate(await getLocale(), 'auth.setup.pageTitle'),
+    robots: { index: false, follow: false },
+  };
+}
 
 /**
  * First-run setup wizard. Server-rendered gate: the page only exists while the

@@ -25,124 +25,196 @@ import {
   Star,
   Zap,
 } from 'lucide-react';
+import zhCN from '../messages/zh-CN.json';
+import { messages, t } from './i18n.js';
 
+/** Blog slugs are routed data; titles/bodies come from the package catalog. */
 const BLOG_POSTS = [
-  {
-    slug: 'first-cloud',
-    title: '第一次上云，该怎么选服务器',
-    excerpt: 'CPU、内存、带宽、线路……按业务规模挑，不花一分冤枉钱。',
-    body: '选型是上云的第一步。轻型网站、开发测试，2核4G 就能流畅起步；业务增长后平滑升配，按月按年灵活结算。把需求讲清楚，我们帮你评估用量，不为用不上的资源付费。',
-  },
-  {
-    slug: 'night-sky',
-    title: '稳定，是设计出来的',
-    excerpt: '从架构到运维，每一步都为「可预期」服务。',
-    body: '真实经营、资质齐备、架构自持，这三件事我们从第一天起就做到了。选择我们，就是选择一个看得清、查得到、靠得住的云。',
-  },
+  { slug: 'first-cloud', key: 'content.blog.firstCloud' },
+  { slug: 'night-sky', key: 'content.blog.nightSky' },
 ];
 
 const settingsSchema = {
   groups: [
     {
       id: 'hero',
-      label: '首屏',
+      labelKey: 'settings.hero.group',
       fields: [
-        { type: 'text', name: 'heroBadge', label: '首屏徽标', default: 'AURORA CLOUD' },
+        {
+          type: 'text',
+          name: 'heroBadge',
+          labelKey: 'settings.hero.heroBadge.label',
+          default: zhCN['content.hero.heroBadge'],
+        },
         {
           type: 'text',
           name: 'heroTitle',
-          label: '主标题',
-          default: '在深空中，找到属于你的云',
+          labelKey: 'settings.hero.heroTitle.label',
+          default: zhCN['content.hero.heroTitle'],
         },
         {
           type: 'textarea',
           name: 'heroSubtitle',
-          label: '副标题',
-          default:
-            '暗夜里的一束稳定光。实体运营、资质齐备、架构自主，从第一台服务器开始，可靠就是默认选项。',
-          help: '一句话说明为什么选择我们',
+          labelKey: 'settings.hero.heroSubtitle.label',
+          default: zhCN['content.hero.heroSubtitle'],
+          helpKey: 'settings.hero.heroSubtitle.help',
         },
       ],
     },
     {
       id: 'why',
-      label: '为什么选择我们',
+      labelKey: 'settings.why.group',
       fields: [
-        { type: 'text', name: 'whyKicker', label: '区块小标', default: '为什么选择我们' },
-        { type: 'text', name: 'whyTitle', label: '区块标题', default: '稳定，看得见' },
+        {
+          type: 'text',
+          name: 'whyKicker',
+          labelKey: 'settings.why.whyKicker.label',
+          default: zhCN['content.why.whyKicker'],
+        },
+        {
+          type: 'text',
+          name: 'whyTitle',
+          labelKey: 'settings.why.whyTitle.label',
+          default: zhCN['content.why.whyTitle'],
+        },
         {
           type: 'textarea',
           name: 'whyText',
-          label: '区块说明',
-          default: '上云最该有的确定性，我们一次性交付。',
+          labelKey: 'settings.why.whyText.label',
+          default: zhCN['content.why.whyText'],
         },
-        { type: 'text', name: 'feature1Title', label: '板块一标题', default: '实体企业' },
+        {
+          type: 'text',
+          name: 'feature1Title',
+          labelKey: 'settings.why.feature1Title.label',
+          default: zhCN['content.why.feature1Title'],
+        },
         {
           type: 'textarea',
           name: 'feature1Text',
-          label: '板块一说明',
-          default: '正规注册、真实经营，合作从头就看得清、查得到。',
+          labelKey: 'settings.why.feature1Text.label',
+          default: zhCN['content.why.feature1Text'],
         },
-        { type: 'text', name: 'feature2Title', label: '板块二标题', default: '资质齐全' },
+        {
+          type: 'text',
+          name: 'feature2Title',
+          labelKey: 'settings.why.feature2Title.label',
+          default: zhCN['content.why.feature2Title'],
+        },
         {
           type: 'textarea',
           name: 'feature2Text',
-          label: '板块二说明',
-          default: '备案与服务资质齐备，合规不是加分项，是默认项。',
+          labelKey: 'settings.why.feature2Text.label',
+          default: zhCN['content.why.feature2Text'],
         },
-        { type: 'text', name: 'feature3Title', label: '板块三标题', default: '技术独立' },
+        {
+          type: 'text',
+          name: 'feature3Title',
+          labelKey: 'settings.why.feature3Title.label',
+          default: zhCN['content.why.feature3Title'],
+        },
         {
           type: 'textarea',
           name: 'feature3Text',
-          label: '板块三说明',
-          default: '自研架构、资源自持，升级扩容不设卡，路线自己定。',
+          labelKey: 'settings.why.feature3Text.label',
+          default: zhCN['content.why.feature3Text'],
         },
       ],
     },
     {
       id: 'stats',
-      label: '数据',
+      labelKey: 'settings.stats.group',
       fields: [
-        { type: 'text', name: 'statsKicker', label: '区块小标', default: '用数据说话' },
-        { type: 'text', name: 'statsTitle', label: '区块标题', default: '稳定，看得见' },
-        { type: 'text', name: 'stat1Value', label: '统计值一', default: '99.9%' },
-        { type: 'text', name: 'stat1Label', label: '统计标签一', default: '稳定在线' },
+        {
+          type: 'text',
+          name: 'statsKicker',
+          labelKey: 'settings.stats.statsKicker.label',
+          default: zhCN['content.stats.statsKicker'],
+        },
+        {
+          type: 'text',
+          name: 'statsTitle',
+          labelKey: 'settings.stats.statsTitle.label',
+          default: zhCN['content.stats.statsTitle'],
+        },
+        {
+          type: 'text',
+          name: 'stat1Value',
+          labelKey: 'settings.stats.stat1Value.label',
+          default: zhCN['content.stats.stat1Value'],
+        },
+        {
+          type: 'text',
+          name: 'stat1Label',
+          labelKey: 'settings.stats.stat1Label.label',
+          default: zhCN['content.stats.stat1Label'],
+        },
         {
           type: 'text',
           name: 'stat1Desc',
-          label: '统计说明一',
-          default: '自研架构持续守护，掉线不是选项。',
+          labelKey: 'settings.stats.stat1Desc.label',
+          default: zhCN['content.stats.stat1Desc'],
         },
-        { type: 'text', name: 'stat2Value', label: '统计值二', default: '<5 min' },
-        { type: 'text', name: 'stat2Label', label: '统计标签二', default: '响应速度' },
+        {
+          type: 'text',
+          name: 'stat2Value',
+          labelKey: 'settings.stats.stat2Value.label',
+          default: zhCN['content.stats.stat2Value'],
+        },
+        {
+          type: 'text',
+          name: 'stat2Label',
+          labelKey: 'settings.stats.stat2Label.label',
+          default: zhCN['content.stats.stat2Label'],
+        },
         {
           type: 'text',
           name: 'stat2Desc',
-          label: '统计说明二',
-          default: '任何时刻的问题，都有回音。',
+          labelKey: 'settings.stats.stat2Desc.label',
+          default: zhCN['content.stats.stat2Desc'],
         },
-        { type: 'text', name: 'stat3Value', label: '统计值三', default: '100%' },
-        { type: 'text', name: 'stat3Label', label: '统计标签三', default: '资质合规' },
+        {
+          type: 'text',
+          name: 'stat3Value',
+          labelKey: 'settings.stats.stat3Value.label',
+          default: zhCN['content.stats.stat3Value'],
+        },
+        {
+          type: 'text',
+          name: 'stat3Label',
+          labelKey: 'settings.stats.stat3Label.label',
+          default: zhCN['content.stats.stat3Label'],
+        },
         {
           type: 'text',
           name: 'stat3Desc',
-          label: '统计说明三',
-          default: '正规实体，每一单都合规可溯。',
+          labelKey: 'settings.stats.stat3Desc.label',
+          default: zhCN['content.stats.stat3Desc'],
         },
       ],
     },
     {
       id: 'cta',
-      label: '行动号召',
+      labelKey: 'settings.cta.group',
       fields: [
-        { type: 'text', name: 'ctaTitle', label: '标题', default: '上云，不该是件复杂的事' },
+        {
+          type: 'text',
+          name: 'ctaTitle',
+          labelKey: 'settings.cta.ctaTitle.label',
+          default: zhCN['content.cta.ctaTitle'],
+        },
         {
           type: 'textarea',
           name: 'ctaText',
-          label: '说明',
-          default: '选配置、部署、上线，几步就能跑起来。',
+          labelKey: 'settings.cta.ctaText.label',
+          default: zhCN['content.cta.ctaText'],
         },
-        { type: 'text', name: 'ctaButton', label: '按钮', default: '开始上云' },
+        {
+          type: 'text',
+          name: 'ctaButton',
+          labelKey: 'settings.cta.ctaButton.label',
+          default: zhCN['content.cta.ctaButton'],
+        },
       ],
     },
   ],
@@ -196,6 +268,7 @@ function BrandMark({ size = 'md' }: { size?: 'md' | 'lg' }): ReactElement {
   );
 }
 
+/** Matches category names supplied as catalog data; these are not UI copy. */
 function categoryIcon(name: string): string {
   const n = name.toLowerCase();
   if (/(云?服务器|主机|ecs|裸金属|物理机)/.test(n)) return 'server';
@@ -215,11 +288,13 @@ function AuroraLayout({
   isAuthenticated,
   platform,
   categories = [],
+  locale,
 }: FrontendLayoutProps): ReactElement {
+  const tr = t(locale);
   const navItems = [
-    { label: '首页', href: '/' },
+    { label: tr('nav.home'), href: '/' },
     ...navigation,
-    { label: '上云指南', href: '/blog' },
+    { label: tr('nav.guide'), href: '/blog' },
   ];
   return (
     <div className="flex min-h-full flex-1 flex-col bg-background" data-theme-layout="aurora">
@@ -232,7 +307,7 @@ function AuroraLayout({
             </span>
           </a>
 
-          <nav className="hidden items-center gap-0.5 lg:flex" aria-label="主导航">
+          <nav className="hidden items-center gap-0.5 lg:flex" aria-label={tr('nav.mainAria')}>
             {categories.length > 0 && (
               <div className="group relative">
                 <button
@@ -240,7 +315,7 @@ function AuroraLayout({
                   className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:text-primary"
                   aria-haspopup="true"
                 >
-                  云产品
+                  {tr('nav.products')}
                   <span className="transition-transform duration-200 group-hover:rotate-180">
                     <Icon name="chevron" />
                   </span>
@@ -269,8 +344,8 @@ function AuroraLayout({
                                     </span>
                                     <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
                                       {child.productCount > 0
-                                        ? `${child.productCount} 个服务`
-                                        : '查看分类'}
+                                        ? tr('categories.count', { count: child.productCount })
+                                        : tr('categories.view')}
                                     </span>
                                   </span>
                                 </a>
@@ -282,7 +357,7 @@ function AuroraLayout({
                             href={`/shop?categoryId=${category.id}`}
                             className="mt-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-primary"
                           >
-                            查看分类
+                            {tr('categories.view')}
                             <Icon name="arrow" />
                           </a>
                         )}
@@ -308,14 +383,14 @@ function AuroraLayout({
               href={isAuthenticated ? '/account' : '/login'}
               className="hidden items-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
             >
-              {isAuthenticated ? '账户中心' : '登录'}
+              {isAuthenticated ? tr('nav.account') : tr('nav.login')}
             </a>
             <a
               href="/shop"
               className="group relative hidden items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-sky-500/25 transition-all hover:shadow-xl hover:shadow-violet-500/30 sm:inline-flex"
             >
               <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
-              <span className="relative">浏览服务</span>
+              <span className="relative">{tr('nav.browse')}</span>
               <Icon name="arrow" />
             </a>
             <details className="group relative lg:hidden">
@@ -324,12 +399,12 @@ function AuroraLayout({
               </summary>
               <nav
                 className="absolute right-0 top-11 max-h-[70vh] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-card/95 p-1.5 shadow-2xl shadow-black/40 backdrop-blur-xl"
-                aria-label="移动端导航"
+                aria-label={tr('nav.mobileAria')}
               >
                 {categories.length > 0 && (
                   <>
                     <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-widest text-primary">
-                      云产品
+                      {tr('nav.products')}
                     </p>
                     {categories.map((category) => (
                       <div key={category.id} className="mt-1">
@@ -365,7 +440,7 @@ function AuroraLayout({
                             <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
                               <Icon name={categoryIcon(category.name)} />
                             </span>
-                            查看分类
+                            {tr('categories.view')}
                           </a>
                         )}
                       </div>
@@ -391,13 +466,13 @@ function AuroraLayout({
                     href="/shop"
                     className="flex items-center justify-center rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-3 py-2.5 text-sm font-semibold text-white"
                   >
-                    浏览服务
+                    {tr('nav.browse')}
                   </a>
                   <a
                     href={isAuthenticated ? '/account' : '/login'}
                     className="flex items-center justify-center rounded-lg border border-white/10 px-3 py-2.5 text-sm font-medium text-foreground"
                   >
-                    {isAuthenticated ? '账户中心' : '登录'}
+                    {isAuthenticated ? tr('nav.account') : tr('nav.login')}
                   </a>
                 </div>
               </nav>
@@ -421,11 +496,11 @@ function AuroraLayout({
                 <span>{platform.name}</span>
               </a>
               <p className="mt-4 max-w-sm text-sm leading-6 text-muted-foreground">
-                让上云简单、稳定、可信。实体运营、资质齐备、架构自主。
+                {tr('footer.tagline')}
               </p>
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">导航</p>
+              <p className="text-sm font-semibold text-foreground">{tr('nav.footerNav')}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 {navItems.map((item) => (
                   <li key={item.href}>
@@ -441,7 +516,7 @@ function AuroraLayout({
               </ul>
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">关于</p>
+              <p className="text-sm font-semibold text-foreground">{tr('nav.about')}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li>
                   <a
@@ -449,7 +524,7 @@ function AuroraLayout({
                     className="group inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span className="size-1 -translate-x-1 rounded-full bg-primary opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
-                    关于我们
+                    {tr('nav.aboutUs')}
                   </a>
                 </li>
                 <li>
@@ -458,7 +533,7 @@ function AuroraLayout({
                     className="group inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span className="size-1 -translate-x-1 rounded-full bg-primary opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
-                    上云指南
+                    {tr('nav.guide')}
                   </a>
                 </li>
                 <li>
@@ -467,13 +542,13 @@ function AuroraLayout({
                     className="group inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span className="size-1 -translate-x-1 rounded-full bg-primary opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
-                    浏览服务
+                    {tr('nav.browse')}
                   </a>
                 </li>
               </ul>
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">账户</p>
+              <p className="text-sm font-semibold text-foreground">{tr('nav.accountSection')}</p>
               <ul className="mt-4 space-y-2.5 text-sm">
                 <li>
                   <a
@@ -481,7 +556,7 @@ function AuroraLayout({
                     className="group inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span className="size-1 -translate-x-1 rounded-full bg-primary opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
-                    {isAuthenticated ? '账户中心' : '登录'}
+                    {isAuthenticated ? tr('nav.account') : tr('nav.login')}
                   </a>
                 </li>
                 <li>
@@ -490,7 +565,7 @@ function AuroraLayout({
                     className="group inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <span className="size-1 -translate-x-1 rounded-full bg-primary opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
-                    我的订单
+                    {tr('nav.orders')}
                   </a>
                 </li>
               </ul>
@@ -502,19 +577,19 @@ function AuroraLayout({
             </span>
             <div className="flex flex-col flex-wrap items-center justify-center gap-y-2 text-center text-sm leading-tight text-muted-foreground sm:justify-end sm:text-right md:flex-row">
               <a href="/about" className="transition-colors hover:text-foreground">
-                关于我们
+                {tr('nav.aboutUs')}
               </a>
               <span className="mx-1.5">|</span>
               <a href="/blog" className="transition-colors hover:text-foreground">
-                上云指南
+                {tr('nav.guide')}
               </a>
               <span className="mx-1.5">|</span>
               <a href="/shop" className="transition-colors hover:text-foreground">
-                浏览服务
+                {tr('nav.browse')}
               </a>
               <span className="mx-1.5">|</span>
               <a href="/about" className="transition-colors hover:text-foreground">
-                隐私政策
+                {tr('nav.privacy')}
               </a>
             </div>
           </div>
@@ -524,34 +599,48 @@ function AuroraLayout({
   );
 }
 
-function HomePage({ settings }: FrontendPageProps): ReactElement {
+function HomePage({ settings, locale }: FrontendPageProps): ReactElement {
+  const tr = t(locale);
   const s = settings.hero ?? {};
   const w = settings.why ?? {};
-  const t = settings.stats ?? {};
+  const st = settings.stats ?? {};
   const c = settings.cta ?? {};
   const features = [
     {
       icon: 'building',
-      title: (w.feature1Title as string) || '实体企业',
-      text: (w.feature1Text as string) || '',
+      title: (w.feature1Title as string) || tr('content.why.feature1Title'),
+      text: (w.feature1Text as string) || tr('content.why.feature1Text'),
       href: '/about',
-      cta: '了解更多',
+      cta: tr('home.feature.learn'),
     },
     {
       icon: 'award',
-      title: (w.feature2Title as string) || '资质齐全',
-      text: (w.feature2Text as string) || '',
+      title: (w.feature2Title as string) || tr('content.why.feature2Title'),
+      text: (w.feature2Text as string) || tr('content.why.feature2Text'),
       href: '/about',
-      cta: '查看资质',
+      cta: tr('home.feature.credentials'),
     },
     {
       icon: 'server',
-      title: (w.feature3Title as string) || '技术独立',
-      text: (w.feature3Text as string) || '',
+      title: (w.feature3Title as string) || tr('content.why.feature3Title'),
+      text: (w.feature3Text as string) || tr('content.why.feature3Text'),
       href: '/about',
-      cta: '了解架构',
+      cta: tr('home.feature.architecture'),
     },
   ];
+  const scenes = [
+    tr('home.scene.server'),
+    tr('home.scene.bandwidth'),
+    tr('home.scene.storage'),
+    tr('home.scene.cdn'),
+    tr('home.scene.highDefense'),
+    tr('home.scene.billing'),
+  ];
+  const testimonials = ['1', '2', '3'].map((index) => ({
+    quote: tr(`content.testimonials.${index}.quote`),
+    name: tr(`content.testimonials.${index}.name`),
+    role: tr(`content.testimonials.${index}.role`),
+  }));
   return (
     <main className="flex-1">
       <section className="relative z-0 overflow-hidden">
@@ -571,17 +660,16 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
           >
             <span className="flex items-center gap-1.5 text-primary">
               <Icon name="spark" />
-              {(s.heroBadge as string) || 'AURORA CLOUD'}
+              {(s.heroBadge as string) || tr('content.hero.heroBadge')}
             </span>
-            开始上云
+            {tr('home.start')}
             <Icon name="arrow" />
           </a>
           <h1 className="mt-8 max-w-3xl text-balance bg-gradient-to-br from-cyan-300 via-sky-200 to-violet-300 bg-clip-text text-4xl font-black tracking-tight text-transparent sm:text-6xl">
-            {(s.heroTitle as string) || '在深空中，找到属于你的云'}
+            {(s.heroTitle as string) || tr('content.hero.heroTitle')}
           </h1>
           <p className="mt-6 max-w-xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg">
-            {(s.heroSubtitle as string) ||
-              '暗夜里的一束稳定光。实体运营、资质齐备、架构自主，从第一台服务器开始，可靠就是默认选项。'}
+            {(s.heroSubtitle as string) || tr('content.hero.heroSubtitle')}
           </p>
           <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
             <a
@@ -589,14 +677,14 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
               className="group relative inline-flex h-11 items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-7 text-sm font-semibold text-white shadow-xl shadow-sky-500/30 transition-all hover:scale-[1.02] active:scale-[0.99]"
             >
               <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
-              <span className="relative">浏览服务</span>
+              <span className="relative">{tr('nav.browse')}</span>
               <Icon name="arrow" />
             </a>
             <a
               href="/about"
               className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-background/60 px-7 text-sm font-semibold text-foreground backdrop-blur transition-colors hover:bg-muted/50"
             >
-              为什么选择我们
+              {tr('home.whyCta')}
             </a>
           </div>
         </div>
@@ -605,22 +693,20 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
       <section className="border-y border-white/10 bg-gradient-to-r from-cyan-500/5 via-transparent to-violet-500/5 py-10 dark:from-cyan-400/5 dark:via-transparent dark:to-violet-500/5">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <p className="text-center text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            一个平台，覆盖所有上云场景
+            {tr('home.scenes')}
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-12 gap-y-4 text-sm font-semibold text-muted-foreground">
-            {['云服务器', '弹性带宽', '数据存储', 'CDN 加速', '高防节点', '计费灵活'].map(
-              (name) => (
-                <span
-                  key={name}
-                  className="flex items-center gap-2 opacity-70 transition-opacity hover:opacity-100"
-                >
-                  <span className="flex size-5 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-primary">
-                    <Icon name="server" />
-                  </span>
-                  {name}
+            {scenes.map((name) => (
+              <span
+                key={name}
+                className="flex items-center gap-2 opacity-70 transition-opacity hover:opacity-100"
+              >
+                <span className="flex size-5 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-primary">
+                  <Icon name="server" />
                 </span>
-              ),
-            )}
+                {name}
+              </span>
+            ))}
           </div>
         </div>
       </section>
@@ -628,13 +714,13 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
       <section className="mx-auto w-full max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-semibold uppercase tracking-widest text-primary">
-            {(w.whyKicker as string) || '为什么选择我们'}
+            {(w.whyKicker as string) || tr('content.why.whyKicker')}
           </p>
           <h2 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-            {(w.whyTitle as string) || '稳定，看得见'}
+            {(w.whyTitle as string) || tr('content.why.whyTitle')}
           </h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            {(w.whyText as string) || '上云最该有的确定性，我们一次性交付。'}
+            {(w.whyText as string) || tr('content.why.whyText')}
           </p>
         </div>
         <div className="mt-12 grid gap-5 md:grid-cols-3">
@@ -667,28 +753,28 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
       <section className="mx-auto w-full max-w-7xl px-4 pb-20 sm:px-6 sm:pb-24 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-semibold uppercase tracking-widest text-primary">
-            {(t.statsKicker as string) || '用数据说话'}
+            {(st.statsKicker as string) || tr('content.stats.statsKicker')}
           </p>
           <h2 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-            {(t.statsTitle as string) || '稳定，看得见'}
+            {(st.statsTitle as string) || tr('content.stats.statsTitle')}
           </h2>
         </div>
         <div className="mt-12 grid gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 sm:grid-cols-3">
           {[
             [
-              (t.stat1Value as string) || '99.9%',
-              (t.stat1Label as string) || '稳定在线',
-              (t.stat1Desc as string) || '自研架构持续守护，掉线不是选项。',
+              (st.stat1Value as string) || tr('content.stats.stat1Value'),
+              (st.stat1Label as string) || tr('content.stats.stat1Label'),
+              (st.stat1Desc as string) || tr('content.stats.stat1Desc'),
             ],
             [
-              (t.stat2Value as string) || '<5 min',
-              (t.stat2Label as string) || '响应速度',
-              (t.stat2Desc as string) || '任何时刻的问题，都有回音。',
+              (st.stat2Value as string) || tr('content.stats.stat2Value'),
+              (st.stat2Label as string) || tr('content.stats.stat2Label'),
+              (st.stat2Desc as string) || tr('content.stats.stat2Desc'),
             ],
             [
-              (t.stat3Value as string) || '100%',
-              (t.stat3Label as string) || '资质合规',
-              (t.stat3Desc as string) || '正规实体，每一单都合规可溯。',
+              (st.stat3Value as string) || tr('content.stats.stat3Value'),
+              (st.stat3Label as string) || tr('content.stats.stat3Label'),
+              (st.stat3Desc as string) || tr('content.stats.stat3Desc'),
             ],
           ].map(([value, label, desc]) => (
             <div key={label} className="bg-background p-8">
@@ -705,9 +791,11 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
       <section className="border-y border-white/10 bg-gradient-to-r from-cyan-500/5 via-transparent to-violet-500/5">
         <div className="mx-auto w-full max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary">上云指南</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+              {tr('home.blogKicker')}
+            </p>
             <h2 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-              花两分钟，搞懂上云
+              {tr('home.blogTitle')}
             </h2>
           </div>
           <div className="mt-10 grid gap-5 md:grid-cols-2">
@@ -718,13 +806,13 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
                 className="group flex flex-col rounded-3xl border border-white/10 bg-card/60 p-7 text-card-foreground shadow-lg shadow-black/5 backdrop-blur transition-all hover:-translate-y-1 hover:shadow-xl"
               >
                 <p className="text-sm font-semibold tracking-tight group-hover:text-primary">
-                  {post.title}
+                  {tr(`${post.key}.title`)}
                 </p>
                 <p className="mt-3 flex-1 text-sm leading-6 text-muted-foreground">
-                  {post.excerpt}
+                  {tr(`${post.key}.excerpt`)}
                 </p>
                 <span className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                  阅读全文
+                  {tr('blog.readMore')}
                   <span className="transition-transform group-hover:translate-x-0.5">
                     <Icon name="arrow" />
                   </span>
@@ -737,29 +825,15 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
 
       <section className="mx-auto w-full max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary">他们怎么说</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+            {tr('home.testimonialsKicker')}
+          </p>
           <h2 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-            稳定，用户说了算
+            {tr('home.testimonialsTitle')}
           </h2>
         </div>
         <div className="mt-10 grid gap-5 md:grid-cols-3">
-          {[
-            {
-              quote: '资质、价格、响应，三样都让人放心。业务放这里，很少需要操心。',
-              name: '李强',
-              role: '初创团队',
-            },
-            {
-              quote: '从选配置到上线，全程有人跟，快到超出预期。',
-              name: '周敏',
-              role: '电商运营',
-            },
-            {
-              quote: '想升配就升配，想换线路就换线路，没有被绑死的感觉。',
-              name: '陈浩',
-              role: '独立开发者',
-            },
-          ].map((item) => (
+          {testimonials.map((item) => (
             <figure
               key={item.name}
               className="flex flex-col justify-between rounded-3xl border border-white/10 bg-card/60 p-7 text-card-foreground shadow-lg shadow-black/5 backdrop-blur"
@@ -788,17 +862,19 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
             aria-hidden="true"
           />
           <h2 className="relative mx-auto max-w-xl text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-            {(c.ctaTitle as string) || '上云，不该是件复杂的事'}
+            {(c.ctaTitle as string) || tr('content.cta.ctaTitle')}
           </h2>
           <p className="relative mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
-            {(c.ctaText as string) || '选配置、部署、上线，几步就能跑起来。'}
+            {(c.ctaText as string) || tr('content.cta.ctaText')}
           </p>
           <a
             href="/shop"
             className="group relative mt-8 inline-flex h-11 items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-7 text-sm font-semibold text-white shadow-xl shadow-sky-500/30 transition-transform hover:scale-[1.02] active:scale-[0.99]"
           >
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
-            <span className="relative">{(c.ctaButton as string) || '开始上云'}</span>
+            <span className="relative">
+              {(c.ctaButton as string) || tr('content.cta.ctaButton')}
+            </span>
             <Icon name="arrow" />
           </a>
         </div>
@@ -807,7 +883,19 @@ function HomePage({ settings }: FrontendPageProps): ReactElement {
   );
 }
 
-function AboutPage(_props: FrontendPageProps): ReactElement {
+function AboutPage({ locale }: FrontendPageProps): ReactElement {
+  const tr = t(locale);
+  const values = [
+    { label: tr('about.value1.title'), text: tr('about.value1.text') },
+    { label: tr('about.value2.title'), text: tr('about.value2.text') },
+    { label: tr('about.value3.title'), text: tr('about.value3.text') },
+    { label: tr('about.value4.title'), text: tr('about.value4.text') },
+  ];
+  const principles = [
+    { icon: 'building', title: tr('about.principle1.title'), text: tr('about.principle1.text') },
+    { icon: 'award', title: tr('about.principle2.title'), text: tr('about.principle2.text') },
+    { icon: 'server', title: tr('about.principle3.title'), text: tr('about.principle3.text') },
+  ];
   return (
     <main className="flex-1">
       <section className="relative overflow-hidden">
@@ -819,51 +907,46 @@ function AboutPage(_props: FrontendPageProps): ReactElement {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-background/60 px-3.5 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur">
               <span className="flex size-1.5 rounded-full bg-primary" />
-              关于我们
+              {tr('about.badge')}
             </p>
             <h1 className="mt-6 text-balance text-3xl font-bold tracking-tight sm:text-5xl">
-              为什么
+              {tr('about.titleLead')}
               <span className="bg-gradient-to-r from-cyan-300 to-violet-300 bg-clip-text text-transparent">
-                选择我们
+                {tr('about.titleHighlight')}
               </span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-8 text-muted-foreground">
-              我们做云服务器分销，只做一件事：让上云简单、稳定、可信。实体运营、资质齐备、架构自主，从第一天起就是默认配置。
+              {tr('about.intro')}
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
                 href="/shop"
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-6 text-sm font-semibold text-white shadow-lg shadow-sky-500/25 transition-transform hover:scale-[1.02] active:scale-[0.99]"
               >
-                浏览服务
+                {tr('about.browse')}
                 <Icon name="arrow" />
               </a>
               <a
                 href="/blog"
                 className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-background/60 px-6 text-sm font-semibold text-foreground backdrop-blur transition-colors hover:bg-muted/50"
               >
-                上云指南
+                {tr('about.guide')}
               </a>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            {[
-              ['实体企业', '正规注册，真实可查'],
-              ['资质齐全', '合规不是加分项，是默认项'],
-              ['技术独立', '架构自研，路线自己定'],
-              ['全程服务', '从选购到运维，始终有人'],
-            ].map(([label, text]) => (
+            {values.map((value) => (
               <div
-                key={label}
+                key={value.label}
                 className="rounded-3xl border border-white/10 bg-card/60 p-6 text-card-foreground shadow-lg shadow-black/5 backdrop-blur"
               >
                 <p className="flex items-center gap-2 text-sm font-semibold">
                   <span className="flex size-6 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-violet-500/20 text-primary">
                     <Icon name="check" />
                   </span>
-                  {label}
+                  {value.label}
                 </p>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">{text}</p>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">{value.text}</p>
               </div>
             ))}
           </div>
@@ -873,17 +956,15 @@ function AboutPage(_props: FrontendPageProps): ReactElement {
       <section className="border-y border-white/10 bg-gradient-to-r from-cyan-500/5 via-transparent to-violet-500/5">
         <div className="mx-auto w-full max-w-7xl px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary">三条底线</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+              {tr('about.principlesKicker')}
+            </p>
             <h2 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-              我们只做确定的事
+              {tr('about.principlesTitle')}
             </h2>
           </div>
           <div className="mt-12 grid gap-5 md:grid-cols-3">
-            {[
-              { icon: 'building', title: '实体企业', text: '真实经营，不玩虚的。' },
-              { icon: 'award', title: '资质齐全', text: '合规不是加分项，是默认项。' },
-              { icon: 'server', title: '技术独立', text: '架构在自己手里，才谈得上稳定。' },
-            ].map((v) => (
+            {principles.map((v) => (
               <div
                 key={v.title}
                 className="rounded-3xl border border-white/10 bg-card/60 p-7 text-card-foreground shadow-lg shadow-black/5 backdrop-blur"
@@ -902,7 +983,8 @@ function AboutPage(_props: FrontendPageProps): ReactElement {
   );
 }
 
-function BlogPage(_props: FrontendPageProps): ReactElement {
+function BlogPage({ locale }: FrontendPageProps): ReactElement {
+  const tr = t(locale);
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
       <div className="relative">
@@ -911,10 +993,10 @@ function BlogPage(_props: FrontendPageProps): ReactElement {
           aria-hidden="true"
         />
         <h1 className="mt-6 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-          云服务上手指南
+          {tr('blog.title')}
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-          从选型到部署，帮你快速了解云服务器，开好每一步上云之路。
+          {tr('blog.intro')}
         </p>
       </div>
       <ul className="mt-10 grid gap-5 sm:grid-cols-2">
@@ -925,14 +1007,18 @@ function BlogPage(_props: FrontendPageProps): ReactElement {
               className="group flex h-full flex-col rounded-3xl border border-white/10 bg-card/60 p-7 text-card-foreground shadow-lg shadow-black/5 backdrop-blur transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-xl"
             >
               <p className="text-xs font-medium uppercase tracking-widest text-primary">
-                {post.slug === 'first-cloud' ? '选型' : '理念'}
+                {post.slug === 'first-cloud'
+                  ? tr('blog.category.select')
+                  : tr('blog.category.philosophy')}
               </p>
               <h2 className="mt-3 text-base font-semibold tracking-tight group-hover:text-primary">
-                {post.title}
+                {tr(`${post.key}.title`)}
               </h2>
-              <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">{post.excerpt}</p>
+              <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">
+                {tr(`${post.key}.excerpt`)}
+              </p>
               <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                阅读全文
+                {tr('blog.readMore')}
                 <span className="transition-transform group-hover:translate-x-0.5">
                   <Icon name="arrow" />
                 </span>
@@ -946,6 +1032,7 @@ function BlogPage(_props: FrontendPageProps): ReactElement {
 }
 
 function BlogPostPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const post = BLOG_POSTS.find((item) => item.slug === props.params.slug);
   if (!post) return <AuroraNotFoundPage {...props} />;
   return (
@@ -955,19 +1042,20 @@ function BlogPostPage(props: FrontendPageProps): ReactElement {
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary"
       >
         <Icon name="arrow" />
-        返回指南
+        {tr('blog.back')}
       </a>
       <h1 className="mt-8 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-        {post.title}
+        {tr(`${post.key}.title`)}
       </h1>
       <div className="mt-6 border-t border-white/10 pt-6">
-        <p className="text-base leading-8 text-muted-foreground">{post.body}</p>
+        <p className="text-base leading-8 text-muted-foreground">{tr(`${post.key}.body`)}</p>
       </div>
     </main>
   );
 }
 
-function AuroraNotFoundPage(_props: FrontendPageProps): ReactElement {
+function AuroraNotFoundPage({ locale }: FrontendPageProps): ReactElement {
+  const tr = t(locale);
   return (
     <main className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-24">
       <div
@@ -982,15 +1070,13 @@ function AuroraNotFoundPage(_props: FrontendPageProps): ReactElement {
         <p className="relative select-none bg-gradient-to-b from-cyan-300 via-sky-400 to-violet-500 bg-clip-text font-mono text-8xl font-black tracking-tight text-transparent drop-shadow-[0_0_2rem_color-mix(in_oklch,var(--primary)_45%,transparent)]">
           404
         </p>
-        <h1 className="mt-6 text-2xl font-bold tracking-tight">迷失在深空里</h1>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          你访问的地址不存在或已被移动，回到首页继续逛逛吧。
-        </p>
+        <h1 className="mt-6 text-2xl font-bold tracking-tight">{tr('notFound.title')}</h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{tr('notFound.body')}</p>
         <a
           href="/"
           className="mt-8 inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-5 text-sm font-semibold text-white shadow-lg shadow-sky-500/25 transition-opacity hover:opacity-90"
         >
-          返回首页
+          {tr('notFound.back')}
           <Icon name="arrow" />
         </a>
       </div>
@@ -999,6 +1085,8 @@ function AuroraNotFoundPage(_props: FrontendPageProps): ReactElement {
 }
 
 export const frontend: FrontendPackage = {
+  locales: ['zh-CN', 'en-US'],
+  messages,
   settingsSchema,
   layouts: { theme: AuroraLayout },
   pages: [

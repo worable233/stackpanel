@@ -22,7 +22,8 @@ export async function AccountPluginPage({
   searchParams?: Record<string, string>;
   actionError?: string;
 }): Promise<ReactElement> {
-  const t = createTranslator(await getLocale());
+  const locale = await getLocale();
+  const t = createTranslator(locale);
   if (result.status === 'not-found') {
     return <p className="text-sm text-muted-foreground">{t('account.page.notFound')}</p>;
   }
@@ -49,6 +50,7 @@ export async function AccountPluginPage({
         data: result.data,
         user,
         actions: result.actions,
+        locale,
       } as AccountPageComponentProps)}
     </FrontendScopeRoot>
   );

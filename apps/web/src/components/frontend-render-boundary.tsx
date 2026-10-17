@@ -25,7 +25,8 @@ export class FrontendRenderBoundary extends Component<
   }
 
   componentDidCatch(error: Error): void {
-    console.error(`[frontend] ${this.props.label} 渲染失败`, error);
+    // i18n-exempt — developer console log, never rendered to the user.
+    console.error(`[frontend] ${this.props.label} render failed`, error);
   }
 
   render(): ReactNode {

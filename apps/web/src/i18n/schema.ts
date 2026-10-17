@@ -14,8 +14,14 @@ const BCP47 = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/;
 const MESSAGE_KEY = /^[a-z][a-zA-Z0-9-]*(\.[a-zA-Z0-9_][a-zA-Z0-9_-]*)+$/;
 
 /**
- * Namespaces that belong to the kernel. A plugin or theme catalog must never
- * define these: it would let a package override platform copy (PLAN §3 阶段 2).
+ * Namespaces that belong to the kernel.
+ *
+ * These are **kernel-only** names. A package catalog is resolved inside that
+ * package and is never merged into the kernel catalog (ADR-0016 §5), so it may
+ * legitimately use `nav.*` / `error.*` without shadowing anything — there is no
+ * shared map to collide with. This list is the guard for any hypothetical
+ * merge-based host; `apps/web/src/i18n/package-messages.ts` deliberately does
+ * not apply it.
  */
 export const RESERVED_NAMESPACES = [
   'common',

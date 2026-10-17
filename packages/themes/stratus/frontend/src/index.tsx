@@ -1,6 +1,8 @@
 import { formatMinorCurrency } from '@stackpanel/sdk';
 import type { ReactElement } from 'react';
 import type { FrontendLayoutProps, FrontendPackage, FrontendPageProps } from '@stackpanel/sdk';
+import zhCN from '../messages/zh-CN.json';
+import { messages, t } from './i18n.js';
 import {
   ArrowRight,
   Box,
@@ -12,7 +14,6 @@ import {
   Cpu,
   Database,
   FileText,
-  Gauge,
   Globe2,
   HardDrive,
   Headphones,
@@ -111,176 +112,271 @@ interface ShopPaymentMethods {
 }
 
 const BLOG_POSTS = [
-  {
-    slug: 'enterprise-cloud',
-    title: '企业上云：从第一步到规模化',
-    excerpt: '选型、迁移、治理——一套可落地的路径。',
-    tag: '企业上云',
-    body: '企业上云不是把服务器搬到线上就结束，而是一次关于效率与治理的升级。从轻量起步、按业务分期迁移，到统一权限、成本与合规治理，每一步都需要路径清晰的规划。我们用十余年运营经验，帮你把云用得明白、用得稳。',
-  },
-  {
-    slug: 'reliability',
-    title: '稳定，是一种工程决策',
-    excerpt: '高可用不是魔法，是多区域、多副本与自动故障转移的组合。',
-    tag: '最佳实践',
-    body: '高可用不是一句承诺，而是一系列工程决策的组合：多可用区部署、数据多副本、自动故障检测与切换、可观测性闭环。你看到的是「从没出过事」，背后是我们对每一个环节的反复演练。',
-  },
-  {
-    slug: 'security',
-    title: '从网络到数据，安全的上云姿势',
-    excerpt: '网络隔离、主机加固、数据加密与合规审计，一样都不能少。',
-    tag: '安全合规',
-    body: '安全上云不是买一个防火墙就结束。入口侧要网络隔离与 WAF 防护，主机侧要补丁与基线加固，数据侧要加密与备份，事后还要有审计与处置预案。从攻防演练到等保测评，我们把安全当作一项长期工程持续投入。',
-  },
-  {
-    slug: 'cost',
-    title: '云成本治理：把钱花在刀刃上',
-    excerpt: '预算、标签、弹性伸缩与账单分析，形成成本闭环。',
-    tag: '最佳实践',
-    body: '上云之后账单为什么还是涨？多半是资源闲置与规格浪费。通过标签管理、弹性伸缩、规格匹配与账单分析四件套，你可以把每一分钱花在真正需要的算力上。我们提供成本体检服务，帮你找出 30% 以上的隐藏浪费。',
-  },
+  { slug: 'enterprise-cloud', key: 'blog.posts.enterpriseCloud' },
+  { slug: 'reliability', key: 'blog.posts.reliability' },
+  { slug: 'security', key: 'blog.posts.security' },
+  { slug: 'cost', key: 'blog.posts.cost' },
 ];
 
 const settingsSchema = {
   groups: [
     {
       id: 'hero',
-      label: '首屏 Hero',
+      labelKey: 'settings.hero.group',
       fields: [
-        { type: 'text', name: 'heroKicker', label: '徽标', default: '产业智变 · 云启未来' },
+        {
+          type: 'text',
+          name: 'heroKicker',
+          labelKey: 'settings.hero.heroKicker.label',
+          default: zhCN['content.hero.heroKicker'],
+        },
         {
           type: 'text',
           name: 'heroTitleLine',
-          label: '主标题',
-          default: '值得信赖的企业级云计算平台',
+          labelKey: 'settings.hero.heroTitleLine.label',
+          default: zhCN['content.hero.heroTitleLine'],
         },
         {
           type: 'textarea',
           name: 'heroSubtitle',
-          label: '副标题',
-          default:
-            '为您提供值得信赖的一站式云计算平台，覆盖计算、存储、网络、安全与 AI 全栈服务，让每一次创新都更快落地。',
-          help: '一句话说明定位',
+          labelKey: 'settings.hero.heroSubtitle.label',
+          default: zhCN['content.hero.heroSubtitle'],
+          helpKey: 'settings.hero.heroSubtitle.help',
         },
         {
           type: 'text',
           name: 'searchPlaceholder',
-          label: '搜索占位符',
-          default: '搜索云产品、解决方案及文档',
+          labelKey: 'settings.hero.searchPlaceholder.label',
+          default: zhCN['content.hero.searchPlaceholder'],
         },
         {
           type: 'text',
           name: 'hotKeywords',
-          label: '热门搜索词（逗号分隔）',
-          default: '轻量应用服务器,云服务器,云数据库,SSL证书',
+          labelKey: 'settings.hero.hotKeywords.label',
+          default: zhCN['content.hero.hotKeywords'],
         },
       ],
     },
     {
       id: 'promo',
-      label: '大促公告',
+      labelKey: 'settings.promo.group',
       fields: [
-        { type: 'text', name: 'promoTag', label: '公告标签', default: '新客特惠' },
-        { type: 'text', name: 'promoTitle', label: '公告标题', default: '云服务器新客首月 1 折起' },
+        {
+          type: 'text',
+          name: 'promoTag',
+          labelKey: 'settings.promo.promoTag.label',
+          default: zhCN['content.promo.promoTag'],
+        },
+        {
+          type: 'text',
+          name: 'promoTitle',
+          labelKey: 'settings.promo.promoTitle.label',
+          default: zhCN['content.promo.promoTitle'],
+        },
         {
           type: 'text',
           name: 'promoDesc',
-          label: '公告说明',
-          default: '新用户专享礼包，多款热门套餐限时直降',
+          labelKey: 'settings.promo.promoDesc.label',
+          default: zhCN['content.promo.promoDesc'],
         },
-        { type: 'text', name: 'promoButton', label: '公告按钮', default: '立即选购' },
+        {
+          type: 'text',
+          name: 'promoButton',
+          labelKey: 'settings.promo.promoButton.label',
+          default: zhCN['content.promo.promoButton'],
+        },
       ],
     },
     {
       id: 'models',
-      label: '全模态大模型',
+      labelKey: 'settings.models.group',
       fields: [
-        { type: 'text', name: 'modelsKicker', label: '区块小标', default: '全模态大模型' },
-        { type: 'text', name: 'modelsTitle', label: '区块标题', default: '大模型服务平台' },
+        {
+          type: 'text',
+          name: 'modelsKicker',
+          labelKey: 'settings.models.modelsKicker.label',
+          default: zhCN['content.models.modelsKicker'],
+        },
+        {
+          type: 'text',
+          name: 'modelsTitle',
+          labelKey: 'settings.models.modelsTitle.label',
+          default: zhCN['content.models.modelsTitle'],
+        },
         {
           type: 'textarea',
           name: 'modelsText',
-          label: '区块说明',
-          default: '开箱即用的大模型服务，汇聚主流优质模型，快速获取普惠的模型能力。',
+          labelKey: 'settings.models.modelsText.label',
+          default: zhCN['content.models.modelsText'],
         },
       ],
     },
     {
       id: 'products',
-      label: '产品体系',
+      labelKey: 'settings.products.group',
       fields: [
-        { type: 'text', name: 'productsKicker', label: '区块小标', default: '云产品体系' },
+        {
+          type: 'text',
+          name: 'productsKicker',
+          labelKey: 'settings.products.productsKicker.label',
+          default: zhCN['content.products.productsKicker'],
+        },
         {
           type: 'text',
           name: 'productsTitle',
-          label: '区块标题',
-          default: '全栈产品体系，助力企业实现云化转型',
+          labelKey: 'settings.products.productsTitle.label',
+          default: zhCN['content.products.productsTitle'],
         },
         {
           type: 'textarea',
           name: 'productsText',
-          label: '区块说明',
-          default: '从底层算力到上层应用，覆盖全场景的云产品服务。',
+          labelKey: 'settings.products.productsText.label',
+          default: zhCN['content.products.productsText'],
         },
         {
           type: 'text',
           name: 'productsLink',
-          label: '更多产品链接文字',
-          default: '探索更多云产品',
+          labelKey: 'settings.products.productsLink.label',
+          default: zhCN['content.products.productsLink'],
         },
       ],
     },
     {
       id: 'case',
-      label: '客户案例',
+      labelKey: 'settings.case.group',
       fields: [
-        { type: 'text', name: 'caseKicker', label: '区块小标', default: '客户案例' },
+        {
+          type: 'text',
+          name: 'caseKicker',
+          labelKey: 'settings.case.caseKicker.label',
+          default: zhCN['content.case.caseKicker'],
+        },
         {
           type: 'text',
           name: 'caseTitle',
-          label: '区块标题',
-          default: '行业领先的解决方案，助力企业安全高效上云',
+          labelKey: 'settings.case.caseTitle.label',
+          default: zhCN['content.case.caseTitle'],
         },
-        { type: 'text', name: 'caseMetric1', label: '案例数字一', default: '10万+' },
-        { type: 'text', name: 'caseMetric1Label', label: '案例数字一标签', default: '并发能力' },
-        { type: 'text', name: 'caseMetric2', label: '案例数字二', default: '≤300' },
-        { type: 'text', name: 'caseMetric2Label', label: '案例数字二标签', default: 'ms 超低延迟' },
+        {
+          type: 'text',
+          name: 'caseMetric1',
+          labelKey: 'settings.case.caseMetric1.label',
+          default: zhCN['content.case.caseMetric1'],
+        },
+        {
+          type: 'text',
+          name: 'caseMetric1Label',
+          labelKey: 'settings.case.caseMetric1Label.label',
+          default: zhCN['content.case.caseMetric1Label'],
+        },
+        {
+          type: 'text',
+          name: 'caseMetric2',
+          labelKey: 'settings.case.caseMetric2.label',
+          default: zhCN['content.case.caseMetric2'],
+        },
+        {
+          type: 'text',
+          name: 'caseMetric2Label',
+          labelKey: 'settings.case.caseMetric2Label.label',
+          default: zhCN['content.case.caseMetric2Label'],
+        },
       ],
     },
     {
       id: 'infra',
-      label: '全球基础设施',
+      labelKey: 'settings.infra.group',
       fields: [
-        { type: 'text', name: 'infraKicker', label: '区块小标', default: '全球基础设施' },
+        {
+          type: 'text',
+          name: 'infraKicker',
+          labelKey: 'settings.infra.infraKicker.label',
+          default: zhCN['content.infra.infraKicker'],
+        },
         {
           type: 'text',
           name: 'infraTitle',
-          label: '区块标题',
-          default: '安全合规、高速稳定的基础设施建设',
+          labelKey: 'settings.infra.infraTitle.label',
+          default: zhCN['content.infra.infraTitle'],
         },
-        { type: 'text', name: 'infraMetric1', label: '数据一', default: '3200+' },
-        { type: 'text', name: 'infraMetric1Label', label: '数据一标签', default: '全球加速节点' },
-        { type: 'text', name: 'infraMetric2', label: '数据二', default: '66' },
-        { type: 'text', name: 'infraMetric2Label', label: '数据二标签', default: '可用区' },
-        { type: 'text', name: 'infraMetric3', label: '数据三', default: '22' },
-        { type: 'text', name: 'infraMetric3Label', label: '数据三标签', default: '地理区域' },
-        { type: 'text', name: 'infraMetric4', label: '数据四', default: '200T' },
-        { type: 'text', name: 'infraMetric4Label', label: '数据四标签', default: '带宽储备' },
+        {
+          type: 'text',
+          name: 'infraMetric1',
+          labelKey: 'settings.infra.infraMetric1.label',
+          default: zhCN['content.infra.infraMetric1'],
+        },
+        {
+          type: 'text',
+          name: 'infraMetric1Label',
+          labelKey: 'settings.infra.infraMetric1Label.label',
+          default: zhCN['content.infra.infraMetric1Label'],
+        },
+        {
+          type: 'text',
+          name: 'infraMetric2',
+          labelKey: 'settings.infra.infraMetric2.label',
+          default: zhCN['content.infra.infraMetric2'],
+        },
+        {
+          type: 'text',
+          name: 'infraMetric2Label',
+          labelKey: 'settings.infra.infraMetric2Label.label',
+          default: zhCN['content.infra.infraMetric2Label'],
+        },
+        {
+          type: 'text',
+          name: 'infraMetric3',
+          labelKey: 'settings.infra.infraMetric3.label',
+          default: zhCN['content.infra.infraMetric3'],
+        },
+        {
+          type: 'text',
+          name: 'infraMetric3Label',
+          labelKey: 'settings.infra.infraMetric3Label.label',
+          default: zhCN['content.infra.infraMetric3Label'],
+        },
+        {
+          type: 'text',
+          name: 'infraMetric4',
+          labelKey: 'settings.infra.infraMetric4.label',
+          default: zhCN['content.infra.infraMetric4'],
+        },
+        {
+          type: 'text',
+          name: 'infraMetric4Label',
+          labelKey: 'settings.infra.infraMetric4Label.label',
+          default: zhCN['content.infra.infraMetric4Label'],
+        },
       ],
     },
     {
       id: 'cta',
-      label: '行动号召',
+      labelKey: 'settings.cta.group',
       fields: [
-        { type: 'text', name: 'ctaTitle', label: '标题', default: '开启你的上云之旅' },
+        {
+          type: 'text',
+          name: 'ctaTitle',
+          labelKey: 'settings.cta.ctaTitle.label',
+          default: zhCN['content.cta.ctaTitle'],
+        },
         {
           type: 'textarea',
           name: 'ctaText',
-          label: '说明',
-          default: '注册即享新客礼包，专属架构师一对一支持。',
+          labelKey: 'settings.cta.ctaText.label',
+          default: zhCN['content.cta.ctaText'],
         },
-        { type: 'text', name: 'ctaButton', label: '按钮', default: '免费注册' },
-        { type: 'text', name: 'ctaAlt', label: '次按钮', default: '查看控制台' },
+        {
+          type: 'text',
+          name: 'ctaButton',
+          labelKey: 'settings.cta.ctaButton.label',
+          default: zhCN['content.cta.ctaButton'],
+        },
+        {
+          type: 'text',
+          name: 'ctaAlt',
+          labelKey: 'settings.cta.ctaAlt.label',
+          default: zhCN['content.cta.ctaAlt'],
+        },
       ],
     },
   ],
@@ -363,12 +459,19 @@ function BrandLogo({
 
 function categoryIcon(name: string): string {
   const n = name.toLowerCase();
+  // i18n-exempt — patterns match persisted category names (data), not UI copy.
   if (/(云?服务器|主机|ecs|裸金属|物理机|算力)/.test(n)) return 'server';
+  // i18n-exempt — patterns match persisted category names (data), not UI copy.
   if (/(轻量|应用|建站|wordpress|redis|memcached)/.test(n)) return 'gauge';
+  // i18n-exempt — patterns match persisted category names (data), not UI copy.
   if (/(gpu|训练|渲染|推理|ai|大模型)/.test(n)) return 'rocket';
+  // i18n-exempt — patterns match persisted category names (data), not UI copy.
   if (/(硬盘|磁盘|块存储|cbs)/.test(n)) return 'drive';
+  // i18n-exempt — patterns match persisted category names (data), not UI copy.
   if (/(对象存储|存储|备份|快照|oss|cos)/.test(n)) return 'database';
+  // i18n-exempt — patterns match persisted category names (data), not UI copy.
   if (/(带宽|网络|负载|cdn|加速|线路|ddos|防火墙|waf|安全)/.test(n)) return 'shield';
+  // i18n-exempt — patterns match persisted category names (data), not UI copy.
   if (/(域名|ssl|证书|邮箱|hosting)/.test(n)) return 'globe';
   return 'layers';
 }
@@ -381,12 +484,14 @@ function StratusLayout({
   platform,
   categories = [],
   brand,
+  locale,
 }: FrontendLayoutProps): ReactElement {
+  const tr = t(locale);
   const primaryNav = [
-    { label: '首页', href: '/' },
+    { label: tr('nav.home'), href: '/' },
     ...navigation,
-    { label: '解决方案', href: '/about' },
-    { label: '上云指南', href: '/blog' },
+    { label: tr('nav.solutions'), href: '/about' },
+    { label: tr('nav.guides'), href: '/blog' },
   ];
   return (
     <div
@@ -399,20 +504,20 @@ function StratusLayout({
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <Icon name="phone" />
-              7×24 服务热线：400-888-8888
+              {tr('layout.hotline')}
             </span>
             <span className="hidden items-center gap-1.5 sm:flex">
               <Icon name="headset" />
-              在线客服
+              {tr('layout.onlineSupport')}
             </span>
             <span className="hidden items-center gap-1.5 md:flex">
               <Icon name="msg" />
-              提交工单
+              {tr('layout.submitTicket')}
             </span>
           </div>
           <div className="flex items-center gap-4">
             <a href="/blog" className="transition-colors hover:text-white">
-              帮助文档
+              {tr('layout.helpDocs')}
             </a>
             <span className="opacity-30" aria-hidden="true">
               |
@@ -421,7 +526,7 @@ function StratusLayout({
               href={isAuthenticated ? '/account' : '/login'}
               className="transition-colors hover:text-white"
             >
-              {isAuthenticated ? '控制台' : '登录'}
+              {isAuthenticated ? tr('layout.console') : tr('layout.login')}
             </a>
             <span className="opacity-30" aria-hidden="true">
               |
@@ -430,7 +535,7 @@ function StratusLayout({
               href={isAuthenticated ? '/account' : '/register'}
               className="transition-colors hover:text-white"
             >
-              {isAuthenticated ? '个人中心' : '免费注册'}
+              {isAuthenticated ? tr('layout.account') : tr('layout.register')}
             </a>
           </div>
         </div>
@@ -453,19 +558,19 @@ function StratusLayout({
               <span className="size-4">
                 <Icon name="search" />
               </span>
-              <span className="sr-only">搜索</span>
+              <span className="sr-only">{tr('search.label')}</span>
             </label>
             <input
               type="search"
               name="q"
-              placeholder="搜索云产品、解决方案及文档"
+              placeholder={tr('content.hero.searchPlaceholder')}
               className="h-10 min-w-0 flex-1 bg-transparent px-2.5 text-sm text-ink outline-none placeholder:text-ink-faint"
             />
             <button
               type="submit"
               className="m-1 inline-flex shrink-0 items-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
             >
-              搜索
+              {tr('search.submit')}
             </button>
           </form>
 
@@ -473,7 +578,7 @@ function StratusLayout({
             <a
               href="/shop/cart"
               className="inline-flex size-9 items-center justify-center rounded-md text-ink-soft transition-colors hover:bg-muted hover:text-primary"
-              aria-label="购物车"
+              aria-label={tr('layout.cart')}
             >
               <Icon name="cart" />
             </a>
@@ -481,13 +586,13 @@ function StratusLayout({
               href={isAuthenticated ? '/account' : '/login'}
               className="hidden items-center rounded-md px-2.5 py-1.5 text-sm text-ink-soft transition-colors hover:text-ink sm:inline-flex"
             >
-              {isAuthenticated ? '控制台' : '登录'}
+              {isAuthenticated ? tr('layout.console') : tr('layout.login')}
             </a>
             <a
               href={isAuthenticated ? '/account' : '/register'}
               className="hidden items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 sm:inline-flex"
             >
-              免费注册
+              {tr('layout.register')}
             </a>
             <details className="group relative lg:hidden">
               <summary className="flex size-9 list-none cursor-pointer items-center justify-center rounded-md text-ink-soft transition-colors hover:bg-muted hover:text-primary [&::-webkit-details-marker]:hidden">
@@ -495,12 +600,12 @@ function StratusLayout({
               </summary>
               <nav
                 className="absolute right-0 top-11 max-h-[75vh] w-80 overflow-y-auto rounded-md border border-border bg-card p-2 shadow-lg"
-                aria-label="移动端导航"
+                aria-label={tr('layout.mobileNavAria')}
               >
                 {categories.length > 0 && (
                   <>
                     <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-widest text-ink-faint">
-                      云产品
+                      {tr('layout.cloudProducts')}
                     </p>
                     {categories.map((category) => (
                       <div key={category.id} className="mt-1">
@@ -536,7 +641,7 @@ function StratusLayout({
                             <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
                               <Icon name={categoryIcon(category.name)} />
                             </span>
-                            查看分类
+                            {tr('layout.viewCategory')}
                           </a>
                         )}
                       </div>
@@ -564,7 +669,10 @@ function StratusLayout({
       </header>
 
       {/* Desktop nav bar */}
-      <nav className="hidden border-b border-border bg-card lg:block" aria-label="主导航">
+      <nav
+        className="hidden border-b border-border bg-card lg:block"
+        aria-label={tr('layout.mainNavAria')}
+      >
         <div className="mx-auto flex h-11 w-full max-w-[1680px] items-center px-4 sm:px-6 lg:px-12">
           {categories.length > 0 && (
             <div className="group relative mr-6 flex h-full items-center">
@@ -573,7 +681,7 @@ function StratusLayout({
                 className="flex h-full items-center gap-1 px-1 text-sm font-medium text-primary transition-colors hover:text-primary"
               >
                 <Icon name="cloud" />
-                全部产品
+                {tr('layout.allProducts')}
                 <span className="transition-transform duration-200 group-hover:rotate-180">
                   <Icon name="chevron" />
                 </span>
@@ -638,11 +746,15 @@ function StratusLayout({
                 <BrandLogo brand={brand} size="lg" />
                 <span className="text-ink">{platform.name}</span>
               </a>
-              <p className="mt-4 text-sm leading-6 text-ink-soft">
-                值得信赖的一站式云计算平台，覆盖计算、存储、网络、安全与 AI 全栈服务。
-              </p>
+              <p className="mt-4 text-sm leading-6 text-ink-soft">{tr('footer.description')}</p>
               <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-ink-soft">
-                {['数据自托管', '权限分级', '传输加密', '操作审计', '备份恢复'].map((item) => (
+                {[
+                  tr('trust.selfHosted'),
+                  tr('trust.grading'),
+                  tr('trust.encryption'),
+                  tr('trust.audit'),
+                  tr('trust.backup'),
+                ].map((item) => (
                   <span key={item} className="flex items-center gap-1.5">
                     <span className="text-primary">
                       <Icon name="check" />
@@ -654,9 +766,15 @@ function StratusLayout({
             </div>
             <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
               <div>
-                <p className="text-sm font-medium text-ink">产品与服务</p>
+                <p className="text-sm font-medium text-ink">{tr('footer.products.title')}</p>
                 <ul className="mt-4 space-y-2.5 text-sm">
-                  {['云服务器', '对象存储', '内容分发网络', '云数据库', '云安全'].map((item) => (
+                  {[
+                    tr('footer.products.items.0'),
+                    tr('footer.products.items.1'),
+                    tr('footer.products.items.2'),
+                    tr('footer.products.items.3'),
+                    tr('footer.products.items.4'),
+                  ].map((item) => (
                     <li key={item}>
                       <a
                         href="/shop"
@@ -669,9 +787,15 @@ function StratusLayout({
                 </ul>
               </div>
               <div>
-                <p className="text-sm font-medium text-ink">解决方案</p>
+                <p className="text-sm font-medium text-ink">{tr('footer.solutions.title')}</p>
                 <ul className="mt-4 space-y-2.5 text-sm">
-                  {['金融云', '政务云', '教育云', '游戏云', '电商云'].map((item) => (
+                  {[
+                    tr('footer.solutions.items.0'),
+                    tr('footer.solutions.items.1'),
+                    tr('footer.solutions.items.2'),
+                    tr('footer.solutions.items.3'),
+                    tr('footer.solutions.items.4'),
+                  ].map((item) => (
                     <li key={item}>
                       <a
                         href="/about"
@@ -684,16 +808,16 @@ function StratusLayout({
                 </ul>
               </div>
               <div>
-                <p className="text-sm font-medium text-ink">平台</p>
+                <p className="text-sm font-medium text-ink">{tr('footer.platform.title')}</p>
                 <ul className="mt-4 space-y-2.5 text-sm">
                   <li>
                     <a href="/blog" className="text-ink-soft transition-colors hover:text-primary">
-                      上云指南
+                      {tr('footer.platform.items.0')}
                     </a>
                   </li>
                   <li>
                     <a href="/about" className="text-ink-soft transition-colors hover:text-primary">
-                      关于我们
+                      {tr('footer.platform.items.1')}
                     </a>
                   </li>
                   <li>
@@ -701,7 +825,7 @@ function StratusLayout({
                       href="/account"
                       className="text-ink-soft transition-colors hover:text-primary"
                     >
-                      控制台
+                      {tr('footer.platform.items.2')}
                     </a>
                   </li>
                 </ul>
@@ -709,7 +833,7 @@ function StratusLayout({
             </div>
             <div className="flex flex-col items-start gap-4">
               <p className="text-xs uppercase tracking-widest text-ink-faint">
-                7 × 24 小时在线服务
+                {tr('footer.hotlineLabel')}
               </p>
               <p className="flex items-center gap-2 text-2xl font-medium tracking-tight text-ink">
                 <span className="text-primary">
@@ -721,7 +845,7 @@ function StratusLayout({
                 href={isAuthenticated ? '/account' : '/register'}
                 className="inline-flex h-10 items-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
               >
-                {isAuthenticated ? '进入控制台' : '免费注册'}
+                {isAuthenticated ? tr('layout.enterConsole') : tr('layout.register')}
               </a>
             </div>
           </div>
@@ -731,13 +855,13 @@ function StratusLayout({
             </span>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <a href="/about" className="transition-colors hover:text-ink">
-                法律声明
+                {tr('footer.legal')}
               </a>
               <a href="/about" className="transition-colors hover:text-ink">
-                隐私政策
+                {tr('footer.privacy')}
               </a>
               <a href="/blog" className="transition-colors hover:text-ink">
-                帮助文档
+                {tr('layout.helpDocs')}
               </a>
             </div>
           </div>
@@ -747,10 +871,13 @@ function StratusLayout({
   );
 }
 
+/** Locale used only when the host does not supply one; never a hardcoded display locale. */
+const INTL_FALLBACK_LOCALE = 'en';
+
 /** Format minor units via the kernel currency catalog (no `CNY` branch, no `/100`). */
-function money(amount: number, currency: string): string {
+function money(amount: number, currency: string, locale?: string): string {
   try {
-    return formatMinorCurrency(amount, currency, 'zh-CN');
+    return formatMinorCurrency(amount, currency, locale ?? INTL_FALLBACK_LOCALE);
   } catch {
     return `${amount} ${currency}`;
   }
@@ -759,18 +886,19 @@ function money(amount: number, currency: string): string {
 /** Render a product spec table from metadata (key-value), best-effort ordered. */
 function specRows(metadata: Record<string, unknown> | null | undefined): Array<[string, string]> {
   if (!metadata) return [];
+  // i18n-exempt — ordering hints matched against persisted metadata keys (data), not UI copy.
   const order = [
     'CPU',
-    '内存',
-    '带宽',
-    '流量',
-    '系统盘',
-    '数据盘',
-    '防御',
-    '线路',
-    '机房',
-    '类型',
-    '备注',
+    '内存', // i18n-exempt — persisted metadata key used for ordering.
+    '带宽', // i18n-exempt — persisted metadata key used for ordering.
+    '流量', // i18n-exempt — persisted metadata key used for ordering.
+    '系统盘', // i18n-exempt — persisted metadata key used for ordering.
+    '数据盘', // i18n-exempt — persisted metadata key used for ordering.
+    '防御', // i18n-exempt — persisted metadata key used for ordering.
+    '线路', // i18n-exempt — persisted metadata key used for ordering.
+    '机房', // i18n-exempt — persisted metadata key used for ordering.
+    '类型', // i18n-exempt — persisted metadata key used for ordering.
+    '备注', // i18n-exempt — persisted metadata key used for ordering.
   ];
   const entries = Object.entries(metadata)
     .map(([key, value]): [string, string] => [
@@ -786,9 +914,13 @@ function specRows(metadata: Record<string, unknown> | null | undefined): Array<[
 }
 
 /** Featured spec-table pricing card, following the IDC pricing-card pattern. */
-function pricingCard(product: ShopProduct): ReactElement {
+function pricingCard(
+  product: ShopProduct,
+  tr: ReturnType<typeof t>,
+  locale?: string,
+): ReactElement {
   const rows = specRows(product.metadata);
-  const priceText = money(product.price, product.currency);
+  const priceText = money(product.price, product.currency, locale);
   const icon = categoryIcon(product.name);
   return (
     <a
@@ -810,7 +942,7 @@ function pricingCard(product: ShopProduct): ReactElement {
           </div>
         </div>
         <span className="shrink-0 rounded-md bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
-          {product.stock > 0 ? '可购' : '缺货'}
+          {product.stock > 0 ? tr('product.inStock') : tr('product.outOfStock')}
         </span>
       </div>
 
@@ -830,10 +962,10 @@ function pricingCard(product: ShopProduct): ReactElement {
       <div className="flex items-end justify-between gap-3 p-5">
         <div className="flex items-baseline gap-1">
           <span className="text-xl font-semibold text-price">{priceText}</span>
-          <span className="text-xs text-ink-faint">/月起</span>
+          <span className="text-xs text-ink-faint">{tr('product.priceUnit')}</span>
         </div>
         <span className="inline-flex h-9 items-center rounded-md border border-border px-4 text-sm text-ink transition-colors group-hover:border-primary group-hover:bg-primary group-hover:text-primary-foreground">
-          立即选购
+          {tr('product.buy')}
         </span>
       </div>
     </a>
@@ -841,6 +973,7 @@ function pricingCard(product: ShopProduct): ReactElement {
 }
 
 function HomePage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const s = props.settings.hero ?? {};
   const pr = props.settings.promo ?? {};
   const md = props.settings.models ?? {};
@@ -848,7 +981,7 @@ function HomePage(props: FrontendPageProps): ReactElement {
   const cs = props.settings.case ?? {};
   const inf = props.settings.infra ?? {};
   const c = props.settings.cta ?? {};
-  const hotKeywords = ((s.hotKeywords as string) || '轻量应用服务器,云服务器,云数据库,SSL证书')
+  const hotKeywords = ((s.hotKeywords as string) || tr('content.hero.hotKeywords'))
     .split(',')
     .map((k) => k.trim())
     .filter(Boolean);
@@ -856,66 +989,146 @@ function HomePage(props: FrontendPageProps): ReactElement {
   const featured = products.slice(0, 8).map((entry) => entry.product);
 
   const activities = [
-    { icon: 'spark', title: '新用户专享', desc: '首单特惠，多款套餐 1 折起' },
-    { icon: 'rocket', title: '秒杀专场', desc: '每日 10 点限量秒杀' },
-    { icon: 'star', title: '老客户回馈', desc: '续费优惠，积分兑好礼' },
-    { icon: 'msg', title: '专属顾问', desc: '1v1 架构师免费咨询' },
+    {
+      icon: 'spark',
+      title: tr('home.activities.newUser.title'),
+      desc: tr('home.activities.newUser.description'),
+    },
+    {
+      icon: 'rocket',
+      title: tr('home.activities.flashSale.title'),
+      desc: tr('home.activities.flashSale.description'),
+    },
+    {
+      icon: 'star',
+      title: tr('home.activities.loyal.title'),
+      desc: tr('home.activities.loyal.description'),
+    },
+    {
+      icon: 'msg',
+      title: tr('home.activities.advisor.title'),
+      desc: tr('home.activities.advisor.description'),
+    },
   ];
 
   const services = [
-    { icon: 'server', name: '云服务器', desc: '高性能算力，弹性扩容，分钟级交付' },
-    { icon: 'drive', name: '云硬盘', desc: '高可靠块存储，随开随用' },
-    { icon: 'database', name: '对象存储', desc: '海量文件存储，按量计费' },
-    { icon: 'network', name: '负载均衡', desc: '多活架构，流量自动分发' },
-    { icon: 'shield', name: '云安全', desc: 'DDoS 防护，WAF 拦截' },
-    { icon: 'globe', name: '域名与证书', desc: '域名注册、SSL、ICP 备案' },
-    { icon: 'rocket', name: 'GPU 服务', desc: '即插即用的 GPU 云服务' },
-    { icon: 'code', name: 'Serverless', desc: '免运维，按调用计费' },
+    {
+      icon: 'server',
+      name: tr('home.services.cloudServer.name'),
+      desc: tr('home.services.cloudServer.description'),
+    },
+    {
+      icon: 'drive',
+      name: tr('home.services.cloudDisk.name'),
+      desc: tr('home.services.cloudDisk.description'),
+    },
+    {
+      icon: 'database',
+      name: tr('home.services.objectStorage.name'),
+      desc: tr('home.services.objectStorage.description'),
+    },
+    {
+      icon: 'network',
+      name: tr('home.services.loadBalancer.name'),
+      desc: tr('home.services.loadBalancer.description'),
+    },
+    {
+      icon: 'shield',
+      name: tr('home.services.security.name'),
+      desc: tr('home.services.security.description'),
+    },
+    {
+      icon: 'globe',
+      name: tr('home.services.domain.name'),
+      desc: tr('home.services.domain.description'),
+    },
+    {
+      icon: 'rocket',
+      name: tr('home.services.gpu.name'),
+      desc: tr('home.services.gpu.description'),
+    },
+    {
+      icon: 'code',
+      name: tr('home.services.serverless.name'),
+      desc: tr('home.services.serverless.description'),
+    },
   ];
 
   const capabilities = [
-    { icon: 'cpu', name: 'AI 算力', desc: 'GPU 云服务器即开即用' },
-    { icon: 'rocket', name: '大模型', desc: '训推一体化平台' },
-    { icon: 'code', name: '应用开发', desc: '智能体开发框架' },
-    { icon: 'database', name: '向量数据库', desc: '千亿级高性能检索' },
-    { icon: 'shield', name: '安全', desc: '全链路安全防护' },
-    { icon: 'globe', name: '边缘加速', desc: '全球节点触手可达' },
+    {
+      icon: 'cpu',
+      name: tr('home.capabilities.aiCompute.name'),
+      desc: tr('home.capabilities.aiCompute.description'),
+    },
+    {
+      icon: 'rocket',
+      name: tr('home.capabilities.llm.name'),
+      desc: tr('home.capabilities.llm.description'),
+    },
+    {
+      icon: 'code',
+      name: tr('home.capabilities.appDev.name'),
+      desc: tr('home.capabilities.appDev.description'),
+    },
+    {
+      icon: 'database',
+      name: tr('home.capabilities.vectorDb.name'),
+      desc: tr('home.capabilities.vectorDb.description'),
+    },
+    {
+      icon: 'shield',
+      name: tr('home.capabilities.security.name'),
+      desc: tr('home.capabilities.security.description'),
+    },
+    {
+      icon: 'globe',
+      name: tr('home.capabilities.edge.name'),
+      desc: tr('home.capabilities.edge.description'),
+    },
   ];
 
   const solutions = [
     {
       icon: 'building',
-      name: '金融云',
-      desc: '高可用、强合规的金融级架构',
+      name: tr('home.solutions.finance.name'),
+      desc: tr('home.solutions.finance.description'),
     },
     {
       icon: 'globe',
-      name: '电商云',
-      desc: '大促高峰弹性扩容，零宕机',
+      name: tr('home.solutions.ecommerce.name'),
+      desc: tr('home.solutions.ecommerce.description'),
     },
-    { icon: 'rocket', name: '游戏云', desc: '全球低延迟，防 DDoS 攻击' },
+    {
+      icon: 'rocket',
+      name: tr('home.solutions.gaming.name'),
+      desc: tr('home.solutions.gaming.description'),
+    },
     {
       icon: 'doc',
-      name: '政企云',
-      desc: '专属集群，本地化合规部署',
+      name: tr('home.solutions.gov.name'),
+      desc: tr('home.solutions.gov.description'),
     },
-    { icon: 'waves', name: '音视频', desc: '低延迟直播与点播解决方案' },
+    {
+      icon: 'waves',
+      name: tr('home.solutions.media.name'),
+      desc: tr('home.solutions.media.description'),
+    },
     {
       icon: 'code',
-      name: 'AI 应用',
-      desc: '从推理到训练的完整闭环',
+      name: tr('home.solutions.ai.name'),
+      desc: tr('home.solutions.ai.description'),
     },
   ];
 
   const regions = [
-    { name: '华北', detail: '北京 9 个可用区' },
-    { name: '华东', detail: '上海 9 个可用区' },
-    { name: '华南', detail: '广州 6 个、深圳 3 个' },
-    { name: '西南', detail: '成都 2 个、重庆 1 个' },
-    { name: '中国香港', detail: '3 个可用区' },
-    { name: '亚太', detail: '新加坡、东京、首尔' },
-    { name: '欧洲', detail: '法兰克福 3 个可用区' },
-    { name: '美洲', detail: '硅谷、弗吉尼亚' },
+    { name: tr('home.regions.north.name'), detail: tr('home.regions.north.detail') },
+    { name: tr('home.regions.east.name'), detail: tr('home.regions.east.detail') },
+    { name: tr('home.regions.south.name'), detail: tr('home.regions.south.detail') },
+    { name: tr('home.regions.southwest.name'), detail: tr('home.regions.southwest.detail') },
+    { name: tr('home.regions.hongKong.name'), detail: tr('home.regions.hongKong.detail') },
+    { name: tr('home.regions.asiaPacific.name'), detail: tr('home.regions.asiaPacific.detail') },
+    { name: tr('home.regions.europe.name'), detail: tr('home.regions.europe.detail') },
+    { name: tr('home.regions.americas.name'), detail: tr('home.regions.americas.detail') },
   ];
 
   return (
@@ -931,14 +1144,13 @@ function HomePage(props: FrontendPageProps): ReactElement {
         <div className="relative mx-auto flex w-full max-w-[1680px] items-center px-4 py-16 sm:px-6 sm:py-20 lg:px-12">
           <div className="max-w-[640px]">
             <span className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1 text-xs font-medium tracking-[0.14em]">
-              {(s.heroKicker as string) || '产业智变 · 云启未来'}
+              {(s.heroKicker as string) || tr('content.hero.heroKicker')}
             </span>
             <h1 className="mt-5 text-[34px] font-semibold leading-[46px] tracking-tight sm:text-[42px]">
-              {(s.heroTitleLine as string) || '值得信赖的企业级云计算平台'}
+              {(s.heroTitleLine as string) || tr('content.hero.heroTitleLine')}
             </h1>
             <p className="mt-4 max-w-md text-sm leading-[22px] text-hero-foreground/80">
-              {(s.heroSubtitle as string) ||
-                '为您提供值得信赖的一站式云计算平台，覆盖计算、存储、网络、安全与 AI 全栈服务。'}
+              {(s.heroSubtitle as string) || tr('content.hero.heroSubtitle')}
             </p>
 
             <form
@@ -950,19 +1162,19 @@ function HomePage(props: FrontendPageProps): ReactElement {
                 <span className="size-4">
                   <Icon name="search" />
                 </span>
-                <span className="sr-only">搜索</span>
+                <span className="sr-only">{tr('search.label')}</span>
               </span>
               <input
                 type="search"
                 name="q"
-                placeholder="搜索云产品、解决方案及文档"
+                placeholder={tr('content.hero.searchPlaceholder')}
                 className="h-11 min-w-0 flex-1 bg-transparent px-2.5 text-sm text-ink outline-none placeholder:text-ink-faint"
               />
               <button
                 type="submit"
                 className="inline-flex h-11 shrink-0 items-center rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
               >
-                搜索
+                {tr('search.submit')}
               </button>
             </form>
 
@@ -970,7 +1182,7 @@ function HomePage(props: FrontendPageProps): ReactElement {
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-hero-foreground/70">
                 <span className="flex items-center gap-1">
                   <Icon name="bolt" />
-                  热门搜索：
+                  {tr('home.hotSearch')}
                 </span>
                 {hotKeywords.map((keyword) => (
                   <a
@@ -985,7 +1197,12 @@ function HomePage(props: FrontendPageProps): ReactElement {
             )}
 
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-hero-foreground/80">
-              {['数据自托管', '权限分级', '传输加密', '操作审计'].map((item) => (
+              {[
+                tr('trust.selfHosted'),
+                tr('trust.grading'),
+                tr('trust.encryption'),
+                tr('trust.audit'),
+              ].map((item) => (
                 <span key={item} className="flex items-center gap-1.5">
                   <span className="text-white">
                     <Icon name="check" />
@@ -999,9 +1216,9 @@ function HomePage(props: FrontendPageProps): ReactElement {
           <div className="relative ml-auto hidden max-w-[520px] flex-1 lg:block">
             <div className="rounded-lg border border-white/20 bg-card p-6 shadow-xl">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-ink">AI 算力中心</p>
+                <p className="text-sm font-medium text-ink">{tr('home.capabilities.title')}</p>
                 <span className="rounded-md bg-accent px-2 py-0.5 text-[11px] text-accent-foreground">
-                  弹性扩容
+                  {tr('home.capabilities.badge')}
                 </span>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3">
@@ -1051,21 +1268,23 @@ function HomePage(props: FrontendPageProps): ReactElement {
         <div className="mx-auto w-full max-w-[1680px] px-4 py-5 sm:px-6 lg:px-12">
           <div className="flex items-center gap-4 rounded-md border border-border bg-surface px-5 py-3">
             <span className="rounded-md bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground">
-              {(pr.promoTag as string) || '新客特惠'}
+              {(pr.promoTag as string) || tr('content.promo.promoTag')}
             </span>
             <p className="min-w-0 truncate text-sm text-ink-soft">
               <span className="font-medium text-ink">
-                {(pr.promoTitle as string) || '云服务器新客首月 1 折起'}
+                {(pr.promoTitle as string) || tr('content.promo.promoTitle')}
               </span>
               {pr.promoDesc ? (
-                <span className="ml-2 hidden text-ink-faint sm:inline">{pr.promoDesc}</span>
+                <span className="ml-2 hidden text-ink-faint sm:inline">
+                  {pr.promoDesc as string}
+                </span>
               ) : null}
             </p>
             <a
               href="/shop"
               className="group ml-auto flex shrink-0 items-center gap-0.5 text-sm font-medium text-primary hover:opacity-80"
             >
-              {(pr.promoButton as string) || '立即选购'}
+              {(pr.promoButton as string) || tr('content.promo.promoButton')}
               <span className="transition-transform group-hover:translate-x-0.5">
                 <Icon name="arrow" />
               </span>
@@ -1080,20 +1299,20 @@ function HomePage(props: FrontendPageProps): ReactElement {
           <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
               <p className="text-xs leading-5 text-ink-faint">
-                {(p.productsKicker as string) || '云产品体系'}
+                {(p.productsKicker as string) || tr('content.products.productsKicker')}
               </p>
               <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-                {(p.productsTitle as string) || '全栈产品体系，助力企业实现云化转型'}
+                {(p.productsTitle as string) || tr('content.products.productsTitle')}
               </h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-ink-soft">
-                {(p.productsText as string) || '从底层算力到上层应用，覆盖全场景的云产品服务。'}
+                {(p.productsText as string) || tr('content.products.productsText')}
               </p>
             </div>
             <a
               href="/shop"
               className="group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-ink hover:text-primary"
             >
-              {(p.productsLink as string) || '探索更多云产品'}
+              {(p.productsLink as string) || tr('content.products.productsLink')}
               <span className="transition-transform group-hover:translate-x-0.5">
                 <Icon name="arrow" />
               </span>
@@ -1101,7 +1320,7 @@ function HomePage(props: FrontendPageProps): ReactElement {
           </div>
           {featured.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {featured.map((product) => pricingCard(product))}
+              {featured.map((product) => pricingCard(product, tr, props.locale))}
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1130,50 +1349,61 @@ function HomePage(props: FrontendPageProps): ReactElement {
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 sm:px-6 lg:px-12">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-xs leading-5 text-ink-faint">
-              {(md.modelsKicker as string) || '全模态大模型'}
+              {(md.modelsKicker as string) || tr('content.models.modelsKicker')}
             </p>
             <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-              {(md.modelsTitle as string) || '大模型服务平台'}
+              {(md.modelsTitle as string) || tr('content.models.modelsTitle')}
             </h2>
             <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-ink-soft">
-              {(md.modelsText as string) ||
-                '开箱即用的大模型服务，汇聚主流优质模型，快速获取普惠的模型能力。'}
+              {(md.modelsText as string) || tr('content.models.modelsText')}
             </p>
             <div className="mt-6 flex items-center justify-center gap-3 text-sm">
               <a
                 href="/shop"
                 className="inline-flex h-10 items-center rounded-md bg-primary px-6 font-medium text-primary-foreground transition-opacity hover:opacity-90"
               >
-                立即体验
+                {tr('home.models.try')}
               </a>
               <a
                 href="/shop"
                 className="inline-flex h-10 items-center rounded-md border border-border px-6 text-ink transition-colors hover:border-primary/40 hover:text-primary"
               >
-                查看详情
+                {tr('home.models.details')}
               </a>
             </div>
           </div>
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[
               {
-                name: '混元大模型',
-                tag: '文本生成 / 深度思考',
-                note: '基于真实业务场景打磨，兼具效果和性价比',
-              },
-              { name: 'GLM-5.3', tag: '文本生成 / 深度思考', note: '支持 1M 上下文及思考长度控制' },
-              {
-                name: 'DeepSeek-V4',
-                tag: '极速百万长文本',
-                note: '专为高并发与低延迟设计的生产级选择',
+                name: tr('home.models.hunyuan.name'),
+                tag: tr('home.models.hunyuan.tag'),
+                note: tr('home.models.hunyuan.note'),
               },
               {
-                name: 'MiniMax-M3',
-                tag: '超长上下文 / 原生多模态',
-                note: '在编程与智能体任务上达到前沿能力',
+                name: tr('home.models.glm.name'),
+                tag: tr('home.models.glm.tag'),
+                note: tr('home.models.glm.note'),
               },
-              { name: 'Kimi-K3', tag: '多模态理解', note: '1M token 上下文，综合智能领先' },
-              { name: '腾讯优图', tag: '视觉理解 / 图像生成', note: '行业领先的视觉模型能力' },
+              {
+                name: tr('home.models.deepseek.name'),
+                tag: tr('home.models.deepseek.tag'),
+                note: tr('home.models.deepseek.note'),
+              },
+              {
+                name: tr('home.models.minimax.name'),
+                tag: tr('home.models.minimax.tag'),
+                note: tr('home.models.minimax.note'),
+              },
+              {
+                name: tr('home.models.kimi.name'),
+                tag: tr('home.models.kimi.tag'),
+                note: tr('home.models.kimi.note'),
+              },
+              {
+                name: tr('home.models.tencent.name'),
+                tag: tr('home.models.tencent.tag'),
+                note: tr('home.models.tencent.note'),
+              },
             ].map((model) => (
               <a
                 key={model.name}
@@ -1202,12 +1432,12 @@ function HomePage(props: FrontendPageProps): ReactElement {
       <section className="border-t border-border bg-surface">
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 sm:px-6 lg:px-12">
           <div className="mb-8 text-center">
-            <p className="text-xs leading-5 text-ink-faint">解决方案</p>
+            <p className="text-xs leading-5 text-ink-faint">{tr('home.solutions.kicker')}</p>
             <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-              面向行业的成熟云解决方案
+              {tr('home.solutions.title')}
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-soft">
-              为不同行业量身打造，兼顾性能、成本与合规，让业务更专注。
+              {tr('home.solutions.description')}
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1239,10 +1469,10 @@ function HomePage(props: FrontendPageProps): ReactElement {
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 sm:px-6 lg:px-12">
           <div className="mb-8 text-center">
             <p className="text-xs leading-5 text-ink-faint">
-              {(cs.caseKicker as string) || '客户案例'}
+              {(cs.caseKicker as string) || tr('content.case.caseKicker')}
             </p>
             <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-              {(cs.caseTitle as string) || '行业领先的解决方案，助力企业安全高效上云'}
+              {(cs.caseTitle as string) || tr('content.case.caseTitle')}
             </h2>
           </div>
           <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr] lg:items-center">
@@ -1253,31 +1483,29 @@ function HomePage(props: FrontendPageProps): ReactElement {
                     <Icon name="waves" />
                   </span>
                   <div>
-                    <p className="text-lg font-medium text-ink">实时音视频 · 直播平台案例</p>
-                    <p className="mt-1 text-sm text-ink-faint">
-                      为直播平台打造新一代高可靠直播架构
-                    </p>
+                    <p className="text-lg font-medium text-ink">{tr('home.case.name')}</p>
+                    <p className="mt-1 text-sm text-ink-faint">{tr('home.case.description')}</p>
                   </div>
                 </div>
                 <span className="hidden rounded-md bg-accent px-2.5 py-1 text-xs text-accent-foreground sm:block">
-                  音视频通信
+                  {tr('home.case.tag')}
                 </span>
               </div>
               <div className="mt-8 flex items-center gap-12">
                 <div>
                   <p className="text-[36px] font-semibold leading-[44px] tracking-tight text-ink">
-                    {(cs.caseMetric1 as string) || '10万+'}
+                    {(cs.caseMetric1 as string) || tr('content.case.caseMetric1')}
                   </p>
                   <p className="mt-1 text-xs text-ink-faint">
-                    {(cs.caseMetric1Label as string) || '并发能力'}
+                    {(cs.caseMetric1Label as string) || tr('content.case.caseMetric1Label')}
                   </p>
                 </div>
                 <div>
                   <p className="text-[36px] font-semibold leading-[44px] tracking-tight text-ink">
-                    {(cs.caseMetric2 as string) || '≤300'}
+                    {(cs.caseMetric2 as string) || tr('content.case.caseMetric2')}
                   </p>
                   <p className="mt-1 text-xs text-ink-faint">
-                    {(cs.caseMetric2Label as string) || 'ms 超低延迟'}
+                    {(cs.caseMetric2Label as string) || tr('content.case.caseMetric2Label')}
                   </p>
                 </div>
               </div>
@@ -1291,29 +1519,29 @@ function HomePage(props: FrontendPageProps): ReactElement {
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 sm:px-6 lg:px-12">
           <div className="mb-10">
             <p className="text-xs leading-5 text-ink-faint">
-              {(inf.infraKicker as string) || '全球基础设施'}
+              {(inf.infraKicker as string) || tr('content.infra.infraKicker')}
             </p>
             <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-              {(inf.infraTitle as string) || '安全合规、高速稳定的基础设施建设'}
+              {(inf.infraTitle as string) || tr('content.infra.infraTitle')}
             </h2>
           </div>
           <div className="flex flex-wrap items-center gap-12">
             {[
               {
-                value: (inf.infraMetric1 as string) || '3200+',
-                label: (inf.infraMetric1Label as string) || '全球加速节点',
+                value: (inf.infraMetric1 as string) || tr('content.infra.infraMetric1'),
+                label: (inf.infraMetric1Label as string) || tr('content.infra.infraMetric1Label'),
               },
               {
-                value: (inf.infraMetric2 as string) || '66',
-                label: (inf.infraMetric2Label as string) || '可用区',
+                value: (inf.infraMetric2 as string) || tr('content.infra.infraMetric2'),
+                label: (inf.infraMetric2Label as string) || tr('content.infra.infraMetric2Label'),
               },
               {
-                value: (inf.infraMetric3 as string) || '22',
-                label: (inf.infraMetric3Label as string) || '地理区域',
+                value: (inf.infraMetric3 as string) || tr('content.infra.infraMetric3'),
+                label: (inf.infraMetric3Label as string) || tr('content.infra.infraMetric3Label'),
               },
               {
-                value: (inf.infraMetric4 as string) || '200T',
-                label: (inf.infraMetric4Label as string) || '带宽储备',
+                value: (inf.infraMetric4 as string) || tr('content.infra.infraMetric4'),
+                label: (inf.infraMetric4Label as string) || tr('content.infra.infraMetric4Label'),
               },
             ].map((metric) => (
               <div key={metric.label} className="min-w-[136px]">
@@ -1325,7 +1553,7 @@ function HomePage(props: FrontendPageProps): ReactElement {
             ))}
             <div className="ml-auto hidden items-center gap-2 text-xs text-ink-soft lg:flex">
               <Icon name="globe" />
-              已覆盖 8 大区 · 多可用区容灾
+              {tr('home.infra.coverage')}
             </div>
           </div>
           <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -1345,9 +1573,15 @@ function HomePage(props: FrontendPageProps): ReactElement {
           <div className="mt-8 border-t border-border pt-6">
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
               <span className="flex items-center gap-1.5 text-xs font-medium text-ink">
-                平台保障
+                {tr('home.infra.guarantee')}
               </span>
-              {['数据自托管', '权限分级', '传输加密', '操作审计', '备份恢复'].map((item) => (
+              {[
+                tr('trust.selfHosted'),
+                tr('trust.grading'),
+                tr('trust.encryption'),
+                tr('trust.audit'),
+                tr('trust.backup'),
+              ].map((item) => (
                 <span key={item} className="flex items-center gap-1.5 text-xs text-ink-soft">
                   <span className="text-primary">
                     <Icon name="check" />
@@ -1365,18 +1599,18 @@ function HomePage(props: FrontendPageProps): ReactElement {
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 sm:px-6 lg:px-12">
           <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
             <div>
-              <p className="text-xs leading-5 text-ink-faint">开发者社区</p>
+              <p className="text-xs leading-5 text-ink-faint">{tr('home.dev.kicker')}</p>
               <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-                完备开发者生态，伴你共同成长
+                {tr('home.dev.title')}
               </h2>
               <p className="mt-3 max-w-md text-sm leading-6 text-ink-soft">
-                文档、工具、社区与认证体系，从入门到精通，走上云之路即刻开始。
+                {tr('home.dev.description')}
               </p>
               <a
                 href="/blog"
                 className="group mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-ink hover:text-primary"
               >
-                前往开发者社区
+                {tr('home.dev.link')}
                 <span className="transition-transform group-hover:translate-x-0.5">
                   <Icon name="arrow" />
                 </span>
@@ -1386,23 +1620,39 @@ function HomePage(props: FrontendPageProps): ReactElement {
                   <p className="text-[36px] font-semibold leading-[44px] tracking-tight text-ink">
                     60+
                   </p>
-                  <p className="text-xs text-ink-faint">产品免费试用</p>
+                  <p className="text-xs text-ink-faint">{tr('home.dev.trials')}</p>
                 </div>
                 <div className="h-8 w-px bg-border" />
                 <div>
                   <p className="text-[36px] font-semibold leading-[44px] tracking-tight text-ink">
                     7×24
                   </p>
-                  <p className="text-xs text-ink-faint">小时在线支持</p>
+                  <p className="text-xs text-ink-faint">{tr('home.dev.support')}</p>
                 </div>
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {[
-                { icon: 'doc', title: '产品文档', desc: '覆盖全产品的开发文档与应用指南' },
-                { icon: 'code', title: '快速上手', desc: '一步步带你完成首次上云部署' },
-                { icon: 'msg', title: '技术问答', desc: '社区互助，随时解答开发疑问' },
-                { icon: 'star', title: '最佳实践', desc: '来自一线团队的架构实践沉淀' },
+                {
+                  icon: 'doc',
+                  title: tr('home.dev.docs.title'),
+                  desc: tr('home.dev.docs.description'),
+                },
+                {
+                  icon: 'code',
+                  title: tr('home.dev.quickstart.title'),
+                  desc: tr('home.dev.quickstart.description'),
+                },
+                {
+                  icon: 'msg',
+                  title: tr('home.dev.qa.title'),
+                  desc: tr('home.dev.qa.description'),
+                },
+                {
+                  icon: 'star',
+                  title: tr('home.dev.practices.title'),
+                  desc: tr('home.dev.practices.description'),
+                },
               ].map((item) => (
                 <a
                   key={item.title}
@@ -1428,16 +1678,16 @@ function HomePage(props: FrontendPageProps): ReactElement {
         <div className="mx-auto w-full max-w-[1680px] px-4 pb-16 sm:px-6 lg:px-12">
           <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
-              <p className="text-xs leading-5 text-ink-faint">上云指南</p>
+              <p className="text-xs leading-5 text-ink-faint">{tr('home.blog.kicker')}</p>
               <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-                云上资讯，持续更新
+                {tr('home.blog.title')}
               </h2>
             </div>
             <a
               href="/blog"
               className="group inline-flex items-center gap-1.5 text-sm font-medium text-ink hover:text-primary"
             >
-              查看全部
+              {tr('home.blog.viewAll')}
               <span className="transition-transform group-hover:translate-x-0.5">
                 <Icon name="arrow" />
               </span>
@@ -1452,16 +1702,18 @@ function HomePage(props: FrontendPageProps): ReactElement {
               >
                 <div className="flex items-center gap-2 text-xs">
                   <span className="rounded-md bg-accent px-2 py-0.5 text-accent-foreground">
-                    {post.tag}
+                    {tr(`${post.key}.tag`)}
                   </span>
                   <time className="text-ink-faint">2025</time>
                 </div>
                 <p className="mt-4 text-lg font-medium tracking-tight text-ink group-hover:text-primary">
-                  {post.title}
+                  {tr(`${post.key}.title`)}
                 </p>
-                <p className="mt-2 flex-1 text-sm leading-6 text-ink-faint">{post.excerpt}</p>
+                <p className="mt-2 flex-1 text-sm leading-6 text-ink-faint">
+                  {tr(`${post.key}.excerpt`)}
+                </p>
                 <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                  阅读全文
+                  {tr('blog.readMore')}
                   <span className="transition-transform group-hover:translate-x-0.5">
                     <Icon name="arrow" />
                   </span>
@@ -1476,35 +1728,38 @@ function HomePage(props: FrontendPageProps): ReactElement {
       <section className="border-t border-border bg-hero text-hero-foreground">
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 text-center sm:px-6 lg:px-12">
           <h2 className="text-[30px] font-semibold leading-10 tracking-tight sm:text-[34px]">
-            {(c.ctaTitle as string) || '开启你的上云之旅'}
+            {(c.ctaTitle as string) || tr('content.cta.ctaTitle')}
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-hero-foreground/80">
-            {(c.ctaText as string) || '注册即享新客礼包，专属架构师一对一支持。'}
+            {(c.ctaText as string) || tr('content.cta.ctaText')}
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
               href="/register"
               className="inline-flex h-11 items-center gap-2 rounded-md bg-primary-foreground px-8 text-sm font-medium text-primary transition-transform hover:scale-[1.02] active:scale-[0.99]"
             >
-              {(c.ctaButton as string) || '免费注册'}
+              {(c.ctaButton as string) || tr('content.cta.ctaButton')}
               <Icon name="arrow" />
             </a>
             <a
               href="/login"
               className="inline-flex h-11 items-center rounded-md border border-white/60 px-8 text-sm font-medium transition-colors hover:bg-white/10"
             >
-              {(c.ctaAlt as string) || '查看控制台'}
+              {(c.ctaAlt as string) || tr('content.cta.ctaAlt')}
             </a>
           </div>
           <div className="mx-auto mt-12 flex max-w-2xl flex-wrap items-center justify-center gap-x-10 gap-y-4 text-xs text-hero-foreground/80">
-            {['60+ 产品免费试用', '首购享 5 折起优惠', '新产品抢先体验', '轻松一站式上云'].map(
-              (item) => (
-                <span key={item} className="flex items-center gap-1.5">
-                  <Icon name="check" />
-                  {item}
-                </span>
-              ),
-            )}
+            {[
+              tr('home.cta.trust.0'),
+              tr('home.cta.trust.1'),
+              tr('home.cta.trust.2'),
+              tr('home.cta.trust.3'),
+            ].map((item) => (
+              <span key={item} className="flex items-center gap-1.5">
+                <Icon name="check" />
+                {item}
+              </span>
+            ))}
           </div>
         </div>
       </section>
@@ -1512,7 +1767,8 @@ function HomePage(props: FrontendPageProps): ReactElement {
   );
 }
 
-function AboutPage(_props: FrontendPageProps): ReactElement {
+function AboutPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   return (
     <main className="flex-1">
       <section className="relative overflow-hidden bg-hero text-hero-foreground">
@@ -1524,13 +1780,13 @@ function AboutPage(_props: FrontendPageProps): ReactElement {
         </div>
         <div className="relative mx-auto w-full max-w-[1680px] px-4 py-20 text-center sm:px-6 lg:px-12">
           <p className="text-xs font-medium tracking-[0.18em] text-hero-foreground/70">
-            产业智变 · 云启未来
+            {tr('about.hero.kicker')}
           </p>
           <h1 className="mt-4 text-balance text-[38px] font-semibold leading-[48px] tracking-tight">
-            一个值得信赖的云平台
+            {tr('about.hero.title')}
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-[22px] text-hero-foreground/80">
-            我们是一站式云计算服务平台，坚持实体运营、资质齐备、技术独立，为企业提供稳定可靠的云基础设施与行业解决方案。
+            {tr('about.hero.description')}
           </p>
           <div className="mx-auto mt-8 flex w-full max-w-[460px] items-center gap-2 rounded-lg border border-white/20 bg-card p-1.5 shadow-lg">
             <span className="pl-3 text-ink-faint">
@@ -1538,15 +1794,15 @@ function AboutPage(_props: FrontendPageProps): ReactElement {
             </span>
             <input
               type="search"
-              aria-label="搜索"
-              placeholder="搜索云产品、解决方案及文档"
+              aria-label={tr('search.label')}
+              placeholder={tr('content.hero.searchPlaceholder')}
               className="h-9 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
             />
             <a
               href="/shop"
               className="inline-flex h-9 shrink-0 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
             >
-              搜索
+              {tr('search.submit')}
             </a>
           </div>
         </div>
@@ -1555,24 +1811,28 @@ function AboutPage(_props: FrontendPageProps): ReactElement {
       <section className="border-t border-border bg-background">
         <div className="mx-auto w-full max-w-[1680px] px-4 py-16 sm:px-6 lg:px-12">
           <div className="mb-8 text-center">
-            <p className="text-xs leading-5 text-ink-faint">我们的底线</p>
+            <p className="text-xs leading-5 text-ink-faint">{tr('about.pillars.kicker')}</p>
             <h2 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-              三个确定的承诺
+              {tr('about.pillars.title')}
             </h2>
           </div>
           <div className="grid gap-5 md:grid-cols-3">
             {[
               {
                 icon: 'building',
-                title: '实体运营',
-                text: '正规注册，真实经营，合作从头看得清、查得到。',
+                title: tr('about.pillars.entity.title'),
+                text: tr('about.pillars.entity.description'),
               },
               {
                 icon: 'shield',
-                title: '安全合规',
-                text: '等级保护三级，合规不是加分项，是默认项。',
+                title: tr('about.pillars.security.title'),
+                text: tr('about.pillars.security.description'),
               },
-              { icon: 'server', title: '技术独立', text: '架构自研、资源自持，路线自己定义。' },
+              {
+                icon: 'server',
+                title: tr('about.pillars.tech.title'),
+                text: tr('about.pillars.tech.description'),
+              },
             ].map((item) => (
               <div
                 key={item.title}
@@ -1592,9 +1852,21 @@ function AboutPage(_props: FrontendPageProps): ReactElement {
       <section className="border-t border-border bg-surface">
         <div className="mx-auto grid w-full max-w-[1680px] gap-8 px-4 py-16 sm:px-6 md:grid-cols-3 lg:px-12">
           {[
-            { icon: 'headset', title: '7 × 24 小时服务', text: '工单、电话、专属群，随时响应。' },
-            { icon: 'gauge', title: '分钟级交付', text: '从下单到上线，最快分钟级完成。' },
-            { icon: 'doc', title: '完整文档', text: '丰富的文档与上手指南，快速起步。' },
+            {
+              icon: 'headset',
+              title: tr('about.support.247.title'),
+              text: tr('about.support.247.description'),
+            },
+            {
+              icon: 'gauge',
+              title: tr('about.support.delivery.title'),
+              text: tr('about.support.delivery.description'),
+            },
+            {
+              icon: 'doc',
+              title: tr('about.support.docs.title'),
+              text: tr('about.support.docs.description'),
+            },
           ].map((item) => (
             <div key={item.title} className="flex items-start gap-4">
               <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -1629,7 +1901,7 @@ function shopCategoryList({
   activeId,
 }: {
   nodes: readonly ShopCategoryNode[];
-  activeId?: string;
+  activeId?: string | undefined;
 }): ReactElement {
   return (
     <ul className="space-y-1">
@@ -1659,6 +1931,7 @@ function shopCategoryList({
 }
 
 function ShopPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const categories = (props.data.categories as ShopCategoryNode[] | undefined) ?? null;
   const catalogResult = props.data.catalogProducts as ShopCatalogResult | undefined;
   const active = catalogResult?.category ?? null;
@@ -1675,15 +1948,17 @@ function ShopPage(props: FrontendPageProps): ReactElement {
       <div className="mx-auto w-full max-w-[1600px] px-4 py-12 sm:px-6 lg:px-8">
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-medium leading-5 text-ink-faint">商店</p>
+            <p className="text-xs font-medium leading-5 text-ink-faint">{tr('shop.kicker')}</p>
             <h1 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-              {query ? `搜索结果：${query}` : activeId && active ? active.name : '服务目录'}
+              {query
+                ? tr('shop.searchTitle', { query })
+                : activeId && active
+                  ? active.name
+                  : tr('shop.catalogTitle')}
             </h1>
             <p className="mt-2 text-sm leading-6 text-ink-faint">
               {active?.description ??
-                (query
-                  ? `与「${query}」相关的服务共 ${total} 件。`
-                  : '挑选心仪的服务，加入购物车或直接结算。')}
+                (query ? tr('shop.searchSummary', { query, total }) : tr('shop.summary'))}
             </p>
           </div>
           <a
@@ -1691,7 +1966,7 @@ function ShopPage(props: FrontendPageProps): ReactElement {
             className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-medium text-ink transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
           >
             <Icon name="cart" />
-            购物车
+            {tr('layout.cart')}
           </a>
         </div>
 
@@ -1704,20 +1979,20 @@ function ShopPage(props: FrontendPageProps): ReactElement {
             <span className="size-4">
               <Icon name="search" />
             </span>
-            <span className="sr-only">搜索</span>
+            <span className="sr-only">{tr('search.label')}</span>
           </span>
           <input
             type="search"
             name="q"
             defaultValue={query ?? ''}
-            placeholder="搜索云产品"
+            placeholder={tr('shop.searchPlaceholder')}
             className="h-10 min-w-0 flex-1 bg-transparent px-2.5 text-sm text-ink outline-none placeholder:text-ink-faint"
           />
           <button
             type="submit"
             className="m-1 inline-flex shrink-0 items-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
           >
-            搜索
+            {tr('search.submit')}
           </button>
         </form>
 
@@ -1736,7 +2011,7 @@ function ShopPage(props: FrontendPageProps): ReactElement {
                   <span className="flex size-4 shrink-0 items-center justify-center">
                     <Icon name="layers" />
                   </span>
-                  全部服务
+                  {tr('shop.allServices')}
                 </a>
                 {categories.length ? shopCategoryList({ nodes: categories, activeId }) : null}
               </aside>
@@ -1745,7 +2020,7 @@ function ShopPage(props: FrontendPageProps): ReactElement {
                 {activeId && active ? (
                   <nav className="mb-4 flex flex-wrap items-center gap-1 px-2 text-sm text-ink-faint">
                     <a href="/shop" className="transition-colors hover:text-primary">
-                      全部服务
+                      {tr('shop.allServices')}
                     </a>
                     <span>/</span>
                     <span className="text-ink">
@@ -1755,10 +2030,10 @@ function ShopPage(props: FrontendPageProps): ReactElement {
                     </span>
                   </nav>
                 ) : null}
-                <p className="mb-4 px-2 text-sm text-ink-faint">共 {total} 件服务</p>
+                <p className="mb-4 px-2 text-sm text-ink-faint">{tr('shop.count', { total })}</p>
                 {entries.length ? (
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {entries.map(({ product }) => pricingCard(product))}
+                    {entries.map(({ product }) => pricingCard(product, tr, props.locale))}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center rounded-lg border border-dashed border-border bg-background px-6 py-20 text-center">
@@ -1766,14 +2041,14 @@ function ShopPage(props: FrontendPageProps): ReactElement {
                       <Icon name="box" />
                     </span>
                     <p className="mt-4 text-sm font-medium text-ink-faint">
-                      {query ? '没有找到相关服务，换个关键词试试。' : '该分类下暂无在售服务'}
+                      {query ? tr('shop.emptySearch') : tr('shop.emptyCategory')}
                     </p>
                   </div>
                 )}
                 {pages > 1 ? (
                   <nav
                     className="mt-8 flex items-center justify-center gap-2 text-sm"
-                    aria-label="分页"
+                    aria-label={tr('shop.paginationAria')}
                   >
                     {Array.from({ length: pages }, (_, i) => i + 1).map((n) => (
                       <a
@@ -1810,6 +2085,7 @@ function buildShopPageHref(page: number, activeId?: string, query?: string | nul
 }
 
 function ShopProductPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const product = props.data.product as ShopProduct | undefined;
   const methods = props.data.methods as ShopPaymentMethods | undefined;
   const viewer = props.data.viewer as { authenticated: boolean } | undefined;
@@ -1817,12 +2093,12 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
     return (
       <main className="flex flex-1 flex-col items-center justify-center bg-surface px-4 py-24 text-center">
         <p className="text-5xl font-bold text-primary">404</p>
-        <p className="mt-4 text-sm text-ink-faint">服务不存在或已下架。</p>
+        <p className="mt-4 text-sm text-ink-faint">{tr('product.notFound')}</p>
         <a
           href="/shop"
           className="mt-8 inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm text-primary-foreground transition-opacity hover:opacity-90"
         >
-          返回服务目录
+          {tr('product.backToCatalog')}
           <Icon name="arrow" />
         </a>
       </main>
@@ -1833,7 +2109,7 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
   const externalPurchase = props.actions['store.create-order-external'];
   const isAuthed = Boolean(viewer?.authenticated);
   const specs = specRows(product.metadata);
-  const priceText = money(product.price, product.currency);
+  const priceText = money(product.price, product.currency, props.locale);
 
   return (
     <main className="flex flex-1 flex-col bg-surface">
@@ -1846,14 +2122,14 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
             <span className="rotate-180">
               <Icon name="arrow" />
             </span>
-            返回服务目录
+            {tr('product.backToCatalog')}
           </a>
           <a
             href="/shop/cart"
             className="inline-flex items-center gap-2 text-sm text-ink-faint transition-colors hover:text-primary"
           >
             <Icon name="cart" />
-            购物车
+            {tr('layout.cart')}
           </a>
         </div>
 
@@ -1866,7 +2142,9 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
                 </span>
               </span>
               <div>
-                <p className="text-xs font-medium uppercase tracking-widest text-primary">服务</p>
+                <p className="text-xs font-medium uppercase tracking-widest text-primary">
+                  {tr('product.kicker')}
+                </p>
                 <h1 className="mt-1 text-[26px] font-semibold leading-9 tracking-tight text-ink">
                   {product.name}
                 </h1>
@@ -1893,15 +2171,19 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
           </section>
 
           <aside className="h-fit rounded-lg border border-border bg-surface p-6 lg:sticky lg:top-24">
-            <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">价格</p>
+            <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">
+              {tr('product.price')}
+            </p>
             <p className="mt-2 flex items-baseline gap-1">
               <span className="text-[36px] font-semibold leading-[44px] text-price">
                 {priceText}
               </span>
-              <span className="text-sm text-ink-faint">元/月起</span>
+              <span className="text-sm text-ink-faint">{tr('product.priceUnitLong')}</span>
             </p>
             <p className="mt-4 text-sm text-ink-soft">
-              {product.stock > 0 ? `库存 ${product.stock} 件` : '暂时缺货，请稍后再来'}
+              {product.stock > 0
+                ? tr('product.stock', { stock: product.stock })
+                : tr('product.unavailable')}
             </p>
             {product.stock > 0 ? (
               <div className="mt-6 space-y-3 border-t border-border pt-5">
@@ -1910,7 +2192,7 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
                     <form action={addToCart}>
                       <input type="hidden" name="productId" value={product.id} />
                       <label className="block text-xs text-ink-faint">
-                        数量
+                        {tr('product.quantity')}
                         <input
                           name="quantity"
                           type="number"
@@ -1925,7 +2207,7 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
                         className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm text-ink transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
                       >
                         <Icon name="cart" />
-                        加入购物车
+                        {tr('product.addToCart')}
                       </button>
                     </form>
                   ) : (
@@ -1934,7 +2216,7 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
                       className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm text-ink transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
                     >
                       <Icon name="cart" />
-                      登录后加入购物车
+                      {tr('product.loginToAdd')}
                     </a>
                   )
                 ) : null}
@@ -1947,7 +2229,7 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
                       className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm text-primary-foreground transition-opacity hover:opacity-90"
                     >
                       <Icon name="wallet" />
-                      余额支付
+                      {tr('product.payWithBalance')}
                     </button>
                   </form>
                 ) : null}
@@ -1979,6 +2261,7 @@ function ShopProductPage(props: FrontendPageProps): ReactElement {
 }
 
 function ShopCartPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const cart = props.data.cart as ShopCartPayload | undefined;
   const updateQty = props.actions['store.update-cart-item'];
   const removeItem = props.actions['store.remove-cart-item'];
@@ -1998,15 +2281,17 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
           <span className="rotate-180">
             <Icon name="arrow" />
           </span>
-          返回服务目录
+          {tr('product.backToCatalog')}
         </a>
         <div className="mt-4 mb-8 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">商店</p>
+            <p className="text-xs font-medium uppercase tracking-widest text-ink-faint">
+              {tr('shop.kicker')}
+            </p>
             <h1 className="mt-2 text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-              购物车
+              {tr('cart.title')}
             </h1>
-            <p className="mt-2 text-sm text-ink-faint">勾选要结算的商品，然后选择支付方式。</p>
+            <p className="mt-2 text-sm text-ink-faint">{tr('cart.subtitle')}</p>
           </div>
         </div>
         {items.length ? (
@@ -2025,7 +2310,8 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
                       <div className="min-w-0">
                         <p className="truncate font-medium text-ink">{item.product.name}</p>
                         <p className="mt-0.5 text-xs text-ink-faint">
-                          {money(item.product.price, item.product.currency)} / 件
+                          {money(item.product.price, item.product.currency, props.locale)}{' '}
+                          {tr('cart.perItem')}
                         </p>
                       </div>
                     </div>
@@ -2046,13 +2332,13 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
                           type="submit"
                           className="inline-flex h-9 items-center gap-1 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-ink transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
                         >
-                          更新
+                          {tr('cart.update')}
                         </button>
                       </form>
                     </div>
                   ) : null}
                   <span className="text-lg font-semibold text-price">
-                    {money(item.total, item.product.currency)}
+                    {money(item.total, item.product.currency, props.locale)}
                   </span>
                   <div className="flex items-start gap-3">
                     {removeItem ? (
@@ -2061,7 +2347,7 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
                         <button
                           type="submit"
                           className="inline-flex size-9 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="移除"
+                          aria-label={tr('cart.remove')}
                         >
                           <Icon name="trash" />
                         </button>
@@ -2074,16 +2360,20 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
 
             <section className="rounded-lg border border-border bg-card p-8">
               <div className="flex items-baseline justify-between">
-                <span className="text-sm text-ink-faint">合计</span>
+                <span className="text-sm text-ink-faint">{tr('cart.total')}</span>
                 <p className="flex items-baseline gap-1">
                   <span className="text-[36px] font-semibold leading-[44px] text-price">
-                    {money(cart?.total ?? 0, cart?.items[0]?.product?.currency ?? 'CNY')}
+                    {money(
+                      cart?.total ?? 0,
+                      cart?.items[0]?.product?.currency ?? 'CNY',
+                      props.locale,
+                    )}
                   </span>
-                  <span className="text-sm text-ink-faint">元</span>
+                  <span className="text-sm text-ink-faint">{tr('cart.currencyUnit')}</span>
                 </p>
               </div>
               <div className="mt-6 space-y-3 border-t border-border pt-5">
-                <p className="text-sm font-medium text-ink">选择要结算的商品</p>
+                <p className="text-sm font-medium text-ink">{tr('cart.selectItems')}</p>
                 {checkoutWallet ? (
                   <form action={checkoutWallet} className="space-y-3">
                     <ul className="divide-y divide-border rounded-md border border-border bg-card">
@@ -2110,12 +2400,12 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
                       className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm text-primary-foreground transition-opacity hover:opacity-90"
                     >
                       <Icon name="wallet" />
-                      余额支付结算
+                      {tr('cart.payBalance')}
                     </button>
                   </form>
                 ) : null}
                 {checkoutExternal && hasProviders
-                  ? methods.providers.flatMap((provider) =>
+                  ? methods?.providers.flatMap((provider) =>
                       provider.methods.map((method) => (
                         <form
                           key={`${provider.id}-${method.id}`}
@@ -2150,7 +2440,7 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
                             type="submit"
                             className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm text-ink transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
                           >
-                            {method.label} 结算
+                            {tr('cart.payWith', { method: method.label })}
                           </button>
                         </form>
                       )),
@@ -2165,9 +2455,7 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
               <span className="flex size-12 items-center justify-center rounded-md bg-muted text-ink-faint">
                 <Icon name="box" />
               </span>
-              <p className="mt-4 text-sm font-medium text-ink-faint">
-                购物车是空的，去挑几件服务吧。
-              </p>
+              <p className="mt-4 text-sm font-medium text-ink-faint">{tr('cart.empty')}</p>
             </div>
           </div>
         )}
@@ -2176,16 +2464,15 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
   );
 }
 
-function BlogPage(_props: FrontendPageProps): ReactElement {
+function BlogPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   return (
     <main className="mx-auto w-full max-w-[1000px] flex-1 px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
-      <p className="text-xs leading-5 text-ink-faint">上云指南</p>
+      <p className="text-xs leading-5 text-ink-faint">{tr('home.blog.kicker')}</p>
       <h1 className="mt-2 text-balance text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-        从选型到部署，帮你走好每一步
+        {tr('blog.title')}
       </h1>
-      <p className="mt-3 max-w-xl text-sm leading-6 text-ink-soft">
-        从选型到部署，帮你快速熟悉云服务，走好每一步上云之路。
-      </p>
+      <p className="mt-3 max-w-xl text-sm leading-6 text-ink-soft">{tr('blog.description')}</p>
       <ul className="mt-10 grid gap-4 sm:grid-cols-2">
         {BLOG_POSTS.map((post) => (
           <li key={post.slug}>
@@ -2193,13 +2480,17 @@ function BlogPage(_props: FrontendPageProps): ReactElement {
               href={`/blog/${post.slug}`}
               className="group flex h-full flex-col rounded-lg border border-border bg-card p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
             >
-              <p className="text-xs font-medium tracking-widest text-primary">{post.tag}</p>
+              <p className="text-xs font-medium tracking-widest text-primary">
+                {tr(`${post.key}.tag`)}
+              </p>
               <h2 className="mt-3 text-lg font-medium tracking-tight text-ink group-hover:text-primary">
-                {post.title}
+                {tr(`${post.key}.title`)}
               </h2>
-              <p className="mt-2 flex-1 text-sm leading-6 text-ink-faint">{post.excerpt}</p>
+              <p className="mt-2 flex-1 text-sm leading-6 text-ink-faint">
+                {tr(`${post.key}.excerpt`)}
+              </p>
               <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                阅读全文
+                {tr('blog.readMore')}
                 <span className="transition-transform group-hover:translate-x-0.5">
                   <Icon name="arrow" />
                 </span>
@@ -2213,6 +2504,7 @@ function BlogPage(_props: FrontendPageProps): ReactElement {
 }
 
 function BlogPostPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   const post = BLOG_POSTS.find((item) => item.slug === props.params.slug);
   if (!post) return <StratusNotFoundPage {...props} />;
   return (
@@ -2222,41 +2514,44 @@ function BlogPostPage(props: FrontendPageProps): ReactElement {
         className="inline-flex items-center gap-1.5 text-sm text-ink-faint transition-colors hover:text-primary"
       >
         <Icon name="arrow" />
-        返回指南
+        {tr('blog.back')}
       </a>
-      <p className="mt-6 text-xs font-medium uppercase tracking-widest text-primary">{post.tag}</p>
+      <p className="mt-6 text-xs font-medium uppercase tracking-widest text-primary">
+        {tr(`${post.key}.tag`)}
+      </p>
       <h1 className="mt-3 text-balance text-[30px] font-semibold leading-10 tracking-tight text-ink sm:text-[34px]">
-        {post.title}
+        {tr(`${post.key}.title`)}
       </h1>
       <div className="mt-6 border-t border-border pt-6">
-        <p className="text-base leading-8 text-ink-soft">{post.body}</p>
+        <p className="text-base leading-8 text-ink-soft">{tr(`${post.key}.body`)}</p>
       </div>
     </main>
   );
 }
 
-function StratusNotFoundPage(_props: FrontendPageProps): ReactElement {
+function StratusNotFoundPage(props: FrontendPageProps): ReactElement {
+  const tr = t(props.locale);
   return (
     <main className="relative flex flex-1 items-center justify-center overflow-hidden bg-surface px-4 py-24">
       <div className="relative mx-auto flex w-full max-w-md flex-col items-center text-center">
         <p className="text-8xl font-bold tracking-tight text-primary">404</p>
-        <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">页面不存在</h1>
-        <p className="mt-3 text-sm leading-6 text-ink-faint">
-          你访问的地址不存在或已被移动，回到首页继续逛逛吧。
-        </p>
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
+          {tr('notFound.title')}
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-ink-faint">{tr('notFound.description')}</p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <a
             href="/"
             className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
           >
-            返回首页
+            {tr('notFound.home')}
             <Icon name="arrow" />
           </a>
           <a
             href="/shop"
             className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-5 text-sm font-medium text-ink transition-colors hover:border-primary/40 hover:text-primary"
           >
-            浏览服务
+            {tr('notFound.browse')}
           </a>
         </div>
       </div>
@@ -2265,6 +2560,8 @@ function StratusNotFoundPage(_props: FrontendPageProps): ReactElement {
 }
 
 export const frontend: FrontendPackage = {
+  locales: ['zh-CN', 'en-US'],
+  messages,
   settingsSchema,
   layouts: { theme: StratusLayout },
   pages: [

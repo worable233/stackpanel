@@ -1,44 +1,66 @@
 'use client';
 import { ArrowRight, Layers3, Server, ShieldCheck } from 'lucide-react';
 import { cn } from './cn.js';
+/**
+ * Built-in default stories.
+ *
+ * These are *content*, not interface copy: a site replaces them from the theme
+ * settings (the `stories` group), and the kernel never renders this array for a
+ * site that has configured its own. They are therefore exempt from the i18n
+ * ratchet, exactly like the kernel's default platform info (ADR-0016 §3).
+ */
 const stories = [
   {
-    text: '每一个改变，都从一个想法开始。以云承载业务，以 AI 拓展可能，让创新走得更远。',
-    label: '轻松起步',
-    detail: '让创意从云端启程',
+    text: '每一个改变，都从一个想法开始。以云承载业务，以 AI 拓展可能，让创新走得更远。', // i18n-exempt — settings-overridable default content
+    label: '轻松起步', // i18n-exempt — settings-overridable default content
+    detail: '让创意从云端启程', // i18n-exempt — settings-overridable default content
     icon: Layers3,
   },
   {
-    text: '从第一行代码，到服务更多客户。选择适合业务阶段的云资源，为下一步发展做好准备。',
-    label: '灵活选型',
-    detail: '匹配当下，也面向未来',
+    text: '从第一行代码，到服务更多客户。选择适合业务阶段的云资源，为下一步发展做好准备。', // i18n-exempt — settings-overridable default content
+    label: '灵活选型', // i18n-exempt — settings-overridable default content
+    detail: '匹配当下，也面向未来', // i18n-exempt — settings-overridable default content
     icon: Server,
   },
   {
-    text: '让技术服务于业务，让精力回归创造。以统一的云平台，连接资源、应用与智能。',
-    label: '专注业务',
-    detail: '让云成为创新的基础',
+    text: '让技术服务于业务，让精力回归创造。以统一的云平台，连接资源、应用与智能。', // i18n-exempt — settings-overridable default content
+    label: '专注业务', // i18n-exempt — settings-overridable default content
+    detail: '让云成为创新的基础', // i18n-exempt — settings-overridable default content
     icon: ShieldCheck,
   },
 ];
+
+/** Interface copy around the stories carousel; supplied by the caller. */
+export interface PlatformStoriesLabels {
+  /** aria-roledescription for the carousel region. */
+  roleDescription: string;
+  /** aria-label for the carousel region. */
+  regionLabel: string;
+  /** aria-label for each slide control; `{label}` is the story label. */
+  slideControlAria: string;
+}
 export function PlatformStories({
   items,
-  actionLabel = '了解云产品',
+  actionLabel,
   actionHref = '#features',
+  labels,
 }: {
   items?: Array<{ text: string; label: string; detail: string }>;
   actionLabel?: string;
   actionHref?: string;
+  /** Localized copy. See {@link PlatformStoriesLabels}. */
+  labels: PlatformStoriesLabels;
 }) {
-  const content = items
-    ? items.map((item, index) => ({ ...item, icon: stories[index % stories.length]!.icon }))
-    : stories;
+  // `noUncheckedIndexedAccess` treats every index as possibly missing; cycle the
+  // default icons without an assertion.
+  const iconFor = (index: number) => stories[index % stories.length]?.icon ?? Layers3;
+  const content = items ? items.map((item, index) => ({ ...item, icon: iconFor(index) })) : stories;
   return (
     <div
       data-stories=""
       className="relative mx-auto w-full max-w-6xl"
-      aria-roledescription="轮播"
-      aria-label="云服务理念"
+      aria-roledescription={labels.roleDescription}
+      aria-label={labels.regionLabel}
     >
       <div className="relative min-h-64 md:min-h-80">
         {content.map((item, i) => (
@@ -92,7 +114,7 @@ export function PlatformStories({
               <button
                 type="button"
                 key={item.label}
-                aria-label={`查看${item.label}`}
+                aria-label={labels.slideControlAria.replace('{label}', item.label)}
                 aria-pressed={i === 0}
                 data-story-control=""
                 suppressHydrationWarning

@@ -16,7 +16,17 @@ import type { ReactElement } from 'react';
  * 该入口只能用 `react` / `react/jsx-runtime` / `next/navigation` 三个外部包，
  * 所以这里直接写 Tailwind 原语，不引 `@stackpanel/ui`。
  */
-export function CopyLinkButton({ code }: { code: string }): ReactElement {
+export function CopyLinkButton({
+  code,
+  copyLabel,
+  copiedLabel,
+}: {
+  code: string;
+  /** Localized "copy link" label (ADR-0016 §5). */
+  copyLabel: string;
+  /** Localized "copied" label. */
+  copiedLabel: string;
+}): ReactElement {
   const [copied, setCopied] = useState(false);
 
   const copy = useCallback(() => {
@@ -41,7 +51,7 @@ export function CopyLinkButton({ code }: { code: string }): ReactElement {
       onClick={copy}
       className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium transition-colors hover:bg-muted"
     >
-      {copied ? '已复制' : '复制链接'}
+      {copied ? copiedLabel : copyLabel}
     </button>
   );
 }

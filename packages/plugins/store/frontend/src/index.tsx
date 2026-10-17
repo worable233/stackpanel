@@ -3,6 +3,7 @@ import {
   formatMinorCurrency,
   minorUnitFor,
   minorUnitsToPlainString,
+  PACKAGE_FALLBACK_LOCALE,
 } from '@stackpanel/sdk';
 import type {
   AccountPageComponentProps,
@@ -16,6 +17,7 @@ import type { ReactElement } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, PackageOpen } from 'lucide-react';
 import { z } from 'zod';
+import { messages, t } from './i18n.js';
 
 interface StoreProduct {
   id: string;
@@ -439,12 +441,12 @@ const settingsSchema = {
   groups: [
     {
       id: 'shop',
-      label: '商店',
+      labelKey: 'settings.shop.group',
       fields: [
         {
           type: 'number',
           name: 'productsPerPage',
-          label: '每页商品数',
+          labelKey: 'settings.shop.productsPerPage.label',
           default: 12,
           min: 1,
           max: 60,
@@ -452,8 +454,8 @@ const settingsSchema = {
         {
           type: 'boolean',
           name: 'showAllProducts',
-          label: '前台展示全部服务',
-          description: '开启后，前台除分类外还会显示「全部分类」，展示未分类商品。',
+          labelKey: 'settings.shop.showAllProducts.label',
+          helpKey: 'settings.shop.showAllProducts.help',
           default: false,
         },
       ],
@@ -496,27 +498,30 @@ function Icon({ name }: { name: string }): ReactElement {
 }
 
 /** Format minor units via the kernel catalog (never `/100` or a CNY branch). */
-function money(amount: number, currency: string): string {
+function money(amount: number, currency: string, locale: string | undefined): string {
   try {
-    return formatMinorCurrency(amount, currency, 'zh-CN');
+    // The host negotiates the locale; zh-CN is the same catalog fallback `t()` uses.
+    return formatMinorCurrency(amount, currency, locale ?? PACKAGE_FALLBACK_LOCALE);
   } catch {
     return `${amount} ${currency}`;
   }
 }
 
+/** Fulfillment type -> message id. Values are persisted API codes, not copy. */
 const FULFILLMENT_LABELS: Record<string, string> = {
-  upstream_service: '云服务器',
-  card: '发卡',
-  instant: '即时发放',
-  api_token: 'API 额度',
-  membership: '会员',
-  physical: '实物',
-  donation: '赞助',
-  topup: '流量卡',
+  upstream_service: 'fulfillment.upstreamService',
+  card: 'fulfillment.card',
+  instant: 'fulfillment.instant',
+  api_token: 'fulfillment.apiToken',
+  membership: 'fulfillment.membership',
+  physical: 'fulfillment.physical',
+  donation: 'fulfillment.donation',
+  topup: 'fulfillment.topup',
 };
 
-function fulfillmentLabel(type: string): string {
-  return FULFILLMENT_LABELS[type] ?? type;
+function fulfillmentLabel(type: string, tr: ReturnType<typeof t>): string {
+  const key = FULFILLMENT_LABELS[type];
+  return key ? tr(key) : type;
 }
 
 function PriceTag({ amount, currency }: { amount: number; currency: string }): ReactElement {
@@ -538,21 +543,29 @@ function PriceTag({ amount, currency }: { amount: number; currency: string }): R
   );
 }
 
-function StockBadge({ stock }: { stock: number }): ReactElement {
+function StockBadge({ stock, tr }: { stock: number; tr: ReturnType<typeof t> }): ReactElement {
   return stock > 0 ? (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
       <span className="size-1.5 rounded-full bg-current" />
-      有货
+      {tr('stock.inStock')}
     </span>
   ) : (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
       <span className="size-1.5 rounded-full bg-current" />
-      暂时缺货
+      {tr('stock.outOfStock')}
     </span>
   );
 }
 
-function ProductCard({ product }: { product: StoreProduct }): ReactElement {
+function ProductCard({
+  product,
+  tr,
+  locale,
+}: {
+  product: StoreProduct;
+  tr: ReturnType<typeof t>;
+  locale: string | undefined;
+}): ReactElement {
   return (
     <Link
       href={`/shop/${product.id}`}
@@ -566,7 +579,7 @@ function ProductCard({ product }: { product: StoreProduct }): ReactElement {
         <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform group-hover:scale-110">
           <Icon name="package" />
         </div>
-        <StockBadge stock={product.stock} />
+        <StockBadge stock={product.stock} tr={tr} />
       </div>
       <div className="flex flex-1 flex-col px-5">
         <h2 className="text-base font-semibold tracking-tight transition-colors group-hover:text-primary">
@@ -582,11 +595,11 @@ function ProductCard({ product }: { product: StoreProduct }): ReactElement {
         <div>
           <PriceTag amount={product.price} currency={product.currency} />
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {money(product.price, product.currency)}
+            {money(product.price, product.currency, locale)}
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors group-hover:text-primary">
-          查看详情
+          {tr('catalog.viewDetails')}
           <span className="transition-transform group-hover:translate-x-0.5">
             <Icon name="arrow" />
           </span>
@@ -597,6 +610,7 @@ function ProductCard({ product }: { product: StoreProduct }): ReactElement {
 }
 
 function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElement {
+  const tr = t(props.locale);
   const products = (props.data.products as StoreProduct[] | undefined) ?? [];
   const categories = (props.data.categories as CatalogCategoryNode[] | undefined) ?? [];
   const catalogResult = props.data.catalogProducts as CatalogProductsResult | undefined;
@@ -620,7 +634,7 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="mt-2 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-              {activeId ? findCategoryName(categories, activeId) : '服务目录'}
+              {activeId ? findCategoryName(categories, activeId, tr) : tr('catalog.title')}
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -629,7 +643,7 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
               className="inline-flex h-10 items-center gap-2 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
             >
               <Icon name="cart" />
-              购物车
+              {tr('catalog.cart')}
             </Link>
           </div>
         </div>
@@ -637,7 +651,7 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
       {hasCatalog ? (
         <div className="mt-10 grid gap-10 lg:grid-cols-[14rem_minmax(0,1fr)]">
           <aside className="h-fit rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-20">
-            <nav aria-label="商品分类">
+            <nav aria-label={tr('catalog.categoriesAria')}>
               {showAll ? (
                 <Link
                   href="/shop?showAll=1"
@@ -648,24 +662,33 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
                   <span className="flex items-center text-primary">
                     <Icon name="layers" />
                   </span>
-                  全部分类
+                  {tr('catalog.allCategories')}
                 </Link>
               ) : null}
               <ul className="mt-1 space-y-0.5">
                 {categories.map((node) => (
-                  <CategoryLink key={node.id} node={node} activeId={activeId} />
+                  <CategoryLink key={node.id} node={node} activeId={activeId} tr={tr} />
                 ))}
               </ul>
             </nav>
           </aside>
           <section>
-            {activeId ? <CategoryBreadcrumb categories={categories} activeId={activeId} /> : null}
+            {activeId ? (
+              <CategoryBreadcrumb categories={categories} activeId={activeId} tr={tr} />
+            ) : null}
             {entries.length ? (
               <>
-                <p className="mb-4 text-sm text-muted-foreground">共 {total} 件服务</p>
+                <p className="mb-4 text-sm text-muted-foreground">
+                  {tr('catalog.total', { count: total })}
+                </p>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {entries.map(({ product }) => (
-                    <ProductCard key={product.id} product={toStoreProduct(product)} />
+                    <ProductCard
+                      key={product.id}
+                      product={toStoreProduct(product)}
+                      tr={tr}
+                      locale={props.locale}
+                    />
                   ))}
                 </div>
                 {catalogResult ? (
@@ -674,23 +697,24 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
                     pageSize={catalogResult.pageSize}
                     total={catalogResult.total}
                     categoryId={activeId}
+                    tr={tr}
                   />
                 ) : null}
               </>
             ) : (
-              <Empty text="该分类下暂无在售服务" />
+              <Empty text={tr('catalog.emptyCategory')} />
             )}
           </section>
         </div>
       ) : products.length ? (
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard key={product.id} product={product} tr={tr} locale={props.locale} />
           ))}
         </div>
       ) : (
         <div className="mt-10">
-          <Empty text="暂无在售服务" />
+          <Empty text={tr('catalog.empty')} />
         </div>
       )}
     </main>
@@ -698,9 +722,13 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
 }
 
 /** Find a category name in the tree (used for the page heading). */
-function findCategoryName(categories: readonly CatalogCategoryNode[], activeId: string): string {
+function findCategoryName(
+  categories: readonly CatalogCategoryNode[],
+  activeId: string,
+  tr: ReturnType<typeof t>,
+): string {
   const found = findCategoryNode(categories, activeId);
-  return found?.name ?? '服务目录';
+  return found?.name ?? tr('catalog.title');
 }
 
 function findCategoryNode(
@@ -747,9 +775,11 @@ function findCategoryPathInTree(
 function CategoryLink({
   node,
   activeId,
+  tr,
 }: {
   node: CatalogCategoryNode;
-  activeId?: string;
+  activeId: string | undefined;
+  tr: ReturnType<typeof t>;
 }): ReactElement {
   const isActive = activeId === node.id;
   return (
@@ -773,7 +803,7 @@ function CategoryLink({
       {node.children.length ? (
         <ul className="ml-4">
           {node.children.map((child) => (
-            <CategoryLink key={child.id} node={child} activeId={activeId} />
+            <CategoryLink key={child.id} node={child} activeId={activeId} tr={tr} />
           ))}
         </ul>
       ) : null}
@@ -784,19 +814,21 @@ function CategoryLink({
 function CategoryBreadcrumb({
   categories,
   activeId,
+  tr,
 }: {
   categories: readonly CatalogCategoryNode[];
   activeId: string;
+  tr: ReturnType<typeof t>;
 }): ReactElement | null {
   const path = findCategoryPath(categories, activeId);
   if (!path) return null;
   return (
     <nav
-      aria-label="面包屑"
+      aria-label={tr('catalog.breadcrumbAria')}
       className="mb-4 flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
     >
       <Link href="/shop" className="hover:text-foreground hover:underline">
-        全部服务
+        {tr('catalog.allServices')}
       </Link>
       {path.map((node) =>
         node.id === activeId ? (
@@ -825,11 +857,13 @@ function Pager({
   pageSize,
   total,
   categoryId,
+  tr,
 }: {
   page: number;
   pageSize: number;
   total: number;
-  categoryId?: string;
+  categoryId: string | undefined;
+  tr: ReturnType<typeof t>;
 }): ReactElement | null {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (pages <= 1) return null;
@@ -837,7 +871,7 @@ function Pager({
   return (
     <nav className="mt-8 flex items-center justify-between border-t pt-4 text-sm">
       <span className="text-muted-foreground">
-        共 {total} 件 · 第 {page} / {pages} 页
+        {tr('catalog.pagerSummary', { total, page, pages })}
       </span>
       <div className="flex items-center gap-2">
         {page > 1 ? (
@@ -848,14 +882,14 @@ function Pager({
             <span className="rotate-180">
               <Icon name="arrow" />
             </span>
-            上一页
+            {tr('catalog.previous')}
           </Link>
         ) : (
           <span className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-muted px-3.5 text-sm text-muted-foreground">
             <span className="rotate-180 opacity-50">
               <Icon name="arrow" />
             </span>
-            上一页
+            {tr('catalog.previous')}
           </span>
         )}
         {page < pages ? (
@@ -863,12 +897,12 @@ function Pager({
             href={`/shop?${categoryQuery}page=${page + 1}`}
             className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-card px-3.5 text-sm font-medium shadow-sm transition-colors hover:bg-muted"
           >
-            下一页
+            {tr('catalog.next')}
             <Icon name="arrow" />
           </Link>
         ) : (
           <span className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-muted px-3.5 text-sm text-muted-foreground">
-            下一页
+            {tr('catalog.next')}
             <span className="opacity-50">
               <Icon name="arrow" />
             </span>
@@ -989,10 +1023,14 @@ function CheckoutConfigForm({
   product,
   config,
   selection,
+  tr,
+  locale,
 }: {
   product: StoreProduct;
   config: CheckoutConfig;
   selection: Selection | null;
+  tr: ReturnType<typeof t>;
+  locale: string | undefined;
 }): ReactElement {
   const sel = selection?.selections ?? {};
   const cycle = selection?.cycle ?? config.cycles[0]?.id ?? '';
@@ -1008,7 +1046,7 @@ function CheckoutConfigForm({
   return (
     <form method="get" action={`/shop/${product.id}`} className="mt-6 space-y-5 border-t pt-5">
       <div className="grid gap-1.5">
-        <label className="text-sm font-medium">计费周期</label>
+        <label className="text-sm font-medium">{tr('checkout.cycle')}</label>
         <select
           name="cycle"
           defaultValue={cycle}
@@ -1016,7 +1054,10 @@ function CheckoutConfigForm({
         >
           {config.cycles.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.label}（{money(item.price, product.currency)}）
+              {tr('checkout.cycleOption', {
+                label: item.label,
+                price: money(item.price, product.currency, locale),
+              })}
             </option>
           ))}
         </select>
@@ -1052,7 +1093,10 @@ function CheckoutConfigForm({
                   />
                   {unit != null ? (
                     <span className="text-[11px] text-muted-foreground">
-                      单价 {money(unit, product.currency)}/{option.unit ?? '单位'}
+                      {tr('checkout.unitPrice', {
+                        price: money(unit, product.currency, locale),
+                        unit: option.unit ?? tr('checkout.unit'),
+                      })}
                     </span>
                   ) : null}
                 </div>
@@ -1076,7 +1120,13 @@ function CheckoutConfigForm({
                       <option key={choice.id} value={choice.id}>
                         {choice.label}
                         {price != null && price > 0
-                          ? `（+${money(price, product.currency)}${choice.recurring === false ? ' 首期' : ''}）`
+                          ? choice.recurring === false
+                            ? tr('checkout.choicePriceFirst', {
+                                price: money(price, product.currency, locale),
+                              })
+                            : tr('checkout.choicePrice', {
+                                price: money(price, product.currency, locale),
+                              })
                           : ''}
                       </option>
                     );
@@ -1094,7 +1144,7 @@ function CheckoutConfigForm({
         type="submit"
         className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
       >
-        计算价格
+        {tr('checkout.calculatePrice')}
       </button>
     </form>
   );
@@ -1104,24 +1154,30 @@ function CheckoutConfigForm({
 function CheckoutPricePreview({
   preview,
   currency,
+  tr,
+  locale,
 }: {
   preview: PricePreview;
   currency: string;
+  tr: ReturnType<typeof t>;
+  locale: string | undefined;
 }): ReactElement | null {
   return (
     <div className="mt-4 rounded-xl border bg-muted/40 p-4 text-sm">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-muted-foreground">配置价格</span>
-        <span className="text-xl font-semibold">{money(preview.total, currency)}</span>
+        <span className="text-muted-foreground">{tr('checkout.configPrice')}</span>
+        <span className="text-xl font-semibold">{money(preview.total, currency, locale)}</span>
       </div>
       {preview.settlementCurrency &&
       preview.settlementTotal !== undefined &&
       preview.settlementCurrency !== currency ? (
         <div className="mt-2 flex items-baseline justify-between gap-3 border-t pt-2 text-xs text-muted-foreground">
-          <span>结算金额（{preview.settlementCurrency}）</span>
+          <span>{tr('checkout.settlementAmount', { currency: preview.settlementCurrency })}</span>
           <span className="tabular-nums">
-            {money(preview.settlementTotal, preview.settlementCurrency)}
-            {preview.fxRate ? ` · 汇率 ${(preview.fxRate / 1_000_000).toFixed(6)}` : ''}
+            {money(preview.settlementTotal, preview.settlementCurrency, locale)}
+            {preview.fxRate
+              ? tr('checkout.fxRate', { rate: (preview.fxRate / 1_000_000).toFixed(6) })
+              : ''}
           </span>
         </div>
       ) : null}
@@ -1132,10 +1188,8 @@ function CheckoutPricePreview({
         <ul className="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
           {preview.breakdown.map((item, index) => (
             <li key={index} className="flex justify-between gap-3">
-              <span>
-                {item.label}：{item.value}
-              </span>
-              {item.price != null ? <span>{money(item.price, currency)}</span> : null}
+              <span>{tr('checkout.breakdownItem', { label: item.label, value: item.value })}</span>
+              {item.price != null ? <span>{money(item.price, currency, locale)}</span> : null}
             </li>
           ))}
         </ul>
@@ -1145,9 +1199,10 @@ function CheckoutPricePreview({
 }
 
 const ProductDetailPage: FrontendPageComponent = (props) => {
+  const tr = t(props.locale);
   const product = props.data.product as StoreProduct | undefined;
   const methods = props.data.methods as z.infer<typeof paymentMethodsSchema> | undefined;
-  if (!product) return <ProductNotFound />;
+  if (!product) return <ProductNotFound tr={tr} />;
   const walletPurchase = props.actions['store.create-order-wallet'];
   const externalPurchase = props.actions['store.create-order-external'];
   const addToCart = props.actions['store.add-to-cart'];
@@ -1173,14 +1228,14 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
           <span className="rotate-180">
             <Icon name="arrow" />
           </span>
-          返回服务目录
+          {tr('product.backToCatalog')}
         </Link>
         <Link
           href="/shop/cart"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <Icon name="cart" />
-          购物车
+          {tr('product.cart')}
         </Link>
       </div>
 
@@ -1199,14 +1254,16 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
           </div>
           <div className="p-6 sm:p-8">
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-xs font-semibold uppercase tracking-widest text-primary">服务</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+                {tr('product.kind')}
+              </p>
               <div className="flex items-center gap-2">
                 {product.fulfillmentType ? (
                   <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                    {fulfillmentLabel(product.fulfillmentType)}
+                    {fulfillmentLabel(product.fulfillmentType, tr)}
                   </span>
                 ) : null}
-                <StockBadge stock={product.stock} />
+                <StockBadge stock={product.stock} tr={tr} />
               </div>
             </div>
             <h1 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
@@ -1237,6 +1294,8 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
                 product={product}
                 config={checkoutConfig}
                 selection={currentSelection}
+                tr={tr}
+                locale={props.locale}
               />
             ) : null}
           </div>
@@ -1244,7 +1303,7 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
 
         <aside className="h-fit rounded-2xl border bg-card p-6 text-card-foreground shadow-sm lg:sticky lg:top-20">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            价格
+            {tr('product.price')}
           </p>
           <div className="mt-2 flex flex-wrap items-baseline gap-2 text-3xl">
             <PriceTag amount={pricePreview?.total ?? product.price} currency={product.currency} />
@@ -1252,25 +1311,32 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
               <>
                 {product.originalPrice != null && product.originalPrice > product.price ? (
                   <span className="text-base text-muted-foreground/60 line-through">
-                    {money(product.originalPrice, product.currency)}
+                    {money(product.originalPrice, product.currency, props.locale)}
                   </span>
                 ) : null}
                 {product.discount != null && product.discount > 0 ? (
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    {product.discount}% 折扣
+                    {tr('product.discount', { percent: product.discount })}
                   </span>
                 ) : null}
               </>
             )}
           </div>
           {checkoutConfig && !pricePreview ? (
-            <p className="mt-2 text-xs text-muted-foreground">配置价格将在选择后计算。</p>
+            <p className="mt-2 text-xs text-muted-foreground">{tr('product.configPriceHint')}</p>
           ) : null}
           {pricePreview ? (
-            <CheckoutPricePreview preview={pricePreview} currency={product.currency} />
+            <CheckoutPricePreview
+              preview={pricePreview}
+              currency={product.currency}
+              tr={tr}
+              locale={props.locale}
+            />
           ) : null}
           <p className="mt-4 text-sm text-muted-foreground">
-            {product.stock > 0 ? `库存 ${product.stock} 件` : '暂时缺货，请稍后再来'}
+            {product.stock > 0
+              ? tr('product.stockCount', { count: product.stock })
+              : tr('product.outOfStock')}
           </p>
           {product.stock > 0 ? (
             <div className="mt-6 space-y-3 border-t pt-5">
@@ -1279,13 +1345,13 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
                   <form action={addToCart}>
                     <input type="hidden" name="productId" value={product.id} />
                     {configJson ? <input type="hidden" name="config" value={configJson} /> : null}
-                    <Quantity />
+                    <Quantity tr={tr} />
                     <button
                       type="submit"
                       className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
                     >
                       <Icon name="cart" />
-                      加入购物车
+                      {tr('product.addToCart')}
                     </button>
                   </form>
                 ) : (
@@ -1294,7 +1360,7 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
                     className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
                   >
                     <Icon name="cart" />
-                    登录后加入购物车
+                    {tr('product.loginToAdd')}
                   </Link>
                 )
               ) : null}
@@ -1302,13 +1368,13 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
                 <form action={walletPurchase}>
                   <input type="hidden" name="productId" value={product.id} />
                   {configJson ? <input type="hidden" name="config" value={configJson} /> : null}
-                  <Quantity />
+                  <Quantity tr={tr} />
                   <button
                     type="submit"
                     className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
                   >
                     <Icon name="wallet" />
-                    余额支付
+                    {tr('product.payWithBalance')}
                   </button>
                 </form>
               ) : null}
@@ -1322,7 +1388,7 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
                         {configJson ? (
                           <input type="hidden" name="config" value={configJson} />
                         ) : null}
-                        <Quantity />
+                        <Quantity tr={tr} />
                         <button
                           type="submit"
                           className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
@@ -1342,6 +1408,7 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
 };
 
 function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElement {
+  const tr = t(props.locale);
   const cart = props.data.cart as CartPayload | undefined;
   const updateQty = props.actions['store.update-cart-item'];
   const removeItem = props.actions['store.remove-cart-item'];
@@ -1359,11 +1426,11 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
         <span className="rotate-180">
           <Icon name="arrow" />
         </span>
-        返回服务目录
+        {tr('cart.backToCatalog')}
       </Link>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">购物车</h1>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{tr('cart.title')}</h1>
         </div>
       </div>
       {items.length ? (
@@ -1382,7 +1449,9 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
                     <div className="min-w-0">
                       <p className="truncate font-medium">{item.product.name}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {money(item.product.price, item.product.currency)} / 件
+                        {tr('cart.unitPrice', {
+                          price: money(item.product.price, item.product.currency, props.locale),
+                        })}
                       </p>
                       {item.summary ? (
                         <p className="mt-0.5 text-xs text-muted-foreground">{item.summary}</p>
@@ -1406,13 +1475,13 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
                         type="submit"
                         className="inline-flex h-9 items-center gap-1 rounded-lg bg-muted px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/70"
                       >
-                        更新
+                        {tr('cart.update')}
                       </button>
                     </form>
                   </div>
                 ) : null}
                 <span className="font-mono text-sm font-semibold tabular-nums">
-                  {money(item.total, item.product.currency)}
+                  {money(item.total, item.product.currency, props.locale)}
                 </span>
                 <div className="flex items-start gap-3">
                   {removeItem ? (
@@ -1421,7 +1490,7 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
                       <button
                         type="submit"
                         className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                        aria-label="移除"
+                        aria-label={tr('cart.remove')}
                       >
                         <Icon name="trash" />
                       </button>
@@ -1434,13 +1503,16 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
 
           <section className="rounded-2xl border bg-card p-6 shadow-sm">
             <div className="flex items-baseline justify-between">
-              <span className="text-sm text-muted-foreground">合计</span>
+              <span className="text-sm text-muted-foreground">{tr('cart.total')}</span>
               <div className="text-2xl">
-                <PriceTag amount={cart?.total ?? 0} currency={cart?.items[0]?.product.currency ?? 'CNY'} />
+                <PriceTag
+                  amount={cart?.total ?? 0}
+                  currency={cart?.items[0]?.product.currency ?? 'CNY'}
+                />
               </div>
             </div>
             <div className="mt-6 space-y-3 border-t pt-5">
-              <p className="text-sm font-semibold">选择要结算的商品</p>
+              <p className="text-sm font-semibold">{tr('cart.selectItems')}</p>
               {checkoutWallet ? (
                 <form action={checkoutWallet} className="space-y-3">
                   <ul className="divide-y rounded-xl border bg-background">
@@ -1455,7 +1527,7 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
                         />
                         <span className="min-w-0 flex-1 truncate">{item.product.name}</span>
                         <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                          {money(item.total, item.product.currency)}
+                          {money(item.total, item.product.currency, props.locale)}
                         </span>
                       </li>
                     ))}
@@ -1465,7 +1537,7 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
                     className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
                   >
                     <Icon name="wallet" />
-                    余额支付结算
+                    {tr('cart.checkoutWallet')}
                   </button>
                 </form>
               ) : null}
@@ -1492,7 +1564,7 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
                               />
                               <span className="min-w-0 flex-1 truncate">{item.product.name}</span>
                               <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                                {money(item.total, item.product.currency)}
+                                {money(item.total, item.product.currency, props.locale)}
                               </span>
                             </li>
                           ))}
@@ -1503,7 +1575,7 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
                           type="submit"
                           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
                         >
-                          {method.label} 结算
+                          {tr('cart.checkoutExternal', { method: method.label })}
                         </button>
                       </form>
                     )),
@@ -1514,17 +1586,17 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
         </div>
       ) : (
         <div className="mt-10">
-          <Empty text="购物车是空的，去挑几件服务吧。" />
+          <Empty text={tr('cart.empty')} />
         </div>
       )}
     </main>
   );
 }
 
-function Quantity(): ReactElement {
+function Quantity({ tr }: { tr: ReturnType<typeof t> }): ReactElement {
   return (
     <label className="block text-xs text-muted-foreground">
-      数量
+      {tr('cart.quantity')}
       <input
         name="quantity"
         type="number"
@@ -1536,18 +1608,18 @@ function Quantity(): ReactElement {
     </label>
   );
 }
-function ProductNotFound(): ReactElement {
+function ProductNotFound({ tr }: { tr: ReturnType<typeof t> }): ReactElement {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-4 py-24 text-center">
       <p className="bg-linear-to-r from-primary to-primary/40 bg-clip-text font-mono text-5xl font-bold text-transparent">
         404
       </p>
-      <p className="mt-4 text-sm text-muted-foreground">服务不存在或已下架。</p>
+      <p className="mt-4 text-sm text-muted-foreground">{tr('product.notFound')}</p>
       <Link
         href="/shop"
         className="mt-8 inline-flex h-10 items-center gap-2 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
       >
-        返回服务目录
+        {tr('product.backToCatalog')}
         <Icon name="arrow" />
       </Link>
     </main>
@@ -1565,11 +1637,12 @@ function Empty({ text }: { text: string }): ReactElement {
 }
 
 function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const orders = (props.data.orders as StoreOrder[] | undefined) ?? [];
   const cancel = props.actions?.['store.cancel-order'];
   return (
     <main>
-      <PageHeader title="历史订单" />
+      <PageHeader title={tr('orders.title')} />
       {orders.length ? (
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
           {orders.map((order) => (
@@ -1579,27 +1652,31 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
             >
               <span className="truncate font-mono text-xs text-muted-foreground">{order.id}</span>
               <span className="flex flex-col gap-0.5">
-                <span className="font-mono font-semibold">{money(order.total, order.currency)}</span>
+                <span className="font-mono font-semibold">
+                  {money(order.total, order.currency, props.locale)}
+                </span>
                 {order.settlementCurrency &&
                 order.settlementTotal !== undefined &&
                 order.settlementCurrency !== order.currency ? (
                   <span className="text-xs text-muted-foreground">
-                    结算 {money(order.settlementTotal, order.settlementCurrency)}
+                    {tr('orders.settlement', {
+                      amount: money(order.settlementTotal, order.settlementCurrency, props.locale),
+                    })}
                   </span>
                 ) : null}
               </span>
-              <OrderStatus status={order.status} />
+              <OrderStatus status={order.status} tr={tr} />
               <span className="flex items-center gap-3">
                 {order.payment?.paymentUrl && order.status === 'PENDING' ? (
                   <a href={order.payment.paymentUrl} className="text-primary hover:underline">
-                    继续付款
+                    {tr('orders.continuePayment')}
                   </a>
                 ) : null}
                 {cancel && order.status === 'PENDING' ? (
                   <form action={cancel}>
                     <input type="hidden" name="id" value={order.id} />
                     <button type="submit" className="text-muted-foreground hover:text-destructive">
-                      取消
+                      {tr('orders.cancel')}
                     </button>
                   </form>
                 ) : null}
@@ -1608,7 +1685,7 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
           ))}
         </ul>
       ) : (
-        <Empty text="还没有订单" />
+        <Empty text={tr('orders.empty')} />
       )}
     </main>
   );
@@ -1617,9 +1694,11 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
 function ServiceStatusBadge({
   status,
   label,
+  tr,
 }: {
   status: string;
-  label?: string | null;
+  label?: string | null | undefined;
+  tr: ReturnType<typeof t>;
 }): ReactElement {
   const tone =
     status === 'ACTIVE'
@@ -1634,23 +1713,24 @@ function ServiceStatusBadge({
       className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}
     >
       <span className="size-1.5 rounded-full bg-current" />
-      {label ?? SERVICE_STATUS_LABELS[status] ?? status}
+      {label ?? (SERVICE_STATUS_LABELS[status] ? tr(SERVICE_STATUS_LABELS[status]!) : status)}
     </span>
   );
 }
 
-/** 服务状态的中文展示名（无上游标签时的回退）。 */
+/** Service status -> message id. Keys are persisted API values, not copy. */
 const SERVICE_STATUS_LABELS: Record<string, string> = {
-  ACTIVE: '运行中',
-  PENDING_PROVISION: '待开通',
-  PROVISIONING: '开通中',
-  SUSPENDED: '已暂停',
-  TERMINATED: '已终止',
-  FAILED: '失败',
+  ACTIVE: 'serviceStatus.active',
+  PENDING_PROVISION: 'serviceStatus.pendingProvision',
+  PROVISIONING: 'serviceStatus.provisioning',
+  SUSPENDED: 'serviceStatus.suspended',
+  TERMINATED: 'serviceStatus.terminated',
+  FAILED: 'serviceStatus.failed',
 };
 
 function MetricsChart({
   series,
+  tr,
 }: {
   series: Array<{
     id: string;
@@ -1659,8 +1739,9 @@ function MetricsChart({
     color?: string;
     points: Array<{ t: number; v: number }>;
   }>;
+  tr: ReturnType<typeof t>;
 }): ReactElement {
-  if (!series.length) return <p className="text-sm text-muted-foreground">暂无监控数据</p>;
+  if (!series.length) return <p className="text-sm text-muted-foreground">{tr('metrics.empty')}</p>;
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {series.map((item) => {
@@ -1670,7 +1751,7 @@ function MetricsChart({
           return (
             <div key={item.id} className="rounded-xl border bg-card p-4">
               <p className="text-sm font-semibold">{item.label}</p>
-              <p className="mt-1 text-xs text-muted-foreground">暂无数据</p>
+              <p className="mt-1 text-xs text-muted-foreground">{tr('metrics.noData')}</p>
             </div>
           );
         }
@@ -1707,11 +1788,12 @@ function MetricsChart({
 }
 
 function StoreAccountServicesPage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const services =
     (props.data.services as Array<z.infer<typeof serviceSummarySchema>> | undefined) ?? [];
   return (
     <main>
-      <PageHeader title="我的云服务" />
+      <PageHeader title={tr('services.title')} />
       {services.length ? (
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
           {services.map((service) => (
@@ -1722,21 +1804,22 @@ function StoreAccountServicesPage(props: AccountPageComponentProps): ReactElemen
               >
                 <span className="truncate font-semibold">{service.productName}</span>
                 <span className="font-mono text-muted-foreground">
-                  {money(service.amount, service.currency)}
+                  {money(service.amount, service.currency, props.locale)}
                 </span>
-                <ServiceStatusBadge status={service.status} />
+                <ServiceStatusBadge status={service.status} tr={tr} />
               </a>
             </li>
           ))}
         </ul>
       ) : (
-        <Empty text="还没有服务，去选购吧" />
+        <Empty text={tr('services.empty')} />
       )}
     </main>
   );
 }
 
 function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
   const service = props.data.service as z.infer<typeof serviceSchema>['service'] | undefined;
   const metrics =
     (props.data.metrics as
@@ -1771,7 +1854,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
     | undefined;
   const changeQuote = props.data.changeQuote as
     { diff: number; currency: string; summary?: string; selection: Selection } | null | undefined;
-  if (!service) return <Empty text="服务不存在" />;
+  if (!service) return <Empty text={tr('service.missing')} />;
   const fields = service.detail?.fields ?? [];
   const actions = service.detail?.actions ?? [];
   const renewable = service.status === 'ACTIVE' || service.status === 'SUSPENDED';
@@ -1782,11 +1865,12 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
         <ServiceStatusBadge
           status={service.detail?.status ?? service.status}
           label={service.detail?.statusLabel}
+          tr={tr}
         />
         <span className="font-mono text-xs text-muted-foreground">{service.id}</span>
         {service.expiresAt ? (
           <span className="text-xs text-muted-foreground">
-            到期：{service.expiresAt.slice(0, 10)}
+            {tr('service.expires', { date: service.expiresAt.slice(0, 10) })}
           </span>
         ) : null}
       </div>
@@ -1850,7 +1934,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                           defaultValue={param.default != null ? String(param.default) : ''}
                           className="h-10 rounded-xl border bg-background px-3 text-sm"
                         >
-                          <option value="">请选择</option>
+                          <option value="">{tr('service.selectPlaceholder')}</option>
                           {(param.options ?? []).map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
@@ -1896,7 +1980,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                       htmlFor={`action-${action.id}-params`}
                       className="text-xs text-muted-foreground"
                     >
-                      附加参数（JSON）
+                      {tr('service.extraParams')}
                     </label>
                     <textarea
                       id={`action-${action.id}-params`}
@@ -1907,7 +1991,9 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                       className="rounded-xl border bg-background px-3 py-2 font-mono text-sm"
                     />
                     <span className="text-[11px] text-muted-foreground">
-                      可用键：{extraParams.map((param) => param.name).join('、')}
+                      {tr('service.availableKeys', {
+                        keys: extraParams.map((param) => param.name).join(', '),
+                      })}
                     </span>
                   </div>
                 ) : null}
@@ -1936,7 +2022,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
           <input type="hidden" name="paymentMode" value="wallet" />
           <div>
             <label htmlFor="renew-months" className="mb-1 block text-xs text-muted-foreground">
-              续费时长（月）
+              {tr('service.renewMonths')}
             </label>
             <input
               id="renew-months"
@@ -1952,7 +2038,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
             type="submit"
             className="h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background"
           >
-            续费（余额支付）
+            {tr('service.renew')}
           </button>
         </form>
       ) : null}
@@ -1965,6 +2051,8 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
           current={changeOptions.current}
           quote={changeQuote ?? null}
           changeAction={changeAction}
+          tr={tr}
+          locale={props.locale}
         />
       ) : null}
 
@@ -1974,12 +2062,13 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
           groups={resourceGroups}
           createAction={resourceCreateAction}
           runAction={resourceRunAction}
+          tr={tr}
         />
       ) : null}
 
       <div>
-        <SectionTitle className="mb-3">监控</SectionTitle>
-        <MetricsChart series={metrics} />
+        <SectionTitle className="mb-3">{tr('service.metrics')}</SectionTitle>
+        <MetricsChart series={metrics} tr={tr} />
       </div>
     </main>
   );
@@ -1993,6 +2082,8 @@ function ServiceChangePanel({
   current,
   quote,
   changeAction,
+  tr,
+  locale,
 }: {
   serviceId: string;
   currency: string;
@@ -2000,6 +2091,8 @@ function ServiceChangePanel({
   current: Selection | null;
   quote: { diff: number; currency: string; summary?: string; selection: Selection } | null;
   changeAction: string;
+  tr: ReturnType<typeof t>;
+  locale: string | undefined;
 }): ReactElement {
   const sel = current?.selections ?? {};
   const cycle = current?.cycle ?? config.cycles[0]?.id ?? '';
@@ -2013,10 +2106,10 @@ function ServiceChangePanel({
   }
   return (
     <section className="space-y-3 rounded-2xl border bg-card p-4">
-      <SectionTitle>升配 / 降配</SectionTitle>
+      <SectionTitle>{tr('change.title')}</SectionTitle>
       <form method="get" action={`/account/services/${serviceId}`} className="space-y-4">
         <div className="grid gap-1.5">
-          <label className="text-sm font-medium">计费周期</label>
+          <label className="text-sm font-medium">{tr('change.cycle')}</label>
           <select
             name="cycle"
             defaultValue={cycle}
@@ -2078,7 +2171,7 @@ function ServiceChangePanel({
           type="submit"
           className="h-10 rounded-xl border bg-background px-4 text-sm font-semibold hover:bg-muted"
         >
-          试算差价
+          {tr('change.quote')}
         </button>
       </form>
       {quote ? (
@@ -2087,8 +2180,10 @@ function ServiceChangePanel({
           <input type="hidden" name="paymentMode" value="wallet" />
           <input type="hidden" name="config" value={JSON.stringify(quote.selection)} />
           <span className="text-sm">
-            需补差价：
-            <span className="font-semibold">{money(quote.diff, quote.currency || currency)}</span>
+            {tr('change.diff')}
+            <span className="font-semibold">
+              {money(quote.diff, quote.currency || currency, locale)}
+            </span>
             {quote.summary ? (
               <span className="ml-2 text-xs text-muted-foreground">{quote.summary}</span>
             ) : null}
@@ -2097,7 +2192,7 @@ function ServiceChangePanel({
             type="submit"
             className="h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background"
           >
-            确认变更（余额支付）
+            {tr('change.confirm')}
           </button>
         </form>
       ) : null}
@@ -2111,6 +2206,7 @@ function ServiceResourcesPanel({
   groups,
   createAction,
   runAction,
+  tr,
 }: {
   serviceId: string;
   groups: Array<{
@@ -2119,10 +2215,11 @@ function ServiceResourcesPanel({
   }>;
   createAction?: string;
   runAction?: string;
+  tr: ReturnType<typeof t>;
 }): ReactElement {
   return (
     <section className="space-y-4">
-      <SectionTitle>资源管理</SectionTitle>
+      <SectionTitle>{tr('resources.title')}</SectionTitle>
       {groups.map(({ kind, resources }) => (
         <div key={kind.id} className="space-y-3 rounded-2xl border bg-card p-4">
           <h3 className="text-sm font-semibold">{kind.label}</h3>
@@ -2183,7 +2280,7 @@ function ServiceResourcesPanel({
               </tbody>
             </table>
           ) : (
-            <p className="text-xs text-muted-foreground">暂无数据</p>
+            <p className="text-xs text-muted-foreground">{tr('resources.empty')}</p>
           )}
           {kind.creatable && createAction ? (
             <form action={createAction} className="flex flex-wrap items-end gap-2 border-t pt-3">
@@ -2191,9 +2288,11 @@ function ServiceResourcesPanel({
               <input type="hidden" name="kind" value={kind.id} />
               <div className="flex flex-1 flex-col gap-1">
                 <label className="text-[11px] text-muted-foreground">
-                  新建参数（JSON）
+                  {tr('resources.createParams')}
                   {(kind.createParams ?? []).length
-                    ? ` · 可用键：${(kind.createParams ?? []).map((p) => p.name).join('、')}`
+                    ? tr('resources.availableKeys', {
+                        keys: (kind.createParams ?? []).map((p) => p.name).join(', '),
+                      })
                     : ''}
                 </label>
                 <input
@@ -2208,7 +2307,7 @@ function ServiceResourcesPanel({
                 type="submit"
                 className="h-9 rounded-lg bg-foreground px-3 text-xs font-semibold text-background"
               >
-                新建{kind.label}
+                {tr('resources.create', { kind: kind.label })}
               </button>
             </form>
           ) : null}
@@ -2226,7 +2325,7 @@ function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
 
-function OrderStatus({ status }: { status: string }): ReactElement {
+function OrderStatus({ status, tr }: { status: string; tr: ReturnType<typeof t> }): ReactElement {
   const tone =
     status === 'PENDING'
       ? 'bg-warning/10 text-warning'
@@ -2242,12 +2341,23 @@ function OrderStatus({ status }: { status: string }): ReactElement {
       className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}
     >
       <span className="size-1.5 rounded-full bg-current" />
-      {status}
+      {ORDER_STATUS_LABELS[status] ? tr(ORDER_STATUS_LABELS[status]!) : status}
     </span>
   );
 }
 
+/** Order status -> message id. Keys are persisted API values, not copy. */
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'orderStatus.pending',
+  PAID: 'orderStatus.paid',
+  COMPLETED: 'orderStatus.completed',
+  CANCELLED: 'orderStatus.cancelled',
+  FAILED: 'orderStatus.failed',
+  REFUNDED: 'orderStatus.refunded',
+};
+
 function StoreSummaryWidget(_props: AdminWidgetProps): ReactElement {
+  const tr = t();
   return (
     <Link
       href="/admin/plugin/store/overview"
@@ -2257,8 +2367,8 @@ function StoreSummaryWidget(_props: AdminWidgetProps): ReactElement {
         <PackageOpen className="size-4" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold">产品管理</span>
-        <span className="mt-1 block text-xs text-muted-foreground">管理云产品与套餐</span>
+        <span className="block text-sm font-semibold">{tr('widget.title')}</span>
+        <span className="mt-1 block text-xs text-muted-foreground">{tr('widget.description')}</span>
       </span>
       <ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
     </Link>
@@ -2488,6 +2598,8 @@ const storeFinders: Record<string, FinderProvider> = {
 };
 
 export const frontend: FrontendPackage = {
+  locales: ['zh-CN', 'en-US'],
+  messages,
   settingsSchema,
   finders: storeFinders,
   pages: [
@@ -2752,7 +2864,7 @@ export const frontend: FrontendPackage = {
         path: '/overview',
         component: 'admin/summary',
         permission: 'store.admin',
-        nav: { label: '概览', group: '商店', order: 0 },
+        nav: { labelKey: 'nav.overview', groupKey: 'nav.groupStore', order: 0 },
         data: [
           { finder: 'store.adminSummary', as: 'summary' },
           { finder: 'store.productTypes', as: 'productTypes' },
@@ -2762,7 +2874,12 @@ export const frontend: FrontendPackage = {
         path: '/products',
         component: 'admin/overview',
         permission: 'store.admin',
-        nav: { label: '商品', group: '商店', order: 10, activePaths: ['/products'] },
+        nav: {
+          labelKey: 'nav.products',
+          groupKey: 'nav.groupStore',
+          order: 10,
+          activePaths: ['/products'],
+        },
         data: [
           { finder: 'store.adminProducts', as: 'products' },
           { finder: 'store.productTypes', as: 'productTypes' },
@@ -2805,14 +2922,14 @@ export const frontend: FrontendPackage = {
         path: '/services',
         component: 'account/services',
         permission: 'store.view',
-        nav: { label: '我的云服务', group: '云服务', order: 10 },
+        nav: { labelKey: 'nav.services', groupKey: 'nav.groupServices', order: 10 },
         data: [{ finder: 'store.myServices', as: 'services' }],
       },
       {
         path: '/orders',
         component: 'account/orders',
         permission: 'store.view',
-        nav: { label: '订单', group: '费用', order: 20 },
+        nav: { labelKey: 'nav.orders', groupKey: 'nav.groupBilling', order: 20 },
         data: [{ finder: 'store.myOrders', as: 'orders' }],
       },
       {

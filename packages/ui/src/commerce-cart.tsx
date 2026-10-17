@@ -33,6 +33,41 @@ export interface CommerceCartPayment {
   providerId?: string;
   paymentMethod?: string;
 }
+/**
+ * All user-facing copy for the cart. `@stackpanel/ui` cannot read the host's
+ * message catalogs, so the caller resolves these from its own catalog and
+ * passes final strings in (ADR-0016 §6). Items in `{braces}` are already
+ * interpolated by the caller.
+ */
+export interface CommerceCartLabels {
+  selectAllAria: string;
+  selectAll: string;
+  productCount: string;
+  selectItemAria: string;
+  unavailable: string;
+  outOfStock: string;
+  stockLow: string;
+  notCheckoutable: string;
+  removeAria: string;
+  updateAria: string;
+  update: string;
+  quantity: string;
+  quantityValue: string;
+  priceDisclaimer: string;
+  summary: string;
+  selectedItems: string;
+  selectedCount: string;
+  amountDue: string;
+  pickProducts: string;
+  paymentMethod: string;
+  noPaymentMethods: string;
+  submitting: string;
+  checkout: string;
+  mixedCurrencies: string;
+  itemLimit: string;
+  reviewHint: string;
+}
+
 export interface CommerceCartProps {
   items: CommerceCartItem[];
   payments: CommerceCartPayment[];
@@ -44,6 +79,8 @@ export interface CommerceCartProps {
    * supplies it — the primitive never guesses a locale or reads cookies.
    */
   locale?: string;
+  /** Localized copy. See {@link CommerceCartLabels}. */
+  labels: CommerceCartLabels;
 }
 
 function formatMoney(amount: number, currency: string, locale?: string) {
@@ -56,11 +93,13 @@ function CartMutation({
   children,
   remove = false,
   label,
+  updateLabel,
 }: {
   action: (data: FormData) => Promise<void>;
   children: ReactNode;
   remove?: boolean;
   label: string;
+  updateLabel: string;
 }) {
   const [, submit, pending] = useActionState(async (_: null, data: FormData) => {
     await action(data);
@@ -78,7 +117,7 @@ function CartMutation({
         disabled={pending}
         aria-label={label}
       >
-        {pending ? <LoaderCircle className="animate-spin" /> : remove ? <Trash2 /> : '更新'}
+        {pending ? <LoaderCircle className="animate-spin" /> : remove ? <Trash2 /> : updateLabel}
       </Button>
     </form>
   );
@@ -92,6 +131,7 @@ export function CommerceCart({
   removeItem,
   continueShopping,
   locale,
+  labels,
 }: CommerceCartProps) {
   const eligible = items.filter((item) => item.available && item.stock >= item.quantity);
   const [checked, setChecked] = useState(() => eligible.slice(0, 50).map((item) => item.id));
@@ -128,7 +168,7 @@ export function CommerceCart({
           <label className="flex cursor-pointer items-center gap-3 text-sm">
             <input
               type="checkbox"
-              aria-label="选择全部可购买商品"
+              aria-label={labels.selectAllAria}
               checked={allChecked}
               disabled={pending || !eligible.length}
               onChange={() =>
@@ -136,12 +176,16 @@ export function CommerceCart({
               }
               className="size-4 accent-primary"
             />
-            全选{' '}
+            {labels.selectAll}{' '}
             <span className="text-muted-foreground">
               {selected.length} / {items.length}
             </span>
           </label>
-          <span className="text-sm text-muted-foreground">{items.length} 项云产品</span>
+          <span className="text-sm text-muted-foreground">
+            {labels.productCount.replace(/\{(\w+)\}/g, (m, k: string) =>
+              k === 'count' ? String(items.length) : m,
+            )}
+          </span>
         </Reveal>
         {items.map((item) => {
           const available = item.available && item.stock >= item.quantity;
@@ -152,7 +196,7 @@ export function CommerceCart({
                   <div className="flex items-start gap-4">
                     <input
                       type="checkbox"
-                      aria-label={`选择 ${item.name}`}
+                      aria-label={labels.selectItemAria.replace('{name}', item.name)}
                       checked={available && checked.includes(item.id)}
                       disabled={
                         !available ||
@@ -180,29 +224,38 @@ export function CommerceCart({
                       {!available ? (
                         <p className="mt-2 text-xs text-destructive">
                           {!item.available
-                            ? '商品已下架'
+                            ? labels.unavailable
                             : item.stock === 0
-                              ? '暂时缺货'
-                              : `库存仅剩 ${item.stock} 件，请调整数量`}
-                          ，暂时无法结算。
+                              ? labels.outOfStock
+                              : labels.stockLow.replace('{count}', String(item.stock))}
+                          {labels.notCheckoutable}
                         </p>
                       ) : null}
                     </div>
                     {removeItem ? (
-                      <CartMutation action={removeItem} remove label={`移除 ${item.name}`}>
+                      <CartMutation
+                        action={removeItem}
+                        remove
+                        label={labels.removeAria.replace('{name}', item.name)}
+                        updateLabel={labels.update}
+                      >
                         <input type="hidden" name="id" value={item.id} />
                       </CartMutation>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-4 border-t border-foreground/10 pt-5 sm:pl-8">
                     {updateQuantity && item.available && item.stock > 0 ? (
-                      <CartMutation action={updateQuantity} label={`更新 ${item.name} 数量`}>
+                      <CartMutation
+                        action={updateQuantity}
+                        label={labels.updateAria.replace('{name}', item.name)}
+                        updateLabel={labels.update}
+                      >
                         <input type="hidden" name="id" value={item.id} />
                         <label
                           htmlFor={`cart-quantity-${item.id}`}
                           className="shrink-0 text-xs whitespace-nowrap text-muted-foreground"
                         >
-                          数量
+                          {labels.quantity}
                         </label>
                         <Input
                           id={`cart-quantity-${item.id}`}
@@ -215,7 +268,9 @@ export function CommerceCart({
                         />
                       </CartMutation>
                     ) : (
-                      <span className="text-sm text-muted-foreground">数量 × {item.quantity}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {labels.quantityValue.replace('{count}', String(item.quantity))}
+                      </span>
                     )}
                     <span className="text-lg font-medium tabular-nums">
                       {formatMoney(item.total, item.currency, locale)}
@@ -228,7 +283,7 @@ export function CommerceCart({
         })}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
           {continueShopping}
-          <span>价格以结算时确认为准</span>
+          <span>{labels.priceDisclaimer}</span>
         </div>
       </div>
       <aside className="lg:sticky lg:top-24">
@@ -243,15 +298,15 @@ export function CommerceCart({
                 className="pointer-events-none absolute inset-0 -z-10 rounded-xl [background:radial-gradient(ellipse_at_top,color-mix(in_oklch,var(--primary)_9%,transparent),transparent_65%)]"
               />
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-xl font-medium">订单摘要</h2>
+                <h2 className="text-xl font-medium">{labels.summary}</h2>
                 <ShoppingCart className="size-5 text-muted-foreground" />
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">已选商品</span>
-                <span>{selected.length} 项</span>
+                <span className="text-muted-foreground">{labels.selectedItems}</span>
+                <span>{labels.selectedCount.replace('{count}', String(selected.length))}</span>
               </div>
               <div className="flex flex-col gap-3 border-y border-foreground/10 py-6">
-                <p className="text-xs text-muted-foreground">应付金额</p>
+                <p className="text-xs text-muted-foreground">{labels.amountDue}</p>
                 {Object.keys(totals).length ? (
                   Object.entries(totals).map(([currency, total]) => (
                     <p
@@ -262,7 +317,7 @@ export function CommerceCart({
                     </p>
                   ))
                 ) : (
-                  <p className="text-xl text-muted-foreground">请选择商品</p>
+                  <p className="text-xl text-muted-foreground">{labels.pickProducts}</p>
                 )}
               </div>
               {selected.map((item) => (
@@ -275,7 +330,7 @@ export function CommerceCart({
                 <input type="hidden" name="paymentMethod" value={payment.paymentMethod} />
               ) : null}
               <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3">
-                <legend className="mb-3 text-sm font-medium">支付方式</legend>
+                <legend className="mb-3 text-sm font-medium">{labels.paymentMethod}</legend>
                 {payments.map((option) => (
                   <label
                     key={`${option.id}-${checkoutRevision}`}
@@ -298,7 +353,7 @@ export function CommerceCart({
                 ))}
                 {!payments.length ? (
                   <p className="text-sm leading-6 text-muted-foreground">
-                    暂无可用支付方式，请稍后再试。
+                    {labels.noPaymentMethods}
                   </p>
                 ) : null}
               </fieldset>
@@ -311,15 +366,15 @@ export function CommerceCart({
                 {pending ? (
                   <LoaderCircle className="animate-spin" data-icon="inline-start" />
                 ) : null}
-                {pending ? '正在提交…' : '确认并结算'}
+                {pending ? labels.submitting : labels.checkout}
                 {!pending ? <ArrowRight data-icon="inline-end" /> : null}
               </Button>
               <p className="text-xs leading-6 text-muted-foreground">
                 {Object.keys(totals).length > 1
-                  ? '不同币种的商品请分开结算。'
+                  ? labels.mixedCurrencies
                   : selected.length >= 50
-                    ? '每笔订单最多结算 50 项商品。'
-                    : '提交前请核对商品配置与数量。'}
+                    ? labels.itemLimit
+                    : labels.reviewHint}
               </p>
             </form>
           </Spotlight>

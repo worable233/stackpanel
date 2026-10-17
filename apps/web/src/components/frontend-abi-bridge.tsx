@@ -18,6 +18,7 @@ import Link from 'next/link';
 import * as form from 'next/form';
 import * as navigation from 'next/navigation';
 import * as ui from '@stackpanel/ui';
+import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
 
 interface ClientAbiGlobal {
@@ -40,6 +41,10 @@ export function publishHostClientAbi(): void {
     'next/form': form,
     'next/navigation': navigation,
     '@stackpanel/ui': ui,
+    // Packages format money and resolve their own catalogs through the SDK
+    // (`createPackageTranslator`), so runtime-loaded client modules need the
+    // host's SDK namespace too.
+    '@stackpanel/sdk': sdk,
     'lucide-react': lucide,
   };
 }

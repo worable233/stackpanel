@@ -5,6 +5,7 @@ export type { PageHeaderProps } from './page-header.js';
 export { Button, buttonVariants } from './button.js';
 export { Input } from './input.js';
 export { TicketWorkspace } from './ticket-workspace.js';
+export type { TicketWorkspaceLabels } from './ticket-workspace.js';
 export { Label } from './label.js';
 export { Select } from './select.js';
 export { LocaleSwitcher } from './locale-switcher.js';
@@ -50,23 +51,28 @@ export type { TextAnimateProps } from './magicui/text-animate.js';
 
 export { Reveal, RevealText } from './reveal.js';
 export { MobileNavigation } from './mobile-navigation.js';
+export type { MobileNavigationLabels } from './mobile-navigation.js';
 export { Spotlight } from './spotlight.js';
 
 export { GlassNavigation } from './glass-navigation.js';
+export type { GlassNavigationLabels } from './glass-navigation.js';
 
 export { DocumentScrollbar } from './document-scrollbar.js';
+export type { DocumentScrollbarLabels } from './document-scrollbar.js';
 
 export { HeroRays } from './hero-rays.js';
 
 export { SmoothDocument } from './smooth-document.js';
 
 export { PlatformStories } from './platform-stories.js';
+export type { PlatformStoriesLabels } from './platform-stories.js';
 
 export { PricingInfo } from './pricing-info.js';
 
 export { getClarityMotionBootstrapScript } from './early-motion.js';
 
 export { CommerceCart } from './commerce-cart.js';
+export type { CommerceCartLabels } from './commerce-cart.js';
 export { Stepper } from './stepper.js';
 export { SidebarMenu, SidebarMenuLink } from './sidebar-menu.js';
 export type { StepperProps } from './stepper.js';
@@ -76,12 +82,14 @@ export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 export { Field, FieldGroup, FieldDescription, FieldError, FieldSet, FieldLegend } from './field.js';
 
 export { FeatureOverview } from './feature-overview.js';
-export type { FeatureOverviewProps } from './feature-overview.js';
+export type { FeatureOverviewLabels, FeatureOverviewProps } from './feature-overview.js';
 export { SectionTitle } from './section-title.js';
 export type { SectionTitleProps } from './section-title.js';
 export { WalletRecharge } from './wallet-recharge.js';
-export type { WalletRechargeMethod } from './wallet-recharge.js';
+export type { WalletRechargeLabels, WalletRechargeMethod } from './wallet-recharge.js';
 
 export { ArticleBody } from './article-body.js';
 export { ErrorPage } from './error-page.js';
-export type { ErrorPageKind } from './error-page.js';
+export type { ErrorPageContent, ErrorPageKind, ErrorPageProps } from './error-page.js';
+export { ErrorPageActions } from './error-page-actions.js';
+export type { ErrorPageActionsLabels } from './error-page-actions.js';

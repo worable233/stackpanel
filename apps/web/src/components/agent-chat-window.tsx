@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, type PointerEvent, type ReactNode }
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
+import { useTranslator } from '@/i18n/provider';
 
 type Bounds = { x: number; y: number; width: number; height: number };
 type Action = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -30,6 +31,7 @@ function fit(b: Bounds): Bounds {
 
 export function AgentChatWindow({ open, header, children, sidebar }: { open: boolean; header: ReactNode; children: ReactNode; sidebar?: ReactNode }) {
   const hasSidebar = Boolean(sidebar);
+  const t = useTranslator();
   const reducedMotion = useReducedMotion();
   const panel = useRef<HTMLElement>(null);
   const sidebarPanel = useRef<HTMLDivElement>(null);
@@ -89,7 +91,7 @@ export function AgentChatWindow({ open, header, children, sidebar }: { open: boo
   const end = () => { gesture.current = null; };
   if (!open) return null;
   return createPortal(
-    <aside ref={panel} id="agent-workspace" aria-label="Agent 工作区" onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} className={cn('fixed left-0 top-0 z-40 flex h-dvh w-full flex-col border border-border/70 bg-card shadow-2xl shadow-foreground/15 sm:left-auto sm:right-3 sm:top-20 sm:h-[720px] sm:w-[540px] sm:rounded-2xl', hasSidebar && 'min-[820px]:rounded-l-none!')}>
+    <aside ref={panel} id="agent-workspace" aria-label={t('agentFrame.ariaLabel')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} className={cn('fixed left-0 top-0 z-40 flex h-dvh w-full flex-col border border-border/70 bg-card shadow-2xl shadow-foreground/15 sm:left-auto sm:right-3 sm:top-20 sm:h-[720px] sm:w-[540px] sm:rounded-2xl', hasSidebar && 'min-[820px]:rounded-l-none!')}>
       <AnimatePresence initial={false}>
         {sidebar && <motion.div key="conversation-sidebar" ref={sidebarPanel}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -105,7 +107,7 @@ export function AgentChatWindow({ open, header, children, sidebar }: { open: boo
         </motion.div>}
       </AnimatePresence>
       {handles.map(([edge, classes]) => <div key={edge} aria-hidden="true" onPointerDown={(event) => start(event, edge)} className={cn('absolute hidden touch-none sm:block', classes)} />)}
-      <header title="拖动标题栏移动面板" onPointerDown={(event) => start(event, 'move')} className="flex h-13 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4 sm:cursor-grab sm:touch-none sm:select-none sm:active:cursor-grabbing">{header}</header>
+      <header title={t('agentFrame.dragHint')} onPointerDown={(event) => start(event, 'move')} className="flex h-13 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4 sm:cursor-grab sm:touch-none sm:select-none sm:active:cursor-grabbing">{header}</header>
       {children}
     </aside>, document.body,
   );

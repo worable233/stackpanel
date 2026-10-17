@@ -52,7 +52,8 @@ export async function AdminActions({
   const actions = await visibleActions(pluginId);
   if (actions.length === 0) return null;
 
-  const t = createTranslator(await getLocale());
+  const locale = await getLocale();
+  const t = createTranslator(locale);
   const candidate = (await listPluginFrontendCandidates()).find((item) => item.id === pluginId);
   const pkg = candidate
     ? await importFrontendPackage('plugins', pluginId, candidate.manifest)
@@ -64,7 +65,7 @@ export async function AdminActions({
         {actions.map((action) => {
           const Component = pkg?.ui?.adminActionComponents?.[action.component];
           if (Component) {
-            return createElement(Component, { pluginId } as AdminActionComponentProps, null);
+            return createElement(Component, { pluginId, locale } as AdminActionComponentProps, null);
           }
           return (
             <span

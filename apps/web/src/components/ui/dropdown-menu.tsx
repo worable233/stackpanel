@@ -8,7 +8,9 @@ import { ChevronRightIcon, CheckIcon } from 'lucide-react';
 import { useFrontendPortalContainer } from '@/components/frontend-scope';
 
 function DropdownMenu({ modal = false, ...props }: MenuPrimitive.Root.Props) {
-  // Ordinary action menus keep the page scrollable; callers can opt into modal behavior.
+  // Menus in the backend are action menus, not dialogs. Keeping them
+  // non-modal prevents an invisible focus layer from blocking the rest of the
+  // page after a client-side navigation or a hot reload.
   return <MenuPrimitive.Root data-slot="dropdown-menu" modal={modal} {...props} />;
 }
 
@@ -17,6 +19,9 @@ function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
 }
 
 function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
+  // Keep the trigger as a single Base UI primitive. Passing a Base UI Button
+  // through `render` can swallow the menu trigger's composed handlers after a
+  // client bundle is reloaded; the primitive itself owns the native button.
   return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 }
 

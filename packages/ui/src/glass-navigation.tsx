@@ -3,15 +3,26 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { cn } from './cn.js';
 
+/** Accessible names for the glass navigation; supplied by the caller. */
+export interface GlassNavigationLabels {
+  /** aria-label of the primary navigation landmark. */
+  primary: string;
+  open: string;
+  close: string;
+}
+
 /** One glass surface for the desktop bar and animated mobile expansion. */
 export function GlassNavigation({
   brand,
   actions,
   links,
+  labels,
 }: {
   brand: ReactNode;
   actions: ReactNode;
   links: Array<{ label: string; href: string; content?: ReactNode }>;
+  /** Localized copy (ADR-0016 §6). */
+  labels: GlassNavigationLabels;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLElement>(null);
@@ -50,7 +61,7 @@ export function GlassNavigation({
       className="fixed inset-x-0 top-0 z-50 px-4 pt-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-5 motion-safe:duration-700 md:px-12 lg:px-4"
     >
       <nav
-        aria-label="主导航"
+        aria-label={labels.primary}
         className="mx-auto max-h-[calc(100dvh-2rem)] max-w-5xl overflow-auto rounded-md border border-foreground/10 bg-background/80 backdrop-blur-md md:max-h-[calc(60dvh-2rem)] lg:rounded-xl"
       >
         <div className="flex min-h-[52px] items-center justify-between gap-2 px-2.5 lg:min-h-12">
@@ -77,7 +88,7 @@ export function GlassNavigation({
             <button
               ref={trigger}
               type="button"
-              aria-label={open ? '关闭导航' : '打开导航'}
+              aria-label={open ? labels.close : labels.open}
               aria-expanded={open}
               aria-controls={id}
               onClick={() => setOpen((value) => !value)}

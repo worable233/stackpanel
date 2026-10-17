@@ -6,12 +6,22 @@ export interface BackendNavigationItem {
   pluginId?: string;
   order?: number;
   activePaths?: string[];
+  /**
+   * Explicit "this route is the plugin's overview" marker. Preferred over
+   * label matching: labels are localized, so any label-based heuristic breaks
+   * as soon as the interface language changes (ADR-0016).
+   */
+  overview?: boolean;
 }
 
 /** Normalize only declared overview entries; never infer or create plugin routes. */
 export function isBackendOverview(item: BackendNavigationItem): boolean {
+  if (item.overview === true) return true;
+  // Legacy fallback for packages published before the `overview` marker
+  // existed: accept the Chinese overview labels they shipped and the language
+  // independent route suffixes. Matching is on *data*, never rendered copy.
   return (
-    item.label.includes('概览') ||
+    item.label.includes('概览') || // i18n-exempt — legacy manifest data, not UI copy
     ['overview', 'summary'].includes(item.label.toLowerCase()) ||
     ['overview', 'summary'].includes(item.href.split('/').at(-1) ?? '')
   );

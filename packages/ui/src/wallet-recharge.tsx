@@ -19,14 +19,36 @@ export interface WalletRechargeMethod {
   amounts?: number[];
 }
 
+/**
+ * Fixed copy for the recharge form.
+ *
+ * `@stackpanel/ui` ships no interface translations (ADR-0016 §6): the plugin
+ * that owns the page resolves these from its own catalog and passes final
+ * strings. `{currency}` in `amountLabel` is replaced by `currency` below.
+ */
+export interface WalletRechargeLabels {
+  amountLabel: string;
+  presetsAria: string;
+  paymentMethod: string;
+  noMethods: string;
+  submitting: string;
+  submit: string;
+}
+
 export function WalletRecharge({
   methods,
   action,
   cancelLink,
+  labels,
+  currency = 'CNY',
 }: {
   methods: WalletRechargeMethod[];
   action?: (data: FormData) => Promise<void>;
   cancelLink: React.ReactNode;
+  /** Localized copy. See {@link WalletRechargeLabels}. */
+  labels: WalletRechargeLabels;
+  /** ISO 4217 code shown in the amount label. */
+  currency?: string;
 }) {
   const [amount, setAmount] = useState('50.00');
   const [selected, setSelected] = useState('0');
@@ -41,7 +63,9 @@ export function WalletRecharge({
     <form action={submit} className="flex flex-col gap-8">
       <FieldGroup>
         <Field>
-          <Label htmlFor="topup-amount">充值金额（CNY）</Label>
+          <Label htmlFor="topup-amount">
+            {labels.amountLabel.replace('{currency}', currency)}
+          </Label>
           <Input
             id="topup-amount"
             name="amount"
@@ -57,7 +81,7 @@ export function WalletRecharge({
             disabled={pending}
           />
           <ToggleGroup
-            aria-label="快捷充值金额"
+            aria-label={labels.presetsAria}
             value={
               presets.some((value) => value / 100 === Number(amount))
                 ? [String(Number(amount))]
@@ -81,10 +105,10 @@ export function WalletRecharge({
           </ToggleGroup>
         </Field>
         <FieldSet className="mt-3">
-          <FieldLegend>支付方式</FieldLegend>
+          <FieldLegend>{labels.paymentMethod}</FieldLegend>
           {methods.length ? (
             <RadioGroup
-              aria-label="支付方式"
+              aria-label={labels.paymentMethod}
               value={selected}
               onValueChange={setSelected}
               disabled={pending}
@@ -115,7 +139,7 @@ export function WalletRecharge({
           ) : (
             <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-muted-foreground">
               <Wallet className="size-5 opacity-50" aria-hidden="true" />
-              <p className="text-sm">暂无支付方式</p>
+              <p className="text-sm">{labels.noMethods}</p>
             </div>
           )}
         </FieldSet>
@@ -129,7 +153,7 @@ export function WalletRecharge({
       <div className="flex items-center gap-3 border-t pt-6">
         <Button type="submit" disabled={!method || !action || pending}>
           {pending && <LoaderCircle data-icon="inline-start" className="animate-spin" />}
-          {pending ? '正在提交' : '确认充值'}
+          {pending ? labels.submitting : labels.submit}
         </Button>
         {cancelLink}
       </div>

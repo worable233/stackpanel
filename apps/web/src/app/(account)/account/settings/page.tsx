@@ -36,7 +36,7 @@ export default async function AccountSettingsPage() {
             </div>
           ) : (
             <p role="alert" className="text-sm text-destructive">
-              暂时无法加载 API 密钥，请刷新后重试。
+              {t('account.settings.access.keysLoadFailed')}
             </p>
           )
         }

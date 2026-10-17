@@ -5,6 +5,9 @@ import { getAuthedApiClient } from '@/lib/api';
 import { savePluginSettingsAction } from '@/lib/frontend-settings-actions';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
+import { DEFAULT_LOCALE } from '@/i18n/config';
+import { localizeSettingsSchema, readPackageMessages } from '@/i18n/package-messages';
+import { listPluginFrontendCandidates } from '@/lib/slots';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,13 +17,20 @@ export default async function AdminPluginSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const t = createTranslator(await getLocale());
+  const locale = await getLocale();
+  const t = createTranslator(locale);
   const api = await getAuthedApiClient();
-  const [schemaResult, settingsResult] = await Promise.all([
+  const [schemaResult, settingsResult, candidates] = await Promise.all([
     api.getPluginSettingsSchema(id),
     api.getPluginSettings(id),
+    listPluginFrontendCandidates(),
   ]);
-  const schema = schemaResult.schema;
+  // Resolve the plugin's own settings labels through its catalog (ADR-0016 §5).
+  const candidate = candidates.find((item) => item.id === id);
+  const { messages } = readPackageMessages(id, candidate?.manifest.messages);
+  const schema = schemaResult.schema
+    ? localizeSettingsSchema(schemaResult.schema, messages, locale, [DEFAULT_LOCALE])
+    : null;
 
   return (
     <main className="w-full space-y-6">

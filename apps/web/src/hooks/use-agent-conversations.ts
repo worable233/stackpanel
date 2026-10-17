@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslator } from '@/i18n/provider';
+import { agentErrorFromBody, agentErrorText } from '@/lib/agent-errors';
 
 export type ChatAttachment = { id: string; name: string; url: string };
 export type ChatTurn = { id: string; objective: string; attachments: ChatAttachment[]; created: number; reasoning: string };
@@ -14,11 +16,16 @@ async function chatFetch<T>(path: string, method = 'GET', body?: unknown, signal
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = response.status === 204 ? null : await response.json();
-  if (!response.ok) throw new Error(data?.detail || data?.error || '无法加载对话，请重试');
+  if (!response.ok) throw agentErrorFromBody(data);
   return data;
 }
 
 export function useAgentConversations(open: boolean, search: string) {
+  const t = useTranslator();
+  const errorText = useCallback(
+    (cause: unknown, fallback: string) => agentErrorText(t, cause, fallback),
+    [t],
+  );
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -48,11 +55,11 @@ export function useAgentConversations(open: boolean, search: string) {
           selection.current = page.conversations[0]?.id ?? null;
           setActiveId(selection.current);
         }
-      }).catch((cause: Error) => { if (!controller.signal.aborted) setError(cause.message); })
+      }).catch((cause: Error) => { if (!controller.signal.aborted) setError(errorText(cause, t('agent.chat.loadFailed'))); })
         .finally(() => { if (!controller.signal.aborted) setListLoading(false); });
     }, search ? 250 : 0);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [open, search, refresh]);
+  }, [open, search, refresh, errorText, t]);
 
   useEffect(() => {
     if (!open || !activeId) return;
@@ -61,11 +68,11 @@ export function useAgentConversations(open: boolean, search: string) {
       setLoading(true); setError('');
       void chatFetch<Detail>(`/${activeId}`, 'GET', undefined, controller.signal).then((data) => {
       if (!controller.signal.aborted) setDetail(data);
-    }).catch((cause: Error) => { if (!controller.signal.aborted) setError(cause.message); })
+    }).catch((cause: Error) => { if (!controller.signal.aborted) setError(errorText(cause, t('agent.chat.loadFailed'))); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 0);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [open, activeId, refresh]);
+  }, [open, activeId, refresh, errorText, t]);
 
   const select = useCallback((id: string | null) => {
     if (locked.current) return;
@@ -83,7 +90,7 @@ export function useAgentConversations(open: boolean, search: string) {
     pending.current = intent;
     try {
       const { conversation } = await chatFetch<{ conversation: Conversation }>('', 'POST', {
-        id: intent.conversationId, title: content.slice(0, 80) || '图片对话',
+        id: intent.conversationId, title: content.slice(0, 80) || t('agent.chat.imageConversation'),
       });
       const { turn } = await chatFetch<{ turn: ChatTurn }>(`/${conversation.id}/messages/${intent.messageId}`, 'PUT', {
         content, reasoning, attachmentIds: attachments.map((a) => a.id),
@@ -95,7 +102,7 @@ export function useAgentConversations(open: boolean, search: string) {
       } : { conversation, turns: [turn], nextCursor: null });
       setActiveId(conversation.id); pending.current = null;
       return true;
-    } catch (cause) { setError(`${cause instanceof Error ? cause.message : '保存失败'}。输入内容已保留，可重试保存。`); return false; }
+    } catch (cause) { setError(t('agent.chat.saveFailedRetained', { reason: errorText(cause, t('common.operationFailed')) })); return false; }
     finally { locked.current = false; setSaving(false); }
   }
 
@@ -108,7 +115,7 @@ export function useAgentConversations(open: boolean, search: string) {
       if (generation !== listGeneration.current) return;
       setConversations((items) => [...items, ...page.conversations.filter((row) => !items.some((item) => item.id === row.id))]);
       setNextCursor(page.nextCursor);
-    } catch (cause) { setError((cause as Error).message); }
+    } catch (cause) { setError(errorText(cause, t('agent.chat.loadFailed'))); }
     finally { if (generation === listGeneration.current) setListLoading(false); }
   }
   async function loadEarlier() {
@@ -121,7 +128,7 @@ export function useAgentConversations(open: boolean, search: string) {
       setDetail((current) => current?.conversation.id === conversationId ? {
         ...current, turns: [...page.turns.filter((row) => !current.turns.some((item) => item.id === row.id)), ...current.turns], nextCursor: page.nextCursor,
       } : current);
-    } catch (cause) { setError((cause as Error).message); }
+    } catch (cause) { setError(errorText(cause, t('agent.chat.loadFailed'))); }
     finally { if (selection.current === conversationId) setLoading(false); }
   }
   async function rename(id: string, title: string) {
@@ -132,7 +139,7 @@ export function useAgentConversations(open: boolean, search: string) {
       setConversations((items) => items.map((item) => item.id === id ? conversation : item));
       setDetail((current) => current?.conversation.id === id ? { ...current, conversation } : current);
       return true;
-    } catch (cause) { setError((cause as Error).message); return false; }
+    } catch (cause) { setError(errorText(cause, t('common.operationFailed'))); return false; }
     finally { locked.current = false; setSaving(false); }
   }
   async function remove(id: string) {
@@ -144,7 +151,7 @@ export function useAgentConversations(open: boolean, search: string) {
       if (selection.current === id) { selection.current = null; setActiveId(null); setDetail(null); pending.current = null; }
       setRefresh((value) => value + 1);
       return true;
-    } catch (cause) { setError((cause as Error).message); return false; }
+    } catch (cause) { setError(errorText(cause, t('common.operationFailed'))); return false; }
     finally { locked.current = false; setSaving(false); }
   }
   return {

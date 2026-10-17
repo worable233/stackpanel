@@ -23,6 +23,7 @@ import {
 import Link from 'next/link';
 import { z } from 'zod';
 import { formatMinorCurrency } from '@stackpanel/sdk';
+import { t } from './i18n.js';
 
 export const overviewSchema = z.object({
   account: z.object({
@@ -43,22 +44,37 @@ export const overviewSchema = z.object({
   monthly: z.array(z.object({ month: z.string(), amount: z.number() })),
 });
 
-const amount = (value: number, currency = 'CNY') => {
+const amount = (value: number, currency = 'CNY', locale?: string) => {
   try {
-    return formatMinorCurrency(value, currency, 'zh-CN');
+    return formatMinorCurrency(value, currency, locale);
   } catch {
     return `${value} ${currency}`;
   }
 };
-const monthLabel = (value: string) => `${Number(value.slice(0, 4))}年${Number(value.slice(5))}月`;
-const entryLabels: Record<string, string> = {
-  TOP_UP: '余额充值',
-  ORDER_PAYMENT: '订单支付',
-  ORDER_REFUND: '订单退款',
-  ADMIN_ADJUST: '余额调整',
-  llm_gateway_usage: 'API 用量消费',
-  REFERRAL_REWARD: '推广奖励',
-  REFERRAL_INVITEE_REWARD: '推广注册奖励',
+
+/**
+ * Month label for a `YYYY-MM` bucket.
+ *
+ * Uses `Intl.DateTimeFormat` rather than hand-built "YYYY年M月" copy so the
+ * format follows the requested locale (ADR-0016 §4). Buckets are calendar
+ * months in Beijing time, matching the backend's aggregation.
+ */
+const monthLabel = (value: string, locale?: string) =>
+  new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'long',
+    timeZone: 'Asia/Shanghai',
+  }).format(new Date(`${value}-01T00:00:00+08:00`));
+
+/** Ledger entry type → message id. Types are API values, not display copy. */
+const ENTRY_KEYS: Record<string, string> = {
+  TOP_UP: 'entry.TOP_UP',
+  ORDER_PAYMENT: 'entry.ORDER_PAYMENT',
+  ORDER_REFUND: 'entry.ORDER_REFUND',
+  ADMIN_ADJUST: 'entry.ADMIN_ADJUST',
+  llm_gateway_usage: 'entry.llm_gateway_usage',
+  REFERRAL_REWARD: 'entry.REFERRAL_REWARD',
+  REFERRAL_INVITEE_REWARD: 'entry.REFERRAL_INVITEE_REWARD',
 };
 
 function EmptyState({
@@ -78,14 +94,15 @@ function EmptyState({
 }
 
 export function WalletOverviewPage(props: AccountPageComponentProps) {
+  const tr = t(props.locale);
   const data = props.data.overview as z.infer<typeof overviewSchema> | undefined;
   if (!data)
     return (
       <main className="flex flex-col gap-6">
-        <PageHeader title="费用概览" />
+        <PageHeader title={tr('overview.title')} />
         <Card>
           <CardContent>
-            <p className="text-sm text-muted-foreground">费用数据暂时无法加载，请刷新重试。</p>
+            <p className="text-sm text-muted-foreground">{tr('overview.unavailable')}</p>
           </CardContent>
         </Card>
       </main>
@@ -93,22 +110,29 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
   const { account, monthly, entries } = data;
   const current = monthly.at(-1);
   const max = Math.max(...monthly.map((item) => item.amount), 1);
+  const notSupported = tr('overview.notSupported');
   const rows = [
-    { label: '账户余额', value: amount(account.balance + account.held, account.currency) },
-    { label: '冻结金额', value: amount(account.held, account.currency) },
-    { label: '待支付金额', value: '以待支付订单为准' },
-    { label: '未出账费用（预估）', value: '暂不支持' },
-    { label: '赠金预计抵扣', value: '暂不支持' },
-    { label: '待返还资金', value: '暂不支持' },
+    {
+      label: tr('overview.rowBalance'),
+      value: amount(account.balance + account.held, account.currency, props.locale),
+    },
+    {
+      label: tr('overview.rowHeld'),
+      value: amount(account.held, account.currency, props.locale),
+    },
+    { label: tr('overview.rowOutstanding'), value: tr('overview.rowOutstandingValue') },
+    { label: tr('overview.rowUnbilled'), value: notSupported },
+    { label: tr('overview.rowGrantOffset'), value: notSupported },
+    { label: tr('overview.rowRefundable'), value: notSupported },
   ];
   return (
     <main className="flex flex-col gap-6">
       <PageHeader
-        title="费用概览"
+        title={tr('overview.title')}
         actions={
           <Button render={<Link href="/account/balance" />}>
             <Plus data-icon="inline-start" />
-            充值
+            {tr('overview.topUp')}
           </Button>
         }
       />
@@ -116,43 +140,43 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
-            <p className="text-sm text-muted-foreground">可用额度</p>
+            <p className="text-sm text-muted-foreground">{tr('overview.availableCredit')}</p>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="flex flex-wrap items-baseline gap-2">
               <span className="text-4xl font-semibold tracking-tight tabular-nums">
-                {amount(account.balance)}
+                {amount(account.balance, account.currency, props.locale)}
               </span>
               <span className="text-sm text-muted-foreground">{account.currency}</span>
             </p>
-            <p className="text-xs text-muted-foreground">可直接用于云产品与服务消费</p>
+            <p className="text-xs text-muted-foreground">{tr('overview.availableCreditHint')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <p className="text-sm text-muted-foreground">本月余额消费</p>
+            <p className="text-sm text-muted-foreground">{tr('overview.monthSpend')}</p>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="flex flex-wrap items-baseline gap-2">
               <span className="text-3xl font-semibold tracking-tight tabular-nums">
-                {amount(current?.amount ?? 0)}
+                {amount(current?.amount ?? 0, account.currency, props.locale)}
               </span>
               <span className="text-sm text-muted-foreground">{account.currency}</span>
             </p>
             <Link href="#monthly-spending" className="w-fit text-xs text-primary hover:underline">
-              查看月度消费 <span aria-hidden="true">↗</span>
+              {tr('overview.viewMonthly')} <span aria-hidden="true">↗</span>
             </Link>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <p className="text-sm text-muted-foreground">赠金</p>
+            <p className="text-sm text-muted-foreground">{tr('overview.grant')}</p>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-3xl font-semibold text-muted-foreground">—</p>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Gift className="size-3.5" aria-hidden="true" />
-              暂未提供赠金抵扣
+              {tr('overview.grantUnavailable')}
             </p>
           </CardContent>
         </Card>
@@ -161,7 +185,7 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
       <Card>
         <details open className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 [&::-webkit-details-marker]:hidden">
-            <SectionTitle icon={<Wallet />}>资金明细</SectionTitle>
+            <SectionTitle icon={<Wallet />}>{tr('overview.ledgerTitle')}</SectionTitle>
             <ChevronDown
               className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
               aria-hidden="true"
@@ -182,16 +206,16 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
             <div className="flex flex-col items-start gap-4 lg:border-l lg:pl-8">
               <p className="flex items-center gap-2 text-sm font-medium">
                 <CircleHelp className="size-4 text-muted-foreground" />
-                额度说明
+                {tr('overview.creditNote')}
               </p>
               <p className="text-sm leading-7 text-muted-foreground">
-                可用额度为账户余额扣除冻结金额后的可支付余额。冻结资金将在结算后扣除实际费用，剩余部分退回可用额度。
+                {tr('overview.creditNoteBody')}
               </p>
               <p className="text-xs leading-6 text-muted-foreground">
-                消费统计仅包含余额扣款，不含外部支付、充值与人工调账；退款单独记录，不冲减消费金额。按北京时间自然月统计。
+                {tr('overview.statsNote')}
               </p>
               <Button variant="outline" size="sm" render={<Link href="/account/orders" />}>
-                查看订单
+                {tr('overview.viewOrders')}
                 <ArrowUpRight data-icon="inline-end" />
               </Button>
             </div>
@@ -203,10 +227,10 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
         <Card id="monthly-spending" className="scroll-mt-24">
           <CardHeader>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <SectionTitle icon={<ChartNoAxesColumn />}>月度消费</SectionTitle>
+              <SectionTitle icon={<ChartNoAxesColumn />}>{tr('overview.monthlyTitle')}</SectionTitle>
               <CardDescription>
                 {monthly.length
-                  ? `${monthLabel(monthly[0]!.month)} — ${monthLabel(current!.month)}`
+                  ? `${monthLabel(monthly[0]!.month, props.locale)} — ${monthLabel(current!.month, props.locale)}`
                   : ''}
               </CardDescription>
             </div>
@@ -214,17 +238,20 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
           <CardContent>
             {monthly.some((item) => item.amount > 0) ? (
               <div className="flex flex-col gap-4">
-                <p className="text-xs text-muted-foreground">余额消费 · CNY</p>
+                <p className="text-xs text-muted-foreground">{tr('overview.monthlySubtitle')}</p>
                 <div
                   className="flex h-48 items-end gap-2 border-b pb-0 sm:gap-3"
                   role="img"
-                  aria-label="最近十二个月余额消费柱状图"
+                  aria-label={tr('overview.monthlyAria')}
                 >
                   {monthly.map((item) => (
                     <div
                       key={item.month}
                       className="group/bar relative flex h-full min-w-0 flex-1 items-end justify-center"
-                      title={`${monthLabel(item.month)}：${amount(item.amount)}`}
+                      title={tr('overview.monthlyTooltip', {
+                        month: monthLabel(item.month, props.locale),
+                        amount: amount(item.amount, account.currency, props.locale),
+                      })}
                     >
                       <div
                         className="w-full max-w-8 rounded-t bg-primary/75 transition-colors hover:bg-primary"
@@ -241,36 +268,36 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
                       key={item.month}
                       className="min-w-0 flex-1 text-center text-xs text-muted-foreground"
                     >
-                      {Number(item.month.slice(5))}月
+                      {tr('overview.monthShort', { month: Number(item.month.slice(5)) })}
                     </span>
                   ))}
                 </div>
                 <table className="sr-only">
-                  <caption>月度余额消费（CNY）</caption>
+                  <caption>{tr('overview.monthlyCaption')}</caption>
                   <tbody>
                     {monthly.map((item) => (
                       <tr key={item.month}>
-                        <th>{monthLabel(item.month)}</th>
-                        <td>{amount(item.amount)}</td>
+                        <th>{monthLabel(item.month, props.locale)}</th>
+                        <td>{amount(item.amount, account.currency, props.locale)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <EmptyState kind="spending">暂无消费</EmptyState>
+              <EmptyState kind="spending">{tr('overview.emptySpending')}</EmptyState>
             )}
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <SectionTitle icon={<ListFilter />}>最近资金变动</SectionTitle>
+              <SectionTitle icon={<ListFilter />}>{tr('overview.recentTitle')}</SectionTitle>
               <Link
                 href="/account/balance/records#ledger"
                 className="shrink-0 text-xs text-primary hover:underline"
               >
-                余额流水 ↗
+                {tr('overview.ledgerLink')} ↗
               </Link>
             </div>
           </CardHeader>
@@ -289,10 +316,11 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
                     )}
                     <div className="flex min-w-0 flex-1 flex-col gap-1">
                       <p className="truncate text-sm" title={entry.note ?? undefined}>
-                        {entry.note ?? entryLabels[entry.type] ?? '余额变动'}
+                        {entry.note ??
+                          (ENTRY_KEYS[entry.type] ? tr(ENTRY_KEYS[entry.type]!) : tr('entry.fallback'))}
                       </p>
                       <time className="text-xs text-muted-foreground" dateTime={entry.createdAt}>
-                        {new Date(entry.createdAt).toLocaleString('zh-CN', {
+                        {new Date(entry.createdAt).toLocaleString(props.locale, {
                           timeZone: 'Asia/Shanghai',
                           month: '2-digit',
                           day: '2-digit',
@@ -304,7 +332,7 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
                     </div>
                     <p className="shrink-0 text-right text-sm font-medium tabular-nums">
                       {entry.amount > 0 ? '+' : ''}
-                      {amount(entry.amount)}
+                      {amount(entry.amount, entry.currency, props.locale)}
                       <span className="ml-1 text-xs font-normal text-muted-foreground">
                         {entry.currency}
                       </span>
@@ -313,7 +341,7 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
                 ))}
               </ul>
             ) : (
-              <EmptyState kind="entries">暂无资金变动</EmptyState>
+              <EmptyState kind="entries">{tr('overview.emptyEntries')}</EmptyState>
             )}
           </CardContent>
         </Card>

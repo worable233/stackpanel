@@ -37,6 +37,9 @@ import {
   Marquee,
 } from '@stackpanel/ui';
 import { RouteProgress } from './route-progress.js';
+import { t, messages } from './i18n.js';
+
+type Translator = ReturnType<typeof t>;
 
 const container = 'mx-auto w-full max-w-7xl px-4 md:px-12 xl:px-0';
 
@@ -93,16 +96,11 @@ function ActionLink({
   );
 }
 
-function Hero({ settings }: { settings?: FrontendSettings }) {
-  const badge = setting(settings, 'hero', 'badge', '面向下一代业务的云平台');
-  const titleLine1 = setting(settings, 'hero', 'titleLine1', '以 AI 驱动，');
-  const titleLine2 = setting(settings, 'hero', 'titleLine2', '让业务更进一步。');
-  const description = setting(
-    settings,
-    'hero',
-    'description',
-    'AI 驱动的云平台，汇聚云服务器、存储、数据库与模型服务。\n从创意起步到业务拓展，为你的每一步提供云端支撑。',
-  );
+function Hero({ settings, tr }: { settings?: FrontendSettings; tr: Translator }) {
+  const badge = setting(settings, 'hero', 'badge', tr('content.hero.badge'));
+  const titleLine1 = setting(settings, 'hero', 'titleLine1', tr('content.hero.titleLine1'));
+  const titleLine2 = setting(settings, 'hero', 'titleLine2', tr('content.hero.titleLine2'));
+  const description = setting(settings, 'hero', 'description', tr('content.hero.description'));
   return (
     <section data-section="hero" className="relative overflow-hidden">
       <HeroRays />
@@ -116,7 +114,7 @@ function Hero({ settings }: { settings?: FrontendSettings }) {
               className="relative inline-flex h-8 items-center gap-2 overflow-hidden rounded-full border border-primary/30 bg-gradient-to-r from-primary/0 via-primary/15 to-primary/30 py-1 pl-1 pr-3 text-sm text-foreground/80 transition-colors hover:text-foreground"
             >
               <span className="rounded-full bg-primary px-2 py-0.5 text-primary-foreground">
-                {setting(settings, 'hero', 'badgeLabel', 'AI 驱动')}
+                {setting(settings, 'hero', 'badgeLabel', tr('content.hero.badgeLabel'))}
               </span>
               <BorderBeam
                 duration={6}
@@ -133,7 +131,7 @@ function Hero({ settings }: { settings?: FrontendSettings }) {
             <h1 className="mt-7 max-w-2xl text-center text-[42px] font-normal leading-[1.12] tracking-tighter sm:text-5xl md:text-6xl lg:text-[76px] lg:leading-[1.05]">
               <RevealText text={titleLine1} />
               <RevealText
-                text={setting(settings, 'hero', 'highlight', '加速创新')}
+                text={setting(settings, 'hero', 'highlight', tr('content.hero.highlight'))}
                 className="text-primary"
               />
               <br />
@@ -153,10 +151,10 @@ function Hero({ settings }: { settings?: FrontendSettings }) {
           <Reveal>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <ActionLink href={setting(settings, 'hero', 'primaryHref', '/shop')}>
-                {setting(settings, 'hero', 'primaryLabel', '选购云产品')}
+                {setting(settings, 'hero', 'primaryLabel', tr('content.hero.primaryLabel'))}
               </ActionLink>
               <ActionLink href={setting(settings, 'hero', 'secondaryHref', '#features')} outline>
-                {setting(settings, 'hero', 'secondaryLabel', '了解云产品')}
+                {setting(settings, 'hero', 'secondaryLabel', tr('content.hero.secondaryLabel'))}
               </ActionLink>
             </div>
           </Reveal>
@@ -166,13 +164,13 @@ function Hero({ settings }: { settings?: FrontendSettings }) {
   );
 }
 
-function Ecosystem({ settings }: { settings?: FrontendSettings }) {
+function Ecosystem({ settings, tr }: { settings?: FrontendSettings; tr: Translator }) {
   return (
     <section data-section="ecosystem" className="relative py-12 md:py-16 lg:min-h-[220px]">
       <div className={`${container} group/ecosystem relative`}>
         <Reveal>
           <p className="text-center text-sm text-muted-foreground">
-            {setting(settings, 'ecosystem', 'text1', '连接熟悉的技术栈，构建下一代应用')}
+            {setting(settings, 'ecosystem', 'text1', tr('content.ecosystem.text1'))}
           </p>
         </Reveal>
         <Reveal>
@@ -185,14 +183,14 @@ function Ecosystem({ settings }: { settings?: FrontendSettings }) {
               {(Array.isArray(settings?.ecosystem?.technologies)
                 ? settings.ecosystem.technologies.map((item) => String(item.label ?? ''))
                 : [
-                    'Linux',
-                    'Docker',
-                    'Kubernetes',
-                    'PostgreSQL',
-                    'Node.js',
-                    'Redis',
-                    'OpenAPI',
-                    'Terraform',
+                    tr('content.ecosystem.technologies.0.label'),
+                    tr('content.ecosystem.technologies.1.label'),
+                    tr('content.ecosystem.technologies.2.label'),
+                    tr('content.ecosystem.technologies.3.label'),
+                    tr('content.ecosystem.technologies.4.label'),
+                    tr('content.ecosystem.technologies.5.label'),
+                    tr('content.ecosystem.technologies.6.label'),
+                    tr('content.ecosystem.technologies.7.label'),
                   ]
               ).map((name) => (
                 <span key={name} className="shrink-0 py-3">
@@ -206,7 +204,7 @@ function Ecosystem({ settings }: { settings?: FrontendSettings }) {
           href={setting(settings, 'ecosystem', 'link2', '#capabilities')}
           className="absolute inset-0 flex items-center justify-center gap-2 bg-background/60 text-sm opacity-0 backdrop-blur-[2px] transition-opacity duration-300 hover:opacity-100 focus:opacity-100 group-hover/ecosystem:opacity-100"
         >
-          {setting(settings, 'ecosystem', 'copy1', '探索云服务')}
+          {setting(settings, 'ecosystem', 'copy1', tr('content.ecosystem.copy1'))}
           <ArrowRight className="size-4" />
         </Link>
       </div>
@@ -217,60 +215,42 @@ function Ecosystem({ settings }: { settings?: FrontendSettings }) {
 function Features({
   assetsBaseUrl,
   settings,
+  tr,
 }: {
   assetsBaseUrl: string;
   settings?: FrontendSettings;
+  tr: Translator;
 }) {
   const features = [
     {
-      title: setting(settings, 'features', 'text1', '云服务器，承载业务核心'),
-      body: setting(
-        settings,
-        'features',
-        'text2',
-        '从网站部署到业务系统，选择匹配负载的计算资源，为应用构建独立的运行环境。',
-      ),
+      title: setting(settings, 'features', 'text1', tr('content.features.text1')),
+      body: setting(settings, 'features', 'text2', tr('content.features.text2')),
       points: [
-        setting(settings, 'features', 'text3', '多种规格可选'),
-        setting(settings, 'features', 'text4', '独立运行环境'),
-        setting(settings, 'features', 'text5', '在线选购与管理'),
+        setting(settings, 'features', 'text3', tr('content.features.text3')),
+        setting(settings, 'features', 'text4', tr('content.features.text4')),
+        setting(settings, 'features', 'text5', tr('content.features.text5')),
       ],
       image: 'feature/feature-elastic-compute.png',
     },
     {
-      title: setting(settings, 'features', 'text6', '云存储，连接数据价值'),
-      body: setting(
-        settings,
-        'features',
-        'text7',
-        '为应用文件、内容分发与业务数据选择存储资源，让数据成为业务发展的基础。',
-      ),
+      title: setting(settings, 'features', 'text6', tr('content.features.text6')),
+      body: setting(settings, 'features', 'text7', tr('content.features.text7')),
       points: [],
       image: 'feature/feature-simple-management.png',
     },
     {
-      title: setting(settings, 'features', 'text8', '云数据库，支撑关键应用'),
-      body: setting(
-        settings,
-        'features',
-        'text9',
-        '为业务应用配置数据库资源，从开发验证到生产运行，构建清晰的数据服务体系。',
-      ),
+      title: setting(settings, 'features', 'text8', tr('content.features.text8')),
+      body: setting(settings, 'features', 'text9', tr('content.features.text9')),
       points: [
-        setting(settings, 'features', 'text10', '按应用需求选型'),
-        setting(settings, 'features', 'text11', '清晰的资源规格'),
-        setting(settings, 'features', 'text12', '集中查看与管理'),
+        setting(settings, 'features', 'text10', tr('content.features.text10')),
+        setting(settings, 'features', 'text11', tr('content.features.text11')),
+        setting(settings, 'features', 'text12', tr('content.features.text12')),
       ],
       image: 'feature/feature-secure-network.png',
     },
     {
-      title: setting(settings, 'features', 'text13', '模型服务，拓展应用可能'),
-      body: setting(
-        settings,
-        'features',
-        'text14',
-        '将模型能力融入产品与工作流程，为智能应用与 AI 业务探索更多可能。',
-      ),
+      title: setting(settings, 'features', 'text13', tr('content.features.text13')),
+      body: setting(settings, 'features', 'text14', tr('content.features.text14')),
       points: [],
       image: 'feature/feature-flexible-config.png',
     },
@@ -287,26 +267,21 @@ function Features({
           <div className="max-w-2xl">
             <Reveal>
               <h2 className="text-4xl font-normal leading-none md:text-5xl">
-                {setting(settings, 'features', 'copy1', '从云端算力，')}
+                {setting(settings, 'features', 'copy1', tr('content.features.copy1'))}
                 <br />
                 <span className="text-primary">
-                  {setting(settings, 'features', 'text15', '到智能应用')}
+                  {setting(settings, 'features', 'text15', tr('content.features.text15'))}
                 </span>
               </h2>
 
               <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
-                {setting(
-                  settings,
-                  'features',
-                  'copy2',
-                  '计算、存储、数据库与模型服务，在一个平台发现、选购与管理。',
-                )}
+                {setting(settings, 'features', 'copy2', tr('content.features.copy2'))}
               </p>
             </Reveal>
           </div>
           <Reveal>
             <ActionLink href={setting(settings, 'features', 'link16', '/shop')} outline>
-              {setting(settings, 'features', 'copy3', '浏览产品')}
+              {setting(settings, 'features', 'copy3', tr('content.features.copy3'))}
               <ArrowRight className="size-4" />
             </ActionLink>
           </Reveal>
@@ -348,67 +323,37 @@ function Features({
   );
 }
 
-function Capabilities({ settings }: { settings?: FrontendSettings }) {
+function Capabilities({ settings, tr }: { settings?: FrontendSettings; tr: Translator }) {
   const capabilities: Array<{ icon: LucideIcon; title: string; body: string }> = [
     {
       icon: Server,
-      title: setting(settings, 'capabilities', 'text1', '弹性计算'),
-      body: setting(
-        settings,
-        'capabilities',
-        'text2',
-        '按应用负载挑选计算规格，让预算花在需要的算力上。',
-      ),
+      title: setting(settings, 'capabilities', 'text1', tr('content.capabilities.text1')),
+      body: setting(settings, 'capabilities', 'text2', tr('content.capabilities.text2')),
     },
     {
       icon: Network,
-      title: setting(settings, 'capabilities', 'text3', '网络连接'),
-      body: setting(
-        settings,
-        'capabilities',
-        'text4',
-        '按服务访问需求选择网络配置，连接你的用户与应用。',
-      ),
+      title: setting(settings, 'capabilities', 'text3', tr('content.capabilities.text3')),
+      body: setting(settings, 'capabilities', 'text4', tr('content.capabilities.text4')),
     },
     {
       icon: Database,
-      title: setting(settings, 'capabilities', 'text5', '数据存储'),
-      body: setting(
-        settings,
-        'capabilities',
-        'text6',
-        '为文件与业务数据选择存储容量，满足应用的日常使用。',
-      ),
+      title: setting(settings, 'capabilities', 'text5', tr('content.capabilities.text5')),
+      body: setting(settings, 'capabilities', 'text6', tr('content.capabilities.text6')),
     },
     {
       icon: Activity,
-      title: setting(settings, 'capabilities', 'text7', 'AI 辅助'),
-      body: setting(
-        settings,
-        'capabilities',
-        'text8',
-        '通过 AI 助手理解需求、获取操作建议，让云服务的使用更直观。',
-      ),
+      title: setting(settings, 'capabilities', 'text7', tr('content.capabilities.text7')),
+      body: setting(settings, 'capabilities', 'text8', tr('content.capabilities.text8')),
     },
     {
       icon: ShieldCheck,
-      title: setting(settings, 'capabilities', 'text9', '账户安全'),
-      body: setting(
-        settings,
-        'capabilities',
-        'text10',
-        '管理账户与访问权限，让云资源的使用保持清晰可控。',
-      ),
+      title: setting(settings, 'capabilities', 'text9', tr('content.capabilities.text9')),
+      body: setting(settings, 'capabilities', 'text10', tr('content.capabilities.text10')),
     },
     {
       icon: Headphones,
-      title: setting(settings, 'capabilities', 'text11', '技术支持'),
-      body: setting(
-        settings,
-        'capabilities',
-        'text12',
-        '从资源选型到使用问题，获得清晰的技术协助。',
-      ),
+      title: setting(settings, 'capabilities', 'text11', tr('content.capabilities.text11')),
+      body: setting(settings, 'capabilities', 'text12', tr('content.capabilities.text12')),
     },
   ];
 
@@ -422,19 +367,14 @@ function Capabilities({ settings }: { settings?: FrontendSettings }) {
         <div className="max-w-2xl text-left">
           <Reveal>
             <h2 className="text-4xl font-normal tracking-tight md:text-5xl">
-              {setting(settings, 'capabilities', 'copy1', '让云更易用，')}
+              {setting(settings, 'capabilities', 'copy1', tr('content.capabilities.copy1'))}
               <span className="block text-primary">
-                {setting(settings, 'capabilities', 'text13', '让创新更专注')}
+                {setting(settings, 'capabilities', 'text13', tr('content.capabilities.text13'))}
               </span>
             </h2>
 
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
-              {setting(
-                settings,
-                'capabilities',
-                'copy2',
-                '以 AI 交互连接云服务，从资源选型到日常管理，让你更专注于产品与客户。',
-              )}
+              {setting(settings, 'capabilities', 'copy2', tr('content.capabilities.copy2'))}
             </p>
           </Reveal>
         </div>
@@ -461,9 +401,11 @@ function Capabilities({ settings }: { settings?: FrontendSettings }) {
 function UseCases({
   assetsBaseUrl,
   settings,
+  tr,
 }: {
   assetsBaseUrl: string;
   settings?: FrontendSettings;
+  tr: Translator;
 }) {
   return (
     <section
@@ -475,67 +417,42 @@ function UseCases({
         <div className="max-w-2xl text-left">
           <Reveal>
             <h2 className="text-4xl font-normal tracking-tight md:text-5xl">
-              {setting(settings, 'useCases', 'copy1', '从一个想法，')}
+              {setting(settings, 'useCases', 'copy1', tr('content.useCases.copy1'))}
               <span className="block text-primary">
-                {setting(settings, 'useCases', 'text1', '到下一次突破')}
+                {setting(settings, 'useCases', 'text1', tr('content.useCases.text1'))}
               </span>
             </h2>
 
             <p className="mt-4 max-w-prose text-balance text-sm leading-6 tracking-tight text-muted-foreground lg:text-base">
-              {setting(
-                settings,
-                'useCases',
-                'copy2',
-                '无论构建网站、企业系统还是智能应用，都有适合的云产品作为起点。',
-              )}
+              {setting(settings, 'useCases', 'copy2', tr('content.useCases.copy2'))}
             </p>
           </Reveal>
         </div>
         <div className="my-12 grid gap-4 md:grid-cols-2">
           {[
             {
-              tag: setting(settings, 'useCases', 'text2', '网站与应用'),
+              tag: setting(settings, 'useCases', 'text2', tr('content.useCases.text2')),
               image: 'product/product-browser-card.png',
-              title: setting(settings, 'useCases', 'text3', '让产品稳定在线'),
-              body: setting(
-                settings,
-                'useCases',
-                'text4',
-                '为网站、API 与业务应用提供可靠的运行环境。',
-              ),
+              title: setting(settings, 'useCases', 'text3', tr('content.useCases.text3')),
+              body: setting(settings, 'useCases', 'text4', tr('content.useCases.text4')),
             },
             {
-              tag: setting(settings, 'useCases', 'text5', '开发与测试'),
+              tag: setting(settings, 'useCases', 'text5', tr('content.useCases.text5')),
               image: 'product/product-revenue-growth.png',
-              title: setting(settings, 'useCases', 'text6', '快速搭建独立环境'),
-              body: setting(
-                settings,
-                'useCases',
-                'text7',
-                '为团队准备一致的开发测试资源，缩短环境交付时间。',
-              ),
+              title: setting(settings, 'useCases', 'text6', tr('content.useCases.text6')),
+              body: setting(settings, 'useCases', 'text7', tr('content.useCases.text7')),
             },
             {
-              tag: setting(settings, 'useCases', 'text8', '数据与存储'),
+              tag: setting(settings, 'useCases', 'text8', tr('content.useCases.text8')),
               image: 'product/product-vip-star.png',
-              title: setting(settings, 'useCases', 'text9', '管理业务中的关键数据'),
-              body: setting(
-                settings,
-                'useCases',
-                'text10',
-                '为数据服务与持久化存储安排适合的资源配置。',
-              ),
+              title: setting(settings, 'useCases', 'text9', tr('content.useCases.text9')),
+              body: setting(settings, 'useCases', 'text10', tr('content.useCases.text10')),
             },
             {
-              tag: setting(settings, 'useCases', 'text11', 'AI 与企业应用'),
+              tag: setting(settings, 'useCases', 'text11', tr('content.useCases.text11')),
               image: 'product/product-user-payment.png',
-              title: setting(settings, 'useCases', 'text12', '让智能融入业务'),
-              body: setting(
-                settings,
-                'useCases',
-                'text13',
-                '连接模型服务与云端资源，探索智能助手、业务自动化与企业应用。',
-              ),
+              title: setting(settings, 'useCases', 'text12', tr('content.useCases.text12')),
+              body: setting(settings, 'useCases', 'text13', tr('content.useCases.text13')),
             },
           ].map((c) => (
             <Reveal key={c.tag} className="h-full">
@@ -562,7 +479,7 @@ function UseCases({
                     href={setting(settings, 'useCases', 'link14', '/shop')}
                     className="group/link mt-8 inline-flex items-center gap-2 text-sm text-primary transition-colors hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring lg:text-base"
                   >
-                    {setting(settings, 'useCases', 'copy3', '查看相关服务')}
+                    {setting(settings, 'useCases', 'copy3', tr('content.useCases.copy3'))}
                     <ArrowRight className="size-4 transition-transform duration-300 group-hover/link:translate-x-1 motion-reduce:transform-none" />
                   </Link>
                 </article>
@@ -575,7 +492,7 @@ function UseCases({
   );
 }
 
-function Statement({ settings }: { settings?: FrontendSettings }) {
+function Statement({ settings, tr }: { settings?: FrontendSettings; tr: Translator }) {
   return (
     <section
       data-section="statement"
@@ -599,15 +516,25 @@ function Statement({ settings }: { settings?: FrontendSettings }) {
                 })),
               }
             : {})}
-          actionLabel={setting(settings, 'stories', 'actionLabel', '了解云产品')}
+          actionLabel={setting(
+            settings,
+            'stories',
+            'actionLabel',
+            tr('content.stories.actionLabel'),
+          )}
           actionHref={setting(settings, 'stories', 'actionHref', '#features')}
+          labels={{
+            roleDescription: tr('theme.stories.roleDescription'),
+            regionLabel: tr('theme.stories.regionLabel'),
+            slideControlAria: tr('theme.stories.slideControlAria'),
+          }}
         />
       </Reveal>
     </section>
   );
 }
 
-function Pricing({ settings }: { settings?: FrontendSettings }) {
+function Pricing({ settings, tr }: { settings?: FrontendSettings; tr: Translator }) {
   return (
     <section
       id="pricing"
@@ -625,51 +552,46 @@ function Pricing({ settings }: { settings?: FrontendSettings }) {
       <div className="relative">
         <Reveal className="mx-auto max-w-5xl text-left">
           <h2 className="text-4xl font-normal tracking-tight md:text-5xl">
-            {setting(settings, 'pricing', 'copy1', '匹配业务阶段，')}
+            {setting(settings, 'pricing', 'copy1', tr('content.pricing.copy1'))}
             <span className="block text-primary">
-              {setting(settings, 'pricing', 'text1', '开启云端新篇章')}
+              {setting(settings, 'pricing', 'text1', tr('content.pricing.text1'))}
             </span>
           </h2>
 
           <p className="mt-4 max-w-prose text-sm leading-6 text-muted-foreground">
-            {setting(
-              settings,
-              'pricing',
-              'copy2',
-              '按配置、价格与计费周期比较云产品，为当前需求与下一步发展做出选择。',
-            )}
+            {setting(settings, 'pricing', 'copy2', tr('content.pricing.copy2'))}
           </p>
         </Reveal>
         <div className="mx-auto mt-12 grid max-w-5xl gap-4 md:grid-cols-3">
           {[
             {
-              title: setting(settings, 'pricing', 'text2', '轻量起步'),
-              intro: setting(settings, 'pricing', 'text3', '开发与测试'),
+              title: setting(settings, 'pricing', 'text2', tr('content.pricing.text2')),
+              intro: setting(settings, 'pricing', 'text3', tr('content.pricing.text3')),
               list: [
-                setting(settings, 'pricing', 'text4', '个人网站与小型应用'),
-                setting(settings, 'pricing', 'text5', '开发测试环境'),
-                setting(settings, 'pricing', 'text6', '按预算选择配置'),
-                setting(settings, 'pricing', 'text7', '在线查看规格与价格'),
+                setting(settings, 'pricing', 'text4', tr('content.pricing.text4')),
+                setting(settings, 'pricing', 'text5', tr('content.pricing.text5')),
+                setting(settings, 'pricing', 'text6', tr('content.pricing.text6')),
+                setting(settings, 'pricing', 'text7', tr('content.pricing.text7')),
               ],
             },
             {
-              title: setting(settings, 'pricing', 'text8', '生产业务'),
-              intro: setting(settings, 'pricing', 'text9', '稳定与扩展'),
+              title: setting(settings, 'pricing', 'text8', tr('content.pricing.text8')),
+              intro: setting(settings, 'pricing', 'text9', tr('content.pricing.text9')),
               list: [
-                setting(settings, 'pricing', 'text10', '网站与业务应用'),
-                setting(settings, 'pricing', 'text11', '按负载选择算力'),
-                setting(settings, 'pricing', 'text12', '搭配存储与数据库'),
-                setting(settings, 'pricing', 'text13', '控制台管理已购服务'),
+                setting(settings, 'pricing', 'text10', tr('content.pricing.text10')),
+                setting(settings, 'pricing', 'text11', tr('content.pricing.text11')),
+                setting(settings, 'pricing', 'text12', tr('content.pricing.text12')),
+                setting(settings, 'pricing', 'text13', tr('content.pricing.text13')),
               ],
             },
             {
-              title: setting(settings, 'pricing', 'text14', '企业需求'),
-              intro: setting(settings, 'pricing', 'text15', '按业务选型'),
+              title: setting(settings, 'pricing', 'text14', tr('content.pricing.text14')),
+              intro: setting(settings, 'pricing', 'text15', tr('content.pricing.text15')),
               list: [
-                setting(settings, 'pricing', 'text16', '企业业务系统'),
-                setting(settings, 'pricing', 'text17', '多环境部署需求'),
-                setting(settings, 'pricing', 'text18', '按业务规模选型'),
-                setting(settings, 'pricing', 'text19', '产品选型与技术协助'),
+                setting(settings, 'pricing', 'text16', tr('content.pricing.text16')),
+                setting(settings, 'pricing', 'text17', tr('content.pricing.text17')),
+                setting(settings, 'pricing', 'text18', tr('content.pricing.text18')),
+                setting(settings, 'pricing', 'text19', tr('content.pricing.text19')),
               ],
             },
           ].map((plan, i) => (
@@ -683,18 +605,14 @@ function Pricing({ settings }: { settings?: FrontendSettings }) {
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <p className="text-3xl tracking-tight">{plan.intro}</p>
                     <PricingInfo
-                      text={setting(
-                        settings,
-                        'pricing',
-                        'text20',
-                        '资源规格、计费周期与服务范围以商城商品详情为准。',
-                      )}
+                      text={setting(settings, 'pricing', 'text20', tr('content.pricing.text20'))}
+                      ariaLabel={tr('theme.pricing.infoAria')}
                     />
                   </div>
                   <p
                     className={`mt-10 text-xs ${i === 1 ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}
                   >
-                    {setting(settings, 'pricing', 'copy3', '适用需求')}
+                    {setting(settings, 'pricing', 'copy3', tr('content.pricing.copy3'))}
                   </p>
                   <ul className="mt-5 flex flex-col gap-4 border-t border-dashed border-current/20 pt-5 text-sm">
                     {plan.list.map((item) => (
@@ -708,7 +626,7 @@ function Pricing({ settings }: { settings?: FrontendSettings }) {
                     href={setting(settings, 'pricing', 'link21', '/shop')}
                     className={`mt-auto inline-flex h-9 items-center justify-center rounded-full text-sm ${i === 1 ? 'bg-primary-foreground text-primary' : 'bg-primary text-primary-foreground'}`}
                   >
-                    {setting(settings, 'pricing', 'copy4', '查看产品与价格')}
+                    {setting(settings, 'pricing', 'copy4', tr('content.pricing.copy4'))}
                   </Link>
                 </article>
               </Spotlight>
@@ -720,39 +638,47 @@ function Pricing({ settings }: { settings?: FrontendSettings }) {
   );
 }
 
-function Footer({ settings, brandName }: { settings?: FrontendSettings; brandName: string }) {
+function Footer({
+  settings,
+  brandName,
+  tr,
+}: {
+  settings?: FrontendSettings;
+  brandName: string;
+  tr: Translator;
+}) {
   const groups = [
     {
-      title: setting(settings, 'footer', 'column1Title', '应用场景'),
+      title: setting(settings, 'footer', 'column1Title', tr('content.footer.column1Title')),
       links: settingLinks(settings, 'footer', 'column1Links', [
-        ['网站与应用', '/#use-cases'],
-        ['开发与测试', '/#use-cases'],
-        ['数据与存储', '/#use-cases'],
-        ['企业应用', '/#use-cases'],
+        [tr('content.footer.column1Links.0.label'), '/#use-cases'],
+        [tr('content.footer.column1Links.1.label'), '/#use-cases'],
+        [tr('content.footer.column1Links.2.label'), '/#use-cases'],
+        [tr('content.footer.column1Links.3.label'), '/#use-cases'],
       ]),
     },
     {
-      title: setting(settings, 'footer', 'column2Title', '产品'),
+      title: setting(settings, 'footer', 'column2Title', tr('content.footer.column2Title')),
       links: settingLinks(settings, 'footer', 'column2Links', [
-        ['云服务器', '/shop'],
-        ['云存储', '/shop'],
-        ['云数据库', '/shop'],
+        [tr('content.footer.column2Links.0.label'), '/shop'],
+        [tr('content.footer.column2Links.1.label'), '/shop'],
+        [tr('content.footer.column2Links.2.label'), '/shop'],
       ]),
     },
     {
-      title: setting(settings, 'footer', 'column3Title', '资源'),
+      title: setting(settings, 'footer', 'column3Title', tr('content.footer.column3Title')),
       links: settingLinks(settings, 'footer', 'column3Links', [
-        ['服务优势', '/#capabilities'],
-        ['应用场景', '/#use-cases'],
-        ['服务选型', '/#pricing'],
+        [tr('content.footer.column3Links.0.label'), '/#capabilities'],
+        [tr('content.footer.column3Links.1.label'), '/#use-cases'],
+        [tr('content.footer.column3Links.2.label'), '/#pricing'],
       ]),
     },
     {
-      title: setting(settings, 'footer', 'column4Title', '开始使用'),
+      title: setting(settings, 'footer', 'column4Title', tr('content.footer.column4Title')),
       links: settingLinks(settings, 'footer', 'column4Links', [
-        ['选购云产品', '/shop'],
-        ['登录账户', '/login'],
-        ['注册账户', '/register'],
+        [tr('content.footer.column4Links.0.label'), '/shop'],
+        [tr('content.footer.column4Links.1.label'), '/login'],
+        [tr('content.footer.column4Links.2.label'), '/register'],
       ]),
     },
   ];
@@ -773,19 +699,14 @@ function Footer({ settings, brandName }: { settings?: FrontendSettings; brandNam
               {brandName}
             </Link>
             <p className="max-w-xs text-center text-sm leading-relaxed text-muted-foreground md:text-base lg:text-left">
-              {setting(
-                settings,
-                'footer',
-                'description',
-                'AI 驱动的云平台，提供云服务器、存储、数据库与模型服务，助力业务创新。',
-              )}
+              {setting(settings, 'footer', 'description', tr('content.footer.description'))}
             </p>
-            <nav aria-label="云服务快捷入口" className="flex items-center gap-4">
+            <nav aria-label={tr('theme.footer.quickNavAria')} className="flex items-center gap-4">
               {settingLinks(settings, 'footer', 'links', [
-                ['选购云产品', '/shop'],
-                ['账户控制台', '/account'],
-                ['服务优势', '/#capabilities'],
-                ['产品与价格', '/#pricing'],
+                [tr('content.footer.links.0.label'), '/shop'],
+                [tr('content.footer.links.1.label'), '/account'],
+                [tr('content.footer.links.2.label'), '/#capabilities'],
+                [tr('content.footer.links.3.label'), '/#pricing'],
               ]).map(([label, href], index) => {
                 const Icon = [Server, Layers3, ShieldCheck, Database][index % 4]!;
                 return (
@@ -802,7 +723,7 @@ function Footer({ settings, brandName }: { settings?: FrontendSettings; brandNam
             </nav>
           </Reveal>
           <nav
-            aria-label="页脚导航"
+            aria-label={tr('theme.footer.navAria')}
             className="grid flex-1 grid-cols-2 gap-10 sm:grid-cols-4 sm:gap-8 lg:pt-2.5"
           >
             {groups.map((g) => (
@@ -837,37 +758,38 @@ function Footer({ settings, brandName }: { settings?: FrontendSettings; brandNam
 function HomePage(props: FrontendPageProps): ReactElement {
   const settings = props.settings;
   const assetsBaseUrl = props.assetsBaseUrl ?? '/api/plugins/themes/default/assets';
+  const tr = t(props.locale);
   return (
     <main className="flex-1">
-      <Hero settings={settings} />
-      <Ecosystem settings={settings} />
-      <Features assetsBaseUrl={assetsBaseUrl} settings={settings} />
-      <Capabilities settings={settings} />
-      <UseCases assetsBaseUrl={assetsBaseUrl} settings={settings} />
-      <Statement settings={settings} />
-      <Pricing settings={settings} />
+      <Hero settings={settings} tr={tr} />
+      <Ecosystem settings={settings} tr={tr} />
+      <Features assetsBaseUrl={assetsBaseUrl} settings={settings} tr={tr} />
+      <Capabilities settings={settings} tr={tr} />
+      <UseCases assetsBaseUrl={assetsBaseUrl} settings={settings} tr={tr} />
+      <Statement settings={settings} tr={tr} />
+      <Pricing settings={settings} tr={tr} />
       <section
         data-section="cta"
         className={`${container} pb-20 pt-12 text-left lg:min-h-[316px] lg:pb-32`}
       >
         <Reveal>
           <h2 className="text-4xl font-normal tracking-tight md:text-5xl">
-            {setting(settings, 'cta', 'copy1', '为你的下一次上线，')}
+            {setting(settings, 'cta', 'copy1', tr('content.cta.copy1'))}
             <span className="block text-primary">
-              {setting(settings, 'cta', 'text1', '选好云资源')}
+              {setting(settings, 'cta', 'text1', tr('content.cta.text1'))}
             </span>
           </h2>
 
           <p className="mt-4 max-w-prose text-sm leading-6 text-muted-foreground">
-            {setting(settings, 'cta', 'copy2', '挑选适合的云产品，从今天开始部署你的网站与应用。')}
+            {setting(settings, 'cta', 'copy2', tr('content.cta.copy2'))}
           </p>
         </Reveal>
         <Reveal className="mt-4 flex flex-wrap gap-4">
           <ActionLink href={setting(settings, 'cta', 'link2', '/shop')}>
-            {setting(settings, 'cta', 'text3', '选购云产品')}
+            {setting(settings, 'cta', 'text3', tr('content.cta.text3'))}
           </ActionLink>
           <ActionLink href={setting(settings, 'cta', 'link4', '#features')} outline>
-            {setting(settings, 'cta', 'copy3', '了解云产品')}
+            {setting(settings, 'cta', 'copy3', tr('content.cta.copy3'))}
           </ActionLink>
         </Reveal>
       </section>
@@ -881,12 +803,14 @@ function DefaultLayout({
   isAuthenticated,
   platform,
   settings = {},
+  locale,
 }: FrontendLayoutProps): ReactElement {
+  const tr = t(locale);
   const links = settingLinks(settings, 'navigation', 'links', [
-    ['云产品', '/#features'],
-    ['服务优势', '/#capabilities'],
-    ['应用场景', '/#use-cases'],
-    ['价格', '/#pricing'],
+    [tr('content.navigation.links.0.label'), '/#features'],
+    [tr('content.navigation.links.1.label'), '/#capabilities'],
+    [tr('content.navigation.links.2.label'), '/#use-cases'],
+    [tr('content.navigation.links.3.label'), '/#pricing'],
   ]).map(([label, href]) => ({ label, href }));
   if (settings?.navigation?.includePluginLinks !== false) links.push(...navigation);
 
@@ -905,6 +829,11 @@ function DefaultLayout({
             </Link>
           ),
         }))}
+        labels={{
+          primary: tr('theme.nav.primaryAria'),
+          open: tr('theme.nav.openMenu'),
+          close: tr('theme.nav.closeMenu'),
+        }}
         brand={
           <Link href="/" className="flex items-center gap-2 text-base font-semibold sm:text-xl">
             <Layers3 className="size-7 text-primary" />
@@ -922,8 +851,18 @@ function DefaultLayout({
               className="hidden h-9 items-center rounded-full px-4 text-sm transition-colors hover:bg-muted lg:inline-flex"
             >
               {isAuthenticated
-                ? setting(settings, 'navigation', 'consoleLabel', '控制台')
-                : setting(settings, 'navigation', 'loginLabel', '登录')}
+                ? setting(
+                    settings,
+                    'navigation',
+                    'consoleLabel',
+                    tr('content.navigation.consoleLabel'),
+                  )
+                : setting(
+                    settings,
+                    'navigation',
+                    'loginLabel',
+                    tr('content.navigation.loginLabel'),
+                  )}
             </Link>
             <ActionLink
               href={
@@ -933,8 +872,18 @@ function DefaultLayout({
               }
             >
               {isAuthenticated
-                ? setting(settings, 'navigation', 'consoleActionLabel', '进入控制台')
-                : setting(settings, 'navigation', 'registerLabel', '开始使用')}
+                ? setting(
+                    settings,
+                    'navigation',
+                    'consoleActionLabel',
+                    tr('content.navigation.consoleActionLabel'),
+                  )
+                : setting(
+                    settings,
+                    'navigation',
+                    'registerLabel',
+                    tr('content.navigation.registerLabel'),
+                  )}
             </ActionLink>
           </>
         }
@@ -942,13 +891,20 @@ function DefaultLayout({
       <div id="clarity-page-content" className="flex-1">
         {children}
       </div>
-      <Footer settings={settings} brandName={platform.name || 'StackPanel'} />
-      <DocumentScrollbar />
+      <Footer settings={settings} brandName={platform.name || 'StackPanel'} tr={tr} />
+      <DocumentScrollbar
+        labels={{
+          track: tr('theme.scrollbar.trackAria'),
+          thumb: tr('theme.scrollbar.thumbAria'),
+        }}
+      />
       <SmoothDocument />
     </div>
   );
 }
 const frontend: FrontendPackage = defineFrontend({
+  locales: ['zh-CN', 'en-US'],
+  messages,
   settingsSchema,
   layouts: { default: DefaultLayout, theme: DefaultLayout },
   overrides: {

@@ -254,7 +254,9 @@ export const adminUserDetailResponseSchema = z.object({
       createdAt: z.string(),
     }),
   ),
-  ordersPagination: z.object({ page: z.number().int(), pageSize: z.number().int(), total: z.number().int() }).optional(),
+  ordersPagination: z
+    .object({ page: z.number().int(), pageSize: z.number().int(), total: z.number().int() })
+    .optional(),
   ledger: z.array(
     z.object({
       id: z.string(),
@@ -536,61 +538,84 @@ export const activeThemeResponseSchema = z.object({
 const textFieldSchema = z.object({
   type: z.literal('text'),
   name: z.string(),
-  label: z.string(),
+  label: z.string().optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   default: z.string().optional(),
   placeholder: z.string().optional(),
+  placeholderKey: z.string().min(1).max(160).optional(),
   help: z.string().optional(),
+  helpKey: z.string().min(1).max(160).optional(),
   required: z.boolean().optional(),
 });
 
 const textareaFieldSchema = z.object({
   type: z.literal('textarea'),
   name: z.string(),
-  label: z.string(),
+  label: z.string().optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   default: z.string().optional(),
   placeholder: z.string().optional(),
+  placeholderKey: z.string().min(1).max(160).optional(),
   help: z.string().optional(),
+  helpKey: z.string().min(1).max(160).optional(),
   required: z.boolean().optional(),
 });
 
 const colorFieldSchema = z.object({
   type: z.literal('color'),
   name: z.string(),
-  label: z.string(),
+  label: z.string().optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   default: z.string().optional(),
   placeholder: z.string().optional(),
+  placeholderKey: z.string().min(1).max(160).optional(),
   help: z.string().optional(),
+  helpKey: z.string().min(1).max(160).optional(),
   required: z.boolean().optional(),
 });
 
 const numberFieldSchema = z.object({
   type: z.literal('number'),
   name: z.string(),
-  label: z.string(),
+  label: z.string().optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   default: z.number().optional(),
   min: z.number().optional(),
   max: z.number().optional(),
   step: z.number().optional(),
   help: z.string().optional(),
+  helpKey: z.string().min(1).max(160).optional(),
   required: z.boolean().optional(),
 });
 
 const booleanFieldSchema = z.object({
   type: z.literal('boolean'),
   name: z.string(),
-  label: z.string(),
+  label: z.string().optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   default: z.boolean().optional(),
   help: z.string().optional(),
+  helpKey: z.string().min(1).max(160).optional(),
   required: z.boolean().optional(),
 });
 
 const optionFieldSchema = z.object({
   type: z.enum(['select', 'radio']),
   name: z.string(),
-  label: z.string(),
+  label: z.string().optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   default: z.string().optional(),
-  options: z.array(z.object({ label: z.string(), value: z.string() })).min(1),
+  options: z
+    .array(
+      z.object({
+        label: z.string().optional(),
+        labelKey: z.string().min(1).max(160).optional(),
+        value: z.string(),
+      }),
+    )
+    .min(1),
   help: z.string().optional(),
+  helpKey: z.string().min(1).max(160).optional(),
   required: z.boolean().optional(),
 });
 
@@ -600,11 +625,13 @@ const listFieldSchema = z.lazy(() =>
   z.object({
     type: z.literal('list'),
     name: z.string(),
-    label: z.string(),
+    label: z.string().optional(),
+    labelKey: z.string().min(1).max(160).optional(),
     fields: z.array(frontendSettingsFieldSchema).min(1),
     default: z.array(z.record(z.string(), settingsScalarSchema)).optional(),
     itemLabelField: z.string().optional(),
     help: z.string().optional(),
+    helpKey: z.string().min(1).max(160).optional(),
     required: z.boolean().optional(),
   }),
 );
@@ -623,7 +650,8 @@ export const frontendSettingsFieldSchema = z.lazy(() =>
 
 export const frontendSettingsGroupSchema = z.object({
   id: z.string().min(1),
-  label: z.string(),
+  label: z.string().optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   fields: z.array(frontendSettingsFieldSchema),
 });
 
@@ -646,14 +674,22 @@ export const frontendPageSchema = z.object({
 }) as z.ZodType<FrontendPageDefinition | FrontendPageManifestEntry>;
 
 export const adminMenuSchema = z.object({
-  label: z.string().min(1),
+  label: z.string().min(1).optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   order: z.number().finite().optional(),
   activePaths: z.array(z.string().startsWith('/')).optional(),
   group: z.string().optional(),
+  groupKey: z.string().min(1).max(160).optional(),
 });
 
 export const adminRouteSchema = z.object({
-  systemSettings: z.object({ label: z.string().min(1).max(80), order: z.number().finite().optional() }).optional(),
+  systemSettings: z
+    .object({
+      label: z.string().min(1).max(80).optional(),
+      labelKey: z.string().min(1).max(160).optional(),
+      order: z.number().finite().optional(),
+    })
+    .optional(),
   path: z.string().startsWith('/').min(1),
   component: z.string().min(1),
   permission: z.string().optional(),
@@ -693,10 +729,12 @@ export const adminActionSchema = z.object({
 }) as z.ZodType<AdminActionDefinition>;
 
 export const accountMenuSchema = z.object({
-  label: z.string().min(1),
+  label: z.string().min(1).optional(),
+  labelKey: z.string().min(1).max(160).optional(),
   order: z.number().finite().optional(),
   activePaths: z.array(z.string().startsWith('/')).optional(),
   group: z.string().optional(),
+  groupKey: z.string().min(1).max(160).optional(),
 });
 
 export const accountRouteSchema = z.object({
@@ -709,7 +747,8 @@ export const accountRouteSchema = z.object({
 
 export const accountWidgetSchema = z.object({
   id: z.string().min(1),
-  title: z.string().min(1),
+  title: z.string().min(1).optional(),
+  titleKey: z.string().min(1).max(160).optional(),
   component: z.string().min(1),
   permission: z.string().optional(),
 }) as z.ZodType<AccountWidgetDefinition>;
@@ -732,6 +771,27 @@ export const frontendManifestSchema = z.object({
   // the theme token channel (`theme.css`).
   styles: z.array(z.string()).default([]),
   settingsSchema: frontendSettingsSchema.optional(),
+  /**
+   * ADR-0016 §5: the package's serialized catalogs and declared locales.
+   *
+   * These must survive manifest validation — the host resolves nav / settings /
+   * widget labels from them without importing the package. Bound them here so a
+   * hostile manifest cannot smuggle an unbounded object into every request.
+   */
+  locales: z.array(z.string().min(1).max(35)).max(16).optional(),
+  messages: z
+    .record(
+      z.string().min(1).max(35),
+      z
+        .record(z.string().min(1).max(160), z.string().max(4000))
+        .refine((catalog) => Object.keys(catalog).length <= 4000, {
+          message: 'message catalog exceeds key limit',
+        }),
+    )
+    .refine((catalogs) => Object.keys(catalogs).length <= 16, {
+      message: 'too many message locales',
+    })
+    .optional(),
 });
 
 export const frontendDescriptorSchema = z.object({

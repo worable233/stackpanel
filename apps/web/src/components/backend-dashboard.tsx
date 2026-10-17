@@ -24,6 +24,7 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
       value: formatYuan(data.totals.revenue, locale),
       icon: Wallet,
       hint: t('admin.overview.metricHintRevenue'),
+      href: '/admin/plugin/store/overview',
     },
     {
       title: t('admin.overview.orderCount'),
@@ -32,18 +33,21 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
       hint: t('admin.overview.metricHintOrders', {
         amount: formatYuan(data.totals.monthOrderAmount, locale),
       }),
+      href: '/admin/plugin/store/overview',
     },
     {
       title: t('admin.overview.userCount'),
       value: data.totals.userCount,
       icon: Users,
       hint: t('admin.overview.metricHintUsers'),
+      href: '/admin/users',
     },
     {
       title: t('admin.overview.walletBalance'),
       value: formatYuan(data.totals.walletBalance, locale),
       icon: Wallet,
       hint: t('admin.overview.metricHintWalletAccounts', { count: data.totals.walletAccountCount }),
+      href: '/admin/users',
     },
   ];
   return (
@@ -65,21 +69,28 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
         </TabsList>
         <TabsContent value="overview" className="flex flex-col gap-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {metrics.map(({ title, value, icon: Icon, hint }) => (
-              <Spotlight key={title}>
-                <Card className="backend-dashboard__metric h-full gap-5">
-                  <CardHeader className="flex flex-row items-center justify-between gap-2">
-                    <CardTitle className="text-sm font-medium">{title}</CardTitle>
-                    <span className="flex size-8 items-center justify-center rounded-lg border border-primary/15 bg-primary/5 text-primary">
-                      <Icon className="size-4" />
-                    </span>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-3xl font-medium tracking-tight tabular-nums">{value}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
-                  </CardContent>
-                </Card>
-              </Spotlight>
+            {metrics.map(({ title, value, icon: Icon, hint, href }) => (
+              <Link
+                key={title}
+                href={href}
+                className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                aria-label={`${title}：${value}`}
+              >
+                <Spotlight>
+                  <Card className="backend-dashboard__metric h-full gap-5 transition-colors hover:border-primary/40">
+                    <CardHeader className="flex flex-row items-center justify-between gap-2">
+                      <CardTitle className="text-sm font-medium">{title}</CardTitle>
+                      <span className="flex size-8 items-center justify-center rounded-lg border border-primary/15 bg-primary/5 text-primary">
+                        <Icon className="size-4" />
+                      </span>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-3xl font-medium tracking-tight tabular-nums">{value}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
+                    </CardContent>
+                  </Card>
+                </Spotlight>
+              </Link>
             ))}
           </div>
           <div className="grid gap-4 lg:grid-cols-5">
@@ -147,9 +158,10 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
               <CardContent className="flex flex-col divide-y divide-border/60">
                 {data.recentUsers.length ? (
                   data.recentUsers.slice(0, 5).map((user) => (
-                    <div
+                    <Link
+                      href={`/admin/users/${user.id}`}
                       key={user.id}
-                      className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                      className="flex items-center gap-3 rounded-md py-3 outline-none first:pt-0 last:pb-0 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <Avatar className="size-9">
                         <AvatarFallback>{user.email.slice(0, 2).toUpperCase()}</AvatarFallback>
@@ -163,7 +175,7 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
                       <span className="shrink-0 text-xs text-muted-foreground">
                         {user.createdAt.slice(5, 10)}
                       </span>
-                    </div>
+                    </Link>
                   ))
                 ) : (
                   <p className="text-sm text-muted-foreground">{t('admin.overview.noData')}</p>

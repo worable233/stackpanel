@@ -15,6 +15,7 @@
     "test": "pnpm -r --if-present test",
     "i18n:scan": "node scripts/scan-i18n-literals.mjs",
     "i18n:check": "node scripts/scan-i18n-literals.mjs --check",
+    "i18n:packages": "node scripts/check-package-catalogs.mjs",
     "i18n:baseline": "node scripts/scan-i18n-literals.mjs --update-baseline",
     "verify:s2": "node scripts/verify-s2.mjs",
     "smoke:cluster": "node scripts/smoke-cluster.mjs",

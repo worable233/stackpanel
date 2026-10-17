@@ -9,6 +9,13 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     '.next/**',
+    // Next build output kept for comparison by the performance / spike sessions.
+    '.next-spike*/**',
+    '.next-bt/**',
+    // Local-only spike harness artifacts (gitignored, see .gitignore).
+    '.spike-artifacts/**',
+    'src/app/(spike)/**',
+    'spike/**',
     'out/**',
     'build/**',
     'next-env.d.ts',

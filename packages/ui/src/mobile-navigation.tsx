@@ -3,7 +3,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 
-export function MobileNavigation({ links }: { links: Array<{ label: string; href: string }> }) {
+/** Accessible names for the mobile menu trigger; supplied by the caller. */
+export interface MobileNavigationLabels {
+  open: string;
+  close: string;
+}
+
+export function MobileNavigation({
+  links,
+  labels,
+}: {
+  links: Array<{ label: string; href: string }>;
+  /** Localized copy (ADR-0016 §6). */
+  labels: MobileNavigationLabels;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -30,7 +43,7 @@ export function MobileNavigation({ links }: { links: Array<{ label: string; href
       <button
         ref={trigger}
         type="button"
-        aria-label={open ? '关闭导航' : '打开导航'}
+        aria-label={open ? labels.close : labels.open}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="flex size-9 items-center justify-center rounded-lg hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-ring"

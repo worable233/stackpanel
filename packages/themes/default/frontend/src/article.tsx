@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, Clock3 } from 'lucide-react';
-import type { FrontendPageProps } from '@stackpanel/sdk';
+import { PACKAGE_FALLBACK_LOCALE, type FrontendPageProps } from '@stackpanel/sdk';
 import type { ReactElement } from 'react';
 import { ArticleBody, ErrorPage, Reveal } from '@stackpanel/ui';
+import { t } from './i18n.js';
 
 type Post = {
   title: string;
@@ -13,9 +14,21 @@ type Post = {
 };
 
 export function ArticlePage({ data, locale }: FrontendPageProps): ReactElement {
+  const tr = t(locale);
   const result = data.article as { post?: Post; missing?: boolean } | undefined;
   const post = result?.post;
-  if (!post) return <ErrorPage kind={result?.missing ? 'not-found' : 'server-error'} />;
+  if (!post) {
+    const kind = result?.missing ? 'notFound' : 'serverError';
+    return (
+      <ErrorPage
+        kind={result?.missing ? 'not-found' : 'server-error'}
+        content={{
+          title: tr(`errorPage.${kind}.title`),
+          description: tr(`errorPage.${kind}.description`),
+        }}
+      />
+    );
+  }
   const headings = post.body
     .replace(/```[^\n]*\n[\s\S]*?```/g, '')
     .split('\n')
@@ -43,20 +56,21 @@ export function ArticlePage({ data, locale }: FrontendPageProps): ReactElement {
               className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="size-3.5" />
-              首页
+              {tr('article.home')}
             </Link>
             <div className="mt-9 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <span className="text-primary">文章</span>
+              <span className="text-primary">{tr('article.category')}</span>
               <span aria-hidden="true">/</span>
               <time dateTime={date.toISOString()}>
-                {date.toLocaleDateString(locale ?? 'zh-CN', {
+                {date.toLocaleDateString(locale ?? PACKAGE_FALLBACK_LOCALE, {
                   year: 'numeric',
                   month: 'long',
                   day: 'numeric',
                 })}
               </time>
               <span className="inline-flex items-center gap-1.5">
-                <Clock3 className="size-3.5" />约 {minutes} 分钟
+                <Clock3 className="size-3.5" />
+                {tr('article.readingTime', { minutes })}
               </span>
             </div>
             <h1 className="mt-5 text-3xl font-medium leading-tight tracking-tight text-balance sm:text-4xl lg:text-5xl">
@@ -72,8 +86,10 @@ export function ArticlePage({ data, locale }: FrontendPageProps): ReactElement {
         <div className="relative mx-auto max-w-3xl pt-4 sm:pt-7">
           {headings.length > 1 && (
             <aside className="mb-7 border-b border-border/60 py-5 xl:absolute xl:left-[calc(100%+3rem)] xl:bottom-0 xl:top-7 xl:mb-0 xl:w-40 xl:border-0 xl:py-0">
-              <nav aria-label="文章目录" className="xl:sticky xl:top-28">
-                <p className="mb-4 text-xs font-medium text-muted-foreground">本文目录</p>
+              <nav aria-label={tr('article.tocAria')} className="xl:sticky xl:top-28">
+                <p className="mb-4 text-xs font-medium text-muted-foreground">
+                  {tr('article.tocTitle')}
+                </p>
                 <ol className="flex flex-col gap-3 border-l border-border/60 text-xs leading-5">
                   {headings.map((heading) => (
                     <li key={heading.id}>
@@ -96,10 +112,10 @@ export function ArticlePage({ data, locale }: FrontendPageProps): ReactElement {
               className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="size-4" />
-              返回首页
+              {tr('article.backHome')}
             </Link>
             <Link href="/shop" className="inline-flex items-center gap-2 text-foreground">
-              探索云产品
+              {tr('article.explore')}
               <ArrowUpRight className="size-4" />
             </Link>
           </footer>
