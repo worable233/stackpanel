@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Prisma } from '@stackpanel/db';
-import type { PrismaClient } from '@stackpanel/db';
+import type { Prisma, PrismaClient } from '@stackpanel/db';
 import type {
   EventBus,
   EventMeta,
@@ -127,7 +126,7 @@ export class NotificationDispatcher {
         }
         if (!enabled) continue;
       }
-      let wanted = true;
+      let wanted: boolean;
       try {
         wanted = channel.wants ? await channel.wants(projection) : true;
       } catch (error) {
