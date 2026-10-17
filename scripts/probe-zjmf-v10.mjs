@@ -263,22 +263,45 @@ if (serviceId && activeFamily) {
     `\n  实例探测：${activeFamily.name} id=${serviceId}${SERVICE_ID ? '（来自 ZJMF_SERVICE_ID）' : '（取自列表首条）'}\n`,
   );
   const id = encodeURIComponent(serviceId);
+  // 各家族的详情面/子资源面不一致（见 zjmf-client.ts 的 v10ActionPath 注释），
+  // 探针也按家族只打「该家族源码里真实存在」的路径，避免把 404 误读成缺失能力。
+  const isCommon = activeFamily.name === 'idcsmart_common';
+  const isDcim = activeFamily.name === 'mf_dcim';
   const readOnly = [
     ['host.detail', `console/v1/host/${id}`],
     ['host.ip', `console/v1/host/${id}/ip`],
-    ['detail', `${base}/${id}`],
-    ['part', `${base}/${id}/part`],
-    ['status', `${base}/${id}/status`],
-    ['chart', `${base}/${id}/chart`],
+    ...(isCommon
+      ? [['detail(configoption)', `${base}/host/${id}/configoption`]]
+      : [
+          ['detail', `${base}/${id}`],
+          ['part', `${base}/${id}/part`],
+          ['status', `${base}/${id}/status`],
+          ['remote_info', `${base}/${id}/remote_info`],
+          ...(isDcim
+            ? []
+            : [
+                ['disk', `${base}/${id}/disk`],
+                ['snapshot', `${base}/${id}/snapshot`],
+                ['backup', `${base}/${id}/backup`],
+              ]),
+        ]),
     ['ip', `${base}/${id}/ip`],
-    ['disk', `${base}/${id}/disk`],
-    ['snapshot', `${base}/${id}/snapshot`],
-    ['backup', `${base}/${id}/backup`],
-    ['remote_info', `${base}/${id}/remote_info`],
     ['log', `${base}/${id}/log`],
   ];
   for (const [label, path] of readOnly) {
     await probe(label, 'GET', path);
+  }
+  // 图表：云/物理机是 GET ?type=，通用产品是 POST configoption/chart（对象数组）。
+  if (isCommon) {
+    for (const type of ['cpu', 'memory', 'flow']) {
+      await probe(`chart.${type}`, 'POST', `${base}/host/${id}/configoption/chart`, {
+        chart: [{ type, start: Math.floor(Date.now() / 1000) - 3600 }],
+      });
+    }
+  } else {
+    for (const type of ['cpu', 'memory', 'bw']) {
+      await probe(`chart.${type}`, 'GET', `${base}/${id}/chart?type=${type}`);
+    }
   }
   // 续费试算（GET）不下单；实际续费（POST）属写操作。
   await probe('host.renew_quote', 'GET', `console/v1/host/${id}/renew`);
@@ -289,7 +312,13 @@ if (serviceId && activeFamily) {
     });
   }
   // VNC 只取地址/临时令牌，属于只读；仍与写操作分开，便于报告里区分。
-  const vnc = await probe('vnc', 'POST', `${base}/${id}/vnc`, { more: '1', ...downstream });
+  // 通用产品（idcsmart_common）没有 VNC 动作，源码里不存在该路由。
+  const vnc = isCommon
+    ? { verdict: 'SKIP', sample: null }
+    : await probe('vnc', 'POST', `${base}/${id}/vnc`, {
+        more: '1',
+        ...downstream,
+      });
   if (vnc.sample?.data) {
     const data = vnc.sample.data;
     console.log(
@@ -297,7 +326,7 @@ if (serviceId && activeFamily) {
     );
   }
   // 升降级/子资源价格（只算价，不下单）。
-  if (activeFamily.name.endsWith('mf_cloud')) {
+  if (activeFamily.name === 'mf_cloud' || activeFamily.name === 'remf_cloud') {
     await probe('recommend_config', 'GET', `${base}/${id}/recommend_config`);
     await probe('common_config', 'GET', `${base}/${id}/common_config`, downstream);
     await probe('real_data', 'GET', `${base}/${id}/real_data`);
@@ -305,11 +334,18 @@ if (serviceId && activeFamily) {
 
   if (ALLOW_WRITE) {
     console.log('\n  ⚠ ZJMF_ALLOW_WRITE=1：执行开关机探测（会真实影响实例）\n');
-    for (const [label, path] of [
-      ['power_on', `${base}/${id}/on`],
-      ['power_off', `${base}/${id}/off`],
-      ['reboot', `${base}/${id}/reboot`],
-    ]) {
+    const powerPaths = isCommon
+      ? [
+          ['power_on', `${base}/host/${id}/provision/on`],
+          ['power_off', `${base}/host/${id}/provision/off`],
+          ['reboot', `${base}/host/${id}/provision/reboot`],
+        ]
+      : [
+          ['power_on', `${base}/${id}/on`],
+          ['power_off', `${base}/${id}/off`],
+          ['reboot', `${base}/${id}/reboot`],
+        ];
+    for (const [label, path] of powerPaths) {
       await probe(label, 'POST', path, downstream);
     }
   } else {
