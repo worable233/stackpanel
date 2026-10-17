@@ -17,6 +17,7 @@ import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { loadPluginDefinition, scanPlugins, seedBuiltinPlugins } from './lib/plugins.ts';
 import { packageManager } from './packages/manager.ts';
+import { MarketService } from './market/service.ts';
 import { getCatalogRefresh } from './distribution/runtime.ts';
 import { runAutoUpdate } from './updates/auto-run.ts';
 import { configureRuntimeCoherence, type RuntimeCoherence } from './runtime/coherence.ts';
@@ -61,6 +62,8 @@ export interface PluginHostOptions {
 
 export interface PluginHost {
   runtime: PluginRuntime;
+  /** 市场分发安全原语（内置插件 `market` 经 `kernel.market` 消费）。 */
+  market: MarketService;
   payments: PaymentsService;
   wallet: WalletService;
   fx: FxService;
@@ -123,6 +126,17 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
 
   const extensions = options.extensions ?? new ExtensionService(getPrisma(), getDataCache());
   const media = new AttachmentReferenceService(getPrisma());
+  // `market` is a kernel capability service consumed by the built-in `market`
+  // plugin. It needs the plugin runtime (to register/activate after install),
+  // but the runtime needs every capability service up front — forward lazily.
+  const market = new MarketService({
+    runtime: {
+      has: (id) => getRuntime().has(id),
+      register: (definition) => getRuntime().register(definition),
+      unregister: (id, opts) => getRuntime().unregister(id, opts),
+      activate: (id) => getRuntime().activate(id),
+    },
+  });
   const runtime = new PluginRuntime({
     events: getEventBus(),
     db: getPrisma(),
@@ -136,6 +150,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     cache: cacheService,
     jobs: getJobRuntime(),
     media,
+    market,
     logger,
     registerRoute: options.registerRoute ?? (() => () => undefined),
     removeRoutes: options.removeRoutes ?? (() => undefined),
@@ -159,6 +174,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
 
   return {
     runtime,
+    market,
     payments: paymentsService,
     wallet: walletService,
     fx: fxService,

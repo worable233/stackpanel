@@ -143,6 +143,7 @@ describe.skipIf(!dbAvailable)('admin market with a signed remote catalog', () =>
     app = buildApp();
     await app.ready();
     await app.pluginRuntime.activate('login');
+    await app.pluginRuntime.activate('market');
     const admin = await createAdminUser(app, email, password);
     adminToken = admin.token;
   });
@@ -158,7 +159,7 @@ describe.skipIf(!dbAvailable)('admin market with a signed remote catalog', () =>
   it('surfaces remote catalog plugins alongside local ones', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/admin/market/plugins',
+      url: '/market/admin/plugins',
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(res.statusCode).toBe(200);
@@ -179,7 +180,7 @@ describe.skipIf(!dbAvailable)('admin market with a signed remote catalog', () =>
     // the fake GitHub, so verification/fetch fails and nothing is installed.
     const res = await app.inject({
       method: 'POST',
-      url: '/admin/market/plugins/remote-analytics/install',
+      url: '/market/admin/plugins/remote-analytics/install',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {},
     });

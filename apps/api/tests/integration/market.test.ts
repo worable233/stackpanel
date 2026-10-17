@@ -23,6 +23,7 @@ describe.skipIf(!dbAvailable)('admin application market (real DB)', () => {
     app = buildApp();
     await app.ready();
     await app.pluginRuntime.activate('login');
+    await app.pluginRuntime.activate('market');
     const admin = await createAdminUser(app, email, password);
     adminToken = admin.token;
   });
@@ -36,7 +37,7 @@ describe.skipIf(!dbAvailable)('admin application market (real DB)', () => {
   it('lists market plugins with installed state', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/admin/market/plugins',
+      url: '/market/admin/plugins',
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(res.statusCode).toBe(200);
@@ -61,7 +62,7 @@ describe.skipIf(!dbAvailable)('admin application market (real DB)', () => {
   it('lists market themes with installed state', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/admin/market/themes',
+      url: '/market/admin/themes',
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(res.statusCode).toBe(200);
@@ -78,7 +79,7 @@ describe.skipIf(!dbAvailable)('admin application market (real DB)', () => {
   it('rejects market install for an unknown id', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/admin/market/plugins/does-not-exist/install',
+      url: '/market/admin/plugins/does-not-exist/install',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {},
     });
@@ -88,7 +89,7 @@ describe.skipIf(!dbAvailable)('admin application market (real DB)', () => {
   it('installs a plugin from the market (store-product-card, already built)', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/admin/market/plugins/store-product-card/install',
+      url: '/market/admin/plugins/store-product-card/install',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {},
     });

@@ -8,7 +8,6 @@ import { createTranslator } from '@/i18n/core';
 const FALLBACK_NAV: BackendNavigationItem[] = [
   { label: 'nav.dashboard', href: '/admin' },
   { label: 'nav.users', href: '/admin/users' },
-  { label: 'nav.market', href: '/admin/market' },
   { label: 'nav.settings', href: '/admin/settings' },
   { label: 'nav.plugins', href: '/admin/plugins' },
   { label: 'nav.rbac', href: '/admin/rbac' },

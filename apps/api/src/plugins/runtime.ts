@@ -33,6 +33,7 @@ import type { JobRuntime } from '../jobs/types.ts';
 import type { PluginExtensionRuntime } from '../extensions/service.ts';
 import type { RawDatabase } from '../extensions/client.ts';
 import type { MediaReferenceService } from '@stackpanel/sdk';
+import type { MarketService } from '../market/service.ts';
 import { getCacheService } from '../cache/index.ts';
 import {
   aggregateScopeGovernance,
@@ -92,6 +93,13 @@ export interface PluginRuntimeOptions {
   extensions: PluginExtensionRuntime;
   /** Kernel-owned attachment reference index. */
   media?: MediaReferenceService;
+  /**
+   * 市场分发安全原语（ADR-0020 D3）。市场业务面在内置插件 `market`；内核保留
+   * 验签目录 / 统一安装事务 / 运行时激活，并以 `kernel.market` 暴露。
+   *
+   * Optional so unit tests can build a bare runtime; production always supplies it.
+   */
+  market?: MarketService;
 }
 
 /**
@@ -114,6 +122,11 @@ const KERNEL_SERVICE_ACCESSORS = [
   'notifications',
   'state',
   'cache',
+  /**
+   * 市场分发安全原语（ADR-0020 D3）。市场业务面在内置插件 `market`，内核只
+   * 保留验签目录 / 安装事务 / 运行时激活，并以 `kernel.market` 暴露给插件消费。
+   */
+  'market',
 ] as const;
 
 const KERNEL_SERVICE_OWNER = 'kernel';
@@ -174,9 +187,14 @@ export class PluginRuntime {
     // cannot squat the names. Registered first, so `provideService` rejects any
     // plugin attempt to override.
     for (const name of KERNEL_SERVICE_ACCESSORS) {
+      const implementation = options[name];
+      // Optional services (e.g. `market`) stay absent when a bare runtime is
+      // constructed in unit tests; plugins declaring them in `inject` then fail
+      // activation loudly instead of resolving `undefined`.
+      if (implementation === undefined) continue;
       this.services.set(`${KERNEL_SERVICE_OWNER}.${name}`, {
         pluginId: KERNEL_SERVICE_OWNER,
-        implementation: options[name],
+        implementation,
       });
     }
   }

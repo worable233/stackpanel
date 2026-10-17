@@ -937,29 +937,32 @@ export class ApiClient {
     return this.del('/admin/themes/preview', z.void());
   }
 
-  /** List installable plugins from the local application market. */
+  /**
+   * List installable plugins. The market is a built-in plugin (ADR-0020 D3), so
+   * these paths are served by the `market` plugin, not the kernel.
+   */
   getMarketPlugins(): Promise<MarketPluginsResponse> {
-    return this.get('/admin/market/plugins', marketPluginsResponseSchema);
+    return this.get('/market/admin/plugins', marketPluginsResponseSchema);
   }
 
-  /** List installable themes from the local application market. */
+  /** List installable themes from the application market plugin. */
   getMarketThemes(): Promise<MarketThemesResponse> {
-    return this.get('/admin/market/themes', marketThemesResponseSchema);
+    return this.get('/market/admin/themes', marketThemesResponseSchema);
   }
 
-  /** Install or upgrade a plugin from the local application market. */
+  /** Install or upgrade a plugin from the application market plugin. */
   installMarketPlugin(id: string): Promise<MarketInstallResponse> {
     return this.post(
-      `/admin/market/plugins/${encodeURIComponent(id)}/install`,
+      `/market/admin/plugins/${encodeURIComponent(id)}/install`,
       {},
       marketInstallResponseSchema,
     );
   }
 
-  /** Install or upgrade a theme from the local application market. */
+  /** Install or upgrade a theme from the application market plugin. */
   installMarketTheme(id: string): Promise<MarketInstallResponse> {
     return this.post(
-      `/admin/market/themes/${encodeURIComponent(id)}/install`,
+      `/market/admin/themes/${encodeURIComponent(id)}/install`,
       {},
       marketInstallResponseSchema,
     );

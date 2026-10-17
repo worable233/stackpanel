@@ -438,6 +438,22 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/plugins/market:
+    dependencies:
+      '@stackpanel/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/plugins/store:
     dependencies:
       '@stackpanel/sdk':

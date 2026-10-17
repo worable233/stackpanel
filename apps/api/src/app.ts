@@ -28,7 +28,6 @@ import { createPluginHost } from './plugin-host.ts';
 import { adminAuditRoutes } from './routes/admin/audit.ts';
 import { adminBackupRoutes } from './routes/admin-backup.ts';
 import { adminJobsRoutes } from './routes/admin/jobs.ts';
-import { adminMarketRoutes } from './routes/admin/market.ts';
 import { adminPluginRoutes } from './routes/admin/plugins.ts';
 import { adminAgentModelRoutes } from './routes/admin/agent-model.ts';
 import { adminSecretsRoutes } from './routes/admin/secrets.ts';
@@ -410,7 +409,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminUserRoutes);
   void app.register(adminAuditRoutes);
   void app.register(adminJobsRoutes);
-  void app.register(adminMarketRoutes);
   void app.register(adminUpdateRoutes);
   void app.register(adminSettingsRoutes);
   void app.register(adminSecretsRoutes);

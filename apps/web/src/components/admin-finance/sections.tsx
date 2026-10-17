@@ -2,17 +2,19 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { CartesianGrid, Label, Line, LineChart, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import {
-  CartesianGrid,
-  Label,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import { Blocks, ChevronRight, Package, Palette, Receipt, ScrollText, Settings2, TrendingUp, UserCog, Users } from 'lucide-react';
+  Blocks,
+  ChevronRight,
+  Package,
+  Palette,
+  Receipt,
+  ScrollText,
+  Settings2,
+  TrendingUp,
+  UserCog,
+  Users,
+} from 'lucide-react';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +27,12 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { Field } from '@/components/ui/field';
-import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from '@/components/ui/input-group';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from '@/components/ui/input-group';
 import {
   Item,
   ItemActions,
@@ -158,9 +165,7 @@ export function OverviewKpis({ data }: { data: AdminOverviewData }) {
             </CardHeader>
             <CardContent className="flex items-end justify-between gap-3">
               <div className="space-y-1">
-                <div className="text-3xl leading-none tracking-tight">
-                  {card.value}
-                </div>
+                <div className="text-3xl leading-none tracking-tight">{card.value}</div>
                 <p className="text-xs text-muted-foreground">{card.hint}</p>
               </div>
               <DeltaBadge value={card.delta} />
@@ -234,7 +239,7 @@ export function OrderSummaryNote({ data }: { data: AdminOverviewData }) {
         </ItemDescription>
       </ItemContent>
       <ItemActions>
-        <Button size="sm" variant="outline" render={<Link href="/admin/market" />}>
+        <Button size="sm" variant="outline" render={<Link href="/admin/plugin/market" />}>
           {t('admin.overview.viewDetails')}
         </Button>
       </ItemActions>
@@ -418,9 +423,7 @@ export function OrderStatusCard({ data }: { data: AdminOverviewData }) {
         ) : (
           <div className="mx-auto grid aspect-square h-50 place-items-center">
             <div className="grid size-40 place-items-center rounded-full border border-dashed border-border">
-              <span className="text-sm text-muted-foreground">
-                {t('admin.overview.noData')}
-              </span>
+              <span className="text-sm text-muted-foreground">{t('admin.overview.noData')}</span>
             </div>
           </div>
         )}
@@ -487,7 +490,7 @@ export function RecentOrdersCard({ data }: { data: AdminOverviewData }) {
         <Separator />
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{t('admin.overview.ordersTotal', { count: data.totals.orderCount })}</span>
-          <Link href="/admin/market" className="font-medium text-primary hover:underline">
+          <Link href="/admin/plugin/market" className="font-medium text-primary hover:underline">
             {t('admin.overview.viewDetails')}
           </Link>
         </div>
@@ -516,9 +519,7 @@ export function RecentUsersCard({ data }: { data: AdminOverviewData }) {
                       {user.email.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {user.email}
-                  </span>
+                  <span className="truncate text-sm font-medium text-foreground">{user.email}</span>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatDate(new Date(user.createdAt), locale, {
@@ -551,9 +552,9 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
     new Set(data.recentOrders.map((order) => order.customer).filter(Boolean)),
   ).slice(0, 4);
   const shortcuts = [
-    { label: t('admin.overview.shortcutOrders'), href: '/admin/market', icon: Receipt },
+    { label: t('admin.overview.shortcutOrders'), href: '/admin/plugin/market', icon: Receipt },
     { label: t('admin.overview.shortcutUsers'), href: '/admin/users', icon: Users },
-    { label: t('admin.overview.shortcutProducts'), href: '/admin/market', icon: Package },
+    { label: t('admin.overview.shortcutProducts'), href: '/admin/plugin/market', icon: Package },
     { label: t('admin.overview.shortcutPlugins'), href: '/admin/plugins', icon: Blocks },
     { label: t('admin.overview.shortcutRbac'), href: '/admin/rbac', icon: UserCog },
     { label: t('admin.overview.shortcutAudit'), href: '/admin/audit', icon: ScrollText },
@@ -591,7 +592,10 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
                     <Users />
                   </InputGroupText>
                 </InputGroupAddon>
-                <InputGroupInput name="q" placeholder={t('admin.overview.quickSearchPlaceholder')} />
+                <InputGroupInput
+                  name="q"
+                  placeholder={t('admin.overview.quickSearchPlaceholder')}
+                />
               </InputGroup>
               <Button type="submit">{t('admin.overview.quickSearchAction')}</Button>
             </Field>
@@ -616,7 +620,9 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
                   >
                     <Icon className="size-5" />
                   </Button>
-                  <span className="text-center text-xs text-muted-foreground">{shortcut.label}</span>
+                  <span className="text-center text-xs text-muted-foreground">
+                    {shortcut.label}
+                  </span>
                 </div>
               );
             })}

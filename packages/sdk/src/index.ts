@@ -205,6 +205,7 @@ export type { FxQuote, FxRate, FxService } from './fx.js';
 export type { StateCandidate, StateLease, StateService } from './state.js';
 export type { CacheReadOptions, CacheService } from './cache.js';
 export type { MediaReferenceService } from './media.js';
+export type { MarketInstallResult, MarketService } from './market.js';
 export type { JobContext, JobHandler, JobOptions, JobSchedule } from './jobs.js';
 export type { ChannelTerminal, PaymentMethodInstance, SalesChannel } from './sales.js';
 export { CommerceError, isCommerceError } from './commerce.js';
