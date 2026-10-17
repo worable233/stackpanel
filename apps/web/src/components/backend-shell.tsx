@@ -241,7 +241,7 @@ function NavDropdown({
           <button
             type="button"
             className={cn(
-              'relative h-9 gap-1.5 rounded-xl bg-transparent px-3 text-sm font-medium shadow-none hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent transition-colors duration-200 motion-reduce:transition-none',
+              'relative inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-transparent px-3 text-sm font-medium shadow-none hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent transition-colors duration-200 motion-reduce:transition-none',
               anyActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
@@ -318,7 +318,7 @@ export function BackendShell({
       <div className="backend-shell__header sticky top-0 z-30 overflow-hidden rounded-b-2xl border-b border-border/40 bg-background/80 shadow-[0_1px_12px_color-mix(in_oklab,var(--foreground)_4%,transparent)] backdrop-blur-2xl">
         <header
           className={cn(
-            'relative mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-5 px-5 sm:px-8 lg:px-12 xl:h-[72px]',
+            'relative mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-5 px-5 sm:px-8 lg:px-12 lg:h-[72px]',
           )}
         >
           <Link
@@ -335,9 +335,9 @@ export function BackendShell({
           </Link>
           <nav
             aria-label={t('nav.homeAriaLabel')}
-            className="col-span-3 row-start-2 min-w-0 border-t border-border/50 pt-1 xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:border-t-0 xl:border-l xl:border-border/50 xl:pl-4"
+            className="col-span-3 row-start-2 min-w-0 border-t border-border/50 pt-1 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:border-t-0 lg:border-l lg:border-border/50 lg:pl-4"
           >
-            <div className="scrollbar-none flex h-12 min-w-0 items-center gap-2 overflow-x-auto xl:h-auto">
+            <div className="scrollbar-none flex h-12 min-w-0 items-center gap-2 overflow-x-auto lg:h-auto">
               {directItems.map((item) => (
                 <NavButton
                   key={item.href}
