@@ -1,5 +1,7 @@
+import { redirect } from 'next/navigation';
 import { FrontendRoute } from '@/components/frontend-route';
 import { apiAssetUrl, getAuthedApiClient } from '@/lib/api';
+import { getSessionUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +10,13 @@ export default async function PreviewPage({
 }: {
   searchParams: Promise<{ theme?: string; path?: string }>;
 }) {
+  // Preview renders any installed theme/plugin frontend, bypassing the live
+  // route gating, and the kernel's preview endpoints are admin-only
+  // (`/admin/themes/preview`). Require an admin session before rendering, so an
+  // anonymous visitor cannot use `?theme=` to render arbitrary frontends.
+  const session = await getSessionUser();
+  if (session?.role !== 'ADMIN') redirect('/login?next=/preview');
+
   const params = await searchParams;
   let themeId = params.theme ?? null;
   if (!themeId) {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LlmProviderError, isLlmProviderError } from '@stackpanel/sdk';
+import { LlmProviderError } from '@stackpanel/sdk';
 import type {
   LlmCallOptions,
   LlmCompletionRequest,
@@ -32,7 +32,7 @@ const {
   stepAgent,
   toRunView,
 } = await import('../../src/lib/agent-runtime.ts');
-type AgentRuntimeDeps = import('../../src/lib/agent-runtime.ts').AgentRuntimeDeps;
+import type { AgentRuntimeDeps } from '../../src/lib/agent-runtime.ts';
 const { approvalEligibility } = await import('../../src/routes/agent.ts');
 
 /* ------------------------------------------------------------------ *
@@ -40,6 +40,10 @@ const { approvalEligibility } = await import('../../src/routes/agent.ts');
  * ------------------------------------------------------------------ */
 
 type Row = Record<string, unknown>;
+function must<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error('Missing fixture');
+  return value;
+}
 
 /** Minimal Prisma double: only the models/verbs the loop actually uses. */
 function fakePrisma() {
@@ -81,13 +85,27 @@ function fakePrisma() {
         Object.assign(row, data);
         return row;
       },
+      updateMany: async ({ where, data }: { where: Row; data: Row }) => {
+        const row = runs.get(where['id'] as string);
+        if (!row || ['DONE', 'FAILED', 'CANCELLED'].includes(row['status'] as string))
+          return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      },
       findUnique: async ({ where }: { where: Row }): Promise<Row | null> => {
         return runs.get(where['id'] as string) ?? null;
       },
     },
     agentStep: {
       create: async ({ data }: { data: Row }): Promise<Row> => {
-        const row: Row = { id: nextId('step'), createdAt: new Date(), ...data };
+        const row: Row = {
+          id: nextId('step'),
+          createdAt: new Date(),
+          costMinor: 0,
+          tokensIn: 0,
+          tokensOut: 0,
+          ...data,
+        };
         steps.set(row['id'] as string, row);
         return row;
       },
@@ -98,6 +116,12 @@ function fakePrisma() {
       },
     },
     agentApproval: {
+      updateMany: async ({ where, data }: { where: Row; data: Row }) => {
+        const row = approvals.get(where['id'] as string);
+        if (!row || row['status'] !== where['status']) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      },
       create: async ({ data }: { data: Row }): Promise<Row> => {
         const row: Row = {
           id: nextId('approval'),
@@ -158,7 +182,10 @@ function scriptedProvider(script: LlmCompletionResult[]) {
   return { provider, calls, seen: (): number => index };
 }
 
-function completion(parts: LlmPart[], stopReason: LlmCompletionResult['stopReason']): LlmCompletionResult {
+function completion(
+  parts: LlmPart[],
+  stopReason: LlmCompletionResult['stopReason'],
+): LlmCompletionResult {
   return {
     model: 'test-model',
     parts,
@@ -183,6 +210,7 @@ const READ_CAPABILITY: McpCapability = {
 
 const WRITE_CAPABILITY: McpCapability = {
   id: 'order.cancel',
+  destructive: false,
   method: 'POST',
   path: '/api/v1/orders/:id/cancel',
   scope: null,
@@ -193,7 +221,9 @@ const WRITE_CAPABILITY: McpCapability = {
 /** Executor double: records every call and replies 200 with a JSON body. */
 function fakeExecutor() {
   const calls: McpApiCall[] = [];
-  const executor = async (call: McpApiCall): Promise<{ statusCode: number; contentType: string; body: string }> => {
+  const executor = async (
+    call: McpApiCall,
+  ): Promise<{ statusCode: number; contentType: string; body: string }> => {
     calls.push(call);
     return { statusCode: 200, contentType: 'application/json', body: '{"ok":true}' };
   };
@@ -285,7 +315,9 @@ describe('kernel agent runtime', () => {
 
   it('parks a mutating capability for approval under autonomy=read and NEVER calls the executor', async () => {
     const h = await harness({
-      script: [completion([toolCall('c1', 'order_cancel', { params: { id: 'o_1' } })], 'tool_calls')],
+      script: [
+        completion([toolCall('c1', 'order_cancel', { params: { id: 'o_1' } })], 'tool_calls'),
+      ],
       autonomy: 'read',
     });
 
@@ -327,7 +359,7 @@ describe('kernel agent runtime', () => {
 
     const parked = await runAgentUntilBlocked(h.deps);
     expect(parked.status).toBe('WAITING_APPROVAL');
-    const approval = h.approvalRows()[0]!;
+    const approval = must(h.approvalRows()[0]);
     const storedKey = approval['idempotencyKey'] as string;
     expect(storedKey).toBeTruthy();
 
@@ -351,7 +383,7 @@ describe('kernel agent runtime', () => {
     });
 
     await runAgentUntilBlocked(h.deps);
-    const approval = h.approvalRows()[0]!;
+    const approval = must(h.approvalRows()[0]);
     Object.assign(approval, { status: 'DENIED', decidedBy: 'user_admin', reason: '不允许取消' });
 
     const resumed = await resumeAgent(h.deps, h.deps.runId);
@@ -379,7 +411,7 @@ describe('kernel agent runtime', () => {
     expect(h.approvalRows()).toHaveLength(1);
 
     // The human approves once; the same capability in this run no longer asks.
-    Object.assign(h.approvalRows()[0]!, {
+    Object.assign(must(h.approvalRows()[0]), {
       status: 'APPROVED',
       decidedBy: 'user_admin',
       decidedAt: new Date(),
@@ -397,7 +429,8 @@ describe('kernel agent runtime', () => {
     expect(grantedKey).not.toBe(h.approvalRows()[0]?.['idempotencyKey']);
   });
 
-  it('fails the run once the step budget is exhausted', async () => {    const h = await harness({
+  it('fails the run once the step budget is exhausted', async () => {
+    const h = await harness({
       script: [
         completion([toolCall('c1', 'order_read', { params: { id: 'o_1' } })], 'tool_calls'),
         completion([toolCall('c2', 'order_read', { params: { id: 'o_2' } })], 'tool_calls'),
@@ -437,9 +470,9 @@ describe('kernel agent runtime', () => {
       allowedModels: ['gpt-4o-mini'],
     });
 
-    await expect(stepAgent(h.deps)).rejects.toSatisfy(
-      (error: unknown) => isLlmProviderError(error) && error.code === 'model_not_allowed',
-    );
+    const view = await stepAgent(h.deps);
+    expect(view.status).toBe('FAILED');
+    expect(view.error).toContain('允许名单');
     expect(h.providerCalls).toHaveLength(0);
   });
 
@@ -531,7 +564,7 @@ describe('kernel agent runtime', () => {
     });
 
     await runAgentUntilBlocked(h.deps);
-    const approval = h.approvalRows()[0]!;
+    const approval = must(h.approvalRows()[0]);
     expect(AGENT_APPROVAL_TTL_MS).toBe(15 * 60 * 1000);
     Object.assign(approval, {
       status: 'PENDING',
@@ -637,5 +670,152 @@ describe('agent runtime helpers', () => {
       model: 'm',
       startedAt: '2026-01-01T00:00:00.000Z',
     });
+  });
+});
+
+describe('agent reliability regressions', () => {
+  it('never overwrites cancellation or executes the returned write', async () => {
+    const h = await harness({ autonomy: 'act', script: [] });
+    h.deps.provider.complete = async () => {
+      must(h.runs.get(h.deps.runId)).status = 'CANCELLED';
+      return completion([toolCall('c', 'order_cancel', { params: { id: 'o' } })], 'tool_calls');
+    };
+    expect((await runAgentUntilBlocked(h.deps)).status).toBe('CANCELLED');
+    expect(h.exec.calls).toHaveLength(0);
+  });
+  it('checks the limit before every write in a batch', async () => {
+    const h = await harness({
+      autonomy: 'act',
+      maxSteps: 3,
+      script: [
+        completion(
+          [
+            toolCall('a', 'order_cancel', { params: { id: 'a' } }),
+            toolCall('b', 'order_cancel', { params: { id: 'b' } }),
+          ],
+          'tool_calls',
+        ),
+      ],
+    });
+    expect((await runAgentUntilBlocked(h.deps)).status).toBe('FAILED');
+    expect(h.exec.calls).toHaveLength(1);
+    expect(h.stepRows()).toHaveLength(3);
+  });
+  it('reuses the logical action key after execution interrupted before result storage', async () => {
+    const h = await harness({
+      autonomy: 'act',
+      script: [
+        completion([toolCall('c', 'order_cancel', { params: { id: 'a' } })], 'tool_calls'),
+        completion([{ type: 'text', text: 'done' }], 'stop'),
+      ],
+    });
+    let first = true;
+    h.deps.executor = async (call) => {
+      const result = await h.exec.executor(call);
+      if (first) {
+        first = false;
+        throw new Error('interrupted');
+      }
+      return result;
+    };
+    await expect(runAgentUntilBlocked(h.deps)).rejects.toThrow('interrupted');
+    expect((await resumeAgent(h.deps, h.deps.runId)).status).toBe('DONE');
+    expect(h.exec.calls).toHaveLength(2);
+    expect(must(h.exec.calls[0]).idempotencyKey).toBe(must(h.exec.calls[1]).idempotencyKey);
+  });
+  it('does not confuse reused tool IDs across model rounds during crash recovery', async () => {
+    const h = await harness({
+      autonomy: 'act',
+      script: [
+        completion([toolCall('same', 'order_cancel', { params: { id: 'first' } })], 'tool_calls'),
+        completion([toolCall('same', 'order_cancel', { params: { id: 'second' } })], 'tool_calls'),
+        completion([{ type: 'text', text: 'done' }], 'stop'),
+      ],
+    });
+    let interrupted = false;
+    h.deps.executor = async (call) => {
+      const result = await h.exec.executor(call);
+      if (h.exec.calls.length === 2 && !interrupted) {
+        interrupted = true;
+        throw new Error('lost result');
+      }
+      return result;
+    };
+    await expect(runAgentUntilBlocked(h.deps)).rejects.toThrow('lost result');
+    expect((await resumeAgent(h.deps, h.deps.runId)).status).toBe('DONE');
+    expect(h.exec.calls).toHaveLength(3);
+    expect(must(h.exec.calls[0]).idempotencyKey).not.toBe(must(h.exec.calls[1]).idempotencyKey);
+    expect(must(h.exec.calls[1]).idempotencyKey).toBe(must(h.exec.calls[2]).idempotencyKey);
+  });
+  it('honors a live administrative model restriction before inference', async () => {
+    const h = await harness({ script: [] });
+    h.deps.checkpoint = async () => ({ allowedModels: ['other'] });
+    expect((await runAgentUntilBlocked(h.deps)).status).toBe('FAILED');
+    expect(h.providerCalls).toHaveLength(0);
+  });
+  it('retains token accounting when cancellation wins the terminal state race', async () => {
+    const h = await harness({ script: [] });
+    h.deps.provider.complete = async () => {
+      must(h.runs.get(h.deps.runId)).status = 'CANCELLED';
+      return completion([{ type: 'text', text: 'done' }], 'stop');
+    };
+    const run = await runAgentUntilBlocked(h.deps);
+    expect(run.status).toBe('CANCELLED');
+    expect(run.spendMinor).toBe(4);
+    expect(run.tokensIn).toBe(3);
+  });
+  it('rejects concurrent advancement before a second model call', async () => {
+    const h = await harness({ script: [] });
+    let complete!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    h.deps.provider.complete = async () => {
+      entered();
+      await new Promise<void>((resolve) => {
+        complete = resolve;
+      });
+      return completion([{ type: 'text', text: 'done' }], 'stop');
+    };
+    const first = runAgentUntilBlocked(h.deps);
+    await started;
+    await expect(resumeAgent(h.deps, h.deps.runId)).rejects.toMatchObject({
+      code: 'agent.run.busy',
+    });
+    complete();
+    await first;
+  });
+  it('enforces changed model allowlists on the main entrypoint', async () => {
+    const h = await harness({ allowedModels: ['other'], script: [] });
+    expect((await runAgentUntilBlocked(h.deps)).status).toBe('FAILED');
+    expect(h.providerCalls).toHaveLength(0);
+  });
+  it('excludes agent management tools so a model cannot approve itself or recurse', async () => {
+    const h = await harness({
+      capabilities: [{ ...WRITE_CAPABILITY, id: 'agent.run.create' }],
+      script: [completion([{ type: 'text', text: 'done' }], 'stop')],
+    });
+    await runAgentUntilBlocked(h.deps);
+    expect(must(h.providerCalls[0]).request.tools ?? []).toHaveLength(0);
+  });
+  it('aborts a model that ignores AbortSignal without executing its eventual tools', async () => {
+    const h = await harness({ autonomy: 'act', script: [] });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    h.deps.provider.complete = async () => {
+      entered();
+      return new Promise(() => {});
+    };
+    const controller = new AbortController();
+    h.deps.signal = controller.signal;
+    const running = runAgentUntilBlocked(h.deps);
+    await started;
+    must(h.runs.get(h.deps.runId)).status = 'CANCELLED';
+    controller.abort(new Error('cancelled'));
+    expect((await running).status).toBe('CANCELLED');
+    expect(h.exec.calls).toHaveLength(0);
   });
 });

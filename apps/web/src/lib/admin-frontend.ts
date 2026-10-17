@@ -7,7 +7,13 @@ import type {
 } from '@stackpanel/sdk';
 import { matchFrontendPagePath } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
-import { importFrontendPackage, listPluginFrontendCandidates, readPluginSettings } from './slots';
+import {
+  candidateAdmitsServerExecution,
+  importFrontendPackage,
+  listPluginFrontendCandidates,
+  readPluginSettings,
+} from './slots';
+import { runtimeAdminModuleUrl, runtimeFrontendLoadingEnabled } from './frontend-runtime';
 import { bindPluginActions } from './frontend-plugin-actions';
 
 export interface PluginAdminMenu {
@@ -15,6 +21,8 @@ export interface PluginAdminMenu {
   label: string;
   href: string;
   group?: string;
+  order?: number;
+  activePaths?: string[];
 }
 
 export type PluginAdminRouteResult =
@@ -26,6 +34,12 @@ export type PluginAdminRouteResult =
       data: Record<string, unknown>;
       actions: FrontendActionExecutors;
       params: Record<string, string>;
+      /**
+       * Stage 4 M2: when runtime loading is enabled, the same-origin browser URL of
+       * the plugin's compiled admin entry, so the client container can load it at
+       * request time instead of via the build-time client registry.
+       */
+      runtimeAdminModuleUrl?: string;
     }
   | { status: 'denied'; permission: string }
   | { status: 'not-found' };
@@ -34,13 +48,16 @@ export type PluginAdminRouteResult =
 export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
   const candidates = await listPluginFrontendCandidates();
   const menus: PluginAdminMenu[] = [];
+  const api = await getAuthedApiClient();
   for (const candidate of candidates) {
     for (const route of candidate.manifest.adminRoutes) {
-      if (!route.nav) continue;
+      if (!route.nav || (route.permission && !(await isAllowed(api, route.permission)))) continue;
       menus.push({
         pluginId: candidate.id,
         label: route.nav.label,
         href: pluginAdminHref(candidate.id, route.path),
+        order: route.nav.order,
+        activePaths: route.nav.activePaths?.map((path) => pluginAdminHref(candidate.id, path)),
         ...(route.nav.group ? { group: route.nav.group } : {}),
       });
     }
@@ -65,13 +82,16 @@ export async function resolvePluginAdminRoute(
     const check = await api.checkPermission(route.permission);
     if (!check.allowed) return { status: 'denied', permission: route.permission };
   }
-  const pkg = await importFrontendPackage('plugins', pluginId, candidate.manifest);
+  const pkg = await importFrontendPackage('plugins', pluginId, candidate.manifest, candidate.revision);
   if (!pkg) return { status: 'not-found' };
   // 合并所有已加载插件的前端 finders，使 admin 页面可跨插件复用数据提供者
   // （例如 store 的商品管理页读取 catalog 的分类数据）。
   const mergedFinders: Record<string, FinderProvider> = {};
   for (const item of candidates) {
-    const candidatePkg = await importFrontendPackage('plugins', item.id, item.manifest);
+    // Trust boundary (contract 03 §3.1): an unauthorized package's finder must
+    // not be registered for execution in the web process.
+    if (!candidateAdmitsServerExecution(item)) continue;
+    const candidatePkg = await importFrontendPackage('plugins', item.id, item.manifest, item.revision);
     if (!candidatePkg?.finders) continue;
     for (const [name, finder] of Object.entries(candidatePkg.finders)) {
       if (!mergedFinders[name]) mergedFinders[name] = finder;
@@ -99,6 +119,9 @@ export async function resolvePluginAdminRoute(
       `/admin/plugin/${pluginId}${path}`,
     ),
     params,
+    ...(runtimeFrontendLoadingEnabled()
+      ? { runtimeAdminModuleUrl: runtimeAdminModuleUrl('plugins', pluginId, candidate.revision) }
+      : {}),
   };
 }
 

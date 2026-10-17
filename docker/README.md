@@ -31,15 +31,14 @@ docker compose --env-file docker/.env up -d --build
 
 `runtime` 阶段以基础镜像自带的 `node` 用户（uid/gid 1000）运行，不再以 root 启动。
 `/app` 通过 `COPY --chown=node:node` 归属该用户，`/app/data` 与 `/opt/pnpm` 也已 chown。
-新建的命名卷（`stackpanel-data`、`stackpanel-web-build`）会继承镜像中挂载点的属主，因此
-全新部署开箱即用。
+新建的命名卷（`stackpanel-data`）会继承镜像中挂载点的属主，因此全新部署开箱即用。
 
 > **升级注意**：若你从旧的 root 镜像升级，既有命名卷仍是 `root:root`，非特权进程无法写入。
 > 升级时先对卷执行一次 chown，例如：
 >
 > ```bash
-> docker run --rm -u 0 -v stackpanel-data:/data -v stackpanel-web-build:/next \
->   --entrypoint sh stackpanel:local -c 'chown -R 1000:1000 /data /next'
+> docker run --rm -u 0 -v stackpanel-data:/data \
+>   --entrypoint sh stackpanel:local -c 'chown -R 1000:1000 /data'
 > ```
 
 ## 2. 发布（GHCR + tag + Release Notes + cosign）

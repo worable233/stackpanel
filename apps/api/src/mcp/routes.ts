@@ -1,3 +1,5 @@
+import { mcpDispatchProof } from '../agent/dispatch-proof.ts';
+import { mcpChallenge } from '../agent/oauth.ts';
 /**
  * MCP (Model Context Protocol) endpoint — Streamable HTTP, PLAN-open-platform P2.
  *
@@ -29,11 +31,13 @@ async function executeViaApi(
   const cookie = request.headers.cookie;
   if (typeof authorization === 'string') headers['authorization'] = authorization;
   if (typeof cookie === 'string') headers['cookie'] = cookie;
+  headers['x-stackpanel-mcp-dispatch'] = mcpDispatchProof(call.method, call.path, authorization ?? cookie ?? '', request.ip);
   if (call.idempotencyKey) headers['idempotency-key'] = call.idempotencyKey;
 
   const response = await request.server.inject({
     method: call.method,
     url: call.path,
+    remoteAddress: request.ip,
     headers,
     ...(call.body !== undefined ? { payload: call.body as Record<string, unknown> } : {}),
   });
@@ -84,6 +88,7 @@ export async function mcpRoutes(app: FastifyInstance): Promise<void> {
 async function requireMcpAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const user = await extractSession(request, reply);
   if (!user) {
+    reply.header('www-authenticate', mcpChallenge());
     await reply.code(401).send(
       buildProblem({
         status: 401,

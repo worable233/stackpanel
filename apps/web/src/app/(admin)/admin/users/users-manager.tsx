@@ -16,11 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from '@/components/ui/input-group';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import {
   Pagination,
   PaginationContent,
@@ -48,14 +44,21 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { CreateUserForm } from '@/components/create-user-form';
-import {
-  impersonateUserAction,
-  updateUserStatusAction,
-} from '@/lib/user-actions';
+import { impersonateUserAction, updateUserStatusAction } from '@/lib/user-actions';
 import { useLocale, useTranslator } from '@/i18n/provider';
-import { formatDate } from '@/i18n/core';
+import { formatDate, formatMoney } from '@/i18n/core';
 
 type StatusFilter = 'all' | 'ACTIVE' | 'DISABLED';
+
+const SORT_VALUES = [
+  'createdAt_desc',
+  'createdAt_asc',
+  'balance_desc',
+  'balance_asc',
+  'lastLoginAt_desc',
+  'lastLoginAt_asc',
+] as const;
+type UserSort = (typeof SORT_VALUES)[number];
 
 const PAGE_SIZES = [10, 20, 30, 50];
 
@@ -87,7 +90,9 @@ function StatusBadge({ status }: { status: AdminUser['status'] }) {
     >
       <span
         className={
-          active ? 'size-1.5 rounded-full bg-emerald-500' : 'size-1.5 rounded-full bg-muted-foreground'
+          active
+            ? 'size-1.5 rounded-full bg-emerald-500'
+            : 'size-1.5 rounded-full bg-muted-foreground'
         }
       />
       {active ? t('common.statusActive') : t('common.statusDisabled')}
@@ -103,6 +108,7 @@ export function UsersManager({
   q,
   status,
   groupId,
+  sort,
   groups,
   error,
 }: {
@@ -113,6 +119,7 @@ export function UsersManager({
   q: string;
   status: StatusFilter;
   groupId: string;
+  sort: UserSort;
   groups: PermissionGroupInfo[];
   error?: string | null;
 }) {
@@ -134,6 +141,7 @@ export function UsersManager({
       ...(q ? { q } : {}),
       ...(status !== 'all' ? { status } : {}),
       ...(groupId ? { groupId } : {}),
+      ...(sort !== 'createdAt_desc' ? { sort } : {}),
       ...(pageSize !== 20 ? { pageSize: String(pageSize) } : {}),
       ...(page > 1 ? { page: String(page) } : {}),
       ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v ?? ''])),
@@ -176,18 +184,14 @@ export function UsersManager({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title={t('admin.users.title')}
-        description={t('admin.users.description')}
-        actions={<CreateUserForm groups={groups} />}
-      />
+      <PageHeader title={t('admin.users.title')} actions={<CreateUserForm groups={groups} />} />
 
       {error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border/70 bg-background">
-          <div className="flex flex-col items-stretch gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-            <InputGroup className="h-7 w-full rounded-md sm:w-80">
+          <div className="flex flex-col items-stretch gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between sm:gap-4">
+            <InputGroup className="h-7 w-full rounded-md sm:w-64 sm:shrink-0">
               <InputGroupAddon>
                 <Search />
               </InputGroupAddon>
@@ -203,7 +207,9 @@ export function UsersManager({
             <div className="flex flex-wrap items-center gap-2">
               <Select
                 value={status}
-                onValueChange={(value) => setParams({ status: value === 'all' ? null : value, page: null })}
+                onValueChange={(value) =>
+                  setParams({ status: value === 'all' ? null : value, page: null })
+                }
               >
                 <SelectTrigger size="sm">
                   <span className="text-muted-foreground">{t('admin.users.colStatus')}</span>
@@ -228,14 +234,17 @@ export function UsersManager({
 
               <Select
                 value={groupId || 'all'}
-                onValueChange={(value) => setParams({ groupId: value === 'all' ? null : value, page: null })}
+                onValueChange={(value) =>
+                  setParams({ groupId: value === 'all' ? null : value, page: null })
+                }
               >
                 <SelectTrigger size="sm">
                   <span className="text-muted-foreground">{t('admin.users.colGroups')}</span>
                   <SelectValue>
                     {(value) =>
                       value && value !== 'all'
-                        ? (groups.find((group) => group.id === value)?.name ?? t('admin.users.groupAll'))
+                        ? (groups.find((group) => group.id === value)?.name ??
+                          t('admin.users.groupAll'))
                         : t('admin.users.groupAll')
                     }
                   </SelectValue>
@@ -251,6 +260,26 @@ export function UsersManager({
                   </SelectGroup>
                 </SelectContent>
               </Select>
+
+              <Select
+                value={sort}
+                onValueChange={(value) =>
+                  setParams({ sort: value === 'createdAt_desc' ? null : value, page: null })
+                }
+              >
+                <SelectTrigger size="sm" aria-label={t('admin.users.sortLabel')}>
+                  <SelectValue>{(value) => t(`admin.users.sort.${value}`)}</SelectValue>
+                </SelectTrigger>
+                <SelectContent align="end" alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {SORT_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {t(`admin.users.sort.${value}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -260,6 +289,12 @@ export function UsersManager({
                 <TableHead className="py-4 font-normal">{t('admin.users.colUser')}</TableHead>
                 <TableHead className="py-4 font-normal">{t('admin.users.colGroups')}</TableHead>
                 <TableHead className="py-4 font-normal">{t('admin.users.colStatus')}</TableHead>
+                <TableHead className="py-4 text-right font-normal">
+                  {t('admin.users.colServices')}
+                </TableHead>
+                <TableHead className="py-4 text-right font-normal">
+                  {t('admin.users.colBalance')}
+                </TableHead>
                 <TableHead className="py-4 font-normal">{t('admin.users.colJoined')}</TableHead>
                 <TableHead className="py-4 font-normal">{t('admin.users.colLastLogin')}</TableHead>
                 <TableHead className="py-4 text-right font-normal">{t('common.actions')}</TableHead>
@@ -268,7 +303,7 @@ export function UsersManager({
             <TableBody>
               {users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                     {q ? t('admin.users.emptyQuery', { q }) : t('admin.users.empty')}
                   </TableCell>
                 </TableRow>
@@ -294,7 +329,11 @@ export function UsersManager({
                       {user.groups.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {user.groups.map((group) => (
-                            <Badge key={group.id} variant="secondary" className="rounded-sm font-normal">
+                            <Badge
+                              key={group.id}
+                              variant="secondary"
+                              className="rounded-sm font-normal"
+                            >
                               {group.name}
                             </Badge>
                           ))}
@@ -306,6 +345,14 @@ export function UsersManager({
                     <TableCell className="py-4">
                       <StatusBadge status={user.status} />
                     </TableCell>
+                    <TableCell className="py-4 text-right tabular-nums">
+                      {user.serviceCount ?? <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="py-4 text-right whitespace-nowrap tabular-nums">
+                      {user.balance !== undefined
+                        ? formatMoney(user.balance, user.balanceCurrency ?? 'CNY', locale)
+                        : '—'}
+                    </TableCell>
                     <TableCell className="py-4 text-sm text-muted-foreground">
                       {formatDate(new Date(user.createdAt), locale, { dateStyle: 'medium' })}
                     </TableCell>
@@ -315,7 +362,7 @@ export function UsersManager({
                             dateStyle: 'medium',
                             timeStyle: 'short',
                           })
-                        : '—'}
+                        : t('admin.users.neverLoggedIn')}
                     </TableCell>
                     <TableCell className="py-4 text-right">
                       <DropdownMenu>
@@ -335,10 +382,7 @@ export function UsersManager({
                           <DropdownMenuItem render={<Link href={`/admin/users/${user.id}`} />}>
                             {t('admin.users.viewDetail')}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => toggleStatus(user)}
-                            disabled={isPending}
-                          >
+                          <DropdownMenuItem onClick={() => toggleStatus(user)} disabled={isPending}>
                             {user.status === 'ACTIVE'
                               ? t('admin.users.disableUser')
                               : t('admin.users.enableUser')}
@@ -394,7 +438,9 @@ export function UsersManager({
                   <PaginationPrevious
                     text=""
                     disabled={currentPage <= 1 || isPending}
-                    onClick={() => setParams({ page: currentPage - 1 > 1 ? String(currentPage - 1) : null })}
+                    onClick={() =>
+                      setParams({ page: currentPage - 1 > 1 ? String(currentPage - 1) : null })
+                    }
                   />
                 </PaginationItem>
                 {pageNumbers[0]! > 1 ? (

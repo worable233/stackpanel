@@ -54,6 +54,8 @@ export interface McpCapability {
   scope: string | null;
   summary: string;
   mutating: boolean;
+  /** 缺省写操作视为危险；false 仅用于明确可逆的写。 */
+  destructive?: boolean;
   pluginId?: string;
 }
 
@@ -137,7 +139,7 @@ export function buildMcpTool(capability: McpCapability): McpToolDescriptor {
     annotations: {
       title: capability.summary,
       readOnlyHint: !capability.mutating,
-      destructiveHint: capability.mutating,
+      destructiveHint: capability.destructive ?? capability.mutating,
       idempotentHint: !capability.mutating,
       openWorldHint: false,
     },

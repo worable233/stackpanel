@@ -1,3 +1,5 @@
+import { actionCapabilities } from '../agent/actions.ts';
+import { externalCapabilities } from '../agent/external.ts';
 /**
  * MCP server assembly (PLAN-open-platform P2).
  *
@@ -132,6 +134,8 @@ export async function handleMcpRequest(
   request: FastifyRequest,
   execute: McpExecutor,
 ): Promise<unknown> {
-  const server = createMcpServer(createRequestMcpRuntime(request, execute));
+  const runtime = createRequestMcpRuntime(request, execute);
+  runtime.capabilities = [...runtime.capabilities, ...[...await externalCapabilities(request), ...await actionCapabilities(request)]];
+  const server = createMcpServer(runtime);
   return server.handle(request.body);
 }

@@ -27,6 +27,27 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  /** When email ownership was verified, or `null`. */
+  emailVerifiedAt: string | null;
+}
+
+/** Public auth policy for the frontend (register form). */
+export interface AuthConfigResponse {
+  emailVerificationRequired: boolean;
+  captcha: {
+    mode: 'off' | 'optional' | 'required';
+    configured: boolean;
+    providerIds: string[];
+    clientConfig: Record<string, unknown> | null;
+  };
+}
+
+/** Result of POST /register/send-code. */
+export interface SendRegisterCodeResponse {
+  sent: boolean;
+  email: string;
+  expiresAt: string;
+  expiresInSeconds: number;
 }
 
 /** Standard success envelope. */
@@ -103,6 +124,11 @@ export interface AdminUser {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  /** Spendable wallet balance in the currency's minor unit. */
+  balance?: number | undefined;
+  balanceCurrency?: string | undefined;
+  /** Number of non-terminated cloud products currently held by the user. */
+  serviceCount?: number | null | undefined;
 }
 
 /** Response of GET /admin/users (paginated list). */
@@ -153,6 +179,7 @@ export interface AdminUserDetailResponse {
   wallet: { balance: number; currency: string } | null;
   services: AdminServiceItem[];
   orders: AdminUserOrderItem[];
+  ordersPagination?: { page: number; pageSize: number; total: number } | undefined;
   ledger: AdminUserLedgerItem[];
 }
 
@@ -512,6 +539,30 @@ export interface ThemePreviewMutationResponse {
 export interface PluginFrontendDescriptor {
   id: string;
   manifest: FrontendManifest;
+  /**
+   * Whether the package is a kernel built-in (trusted). Derived by the kernel
+   * from the package's `stackpanel.builtin` metadata — the SAME source the
+   * backend `execution` decision uses (plugins.ts loadPluginDefinition).
+   */
+  builtin: boolean;
+  /**
+   * The backend execution mode this plugin runs under, mirroring
+   * `plugins.ts` `loadPluginDefinition`: built-in → `trusted`, otherwise
+   * `isolated` in production. Whether the plugin is admitted to execute in the
+   * web process is decided by `serverExecution`, NOT by this field.
+   */
+  execution: 'trusted' | 'isolated';
+  /**
+   * Kernel-computed admission decision for server-side execution in the web
+   * process (contract 03 §3.1): `allowed` = built-in OR explicitly authorized
+   * (`frontendExecutions: 'server'`); `declarative` = not admitted (default).
+   */
+  serverExecution: 'allowed' | 'declarative';
+  /**
+   * Active content-addressed revision (contract 04 §1). Present when the kernel
+   * has published the plugin frontend to the immutable revision store.
+   */
+  revision?: string;
 }
 
 /** Response of GET /plugins/frontends. */

@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { SectionTitle } from '@stackpanel/ui';
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
 import type {
   AdminUpstreamServiceItem,
   AdminUserDetailResponse,
@@ -93,7 +97,7 @@ function SectionCard({
     <section className="rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <SectionTitle>{title}</SectionTitle>
           {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
         </div>
         {action}
@@ -115,8 +119,9 @@ function BasicInfoSection({ user }: { user: AdminUserDetailResponse['user'] }) {
     if (status === user.status) return;
     setState(null);
     startTransition(async () => {
-      setState(await updateUserStatusAction(user.id, status));
-      if (state?.ok !== false) router.refresh();
+      const result = await updateUserStatusAction(user.id, status);
+      setState(result);
+      if (result.ok) router.refresh();
     });
   }
 
@@ -137,15 +142,13 @@ function BasicInfoSection({ user }: { user: AdminUserDetailResponse['user'] }) {
             {t('admin.userDetail.status')}
           </dt>
           <dd className="mt-0.5 flex items-center gap-2">
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'DISABLED')}
-              className="h-8 rounded-md border bg-background px-2 text-sm"
-              aria-label={t('admin.userDetail.statusAria')}
-            >
-              <option value="ACTIVE">{t('admin.userDetail.statusActive')}</option>
-              <option value="DISABLED">{t('admin.userDetail.statusDisabled')}</option>
-            </select>
+            <Select value={status} onValueChange={(value) => { if (value) setStatus(value); }} disabled={isPending}>
+              <SelectTrigger className="w-32" aria-label={t('admin.userDetail.statusAria')}><SelectValue>{status === 'ACTIVE' ? t('admin.userDetail.statusActive') : t('admin.userDetail.statusDisabled')}</SelectValue></SelectTrigger>
+              <SelectContent><SelectGroup>
+                <SelectItem value="ACTIVE">{t('admin.userDetail.statusActive')}</SelectItem>
+                <SelectItem value="DISABLED">{t('admin.userDetail.statusDisabled')}</SelectItem>
+              </SelectGroup></SelectContent>
+            </Select>
             {status !== user.status ? (
               <Button size="sm" variant="outline" onClick={() => void save()} disabled={isPending}>
                 {t('common.save')}
@@ -202,8 +205,9 @@ function GroupsSection({
   function save() {
     setState(null);
     startTransition(async () => {
-      setState(await updateUserGroupsAction(userId, [...selected]));
-      if (state?.ok !== false) router.refresh();
+      const result = await updateUserGroupsAction(userId, [...selected]);
+      setState(result);
+      if (result.ok) router.refresh();
     });
   }
 
@@ -213,28 +217,23 @@ function GroupsSection({
       description={t('admin.userDetail.groups.description')}
       action={
         dirty ? (
-          <Button size="sm" onClick={() => void save()} disabled={isPending}>
+          <Button size="sm" onClick={() => void save()} disabled={isPending || selected.size === 0}>
             {t('common.save')}
           </Button>
         ) : null
       }
     >
-      <div className="flex flex-wrap gap-2">
-        {groups.map((group) => (
-          <label
-            key={group.id}
-            className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-accent"
-          >
-            <input
-              type="checkbox"
-              checked={selected.has(group.id)}
-              onChange={() => toggle(group.id)}
-              className="size-4 accent-primary"
-            />
-            <span>{group.name}</span>
-          </label>
-        ))}
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="outline" disabled={isPending} className="max-w-full" />}>
+          <span className="truncate">{groups.filter((group) => selected.has(group.id)).map((group) => group.name).join('、') || t('admin.userDetail.groups.title')}</span>
+          <ChevronDown data-icon="inline-end" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-52">
+          <DropdownMenuGroup>
+            {groups.map((group) => <DropdownMenuCheckboxItem key={group.id} checked={selected.has(group.id)} onCheckedChange={() => toggle(group.id)} closeOnClick={false}>{group.name}</DropdownMenuCheckboxItem>)}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <div className="mt-2">
         <StatusMessage state={state} />
       </div>
@@ -396,6 +395,7 @@ function ServicesSection({
   const [bindOpen, setBindOpen] = useState(false);
   const [bindLoading, setBindLoading] = useState(false);
   const [bindError, setBindError] = useState<string | null>(null);
+  const [hasSources, setHasSources] = useState(false);
   const [candidates, setCandidates] = useState<AdminUpstreamServiceItem[]>([]);
   const [selected, setSelected] = useState<string>('');
 
@@ -428,14 +428,15 @@ function ServicesSection({
       if (result.error || !result.data) {
         setBindError(result.error ?? t('admin.userDetail.services.bindLoadFailed'));
       } else {
+        setHasSources(result.data.sources.length > 0);
         setCandidates(result.data.services);
         const first = result.data.services.find(
           (item) => !item.boundServiceId && !item.boundUserId,
         );
         if (first) setSelected(`${first.sourceId}:${first.id}`);
       }
-      setBindLoading(false);
-    });
+    }).catch(() => setBindError(t('admin.userDetail.services.bindLoadFailed')))
+      .finally(() => setBindLoading(false));
   }
 
   function bind() {
@@ -511,22 +512,22 @@ function ServicesSection({
                   {t('admin.userDetail.services.bindLoading')}
                 </p>
               ) : bindError ? (
-                <p className="text-sm text-destructive">{bindError}</p>
+                <div className="flex flex-col items-start gap-3"><p role="alert" className="text-sm text-destructive">{bindError}</p><Button variant="outline" size="sm" onClick={() => openBind(true)}>重试</Button></div>
               ) : candidates.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  {t('admin.userDetail.services.bindEmpty')}
+                  {hasSources ? '上游暂无已购服务，请先确认上游账号中有可绑定的服务。' : '暂无可用的上游插件，请先启用提供服务绑定能力的插件。'}
                 </p>
               ) : (
                 <div className="flex flex-col gap-1">
                   <Label htmlFor="bind-service">
                     {t('admin.userDetail.services.upstreamService')}
                   </Label>
-                  <select
-                    id="bind-service"
+                  <Select
                     value={selected}
-                    onChange={(e) => setSelected(e.target.value)}
-                    className="h-9 rounded-md border bg-background px-2 text-sm"
+                    onValueChange={(value) => setSelected(value ?? '')}
                   >
+                    <SelectTrigger id="bind-service" className="w-full"><SelectValue>{candidates.find((item) => `${item.sourceId}:${item.id}` === selected)?.name ?? '选择上游服务'}</SelectValue></SelectTrigger>
+                    <SelectContent><SelectGroup>
                     {candidates.map((item) => {
                       const boundMine = Boolean(item.boundServiceId);
                       const boundOther = Boolean(item.boundUserId);
@@ -536,7 +537,7 @@ function ServicesSection({
                           ? ` · ${t('admin.userDetail.services.boundElsewhere')}`
                           : '';
                       return (
-                        <option
+                        <SelectItem
                           key={`${item.sourceId}:${item.id}`}
                           value={`${item.sourceId}:${item.id}`}
                           disabled={boundMine || boundOther}
@@ -544,12 +545,14 @@ function ServicesSection({
                           {item.name}
                           {item.host ? ` · ${item.host}` : ''}
                           {suffix}
-                        </option>
+                        </SelectItem>
                       );
                     })}
-                  </select>
+                    </SelectGroup></SelectContent>
+                  </Select>
                 </div>
               )}
+              <StatusMessage state={state} />
               <DialogFooter>
                 <Button
                   onClick={() => void bind()}
@@ -608,18 +611,19 @@ function ServicesSection({
                     </td>
                     <td className="px-3 py-2">
                       {editing ? (
-                        <select
+                        <Select
                           value={editStatus}
-                          onChange={(e) => setEditStatus(e.target.value)}
-                          className="h-8 rounded-md border bg-background px-2 text-sm"
-                          aria-label={t('admin.userDetail.services.statusAria')}
+                          onValueChange={(value) => setEditStatus(value ?? '')}
                         >
+                          <SelectTrigger aria-label={t('admin.userDetail.services.statusAria')}><SelectValue>{serviceStatusLabel(editStatus, t)}</SelectValue></SelectTrigger>
+                          <SelectContent><SelectGroup>
                           {Object.keys(SERVICE_STATUS_KEYS).map((value) => (
-                            <option key={value} value={value}>
+                            <SelectItem key={value} value={value}>
                               {serviceStatusLabel(value, t)}
-                            </option>
+                            </SelectItem>
                           ))}
-                        </select>
+                          </SelectGroup></SelectContent>
+                        </Select>
                       ) : (
                         serviceStatusLabel(service.status, t)
                       )}
@@ -689,13 +693,24 @@ function boundServiceIds(services: AdminUserDetailResponse['services']): Set<str
   );
 }
 
-function OrdersSection({ orders }: { orders: AdminUserDetailResponse['orders'] }) {
+function OrdersSection({ orders, pagination }: { orders: AdminUserDetailResponse['orders']; pagination: AdminUserDetailResponse['ordersPagination'] }) {
   const t = useTranslator();
   const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [pending, startTransition] = useTransition();
+  const { page, pageSize, total } = pagination ?? { page: 1, pageSize: 20, total: orders.length };
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const navigate = (next: number, size = pageSize) => {
+    const query = new URLSearchParams(searchParams);
+    query.set('orderPage', String(next));
+    query.set('orderPageSize', String(size));
+    startTransition(() => router.replace(`${pathname}?${query}`, { scroll: false }));
+  };
   return (
     <SectionCard
       title={t('admin.userDetail.orders.title')}
-      description={t('admin.userDetail.orders.description')}
     >
       {orders.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
@@ -729,6 +744,18 @@ function OrdersSection({ orders }: { orders: AdminUserDetailResponse['orders'] }
           </table>
         </div>
       )}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-busy={pending}>
+        <span className="text-sm text-muted-foreground">共 {total} 笔订单</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={String(pageSize)} onValueChange={(value) => { if (value) navigate(1, Number(value)); }} disabled={pending}>
+            <SelectTrigger aria-label="每页订单数"><SelectValue>{pageSize} 条 / 页</SelectValue></SelectTrigger>
+            <SelectContent><SelectGroup>{[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} 条 / 页</SelectItem>)}</SelectGroup></SelectContent>
+          </Select>
+          <span className="text-sm tabular-nums">第 {page} / {pages} 页</span>
+          <Button size="icon-sm" variant="outline" aria-label="上一页订单" disabled={pending || page <= 1} onClick={() => navigate(page - 1)}><ChevronLeft /></Button>
+          <Button size="icon-sm" variant="outline" aria-label="下一页订单" disabled={pending || page >= pages} onClick={() => navigate(page + 1)}><ChevronRight /></Button>
+        </div>
+      </div>
     </SectionCard>
   );
 }
@@ -752,7 +779,7 @@ export function AdminUserDetail({
       />
       <WalletSection userId={userId} wallet={initial.wallet} ledger={initial.ledger} />
       <ServicesSection userId={userId} services={initial.services} />
-      <OrdersSection orders={initial.orders} />
+      <OrdersSection orders={initial.orders} pagination={initial.ordersPagination} />
     </div>
   );
 }

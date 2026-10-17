@@ -15,7 +15,13 @@ import type {
 export const FRONTEND_MANIFEST_FILE = 'frontend/manifest.json';
 
 const MAX_FRONTEND_FILE_BYTES = 1024 * 1024;
-const MAX_FRONTEND_ENTRY_BYTES = 512 * 1024;
+/**
+ * Upper bound for a compiled frontend entry (`dist/index.js` / `admin.runtime.js`).
+ * Matches the per-file cap so a legitimately large bundle (e.g. the built-in
+ * `store` frontend at ~610 KB) still materializes as a revision instead of
+ * silently falling back to the flat, unversioned path.
+ */
+const MAX_FRONTEND_ENTRY_BYTES = 1024 * 1024;
 
 export class FrontendError extends Error {
   constructor(
@@ -57,8 +63,101 @@ export function assertNoConflictingFrontendPages(claims: readonly FrontendPageCl
 export function isAllowedFrontendFile(name: string): boolean {
   if (name === FRONTEND_MANIFEST_FILE) return true;
   if (!name.startsWith('frontend/dist/')) return false;
+  // Reject traversal / backslash segments outright: a name like
+  // `frontend/dist/../../evil.css` must never be treated as a valid asset.
+  if (name.includes('..') || name.includes('\\') || name.includes('\0')) return false;
   const ext = path.extname(name).toLowerCase();
-  return ext === '.js' || ext === '.map';
+  // `.css` is admitted so packages can ship their own pre-compiled styles
+  // (contract 05 §3.2 `styles[]`). The theme token channel (`theme.css`) is a
+  // separate, restricted path.
+  return ext === '.js' || ext === '.map' || ext === '.css';
+}
+
+/** The cascade layer every third-party `styles[]` rule must live inside. */
+export const FRONTEND_STYLE_LAYER = 'sp-plugin';
+
+/**
+ * Contract 05 §3.3/§3.4/§3.8 — validate a package's `styles[]` stylesheet.
+ *
+ * Enforced at upload/publish time so a malicious or careless package cannot
+ * leak into the host:
+ *
+ * - §3.8: no `@import` (the host never imports third-party CSS, and a package
+ *   must not pull host/cross-origin resources into the cascade).
+ * - §3.8: every `url(...)` must be same-origin (relative) or `data:` — no
+ *   `http(s):` / protocol-relative references (which would also be blocked by
+ *   CSP `img-src`/`font-src`).
+ * - §3.3: no bare global selectors (`html` / `body` / `:root`); those belong to
+ *   the host or the restricted token channel (`theme.css`).
+ * - §3.4: every top-level rule must be wrapped in `@layer <…>` so the host's
+ *   Tailwind `utilities`/`components` layers always win (unlayered third-party
+ *   rules would outrank every host layer).
+ *
+ * The check is intentionally conservative (regex + brace scanning), not a full
+ * CSS parser: it errs toward rejection, which the publisher can satisfy by
+ * emitting its CSS inside the agreed layer.
+ */
+export function validateScopedStylesheet(css: string, label = 'styles[]'): void {
+  const commentsStripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  if (/@import\b/i.test(commentsStripped)) {
+    throw new FrontendError(422, `${label} 不得使用 @import（契约 05 §3.8）`);
+  }
+  for (const match of commentsStripped.matchAll(/url\(\s*['"]?\s*([^'")]+)/gi)) {
+    const url = (match[1] ?? '').trim();
+    if (!url) continue;
+    if (/^(?:https?:)?\/\//i.test(url) || /^[a-z][a-z0-9+.-]*:/i.test(url)) {
+      if (!url.toLowerCase().startsWith('data:')) {
+        throw new FrontendError(422, `${label} 引用了跨源资源（契约 05 §3.8）：${url}`);
+      }
+    }
+  }
+  assertLayeredStylesheet(commentsStripped, label);
+  for (const match of commentsStripped.matchAll(/(^|[\s,{;>+~])(html|body|:root)(?=[\s,{:.#*[>~+]|$)/gi)) {
+    throw new FrontendError(
+      422,
+      `${label} 不得使用裸全局选择器 ${match[2]}（契约 05 §3.3；token 请用 theme.css）`,
+    );
+  }
+}
+
+/** Ensure all top-level rules live inside at least one `@layer` block (§3.4). */
+function assertLayeredStylesheet(css: string, label: string): void {
+  let depth = 0;
+  let prelude = '';
+  let inString: string | null = null;
+  for (let i = 0; i < css.length; i += 1) {
+    const char = css[i] ?? '';
+    if (inString) {
+      if (char === '\\') i += 1;
+      else if (char === inString) inString = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      inString = char;
+      continue;
+    }
+    if (char === '{') {
+      if (depth === 0 && !/^\s*@layer\b/i.test(prelude) && !/^\s*@charset\b/i.test(prelude)) {
+        throw new FrontendError(
+          422,
+          `${label} 存在未分层规则（契约 05 §3.4，须包在 @layer ${FRONTEND_STYLE_LAYER} 内）：${prelude.trim().slice(0, 60)}`,
+        );
+      }
+      depth += 1;
+      prelude = '';
+      continue;
+    }
+    if (char === '}') {
+      depth = Math.max(0, depth - 1);
+      prelude = '';
+      continue;
+    }
+    if (char === ';') {
+      prelude = '';
+      continue;
+    }
+    prelude += char;
+  }
 }
 
 /** Read and validate frontend/manifest.json plus all referenced dist files. */
@@ -192,8 +291,45 @@ export function validateFrontendFiles(files: Map<string, Uint8Array>): FrontendM
       throw new FrontendError(422, `前端文件缺失或无效：${file}`);
     }
     const data = files.get(file);
-    if (data && data.length > MAX_FRONTEND_FILE_BYTES) {
+    // Source maps are development artifacts: they are large (often > the entry
+    // itself) but never parsed or executed. They are still bounded overall by
+    // the upload size cap, so exempting them from the per-file runtime cap lets
+    // a legitimately large bundle (e.g. the built-in `store`) materialize as a
+    // revision instead of silently falling back to the flat path.
+    const isSourceMap = path.extname(file).toLowerCase() === '.map';
+    if (data && data.length > MAX_FRONTEND_FILE_BYTES && !isSourceMap) {
       throw new FrontendError(422, `前端文件过大：${file}`);
+    }
+  }
+  // Contract 05 §3.2: `styles[]` entries are pre-compiled CSS owned by the
+  // package. Each must be a `.css` under the allowed dist layout AND present in
+  // the `files` whitelist (so `files` remains the single source of shipped
+  // bytes).
+  const styleFiles = manifest.styles ?? [];
+  const seenStyles = new Set<string>();
+  for (const style of styleFiles) {
+    if (seenStyles.has(style)) {
+      throw new FrontendError(422, `重复的前端样式：${style}`);
+    }
+    seenStyles.add(style);
+    if (!style.startsWith('frontend/dist/') || path.extname(style).toLowerCase() !== '.css') {
+      throw new FrontendError(422, `前端样式必须是 frontend/dist/ 下的 .css：${style}`);
+    }
+    if (!manifest.files.includes(style)) {
+      throw new FrontendError(422, `前端样式未列入 files 白名单：${style}`);
+    }
+    if (!files.has(style)) {
+      throw new FrontendError(422, `缺少前端样式文件：${style}`);
+    }
+    const data = files.get(style);
+    if (data && data.length > MAX_FRONTEND_FILE_BYTES) {
+      throw new FrontendError(422, `前端样式文件过大：${style}`);
+    }
+    // Contract 05 §3.3/§3.4/§3.8: the CSS must be scoped, layered and
+    // same-origin. Reject uploads that would leak global rules or pull
+    // cross-origin resources.
+    if (data) {
+      validateScopedStylesheet(new TextDecoder().decode(data), style);
     }
   }
   if (manifest.settingsSchema) {

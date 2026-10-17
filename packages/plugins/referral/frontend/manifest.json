@@ -1,0 +1,194 @@
+{
+  "version": "0.1.0",
+  "revision": "fb15ce87b85b",
+  "entry": "frontend/dist/index.js",
+  "pages": [],
+  "layouts": [],
+  "finders": ["referral.mine", "referral.adminList", "referral.adminConfig"],
+  "adminRoutes": [
+    {
+      "path": "/referrals",
+      "component": "admin/referrals",
+      "permission": "store.admin",
+      "nav": {
+        "label": "推广管理",
+        "group": "商店插件"
+      },
+      "data": [
+        {
+          "finder": "referral.adminList",
+          "as": "referral"
+        },
+        {
+          "finder": "referral.adminConfig",
+          "as": "referralConfig"
+        }
+      ]
+    }
+  ],
+  "adminActions": [],
+  "actions": [
+    {
+      "id": "referral.create-code",
+      "method": "POST",
+      "path": "/referral/codes",
+      "permission": "store.referral",
+      "input": [
+        {
+          "name": "label",
+          "type": "string",
+          "maxLength": 40
+        },
+        {
+          "name": "rewardAmount",
+          "type": "integer",
+          "min": 0,
+          "max": 2000000000
+        }
+      ]
+    },
+    {
+      "id": "referral.toggle-code",
+      "method": "PATCH",
+      "path": "/referral/codes/:id",
+      "permission": "store.referral",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "required": true,
+          "maxLength": 16
+        }
+      ]
+    },
+    {
+      "id": "referral.save-config",
+      "method": "POST",
+      "path": "/store/admin/referrals/config",
+      "permission": "store.admin",
+      "input": [
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "required": true
+        },
+        {
+          "name": "trigger",
+          "type": "string",
+          "required": true,
+          "maxLength": 32
+        },
+        {
+          "name": "rewardAmount",
+          "type": "integer",
+          "required": true,
+          "min": 0,
+          "max": 2000000000
+        },
+        {
+          "name": "inviteeRewardAmount",
+          "type": "integer",
+          "required": true,
+          "min": 0,
+          "max": 2000000000
+        },
+        {
+          "name": "freezeDays",
+          "type": "integer",
+          "required": true,
+          "min": 0,
+          "max": 365
+        },
+        {
+          "name": "cookieDays",
+          "type": "integer",
+          "required": true,
+          "min": 1,
+          "max": 365
+        },
+        {
+          "name": "maxInvitesPerUser",
+          "type": "integer",
+          "required": true,
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "name": "sameIpLimit",
+          "type": "integer",
+          "required": true,
+          "min": 0,
+          "max": 1000
+        },
+        {
+          "name": "currency",
+          "type": "string",
+          "required": true,
+          "maxLength": 8
+        }
+      ]
+    },
+    {
+      "id": "referral.adjust",
+      "method": "POST",
+      "path": "/store/admin/referrals/adjustments",
+      "permission": "store.admin",
+      "input": [
+        {
+          "name": "email",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "amount",
+          "type": "integer",
+          "required": true,
+          "min": -2000000000,
+          "max": 2000000000
+        },
+        {
+          "name": "note",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        }
+      ]
+    }
+  ],
+  "accountRoutes": [
+    {
+      "path": "/referral",
+      "component": "account/referral",
+      "permission": "store.referral",
+      "nav": {
+        "label": "我的推广",
+        "group": "推广",
+        "order": 20
+      },
+      "data": [
+        {
+          "finder": "referral.mine",
+          "as": "referral"
+        }
+      ]
+    }
+  ],
+  "accountWidgets": [],
+  "files": [
+    "frontend/dist/admin.js",
+    "frontend/dist/admin.js.map",
+    "frontend/dist/admin.runtime.js",
+    "frontend/dist/admin.runtime.js.map",
+    "frontend/dist/index.js",
+    "frontend/dist/index.js.map",
+    "frontend/dist/route-progress.js",
+    "frontend/dist/route-progress.js.map"
+  ]
+}

@@ -134,5 +134,11 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # E-1: the DR path (backup -> verify-rejects-corruption -> restore ->
+      # row-count match) was never gated. It only needs the Postgres service
+      # above, so it runs on every PR instead of only in ad-hoc drills.
+      - name: Backup/restore drill (DR gate)
+        run: pnpm backup:drill
+
       - name: Build
         run: pnpm build

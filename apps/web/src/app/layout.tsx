@@ -7,6 +7,8 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { ThemeInitScript } from '@/components/theme-init-script';
 import { Toaster } from '@/components/ui/sonner';
 import ThemeStylesheet from '@/components/theme-stylesheet';
+import FrontendStylesheets from '@/components/frontend-stylesheets';
+import { FrontendAbiBridge } from '@/components/frontend-abi-bridge';
 import { I18nProvider } from '@/i18n/provider';
 import { getLocale } from '@/i18n/locale';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
@@ -63,7 +65,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`h-full antialiased has-[.clarity-surface]:bg-[var(--clarity-background)] has-[.clarity-surface]:[color-scheme:dark]! [@media(pointer:fine)]:has-[.clarity-surface]:[scrollbar-width:none] [@media(pointer:fine)]:has-[.clarity-surface]:[&::-webkit-scrollbar]:hidden ${geistSans.variable} ${geistMono.variable}`}
+      className={`h-full overflow-y-scroll antialiased [scrollbar-gutter:stable_both-edges] has-[.clarity-surface]:bg-[var(--clarity-background)] has-[.clarity-surface]:[color-scheme:dark]! [@media(pointer:fine)]:has-[.clarity-surface]:[scrollbar-width:none] [@media(pointer:fine)]:has-[.clarity-surface]:[&::-webkit-scrollbar]:hidden ${geistSans.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >
       <body
@@ -73,6 +75,8 @@ export default async function RootLayout({
         <ThemeInitScript nonce={nonce} script={themeBootstrapScript} />
         <ThemeInitScript nonce={nonce} script={getClarityMotionBootstrapScript()} />
         <ThemeStylesheet />
+        <FrontendStylesheets />
+        <FrontendAbiBridge />
         <I18nProvider locale={locale}>
           <ThemeProvider>
             {children}

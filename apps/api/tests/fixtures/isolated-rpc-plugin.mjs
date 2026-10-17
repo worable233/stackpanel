@@ -77,6 +77,25 @@ export default {
       },
     },
     {
+      // Kernel storage capability: the worker must receive a *remote* provider
+      // proxy (methods re-issued as `storage.invoke`), never the kernel driver.
+      method: 'GET',
+      path: '/storage',
+      handler: async () => {
+        const provider = await pluginContext.storage.backend({
+          driver: 'local',
+          root: '/tmp/isolated-storage',
+        });
+        const target = await provider.beginPut({
+          key: 'media/2026/01/a/original.png',
+          size: 3,
+          contentType: 'image/png',
+        });
+        const stat = await provider.stat('media/2026/01/a/original.png');
+        return { id: provider.id, byteMode: provider.byteMode, target, stat };
+      },
+    },
+    {
       // Raw echo: streams the request body back, reporting its byte length and
       // the value of the `x-test` header, so the host bridge is fully exercised.
       method: 'POST',

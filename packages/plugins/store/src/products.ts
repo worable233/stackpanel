@@ -48,6 +48,7 @@ export interface StoreProductMutation {
   price: number;
   currency: string;
   stock: number;
+  cost?: number | null;
   status?: string;
   description?: string | null;
   metadata?: unknown;
@@ -131,7 +132,7 @@ export async function createProductForSync(
     description: input.description ?? null,
     price: input.price,
     currency: input.currency.toUpperCase(),
-    cost: null,
+    cost: input.cost ?? null,
     originalPrice: null,
     discount: null,
     stock: input.stock,
@@ -158,6 +159,7 @@ export async function updateProductForSync(
     ...(patch.description !== undefined ? { description: patch.description } : {}),
     ...(patch.price !== undefined ? { price: patch.price } : {}),
     ...(patch.stock !== undefined ? { stock: patch.stock } : {}),
+    ...(patch.cost !== undefined ? { cost: patch.cost ?? null } : {}),
     ...(patch.currency !== undefined ? { currency: patch.currency.toUpperCase() } : {}),
     ...(patch.status !== undefined ? { status: patch.status } : {}),
     ...(patch.metadata !== undefined ? { metadata: patch.metadata ?? null } : {}),
@@ -257,8 +259,11 @@ export async function updateProduct(req: HttpRequest): Promise<unknown> {
 }
 
 /**
- * 商品与上游的关联建立/解除：把 providerId/providerProductId 的变化同步给对应
- * 上游插件的 associate/dissociate 钩子（如魔方用它建 ZJMFProductMapping）。
+ * 商品与上游的关联建立/解除。
+ *
+ * 关联信息全部落在商品自身：`providerId` + `providerProductId` 定位「哪个上游插件的
+ * 哪个商品」，实例（账号）标识与上游源价写入 `metadata.upstream`，履约层据此定位。
+ * store 不持有任何上游映射表，对具体上游零感知；这里只调用上游插件的可选副作用钩子。
  */
 async function syncUpstreamAssociation(
   productId: string,
@@ -268,18 +273,57 @@ async function syncUpstreamAssociation(
   const sources = context().getExtensions<UpstreamProductSource>(
     EXTENSION_POINTS.upstreamProductSource,
   );
+  const current = await getProductRecord(productId);
+  if (!current) return;
+
   if (providerId && providerProductId) {
     const source = sources.find((candidate) => candidate.id === providerId);
-    if (source?.associate) {
-      const item = await source.get(providerProductId).catch(() => null);
-      if (item) await source.associate({ productId, item });
-    }
+    if (!source) return;
+    const item = await source.get(providerProductId).catch(() => null);
+    // 上游暂时取不到该商品时不改动已有绑定，避免网络抖动误清关联。
+    if (!item) return;
+    await mergeUpstreamBinding(current, {
+      providerId: source.id,
+      sourceRef: item.sourceRef ?? null,
+      productId: item.id,
+      sourcePrice: item.price ?? null,
+      // 首次绑定且尚无成本时以源价作为成本；此后保留人工值（同步只提示差异）。
+      cost: current.cost === null && item.price != null ? item.price : null,
+    });
+    await source.associate?.({ productId, item }).catch(() => undefined);
     return;
   }
-  // 解除关联：通知所有上游（它们自行判断是否处理过该商品）。
+
+  // 解除关联：清掉商品上的上游标记，并通知所有上游（它们自行判断是否处理过该商品）。
+  await mergeUpstreamBinding(current, null);
   for (const source of sources) {
     await source.dissociate?.(productId).catch(() => undefined);
   }
+}
+
+/** 合并/移除商品 metadata 中的 `upstream` 标记（保留其余 metadata 键）。 */
+async function mergeUpstreamBinding(
+  record: ProductRecord,
+  binding: (Record<string, unknown> & { cost: number | null }) | null,
+): Promise<void> {
+  const base =
+    record.metadata !== null &&
+    typeof record.metadata === 'object' &&
+    !Array.isArray(record.metadata)
+      ? { ...(record.metadata as Record<string, unknown>) }
+      : {};
+  if (binding) {
+    const { cost, ...upstream } = binding;
+    base.upstream = upstream;
+    await replaceProduct(record.id, {
+      ...toProductData(record),
+      metadata: base,
+      ...(cost !== null ? { cost } : {}),
+    });
+    return;
+  }
+  delete base.upstream;
+  await replaceProduct(record.id, { ...toProductData(record), metadata: base });
 }
 
 /**

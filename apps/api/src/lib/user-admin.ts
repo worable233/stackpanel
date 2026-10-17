@@ -10,8 +10,8 @@
  * Failures throw {@link PluginError} with a stable HTTP status; the kernel
  * error handler renders the RFC 7807 problem (ADR-0012).
  */
-import type { PrismaClient } from '@stackpanel/db';
-import { isCommerceError, PluginError } from '@stackpanel/sdk';
+import { Prisma, type PrismaClient } from '@stackpanel/db';
+import { isCommerceError, isPluginError, PluginError } from '@stackpanel/sdk';
 import type {
   CommerceOperations,
   CommerceOrder,
@@ -74,6 +74,14 @@ export interface ListUsersInput {
   status?: 'ACTIVE' | 'DISABLED' | undefined;
   /** Filter to users that belong to this permission group. */
   groupId?: string | undefined;
+  sort?:
+    | 'createdAt_desc'
+    | 'createdAt_asc'
+    | 'balance_desc'
+    | 'balance_asc'
+    | 'lastLoginAt_desc'
+    | 'lastLoginAt_asc'
+    | undefined;
 }
 
 export interface CreateUserInput {
@@ -199,26 +207,89 @@ export class UserAdminService {
   }
 
   async listUsers(input: ListUsersInput) {
-    const { page, pageSize, q, status, groupId } = input;
+    const { page, pageSize, q, status, groupId, sort = 'createdAt_desc' } = input;
     const where = {
       ...(q ? { email: { contains: q.toLowerCase() } } : {}),
       ...(status ? { status } : {}),
       ...(groupId ? { groups: { some: { groupId } } } : {}),
     };
-    const [users, total] = await Promise.all([
-      this.db.user.findMany({
+    const select = {
+      id: true,
+      email: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      lastLoginAt: true,
+      groups: { include: { group: true } },
+    } as const;
+    const total = await this.db.user.count({ where });
+    let users;
+    if (sort === 'balance_desc' || sort === 'balance_asc') {
+      // Sort the complete result before pagination, including users without a wallet.
+      const filters = Prisma.sql`
+        (${q || null}::text IS NULL OR strpos(u.email, ${q?.toLowerCase() || null}::text) > 0)
+        AND (${status || null}::text IS NULL OR u.status::text = ${status || null}::text)
+        AND (${groupId || null}::text IS NULL OR EXISTS (
+          SELECT 1 FROM user_groups g WHERE g."userId" = u.id AND g."groupId" = ${groupId || null}::text
+        ))`;
+      const direction = sort === 'balance_asc' ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+      const ids = await this.db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT u.id FROM users u
+        LEFT JOIN wallet_accounts w ON w."userId" = u.id AND w.currency = 'CNY'
+        WHERE ${filters}
+        ORDER BY COALESCE(w.balance, 0) ${direction}, u.id ASC
+        LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+      `);
+      const pageIds = ids.map((user) => user.id);
+      const rows = await this.db.user.findMany({
+        where: { id: { in: pageIds } },
+        select,
+      });
+      const rowById = new Map(rows.map((user) => [user.id, user]));
+      users = pageIds
+        .map((id) => rowById.get(id))
+        .filter((user): user is NonNullable<typeof user> => Boolean(user));
+    } else {
+      const [field, direction] = sort.split('_') as ['createdAt' | 'lastLoginAt', 'asc' | 'desc'];
+      users = await this.db.user.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
-        include: { groups: { include: { group: true } } },
-      }),
-      this.db.user.count({ where }),
-    ]);
+        orderBy: [
+          field === 'lastLoginAt'
+            ? { lastLoginAt: { sort: direction, nulls: 'last' } }
+            : { createdAt: direction },
+          { id: 'asc' },
+        ],
+        select,
+      });
+    }
+    const userIds = users.map((user) => user.id);
+    const accounts = await this.db.walletAccount.findMany({
+      where: { userId: { in: userIds }, currency: 'CNY' },
+      select: { userId: true, balance: true, currency: true },
+    });
+    const accountByUser = new Map(accounts.map((account) => [account.userId, account]));
+    let serviceCounts: Record<string, number> = {};
+    if (this.commerce?.countServicesByUsers && userIds.length > 0) {
+      try {
+        serviceCounts = await this.commerce.countServicesByUsers(userIds);
+      } catch {
+        // Missing or unavailable commerce statistics must not block user administration.
+      }
+    }
     return {
       users: users.map((user) => ({
-        ...toPublicUser(user),
+        id: user.id,
+        email: user.email,
+        status: user.status,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        lastLoginAt: user.lastLoginAt,
         groups: user.groups.map((g) => ({ id: g.group.id, name: g.group.name })),
+        balance: accountByUser.get(user.id)?.balance ?? 0,
+        balanceCurrency: accountByUser.get(user.id)?.currency ?? 'CNY',
+        serviceCount: serviceCounts[user.id] ?? null,
       })),
       total,
       page,
@@ -226,7 +297,7 @@ export class UserAdminService {
     };
   }
 
-  async getUserDetail(id: string) {
+  async getUserDetail(id: string, orderPage = 1, orderPageSize = 20) {
     const user = await this.db.user.findUnique({
       where: { id },
       include: { groups: { include: { group: true } } },
@@ -237,9 +308,14 @@ export class UserAdminService {
       this.deps.wallet.listLedger(id, 20),
     ]);
     const services: CommerceService[] = this.commerce ? await this.commerce.listServices(id) : [];
-    const orders: CommerceOrder[] = this.commerce
-      ? (await this.commerce.listOrders(id, 1, 20)).items
-      : [];
+    // The detail page paginates orders server-side; a fixed first page would
+    // silently hide everything older than 20 records from admins.
+    const page = Math.max(1, Math.trunc(orderPage));
+    const pageSize = Math.min(100, Math.max(1, Math.trunc(orderPageSize)));
+    const orderPageResult = this.commerce
+      ? await this.commerce.listOrders(id, page, pageSize)
+      : { items: [] as CommerceOrder[], total: 0 };
+    const orders: CommerceOrder[] = orderPageResult.items;
     return {
       user: {
         ...toPublicUser(user),
@@ -247,6 +323,7 @@ export class UserAdminService {
       },
       wallet: wallet ? { balance: wallet.balance, currency: wallet.currency } : null,
       services: services.map(toAdminService),
+      ordersPagination: { page, pageSize, total: orderPageResult.total },
       orders: orders.map((order) => ({
         id: order.id,
         status: order.status,
@@ -531,7 +608,28 @@ export class UserAdminService {
     }
     const services = [];
     for (const source of sources) {
-      const items = await source.list({ limit: 100 }).catch(() => []);
+      let items: UpstreamServiceItem[];
+      try {
+        items = await source.list({ limit: 100 });
+      } catch (error) {
+        // Never disguise an upstream failure as an empty list: the admin needs
+        // the actionable reason (credentials, network, disabled upstream).
+        if (isPluginError(error)) throw error;
+        const status =
+          typeof error === 'object' && error && 'status' in error
+            ? Number((error as { status: unknown }).status)
+            : 502;
+        const code =
+          typeof error === 'object' && error && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : 'upstream.list_failed';
+        const detail = error instanceof Error ? error.message : '上游服务列表获取失败';
+        throw new PluginError(
+          code,
+          Number.isInteger(status) && status >= 400 && status <= 599 ? status : 502,
+          detail,
+        );
+      }
       const bound = new Map(
         (boundByProvider.get(source.id) ?? [])
           .filter((service) => service.providerServiceId)

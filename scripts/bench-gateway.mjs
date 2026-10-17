@@ -322,19 +322,24 @@ async function main() {
     console.log('');
     console.log('  容量曲线（并发 → 吞吐 / 附加延迟 / 内存）');
     console.log('  ────────────────────────────────────────────────────────────────');
-    console.log(`  ${'并发'.padStart(6)} ${'请求'.padStart(6)} ${'QPS'.padStart(9)} ${'附加p50'.padStart(9)} ${'附加p95'.padStart(9)} ${'总p95'.padStart(9)} ${'RSS'.padStart(8)} ${'错误'.padStart(6)} ${'拒绝'.padStart(6)}`);
+    console.log(`  ${'并发'.padStart(6)} ${'请求'.padStart(6)} ${'QPS'.padStart(9)} ${'附加p50'.padStart(9)} ${'附加p95'.padStart(9)} ${'总p95'.padStart(9)} ${'RSS'.padStart(8)} ${'错误'.padStart(6)} ${'拒绝'.padStart(6)} ${'传输'.padStart(6)}`);
     for (const row of report.sweep) {
       console.log(
         `  ${String(row.concurrency).padStart(6)} ${String(row.n).padStart(6)} ${String(row.qps).padStart(9)} ` +
           `${String(row.addedP50).padStart(9)} ${String(row.addedP95).padStart(9)} ${String(row.totalP95).padStart(9)} ` +
-          `${String(row.peakRssMb + ' MB').padStart(8)} ${String(row.errors).padStart(6)} ${String(row.capped ?? 0).padStart(6)}`,
+          `${String(row.peakRssMb + ' MB').padStart(8)} ${String(row.errors).padStart(6)} ${String(row.capped ?? 0).padStart(6)} ${String(row.transport ?? 0).padStart(6)}`,
       );
     }
   }
   // --saturate 故意把账号池压小，此时 429/502 是预期拒绝，延迟也被排队拉长；
   // 该模式只用来确认超限路径会**明确拒绝**（而不是无界排队），不套用吞吐预算线。
   if (SATURATE > 0) {
-    console.log(`  账号满载模式（maxConcurrency=${SATURATE}）：只验证超限被明确拒绝，不套用延迟与错误预算线。`);
+    console.log(
+      `  账号满载模式（maxConcurrency=${SATURATE}）：只验证超限被明确拒绝，不套用延迟与错误预算线。`,
+    );
+    console.log(
+      `  非流式拒绝 ${report.saturation.rejected} 条（429/502），流式拒绝 ${report.stream.capped} 条（429）；均为明确拒绝而非无界排队。`,
+    );
   } else {
     if (plain.errors > 0) bad(`非流式请求出现 ${plain.errors} 个错误`);
     if (plain.addedP95 > 250) bad(`非流式附加延迟 p95 ${plain.addedP95} ms 超过 250 ms 预算线`);
@@ -448,12 +453,22 @@ const sampleRss = () => { peakRss = Math.max(peakRss, process.memoryUsage().rss)
 
 async function callOnce(streaming) {
   const started = Date.now();
-  const res = await fetch(origin + '/llm-gateway/v1/chat/completions', {
-    method: 'POST',
-    headers: { authorization: 'Bearer ' + apiKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'bench-model', stream: !!streaming, messages: [{ role: 'user', content: 'hi' }] }),
-    signal: AbortSignal.timeout(Number(process.env.BENCH_REQUEST_TIMEOUT_MS ?? 60_000)),
-  });
+  let res;
+  try {
+    res = await fetch(origin + '/llm-gateway/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'bench-model', stream: !!streaming, messages: [{ role: 'user', content: 'hi' }] }),
+      signal: AbortSignal.timeout(Number(process.env.BENCH_REQUEST_TIMEOUT_MS ?? 60_000)),
+    });
+  } catch (error) {
+    // Client-side transport failure (e.g. ECONNRESET when the load generator
+    // exhausts its own connection budget at very high concurrency). Record it
+    // as a non-200 result instead of aborting the whole run, so the sweep can
+    // still report how the gateway behaves as load rises.
+    const cause = error && error.cause ? (error.cause.code ?? error.cause.message ?? '') : '';
+    return { status: 0, total: Date.now() - started, ttft: null, upstreamHeader: null, detail: 'transport: ' + (cause || String(error)) };
+  }
   let ttft = null;
   let detail = '';
   if (streaming) {
@@ -525,11 +540,15 @@ try {
     // 全部满载，pickAccount 返回 null）都是预期的准入拒绝而非错误。
     // （注意：本段位于 String.raw 模板内，不能出现反引号。）
     const capped = SATURATE > 0 ? runs.filter((r) => r.status === 429 || r.status === 502).length : 0;
+    // Transport failures are the load generator's own connection budget, not
+    // the gateway's; report them separately so the error column stays honest.
+    const transport = runs.filter((r) => r.status === 0).length;
     sweep.push({
       concurrency: c,
       n,
       ok: ok.length,
-      errors: runs.length - ok.length - capped,
+      errors: runs.length - ok.length - capped - transport,
+      transport,
       capped,
       qps: Math.round((ok.length / elapsed) * 1000 * 10) / 10,
       addedP50: pct(addedSweep, 50),
@@ -554,7 +573,9 @@ try {
     },
     stream: {
       count: streamOk.length,
-      errors: streamRuns.length - streamOk.length,
+      errors: SATURATE > 0
+        ? streamRuns.filter((r) => r.status !== 200 && r.status !== 429 && r.status !== 502).length
+        : streamRuns.length - streamOk.length,
       ttftP50: pct(ttfts, 50), ttftP95: pct(ttfts, 95),
       totalP50: pct(streamTotals, 50), totalP95: pct(streamTotals, 95),
       peakConcurrent: CONCURRENCY, capped: streamRuns.filter((r) => r.status === 429).length,
@@ -572,6 +593,9 @@ try {
   });
 } catch (benchError) {
   console.error('[bench] ERROR ' + (benchError && benchError.stack ? benchError.stack : String(benchError)));
+  if (benchError && benchError.cause) {
+    console.error('[bench] CAUSE ' + (benchError.cause.code ?? '') + ' ' + (benchError.cause.message ?? String(benchError.cause)));
+  }
   process.exit(9);
 } finally {
   try {

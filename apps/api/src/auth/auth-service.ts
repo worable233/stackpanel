@@ -99,6 +99,7 @@ export class KernelAuthService implements AuthService {
             email,
             passwordHash,
             status: 'ACTIVE',
+            emailVerifiedAt: input.emailVerified ? new Date() : null,
             groups: {
               create: { groupId: isFirst ? 'group_admin' : 'group_user' },
             },
@@ -363,6 +364,7 @@ export class KernelAuthService implements AuthService {
     createdAt?: Date;
     updatedAt?: Date;
     lastLoginAt?: Date | null;
+    emailVerifiedAt?: Date | null;
   }): Promise<AuthUser> {
     const isAdmin =
       (await this.options.db.userGroup.count({
@@ -376,6 +378,7 @@ export class KernelAuthService implements AuthService {
       createdAt: (user.createdAt ?? new Date()).toISOString(),
       updatedAt: (user.updatedAt ?? new Date()).toISOString(),
       lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
+      emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null,
     };
   }
 

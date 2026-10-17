@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# spike (runtime-frontend-loading Stage 1) — throwaway harness artifacts
+/.next-spike*/
+/.spike-artifacts/
+
 # production
 /build
 

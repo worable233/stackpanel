@@ -1,4 +1,5 @@
 'use client';
+import { SectionTitle } from '@stackpanel/ui';
 
 import { useTransition } from 'react';
 import Link from 'next/link';
@@ -65,7 +66,7 @@ export function PluginManager({ plugins }: { plugins: AdminPlugin[] }) {
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="text-lg font-semibold">{t('admin.plugins.installed')}</h2>
+        <SectionTitle>{t('admin.plugins.installed')}</SectionTitle>
         <ul className="mt-3 space-y-2">
           {plugins.map((plugin) => (
             <li

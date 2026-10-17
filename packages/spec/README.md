@@ -25,6 +25,19 @@ StackPanel 协议契约的**单一来源**。零运行时依赖，供内核、SD
 - `normalizeSpec` / `buildSnapshot` / `snapshotFromOperations` / `diffContracts`
 - `scopeOperations` / `hashOperations` / `toOpenApiPath`
 
+### 分发与自动升级（ADR-0023 提议）
+
+「发布端构建、实例自动发现/下载/校验/安装/恢复」全链路的机器可读契约。内核、独立 updater、发布脚本与 CI 共用，避免版本声明、摘要字段、兼容范围三处漂移。除 `node:crypto` 外零运行时依赖。
+
+- 清单：`PackageManifest` / `KernelManifest` / `validatePackageManifest` / `validateKernelManifest`（五维独立版本：产品 / 契约 API / 前端 ABI / 升级协议 / schema）。
+- 目录：`CatalogSnapshot` / `CatalogSignature` / `catalogReleaseTag` / `isNewerSequence`（拒绝回放）/ `isCatalogExpired`。
+- 签名原语（发布端与实例端**共用**）：`stableStringify` / `canonicalizeCatalogSnapshot` / `catalogDigest`；`signCatalog` / `verifyCatalogSignatureBytes`；`packageFileDigests` / `packageSignaturePayload` / `signPackageFiles` / `parsePackageSignatureFile` / `verifyPackageSignatureBound`。
+- revision：`computeRevision` / `buildRevisionManifest` / `normalizeRevisionPath`（规范化清单 → 完整 SHA-256）。
+- 升级协议：`UpdatePhase` / `canTransition` / `assertTransition` / `UpdateTask` / `DeploymentPlan` / `BlockReason`。
+- 信任链：`Keyring` / `TrustedKey` / `catalogKeyAllowed` / `packageKeyAllowed` / `applyKeyRotation` / `applyRootRecovery`。
+- 安装事务：`INSTALL_TRANSACTION_STEPS` / `FAILURE_FALLBACKS` / `PreservedPackageState` / `collectGcCandidates`。
+- 兼容性求解：`checkPackageCompatibility` / `addedPermissions` / `selectTargetVersion` / `resolveDeployment`。
+
 ## 使用
 
 ```ts

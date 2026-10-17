@@ -29,6 +29,16 @@ const listQuerySchema = z.object({
   q: z.string().trim().max(64).optional(),
   status: z.enum(['ACTIVE', 'DISABLED']).optional(),
   groupId: z.string().min(1).optional(),
+  sort: z
+    .enum([
+      'createdAt_desc',
+      'createdAt_asc',
+      'balance_desc',
+      'balance_asc',
+      'lastLoginAt_desc',
+      'lastLoginAt_asc',
+    ])
+    .default('createdAt_desc'),
 });
 
 const createUserSchema = z.object({
@@ -86,6 +96,17 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
             q: { type: 'string' },
             status: { type: 'string' },
             groupId: { type: 'string' },
+            sort: {
+              type: 'string',
+              enum: [
+                'createdAt_desc',
+                'createdAt_asc',
+                'balance_desc',
+                'balance_asc',
+                'lastLoginAt_desc',
+                'lastLoginAt_asc',
+              ],
+            },
           },
         },
         response: {

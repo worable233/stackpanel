@@ -45,13 +45,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // Fallback shell if the API is unreachable.
   }
 
+  const kernelGroups: Record<string, string> = {
+    '/admin/users': '用户与权限',
+    '/admin/rbac': '用户与权限',
+    '/admin/settings': '站点',
+    '/admin/themes': '站点',
+    '/admin/notifications': '站点',
+    '/admin/plugins': '系统',
+    '/admin/market': '系统',
+    '/admin/audit': '系统',
+    '/admin/developer': '开发者',
+  };
   const navigationItems: BackendNavigationItem[] = [
-    ...nav,
-    ...pluginMenus.map((item) => ({
-      label: item.label,
-      href: item.href,
-      group: 'plugins' as const,
-    })),
+    ...nav.map((item) => ({ ...item, group: kernelGroups[item.href] })),
+    ...pluginMenus.map((item) => ({ ...item, group: item.group ?? item.pluginId })),
   ];
 
   const brand = await getApiClient()

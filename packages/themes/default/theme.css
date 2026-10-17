@@ -4,72 +4,72 @@
  * Tokens follow the shadcn/ui CSS-variable convention so themes can drive both
  * user and admin surfaces. Light mode = :root, dark mode = .dark.
  *
- * Visual direction: Clarity blue accent, neutral surfaces, glass layers and hairline borders.
+ * Visual direction: Solaris glass surfaces with compact shadcn-admin controls.
  * The backend follows the same palette while retaining light/dark preferences.
  */
 
 :root {
-  --background: #fafafa;
-  --foreground: #171717;
-  --card: #ffffff;
-  --card-foreground: #171717;
-  --popover: #ffffff;
-  --popover-foreground: #171717;
-  --primary: #0065fc;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --accent: #e8f4ff;
-  --accent-foreground: #0079d6;
-  --destructive: #ef4444;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.042 264.695);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.129 0.042 264.695);
+  --primary: oklch(0.208 0.042 265.755);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
+  --destructive: oklch(0.577 0.245 27.325);
   --success: #16a34a;
   --success-foreground: #ffffff;
   --warning: #f59e0b;
   --warning-foreground: #1f2937;
-  --border: #e5e5e5;
-  --input: #e2e8f0;
-  --ring: #0065fc;
-  --radius: 0.75rem;
-  --sidebar: #f8fafc;
-  --sidebar-foreground: #171717;
-  --sidebar-primary: #0065fc;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e8f4ff;
-  --sidebar-accent-foreground: #0079d6;
-  --sidebar-border: #e5e5e5;
-  --sidebar-ring: #0065fc;
-  --chart-1: #0065fc;
-  --chart-2: #38bdf8;
-  --chart-3: #6366f1;
-  --chart-4: #8b5cf6;
-  --chart-5: #f59e0b;
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.704 0.04 256.788);
+  --radius: 0.625rem;
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
 }
 
 .dark {
-  --background: #090909;
-  --foreground: #f5f5f5;
-  --card: #111113;
-  --card-foreground: #f5f5f5;
-  --popover: #151518;
-  --popover-foreground: #f5f5f5;
-  --primary: #0065fc;
-  --primary-foreground: #ffffff;
-  --secondary: #202023;
-  --secondary-foreground: #f5f5f5;
-  --muted: #202023;
-  --muted-foreground: #999999;
-  --accent: #18243a;
-  --accent-foreground: #a9caff;
-  --destructive: #f87171;
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --card: oklch(0.14 0.04 259.21);
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --popover: oklch(0.208 0.042 265.755);
+  --popover-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.929 0.013 255.508);
+  --primary-foreground: oklch(0.208 0.042 265.755);
+  --secondary: oklch(0.279 0.041 260.031);
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.279 0.041 260.031);
+  --muted-foreground: oklch(0.704 0.04 256.788);
+  --accent: oklch(0.279 0.041 260.031);
+  --accent-foreground: oklch(0.984 0.003 247.858);
+  --destructive: oklch(0.704 0.191 22.216);
   --success: #34d399;
   --success-foreground: #052e23;
   --warning: #fbbf24;
   --warning-foreground: #1f2937;
-  --border: #262626;
-  --input: #333336;
-  --ring: #6ea8ff;
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.551 0.027 264.364);
   --sidebar: #111113;
   --sidebar-foreground: #f5f5f5;
   --sidebar-primary: #0065fc;
@@ -78,11 +78,11 @@
   --sidebar-accent-foreground: #f5f5f5;
   --sidebar-border: #262626;
   --sidebar-ring: #6ea8ff;
-  --chart-1: #6ea8ff;
-  --chart-2: #67c9ff;
-  --chart-3: #818cf8;
-  --chart-4: #a78bfa;
-  --chart-5: #fbbf24;
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
 }
 
 .clarity-route-progress {
@@ -93,6 +93,169 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity 180ms ease;
+}
+
+/* Solaris-inspired admin surfaces: layered glass over a quiet blue-black field. */
+:root:has(.backend-shell) {
+  --background: #f5f7fb;
+  --card: #ffffff;
+  --foreground: #172033;
+  --muted-foreground: #64748b;
+  --primary: #0065fc;
+  --primary-foreground: #ffffff;
+  --ring: #6ea8ff;
+  --radius: 0.875rem;
+  --backend-panel-radius: 1rem;
+  --backend-panel-background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.94),
+    rgba(246, 249, 255, 0.82)
+  );
+  --backend-panel-shadow:
+    0 10px 30px rgba(71, 91, 125, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --border: #d7e0ed;
+  --input: #d7e0ed;
+}
+
+.dark:has(.backend-shell) {
+  --backend-panel-background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--card) 94%, transparent),
+    color-mix(in oklab, var(--card) 64%, transparent)
+  );
+  --backend-panel-shadow:
+    0 4px 24px color-mix(in oklab, var(--background) 18%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--foreground) 4%, transparent);
+  --background: #090909;
+  --foreground: #f5f5f5;
+  --card: #141416;
+  --card-foreground: #f5f5f5;
+  --popover: #18181c;
+  --popover-foreground: #f5f5f5;
+  --muted: #202024;
+  --muted-foreground: #9999a3;
+  --secondary: #202024;
+  --secondary-foreground: #ededf0;
+  --accent: #222229;
+  --accent-foreground: #f5f5f5;
+  --border: #ffffff12;
+  --input: #ffffff18;
+}
+
+.backend-shell {
+  background-image: radial-gradient(
+    ellipse 1000px 650px at 18% -80px,
+    color-mix(in oklab, var(--primary) 9%, transparent),
+    transparent 75%
+  );
+}
+
+:root:not(.dark):has(.backend-shell) .backend-shell {
+  background-image:
+    radial-gradient(ellipse 780px 420px at 12% -100px, rgba(0, 101, 252, 0.12), transparent 72%),
+    linear-gradient(180deg, #f8faff 0%, var(--background) 48%);
+}
+
+.backend-shell__glow {
+  background: radial-gradient(
+    ellipse 700px 300px at 72% -20%,
+    color-mix(in oklab, var(--primary) 15%, transparent),
+    transparent 80%
+  );
+}
+
+.backend-shell__header {
+  box-shadow: none;
+}
+
+:root:not(.dark):has(.backend-shell) .backend-shell__header {
+  background-color: rgba(255, 255, 255, 0.72);
+}
+
+/* Plugins may render plain semantic panels instead of the host Card.
+ * Match only bordered card containers, never buttons, fields or badges. */
+.backend-shell :is([data-slot='card'], :where(div, section, aside, ul, article).border.bg-card) {
+  background: var(--backend-panel-background);
+  border-color: var(--border);
+  box-shadow: var(--backend-panel-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.backend-shell
+  :is([data-slot='card'], :where(div, section, aside, ul, article).border.bg-card):not(
+    .rounded-none
+  ) {
+  border-radius: var(--backend-panel-radius);
+}
+
+.backend-shell .backend-widget {
+  border: 1px solid var(--border);
+  border-radius: var(--backend-panel-radius);
+  background: var(--backend-panel-background);
+  box-shadow: var(--backend-panel-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.backend-shell .backend-widget:hover {
+  border-color: color-mix(in oklab, var(--primary) 40%, var(--border));
+  box-shadow:
+    0 12px 34px color-mix(in oklab, var(--primary) 10%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+
+.backend-shell .backend-widget:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+/* Joined cards retain their shared outer frame, without separate shadows. */
+.backend-shell [data-slot='card'].rounded-none {
+  box-shadow: none;
+}
+
+.backend-dashboard [data-spotlight] {
+  border-radius: var(--backend-panel-radius);
+  border-color: var(--border);
+  box-shadow: var(--backend-panel-shadow);
+}
+
+.backend-dashboard [data-spotlight] [data-slot='card'] {
+  border: 0;
+  box-shadow: none;
+}
+
+.backend-dashboard .backend-dashboard__metric {
+  background-image: radial-gradient(
+    ellipse at 100% 0%,
+    color-mix(in oklab, var(--primary) 8%, var(--card)),
+    color-mix(in oklab, var(--card) 78%, transparent) 65%
+  );
+}
+
+.backend-shell [data-slot='card'][data-interactive='true'] {
+  transition:
+    border-color 260ms ease,
+    box-shadow 260ms ease;
+}
+
+.backend-shell [data-slot='card'][data-interactive='true']:hover {
+  border-color: color-mix(in oklab, var(--primary) 42%, var(--border));
+  box-shadow:
+    0 8px 28px color-mix(in oklab, var(--primary) 8%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backend-shell [data-slot='card'][data-interactive='true'] {
+    transition: none;
+  }
+}
+
+.backend-shell input,
+.backend-shell textarea,
+.backend-shell select {
+  background-color: color-mix(in oklab, var(--background) 46%, transparent);
+  border-color: color-mix(in oklab, var(--border) 90%, transparent);
 }
 
 .clarity-route-progress[data-visible='true'] {
@@ -115,7 +278,9 @@
   height: 100%;
   opacity: 1;
   transform: rotate(3deg) translateY(-4px);
-  box-shadow: 0 0 10px var(--clarity-primary, var(--primary)), 0 0 5px var(--clarity-primary, var(--primary));
+  box-shadow:
+    0 0 10px var(--clarity-primary, var(--primary)),
+    0 0 5px var(--clarity-primary, var(--primary));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -147,9 +312,16 @@
 
 /* Transparent glass artwork floats independently of its placement transform. */
 @keyframes clarity-glass-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .clarity-glass-float { animation: clarity-glass-float 7s ease-in-out infinite; }
+  .clarity-glass-float {
+    animation: clarity-glass-float 7s ease-in-out infinite;
+  }
 }

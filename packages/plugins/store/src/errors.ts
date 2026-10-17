@@ -80,6 +80,20 @@ export function stockItems(order: {
   previousExpiresAt?: string | null;
   /** 续费前服务状态，供全额退款回滚。 */
   previousState?: string;
+  /** 变更订单行（升配/降配/换商品）：指向被变更的服务实例 id。 */
+  changeServiceId?: string;
+  /** 变更类型：`package`（升配降配）| `product`（换商品）。 */
+  changeType?: string;
+  /** 变更后的目标商品 id（换商品用；升配降配时可空）。 */
+  changeTargetProductId?: string;
+  /** 变更后的目标配置选择（JSON 对象）。 */
+  changeSelection?: unknown;
+  /** 变更是否已应用（幂等标记）。 */
+  changeApplied?: boolean;
+  /** 变更前的商品 id，供全额退款回滚。 */
+  previousProductId?: string;
+  /** 变更前的配置选择，供全额退款回滚。 */
+  previousSelection?: unknown;
 }> {
   const value = order.items as {
     items?: Array<{
@@ -90,6 +104,13 @@ export function stockItems(order: {
       renewMonths?: unknown;
       previousExpiresAt?: unknown;
       previousState?: unknown;
+      changeServiceId?: unknown;
+      changeType?: unknown;
+      changeTargetProductId?: unknown;
+      changeSelection?: unknown;
+      changeApplied?: unknown;
+      previousProductId?: unknown;
+      previousSelection?: unknown;
     }>;
   };
   return (value.items ?? []).flatMap((item) =>
@@ -115,6 +136,23 @@ export function stockItems(order: {
               : {}),
             ...(typeof item.previousState === 'string'
               ? { previousState: item.previousState }
+              : {}),
+            ...(typeof item.changeServiceId === 'string'
+              ? { changeServiceId: item.changeServiceId }
+              : {}),
+            ...(typeof item.changeType === 'string' ? { changeType: item.changeType } : {}),
+            ...(typeof item.changeTargetProductId === 'string'
+              ? { changeTargetProductId: item.changeTargetProductId }
+              : {}),
+            ...(item.changeSelection !== undefined && item.changeSelection !== null
+              ? { changeSelection: item.changeSelection }
+              : {}),
+            ...(item.changeApplied === true ? { changeApplied: true } : {}),
+            ...(typeof item.previousProductId === 'string'
+              ? { previousProductId: item.previousProductId }
+              : {}),
+            ...('previousSelection' in item
+              ? { previousSelection: item.previousSelection }
               : {}),
           },
         ]

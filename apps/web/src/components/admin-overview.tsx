@@ -46,7 +46,7 @@ export function AdminOverview({ data }: { data: AdminOverviewData }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={t('nav.dashboard')} description={today} />
+      <PageHeader title={t('nav.dashboard')} />
 
       <Tabs defaultValue="overview" className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

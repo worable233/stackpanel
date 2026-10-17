@@ -1,8 +1,10 @@
 import type {
   AuthService,
   CacheService,
+  CaptchaService,
   EventBus,
   FxService,
+  IdentityChallengeService,
   NotificationsService,
   PaymentService,
   StateService,
@@ -34,6 +36,8 @@ import type { PluginExtensionRuntime } from '../extensions/service.ts';
 import type { RawDatabase } from '../extensions/client.ts';
 import type { MediaReferenceService } from '@stackpanel/sdk';
 import type { MarketService } from '../market/service.ts';
+import type { StorageService } from '@stackpanel/sdk';
+import { createStorageService } from '../storage/backend.ts';
 import { getCacheService } from '../cache/index.ts';
 import {
   aggregateScopeGovernance,
@@ -75,6 +79,14 @@ export interface PluginRuntimeOptions {
   auth: AuthService;
   /** Kernel-owned notification service exposed to plugins via ctx.notifications. */
   notifications: NotificationsService;
+  /**
+   * Kernel-owned identity-challenge service exposed via ctx.identity. Optional
+   * so lifecycle-only unit tests can construct a runtime without the host; the
+   * process-wide host always supplies it.
+   */
+  identity?: IdentityChallengeService;
+  /** Kernel-owned human-verification service exposed via ctx.captcha. Optional (see `identity`). */
+  captcha?: CaptchaService;
   /** Kernel-owned shared state (counters, TTL keys, locks) via ctx.state. */
   state: StateService;
   /**
@@ -94,12 +106,19 @@ export interface PluginRuntimeOptions {
   /** Kernel-owned attachment reference index. */
   media?: MediaReferenceService;
   /**
+  /**
    * 市场分发安全原语（ADR-0020 D3）。市场业务面在内置插件 `market`；内核保留
    * 验签目录 / 统一安装事务 / 运行时激活，并以 `kernel.market` 暴露。
    *
    * Optional so unit tests can build a bare runtime; production always supplies it.
    */
   market?: MarketService;
+  /**
+   * Kernel-owned storage capability (`ctx.storage`, ADR-0014 extension):
+   * builds a `StorageProvider` for a generic backend while keeping all
+   * byte/presign machinery on the kernel side. Defaults to the standard factory.
+   */
+  storage?: StorageService;
 }
 
 /**
@@ -120,6 +139,8 @@ const KERNEL_SERVICE_ACCESSORS = [
   'fx',
   'auth',
   'notifications',
+  'identity',
+  'captcha',
   'state',
   'cache',
   /**
@@ -130,6 +151,33 @@ const KERNEL_SERVICE_ACCESSORS = [
 ] as const;
 
 const KERNEL_SERVICE_OWNER = 'kernel';
+
+/**
+ * Fail-safe stand-ins for the identity/captcha kernel services when a runtime
+ * is constructed without the full host (lifecycle unit tests). They deny rather
+ * than silently pass: an unavailable captcha is "not configured" and issuing a
+ * code throws. The real host always supplies the concrete services.
+ */
+const UNAVAILABLE_IDENTITY: IdentityChallengeService = {
+  requiresEmailVerification: () => false,
+  isDeliveryConfigured: () => false,
+  senderIds: () => [],
+  issue: async () => {
+    throw new Error('identity challenge service 不可用');
+  },
+  consume: async () => {
+    throw new Error('identity challenge service 不可用');
+  },
+};
+
+const UNAVAILABLE_CAPTCHA: CaptchaService = {
+  mode: () => 'off',
+  isConfigured: () => false,
+  providerIds: () => [],
+  verify: async () => ({ success: false, reason: 'no_provider' }),
+  enforce: async () => undefined,
+  clientConfig: () => null,
+};
 
 /** Kernel service names a plugin may resolve but never override. */
 export const KERNEL_SERVICE_IDS: readonly string[] = Object.freeze(
@@ -187,7 +235,12 @@ export class PluginRuntime {
     // cannot squat the names. Registered first, so `provideService` rejects any
     // plugin attempt to override.
     for (const name of KERNEL_SERVICE_ACCESSORS) {
-      const implementation = options[name];
+      const implementation =
+        name === 'identity'
+          ? (options.identity ?? UNAVAILABLE_IDENTITY)
+          : name === 'captcha'
+            ? (options.captcha ?? UNAVAILABLE_CAPTCHA)
+            : options[name];
       // Optional services (e.g. `market`) stay absent when a bare runtime is
       // constructed in unit tests; plugins declaring them in `inject` then fail
       // activation loudly instead of resolving `undefined`.
@@ -277,6 +330,12 @@ export class PluginRuntime {
     permissions: string[];
     roleTemplates: PluginRoleTemplate[];
     locales: string[];
+    /** Kernel-derived built-in flag (same source as the backend execution decision). */
+    builtin: boolean;
+    /** Execution mode applied by `loadPluginDefinition`. */
+    execution: 'trusted' | 'isolated';
+    /** Explicit platform grant for web-process server execution (contract 03 §3.1). */
+    frontendExecutions: 'declarative' | 'server';
   }> {
     return [...this.plugins.values()].map((p) => ({
       id: p.definition.manifest.id,
@@ -292,6 +351,13 @@ export class PluginRuntime {
       ),
       roleTemplates: p.definition.manifest.roleTemplates ?? [],
       locales: p.definition.manifest.locales ?? [],
+      builtin: p.definition.manifest.builtin === true,
+      // Mirror `loadPluginDefinition` (plugins.ts): built-ins are always
+      // trusted; a non-built-in defaults to isolated in production.
+      execution:
+        p.definition.manifest.execution ??
+        (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted'),
+      frontendExecutions: p.definition.manifest.frontendExecutions ?? 'declarative',
     }));
   }
 
@@ -409,6 +475,7 @@ export class PluginRuntime {
         scope: capability.scope ?? route.permission ?? null,
         summary: capability.summary,
         mutating: capability.mutating ?? capability.method !== 'GET',
+        ...(capability.destructive !== undefined ? { destructive: capability.destructive } : {}),
         pluginId: id,
       });
     }
@@ -800,9 +867,12 @@ export class PluginRuntime {
       fx: this.options.fx,
       auth: this.options.auth,
       notifications: this.options.notifications,
+      identity: this.options.identity ?? UNAVAILABLE_IDENTITY,
+      captcha: this.options.captcha ?? UNAVAILABLE_CAPTCHA,
       state: this.options.state,
       cache: this.options.cache ?? getCacheService(),
       jobs: createKernelJobContext(pluginId, this.options.jobs),
+      storage: this.options.storage ?? createStorageService(),
       media: this.options.media ? (() => {
         const media = this.options.media as MediaReferenceService;
         return {

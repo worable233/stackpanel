@@ -42,6 +42,9 @@ e2e/.runtime.json
 data/
 var/
 .sp-testdata-*
+.sp-media-*
+.sp-rawdata-*
+.sp-storage-*
 dist-pack/
 
 # Test databases
@@ -70,6 +73,12 @@ output/
 .agents/
 skills-lock.json
 opencode.json
+
+# Scraped design-reference assets & throwaway spike scripts (local only)
+picture/
+apps/web/spike/
+apps/web/src/app/(spike)/
+scripts/spike/
 
 # Local working hero assets (not part of the committed theme)
 packages/themes/default/assets/cloud-console-hero.png

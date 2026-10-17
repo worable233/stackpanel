@@ -14,10 +14,15 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminUserDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ orderPage?: string; orderPageSize?: string }>;
 }) {
   const { id } = await params;
+  const query = await searchParams;
+  const orderPage = Math.floor(Math.min(1000000, Math.max(1, Number(query.orderPage) || 1)));
+  const orderPageSize = [10, 20, 50, 100].includes(Number(query.orderPageSize)) ? Number(query.orderPageSize) : 20;
   const t = createTranslator(await getLocale());
   const client = await getAuthedApiClient();
 
@@ -27,7 +32,7 @@ export default async function AdminUserDetailPage({
 
   try {
     [detail, groups] = await Promise.all([
-      client.getAdminUser(id),
+      client.getAdminUser(id, { orderPage, orderPageSize }),
       client.getPermissionGroups(),
     ]);
   } catch (err) {
@@ -61,12 +66,11 @@ export default async function AdminUserDetailPage({
           </Link>
         }
         title={
-          <span className="flex items-center gap-2">
-            <UserRoundCog className="size-6 text-primary" />
-            {detail.user.email}
+          <span className="flex min-w-0 items-start gap-2">
+            <UserRoundCog className="mt-1 size-6 shrink-0 text-primary" />
+            <span className="min-w-0 break-all">{detail.user.email}</span>
           </span>
         }
-        description={t('admin.userDetailPage.description')}
         actions={
           <form action={impersonateUserAction.bind(null, id)}>
             <Button type="submit">{t('admin.userDetailPage.impersonate')}</Button>

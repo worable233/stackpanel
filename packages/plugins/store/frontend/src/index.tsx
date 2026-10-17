@@ -1,3 +1,4 @@
+import { SectionTitle } from '@stackpanel/ui';
 import type {
   AccountPageComponentProps,
   AdminWidgetProps,
@@ -8,6 +9,7 @@ import type {
 import { PageHeader } from '@stackpanel/ui';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
+import { ArrowUpRight, PackageOpen } from 'lucide-react';
 import { z } from 'zod';
 
 interface StoreProduct {
@@ -29,23 +31,38 @@ interface CheckoutCycle {
   id: string;
   label: string;
   price: number;
+  renewPrice?: number;
+  months?: number;
 }
 
 interface CheckoutChoice {
   id: string;
   label: string;
   price?: number;
+  prices?: Record<string, number>;
+  requires?: Record<string, string | string[]>;
+  recurring?: boolean;
+}
+
+interface CheckoutVisibility {
+  field: string;
+  equals?: unknown;
+  in?: unknown[];
 }
 
 interface CheckoutOption {
   id: string;
   label: string;
   type: 'select' | 'quantity';
+  group?: string;
+  help?: string;
   unit?: string;
   min?: number;
   max?: number;
   step?: number;
   required?: boolean;
+  defaultChoice?: string;
+  visibleWhen?: CheckoutVisibility;
   choices?: CheckoutChoice[];
 }
 
@@ -226,6 +243,14 @@ const productListSchema = z.object({ products: z.array(storeProductSchema) });
 const productSchema = z.object({ product: storeProductSchema });
 const orderListSchema = z.object({ orders: z.array(storeOrderSchema) });
 
+const changeQuoteSchema = z.object({
+  from: z.number(),
+  to: z.number(),
+  diff: z.number(),
+  currency: z.string(),
+  summary: z.string().optional(),
+});
+
 const productTypeListSchema = z.object({
   types: z.array(
     z.object({
@@ -271,27 +296,24 @@ const serviceFieldSchema = z.object({
   secret: z.boolean().optional(),
   copyable: z.boolean().optional(),
 });
+const serviceActionParamSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  type: z.enum(['text', 'password', 'number', 'select', 'textarea']),
+  required: z.boolean().optional(),
+  default: z.union([z.string(), z.number()]).optional(),
+  options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  maxLength: z.number().optional(),
+  placeholder: z.string().optional(),
+});
 const serviceActionSchema = z.object({
   id: z.string(),
   label: z.string(),
   danger: z.boolean().optional(),
   confirm: z.boolean().optional(),
-  params: z
-    .array(
-      z.object({
-        name: z.string(),
-        label: z.string(),
-        type: z.enum(['text', 'password', 'number', 'select', 'textarea']),
-        required: z.boolean().optional(),
-        default: z.union([z.string(), z.number()]).optional(),
-        options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
-        min: z.number().optional(),
-        max: z.number().optional(),
-        maxLength: z.number().optional(),
-        placeholder: z.string().optional(),
-      }),
-    )
-    .optional(),
+  params: z.array(serviceActionParamSchema).optional(),
 });
 const serviceDetailSchema = z.object({
   title: z.string().optional(),
@@ -303,6 +325,7 @@ const serviceDetailSchema = z.object({
 const serviceSchema = z.object({
   service: z.object({
     id: z.string(),
+    productId: z.string().optional(),
     productName: z.string(),
     fulfillmentType: z.string(),
     providerId: z.string().nullable(),
@@ -327,6 +350,32 @@ const serviceMetricsSchema = z.object({
       unit: z.string(),
       color: z.string().optional(),
       points: z.array(z.object({ t: z.number(), v: z.number() })),
+    }),
+  ),
+});
+
+const resourceKindSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  creatable: z.boolean().optional(),
+  createParams: z.array(serviceActionParamSchema).optional(),
+  columns: z.array(z.object({ key: z.string(), label: z.string() })).optional(),
+  rowActions: z.array(serviceActionSchema).optional(),
+  visibleWhen: z
+    .object({
+      field: z.string(),
+      equals: z.unknown().optional(),
+      in: z.array(z.unknown()).optional(),
+    })
+    .optional(),
+});
+const resourceKindsSchema = z.object({ kinds: z.array(resourceKindSchema) });
+const resourceListSchema = z.object({
+  resources: z.array(
+    z.object({
+      id: z.string(),
+      fields: z.record(z.string(), z.string()),
+      actions: z.array(serviceActionSchema).optional(),
     }),
   ),
 });
@@ -505,9 +554,6 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
             <h1 className="mt-2 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
               {activeId ? findCategoryName(categories, activeId) : '服务目录'}
             </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-              挑选心仪的服务，加入购物车或直接结算。
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Link
@@ -784,20 +830,71 @@ function readCheckoutConfig(metadata: Record<string, unknown> | null): CheckoutC
   };
 }
 
-/** 默认选择：第一个周期；每个 select 选项选第一个可选值；quantity 取 min。 */
+/** 条件是否命中：`equals` 精确、`in` 任一命中；都缺省表示「非空即显示」。 */
+function matchesVisibility(
+  value: string | number | undefined,
+  condition: CheckoutVisibility,
+): boolean {
+  if (condition.equals === undefined && (!condition.in || condition.in.length === 0)) {
+    return value !== undefined && value !== null && value !== '';
+  }
+  if (value === undefined || value === null) return false;
+  if (condition.equals !== undefined && String(value) === String(condition.equals)) return true;
+  return Boolean(condition.in?.some((candidate) => String(candidate) === String(value)));
+}
+
+/** 当前选择下某配置项可用的档位（按 `requires` 层级联动过滤）。 */
+function allowedChoices(
+  option: CheckoutOption,
+  selections: Record<string, string | number>,
+  cycle: string,
+): CheckoutChoice[] {
+  return (option.choices ?? []).filter((choice) => {
+    if (!choice.requires) return true;
+    return Object.entries(choice.requires).every(([field, expected]) => {
+      const value = field === 'cycle' ? cycle : selections[field];
+      const allowed = Array.isArray(expected) ? expected : [expected];
+      return (
+        value !== undefined && allowed.some((candidate) => String(candidate) === String(value))
+      );
+    });
+  });
+}
+
+function optionVisible(
+  option: CheckoutOption,
+  selections: Record<string, string | number>,
+  cycle: string,
+): boolean {
+  if (!option.visibleWhen) return true;
+  const value = option.visibleWhen.field === 'cycle' ? cycle : selections[option.visibleWhen.field];
+  return matchesVisibility(value, option.visibleWhen);
+}
+
+/** 默认选择：第一个周期；每个可见 select 选项选第一个可用档位；quantity 取 min。 */
 function defaultSelection(config: CheckoutConfig | null): Selection | null {
   if (!config) return null;
+  const cycle = config.cycles[0]?.id ?? '';
   const selections: Record<string, string | number> = {};
   for (const option of config.options) {
-    const first = option.choices?.[0];
+    if (!optionVisible(option, selections, cycle)) continue;
+    const choices = allowedChoices(option, selections, cycle);
+    const preferred =
+      (option.defaultChoice && choices.find((choice) => choice.id === option.defaultChoice)) ||
+      choices[0];
     if (option.type === 'quantity') {
-      const min = option.min ?? first?.qtyMin ?? 0;
-      if (first) selections[option.id] = min;
-    } else if (first) {
-      selections[option.id] = first.id;
+      const min = option.min ?? preferred?.qtyMin ?? 0;
+      if (preferred) selections[option.id] = min;
+    } else if (preferred) {
+      selections[option.id] = preferred.id;
     }
   }
-  return { cycle: config.cycles[0]?.id, ...(Object.keys(selections).length ? { selections } : {}) };
+  return { cycle, ...(Object.keys(selections).length ? { selections } : {}) };
+}
+
+/** 某档位在当前周期下的单价增量（minor）；无则回退 price。 */
+function choicePrice(choice: CheckoutChoice, cycleId: string): number | undefined {
+  return choice.prices?.[cycleId] ?? choice.price;
 }
 
 /** 从 GET 表单 query 重建选择（字段名：cycle + cfg_<optionId>）。 */
@@ -831,8 +928,17 @@ function CheckoutConfigForm({
 }): ReactElement {
   const sel = selection?.selections ?? {};
   const cycle = selection?.cycle ?? config.cycles[0]?.id ?? '';
+  // 按 group 归组（无 group 的项归入默认组），保留声明顺序。
+  const groups: Array<{ name: string; options: CheckoutOption[] }> = [];
+  for (const option of config.options) {
+    if (!optionVisible(option, sel, cycle)) continue;
+    const name = option.group ?? '';
+    const bucket = groups.find((candidate) => candidate.name === name);
+    if (bucket) bucket.options.push(option);
+    else groups.push({ name, options: [option] });
+  }
   return (
-    <form method="get" action={`/shop/${product.id}`} className="mt-6 space-y-4 border-t pt-5">
+    <form method="get" action={`/shop/${product.id}`} className="mt-6 space-y-5 border-t pt-5">
       <div className="grid gap-1.5">
         <label className="text-sm font-medium">计费周期</label>
         <select
@@ -847,44 +953,75 @@ function CheckoutConfigForm({
           ))}
         </select>
       </div>
-      {config.options.map((option) => {
-        const current = sel[option.id];
-        if (option.type === 'quantity') {
-          return (
-            <div key={option.id} className="grid gap-1.5">
-              <label className="text-sm font-medium">
-                {option.label}
-                {option.unit ? `（${option.unit}）` : ''}
-              </label>
-              <input
-                name={`cfg_${option.id}`}
-                type="number"
-                min={option.min ?? 0}
-                max={option.max ?? undefined}
-                step={option.step ?? 1}
-                defaultValue={typeof current === 'number' ? current : (option.min ?? 0)}
-                className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
-              />
-            </div>
-          );
-        }
-        return (
-          <div key={option.id} className="grid gap-1.5">
-            <label className="text-sm font-medium">{option.label}</label>
-            <select
-              name={`cfg_${option.id}`}
-              defaultValue={typeof current === 'string' ? current : (option.choices?.[0]?.id ?? '')}
-              className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
-            >
-              {(option.choices ?? []).map((choice) => (
-                <option key={choice.id} value={choice.id}>
-                  {choice.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        );
-      })}
+      {groups.map((group) => (
+        <fieldset key={group.name || 'default'} className="space-y-4 rounded-xl border p-4">
+          {group.name ? (
+            <legend className="px-1 text-xs font-semibold text-muted-foreground">
+              {group.name}
+            </legend>
+          ) : null}
+          {group.options.map((option) => {
+            const current = sel[option.id];
+            if (option.type === 'quantity') {
+              const unit = choicePrice(
+                allowedChoices(option, sel, cycle)[0] ?? { id: '', label: '' },
+                cycle,
+              );
+              return (
+                <div key={option.id} className="grid gap-1.5">
+                  <label className="text-sm font-medium">
+                    {option.label}
+                    {option.unit ? `（${option.unit}）` : ''}
+                  </label>
+                  <input
+                    name={`cfg_${option.id}`}
+                    type="number"
+                    min={option.min ?? 0}
+                    max={option.max ?? undefined}
+                    step={option.step ?? 1}
+                    defaultValue={typeof current === 'number' ? current : (option.min ?? 0)}
+                    className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
+                  />
+                  {unit != null ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      单价 {money(unit, product.currency)}/{option.unit ?? '单位'}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            }
+            const choices = allowedChoices(option, sel, cycle);
+            return (
+              <div key={option.id} className="grid gap-1.5">
+                <label className="text-sm font-medium">
+                  {option.label}
+                  {option.required ? ' *' : ''}
+                </label>
+                <select
+                  name={`cfg_${option.id}`}
+                  defaultValue={typeof current === 'string' ? current : (choices[0]?.id ?? '')}
+                  className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
+                >
+                  {choices.map((choice) => {
+                    const price = choicePrice(choice, cycle);
+                    return (
+                      <option key={choice.id} value={choice.id}>
+                        {choice.label}
+                        {price != null && price > 0
+                          ? `（+${money(price, product.currency)}${choice.recurring === false ? ' 首期' : ''}）`
+                          : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                {option.help ? (
+                  <span className="text-[11px] text-muted-foreground">{option.help}</span>
+                ) : null}
+              </div>
+            );
+          })}
+        </fieldset>
+      ))}
       <button
         type="submit"
         className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
@@ -1147,9 +1284,7 @@ function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElemen
       </Link>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary">商店</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">购物车</h1>
-          <p className="mt-2 text-sm text-muted-foreground">勾选要结算的商品，然后选择支付方式。</p>
         </div>
       </div>
       {items.length ? (
@@ -1355,7 +1490,7 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
   const cancel = props.actions?.['store.cancel-order'];
   return (
     <main>
-      <PageHeader title="历史订单" description="查看购买记录与支付状态。" />
+      <PageHeader title="历史订单" />
       {orders.length ? (
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
           {orders.map((order) => (
@@ -1488,7 +1623,7 @@ function StoreAccountServicesPage(props: AccountPageComponentProps): ReactElemen
     (props.data.services as Array<z.infer<typeof serviceSummarySchema>> | undefined) ?? [];
   return (
     <main>
-      <PageHeader title="我的云服务" description="查看已购买的云服务器等服务及其状态。" />
+      <PageHeader title="我的云服务" />
       {services.length ? (
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
           {services.map((service) => (
@@ -1527,16 +1662,34 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
       | undefined) ?? [];
   const runAction = props.actions?.['store.service-action'];
   const renewAction = props.actions?.['store.renew-service-wallet'];
+  const resourceCreateAction = props.actions?.['store.service-resource-create'];
+  const resourceRunAction = props.actions?.['store.service-resource-action'];
+  const changeAction = props.actions?.['store.service-change-wallet'];
+  const resourceGroups =
+    (props.data.resources as
+      | Array<{
+          kind: z.infer<typeof resourceKindSchema>;
+          resources: Array<z.infer<typeof resourceListSchema>['resources'][number]>;
+        }>
+      | undefined) ?? [];
+  const changeOptions = props.data.changeOptions as
+    | {
+        productId: string;
+        productName: string;
+        config: CheckoutConfig | null;
+        current: Selection | null;
+      }
+    | null
+    | undefined;
+  const changeQuote = props.data.changeQuote as
+    { diff: number; currency: string; summary?: string; selection: Selection } | null | undefined;
   if (!service) return <Empty text="服务不存在" />;
   const fields = service.detail?.fields ?? [];
   const actions = service.detail?.actions ?? [];
   const renewable = service.status === 'ACTIVE' || service.status === 'SUSPENDED';
   return (
     <main className="space-y-6">
-      <PageHeader
-        title={service.detail?.title ?? service.productName}
-        description={service.productName}
-      />
+      <PageHeader title={service.detail?.title ?? service.productName} />
       <div className="flex items-center gap-3">
         <ServiceStatusBadge
           status={service.detail?.status ?? service.status}
@@ -1716,11 +1869,264 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
         </form>
       ) : null}
 
+      {changeAction && changeOptions?.config ? (
+        <ServiceChangePanel
+          serviceId={service.id}
+          currency={service.currency}
+          config={changeOptions.config}
+          current={changeOptions.current}
+          quote={changeQuote ?? null}
+          changeAction={changeAction}
+        />
+      ) : null}
+
+      {resourceGroups.length ? (
+        <ServiceResourcesPanel
+          serviceId={service.id}
+          groups={resourceGroups}
+          createAction={resourceCreateAction}
+          runAction={resourceRunAction}
+        />
+      ) : null}
+
       <div>
-        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">监控</h2>
+        <SectionTitle className="mb-3">监控</SectionTitle>
         <MetricsChart series={metrics} />
       </div>
     </main>
+  );
+}
+
+/** 升配/降配面板：GET 试算差价 → POST 下变配订单。 */
+function ServiceChangePanel({
+  serviceId,
+  currency,
+  config,
+  current,
+  quote,
+  changeAction,
+}: {
+  serviceId: string;
+  currency: string;
+  config: CheckoutConfig;
+  current: Selection | null;
+  quote: { diff: number; currency: string; summary?: string; selection: Selection } | null;
+  changeAction: string;
+}): ReactElement {
+  const sel = current?.selections ?? {};
+  const cycle = current?.cycle ?? config.cycles[0]?.id ?? '';
+  const groups: Array<{ name: string; options: CheckoutOption[] }> = [];
+  for (const option of config.options) {
+    if (!optionVisible(option, sel, cycle)) continue;
+    const name = option.group ?? '';
+    const bucket = groups.find((candidate) => candidate.name === name);
+    if (bucket) bucket.options.push(option);
+    else groups.push({ name, options: [option] });
+  }
+  return (
+    <section className="space-y-3 rounded-2xl border bg-card p-4">
+      <SectionTitle>升配 / 降配</SectionTitle>
+      <form method="get" action={`/account/services/${serviceId}`} className="space-y-4">
+        <div className="grid gap-1.5">
+          <label className="text-sm font-medium">计费周期</label>
+          <select
+            name="cycle"
+            defaultValue={cycle}
+            className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
+          >
+            {config.cycles.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {groups.map((group) => (
+          <fieldset key={group.name || 'default'} className="space-y-4 rounded-xl border p-3">
+            {group.name ? (
+              <legend className="px-1 text-xs font-semibold text-muted-foreground">
+                {group.name}
+              </legend>
+            ) : null}
+            {group.options.map((option) => {
+              const value = sel[option.id];
+              const choices = allowedChoices(option, sel, cycle);
+              if (option.type === 'quantity') {
+                return (
+                  <div key={option.id} className="grid gap-1.5">
+                    <label className="text-sm font-medium">{option.label}</label>
+                    <input
+                      name={`cfg_${option.id}`}
+                      type="number"
+                      min={option.min ?? 0}
+                      max={option.max ?? undefined}
+                      step={option.step ?? 1}
+                      defaultValue={typeof value === 'number' ? value : (option.min ?? 0)}
+                      className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
+                    />
+                  </div>
+                );
+              }
+              return (
+                <div key={option.id} className="grid gap-1.5">
+                  <label className="text-sm font-medium">{option.label}</label>
+                  <select
+                    name={`cfg_${option.id}`}
+                    defaultValue={typeof value === 'string' ? value : (choices[0]?.id ?? '')}
+                    className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
+                  >
+                    {choices.map((choice) => (
+                      <option key={choice.id} value={choice.id}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </fieldset>
+        ))}
+        <button
+          type="submit"
+          className="h-10 rounded-xl border bg-background px-4 text-sm font-semibold hover:bg-muted"
+        >
+          试算差价
+        </button>
+      </form>
+      {quote ? (
+        <form action={changeAction} className="flex items-center gap-3 border-t pt-3">
+          <input type="hidden" name="id" value={serviceId} />
+          <input type="hidden" name="paymentMode" value="wallet" />
+          <input type="hidden" name="config" value={JSON.stringify(quote.selection)} />
+          <span className="text-sm">
+            需补差价：
+            <span className="font-semibold">{money(quote.diff, quote.currency || currency)}</span>
+            {quote.summary ? (
+              <span className="ml-2 text-xs text-muted-foreground">{quote.summary}</span>
+            ) : null}
+          </span>
+          <button
+            type="submit"
+            className="h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background"
+          >
+            确认变更（余额支付）
+          </button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+/** 增值运维面板：按资源种类渲染列表 + 新建 + 行内动作。 */
+function ServiceResourcesPanel({
+  serviceId,
+  groups,
+  createAction,
+  runAction,
+}: {
+  serviceId: string;
+  groups: Array<{
+    kind: z.infer<typeof resourceKindSchema>;
+    resources: Array<z.infer<typeof resourceListSchema>['resources'][number]>;
+  }>;
+  createAction?: string;
+  runAction?: string;
+}): ReactElement {
+  return (
+    <section className="space-y-4">
+      <SectionTitle>资源管理</SectionTitle>
+      {groups.map(({ kind, resources }) => (
+        <div key={kind.id} className="space-y-3 rounded-2xl border bg-card p-4">
+          <h3 className="text-sm font-semibold">{kind.label}</h3>
+          {resources.length ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  {(kind.columns ?? []).map((column) => (
+                    <th key={column.key} className="py-1">
+                      {column.label}
+                    </th>
+                  ))}
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {resources.map((resource) => (
+                  <tr key={resource.id} className="border-t">
+                    {(kind.columns ?? []).map((column) => (
+                      <td key={column.key} className="py-1.5">
+                        {resource.fields[column.key] ?? ''}
+                      </td>
+                    ))}
+                    <td className="py-1.5">
+                      <div className="flex flex-wrap gap-2">
+                        {(kind.rowActions ?? []).map((rowAction) =>
+                          runAction ? (
+                            <form key={rowAction.id} action={runAction}>
+                              <input type="hidden" name="id" value={serviceId} />
+                              <input type="hidden" name="kind" value={kind.id} />
+                              <input type="hidden" name="resourceId" value={resource.id} />
+                              <input type="hidden" name="actionId" value={rowAction.id} />
+                              {(rowAction.params ?? []).length ? (
+                                <input
+                                  type="text"
+                                  name="params"
+                                  defaultValue="{}"
+                                  className="h-8 w-28 rounded-lg border bg-background px-2 font-mono text-xs"
+                                />
+                              ) : null}
+                              <button
+                                type="submit"
+                                className={
+                                  rowAction.danger
+                                    ? 'rounded-lg border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10'
+                                    : 'rounded-lg border px-2.5 py-1 text-xs font-medium hover:bg-muted'
+                                }
+                              >
+                                {rowAction.label}
+                              </button>
+                            </form>
+                          ) : null,
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-xs text-muted-foreground">暂无数据</p>
+          )}
+          {kind.creatable && createAction ? (
+            <form action={createAction} className="flex flex-wrap items-end gap-2 border-t pt-3">
+              <input type="hidden" name="id" value={serviceId} />
+              <input type="hidden" name="kind" value={kind.id} />
+              <div className="flex flex-1 flex-col gap-1">
+                <label className="text-[11px] text-muted-foreground">
+                  新建参数（JSON）
+                  {(kind.createParams ?? []).length
+                    ? ` · 可用键：${(kind.createParams ?? []).map((p) => p.name).join('、')}`
+                    : ''}
+                </label>
+                <input
+                  name="params"
+                  defaultValue={JSON.stringify(
+                    Object.fromEntries((kind.createParams ?? []).map((p) => [p.name, ''])),
+                  )}
+                  className="h-9 w-full rounded-lg border bg-background px-3 font-mono text-xs"
+                />
+              </div>
+              <button
+                type="submit"
+                className="h-9 rounded-lg bg-foreground px-3 text-xs font-semibold text-background"
+              >
+                新建{kind.label}
+              </button>
+            </form>
+          ) : null}
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -1755,9 +2161,19 @@ function OrderStatus({ status }: { status: string }): ReactElement {
 
 function StoreSummaryWidget(_props: AdminWidgetProps): ReactElement {
   return (
-    <section className="rounded-2xl border bg-card p-4 text-card-foreground shadow-sm">
-      <h2 className="text-sm font-semibold">商店概览</h2>
-    </section>
+    <Link
+      href="/admin/plugin/store/overview"
+      className="backend-widget group flex min-h-24 items-center gap-3 p-4 text-card-foreground transition-colors hover:border-primary/40"
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <PackageOpen className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">产品管理</span>
+        <span className="mt-1 block text-xs text-muted-foreground">管理云产品与套餐</span>
+      </span>
+      <ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
+    </Link>
   );
 }
 
@@ -1802,6 +2218,22 @@ const storeFinders: Record<string, FinderProvider> = {
       return { ...price, selection };
     },
   },
+  'store.pendingOrderCount': {
+    handler: async (_input, ctx) => {
+      const schema = orderListSchema.extend({ total: z.number() });
+      let count = 0;
+      let page = 1;
+      let fetched = 0;
+      while (true) {
+        const result = await ctx.api.get(`/orders?page=${page}&pageSize=100`, schema);
+        count += result.orders.filter((order) => order.status === 'PENDING').length;
+        fetched += result.orders.length;
+        if (fetched >= result.total || result.orders.length === 0) break;
+        page += 1;
+      }
+      return { count };
+    },
+  },
   'store.myOrders': {
     handler: async (_input, ctx) =>
       (await ctx.api.get('/orders?page=1&pageSize=50', orderListSchema)).orders,
@@ -1827,9 +2259,105 @@ const storeFinders: Record<string, FinderProvider> = {
         )
       ).metrics,
   },
+  'store.myServiceResources': {
+    handler: async (input, ctx) => {
+      const id = encodeURIComponent(typeof input.id === 'string' ? input.id : '');
+      if (!id) return [];
+      const { kinds } = await ctx.api.get(`/services/${id}/resource-kinds`, resourceKindsSchema);
+      const result: Array<{
+        kind: z.infer<typeof resourceKindSchema>;
+        resources: Array<z.infer<typeof resourceListSchema>['resources'][number]>;
+      }> = [];
+      for (const kind of kinds) {
+        const { resources } = await ctx.api.get(
+          `/services/${id}/resources/${encodeURIComponent(kind.id)}`,
+          resourceListSchema,
+        );
+        result.push({ kind, resources });
+      }
+      return result;
+    },
+  },
+  'store.myServiceChangeOptions': {
+    handler: async (input, ctx) => {
+      const id = encodeURIComponent(typeof input.id === 'string' ? input.id : '');
+      if (!id) return null;
+      const { service } = await ctx.api.get(`/services/${id}`, serviceSchema);
+      if (!service.productId) return null;
+      const { product } = await ctx.api.get(
+        `/products/${encodeURIComponent(service.productId)}`,
+        productSchema,
+      );
+      const config = readCheckoutConfig(product.metadata);
+      const runtime = (service.runtime ?? {}) as Record<string, unknown>;
+      const current = runtime['config'] as Selection | undefined;
+      return {
+        productId: service.productId,
+        productName: product.name,
+        config,
+        current: current ?? null,
+      };
+    },
+  },
+  'store.myServiceChangeQuote': {
+    handler: async (input, ctx) => {
+      const id = encodeURIComponent(typeof input.id === 'string' ? input.id : '');
+      if (!id) return null;
+      const query = (input['$query'] ?? {}) as Record<string, string | string[] | undefined>;
+      const selection = selectionFromQuery(query);
+      if (!selection) return null;
+      const quote = await ctx.api.post(
+        `/services/${id}/change-quote`,
+        { config: JSON.stringify(selection) },
+        changeQuoteSchema,
+      );
+      return { ...quote, selection };
+    },
+  },
+  'store.adminSummary': {
+    handler: async (_input, ctx) =>
+      ctx.api.get(
+        '/store/admin/products?page=1&pageSize=5',
+        productListSchema.extend({ total: z.number() }),
+      ),
+  },
   'store.adminProducts': {
     handler: async (_input, ctx) =>
       (await ctx.api.get('/store/admin/products?page=1&pageSize=50', productListSchema)).products,
+  },
+  'store.adminProduct': {
+    handler: async (input, ctx) => {
+      const schema = productListSchema.extend({ total: z.number() });
+      // 管理列表包含完整 metadata 与未上架商品；不使用公开商品接口。
+      for (let page = 1; ; page += 1) {
+        const result = await ctx.api.get(`/store/admin/products?page=${page}&pageSize=100`, schema);
+        const product = result.products.find((item) => item.id === input.id);
+        if (product) return product;
+        if (result.products.length === 0 || page * 100 >= result.total) return null;
+      }
+    },
+  },
+  'store.adminProductCategoryIds': {
+    handler: async (input, ctx) => {
+      const schema = z.object({
+        products: z.array(
+          z.object({
+            product: z.object({ id: z.string() }),
+            catalog: z.object({ categoryIds: z.array(z.string()) }).nullable(),
+          }),
+        ),
+        total: z.number(),
+      });
+      for (let page = 1; ; page += 1) {
+        const result = await ctx.api.get(
+          `/catalog/admin/products?page=${page}&pageSize=100`,
+          schema,
+        );
+        const entry = result.products.find((item) => item.product.id === input.id);
+        if (entry) return entry.catalog?.categoryIds ?? [];
+        if (result.products.length === 0 || page * 100 >= result.total) return [];
+      }
+    },
   },
   'store.productTypes': {
     handler: async (_input, ctx) =>
@@ -2010,6 +2538,54 @@ export const frontend: FrontendPackage = {
         redirect: { responsePath: 'nextPath' },
       },
       {
+        id: 'store.service-resource-create',
+        method: 'POST',
+        path: '/services/:id/resources/:kind',
+        permission: 'store.buy',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'kind', type: 'string', required: true, maxLength: 64 },
+          // 具体参数名由资源种类声明决定；通用参数袋承载动态键值。
+          { name: 'params', type: 'string', maxLength: 4000 },
+        ],
+      },
+      {
+        id: 'store.service-resource-action',
+        method: 'POST',
+        path: '/services/:id/resources/:kind/:resourceId/actions/:actionId',
+        permission: 'store.buy',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'kind', type: 'string', required: true, maxLength: 64 },
+          { name: 'resourceId', type: 'string', required: true, maxLength: 191 },
+          { name: 'actionId', type: 'string', required: true, maxLength: 64 },
+          { name: 'params', type: 'string', maxLength: 4000 },
+        ],
+      },
+      {
+        id: 'store.service-change-wallet',
+        method: 'POST',
+        path: '/services/:id/change',
+        permission: 'store.buy',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'paymentMode', type: 'string', default: 'wallet' },
+          { name: 'config', type: 'string', maxLength: 40000 },
+          { name: 'targetProductId', type: 'string', maxLength: 191 },
+        ],
+        redirect: { responsePath: 'nextPath' },
+      },
+      {
+        id: 'store.admin-transfer-service',
+        method: 'POST',
+        path: '/store/admin/services/:id/transfer',
+        permission: 'store.admin',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'targetUserId', type: 'string', required: true, maxLength: 191 },
+        ],
+      },
+      {
         id: 'store.admin-refund-order',
         method: 'POST',
         path: '/store/admin/orders/:id/refund',
@@ -2062,9 +2638,19 @@ export const frontend: FrontendPackage = {
     adminRoutes: [
       {
         path: '/overview',
+        component: 'admin/summary',
+        permission: 'store.admin',
+        nav: { label: '概览', group: '商店', order: 0 },
+        data: [
+          { finder: 'store.adminSummary', as: 'summary' },
+          { finder: 'store.productTypes', as: 'productTypes' },
+        ],
+      },
+      {
+        path: '/products',
         component: 'admin/overview',
         permission: 'store.admin',
-        nav: { label: '商店管理', group: '商店插件' },
+        nav: { label: '商品', group: '商店', order: 10, activePaths: ['/products'] },
         data: [
           { finder: 'store.adminProducts', as: 'products' },
           { finder: 'store.productTypes', as: 'productTypes' },
@@ -2073,20 +2659,46 @@ export const frontend: FrontendPackage = {
           { finder: 'catalog.adminProducts', as: 'catalogProducts' },
         ],
       },
+      {
+        path: '/products/new',
+        component: 'admin/product-editor',
+        permission: 'store.admin',
+        data: [
+          { finder: 'store.productTypes', as: 'productTypes' },
+          { finder: 'store.upstreamSources', as: 'upstreamSources' },
+          { finder: 'catalog.adminCategories', as: 'categories' },
+        ],
+      },
+      {
+        path: '/products/:id/edit',
+        component: 'admin/product-editor',
+        permission: 'store.admin',
+        data: [
+          { finder: 'store.adminProduct', as: 'product', input: { id: ':id' } },
+          {
+            finder: 'store.adminProductCategoryIds',
+            as: 'productCategoryIds',
+            input: { id: ':id' },
+          },
+          { finder: 'store.productTypes', as: 'productTypes' },
+          { finder: 'store.upstreamSources', as: 'upstreamSources' },
+          { finder: 'catalog.adminCategories', as: 'categories' },
+        ],
+      },
     ],
     accountRoutes: [
       {
         path: '/services',
         component: 'account/services',
         permission: 'store.view',
-        nav: { label: '我的云服务', group: '服务' },
+        nav: { label: '我的云服务', group: '云服务', order: 10 },
         data: [{ finder: 'store.myServices', as: 'services' }],
       },
       {
         path: '/orders',
         component: 'account/orders',
         permission: 'store.view',
-        nav: { label: '历史订单', group: '费用' },
+        nav: { label: '订单', group: '费用', order: 20 },
         data: [{ finder: 'store.myOrders', as: 'orders' }],
       },
       {
@@ -2096,6 +2708,13 @@ export const frontend: FrontendPackage = {
         data: [
           { finder: 'store.myService', as: 'service', input: { id: ':id' } },
           { finder: 'store.myServiceMetrics', as: 'metrics', input: { id: ':id' } },
+          { finder: 'store.myServiceResources', as: 'resources', input: { id: ':id' } },
+          { finder: 'store.myServiceChangeOptions', as: 'changeOptions', input: { id: ':id' } },
+          {
+            finder: 'store.myServiceChangeQuote',
+            as: 'changeQuote',
+            input: { id: ':id', $query: '1' },
+          },
         ],
       },
     ],

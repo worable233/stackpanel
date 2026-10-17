@@ -19,6 +19,10 @@ function publicDevOrigins(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: publicDevOrigins(),
+  // Spike hook (runtime-frontend-loading, Stage 1): allow the throwaway harness
+  // to build into a sibling distDir so it never fights the running dev server's
+  // `.next`. Unset in normal runs, so production is unaffected.
+  distDir: process.env.NEXT_SPIKE_DIST_DIR ?? '.next',
   turbopack: {
     root: path.join(__dirname, '../..'),
   },

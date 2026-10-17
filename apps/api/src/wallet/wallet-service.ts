@@ -211,13 +211,23 @@ export class WalletService {
         const current = await t.walletHold.findUnique({ where: { id: holdId } });
         return current ? this.toHold(current) : null;
       }
-      await t.walletAccount.update({
-        where: { userId_currency: { userId: hold.userId, currency: hold.currency } },
+      // 冻结额必须足以覆盖本次释放：正常情况下 `held` 是全部在途 hold 之和，
+      // 恒 ≥ 单个 hold.amount。若条件不成立说明冻结额已漂移（并发/篡改），此时
+      // 拒绝并回滚整个事务，绝不让 `held` 变负。
+      const released = await t.walletAccount.updateMany({
+        where: {
+          userId: hold.userId,
+          currency: hold.currency,
+          held: { gte: hold.amount },
+        },
         data: {
           held: { decrement: hold.amount },
           ...(refund > 0 ? { balance: { increment: refund } } : {}),
         },
       });
+      if (released.count === 0) {
+        throw new WalletError(500, '钱包冻结额不一致，已阻止结算');
+      }
       if (settled > 0) {
         await t.walletLedgerEntry.create({
           data: {
@@ -280,10 +290,18 @@ export class WalletService {
         const current = await t.walletHold.findUnique({ where: { id: holdId } });
         return current ? this.toHold(current) : null;
       }
-      await t.walletAccount.update({
-        where: { userId_currency: { userId: hold.userId, currency: hold.currency } },
+      // 同 settleHold：以条件更新保证 `held` 不会变负，漂移即回滚。
+      const released = await t.walletAccount.updateMany({
+        where: {
+          userId: hold.userId,
+          currency: hold.currency,
+          held: { gte: hold.amount },
+        },
         data: { held: { decrement: hold.amount }, balance: { increment: hold.amount } },
       });
+      if (released.count === 0) {
+        throw new WalletError(500, '钱包冻结额不一致，已阻止释放');
+      }
       const updated = await t.walletHold.findUniqueOrThrow({ where: { id: holdId } });
       return this.toHold(updated);
     };
@@ -428,6 +446,32 @@ export class WalletService {
     return accounts.map((account) => ({
       ...this.toAccount(account),
       email: emailById.get(account.userId) ?? account.userId,
+    }));
+  }
+
+  /** Sum spending over the last twelve Shanghai calendar months. */
+  async getMonthlySpending(userId: string): Promise<Array<{ month: string; amount: number }>> {
+    // UTC+8 has no DST. Derive month boundaries independently of the host TZ.
+    const now = new Date(Date.now() + 8 * 60 * 60_000);
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth();
+    return Promise.all(Array.from({ length: 12 }, async (_, index) => {
+      const start = new Date(Date.UTC(year, month - 11 + index, 1));
+      const end = new Date(Date.UTC(year, month - 10 + index, 1));
+      const result = await this.options.db.walletLedgerEntry.aggregate({
+        where: {
+          userId,
+          currency: 'CNY',
+          amount: { lt: 0 },
+          type: { not: 'ADMIN_ADJUST' },
+          createdAt: {
+            gte: new Date(start.getTime() - 8 * 60 * 60_000),
+            lt: new Date(end.getTime() - 8 * 60 * 60_000),
+          },
+        },
+        _sum: { amount: true },
+      });
+      return { month: start.toISOString().slice(0, 7), amount: -(result._sum.amount ?? 0) };
     }));
   }
 

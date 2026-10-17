@@ -22,6 +22,8 @@ export type {
   MetricPoint,
   MetricSeries,
   ProductConfigField,
+  ProductConfigFieldType,
+  ProductConfigVisibility,
   ProductTypeProvider,
   ProvisionContext,
   ProvisionResult,
@@ -29,8 +31,12 @@ export type {
   ServiceAction,
   ServiceActionParam,
   ServiceActionResult,
+  ServiceChangeInput,
   ServiceDetail,
   ServiceDetailField,
+  ServiceRenewalInput,
+  ServiceResource,
+  ServiceResourceKind,
   ServiceStatus,
 } from './fulfillment.js';
 export type {
@@ -41,8 +47,15 @@ export type {
   CheckoutPriceContext,
   CheckoutPriceResult,
   CheckoutSelection,
+  CheckoutVisibility,
 } from './fulfillment.js';
-export { computeCheckoutPrice, readCheckoutConfig } from './fulfillment.js';
+export {
+  allowedChoices,
+  computeCheckoutPrice,
+  readCheckoutConfig,
+  validateCheckoutSelection,
+  visibleOptions,
+} from './fulfillment.js';
 export type {
   UpstreamProductItem,
   UpstreamProductSource,
@@ -57,6 +70,19 @@ export type {
   NotificationsService,
   UpsertNotificationInput,
 } from './notifications.js';
+export type {
+  CaptchaProvider,
+  CaptchaService,
+  CaptchaVerification,
+  CaptchaVerifyResult,
+  ConsumeIdentityChallengeInput,
+  IdentityChallengeMessage,
+  IdentityChallengePurpose,
+  IdentityChallengeSender,
+  IdentityChallengeService,
+  IssueIdentityChallengeInput,
+  IssuedIdentityChallenge,
+} from './identity.js';
 export {
   buildZodFromSettingsSchema,
   captureFrontendPathParams,
@@ -206,6 +232,16 @@ export type { StateCandidate, StateLease, StateService } from './state.js';
 export type { CacheReadOptions, CacheService } from './cache.js';
 export type { MediaReferenceService } from './media.js';
 export type { MarketInstallResult, MarketService } from './market.js';
+export type {
+  StorageBackendSpec,
+  StorageBeginPutInput,
+  StorageByteMode,
+  StorageGetTarget,
+  StorageProvider,
+  StorageProviderObjectStat,
+  StoragePutTarget,
+  StorageService,
+} from './storage.js';
 export type { JobContext, JobHandler, JobOptions, JobSchedule } from './jobs.js';
 export type { ChannelTerminal, PaymentMethodInstance, SalesChannel } from './sales.js';
 export { CommerceError, isCommerceError } from './commerce.js';

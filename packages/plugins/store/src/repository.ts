@@ -1,4 +1,5 @@
 import type { ExtensionInstance } from '@stackpanel/sdk';
+import { isExtensionVersionConflict } from '@stackpanel/sdk';
 import { extensions } from './context.js';
 import {
   cartItemModel,
@@ -70,8 +71,12 @@ export interface ServiceInstanceRecord {
   expiresAt: Date | null;
   /** epoch 毫秒镜像（索引列，供范围扫描）。 */
   expiresAtMs: number | null;
-  /** 到期处理阶段：reminded | suspended | terminated。 */
+  /** 到期处理阶段：reminded | suspending | suspended | terminating | terminated。 */
   expiryStage: string | null;
+  /** 到期动作（暂停/终止）的上游调用尝试次数；成功落终态时清 0。 */
+  expiryAttempts: number;
+  /** 到期动作最后一次上游失败原因；成功落终态时清 null。 */
+  expiryLastError: string | null;
   provisionedAt: Date | null;
   terminatedAt: Date | null;
   createdAt: Date;
@@ -130,8 +135,17 @@ export function toOrder(instance: ExtensionInstance<StoreOrderData>): OrderRecor
 }
 
 export function toService(instance: ExtensionInstance<StoreServiceInstanceData>): ServiceInstanceRecord {
-  const { state, expiresAt, expiresAtMs, expiryStage, provisionedAt, terminatedAt, ...rest } =
-    instance.spec;
+  const {
+    state,
+    expiresAt,
+    expiresAtMs,
+    expiryStage,
+    expiryAttempts,
+    expiryLastError,
+    provisionedAt,
+    terminatedAt,
+    ...rest
+  } = instance.spec;
   return {
     id: instance.name,
     ...rest,
@@ -139,6 +153,8 @@ export function toService(instance: ExtensionInstance<StoreServiceInstanceData>)
     expiresAt: parseDate(expiresAt),
     expiresAtMs: expiresAtMs ?? null,
     expiryStage: expiryStage ?? null,
+    expiryAttempts: expiryAttempts ?? 0,
+    expiryLastError: expiryLastError ?? null,
     provisionedAt: parseDate(provisionedAt),
     terminatedAt: parseDate(terminatedAt),
     createdAt: instance.createdAt,
@@ -163,6 +179,8 @@ export function toServiceInstanceData(service: ServiceInstanceRecord): StoreServ
     expiresAt: isoOrNull(service.expiresAt),
     expiresAtMs: service.expiresAtMs ?? toEpochMs(isoOrNull(service.expiresAt)),
     expiryStage: service.expiryStage,
+    expiryAttempts: service.expiryAttempts,
+    expiryLastError: service.expiryLastError,
     provisionedAt: isoOrNull(service.provisionedAt),
     terminatedAt: isoOrNull(service.terminatedAt),
   };
@@ -177,6 +195,26 @@ export function toTask(instance: ExtensionInstance<StoreDeliveryTaskData>): Deli
     nextAttemptAt: nextAttemptAtMs > 0 ? new Date(nextAttemptAtMs) : null,
     createdAt: instance.createdAt,
     updatedAt: instance.updatedAt,
+  };
+}
+
+/** 领域任务记录 → 存储载荷（`replaceTask`/`reclaimTask` 整行回写共用）。 */
+export function toTaskData(task: DeliveryTaskRecord): StoreDeliveryTaskData {
+  return {
+    orderId: task.orderId,
+    productId: task.productId,
+    userId: task.userId,
+    productName: task.productName,
+    fulfillmentType: task.fulfillmentType,
+    providerId: task.providerId,
+    quantity: task.quantity,
+    state: task.status,
+    attempts: task.attempts,
+    maxAttempts: task.maxAttempts,
+    error: task.error,
+    payload: task.payload,
+    serviceId: task.serviceId,
+    nextAttemptAtMs: task.nextAttemptAt ? task.nextAttemptAt.getTime() : 0,
   };
 }
 
@@ -493,7 +531,16 @@ export async function listServicesPage(
 }
 
 export async function createServiceInstance(
-  data: Omit<StoreServiceInstanceData, 'state' | 'expiresAt' | 'expiresAtMs' | 'expiryStage' | 'terminatedAt'> & {
+  data: Omit<
+    StoreServiceInstanceData,
+    | 'state'
+    | 'expiresAt'
+    | 'expiresAtMs'
+    | 'expiryStage'
+    | 'expiryAttempts'
+    | 'expiryLastError'
+    | 'terminatedAt'
+  > & {
     state: string;
     expiresAt?: string | null;
     terminatedAt?: string | null;
@@ -502,6 +549,8 @@ export async function createServiceInstance(
   const created = await extensions().create<StoreServiceInstanceData>(serviceInstanceModel, {
     expiresAt: null,
     expiryStage: null,
+    expiryAttempts: 0,
+    expiryLastError: null,
     terminatedAt: null,
     ...data,
     // 派生过期毫秒列：以 expiresAt 为唯一真源，避免两处漂移。
@@ -513,28 +562,92 @@ export async function createServiceInstance(
 export async function replaceServiceInstance(
   id: string,
   data: StoreServiceInstanceData,
+  opts?: { expectedVersion?: number },
 ): Promise<void> {
-  await extensions().update<StoreServiceInstanceData>(serviceInstanceModel, id, {
-    ...data,
-    expiresAtMs: toEpochMs(data.expiresAt),
-  });
+  await extensions().update<StoreServiceInstanceData>(
+    serviceInstanceModel,
+    id,
+    {
+      ...data,
+      expiresAtMs: toEpochMs(data.expiresAt),
+    },
+    opts,
+  );
 }
 
 /**
- * 仅更新交付物的少量字段（按 `name` + `expiryStage` 条件原子落库），避免用早先读到的
- * 整行快照覆盖并发写入的其它字段（如运维动作改动的 runtime）。用于到期扫描推进状态。
+ * 仅更新交付物的少量字段（**整行读改写**：先按 `name` 读出、校验 `expiryStage` 仍为
+ * `expectedStage`，再合并 patch 整行落库）。内核 `updateWhere` 只接受 `indexes` 中声明
+ * 过的字段，而 `terminatedAt`/`expiryAttempts`/`expiryLastError` 未声明为索引（也无需
+ * 查询），因此这里改用整行更新以携带这些字段；`state`/`expiryStage` 的并发安全由调用方
+ * 先经 `claimExpiryStage` 原子认领阶段来保证。
+ *
+ * 另以**乐观锁** `expectedVersion`（读到的 `instance.version`）兜底：若读与写之间该行被
+ * 并发修改（如用户续费重置了 `expiryStage`/顺延了 `expiresAt`），`update` 抛
+ * `ExtensionVersionConflict`，此处吞掉返回 `false`，避免用陈旧快照覆盖并发写入。
  */
 export async function patchServiceInstance(
   id: string,
   expectedStage: string,
-  patch: Partial<Record<'state' | 'terminatedAt' | 'expiryStage', { set: unknown }>>,
+  patch: Partial<
+    Record<
+      'state' | 'terminatedAt' | 'expiryStage' | 'expiryAttempts' | 'expiryLastError',
+      { set: unknown }
+    >
+  >,
 ): Promise<boolean> {
-  const { updated } = await extensions().updateWhere(
-    serviceInstanceModel,
-    { name: { eq: id }, expiryStage: { eq: expectedStage } },
-    patch,
-  );
-  return updated > 0;
+  const instance = await extensions().get<StoreServiceInstanceData>(serviceInstanceModel, id);
+  if (!instance) return false;
+  const service = toService(instance);
+  if (service.expiryStage !== expectedStage) return false;
+  const next = toServiceInstanceData(service);
+  if ('state' in patch && patch.state) next.state = patch.state.set as string;
+  if ('expiryStage' in patch && patch.expiryStage)
+    next.expiryStage = patch.expiryStage.set as string | null;
+  if ('expiryAttempts' in patch && patch.expiryAttempts)
+    next.expiryAttempts = patch.expiryAttempts.set as number;
+  if ('expiryLastError' in patch && patch.expiryLastError)
+    next.expiryLastError = patch.expiryLastError.set as string | null;
+  if ('terminatedAt' in patch && patch.terminatedAt)
+    next.terminatedAt = patch.terminatedAt.set as string | null;
+  try {
+    await replaceServiceInstance(id, next, { expectedVersion: instance.version });
+  } catch (error) {
+    if (isExtensionVersionConflict(error)) return false;
+    throw error;
+  }
+  return true;
+}
+
+/**
+ * 记录一次到期动作（暂停/终止）的上游失败：自增尝试次数、写最后错误；**不动 state**，
+ * 阶段停留在「处理中」以便下一轮 sweep 重试。返回是否命中（阶段已变更或并发冲突时不写入）。
+ */
+export async function markExpiryFailure(
+  id: string,
+  expectedStage: string,
+  error: unknown,
+): Promise<boolean> {
+  const message = error instanceof Error && error.message ? error.message : '未知错误';
+  const instance = await extensions().get<StoreServiceInstanceData>(serviceInstanceModel, id);
+  if (!instance) return false;
+  const service = toService(instance);
+  if (service.expiryStage !== expectedStage) return false;
+  try {
+    await replaceServiceInstance(
+      id,
+      {
+        ...toServiceInstanceData(service),
+        expiryAttempts: (service.expiryAttempts ?? 0) + 1,
+        expiryLastError: message,
+      },
+      { expectedVersion: instance.version },
+    );
+  } catch (error) {
+    if (isExtensionVersionConflict(error)) return false;
+    throw error;
+  }
+  return true;
 }
 
 /** ISO 时间 → epoch 毫秒；空值或非法值返回 null。 */
@@ -588,6 +701,8 @@ export async function listDueExpiryReminders(
     where: {
       state: { eq: 'ACTIVE' },
       expiresAtMs: { gte: fromMs, lte: toMs },
+      // 只提醒尚未进入任何阶段（expiryStage IS NULL）的服务，避免已提醒记录占满批次。
+      expiryStage: { eq: null },
     },
     orderBy: { field: 'expiresAtMs', desc: false },
   });
@@ -625,14 +740,67 @@ export async function listDueTasks(nowMs: number, take: number): Promise<Deliver
   return rows.slice(0, take).map(toTask);
 }
 
-/** 认领一个到期任务（原子）。 */
-export async function claimTask(id: string): Promise<boolean> {
+/** 某订单已创建的履约任务（用于入队幂等：同一 (orderId, productId) 只建一次）。 */
+export async function listTasksByOrder(orderId: string): Promise<DeliveryTaskRecord[]> {
+  const rows = await extensions().listAll<StoreDeliveryTaskData>(deliveryTaskModel, {
+    where: { orderId: { eq: orderId } },
+  });
+  return rows.map(toTask);
+}
+
+/**
+ * 认领一个到期任务（原子）。`leaseUntilMs` 写入 `nextAttemptAtMs` 作为**租约到期**：
+ * 任务处于 RUNNING 时该字段表示「认领者必须在此前完成」，超时即可被回收重试。
+ */
+export async function claimTask(id: string, leaseUntilMs: number): Promise<boolean> {
   const { updated } = await extensions().updateWhere(
     deliveryTaskModel,
     { name: { eq: id }, state: { eq: 'PENDING' } },
-    { state: { set: 'RUNNING' }, attempts: { inc: 1 } },
+    { state: { set: 'RUNNING' }, attempts: { inc: 1 }, nextAttemptAtMs: { set: leaseUntilMs } },
   );
   return updated > 0;
+}
+
+/** 列出超过租约仍停留在 RUNNING 的任务（认领者已死，需要回收）。 */
+export async function listStaleRunningTasks(nowMs: number, take: number): Promise<DeliveryTaskRecord[]> {
+  const rows = await extensions().listAll<StoreDeliveryTaskData>(deliveryTaskModel, {
+    where: {
+      state: { eq: 'RUNNING' },
+      nextAttemptAtMs: { lte: nowMs },
+    },
+    orderBy: { field: 'nextAttemptAtMs', desc: false },
+  });
+  return rows.slice(0, take).map(toTask);
+}
+
+/**
+ * 回收超租约的 RUNNING 任务：还有重试次数就回到 PENDING（立即可跑），否则置 FAILED。
+ * 返回 `true` 表示已转 PENDING 待重试。
+ *
+ * 用 `update`（整行 + 乐观锁）而非 `updateWhere`：`error` 未声明为索引，`updateWhere`
+ * 不接受它；顺带以 `expectedVersion` 保证「仅回收仍是同一 RUNNING 行」，避免与真正的
+ * 执行者/另一轮回收竞态。
+ */
+export async function reclaimTask(
+  id: string,
+  nowMs: number,
+  retryable: boolean,
+): Promise<boolean> {
+  const instance = await extensions().get<StoreDeliveryTaskData>(deliveryTaskModel, id);
+  if (!instance || instance.spec.state !== 'RUNNING') return false;
+  const task = toTask(instance);
+  const next: StoreDeliveryTaskData = retryable
+    ? { ...toTaskData(task), state: 'PENDING', nextAttemptAtMs: nowMs }
+    : { ...toTaskData(task), state: 'FAILED', error: '运行超时，已回收' };
+  try {
+    await extensions().update<StoreDeliveryTaskData>(deliveryTaskModel, id, next, {
+      expectedVersion: instance.version,
+    });
+  } catch (error) {
+    if (isExtensionVersionConflict(error)) return false;
+    throw error;
+  }
+  return retryable;
 }
 
 export async function listTasksPage(

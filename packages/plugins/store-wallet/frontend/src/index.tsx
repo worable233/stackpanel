@@ -4,11 +4,19 @@ import type {
   FinderProvider,
   FrontendPackage,
 } from '@stackpanel/sdk';
-import { PageHeader } from '@stackpanel/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  PageHeader,
+  SectionTitle,
+  WalletRecharge,
+} from '@stackpanel/ui';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
-import { Clock, Plus, Wallet } from 'lucide-react';
+import { ArrowLeft, Clock, Plus, Wallet } from 'lucide-react';
+import { overviewSchema, WalletOverviewPage } from './overview';
 
 interface WalletEntry {
   id: string;
@@ -96,32 +104,17 @@ function money(amount: number, currency: string): string {
   return `${(amount / 100).toFixed(2)} ${currency}`;
 }
 
-function formatAmountInput(amount: number): string {
-  return (amount / 100).toFixed(2);
-}
-
 function formatDate(value: string): string {
   return new Date(value).toLocaleString('zh-CN');
 }
 
-function PriceTag({ amount, currency }: { amount: number; currency: string }): ReactElement {
-  const [int, dec] = (amount / 100).toFixed(2).split('.');
-  return (
-    <span className="font-mono font-bold tracking-tight tabular-nums">
-      <span className="align-super text-[0.65em] font-medium opacity-80">{currency} </span>
-      <span>{int}</span>
-      <span className="text-[0.75em] opacity-80">.{dec}</span>
-    </span>
-  );
-}
-
 function Empty({ text }: { text: string }): ReactElement {
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed px-6 py-16 text-center">
-      <span className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+    <div className="flex flex-col items-center gap-3 rounded-xl border bg-card px-6 py-16 text-center text-muted-foreground">
+      <span className="size-5 opacity-50">
         <Icon name="wallet" />
       </span>
-      <p className="mt-4 text-sm font-medium">{text}</p>
+      <p className="text-sm">{text}</p>
     </div>
   );
 }
@@ -143,88 +136,65 @@ function WalletAccountWidget(_props: AccountWidgetProps): ReactElement {
 
 function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElement {
   const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
-  const topUp = props.actions?.['wallet.create-topup'];
-  const cancelTopUp = props.actions?.['wallet.cancel-topup'];
-  const account = wallet?.account ?? { balance: 0, currency: 'CNY' };
   return (
-    <main className="space-y-8">
-      <PageHeader
-        title="余额充值"
-        description="充值、消费和人工调整都会记录在余额流水中。"
-      />
-      <section className="relative overflow-hidden rounded-2xl border bg-card p-6 shadow-sm">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-60 [background:radial-gradient(22rem_10rem_at_0%_0%,color-mix(in_oklch,var(--primary)_14%,transparent),transparent)]"
-          aria-hidden="true"
-        />
-        <p className="relative text-sm text-muted-foreground">可用余额</p>
-        <div className="relative mt-2 text-4xl">
-          <PriceTag amount={account.balance} currency={account.currency} />
-        </div>
-      </section>
-      <section className="space-y-4">
-        <h2 className="flex items-center gap-2 text-base font-semibold">
-          <span className="flex size-6 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Icon name="plus" />
-          </span>
-          充值
-        </h2>
-        {wallet?.providers.length && topUp ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {wallet.providers.flatMap((provider) =>
-              provider.methods.map((method) => (
-                <section
-                  key={`${provider.id}-${method.id}`}
-                  className="rounded-2xl border bg-card p-5 shadow-sm"
-                >
-                  <h3 className="flex items-center gap-2 text-sm font-semibold">
-                    <span className="flex size-6 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Icon name="wallet" />
-                    </span>
-                    {method.label}
-                  </h3>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {(method.topUpAmounts ?? []).map((amount) => (
-                      <form action={topUp} key={amount}>
-                        <input type="hidden" name="providerId" value={provider.id} />
-                        <input type="hidden" name="paymentMethod" value={method.id} />
-                        <input type="hidden" name="amount" value={formatAmountInput(amount)} />
-                        <button
-                          type="submit"
-                          className="h-9 rounded-lg border bg-background px-3.5 text-xs font-medium transition-colors hover:bg-muted"
-                        >
-                          {money(amount, 'CNY')}
-                        </button>
-                      </form>
-                    ))}
-                  </div>
-                  <form action={topUp} className="mt-4 flex gap-2">
-                    <input type="hidden" name="providerId" value={provider.id} />
-                    <input type="hidden" name="paymentMethod" value={method.id} />
-                    <input
-                      name="amount"
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="自定义金额"
-                      className="h-10 min-w-0 flex-1 rounded-lg border bg-background px-3 text-sm"
-                    />
-                    <button
-                      type="submit"
-                      className="h-10 rounded-lg bg-foreground px-4 text-sm font-semibold text-background transition-opacity hover:opacity-90"
-                    >
-                      充值
-                    </button>
-                  </form>
-                </section>
-              )),
-            )}
-          </div>
-        ) : (
-          <Empty text="暂未配置在线支付方式" />
-        )}
-      </section>
-      <Ledger title="充值记录" rows={wallet?.topUps ?? []} cancel={cancelTopUp} />
-      <Ledger title="余额流水" rows={wallet?.entries ?? []} />
+    <main className="flex flex-col gap-6">
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="返回概览"
+          render={<Link href="/account/billing" />}
+        >
+          <ArrowLeft />
+        </Button>
+        <PageHeader title="充值" />
+      </div>
+      <Card className="max-w-5xl">
+        <CardContent>
+          {wallet ? (
+            <WalletRecharge
+              methods={wallet.providers.flatMap((provider) =>
+                provider.methods.map((method) => ({
+                  providerId: provider.id,
+                  providerName: provider.name,
+                  id: method.id,
+                  label: method.label,
+                  amounts: method.topUpAmounts,
+                })),
+              )}
+              action={props.actions?.['wallet.create-topup']}
+              cancelLink={
+                <Button variant="ghost" render={<Link href="/account/billing" />}>
+                  取消
+                </Button>
+              }
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">支付方式暂时无法加载，请刷新重试。</p>
+          )}
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
+
+function WalletAccountRecordsPage(props: AccountPageComponentProps): ReactElement {
+  const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
+  return (
+    <main className="flex flex-col gap-6">
+      <PageHeader title="资金记录" />
+      {wallet ? (
+        <>
+          <Ledger
+            title="充值记录"
+            rows={wallet.topUps}
+            cancel={props.actions?.['wallet.cancel-topup']}
+          />
+          <Ledger title="余额流水" rows={wallet.entries} />
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">资金记录暂时无法加载，请刷新重试。</p>
+      )}
     </main>
   );
 }
@@ -239,17 +209,17 @@ function Ledger({
   cancel?: ((formData: FormData) => Promise<void>) | undefined;
 }): ReactElement {
   return (
-    <section>
-      <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
-        <span className="flex size-6 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon name="clock" />
-        </span>
+    <section id={title === '余额流水' ? 'ledger' : undefined} className="scroll-mt-24">
+      <SectionTitle icon={<Clock />} className="mb-3">
         {title}
-      </h2>
+      </SectionTitle>
       {rows.length ? (
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
           {rows.map((row) => (
-            <li key={row.id} className="flex items-center justify-between gap-4 px-5 py-3.5 text-sm">
+            <li
+              key={row.id}
+              className="flex items-center justify-between gap-4 px-5 py-3.5 text-sm"
+            >
               <div className="min-w-0">
                 <p className="truncate">
                   {'type' in row
@@ -295,6 +265,9 @@ function Ledger({
 }
 
 const walletFinders: Record<string, FinderProvider> = {
+  'wallet.overview': {
+    handler: async (_input, ctx) => ctx.api.get('/wallet/overview', overviewSchema),
+  },
   'wallet.me': {
     handler: async (_input, ctx) => ctx.api.get('/wallet', walletSchema),
   },
@@ -328,24 +301,13 @@ export const frontend: FrontendPackage = {
         permission: 'store.wallet',
         input: [{ name: 'id', type: 'string', required: true, maxLength: 191 }],
       },
-      {
-        id: 'wallet.adjust-wallet',
-        method: 'POST',
-        path: '/store/admin/wallets/adjustments',
-        permission: 'store.admin',
-        input: [
-          { name: 'email', type: 'string', required: true, maxLength: 191 },
-          { name: 'amount', type: 'integer', required: true, min: -2000000000, max: 2000000000 },
-          { name: 'note', type: 'string', required: true, maxLength: 191 },
-        ],
-      },
     ],
     adminRoutes: [
       {
-        path: '/wallets',
-        component: 'admin/wallets',
+        path: '/overview',
+        component: 'admin/summary',
         permission: 'store.admin',
-        nav: { label: '钱包管理', group: '商店插件' },
+        nav: { label: '概览', group: '财务', order: 0 },
         data: [{ finder: 'wallet.adminAccounts', as: 'wallets' }],
       },
     ],
@@ -359,15 +321,31 @@ export const frontend: FrontendPackage = {
     ],
     accountRoutes: [
       {
+        path: '/billing',
+        component: 'account/overview',
+        permission: 'store.wallet',
+        nav: { label: '概览', group: '费用', order: 0, activePaths: ['/balance'] },
+        data: [{ finder: 'wallet.overview', as: 'overview' }],
+      },
+      {
         path: '/balance',
         component: 'account/balance',
         permission: 'store.wallet',
-        nav: { label: '余额充值', group: '费用' },
+        data: [{ finder: 'wallet.me', as: 'wallet' }],
+      },
+      {
+        path: '/balance/records',
+        component: 'account/records',
+        permission: 'store.wallet',
         data: [{ finder: 'wallet.me', as: 'wallet' }],
       },
     ],
     accountWidgetComponents: { 'account/balance': WalletAccountWidget },
-    accountPages: { 'account/balance': WalletAccountBalancePage },
+    accountPages: {
+      'account/balance': WalletAccountBalancePage,
+      'account/overview': WalletOverviewPage,
+      'account/records': WalletAccountRecordsPage,
+    },
   },
 };
 

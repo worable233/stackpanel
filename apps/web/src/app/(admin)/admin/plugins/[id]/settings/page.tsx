@@ -34,7 +34,6 @@ export default async function AdminPluginSettingsPage({
           </Link>
         }
         title={t('admin.pluginSettings.title')}
-        description={id}
       />
       <div>
         {schema ? (

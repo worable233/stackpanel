@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "fc14f03e3feb",
+  "revision": "c705f5dbc97a",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -83,11 +83,18 @@
     "store.product",
     "store.paymentMethods",
     "store.pricePreview",
+    "store.pendingOrderCount",
     "store.myOrders",
     "store.myServices",
     "store.myService",
     "store.myServiceMetrics",
+    "store.myServiceResources",
+    "store.myServiceChangeOptions",
+    "store.myServiceChangeQuote",
+    "store.adminSummary",
     "store.adminProducts",
+    "store.adminProduct",
+    "store.adminProductCategoryIds",
     "store.productTypes",
     "store.upstreamSources",
     "store.cart",
@@ -96,11 +103,33 @@
   "adminRoutes": [
     {
       "path": "/overview",
+      "component": "admin/summary",
+      "permission": "store.admin",
+      "nav": {
+        "label": "概览",
+        "group": "商店",
+        "order": 0
+      },
+      "data": [
+        {
+          "finder": "store.adminSummary",
+          "as": "summary"
+        },
+        {
+          "finder": "store.productTypes",
+          "as": "productTypes"
+        }
+      ]
+    },
+    {
+      "path": "/products",
       "component": "admin/overview",
       "permission": "store.admin",
       "nav": {
-        "label": "商店管理",
-        "group": "商店插件"
+        "label": "商品",
+        "group": "商店",
+        "order": 10,
+        "activePaths": ["/products"]
       },
       "data": [
         {
@@ -122,6 +151,58 @@
         {
           "finder": "catalog.adminProducts",
           "as": "catalogProducts"
+        }
+      ]
+    },
+    {
+      "path": "/products/new",
+      "component": "admin/product-editor",
+      "permission": "store.admin",
+      "data": [
+        {
+          "finder": "store.productTypes",
+          "as": "productTypes"
+        },
+        {
+          "finder": "store.upstreamSources",
+          "as": "upstreamSources"
+        },
+        {
+          "finder": "catalog.adminCategories",
+          "as": "categories"
+        }
+      ]
+    },
+    {
+      "path": "/products/:id/edit",
+      "component": "admin/product-editor",
+      "permission": "store.admin",
+      "data": [
+        {
+          "finder": "store.adminProduct",
+          "as": "product",
+          "input": {
+            "id": ":id"
+          }
+        },
+        {
+          "finder": "store.adminProductCategoryIds",
+          "as": "productCategoryIds",
+          "input": {
+            "id": ":id"
+          }
+        },
+        {
+          "finder": "store.productTypes",
+          "as": "productTypes"
+        },
+        {
+          "finder": "store.upstreamSources",
+          "as": "upstreamSources"
+        },
+        {
+          "finder": "catalog.adminCategories",
+          "as": "categories"
         }
       ]
     }
@@ -411,6 +492,120 @@
       }
     },
     {
+      "id": "store.service-resource-create",
+      "method": "POST",
+      "path": "/services/:id/resources/:kind",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        {
+          "name": "params",
+          "type": "string",
+          "maxLength": 4000
+        }
+      ]
+    },
+    {
+      "id": "store.service-resource-action",
+      "method": "POST",
+      "path": "/services/:id/resources/:kind/:resourceId/actions/:actionId",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        {
+          "name": "resourceId",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "actionId",
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        {
+          "name": "params",
+          "type": "string",
+          "maxLength": 4000
+        }
+      ]
+    },
+    {
+      "id": "store.service-change-wallet",
+      "method": "POST",
+      "path": "/services/:id/change",
+      "permission": "store.buy",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "paymentMode",
+          "type": "string",
+          "default": "wallet"
+        },
+        {
+          "name": "config",
+          "type": "string",
+          "maxLength": 40000
+        },
+        {
+          "name": "targetProductId",
+          "type": "string",
+          "maxLength": 191
+        }
+      ],
+      "redirect": {
+        "responsePath": "nextPath"
+      }
+    },
+    {
+      "id": "store.admin-transfer-service",
+      "method": "POST",
+      "path": "/store/admin/services/:id/transfer",
+      "permission": "store.admin",
+      "input": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        },
+        {
+          "name": "targetUserId",
+          "type": "string",
+          "required": true,
+          "maxLength": 191
+        }
+      ]
+    },
+    {
       "id": "store.admin-refund-order",
       "method": "POST",
       "path": "/store/admin/orders/:id/refund",
@@ -577,7 +772,8 @@
       "permission": "store.view",
       "nav": {
         "label": "我的云服务",
-        "group": "服务"
+        "group": "云服务",
+        "order": 10
       },
       "data": [
         {
@@ -591,8 +787,9 @@
       "component": "account/orders",
       "permission": "store.view",
       "nav": {
-        "label": "历史订单",
-        "group": "费用"
+        "label": "订单",
+        "group": "费用",
+        "order": 20
       },
       "data": [
         {
@@ -619,6 +816,28 @@
           "input": {
             "id": ":id"
           }
+        },
+        {
+          "finder": "store.myServiceResources",
+          "as": "resources",
+          "input": {
+            "id": ":id"
+          }
+        },
+        {
+          "finder": "store.myServiceChangeOptions",
+          "as": "changeOptions",
+          "input": {
+            "id": ":id"
+          }
+        },
+        {
+          "finder": "store.myServiceChangeQuote",
+          "as": "changeQuote",
+          "input": {
+            "id": ":id",
+            "$query": "1"
+          }
         }
       ]
     }
@@ -627,6 +846,8 @@
   "files": [
     "frontend/dist/admin.js",
     "frontend/dist/admin.js.map",
+    "frontend/dist/admin.runtime.js",
+    "frontend/dist/admin.runtime.js.map",
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],

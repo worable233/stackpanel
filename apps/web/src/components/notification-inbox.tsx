@@ -11,25 +11,40 @@ import { cn } from '@/lib/utils';
 import { mergeNotification, useNotificationStream } from '@/lib/use-notification-stream';
 import { useLocale, useTranslator } from '@/i18n/provider';
 import { formatDate } from '@/i18n/core';
+import {
+  NOTIFICATION_READ_EVENT,
+  useVisibleNotificationRead,
+} from '@/lib/use-visible-notification-read';
 
 type Filter = 'all' | 'unread';
 
 const PAGE_SIZE = 50;
+const EMPTY_ITEMS: NotificationView[] = [];
 
 /** Full in-app notification inbox (account and admin share the same user-scoped list). */
-export function NotificationInbox({
-  title,
-  description,
-}: {
-  title: string;
-  description?: string;
-}) {
+export function NotificationInbox({ title, description }: { title: string; description?: string }) {
   const t = useTranslator();
   const locale = useLocale();
   const [filter, setFilter] = useState<Filter>('all');
   const [data, setData] = useState<NotificationListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const visibleRows = useVisibleNotificationRead(data?.items ?? EMPTY_ITEMS);
+
+  useEffect(() => {
+    const refreshCount = async () => {
+      try {
+        const response = await fetch('/api/notifications/unread-count', { cache: 'no-store' });
+        if (!response.ok) return;
+        const result = (await response.json()) as { unreadCount: number };
+        setData((prev) => (prev ? { ...prev, unreadCount: result.unreadCount } : prev));
+      } catch {
+        /* Keep the current snapshot when offline. */
+      }
+    };
+    window.addEventListener(NOTIFICATION_READ_EVENT, refreshCount);
+    return () => window.removeEventListener(NOTIFICATION_READ_EVENT, refreshCount);
+  }, []);
 
   const load = useCallback(
     async (cursor?: string) => {
@@ -45,9 +60,7 @@ export function NotificationInbox({
         }
         const result = (await res.json()) as NotificationListResponse;
         setData((prev) =>
-          cursor && prev
-            ? { ...result, items: [...prev.items, ...result.items] }
-            : result,
+          cursor && prev ? { ...result, items: [...prev.items, ...result.items] } : result,
         );
         setError(null);
       } catch (err) {
@@ -67,28 +80,36 @@ export function NotificationInbox({
 
   // Fold streamed live notifications into the current page's items so an
   // in-progress activity advances in place (its title/body/progress change).
-  const applyLive = useCallback((view: NotificationView) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      if (filter === 'unread' && view.readAt) {
-        return { ...prev, items: prev.items.filter((item) => item.id !== view.id) };
-      }
-      return { ...prev, items: mergeNotification(prev.items, view) };
-    });
-  }, [filter]);
+  const applyLive = useCallback(
+    (view: NotificationView) => {
+      setData((prev) => {
+        if (!prev) return prev;
+        if (filter === 'unread' && view.readAt) {
+          return { ...prev, items: prev.items.filter((item) => item.id !== view.id) };
+        }
+        return { ...prev, items: mergeNotification(prev.items, view) };
+      });
+    },
+    [filter],
+  );
   useNotificationStream(applyLive);
 
   const markRead = async (id: string) => {
     try {
-      await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+      const response = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
+        method: 'POST',
+      });
+      if (!response.ok) return;
+      window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
       setData((prev) =>
         prev
           ? {
               ...prev,
               items: prev.items.map((item) =>
-                item.id === id ? { ...item, readAt: item.readAt ?? new Date().toISOString() } : item,
+                item.id === id
+                  ? { ...item, readAt: item.readAt ?? new Date().toISOString() }
+                  : item,
               ),
-              unreadCount: Math.max(0, prev.unreadCount - 1),
             }
           : prev,
       );
@@ -119,10 +140,9 @@ export function NotificationInbox({
   const items = data?.items ?? [];
 
   return (
-    <div className="space-y-6">
+    <div ref={visibleRows} className="space-y-6">
       <PageHeader
         title={title}
-        description={description}
         actions={
           <>
             <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
@@ -171,39 +191,47 @@ export function NotificationInbox({
           {filter === 'unread' ? t('notification.emptyUnread') : t('notification.emptyAll')}
         </div>
       ) : (
-        <ul className="divide-y rounded-lg border bg-card">
+        <ul className="overflow-hidden rounded-xl border bg-card">
           {items.map((item) => (
-            <li key={item.id} className="flex items-start gap-3 p-4">
+            <li
+              key={item.id}
+              data-notification-id={item.id}
+              className={cn(
+                'grid grid-cols-[16px_minmax(0,1fr)] items-start gap-x-4 gap-y-2 border-b px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/30 sm:grid-cols-[16px_minmax(0,1fr)_auto]',
+                !item.readAt && 'bg-muted/25',
+              )}
+            >
               <InboxGlyph item={item} />
               <div className="min-w-0 flex-1">
-                <p
-                  className={cn(
-                    'text-sm',
-                    item.readAt ? 'text-foreground/70' : 'font-medium text-foreground',
-                  )}
-                >
-                  {item.title}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className={cn('text-sm', item.readAt ? 'text-foreground/85' : 'font-medium')}>
+                    {item.title}
+                  </p>
+                  {!item.readAt ? (
+                    <span className="size-1.5 rounded-full bg-primary" aria-label="未读" />
+                  ) : null}
+                </div>
                 {item.body ? (
-                  <p className="mt-1 text-sm text-muted-foreground">{item.body}</p>
+                  <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">
+                    {item.body}
+                  </p>
                 ) : null}
                 {item.status === 'active' && item.progress !== null ? (
-                  <div className="mt-2 flex items-center gap-3">
-                    <Progress className="h-1.5 max-w-xs" value={item.progress} />
+                  <div className="mt-3 flex max-w-md items-center gap-3">
+                    <Progress className="h-1.5" value={item.progress} />
                     <span className="text-xs tabular-nums text-muted-foreground">
                       {item.progress}%
                     </span>
                   </div>
                 ) : null}
-                <p className="mt-1 text-xs text-muted-foreground/70">
+                <p className="mt-2 text-xs text-muted-foreground/65">
                   {formatDate(new Date(item.createdAt), locale, {
                     dateStyle: 'medium',
                     timeStyle: 'short',
                   })}{' '}
-                  · {item.type}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="col-start-2 flex shrink-0 items-center gap-1 sm:col-start-3 sm:row-start-1">
                 {!item.readAt ? (
                   <Button variant="ghost" size="sm" onClick={() => void markRead(item.id)}>
                     <Check className="size-4" />
@@ -215,7 +243,7 @@ export function NotificationInbox({
                     render={
                       <Link
                         href={item.link}
-                        className="flex items-center gap-1 text-xs text-primary"
+                        className="flex items-center gap-1 text-xs text-muted-foreground"
                       />
                     }
                     variant="ghost"
@@ -250,13 +278,13 @@ export function NotificationInbox({
 /** Status glyph for an inbox row; a plain dot for one-shot notifications. */
 function InboxGlyph({ item }: { item: NotificationView }) {
   if (item.status === 'active') {
-    return <Loader className="mt-1 size-4 shrink-0 animate-spin text-primary" />;
+    return <Loader className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />;
   }
   if (item.status === 'success') {
-    return <Check className="mt-1 size-4 shrink-0 text-emerald-500" />;
+    return <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />;
   }
   if (item.status === 'error') {
-    return <CircleAlert className="mt-1 size-4 shrink-0 text-destructive" />;
+    return <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />;
   }
   return (
     <span

@@ -125,10 +125,16 @@ export const serviceInstanceModel = defineModel({
      */
     expiresAtMs: z.number().int().nullable().default(null),
     /**
-     * 到期处理阶段：`reminded`（已提醒）→ `suspended`（已暂停）→ `terminated`
-     * （已终止）。仅用于让周期扫描「每个阶段只动作一次」，续费成功时重置。
+     * 到期处理阶段：`reminded`（已提醒）→ `suspending`（暂停处理中）→
+     * `suspended`（上游已确认暂停）→ `terminating`（终止处理中）→ `terminated`
+     * （上游已确认终止）。仅用于让周期扫描「每个阶段只动作一次」，续费成功时重置。
+     * `suspending`/`terminating` 表示已认领但尚未确认上游，失败时停留在该阶段待重试。
      */
     expiryStage: z.string().nullable().default(null),
+    /** 到期动作（暂停/终止）的上游调用尝试次数；成功落终态时清 0。 */
+    expiryAttempts: z.number().int().default(0),
+    /** 到期动作最后一次上游失败原因；成功落终态时清 null。 */
+    expiryLastError: z.string().nullable().default(null),
     provisionedAt: z.string().nullable().default(null),
     terminatedAt: z.string().nullable().default(null),
   }),
@@ -239,8 +245,12 @@ export interface StoreServiceInstanceData {
   expiresAt: string | null;
   /** `expiresAt` 的 epoch 毫秒镜像（索引列，供到期范围扫描）。 */
   expiresAtMs: number | null;
-  /** 到期处理阶段：reminded | suspended | terminated（每次动作推进一档）。 */
+  /** 到期处理阶段：reminded | suspending | suspended | terminating | terminated（每次动作推进一档）。 */
   expiryStage: string | null;
+  /** 到期动作（暂停/终止）的上游调用尝试次数；成功落终态时清 0。 */
+  expiryAttempts: number;
+  /** 到期动作最后一次上游失败原因；成功落终态时清 null。 */
+  expiryLastError: string | null;
   provisionedAt: string | null;
   terminatedAt: string | null;
 }

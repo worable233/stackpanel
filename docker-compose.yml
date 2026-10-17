@@ -46,7 +46,7 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
     command: ['server', '/data', '--console-address', ':9001']
     environment:
@@ -66,7 +66,7 @@ services:
   # One-shot: create the object-storage bucket once MinIO is healthy. The API
   # also ensures the bucket on boot; this makes it ready for first-run seeding.
   minio-init:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: 'no'
     depends_on:
       minio:
@@ -233,7 +233,7 @@ services:
       DISTRIBUTION_UPDATE_INSTANCE_ID: ${UPDATER_INSTANCE_ID:-stackpanel}
       DISTRIBUTION_UPDATER_STATUS_FILE: ${DISTRIBUTION_UPDATER_STATUS_FILE:-/var/lib/stackpanel-updater/status.json}
     volumes:
-      # Plugin/theme packages + the apply request/status files.
+      # Plugin/theme packages (their frontends are loaded at runtime from here).
       - stackpanel-data:/app/data
       # Single-builder web bundle, shared read-only with every web replica.
       - stackpanel-web-build:/app/apps/web/.next
@@ -241,9 +241,6 @@ services:
       - stackpanel-updater-state:/var/lib/stackpanel-updater
     networks:
       - stackpanel
-    deploy:
-      # Exactly one builder: a second replica would race the same artifacts.
-      replicas: 1
 
   web:
     build:
@@ -266,11 +263,8 @@ services:
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
       STACKPANEL_DATA_DIR: /app/data
-      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
     volumes:
       - stackpanel-data:/app/data
-      # Serve the worker-built bundle (S7). Read-mostly: only the worker writes.
-      - stackpanel-web-build:/app/apps/web/.next
     ports:
       - '3000:3000'
     networks:
@@ -350,7 +344,6 @@ services:
 
 volumes:
   stackpanel-data:
-  stackpanel-web-build:
   stackpanel-postgres:
   stackpanel-redis:
   stackpanel-minio:

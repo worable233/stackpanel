@@ -20,6 +20,7 @@ import { apiAssetUrl, getAuthedApiClient } from './api';
 import { getSessionUser } from './auth';
 import {
   activeThemeCandidate,
+  candidateAdmitsServerExecution,
   importFrontendPackage,
   listPluginFrontendCandidates,
   readPluginSettings,
@@ -38,6 +39,12 @@ export interface PageResolution {
   source: FrontendPageSource;
   actions: FrontendActionExecutors;
   assetsBaseUrl?: string;
+  /**
+   * Owning frontend package (contract 05 §3.3): the host wraps the rendered page
+   * in a stable scope marker `data-sp-frontend="<kind>:<id>"` so a package's
+   * `styles[]` selectors can be scoped to its own DOM and never leak to the host.
+   */
+  owner?: { kind: 'themes' | 'plugins'; id: string };
   /**
    * True when the match came from a `*`/`/**` fallback pattern (the theme's
    * "not-found template") rather than an explicit page. The route shell turns
@@ -81,6 +88,9 @@ export async function resolveFrontendRoute(
     ...pluginCandidates.map((candidate, index) => ({
       pkg: pluginPkgs[index] ?? null,
       pluginId: candidate.id,
+      // Trust boundary (contract 03 §3.1): an unauthorized package's finder
+      // must not be registered for execution in the web process.
+      admitted: candidateAdmitsServerExecution(candidate),
     })),
   ]);
 
@@ -105,6 +115,7 @@ export async function resolveFrontendRoute(
         params: routeParams,
         source,
         fallback: isFallbackPagePattern(definition.path),
+        owner: { kind: 'themes', id: theme.id },
         // Themes may render pages that borrow plugin actions (e.g. a themed
         // storefront using store.* cart/checkout actions). Bind them all so
         // the theme page keeps interactivity while owning the visual shell.
@@ -163,6 +174,7 @@ export async function resolveFrontendRoute(
         params: routeParams,
         source,
         fallback: isFallbackPagePattern(definition.path),
+        owner: { kind: 'plugins', id: owner.id },
         actions: bindPluginActions(owner.id, owner.manifest.actions, path),
       };
     }
@@ -214,6 +226,7 @@ export async function resolveFallbackRoute(path = '/'): Promise<PageResolution |
         params: pageParams(themeDefinition.path, path, {}),
         source: 'theme',
         fallback: true,
+        owner: { kind: 'themes', id: theme.id },
         actions: bindAllPluginActions(pluginCandidates, path),
         assetsBaseUrl: apiAssetUrl(`/themes/${theme.id}/assets`),
       };
@@ -237,6 +250,7 @@ export async function resolveFallbackRoute(path = '/'): Promise<PageResolution |
       params: pageParams(definition.path, path, {}),
       source: 'plugin',
       fallback: true,
+      owner: { kind: 'plugins', id: candidate.id },
       actions: bindPluginActions(candidate.id, candidate.manifest.actions, path),
     };
   }
@@ -283,18 +297,24 @@ function pageParams(
 
 async function safeImportFrontend(candidate: FrontendCandidate): Promise<FrontendPackage | null> {
   try {
-    return await importFrontendPackage(candidate.kind, candidate.id, candidate.manifest);
+    return await importFrontendPackage(
+      candidate.kind,
+      candidate.id,
+      candidate.manifest,
+      candidate.revision,
+    );
   } catch {
     return null;
   }
 }
 
 function collectFinders(
-  packages: Array<{ pkg: FrontendPackage | null; pluginId?: string }>,
+  packages: Array<{ pkg: FrontendPackage | null; pluginId?: string; admitted?: boolean }>,
 ): FinderRegistry {
   const result: FinderRegistry = {};
-  for (const { pkg, pluginId } of packages) {
+  for (const { pkg, pluginId, admitted } of packages) {
     if (!pkg?.finders) continue;
+    if (admitted === false) continue;
     for (const [name, finder] of Object.entries(pkg.finders)) {
       // Theme-owned finders are registered first. A plugin cannot silently
       // replace a theme's data provider just by reusing its name.

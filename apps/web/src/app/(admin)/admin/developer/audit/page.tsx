@@ -72,7 +72,6 @@ export default async function AdminDeveloperAuditPage({
     <main className="w-full space-y-6">
       <PageHeader
         title={t('admin.developer.calls.title')}
-        description={t('admin.developer.calls.description')}
       />
 
       <form className="flex flex-wrap items-end gap-3" method="get">

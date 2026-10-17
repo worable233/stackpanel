@@ -127,11 +127,13 @@ if [[ -n "$IMAGE" ]]; then
     sed -i.bak -e "s|^STACKPANEL_IMAGE=.*|STACKPANEL_IMAGE=${IMAGE}|" "$DOCKER_ENV" && rm -f "$DOCKER_ENV.bak"
   fi
   info "使用已发布镜像：${IMAGE}"
-  if [[ "${STACKPANEL_VERIFY_IMAGE:-0}" == "1" ]]; then
+  # 默认验签（fail-closed）：-image 路径本可被默认跳过，使 cosign 投入形同虚设
+  #（审计 E-3）。默认强制校验镜像签名；确需跳过时显式 STACKPANEL_VERIFY_IMAGE=0。
+  if [[ "${STACKPANEL_VERIFY_IMAGE:-1}" != "0" ]]; then
     info "校验镜像签名（cosign keyless）…"
     bash "$ROOT_DIR/scripts/verify-image.sh" "$IMAGE"
   else
-    warn "未校验镜像签名（如需校验：STACKPANEL_VERIFY_IMAGE=1 bash scripts/deploy.sh --image <ref>）。"
+    warn "已按 STACKPANEL_VERIFY_IMAGE=0 跳过镜像签名校验——生产环境强烈建议保持默认校验。"
   fi
   info "拉取镜像…"
   docker compose $COMPOSE_FILE --env-file "$DOCKER_ENV" pull

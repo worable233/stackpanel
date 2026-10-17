@@ -12,6 +12,7 @@
  * no HTTP surface). Everything else is identical.
  */
 import type { PaymentProvider, PaymentSettlementHandler, PluginRoute } from '@stackpanel/sdk';
+import type { CaptchaProvider, IdentityChallengeSender } from '@stackpanel/sdk';
 import type { PrismaClient } from '@stackpanel/db';
 import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
@@ -20,6 +21,7 @@ import { packageManager } from './packages/manager.ts';
 import { MarketService } from './market/service.ts';
 import { getCatalogRefresh } from './distribution/runtime.ts';
 import { runAutoUpdate } from './updates/auto-run.ts';
+import { env } from './config/env.ts';
 import { configureRuntimeCoherence, type RuntimeCoherence } from './runtime/coherence.ts';
 import { getEventBus, getOutboxBus } from './plugins/events.ts';
 import { getPrisma } from './plugins/prisma.ts';
@@ -31,12 +33,15 @@ import { WalletService } from './wallet/wallet-service.ts';
 import { FxService } from './fx/fx-service.ts';
 import { KernelAuthService } from './auth/auth-service.ts';
 import { KernelNotificationsService } from './notifications/notifications-service.ts';
+import { KernelIdentityChallengeService } from './auth/identity-challenge-service.ts';
+import { KernelCaptchaService } from './auth/captcha-service.ts';
 import { getStateService } from './state/index.ts';
 import { getCacheService, getDataCache } from './cache/index.ts';
 import { getJobRuntime, registerKernelSweeps, createKernelJobContext } from './jobs/index.ts';
 import { registerBackupJobs } from './backup/jobs.ts';
 import { registerMediaJobs } from './media/jobs.ts';
 import { AttachmentReferenceService } from './media/references.ts';
+import { setStorageRuntime, refreshStorageDriver } from './infra.ts';
 
 export interface PluginHostLogger {
   info: (message: string) => void;
@@ -69,6 +74,8 @@ export interface PluginHost {
   fx: FxService;
   auth: KernelAuthService;
   notifications: KernelNotificationsService;
+  identity: KernelIdentityChallengeService;
+  captcha: KernelCaptchaService;
   state: ReturnType<typeof getStateService>;
   cache: ReturnType<typeof getCacheService>;
   /** Extension engine instance (tables, clients, finalizers). */
@@ -111,6 +118,19 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
   });
   const stateService = getStateService();
   const cacheService = getCacheService();
+  const identityService = new KernelIdentityChallengeService({
+    db: getPrisma(),
+    state: stateService,
+    getSenders: () =>
+      getRuntime().getExtensions<IdentityChallengeSender>(EXTENSION_POINTS.identityChallengeSender),
+    secret: env.JWT_SECRET,
+    logger,
+  });
+  const captchaService = new KernelCaptchaService({
+    getProviders: () =>
+      getRuntime().getExtensions<CaptchaProvider>(EXTENSION_POINTS.captchaProvider),
+    logger: { warn: (message) => logger.warn(message) },
+  });
   const paymentsService = new PaymentsService({
     db: getPrisma(),
     events: getEventBus(),
@@ -146,6 +166,8 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     fx: fxService,
     auth: authService,
     notifications: notificationsService,
+    identity: identityService,
+    captcha: captchaService,
     state: stateService,
     cache: cacheService,
     jobs: getJobRuntime(),
@@ -156,6 +178,13 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     removeRoutes: options.removeRoutes ?? (() => undefined),
   });
   runtimeRef.current = runtime;
+
+  // ADR-0014 扩展：把 storage.provider 的实际解析接到内核单例。绑定时立即解析一次，
+  // 并在插件激活/停用后重新解析——激活事件在 onActivate 之后发布、停用事件在
+  // effects.dispose()（撤销扩展注册）之后发布，因此此刻读扩展点必然反映最新状态。
+  setStorageRuntime(runtime);
+  getEventBus().subscribe('plugin.activated', () => refreshStorageDriver());
+  getEventBus().subscribe('plugin.deactivated', () => refreshStorageDriver());
 
   // S8: cross-replica runtime coherence. Configured here (shared by API +
   // worker); the entrypoints explicitly `start()` the subscriber so hermetic
@@ -180,6 +209,8 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     fx: fxService,
     auth: authService,
     notifications: notificationsService,
+    identity: identityService,
+    captcha: captchaService,
     state: stateService,
     cache: cacheService,
     extensions,

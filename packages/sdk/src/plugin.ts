@@ -13,10 +13,12 @@ import type { FxService } from './fx.js';
 import type { JobContext } from './jobs.js';
 import type { NotificationsService } from './notifications.js';
 import type { NotificationView } from './notifications.js';
+import type { CaptchaService, IdentityChallengeService } from './identity.js';
 import type { PaymentService } from './payments.js';
 import type { StateService } from './state.js';
 import type { WalletService } from './wallet.js';
 import type { MediaReferenceService } from './media.js';
+import type { StorageService } from './storage.js';
 
 /**
  * A permission declared by a plugin. The bare string form (`'store.admin'`) is
@@ -77,6 +79,20 @@ export interface PluginManifest {
   capabilities?: PluginCapability[];
   /** Execution boundary. Third-party packages default to isolated. */
   execution?: 'trusted' | 'isolated';
+  /**
+   * Platform-admission level for server-side execution in the WEB process
+   * (contract 03 §3.1). Default `declarative`; `server` is an explicit grant.
+   * Built-ins are always admitted regardless of this field.
+   */
+  frontendExecutions?: 'declarative' | 'server';
+  /**
+   * Host frontend ABI slots this package's frontend depends on, with a
+   * compatibility semver range each (contract 02 §5). The kernel validates this
+   * against its own host versions at install time (market and upload share the
+   * same check). Slots are frozen in `@stackpanel/spec`'s
+   * `HOST_FRONTEND_ABI_SLOTS`.
+   */
+  frontendExternals?: Record<string, string>;
 }
 
 /**
@@ -100,6 +116,8 @@ export interface PluginCapability {
   summary: string;
   /** Whether the operation changes state (writes require `Idempotency-Key`). */
   mutating?: boolean;
+  /** 缺省写操作视为危险；false 仅用于明确可逆的写。 */
+  destructive?: boolean;
   /**
    * Optional refined scope (`资源:read|write`) to advertise for this capability
    * on the open surface (PLAN-open-platform P1 slice four). When set, a token
@@ -180,8 +198,21 @@ export interface PlatformEvents {
   'notification.created': { notification: NotificationView; userId: string };
   'notification.updated': { notification: NotificationView; userId: string };
   'payment.settled': { orderId: string | null; paymentId: string };
+  /**
+   * A new platform account was created through a self-service signup path.
+   * `affid` carries the referral code the visitor arrived with, when the
+   * signup surface forwarded one; the kernel itself never interprets it.
+   */
+  'user.registered': {
+    userId: string;
+    email: string;
+    affid?: string | null;
+    ip?: string | null;
+  };
   'order.paid': {
     orderId: string;
+    /** Account the order belongs to; required to attribute downstream rewards. */
+    userId?: string;
     channelCode?: string | null;
     status?: string;
     total?: number;
@@ -417,6 +448,18 @@ export const EXTENSION_POINTS = {
   upstreamServiceSource: 'upstream.service.source',
   /** External notification channels (email/webhook/push) subscribed to `notification.created`. */
   notificationChannel: 'notification.channel',
+  /**
+   * Verification-code delivery channels (email/SMS) the kernel invokes through
+   * `ctx.identity`. Deliberately separate from `notification.channel`: a
+   * transactional code must never be mirrored into the in-app inbox, SSE stream
+   * or generic events (audit §5).
+   */
+  identityChallengeSender: 'identity.challengeSender',
+  /**
+   * Human-verification (captcha) providers the kernel invokes through
+   * `ctx.captcha` at the register and send-code entry points.
+   */
+  captchaProvider: 'captcha.provider',
   eventListener: 'event.listener',
   webNav: 'web.nav',
   adminDashboard: 'ui.admin.dashboard',
@@ -430,6 +473,12 @@ export const EXTENSION_POINTS = {
    * `LlmProvider` 并注册到此处；内核只消费接口，不绑定 llm-gateway 或任何厂商协议。
    */
   llmProvider: 'llm.provider',
+  /**
+   * 存储供给（ADR-0014 扩展）：任何「能提供对象存储」的插件都可实现
+   * `StorageProvider` 并注册到此处；内核经此把媒体/品牌/备份的字节交给插件后端，
+   * 不绑定任何图床或厂商。provider 只处理控制面，字节经 redirect/spool 通道搬运。
+   */
+  storageProvider: 'storage.provider',
 } as const;
 
 export type ExtensionPointId = (typeof EXTENSION_POINTS)[keyof typeof EXTENSION_POINTS];
@@ -583,8 +632,29 @@ export interface PluginContext {
   readonly auth: AuthService;
   /** Kernel-owned in-app notification service (create/list/mark-read for users). */
   readonly notifications: NotificationsService;
+  /**
+   * Kernel-owned identity-challenge service: issue/consume email verification
+   * codes for registration and other identity flows. Fresh users have no
+   * reliable `userId`, so challenges are keyed by email, never routed through
+   * the in-app notification service.
+   */
+  readonly identity: IdentityChallengeService;
+  /**
+   * Kernel-owned human-verification service. Returns `isConfigured() === false`
+   * when no captcha provider plugin is active; callers decide their policy
+   * (fail open or closed) rather than silently bypassing verification.
+   */
+  readonly captcha: CaptchaService;
   /** Register durable references from plugin records to kernel attachments. */
   readonly media: MediaReferenceService;
+  /**
+   * Kernel-owned storage capability (ADR-0014 extension). A plugin builds a
+   * `StorageProvider` for a generic backend (local filesystem or S3-compatible
+   * API) and registers it on `EXTENSION_POINTS.storageProvider`. The kernel
+   * keeps all byte-transfer, presigning and credential machinery on its side of
+   * the boundary, so the plugin never imports kernel packages.
+   */
+  readonly storage: StorageService;
   /**
    * Kernel-owned shared state for cross-request coordination: counters, TTL
    * keys, and locks (concurrency caps, rate windows, sticky routing, scheduling

@@ -31,6 +31,12 @@ export interface AuthUser {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  /**
+   * When email ownership was verified, or `null`. `null` does not mean
+   * "unverified by policy" — it also covers accounts created before the flag
+   * existed and password-less third-party identities.
+   */
+  emailVerifiedAt?: string | null;
 }
 
 /** Result of a login attempt. */
@@ -98,6 +104,12 @@ export interface EnsureSystemUserInput {
 export interface RegisterUserInput {
   email: string;
   password: string;
+  /**
+   * Mark the email as verified at creation. Set only after the caller has
+   * proven ownership out-of-band (e.g. consumed a register verification code);
+   * defaults to unverified.
+   */
+  emailVerified?: boolean;
 }
 
 /** Session cookie parameters the login plugin needs to set the cookie. */

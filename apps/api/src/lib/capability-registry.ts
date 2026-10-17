@@ -38,6 +38,8 @@ export interface Capability {
   summary: string;
   /** Whether the operation changes state (writes need `Idempotency-Key`). */
   mutating: boolean;
+  /** 缺省写操作视为危险；false 仅用于明确可逆的写。 */
+  destructive?: boolean;
   /** Owning plugin id for plugin-contributed capabilities; absent for kernel ones. */
   pluginId?: string;
 }
@@ -302,6 +304,30 @@ export const CAPABILITIES: readonly Capability[] = [
   // credential**, so there is no permission key that could widen it. The
   // mutating flag makes MCP callers additionally declare `mcp.write` — the
   // existing meaning of that scope, unchanged.
+  {
+    id: 'agent.status.read',
+    method: 'GET',
+    path: '/api/v1/agent/status',
+    scope: null,
+    summary: '读取 Agent 开关与模型提供方状态',
+    mutating: false,
+  },
+  {
+    id: 'agent.model.list',
+    method: 'GET',
+    path: '/api/v1/agent/models',
+    scope: null,
+    summary: '读取当前凭证允许使用的 Agent 模型',
+    mutating: false,
+  },
+  {
+    id: 'agent.profile.read',
+    method: 'GET',
+    path: '/api/v1/agent/profiles/:tokenId',
+    scope: null,
+    summary: '读取本人 API Key 的 Agent 策略',
+    mutating: false,
+  },
   {
     id: 'agent.run.create',
     method: 'POST',

@@ -18,12 +18,15 @@ import { useRedisCache } from './cache/index.ts';
 import { configureOutboxEventBus } from './plugins/events.ts';
 import { initJobs } from './jobs/index.ts';
 import { getPrisma } from './plugins/prisma.ts';
+import { resolveStorageDriver, type StorageExtensionRuntime } from './storage/provider-router.ts';
 
 /** Redis client type derived from the shared factory (no direct ioredis dep). */
 type RedisClient = Awaited<ReturnType<typeof getRedis>>;
 
 let infra: InfraConfig | null = null;
 let storage: StorageDriver | null = null;
+/** The plugin runtime that may provide a storage backend (set after app init). */
+let storageRuntime: StorageExtensionRuntime | null = null;
 
 /** Validated infrastructure config (throws on invalid production config). */
 export function getInfraConfig(): InfraConfig {
@@ -33,12 +36,53 @@ export function getInfraConfig(): InfraConfig {
   return infra;
 }
 
-/** The process-wide storage driver. */
+/** The env-configured storage driver, without plugin-provided backends. */
+function createFallbackStorage(): StorageDriver {
+  return createStorageDriver(getInfraConfig().storage);
+}
+
+/**
+ * The process-wide storage driver.
+ *
+ * When a `storage.provider` extension is registered the driver is a router over
+ * the plugin backend; otherwise it is the env-configured driver. Reads always
+ * fall back to the env driver so switching backends never strands old objects.
+ */
 export function getStorage(): StorageDriver {
-  if (!storage) {
-    storage = createStorageDriver(getInfraConfig().storage);
-  }
+  if (!storage) storage = createFallbackStorage();
   return storage;
+}
+
+/**
+ * Bind the plugin runtime so a `storage.provider` implementation can become the
+ * process-wide storage backend. Called by the plugin host once the runtime
+ * exists; the driver is re-resolved on every activate/deactivate via
+ * {@link refreshStorageDriver}.
+ */
+export function setStorageRuntime(runtime: StorageExtensionRuntime): void {
+  storageRuntime = runtime;
+  refreshStorageDriver();
+}
+
+/** Re-resolve the storage driver from the current runtime (idempotent). */
+export function refreshStorageDriver(): void {
+  const fallback = createFallbackStorage();
+  storage = storageRuntime ? resolveStorageDriver(storageRuntime, fallback) : fallback;
+  // A plugin backend that just became active may need one-time provisioning
+  // (e.g. create its bucket). `initInfra` runs before the plugin host binds the
+  // runtime, so provisioning cannot live only there. The env fallback is
+  // already provisioned in `initInfra`, so we only provision a provider here.
+  if (storage.kind === 'provider') void provisionStorage(storage);
+}
+
+/** Best-effort provisioning of the active driver's backing store. Never throws. */
+async function provisionStorage(driver: StorageDriver): Promise<void> {
+  if (!('ensureBucket' in driver)) return;
+  try {
+    await (driver as unknown as { ensureBucket?: () => Promise<void> }).ensureBucket?.();
+  } catch (error) {
+    console.warn(`[infra] 存储后端初始化失败（首写时仍会重试）：${String(error)}`);
+  }
 }
 
 /**
@@ -86,7 +130,5 @@ export async function initInfra(): Promise<void> {
     },
   });
   const driver = getStorage();
-  if (driver.kind === 's3' && 'ensureBucket' in driver) {
-    await (driver as unknown as { ensureBucket(): Promise<void> }).ensureBucket();
-  }
+  await provisionStorage(driver);
 }

@@ -5,7 +5,9 @@ import type {
   MetricSeries,
   ProvisionContext,
   ProviderServiceContext,
+  ServiceChangeInput,
   ServiceDetail,
+  ServiceRenewalInput,
 } from '@stackpanel/sdk';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
 import { bus, context, logger } from './context';
@@ -24,15 +26,20 @@ import {
   listDueTasks,
   listServicesByUser,
   listServicesPage,
+  listStaleRunningTasks,
+  listTasksByOrder,
   listTasksPage,
+  reclaimTask,
   replaceServiceInstance,
   replaceTask,
   retryFailedTask,
   toServiceInstanceData,
-  type DeliveryTaskRecord,
+  toTaskData,
   type ServiceInstanceRecord,
 } from './repository';
-import type { StoreDeliveryTaskData } from './data';
+
+/** 认领任务的租约时长：超时未完成即视为认领者已死，可被回收重试。 */
+const TASK_LEASE_MS = 5 * 60 * 1000;
 
 const FULFILLMENT_POINT = EXTENSION_POINTS.fulfillmentProvider;
 export const FULFILLMENT_POLL_INTERVAL_MS = 5_000;
@@ -81,14 +88,26 @@ export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
   if (!order) return;
   // 续费行不产生交付任务（服务已存在），改由 renewal 模块顺延到期时间。
   const { applyRenewalOrder } = await import('./renewal');
+  const { applyChangeOrder } = await import('./changes');
+  // 入队幂等：`order.paid` 是 at-least-once（重放回调、结算重试都会再次触发），
+  // 同一 (orderId, productId) 只能有一个履约任务，否则会重复开通。
+  const existing = await listTasksByOrder(orderId);
+  const seen = new Set(existing.map((task) => task.productId));
   let hasRenewal = false;
+  let hasChange = false;
   for (const line of stockItems(order)) {
     if (line.renewalServiceId) {
       hasRenewal = true;
       continue;
     }
+    if (line.changeServiceId) {
+      hasChange = true;
+      continue;
+    }
+    if (seen.has(line.productId)) continue;
     const product = await getProduct(line.productId);
     if (!product) continue;
+    seen.add(line.productId);
     const snapshot: TaskProductSnapshot = {
       name: product.name,
       price: product.price,
@@ -119,6 +138,11 @@ export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
       logger().error(`store: renewal apply failed for ${orderId}: ${messageOf(error)}`);
     });
   }
+  if (hasChange) {
+    await applyChangeOrder(orderId).catch((error) => {
+      logger().error(`store: change apply failed for ${orderId}: ${messageOf(error)}`);
+    });
+  }
   await processDue().catch((error) => {
     logger().error(`store: fulfillment kick failed for ${orderId}: ${messageOf(error)}`);
   });
@@ -130,11 +154,25 @@ export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
  */
 export async function processDue(): Promise<void> {
   const nowMs = Date.now();
+  // 回收超租约仍 RUNNING 的任务（认领者崩溃/被 kill），避免永久卡住。
+  // 逐条兜底：单个任务的回收/执行失败不应中断整轮（否则一条坏任务会卡死后续所有任务）。
+  const stale = await listStaleRunningTasks(nowMs, 20);
+  for (const task of stale) {
+    try {
+      await reclaimTask(task.id, nowMs, task.attempts < task.maxAttempts);
+    } catch (error) {
+      logger().error(`store: reclaim stale task ${task.id} failed: ${messageOf(error)}`);
+    }
+  }
   const due = await listDueTasks(nowMs, 20);
   for (const task of due) {
-    const claimed = await claimTask(task.id);
-    if (!claimed) continue;
-    await runTask(task.id);
+    try {
+      const claimed = await claimTask(task.id, nowMs + TASK_LEASE_MS);
+      if (!claimed) continue;
+      await runTask(task.id);
+    } catch (error) {
+      logger().error(`store: run task ${task.id} failed: ${messageOf(error)}`);
+    }
   }
 }
 
@@ -193,7 +231,7 @@ async function runTask(taskId: string): Promise<void> {
             ? 'PROVISIONING'
             : 'FAILED',
       credentialsRef: null,
-      runtime: result.runtime ?? null,
+      runtime: mergeRuntime(result.runtime, provisionCtx.config),
       amount: snapshot.price ?? product.price,
       currency: snapshot.currency ?? product.currency,
       ...(initialExpiry ? { expiresAt: initialExpiry.toISOString() } : {}),
@@ -257,22 +295,17 @@ async function markTaskFailed(taskId: string, message: string): Promise<void> {
 
 const toServiceData = toServiceInstanceData;
 
-const toTaskData = (task: DeliveryTaskRecord): StoreDeliveryTaskData => ({
-  orderId: task.orderId,
-  productId: task.productId,
-  userId: task.userId,
-  productName: task.productName,
-  fulfillmentType: task.fulfillmentType,
-  providerId: task.providerId,
-  quantity: task.quantity,
-  state: task.status,
-  attempts: task.attempts,
-  maxAttempts: task.maxAttempts,
-  error: task.error,
-  payload: task.payload,
-  serviceId: task.serviceId,
-  nextAttemptAtMs: task.nextAttemptAt ? task.nextAttemptAt.getTime() : 0,
-});
+/** 把结账配置选择并入 runtime（供升配/续费/详情复用）。 */
+function mergeRuntime(
+  runtime: Record<string, unknown> | undefined,
+  config: CheckoutSelection | undefined,
+): Record<string, unknown> | null {
+  const base = runtime && typeof runtime === 'object' ? runtime : {};
+  if (!config || (!config.cycle && !config.selections)) {
+    return Object.keys(base).length > 0 ? base : null;
+  }
+  return { ...base, config };
+}
 
 function serviceContext(service: ServiceInstanceRecord): ProviderServiceContext {
   return {
@@ -291,6 +324,17 @@ function serviceContext(service: ServiceInstanceRecord): ProviderServiceContext 
     secrets: context().secrets,
   };
 }
+
+/** 供其它 store 模块（升配/转移/续费等）复用同一 provider 上下文。 */
+export function providerServiceContext(service: ServiceInstanceRecord): ProviderServiceContext {
+  return serviceContext(service);
+}
+
+/** 解析某服务的履约提供方（providerId 优先，回退到类型插件的本地履约）。 */
+export function providerForService(service: ServiceInstanceRecord) {
+  return providerById(service.providerId) ?? productTypeById(service.fulfillmentType) ?? null;
+}
+
 
 function requireOwnedService(service: ServiceInstanceRecord, userId: string): void {
   if (service.userId !== userId) throw new StoreError(404, '服务不存在');
@@ -354,6 +398,7 @@ export async function getMyService(req: HttpRequest): Promise<unknown> {
   return {
     service: {
       id: service.id,
+      productId: service.productId,
       productName: service.productName,
       fulfillmentType: service.fulfillmentType,
       providerId: service.providerId,
@@ -416,10 +461,174 @@ export async function runMyServiceAction(req: HttpRequest): Promise<unknown> {
   return { ok: true, result: result ?? null };
 }
 
-/** 保留键（路由/动作标识 + JSON 参数袋），不参与动作参数。 */
-const ACTION_RESERVED_KEYS = new Set(['id', 'actionId', 'params']);
-/** 动作参数名：字母开头，允许字母/数字/下划线/连字符，最长 64。 */
-const ACTION_PARAM_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+/* ------------------------- 增值运维：服务子资源 ------------------------- */
+
+/** 读取某服务可用的子资源种类（磁盘/快照/备份/网络/流量包…）。 */
+export async function listMyServiceResourceKinds(req: HttpRequest): Promise<unknown> {
+  const { service } = await requireOwnedServiceById(req);
+  const provider = providerForService(service);
+  if (!provider?.listResourceKinds) return { kinds: [] };
+  const kinds = await provider.listResourceKinds(serviceContext(service));
+  return { kinds: kinds.filter((kind) => resourceKindVisible(kind, service.runtime)) };
+}
+
+/** 按 runtime 字段条件过滤资源种类（如仅 VPC 显示流量包）。 */
+function resourceKindVisible(
+  kind: { visibleWhen?: { field: string; equals?: unknown; in?: readonly unknown[] } },
+  runtime: unknown,
+): boolean {
+  const condition = kind.visibleWhen;
+  if (!condition) return true;
+  const value = ((runtime ?? {}) as Record<string, unknown>)[condition.field];
+  if (condition.equals === undefined && (!condition.in || condition.in.length === 0)) {
+    return value !== undefined && value !== null && value !== '';
+  }
+  if (value === undefined || value === null) return false;
+  if (condition.equals !== undefined && String(value) === String(condition.equals)) return true;
+  return Boolean(condition.in?.some((candidate) => String(candidate) === String(value)));
+}
+
+/** 列出某类子资源。 */
+export async function listMyServiceResources(req: HttpRequest): Promise<unknown> {
+  const { service } = await requireOwnedServiceById(req);
+  const kind = req.params['kind'];
+  if (!kind) throw new StoreError(400, '缺少资源类型');
+  const provider = providerForService(service);
+  if (!provider?.listResources) return { resources: [] };
+  const resources = await provider.listResources(serviceContext(service), kind);
+  return { resources };
+}
+
+/** 新建子资源（磁盘/快照/备份/IP…）。 */
+export async function createMyServiceResource(req: HttpRequest): Promise<unknown> {
+  const { service } = await requireOwnedServiceById(req);
+  const kind = req.params['kind'];
+  if (!kind) throw new StoreError(400, '缺少资源类型');
+  const provider = providerForService(service);
+  if (!provider?.createResource) throw new StoreError(501, '该服务不支持此操作');
+  const ctx = serviceContext(service);
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const params = collectActionParams(body);
+  const guarded = await restrictResourceParams(provider, ctx, kind, 'create', params);
+  const result = await provider.createResource(ctx, kind, guarded);
+  await mergeActionResult(service, result);
+  return { ok: true, result: result ?? null };
+}
+
+/** 对某子资源执行行内动作（扩容/挂载/删除/恢复…）。 */
+export async function runMyServiceResourceAction(req: HttpRequest): Promise<unknown> {
+  const { service } = await requireOwnedServiceById(req);
+  const kind = req.params['kind'];
+  const resourceId = req.params['resourceId'];
+  const actionId = req.params['actionId'];
+  if (!kind || !resourceId || !actionId) throw new StoreError(400, '缺少资源参数');
+  const provider = providerForService(service);
+  if (!provider?.runResourceAction) throw new StoreError(501, '该服务不支持此操作');
+  const ctx = serviceContext(service);
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const params = collectActionParams(body);
+  const guarded = await restrictResourceParams(provider, ctx, kind, actionId, params);
+  const result = await provider.runResourceAction(ctx, kind, resourceId, actionId, guarded);
+  await mergeActionResult(service, result);
+  return { ok: true, result: result ?? null };
+}
+
+/** 解析当前用户拥有的服务（按路由 `:id`）。 */
+async function requireOwnedServiceById(req: HttpRequest): Promise<{ service: ServiceInstanceRecord }> {
+  const userId = req.user?.id;
+  if (!userId) throw new StoreError(401, '未登录');
+  const id = req.params['id'];
+  if (!id) throw new StoreError(400, '缺少 ID');
+  const service = await getService(id);
+  if (!service) throw new StoreError(404, '服务不存在');
+  requireOwnedService(service, userId);
+  return { service };
+}
+
+/** 把提供方返回的 runtime 补丁浅合并回服务实例。 */
+async function mergeActionResult(
+  service: ServiceInstanceRecord,
+  result: { runtime?: Record<string, unknown> } | void,
+): Promise<void> {
+  if (result && result.runtime && typeof result.runtime === 'object') {
+    await replaceServiceInstance(service.id, {
+      ...toServiceInstanceData(service),
+      runtime: { ...((service.runtime as Record<string, unknown>) ?? {}), ...result.runtime },
+    });
+  }
+}
+
+/**
+ * 限制子资源参数为提供方**声明**过的参数名（新建看 `createParams`，行内动作看
+ * `rowActions[].params`）。未声明则放行，交由提供方自身参数校验兜底。
+ */
+async function restrictResourceParams(
+  provider: FulfillmentProvider,
+  ctx: ProviderServiceContext,
+  kind: string,
+  actionId: string,
+  params: Record<string, string> | undefined,
+): Promise<Record<string, string> | undefined> {
+  if (!params || !provider.listResourceKinds) return params;
+  let declared: string[] | null = null;
+  try {
+    const kinds = await provider.listResourceKinds(ctx);
+    const resource = kinds.find((candidate) => candidate.id === kind);
+    if (resource) {
+      const action =
+        actionId === 'create'
+          ? undefined
+          : resource.rowActions?.find((candidate) => candidate.id === actionId);
+      const declaredParams =
+        actionId === 'create' ? resource.createParams : (action?.params ?? undefined);
+      if (declaredParams) declared = declaredParams.map((param) => param.name);
+    }
+  } catch {
+    return params;
+  }
+  if (declared === null) return params;
+  for (const key of Object.keys(params)) {
+    if (!declared.includes(key)) throw new StoreError(400, '动作参数无效');
+  }
+  return params;
+}
+
+/**
+ * 应用配置变更（升配/降配/换商品）：调用提供方的 `changePackage`/`changeProduct`，
+ * 合并返回的 runtime。由升级订单结算后调用。
+ */
+export async function applyServiceChange(
+  service: ServiceInstanceRecord,
+  change: { type: 'package' | 'product'; config?: CheckoutSelection; targetProductId?: string; targetProviderProductId?: string | null },
+): Promise<boolean> {
+  const provider = providerForService(service);
+  if (!provider) return false;
+  const ctx = serviceContext(service);
+  const input: ServiceChangeInput = {
+    ...(change.config ? { config: change.config } : {}),
+    ...(change.targetProductId ? { targetProductId: change.targetProductId } : {}),
+    ...(change.targetProviderProductId !== undefined
+      ? { targetProviderProductId: change.targetProviderProductId }
+      : {}),
+  };
+  const hook = change.type === 'product' ? provider.changeProduct : provider.changePackage;
+  if (!hook) return false;
+  const result = await hook.call(provider, ctx, input);
+  await mergeActionResult(service, result);
+  return true;
+}
+
+/** 续费回调：通知提供方到期时间已推进（尽力而为，失败不阻断）。 */
+export async function notifyServiceRenewal(
+  service: ServiceInstanceRecord,
+  info: ServiceRenewalInput,
+): Promise<void> {
+  const provider = providerForService(service);
+  if (!provider?.renew) return;
+  await provider.renew(serviceContext(service), info);
+}
+
+/* ------------------------- 动作/资源参数校验 ------------------------- */
 
 /**
  * 限制动作参数为该动作**声明**过的参数名。提供方经 `getDetail().actions[].params`
@@ -448,6 +657,11 @@ async function restrictActionParams(
   }
   return params;
 }
+
+/** 保留键（路由/动作标识 + JSON 参数袋），不参与动作参数。 */
+const ACTION_RESERVED_KEYS = new Set(['id', 'actionId', 'params']);
+/** 动作参数名：字母开头，允许字母/数字/下划线/连字符，最长 64。 */
+const ACTION_PARAM_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 /**
  * 从动作请求体收集参数：仅接受合法参数名的标量，忽略空值与保留键。

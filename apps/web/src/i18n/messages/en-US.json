@@ -1,4 +1,10 @@
 {
+  "backendSearch": {
+    "placeholder": "Type a command or search…",
+    "empty": "No results found.",
+    "pages": "Pages",
+    "theme": "Theme"
+  },
   "common": {
     "loading": "Loading…",
     "save": "Save",
@@ -85,7 +91,12 @@
       "showPassword": "Show password",
       "hidePassword": "Hide password",
       "hasAccount": "Already have an account?",
-      "login": "Sign in"
+      "login": "Sign in",
+      "code": "Email verification code",
+      "sendCode": "Send code",
+      "sendingCode": "Sending…",
+      "codeSent": "A verification code has been sent to your email.",
+      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes."
     },
     "panel": {
       "highlightTitle": "Ready to launch",
@@ -100,12 +111,14 @@
     "validation": {
       "emailPasswordRequired": "Please enter your email and password",
       "passwordMin": "Password must be at least 8 characters",
-      "passwordMismatch": "The two passwords do not match"
+      "passwordMismatch": "The two passwords do not match",
+      "emailRequired": "Please enter your email"
     },
     "error": {
       "invalidCredentials": "Incorrect email or password",
       "loginFailed": "Sign-in failed, please try again later",
-      "registerFailed": "Registration failed, please try again later"
+      "registerFailed": "Registration failed, please try again later",
+      "sendCodeFailed": "Could not send the verification code, please try again later"
     }
   },
   "localeSwitcher": {
@@ -541,6 +554,18 @@
       "colStatus": "Status",
       "colJoined": "Joined",
       "colLastLogin": "Last sign-in",
+      "colServices": "Cloud products",
+      "colBalance": "Balance",
+      "sortLabel": "Sort users",
+      "neverLoggedIn": "Never signed in",
+      "sort": {
+        "createdAt_desc": "Joined · Newest first",
+        "createdAt_asc": "Joined · Oldest first",
+        "balance_desc": "Balance · High to low",
+        "balance_asc": "Balance · Low to high",
+        "lastLoginAt_desc": "Last sign-in · Newest first",
+        "lastLoginAt_asc": "Last sign-in · Oldest first"
+      },
       "statusAll": "All statuses",
       "groupAll": "All groups",
       "total": "{total} users",
@@ -733,7 +758,19 @@
       "rate_limited": "Too many attempts, please try again later",
       "register_failed": "Registration failed, please try again later",
       "unauthenticated": "Your session has expired, please sign in again",
-      "forbidden": "You do not have permission to perform this action"
+      "forbidden": "You do not have permission to perform this action",
+      "code_missing": "This code is missing or no longer valid. Request a new one.",
+      "code_invalid": "Incorrect verification code",
+      "code_expired": "The verification code expired. Request a new one.",
+      "code_locked": "Too many attempts. Request a new code.",
+      "code_rate_limited": "Too many code requests, please try again later",
+      "code_channel_unavailable": "No verification channel is configured; contact the administrator",
+      "code_delivery_failed": "Could not send the verification code, please try again later",
+      "code_not_required": "Email verification is not enabled",
+      "code_purpose_invalid": "Unsupported verification purpose",
+      "captcha_required": "Please complete the human verification",
+      "captcha_failed": "Human verification failed, please retry",
+      "captcha_unavailable": "Human verification is unavailable"
     },
     "validation": {
       "invalid": "Invalid request parameters"
@@ -882,7 +919,7 @@
       "upstream_credentials_required": "Missing upstream Base URL or API Key",
       "upstream_failed": "Upstream service returned an error, please try again later",
       "models_fetch_failed": "Failed to fetch models, please try again later",
-      "not_ready": "API gateway service is temporarily unavailable, please try again later"
+      "not_ready": "Model service is temporarily unavailable, please try again later"
     },
     "zjmf": {
       "upstream_not_found": "Upstream not found",
@@ -985,7 +1022,7 @@
   },
   "apiToken": {
     "group": {
-      "llm-gateway": "API gateway",
+      "llm-gateway": "Model services",
       "store": "Store",
       "store-wallet": "Wallet",
       "store-product-card": "Card keys",
@@ -1123,43 +1160,12 @@
       "description": "Order payments, fulfillment progress and system announcements appear here."
     }
   },
-  "apply": {
-    "queued": "Queued, waiting for the web tier",
-    "processing": "Processing",
-    "installed": "Plugin installed.",
-    "installingFrontend": "Plugin installed, applying front-end…",
-    "noun": {
-      "plugin": "plugin",
-      "theme": "theme"
-    },
-    "nounCap": {
-      "plugin": "Plugin",
-      "theme": "Theme"
-    },
-    "labeled": " \"{label}\"",
-    "install": {
-      "failed": "Failed to install {noun}{label}",
-      "succeeded": "{nounCap}{label} installed",
-      "inProgress": "Installing {noun}{label}"
-    },
-    "update": {
-      "failed": "Failed to upgrade {noun}{label}",
-      "succeeded": "{nounCap}{label} upgraded",
-      "inProgress": "Upgrading {noun}{label}"
-    },
-    "remove": {
-      "failed": "Failed to uninstall {noun}{label}",
-      "succeeded": "{nounCap}{label} uninstalled",
-      "inProgress": "Uninstalling {noun}{label}"
-    }
-  },
   "upload": {
     "pluginTrigger": "Upload plugin (ZIP)",
     "pluginTitle": "Upload plugin",
-    "pluginDescription": "Upload a plugin ZIP to install; front-end changes are built automatically.",
+    "pluginDescription": "Upload a plugin ZIP to install; front-end changes take effect immediately.",
     "pluginFile": "Plugin ZIP file",
     "uploading": "Uploading…",
-    "applying": "Applying…",
     "submit": "Upload",
     "themeTrigger": "Upload theme (ZIP)",
     "themeTitle": "Upload theme",
@@ -1169,14 +1175,15 @@
   },
   "pluginPage": {
     "notFound": "Plugin admin page not found.",
-    "denied": "Access denied: requires {permission}."
+    "denied": "Access denied: requires {permission}.",
+    "loading": "Loading plugin page…",
+    "loadFailed": "Plugin page failed to load: {message}"
   },
   "plugin": {
     "uploadSelectZip": "Choose a plugin ZIP to upload",
     "zipTooLarge": "ZIP must be smaller than 2MB",
     "uploadFailed": "Upload failed",
     "uploadFailedStatus": "Upload failed ({status})",
-    "installedApplying": "Plugin installed, applying front-end…",
     "installed": "Plugin installed."
   },
   "api": {

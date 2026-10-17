@@ -4,7 +4,7 @@ import { Bell, Check, CircleAlert, Loader } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
-import { Button } from '@/components/ui/button';
+import { BackendToolbarButton } from '@/components/backend-toolbar-button';
 import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
@@ -17,6 +17,10 @@ import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatDate } from '@/i18n/core';
 import { mergeNotification, useNotificationStream } from '@/lib/use-notification-stream';
 import { cn } from '@/lib/utils';
+import {
+  NOTIFICATION_READ_EVENT,
+  useVisibleNotificationRead,
+} from '@/lib/use-visible-notification-read';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -38,6 +42,8 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
   const locale = useLocale();
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<NotificationListResponse['items']>([]);
+  const [open, setOpen] = useState(false);
+  const visibleRows = useVisibleNotificationRead(items, open);
 
   // Apply streamed notifications on top of the polled list. A brand-new live
   // row also bumps the unread badge (an activity rewrite clears `readAt`, so an
@@ -82,15 +88,18 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
     const timer = setInterval(() => void refreshCount(), POLL_INTERVAL_MS);
     const onFocus = () => void refreshCount();
     window.addEventListener('focus', onFocus);
+    window.addEventListener(NOTIFICATION_READ_EVENT, onFocus);
     return () => {
       clearInterval(timer);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener(NOTIFICATION_READ_EVENT, onFocus);
     };
   }, [refreshCount]);
 
   // Fold streamed live notifications into the list so an in-progress activity
   // advances without waiting for the next poll.
   const handleOpenChange = (open: boolean) => {
+    setOpen(open);
     if (open) void loadRecent();
   };
 
@@ -98,7 +107,9 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
     try {
       await fetch('/api/notifications/read-all', { method: 'POST' });
       setUnreadCount(0);
-      setItems((prev) => prev.map((item) => ({ ...item, readAt: item.readAt ?? new Date().toISOString() })));
+      setItems((prev) =>
+        prev.map((item) => ({ ...item, readAt: item.readAt ?? new Date().toISOString() })),
+      );
     } catch {
       // ignore
     }
@@ -106,8 +117,12 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
 
   const markRead = async (id: string) => {
     try {
-      await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      const response = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
+        method: 'POST',
+      });
+      if (!response.ok) return;
+      window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
+      void refreshCount();
       setItems((prev) =>
         prev.map((item) =>
           item.id === id ? { ...item, readAt: item.readAt ?? new Date().toISOString() } : item,
@@ -122,24 +137,21 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
     <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         render={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t("notification.ariaLabel")}
-            className="relative h-9 w-9 text-foreground/80 hover:bg-accent hover:text-foreground"
-          >
+          <BackendToolbarButton aria-label={t('notification.ariaLabel')} className="relative">
             <Bell className="size-4" />
             {unreadCount > 0 ? (
-              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground ring-2 ring-background">
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-primary/20 bg-background px-1 text-[9px] leading-none font-medium text-primary tabular-nums">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             ) : null}
-          </Button>
+          </BackendToolbarButton>
         }
       />
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-sm font-semibold text-popover-foreground">{t("notification.title")}</span>
+          <span className="text-sm font-semibold text-popover-foreground">
+            {t('notification.title')}
+          </span>
           {unreadCount > 0 ? (
             <button
               type="button"
@@ -151,14 +163,17 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
           ) : null}
         </div>
         <DropdownMenuSeparator />
-        <div className="max-h-96 overflow-y-auto px-1">
+        <div ref={visibleRows} className="max-h-96 overflow-y-auto px-1">
           {items.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-muted-foreground">{t("notification.empty")}</p>
+            <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+              {t('notification.empty')}
+            </p>
           ) : (
             items.map((item) => (
               <DropdownMenuItem key={item.id} onClick={() => void markRead(item.id)}>
                 <Link
                   href={item.link ?? inboxHref}
+                  data-notification-id={item.id}
                   className={cn(
                     'block w-full rounded-md px-2 py-2',
                     !item.readAt && 'bg-primary/5',
@@ -227,7 +242,10 @@ function NotificationGlyph({ item }: { item: NotificationView }) {
   }
   return (
     <span
-      className={cn('mt-1.5 size-1.5 shrink-0 rounded-full', item.readAt ? 'bg-transparent' : 'bg-primary')}
+      className={cn(
+        'mt-1.5 size-1.5 shrink-0 rounded-full',
+        item.readAt ? 'bg-transparent' : 'bg-primary',
+      )}
     />
   );
 }

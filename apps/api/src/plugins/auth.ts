@@ -1,3 +1,4 @@
+import { validMcpDispatch } from '../agent/dispatch-proof.ts';
 import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PluginError } from '@stackpanel/sdk';
@@ -143,6 +144,7 @@ async function apiTokenUser(
   token: string,
   clientIp?: string,
   governance?: ScopeGovernance,
+  request?: FastifyRequest,
 ): Promise<AuthUser | null> {
   if (!looksLikeApiToken(token)) return null;
   const cacheKey = rejectedKey(token, clientIp);
@@ -152,6 +154,7 @@ async function apiTokenUser(
     rejectedTokens.add(cacheKey);
     return null;
   }
+  if (resolved.audience === 'mcp' && (!request || (request.url.split('?')[0] !== '/mcp' && !validMcpDispatch(request)))) return null;
   const { owner, scopes } = resolved;
   if (owner.status !== 'ACTIVE') return null;
   const owned = owner.permissions;
@@ -210,7 +213,7 @@ export async function extractSession(
   if (!token) return null;
   const governance = requestScopeGovernance(request);
   // Platform API tokens (default `sp_` prefix, legacy `sk-sp-`) are checked first.
-  const viaToken = await apiTokenUser(token, request.ip, governance);
+  const viaToken = await apiTokenUser(token, request.ip, governance, request);
   if (viaToken) return viaToken;
 
   const prisma = getPrisma();

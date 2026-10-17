@@ -16,6 +16,8 @@ const envSchema = z.object({
   // Server-side per-statement ceiling. 0 disables it (not recommended).
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(30_000),
   STACKPANEL_DATA_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
+  AGENT_PUBLIC_ORIGIN: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  AGENT_WEB_ORIGIN: z.preprocess(emptyToUndefined, z.string().url().optional()),
   API_HOST: z.string().default('127.0.0.1'),
   API_PORT: z.coerce.number().int().positive().default(3001),
   API_LOG_LEVEL: z
@@ -43,6 +45,20 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   SESSION_COOKIE_NAME: z.string().default('sp_session'),
   SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(43200),
+  // Registration email verification + human verification policy (audit §5).
+  // `off` keeps the historical behaviour (register immediately, no code). When
+  // `required`, a verified email code is mandatory before an ACTIVE account is
+  // created and a missing delivery channel is a hard error, never a silent skip.
+  AUTH_EMAIL_VERIFICATION: z.enum(['off', 'required']).default('off'),
+  // Captcha policy: `off` never asks; `optional` verifies a token when the
+  // client sends one but admits requests without it; `required` rejects any
+  // request lacking a valid token (and rejects when no provider is configured).
+  AUTH_CAPTCHA_MODE: z.enum(['off', 'optional', 'required']).default('off'),
+  // Verification-code lifetime and throttling.
+  AUTH_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  AUTH_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  AUTH_CODE_SEND_PER_HOUR: z.coerce.number().int().min(0).default(5),
+  AUTH_CODE_SEND_PER_HOUR_PER_IP: z.coerce.number().int().min(0).default(20),
   STACKPANEL_BOOTSTRAP_EMAIL: z.preprocess(emptyToUndefined, z.string().email().optional()),
   STACKPANEL_BOOTSTRAP_PASSWORD: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
   SETTINGS_ENCRYPTION_KEY: z.preprocess(emptyToUndefined, z.string().min(32).optional()),

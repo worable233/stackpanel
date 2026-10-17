@@ -2,6 +2,7 @@
 
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from '@/components/theme-provider';
+import { backendToolbarButtonClass } from '@/components/backend-toolbar-button';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,14 +13,27 @@ import {
 import { useTranslator } from '@/i18n/provider';
 
 /** Light / dark / system theme switcher. */
-export function ThemeToggle() {
+export function ThemeToggle({
+  variant = 'outline',
+  toolbar = false,
+}: {
+  variant?: 'outline' | 'ghost';
+  toolbar?: boolean;
+}) {
   const { setTheme } = useTheme();
   const t = useTranslator();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="outline" size="icon" aria-label={t('theme.toggleAriaLabel')} />}
+        render={
+          <Button
+            variant={variant}
+            className={toolbar ? backendToolbarButtonClass : undefined}
+            size="icon"
+            aria-label={t('theme.toggleAriaLabel')}
+          />
+        }
       >
         <Sun className="size-4 dark:hidden" />
         <Moon className="hidden size-4 dark:block" />

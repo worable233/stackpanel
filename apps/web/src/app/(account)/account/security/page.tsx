@@ -16,7 +16,6 @@ export default async function AccountSecurityPage() {
     <main className="max-w-3xl space-y-6">
       <PageHeader
         title={t('account.security.title')}
-        description={t('account.security.description')}
       />
       <section className="overflow-hidden rounded-lg border bg-card">
         <div className="border-b px-5 py-4">

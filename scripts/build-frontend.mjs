@@ -19,6 +19,26 @@ const dataDir = process.env.STACKPANEL_DATA_DIR
 const esbuildBin = createRequire(import.meta.url).resolve('esbuild/bin/esbuild');
 const webLibDir = path.join(root, 'apps', 'web', 'src', 'lib');
 
+/**
+ * Stage 4 M2 — publish-time rewrite of the client bundle's host-ABI imports to the
+ * controlled same-origin adapter (`/api/frontend-abi/*`; SPIKE-results §0). Order
+ * matters: esbuild `--alias` is a prefix match, so `react/jsx-runtime` and
+ * `react-dom` must precede `react`. The ABI slot list mirrors
+ * `@stackpanel/spec`'s `HOST_FRONTEND_ABI_SLOTS`.
+ */
+const HOST_ABI_ADAPTER_ALIASES = [
+  '--alias:react/jsx-runtime=/api/frontend-abi/react/jsx-runtime',
+  '--alias:react-dom/client=/api/frontend-abi/react-dom',
+  '--alias:react-dom=/api/frontend-abi/react-dom',
+  '--alias:react=/api/frontend-abi/react',
+  '--alias:next/link=/api/frontend-abi/next/link',
+  '--alias:next/form=/api/frontend-abi/next/form',
+  '--alias:next/navigation=/api/frontend-abi/next/navigation',
+  '--alias:@stackpanel/ui=/api/frontend-abi/@stackpanel/ui',
+  '--alias:@stackpanel/sdk=/api/frontend-abi/@stackpanel/sdk',
+  '--alias:lucide-react=/api/frontend-abi/lucide-react',
+];
+
 const { sourcePackages } = await discoverFrontendPackages();
 
 for (const pkg of sourcePackages) {
@@ -27,11 +47,24 @@ for (const pkg of sourcePackages) {
   await buildFrontendPackageFromSource(pkg);
 }
 
-// The registry is generated from `data/` so the same artifact set is visible to
-// any builder, including the worker building on the shared data volume (S7).
-// Source packages were just materialized into `data/` above; third-party
-// packages already live there.
-await generateFrontendRegistry(await discoverRegistryPackages());
+// Registry generation (stage 5).
+//
+// Historically the web bundle statically imported every installed frontend
+// package through this generated registry, so installing a theme/plugin required
+// a `next build` + restart. Stage 5 makes **runtime loading** the default (the
+// host dynamic-`import()`s the compiled entry from `data/`), so the registry is
+// no longer needed: by default we emit an **empty** registry, which also decouples
+// `next build` from whatever packages happen to be installed.
+//
+// The legacy build-time path is retained behind an explicit opt-out:
+// `STACKPANEL_FRONTEND_RUNTIME_LOAD=0 pnpm build:frontend` regenerates the static
+// registry (then `next build` bundles them) — the reversible fallback.
+const legacyRegistry = process.env.STACKPANEL_FRONTEND_RUNTIME_LOAD === '0';
+if (legacyRegistry) {
+  await generateFrontendRegistry(await discoverRegistryPackages());
+} else {
+  await writeEmptyRegistry();
+}
 
 async function buildFrontendPackageFromSource(pkg) {
   if (!existsSync(pkg.source)) {
@@ -58,7 +91,8 @@ async function buildFrontendPackageFromSource(pkg) {
       '--external:./route-progress.js',
       '--external:@stackpanel/sdk',
       '--external:@stackpanel/ui',
-      '--external:zod',
+      // lucide-react is host ABI (contract 02 §5); zod is bundled by the
+      // publisher, so it is intentionally NOT external here.
       '--external:lucide-react',
       '--main-fields=module,main',
     ],
@@ -85,6 +119,21 @@ async function buildFrontendPackageFromSource(pkg) {
     );
   }
   // Build the client-only admin entry (interactive admin pages) when present.
+  //
+  // Two artifacts are emitted (stage 4 keeps the old path alongside the new one):
+  //
+  //   dist/admin.js          bare host-ABI specifiers. Consumed by the build-time
+  //                          client registry (`frontend-client-registry.ts`), which
+  //                          Next bundles. Unchanged default behaviour.
+  //   dist/admin.runtime.js  the same bundle with every host-ABI specifier rewritten
+  //                          at publish time to the controlled same-origin adapter
+  //                          `/api/frontend-abi/*` (SPIKE-results §0). Loaded by the
+  //                          M2 runtime container so a plugin's admin page no longer
+  //                          requires a `next build`. The browser cannot resolve
+  //                          bare specifiers (no import map), hence the rewrite.
+  //
+  // `--alias:react/jsx-runtime` must precede `--alias:react` (alias is a prefix
+  // match); likewise `react-dom` before `react`.
   if (existsSync(path.join(pkg.source, 'src', 'admin.tsx'))) {
     execFileSync(
       esbuildBin,
@@ -105,12 +154,34 @@ async function buildFrontendPackageFromSource(pkg) {
         '--external:next/navigation',
         '--external:@stackpanel/sdk',
         '--external:@stackpanel/ui',
-        '--external:zod',
+        // lucide-react is host ABI; zod is bundled (contract 02 §5).
         '--external:lucide-react',
         '--main-fields=module,main',
       ],
       { cwd: pkg.source, stdio: 'inherit' },
     );
+    execFileSync(
+      esbuildBin,
+      [
+        'src/admin.tsx',
+        '--bundle',
+        '--format=esm',
+        '--outfile=dist/admin.runtime.js',
+        '--platform=neutral',
+        '--target=es2020',
+        '--jsx=automatic',
+        '--sourcemap',
+        ...HOST_ABI_ADAPTER_ALIASES,
+        '--external:/api/frontend-abi/*',
+        '--main-fields=module,main',
+      ],
+      { cwd: pkg.source, stdio: 'inherit' },
+    );
+    // The adapter's named exports must be driven by what THIS bundle actually
+    // imports (the browser's client-React namespace differs from the server's, so
+    // the adapter cannot enumerate it server-side). Append `?names=` so the route
+    // exports exactly these bindings.
+    await annotateAdapterImports(path.join(pkg.source, 'dist', 'admin.runtime.js'));
   }
 
   const distFiles = await listFiles(path.join(pkg.source, 'dist'));
@@ -231,8 +302,15 @@ async function discoverFrontendPackages() {
   const sourcePackages = [];
   const dataPackages = [];
   const sourceIds = new Set();
+  const externalPluginGroups = (process.env.STACKPANEL_PLUGIN_SOURCES ?? '')
+      .split(path.delimiter)
+      .filter(Boolean)
+      .map((directory) => ({ kind: 'plugins', root: path.resolve(directory) }));
   const sourceGroups = [
     { kind: 'themes', root: path.join(root, 'packages', 'themes') },
+    // An optional plugin checkout takes precedence over the matching built-in
+    // source, so local plugin development can be rebuilt into the same runtime.
+    ...externalPluginGroups,
     { kind: 'plugins', root: path.join(root, 'packages', 'plugins') },
   ];
   const dataGroups = [
@@ -246,6 +324,7 @@ async function discoverFrontendPackages() {
       if (!entry.isDirectory()) continue;
       const source = path.join(group.root, entry.name, 'frontend');
       if (existsSync(path.join(source, 'src', 'index.tsx'))) {
+        if (sourceIds.has(`${group.kind}/${entry.name}`)) continue;
         sourcePackages.push({ kind: group.kind, id: entry.name, source });
         sourceIds.add(`${group.kind}/${entry.name}`);
       }
@@ -299,6 +378,62 @@ async function discoverRegistryPackages() {
  * bundles all imports at build time so every package shares the same React
  * instance and the same set of external libraries.
  */
+/**
+ * Emit empty registries (stage 5 default). The host loads frontends at runtime,
+ * so the generated modules only need to keep their public shape for typecheck and
+ * for any residual importer; they bundle nothing, which is what decouples
+ * `next build` from the installed package set.
+ */
+async function writeEmptyRegistry() {
+  const registryFile = path.join(webLibDir, 'frontend-registry.ts');
+  await writeFile(
+    registryFile,
+    `import 'server-only';
+
+import type { FrontendPackage } from '@stackpanel/sdk';
+
+/**
+ * Stage 5: runtime frontend loading is the default, so no package is statically
+ * bundled here. Regenerate a populated registry with
+ * \`STACKPANEL_FRONTEND_RUNTIME_LOAD=0 pnpm build:frontend\` (fallback path).
+ */
+export function getFrontendPackage(_kind: 'themes' | 'plugins', _id: string): FrontendPackage | null {
+  void _kind;
+  void _id;
+  return null;
+}
+
+export function listFrontendPackageIds(kind?: 'themes' | 'plugins'): string[] {
+  void kind;
+  return [];
+}
+`,
+  );
+
+  const clientRegistryFile = path.join(webLibDir, 'frontend-client-registry.ts');
+  await writeFile(
+    clientRegistryFile,
+    `import type { AdminPageComponent } from '@stackpanel/sdk';
+
+/** Stage 5: runtime admin loading is the default; no client pages are statically bundled here. */
+export const clientAdminRegistry = new Map<
+  string,
+  { adminPages: Record<string, AdminPageComponent> }
+>();
+
+export function getClientAdminPages(
+  _kind: 'themes' | 'plugins',
+  _id: string,
+): Record<string, AdminPageComponent> | null {
+  void _kind;
+  void _id;
+  return null;
+}
+`,
+  );
+  console.log('Wrote empty frontend registries (runtime loading is the default).');
+}
+
 async function generateFrontendRegistry(packages) {
   const registryFile = path.join(webLibDir, 'frontend-registry.ts');
   const imports = [];
@@ -395,6 +530,52 @@ async function listFiles(dir) {
   }
   return result.sort();
 }
+
+/**
+ * Stage 4 M2 — annotate a compiled client bundle's host-ABI adapter imports with
+ * the exact named bindings it uses (`/api/frontend-abi/react?names=useState,useEffect`).
+ *
+ * Why: the adapter route runs on the server, and `react` resolves to the
+ * `react-server` build there, whose named exports differ from the browser's React
+ * (no `useState`, ...). The browser React namespace is also un-enumerable without
+ * instantiating it, so the only reliable source of the right export names is what
+ * the bundle actually imports. This scans `import ... from "/api/frontend-abi/<slot>"`
+ * statements and rewrites each specifier to carry its `names`.
+ */
+async function annotateAdapterImports(file) {
+  if (!existsSync(file)) return;
+  const source = await readFile(file, 'utf8');
+  // Collect per-slot named bindings from `import { a, b as c } from "...";`
+  const imports = new Map();
+  const re = /import\s*\{([^}]*)\}\s*from\s*"(\/api\/frontend-abi\/[^"?]+)"/g;
+  let m;
+  while ((m = re.exec(source)) !== null) {
+    const names = m[1]
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const asMatch = /^\S+\s+as\s+(\S+)$/.exec(part);
+        return asMatch ? asMatch[1] : part;
+      })
+      .filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name));
+    const existing = imports.get(m[2]) ?? new Set();
+    for (const name of names) existing.add(name);
+    imports.set(m[2], existing);
+  }
+  if (imports.size === 0) return;
+  // Rewrite each adapter specifier (deduping when the same slot is imported twice).
+  const rewritten = source.replace(
+    /(\/api\/frontend-abi\/[^"?]+)(\?names=[^"]*)?/g,
+    (match, specifier) => {
+      const names = imports.get(specifier);
+      if (!names || names.size === 0) return specifier;
+      return `${specifier}?names=${[...names].sort().join(',')}`;
+    },
+  );
+  await writeFile(file, rewritten);
+}
+
 
 async function revisionOf(rootDir, files) {
   const hash = createHash('sha1');

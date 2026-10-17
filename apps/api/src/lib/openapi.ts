@@ -41,7 +41,18 @@ export const userListResponseSchema = {
   type: 'object',
   required: ['users', 'total', 'page', 'pageSize'],
   properties: {
-    users: { type: 'array', items: userResponseSchema },
+    users: {
+      type: 'array',
+      items: {
+        ...userResponseSchema,
+        properties: {
+          ...userResponseSchema.properties,
+          balance: { type: 'integer' },
+          balanceCurrency: { type: 'string' },
+          serviceCount: { type: ['integer', 'null'] },
+        },
+      },
+    },
     total: { type: 'number' },
     page: { type: 'number' },
     pageSize: { type: 'number' },

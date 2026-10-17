@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
-import type { PluginDefinition, PluginManifest, PluginRoute, HttpRequest, HttpReply, RawHttpRequest, RawHttpReply, PluginContext, JobOptions, JobSchedule, ExtensionTransaction, CustomModelDefinition } from '@stackpanel/sdk';
+import type { PluginDefinition, PluginManifest, PluginRoute, HttpRequest, HttpReply, RawHttpRequest, RawHttpReply, PluginContext, JobOptions, JobSchedule, ExtensionTransaction, CustomModelDefinition, StorageProvider } from '@stackpanel/sdk';
 import { decodeWire, encodeWire, RPC_MAX_BYTES, RPC_MAX_IN_FLIGHT, RPC_MAX_RAW_STREAMS, RPC_PROTOCOL, RPC_TIMEOUT_MS, RAW_CHUNK_BYTES, wireError } from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
 import { dispatchCacheCapability } from '../../cache/index.ts';
@@ -49,6 +49,8 @@ interface IsolatedWorker {
   allowedExtensions: Set<string>;
   /** Live raw streams, keyed by request id (successful raw invocations only). */
   raw: Map<string, RawSession>;
+  /** Kernel storage providers built for the worker via `ctx.storage.backend`. */
+  storageHandles: Map<string, StorageProvider>;
 }
 
 /** Host-side state for one `kind: 'raw'` route invocation over the stream protocol. */
@@ -134,6 +136,7 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
     allowedServices: new Set(),
     allowedExtensions: new Set(),
     raw: new Map(),
+    storageHandles: new Map(),
   };
   workers.set(id, state);
   const spec = workerSpecs.get(id);
@@ -434,8 +437,8 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     return;
   }
   const serviceMatch = /^([a-z]+)\.([a-zA-Z][a-zA-Z0-9]*)$/.exec(message.capability);
-  if (serviceMatch && ['state', 'auth', 'notifications', 'secrets', 'payments', 'wallet', 'fx', 'cache'].includes(serviceMatch[1] ?? '')) {
-    const service = ctx[serviceMatch[1] as 'state' | 'auth' | 'notifications' | 'secrets' | 'payments' | 'wallet' | 'fx' | 'cache'] as unknown as Record<string, unknown>;
+  if (serviceMatch && ['state', 'auth', 'notifications', 'identity', 'captcha', 'secrets', 'payments', 'wallet', 'fx', 'cache'].includes(serviceMatch[1] ?? '')) {
+    const service = ctx[serviceMatch[1] as 'state' | 'auth' | 'notifications' | 'identity' | 'captcha' | 'secrets' | 'payments' | 'wallet' | 'fx' | 'cache'] as unknown as Record<string, unknown>;
     const method = service[serviceMatch[2] ?? ''];
     if (typeof method !== 'function') throw new Error(`未知插件服务方法：${message.capability}`);
     value = await method.apply(service, Array.isArray(args) ? args : []);
@@ -446,6 +449,25 @@ async function handleCapability(id: string, state: IsolatedWorker, message: Capa
     case 'media.register': value = await ctx.media.register({ ...(args as Parameters<PluginContext['media']['register']>[0]), ownerPluginId: id }); break;
     case 'media.unregister': value = await ctx.media.unregister({ ...(args as Parameters<PluginContext['media']['unregister']>[0]), ownerPluginId: id }); break;
     case 'media.unregisterResource': value = await ctx.media.unregisterResource(String(args.resourceType), String(args.resourceId), id); break;
+    case 'storage.backend': {
+      const provider = await ctx.storage.backend(args as Parameters<PluginContext['storage']['backend']>[0]);
+      const token = `storage:${randomUUID()}`;
+      state.storageHandles.set(token, provider);
+      value = { token, ...implementationShape(provider) };
+      break;
+    }
+    case 'storage.invoke': {
+      const provider = state.storageHandles.get(String(args.token));
+      if (!provider) throw new Error('存储后端句柄已失效');
+      const method = (provider as unknown as Record<string, unknown>)[String(args.method)];
+      if (typeof method !== 'function') throw new Error(`未知存储后端方法：${String(args.method)}`);
+      value = await (method as (...a: unknown[]) => unknown).apply(
+        provider,
+        Array.isArray(args.args) ? args.args : [],
+      );
+      break;
+    }
+    case 'storage.release': state.storageHandles.delete(String(args.token)); break;
     case 'events.publish': value = ctx.events.publish(String(args.topic), args.payload); break;
     case 'events.subscribe': {
       const topic = String(args.topic);
@@ -519,24 +541,42 @@ function workerProxy(id: string, token: string, methods: string[], values: Recor
   const proxy: Record<string, unknown> = Object.assign(Object.create(null) as Record<string, unknown>, values);
   for (const method of methods) {
     if (!/^[A-Za-z][A-Za-z0-9_$]{0,127}$/.test(method)) throw new Error(`isolated implementation method name is invalid: ${method}`);
-    proxy[method] = (...args: unknown[]) => invokeWorker(id, 'service', token, { method, payload: args });
+    proxy[method] = async (...args: unknown[]) => {
+      const options = args[1] as { signal?: AbortSignal; timeoutMs?: number } | undefined;
+      const signal = options?.signal instanceof AbortSignal ? options.signal : undefined;
+      if (signal?.aborted) throw new Error('isolated service call aborted');
+      const input = signal ? [args[0], { ...options, signal: undefined }, ...args.slice(2)] : args;
+      const result = await invokeWorker(id, 'service', token, { method, payload: input }, signal, options?.timeoutMs);
+      return result.value;
+    };
   }
   return proxy;
 }
 
-function invokeWorker(id: string, kind: string, token: string, payload: unknown): Promise<Result> {
+function invokeWorker(id: string, kind: string, token: string, payload: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<Result> {
   const state = workers.get(id);
   if (!state || !state.child.connected) return Promise.reject(new Error(`isolated plugin ${id} is unavailable`));
   const requestId = randomUUID();
   return new Promise((resolve, reject) => {
+    const abort = () => {
+      const pending = state.pending.get(requestId);
+      if (!pending) return;
+      clearTimeout(pending.timer); state.pending.delete(requestId);
+      try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'cancel', id: requestId }); } catch { /* disconnected */ }
+      reject(new Error('isolated service call aborted'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    const done = (result: Result) => { signal?.removeEventListener('abort', abort); resolve(result); };
+    const fail = (error: Error) => { signal?.removeEventListener('abort', abort); reject(error); };
     const timer = setTimeout(() => {
       state.pending.delete(requestId);
       try { sendWorker(state.child, { protocol: RPC_PROTOCOL, pluginId: id, type: 'cancel', id: requestId }); } catch { /* exit path */ }
-      reject(Object.assign(new Error(`isolated plugin ${id} timed out`), { code: 'rpc.timeout', status: 504 }));
-    }, RPC_TIMEOUT_MS);
-    state.pending.set(requestId, { resolve, reject, timer });
+      fail(Object.assign(new Error(`isolated plugin ${id} timed out`), { code: 'rpc.timeout', status: 504 }));
+    }, Math.min(120_000, Math.max(RPC_TIMEOUT_MS, timeoutMs ?? RPC_TIMEOUT_MS)));
+    state.pending.set(requestId, { resolve: done, reject: fail, timer });
+    if (signal?.aborted) { abort(); return; }
     try {
-      sendWorker(state.child, { protocol: 1, pluginId: id, type: kind, id: requestId, ...(kind === 'lifecycle' ? { phase: token, context: payload } : { token, payload }) });
+      sendWorker(state.child, { protocol: 1, pluginId: id, type: kind, id: requestId, ...(kind === 'lifecycle' ? { phase: token, context: payload } : kind === 'service' ? { token, ...(payload as object) } : { token, payload }) });
     } catch (error) {
       clearTimeout(timer);
       state.pending.delete(requestId);
@@ -855,6 +895,7 @@ export async function loadIsolatedPluginDefinition(id: string, entry: string, ma
           transaction.finish(false);
         }
         state.transactions.clear();
+        state.storageHandles.clear();
       }
     }
   };
@@ -897,6 +938,7 @@ export function stopIsolatedPlugin(id: string): void {
     transaction.finish(false);
   }
   state?.transactions.clear();
+  state?.storageHandles.clear();
   state?.child.kill('SIGTERM');
 }
 

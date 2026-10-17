@@ -473,6 +473,77 @@ describe('isolated worker RPC protocol', () => {
     send(child, { protocol: 1, pluginId, type: 'result', id: messageId(extensionInvoke), value: 'done' });
     const snapshotResult = await nextMessage(child);
     expect(snapshotResult).toMatchObject({ type: 'result', id: snapshotInvokeId, value: { id: 'snapshot-extension', result: 'done' } });
+
+    // ctx.storage：worker 只拿到远程序 provider 代理；`backend()` 与每次方法调用
+    // 都拆成 `storage.backend` / `storage.invoke` 两条 IPC，字节机制留在内核。
+    const storageInvokeId = randomUUID();
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'invoke',
+      id: storageInvokeId,
+      method: 'GET',
+      route: '/storage',
+      request: { params: {}, query: {}, body: null, headers: {} },
+    });
+    const backendRequest = await nextMessage(child);
+    expect(backendRequest).toMatchObject({
+      type: 'capability',
+      capability: 'storage.backend',
+      args: { driver: 'local', root: '/tmp/isolated-storage' },
+    });
+    // Host builds the real provider and hands back only a serializable handle:
+    // non-function values inline, method names for the worker to re-issue.
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'result',
+      id: messageId(backendRequest),
+      value: {
+        token: 'storage:1',
+        methods: ['beginPut', 'prepareGet', 'delete', 'exists', 'stat', 'list', 'url', 'ping'],
+        values: { id: 'storage.local', name: '服务器本地盘', byteMode: 'spool' },
+      },
+    });
+    // provider.beginPut(...) is proxied as storage.invoke.
+    const beginPutRequest = await nextMessage(child);
+    expect(beginPutRequest).toMatchObject({
+      type: 'capability',
+      capability: 'storage.invoke',
+      args: {
+        token: 'storage:1',
+        method: 'beginPut',
+        args: [{ key: 'media/2026/01/a/original.png', size: 3, contentType: 'image/png' }],
+      },
+    });
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'result',
+      id: messageId(beginPutRequest),
+      value: { spoolPath: '/tmp/isolated-storage/media/2026/01/a/original.png' },
+    });
+    // provider.stat(...) is another storage.invoke.
+    const statRequest = await nextMessage(child);
+    expect(statRequest).toMatchObject({ capability: 'storage.invoke', args: { token: 'storage:1', method: 'stat' } });
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'result',
+      id: messageId(statRequest),
+      value: { key: 'media/2026/01/a/original.png', size: 3 },
+    });
+    const storageResult = await nextMessage(child);
+    expect(storageResult).toMatchObject({
+      type: 'result',
+      id: storageInvokeId,
+      value: {
+        id: 'storage.local',
+        byteMode: 'spool',
+        target: { spoolPath: '/tmp/isolated-storage/media/2026/01/a/original.png' },
+        stat: { key: 'media/2026/01/a/original.png', size: 3 },
+      },
+    });
   });
 
   it('streams a raw request body through the isolated bridge', async () => {
@@ -615,3 +686,23 @@ describe('isolated worker RPC protocol', () => {
     }
   }, 15_000);
 });
+
+it('invokes an isolated model provider with unwrapped results and propagates cancellation',async()=>{
+  const id=`agent-provider-${randomUUID()}`;
+  const plugin=await loadIsolatedPluginDefinition(id,fileURLToPath(new URL('../fixtures/agent-provider-rpc-plugin.mjs',import.meta.url)),{id,name:'Agent fixture',version:'1.0.0'});
+  let provider: import('@stackpanel/sdk').LlmProvider & {aborted():Promise<boolean>};
+  const context={registerExtension:(_point:string,value:typeof provider)=>{provider=value;return()=>undefined;}};
+  try {
+    await plugin.onRegister?.(context as unknown as import('@stackpanel/sdk').PluginContext);
+    expect((await provider!.listModels())[0]?.id).toBe('fixture');
+    const options={callId:'stable-id',runId:'run-id',actorId:'owner'};
+    const answer=await provider!.complete({model:'fixture',messages:[]},options);
+    expect(answer.parts).toEqual([{type:'text',text:'stable-id'}]);
+    const controller=new AbortController();
+    const result=provider!.complete({model:'wait',messages:[]},{...options,signal:controller.signal});
+    setTimeout(()=>controller.abort(),50);
+    await expect(result).rejects.toThrow('aborted');
+    await new Promise((resolve)=>setTimeout(resolve,50));
+    expect(await provider!.aborted()).toBe(true);
+  } finally {stopIsolatedPlugin(id);}
+},15000);

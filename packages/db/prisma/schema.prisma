@@ -18,6 +18,9 @@ model User {
   email        String        @unique
   passwordHash String?
   status       UserStatus    @default(ACTIVE)
+  /// 邮箱所有权验证时间。启用「注册邮箱验证」后，验证通过才写入；
+  /// 未启用或第三方登录创建的可为空（不代表已验证）。
+  emailVerifiedAt DateTime?
   lastLoginAt  DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -27,6 +30,30 @@ model User {
   apiTokens     ApiToken[]
 
   @@map("users")
+}
+
+/// 独立身份挑战（邮箱验证码）。内核拥有的短时、单次、限次凭证，按规范化
+/// 邮箱与用途寻址；未注册用户尚无可靠 userId，故不落进站内通知表。
+/// 只保存验证码摘要与盐，明文只在发送时出现一次，绝不进入通知/SSE/审计/日志。
+model IdentityChallenge {
+  id          String    @id @default(cuid())
+  purpose     String // register | email_change | password_reset
+  email       String // 规范化（小写）邮箱
+  codeDigest  String // HMAC/pbkdf2 摘要
+  codeSalt    String
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  locale      String?
+  ip          String?
+  userAgent   String?
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([email, purpose, consumedAt])
+  @@index([expiresAt])
+  @@map("identity_challenges")
 }
 
 /// External identity bound to a local user (e.g. WowID account).
@@ -355,6 +382,7 @@ model ApiToken {
   userId      String
   name        String
   keyPrefix   String // 展示用打码前缀，如 sp_abcd…
+  audience    String?
   keyHash     String    @unique // sha256(明文)
   scopes      Json      @default("[]") // 授权范围 string[]；空 = 仅身份、无任何权限
   ipAllowlist Json      @default("[]") // CIDR/单 IP；空 = 不限制
@@ -414,12 +442,21 @@ model AgentProfile {
 /// 一次 Agent 运行的头（PLAN-agent-in-kernel §3.3）。
 /// 逐步骤落在 `AgentStep`，因此运行天然可恢复、崩溃点可见（§3.4）。
 model AgentRun {
+  parentId String?
+  rootId String?
+  depth Int @default(0)
+  @@index([rootId])
   id         String         @id @default(cuid())
   /// 触发本次运行的身份（User.id）。与 ApiTokenUsage.userId 同口径：不建 FK，保审计。
   actorId    String
   /// 本次运行使用的唯一凭据。凭据删除即级联清理运行（与 ApiTokenUsage 同口径）。
   tokenId    String
   objective  String
+  /// 创建时的有效执行上限；恢复时只允许收紧。
+  policy     Json?
+  /// 原凭证范围内的持久创建幂等标识和参数摘要。
+  requestKey String?
+  requestHash String?
   status     AgentRunStatus @default(QUEUED)
   model      String?
   /// 已推进步数（= 该运行已有 AgentStep 数）。
@@ -437,6 +474,7 @@ model AgentRun {
   approvals  AgentApproval[]
 
   @@map("agent_runs")
+  @@unique([tokenId, requestKey])
   @@index([actorId, startedAt])
   @@index([tokenId, startedAt])
   @@index([status])
@@ -603,4 +641,91 @@ model Attachment {
 enum UserStatus {
   ACTIVE
   DISABLED
+}
+
+/// 管理员固定的 HTTP MCP 服务；工具安全属性由管理员审核。
+model AgentMcpServer {
+  id String @id
+  name String
+  url String
+  enabled Boolean @default(false)
+  tools Json @default("[]")
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("agent_mcp_servers")
+}
+
+/// 对外部非事务操作采用先记意图、后记结果；未知结果不自动重放。
+model AgentOperation {
+  id String @id
+  actorId String
+  runId String?
+  kind String
+  requestHash String
+  status String @default("STARTED")
+  result Json?
+  reservedMinor Int @default(0)
+  costMinor Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([actorId, createdAt])
+  @@index([runId, kind])
+  @@map("agent_operations")
+}
+
+/// 跨进程后台执行授权；凭证单独加密保存在 Secret，队列只带 runId。
+model AgentDispatch {
+  runId String @id
+  actorId String
+  clientIp String
+  expiresAt DateTime
+  pending Boolean @default(true)
+  lockedUntil DateTime?
+  attempts Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([pending, lockedUntil])
+  @@map("agent_dispatches")
+}
+
+/// 站内通知的持久待投递记录；去重键在通知服务中保持稳定。
+model AgentDelivery {
+  id String @id
+  userId String
+  runId String
+  payload Json
+  deliveredAt DateTime?
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  @@index([deliveredAt, nextAttemptAt])
+  @@index([runId])
+  @@map("agent_deliveries")
+}
+
+model AgentOAuthClient {
+  id String @id
+  name String
+  redirectUris Json
+  enabled Boolean @default(true)
+  createdAt DateTime @default(now())
+  @@map("agent_oauth_clients")
+}
+model AgentOAuthGrant {
+  hash String @id
+  familyId String
+  @@index([familyId])
+  kind String
+  clientId String
+  userId String
+  scopes Json
+  redirectUri String?
+  challenge String?
+  tokenId String?
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([expiresAt])
+  @@map("agent_oauth_grants")
 }

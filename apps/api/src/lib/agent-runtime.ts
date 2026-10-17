@@ -19,25 +19,16 @@
  * §3.4 定稿「凭证携带的请求驱动」: a run is created **and advanced inside the
  * caller's own HTTP request** until `DONE` or `WAITING_APPROVAL`; `/resume`
  * continues on the same credential. All state lives in the DB
- * (`agent_runs` / `agent_steps` / `agent_approvals`), so it is correct across
+ * (`agent_runs` / `agent_steps` / `agent_approvals`), with renewable leases serializing advancement across
  * replicas without any background job (`ctx.jobs` is deliberately left to P1).
  *
  * ## Approval policy (P0, conservative)
  *
- * `mutating === false` → execute directly.
- * `mutating === true && autonomy !== 'act'` → park as an approval, do NOT execute.
- * `autonomy === 'act'` → execute directly.
- *
- * KNOWN LIMITATION: PLAN §4.1 wants a three-tier policy (低/中/高) where
- * "irreversible / money-moving / other-people" capabilities always require
- * approval. The only risk input available today is the capability's `mutating`
- * flag (the MCP `destructiveHint` annotation is derived from the very same flag —
- * packages/sdk/src/mcp.ts), so P0 cannot distinguish 中 from 高 and treats only
- * `act` as pass-through. Per the plan's own instruction we must **not** hand-maintain
- * a second high-risk list, so this gap is documented rather than papered over.
+ * Read tools execute directly. Destructive writes always pause for individual
+ * confirmation; explicitly non-destructive writes may use act or a run-scoped grant.
  */
-import { randomUUID } from 'node:crypto';
-import { LlmProviderError, buildMcpApiCall, buildMcpTools } from '@stackpanel/sdk';
+import { createHash } from 'node:crypto';
+import { PluginError, buildMcpApiCall, buildMcpTools } from '@stackpanel/sdk';
 import type {
   AgentAutonomy,
   AgentRunStatus,
@@ -52,9 +43,11 @@ import type {
   McpCapability,
   McpToolArguments,
   McpToolDescriptor,
+  StateLease,
 } from '@stackpanel/sdk';
 import type { AgentRun, AgentStep, Prisma, PrismaClient } from '@stackpanel/db';
 import { writeAudit } from '../plugins/audit.ts';
+import { getStateService } from '../state/index.ts';
 
 /** How long a parked mutating action stays decidable before it expires (§4.1). */
 export const AGENT_APPROVAL_TTL_MS = 15 * 60 * 1000;
@@ -104,6 +97,14 @@ export interface AgentRuntimeDeps {
   grantedScopes?: ReadonlySet<string> | null;
   /** Wall-clock cap in seconds; `null`/absent = uncapped. */
   maxRunSeconds?: number | null;
+  signal?: AbortSignal;
+  /** Revalidate the original credential and administrative policy before each effect. */
+  checkpoint?: (
+    kind: 'model' | 'tool',
+    reserve: number,
+  ) => Promise<Partial<AgentRuntimeDeps> | void>;
+  validateCredential?: () => Promise<void>;
+  notifyApproval?: (approvalId: string) => Promise<void>;
 }
 
 /** Mutable bookkeeping for one `stepAgent`/`advance` pass. */
@@ -238,7 +239,10 @@ async function createContext(
   run: AgentRun,
   stepRows: AgentStep[],
 ): Promise<RunContext> {
-  const descriptors = buildMcpTools(deps.capabilities, deps.grantedScopes ?? null);
+  const descriptors = buildMcpTools(
+    deps.capabilities.filter((item) => !item.id.startsWith('agent.')),
+    deps.grantedScopes ?? null,
+  );
   return {
     deps,
     descriptors,
@@ -246,9 +250,9 @@ async function createContext(
     capabilityById: new Map(deps.capabilities.map((capability) => [capability.id, capability])),
     stepRows,
     model: run.model ?? deps.model,
-    spendMinor: run.spendMinor,
-    tokensIn: run.tokensIn,
-    tokensOut: run.tokensOut,
+    spendMinor: stepRows.reduce((sum, step) => sum + step.costMinor, 0),
+    tokensIn: stepRows.reduce((sum, step) => sum + step.tokensIn, 0),
+    tokensOut: stepRows.reduce((sum, step) => sum + step.tokensOut, 0),
     error: null,
     endedAt: null,
   };
@@ -275,7 +279,7 @@ async function recordStep(
     approvalId?: string;
   },
 ): Promise<AgentStep> {
-  const index = ctx.stepRows.length === 0 ? 0 : ctx.stepRows[ctx.stepRows.length - 1]!.index + 1;
+  const index = ctx.stepRows.length === 0 ? 0 : (ctx.stepRows.at(-1)?.index ?? -1) + 1;
   const args = jsonValue(input.args);
   const result = jsonValue(input.result);
   const created = await ctx.deps.prisma.agentStep.create({
@@ -295,6 +299,17 @@ async function recordStep(
     },
   });
   ctx.stepRows.push(created);
+  // Counters are a projection of durable steps; update them even after cancellation,
+  // without touching the terminal state or its error/timestamps.
+  await ctx.deps.prisma.agentRun.update({
+    where: { id: ctx.deps.runId },
+    data: {
+      steps: ctx.stepRows.length,
+      spendMinor: ctx.stepRows.reduce((sum, step) => sum + step.costMinor, 0),
+      tokensIn: ctx.stepRows.reduce((sum, step) => sum + step.tokensIn, 0),
+      tokensOut: ctx.stepRows.reduce((sum, step) => sum + step.tokensOut, 0),
+    },
+  });
   await writeAudit({
     actorId: ctx.deps.actorId,
     action: 'agent.step',
@@ -325,7 +340,7 @@ function buildMessages(ctx: RunContext): LlmMessage[] {
   for (const step of ctx.stepRows) {
     if (step.kind === 'assistant') {
       const payload = asRecord(step.result);
-      const parts = Array.isArray(payload?.['parts']) ? (payload!['parts'] as LlmPart[]) : [];
+      const parts = Array.isArray(payload?.['parts']) ? (payload?.['parts'] as LlmPart[]) : [];
       messages.push({ role: 'assistant', parts });
       continue;
     }
@@ -348,8 +363,8 @@ function buildMessages(ctx: RunContext): LlmMessage[] {
 async function persistRun(ctx: RunContext, run: AgentRun, status: AgentRunStatus): Promise<void> {
   const finished = isTerminal(status);
   const endedAt = finished ? (ctx.endedAt ?? new Date()) : null;
-  await ctx.deps.prisma.agentRun.update({
-    where: { id: run.id },
+  await ctx.deps.prisma.agentRun.updateMany({
+    where: { id: run.id, status: { notIn: [...TERMINAL_STATUSES] } },
     data: {
       status,
       model: ctx.model,
@@ -399,7 +414,11 @@ async function executeToolCall(
     ...apiCall,
     ...(idempotencyKey ? { idempotencyKey } : {}),
   };
+  await checkpoint(ctx, 'tool', 1);
   const outcome = await ctx.deps.executor(callWithKey);
+  // Preserve the result of an already-started action even when cancellation arrived.
+  if (Buffer.byteLength(outcome.body) > 262144)
+    outcome.body = outcome.body.slice(0, 65536) + '\n[工具结果已截断]';
   const isError = outcome.statusCode >= 400;
   await recordStep(ctx, {
     kind: 'tool_result',
@@ -426,13 +445,24 @@ async function handleToolCall(
   ctx: RunContext,
   call: ToolCallPart,
 ): Promise<'continue' | 'waiting'> {
+  const lastAssistantIndex =
+    [...ctx.stepRows].reverse().find((step) => step.kind === 'assistant')?.index ?? -1;
+  const existingCall = ctx.stepRows.find(
+    (step) =>
+      step.index > lastAssistantIndex &&
+      step.kind === 'tool_call' &&
+      toolCallIdOf(step.result) === call.id,
+  );
+  await checkpoint(ctx, 'tool', existingCall ? 1 : 2);
   const args = parseToolArguments(call.arguments);
-  const toolCallStep = await recordStep(ctx, {
-    kind: 'tool_call',
-    toolName: call.name,
-    args,
-    result: { toolCallId: call.id },
-  });
+  const toolCallStep =
+    existingCall ??
+    (await recordStep(ctx, {
+      kind: 'tool_call',
+      toolName: call.name,
+      args,
+      result: { toolCallId: call.id },
+    }));
 
   const descriptor = ctx.descriptorByName.get(call.name);
   if (!descriptor) {
@@ -470,9 +500,10 @@ async function handleToolCall(
     return 'continue';
   }
 
-  const needsApproval = descriptor.mutating && ctx.deps.autonomy !== 'act';
-  if (needsApproval && !(await hasRunScopedGrant(ctx, capability.id))) {
-    const idempotencyKey = randomUUID();
+  const dangerous = descriptor.annotations.destructiveHint;
+  const needsApproval = descriptor.mutating && (dangerous || ctx.deps.autonomy !== 'act');
+  if (needsApproval && (dangerous || !(await hasRunScopedGrant(ctx, capability.id)))) {
+    const idempotencyKey = stableToolKey(ctx, call);
     const approvalArgs = jsonValue(args);
     const approval = await ctx.deps.prisma.agentApproval.create({
       data: {
@@ -492,10 +523,11 @@ async function handleToolCall(
       approvalId: approval.id,
       result: { approvalId: approval.id, status: 'PENDING', toolCallId: call.id },
     });
+    await ctx.deps.notifyApproval?.(approval.id);
     return 'waiting';
   }
 
-  const key = descriptor.mutating ? randomUUID() : apiCall.idempotencyKey;
+  const key = descriptor.mutating ? stableToolKey(ctx, call) : apiCall.idempotencyKey;
   await executeToolCall(ctx, call, capability, args, key ?? '');
   return 'continue';
 }
@@ -531,13 +563,14 @@ async function resolveOutstanding(ctx: RunContext): Promise<'waiting' | null> {
   const lastAssistant = assistantSteps[assistantSteps.length - 1];
   if (!lastAssistant) return null;
   const payload = asRecord(lastAssistant.result);
-  const parts = Array.isArray(payload?.['parts']) ? (payload!['parts'] as LlmPart[]) : [];
+  const parts = Array.isArray(payload?.['parts']) ? (payload?.['parts'] as LlmPart[]) : [];
   const calls = parts.filter(isToolCallPart);
   if (calls.length === 0) return null;
 
   const resolved = new Set<string>();
   const toolCallSteps = new Map<string, AgentStep>();
   for (const step of ctx.stepRows) {
+    if (step.index <= lastAssistant.index) continue;
     if (step.kind === 'tool_result') {
       const id = toolCallIdOf(step.result);
       if (id) resolved.add(id);
@@ -555,7 +588,7 @@ async function resolveOutstanding(ctx: RunContext): Promise<'waiting' | null> {
       continue;
     }
 
-    const approval = await ctx.deps.prisma.agentApproval.findFirst({
+    let approval = await ctx.deps.prisma.agentApproval.findFirst({
       where: { stepId: toolCallStep.id },
       orderBy: { createdAt: 'desc' },
     });
@@ -574,23 +607,34 @@ async function resolveOutstanding(ctx: RunContext): Promise<'waiting' | null> {
     if (approval && approval.status === 'PENDING') {
       const expiresAt = approval.expiresAt;
       if (expiresAt && expiresAt.getTime() <= Date.now()) {
-        await ctx.deps.prisma.agentApproval.update({
-          where: { id: approval.id },
+        const expired = await ctx.deps.prisma.agentApproval.updateMany({
+          where: { id: approval.id, status: 'PENDING', expiresAt: { lte: new Date() } },
           data: { status: 'EXPIRED', decidedAt: new Date(), reason: '审批超时' },
         });
-        await recordStep(ctx, {
-          kind: 'tool_result',
-          toolName: call.name,
-          isError: true,
-          result: { toolCallId: call.id, text: '审批已超时，该操作未执行' },
-        });
-        continue;
+        if (!expired.count) {
+          // A decision won the race; never overwrite it with expiry.
+          approval = await ctx.deps.prisma.agentApproval.findUnique({ where: { id: approval.id } });
+        } else {
+          await recordStep(ctx, {
+            kind: 'tool_result',
+            toolName: call.name,
+            isError: true,
+            result: { toolCallId: call.id, text: '审批已超时，该操作未执行' },
+          });
+          continue;
+        }
       }
-      return 'waiting';
+      if (approval?.status === 'PENDING') return 'waiting';
     }
     if (approval && approval.status === 'APPROVED') {
       // Reuse the key persisted at approval-creation time, verbatim (§4.2).
-      await executeToolCall(ctx, call, capability, parseToolArguments(call.arguments), approval.idempotencyKey);
+      await executeToolCall(
+        ctx,
+        call,
+        capability,
+        parseToolArguments(call.arguments),
+        approval.idempotencyKey,
+      );
       continue;
     }
     if (approval && (approval.status === 'DENIED' || approval.status === 'EXPIRED')) {
@@ -614,6 +658,7 @@ async function resolveOutstanding(ctx: RunContext): Promise<'waiting' | null> {
 
 /** Issue one model call and process whatever tool calls it asked for. */
 async function stepOnce(ctx: RunContext, run: AgentRun): Promise<void> {
+  await checkpoint(ctx, 'model', 1);
   const tools: LlmTool[] = ctx.descriptors.map((descriptor) => ({
     name: descriptor.name,
     description: descriptor.description,
@@ -627,23 +672,48 @@ async function stepOnce(ctx: RunContext, run: AgentRun): Promise<void> {
   const callId = `${ctx.deps.runId}:${modelStepIndex}`;
   const startedAt = Date.now();
 
+  const modelSignal = AbortSignal.any([
+    AbortSignal.timeout(remainingMs(run, ctx.deps.maxRunSeconds)),
+    ...(ctx.deps.signal ? [ctx.deps.signal] : []),
+  ]);
   let result;
   try {
-    result = await ctx.deps.provider.complete(
-      {
-        model: ctx.model,
-        system: AGENT_SYSTEM_PROMPT,
-        messages: buildMessages(ctx),
-        ...(tools.length > 0 ? { tools, toolChoice: 'auto' as const } : {}),
-      },
-      { callId, runId: ctx.deps.runId, actorId: ctx.deps.actorId },
+    result = await abortable(
+      ctx.deps.provider.complete(
+        {
+          model: ctx.model,
+          system: AGENT_SYSTEM_PROMPT,
+          messages: boundedMessages(ctx),
+          maxTokens: 4096,
+          ...(tools.length > 0 ? { tools, toolChoice: 'auto' as const } : {}),
+        },
+        {
+          callId,
+          runId: ctx.deps.runId,
+          actorId: ctx.deps.actorId,
+          signal: modelSignal,
+          timeoutMs: remainingMs(run, ctx.deps.maxRunSeconds),
+        },
+      ),
+      modelSignal,
     );
   } catch (error) {
+    if (ctx.deps.signal?.aborted) throw ctx.deps.signal.reason;
     // Runtime provider failures never escape the loop: the run fails visibly.
     ctx.error = `模型调用失败：${errorMessage(error)}`;
     ctx.endedAt = new Date();
     await persistRun(ctx, run, 'FAILED');
     return;
+  }
+  if (
+    ![
+      result.costMinor,
+      result.usage.inputTokens,
+      result.usage.outputTokens,
+      result.usage.totalTokens,
+    ].every((value) => Number.isSafeInteger(value) && value >= 0)
+  ) {
+    throw new StopRun('模型提供方返回无效的费用或用量');
   }
   const latencyMs = Date.now() - startedAt;
 
@@ -667,7 +737,15 @@ async function stepOnce(ctx: RunContext, run: AgentRun): Promise<void> {
   ctx.tokensOut += result.usage.outputTokens;
   if (result.model) ctx.model = result.model;
 
+  if (!isModelAllowed(ctx.model, ctx.deps.allowedModels)) throw new StopRun('模型已不在允许名单内');
   const calls = result.parts.filter(isToolCallPart);
+  if (calls.length) await checkpoint(ctx, 'tool', 0);
+  if (
+    new Set(calls.map((call) => call.id)).size !== calls.length ||
+    calls.some((call) => !call.id)
+  ) {
+    throw new StopRun('模型返回重复或无效的工具调用标识');
+  }
   for (const call of calls) {
     if ((await handleToolCall(ctx, call)) === 'waiting') {
       ctx.error = null;
@@ -677,8 +755,8 @@ async function stepOnce(ctx: RunContext, run: AgentRun): Promise<void> {
   }
 
   if (calls.length === 0) {
-    if (result.stopReason === 'error') {
-      ctx.error = '模型返回错误终止';
+    if (result.stopReason !== 'stop') {
+      ctx.error = `模型未正常完成（${result.stopReason}）`;
       ctx.endedAt = new Date();
       await persistRun(ctx, run, 'FAILED');
       return;
@@ -717,9 +795,14 @@ function limitViolation(
 }
 
 async function failRun(deps: AgentRuntimeDeps, run: AgentRun, message: string): Promise<void> {
-  await deps.prisma.agentRun.update({
-    where: { id: run.id },
-    data: { status: 'FAILED', error: message, endedAt: new Date(), startedAt: run.startedAt ?? new Date() },
+  await deps.prisma.agentRun.updateMany({
+    where: { id: run.id, status: { notIn: [...TERMINAL_STATUSES] } },
+    data: {
+      status: 'FAILED',
+      error: message,
+      endedAt: new Date(),
+      startedAt: run.startedAt ?? new Date(),
+    },
   });
 }
 
@@ -730,23 +813,7 @@ async function failRun(deps: AgentRuntimeDeps, run: AgentRun, message: string): 
  * freshest run view.
  */
 export async function stepAgent(deps: AgentRuntimeDeps): Promise<AgentRunView> {
-  if (!isModelAllowed(deps.model, deps.allowedModels)) {
-    // Defensive: the route layer already rejects this before creating the run.
-    throw new LlmProviderError(
-      'model_not_allowed',
-      `模型 ${deps.model} 不在该凭证的模型白名单内`,
-      false,
-    );
-  }
-  const run = await loadRun(deps);
-  if (isTerminal(run.status) || run.status === 'WAITING_APPROVAL') return toRunView(run);
-  const stepRows = await deps.prisma.agentStep.findMany({
-    where: { runId: deps.runId },
-    orderBy: { index: 'asc' },
-  });
-  const ctx = await createContext(deps, run, stepRows);
-  await stepOnce(ctx, run);
-  return toRunView(await loadRun(deps));
+  return withExecution(deps, true);
 }
 
 /**
@@ -756,7 +823,7 @@ export async function stepAgent(deps: AgentRuntimeDeps): Promise<AgentRunView> {
  * left untouched until the approval is decided, so `resolveOutstanding` runs
  * first on every iteration and only then does the loop ask the model again.
  */
-async function advance(deps: AgentRuntimeDeps): Promise<AgentRunView> {
+async function advance(deps: AgentRuntimeDeps, single = false): Promise<AgentRunView> {
   for (;;) {
     const run = await loadRun(deps);
     if (isTerminal(run.status)) return toRunView(run);
@@ -781,33 +848,179 @@ async function advance(deps: AgentRuntimeDeps): Promise<AgentRunView> {
 
     await stepOnce(ctx, run);
     const view = toRunView(await loadRun(deps));
-    if (view.status !== 'RUNNING') return view;
+    if (single || view.status !== 'RUNNING') return view;
   }
 }
 
 /** Advance a run from the beginning until it finishes or needs an approval. */
 export async function runAgentUntilBlocked(deps: AgentRuntimeDeps): Promise<AgentRunView> {
-  return advance(deps);
+  return withExecution(deps);
 }
 
-/**
- * Continue a run that paused in `WAITING_APPROVAL`.
- *
- * The execution after an approval happens **inside the resuming caller's HTTP
- * request**, so the injected tool call carries the *resume caller's* credential,
- * not the credential that created the run. That is a direct consequence of the
- * §3.4 「凭证携带的请求驱动」 shape (the kernel holds no standing credential and
- * the token plaintext is never recoverable from its hash) — not an oversight.
- * The approved capability's scope was checked against the approver's own
- * permissions, so this cannot grant the approver anything they did not already
- * hold.
- */
-export async function resumeAgent(
-  deps: AgentRuntimeDeps,
-  runId: string,
-): Promise<AgentRunView> {
+/** Continue under the original credential, verified by the HTTP boundary. */
+export async function resumeAgent(deps: AgentRuntimeDeps, runId: string): Promise<AgentRunView> {
   const run = await deps.prisma.agentRun.findUnique({ where: { id: runId } });
   if (!run) throw new Error(`agent run not found: ${runId}`);
   if (isTerminal(run.status)) return toRunView(run);
-  return advance(deps);
+  return withExecution(deps);
+}
+
+class StopRun extends Error {}
+
+function remainingMs(run: AgentRun, seconds?: number | null): number {
+  return Math.max(
+    1,
+    Math.min(
+      30000,
+      seconds && run.startedAt ? seconds * 1000 - (Date.now() - run.startedAt.getTime()) : 30000,
+    ),
+  );
+}
+
+function stableToolKey(ctx: RunContext, call: ToolCallPart): string {
+  const ordinal = ctx.stepRows.filter((step) => step.kind === 'assistant').length - 1;
+  return createHash('sha256').update(`${ctx.deps.runId}:${ordinal}:${call.id}`).digest('hex');
+}
+
+function boundedMessages(ctx: RunContext): LlmMessage[] {
+  const messages = buildMessages(ctx);
+  if (Buffer.byteLength(JSON.stringify(messages)) > 524288) {
+    throw new StopRun('对话上下文已达上限，请新建任务');
+  }
+  return messages;
+}
+
+async function checkpoint(ctx: RunContext, kind: 'model' | 'tool', reserve: number): Promise<void> {
+  ctx.deps.signal?.throwIfAborted();
+  const run = await loadRun(ctx.deps);
+  if (isTerminal(run.status)) throw new StopRun('运行已结束');
+  if (!isModelAllowed(run.model ?? ctx.deps.model, ctx.deps.allowedModels)) {
+    throw new StopRun('模型已不在允许名单内');
+  }
+  const violation = limitViolation(
+    { ...run, steps: ctx.stepRows.length, spendMinor: ctx.spendMinor },
+    ctx.deps.maxSteps,
+    ctx.deps.budgetMinor,
+    ctx.deps.maxRunSeconds,
+  );
+  if (violation || (ctx.deps.maxSteps > 0 && ctx.stepRows.length + reserve > ctx.deps.maxSteps)) {
+    throw new StopRun(violation ?? '剩余步数不足以执行并记录该操作');
+  }
+  const limits = await ctx.deps.checkpoint?.(kind, reserve);
+  if (limits) {
+    Object.assign(ctx.deps, limits);
+    const tightened = limitViolation(
+      { ...run, steps: ctx.stepRows.length, spendMinor: ctx.spendMinor },
+      ctx.deps.maxSteps,
+      ctx.deps.budgetMinor,
+      ctx.deps.maxRunSeconds,
+    );
+    if (tightened || (ctx.deps.maxSteps > 0 && ctx.stepRows.length + reserve > ctx.deps.maxSteps))
+      throw new StopRun(tightened ?? '剩余步数不足');
+    if (!isModelAllowed(run.model ?? ctx.deps.model, ctx.deps.allowedModels))
+      throw new StopRun('模型已不在允许名单内');
+  }
+}
+
+/** A renewable cross-replica lease serializes both a run and its owner's daily spending. */
+async function withExecution(deps: AgentRuntimeDeps, single = false): Promise<AgentRunView> {
+  const state = getStateService();
+  const leases: StateLease[] = [];
+  const release = async (): Promise<void> => {
+    await Promise.allSettled(leases.map((held) => state.releaseLease(held)));
+  };
+  try {
+    for (const key of [`agent:actor:${deps.actorId}`, `agent:run:${deps.runId}`]) {
+      const lease = await state.acquireLease([{ key, limit: 1 }], 30000);
+      if (!lease)
+        throw new PluginError('agent.run.busy', 409, '该账号已有任务正在推进，请稍后重试');
+      leases.push(lease);
+    }
+  } catch (error) {
+    await release();
+    throw error;
+  }
+  const controller = new AbortController();
+  let checking = false;
+  const check = async (): Promise<void> => {
+    if (checking || controller.signal.aborted) return;
+    checking = true;
+    try {
+      await deps.validateCredential?.();
+      const run = await loadRun(deps);
+      if (isTerminal(run.status)) controller.abort(new StopRun('运行已结束'));
+      if (
+        deps.maxRunSeconds &&
+        run.startedAt &&
+        Date.now() - run.startedAt.getTime() >= deps.maxRunSeconds * 1000
+      ) {
+        controller.abort(new StopRun('运行时长已达上限'));
+      }
+      for (const lease of leases) {
+        if (!(await state.renewLease(lease, 30000)))
+          controller.abort(new StopRun('执行租约已失效'));
+      }
+    } catch (error) {
+      controller.abort(error);
+    } finally {
+      checking = false;
+    }
+  };
+  const timer = setInterval(() => {
+    void check();
+  }, 1000);
+  timer.unref();
+  const externalAbort = (): void => controller.abort(deps.signal?.reason);
+  deps.signal?.addEventListener('abort', externalAbort, { once: true });
+  if (deps.signal?.aborted) externalAbort();
+  try {
+    const before = await loadRun(deps);
+    if (!isTerminal(before.status) && !before.startedAt) {
+      await deps.prisma.agentRun.updateMany({
+        where: { id: before.id, status: { notIn: [...TERMINAL_STATUSES] } },
+        data: { startedAt: new Date(), status: 'RUNNING' },
+      });
+    }
+    return await advance(
+      {
+        ...deps,
+        signal: controller.signal,
+        checkpoint: async (kind, reserve) => {
+          for (const lease of leases) {
+            if (!(await state.renewLease(lease, 30000))) throw new StopRun('执行租约已失效');
+          }
+          return deps.checkpoint?.(kind, reserve);
+        },
+      },
+      single,
+    );
+  } catch (error) {
+    const run = await loadRun(deps);
+    if (isTerminal(run.status)) return toRunView(run);
+    if (error instanceof StopRun || error instanceof PluginError || controller.signal.aborted) {
+      await failRun(deps, run, errorMessage(error));
+      return toRunView(await loadRun(deps));
+    }
+    // A transport/DB failure may occur after an external effect. Keep it resumable;
+    // stableToolKey ensures the logical action is replayed with exactly the same key.
+    await deps.prisma.agentRun.updateMany({
+      where: { id: run.id, status: { notIn: [...TERMINAL_STATUSES] } },
+      data: { status: 'RUNNING', error: '推进中断，执行结果待核对，可使用原凭证继续' },
+    });
+    throw error;
+  } finally {
+    clearInterval(timer);
+    deps.signal?.removeEventListener('abort', externalAbort);
+    await release();
+  }
+}
+
+function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const abort = (): void => reject(signal.reason ?? new StopRun('运行已取消'));
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
 }

@@ -44,7 +44,7 @@ export function AdminShell({ user, items, children, brandLogoUrl }: AdminShellPr
       rootHref="/admin"
       navigationIcons={NAVIGATION_ICONS}
       defaultIcon={Box}
-      contentMaxWidth="max-w-6xl"
+      contentMaxWidth="max-w-[1440px]"
       backLink={{ label: '', href: '/', messageKey: 'nav.backToSite' }}
       brandLogoUrl={brandLogoUrl}
     >

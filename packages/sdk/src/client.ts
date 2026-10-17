@@ -18,6 +18,8 @@ import {
   adminActionsResponseSchema,
   adminPluginsResponseSchema,
   adminThemesResponseSchema,
+  authConfigResponseSchema,
+  sendRegisterCodeResponseSchema,
   connectedIdentityListResponseSchema,
   currentUserResponseSchema,
   developerOverviewResponseSchema,
@@ -113,6 +115,7 @@ import type {
   ApiTokenListResponse,
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
+  AuthConfigResponse,
   FrontendAuditAction,
   Health,
   LoginResponse,
@@ -138,6 +141,7 @@ import type {
   PermissionGroupUpdateInput,
   PermissionInfoListResponse,
   RbacTemplatesResponse,
+  SendRegisterCodeResponse,
   SigningResponse,
   Readiness,
   ThemePreviewMutationResponse,
@@ -439,9 +443,47 @@ export class ApiClient {
     return this.post('/login', { email, password }, loginResponseSchema);
   }
 
-  /** Register a new local account (login plugin). */
-  register(email: string, password: string): Promise<LoginResponse> {
-    return this.post('/register', { email, password }, loginResponseSchema);
+  /**
+   * Register a new local account (login plugin). `affid` is an optional
+   * referral code carried over from the visitor's landing link; the login
+   * plugin forwards it on `user.registered` for attribution. `code` is the
+   * email verification code when the deployment requires a verified email;
+   * `captchaToken` is the human-verification token from the widget.
+   */
+  register(
+    email: string,
+    password: string,
+    options: { affid?: string | null; code?: string; captchaToken?: string } = {},
+  ): Promise<LoginResponse> {
+    const { affid, code, captchaToken } = options;
+    return this.post(
+      '/register',
+      {
+        email,
+        password,
+        ...(affid ? { affid } : {}),
+        ...(code ? { code } : {}),
+        ...(captchaToken ? { captchaToken } : {}),
+      },
+      loginResponseSchema,
+    );
+  }
+
+  /** Request a registration email verification code (login plugin). */
+  sendRegisterCode(
+    email: string,
+    options: { captchaToken?: string } = {},
+  ): Promise<SendRegisterCodeResponse> {
+    return this.post(
+      '/register/send-code',
+      { email, ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}) },
+      sendRegisterCodeResponseSchema,
+    );
+  }
+
+  /** Read the public authentication policy (login plugin). */
+  getAuthConfig(): Promise<AuthConfigResponse> {
+    return this.get('/auth/config', authConfigResponseSchema);
   }
 
   /** Read the authenticated account identity. */
@@ -533,6 +575,13 @@ export class ApiClient {
     q?: string;
     status?: 'ACTIVE' | 'DISABLED';
     groupId?: string;
+    sort?:
+      | 'createdAt_desc'
+      | 'createdAt_asc'
+      | 'balance_desc'
+      | 'balance_asc'
+      | 'lastLoginAt_desc'
+      | 'lastLoginAt_asc';
   }): Promise<UserListResponse> {
     const query = new URLSearchParams();
     if (options?.page !== undefined) query.set('page', String(options.page));
@@ -540,13 +589,23 @@ export class ApiClient {
     if (options?.q) query.set('q', options.q);
     if (options?.status) query.set('status', options.status);
     if (options?.groupId) query.set('groupId', options.groupId);
+    if (options?.sort) query.set('sort', options.sort);
     const qs = query.toString();
     return this.get(`/admin/users${qs ? `?${qs}` : ''}`, userListResponseSchema);
   }
 
   /** Read the full admin user detail aggregate (wallet, services, orders, ledger). */
-  getAdminUser(id: string): Promise<AdminUserDetailResponse> {
-    return this.get(`/admin/users/${encodeURIComponent(id)}`, adminUserDetailResponseSchema);
+  getAdminUser(
+    id: string,
+    options?: { orderPage?: number; orderPageSize?: number },
+  ): Promise<AdminUserDetailResponse> {
+    const query = new URLSearchParams();
+    if (options?.orderPage) query.set('orderPage', String(options.orderPage));
+    if (options?.orderPageSize) query.set('orderPageSize', String(options.orderPageSize));
+    return this.get(
+      `/admin/users/${encodeURIComponent(id)}${query.size ? `?${query}` : ''}`,
+      adminUserDetailResponseSchema,
+    );
   }
 
   /** Update a user's status and/or permission groups. */

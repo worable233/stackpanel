@@ -1,4 +1,4 @@
-import { computeCheckoutPrice, readCheckoutConfig } from '@stackpanel/sdk';
+import { computeCheckoutPrice, readCheckoutConfig, validateCheckoutSelection } from '@stackpanel/sdk';
 import type {
   CheckoutPriceContext,
   CheckoutPriceResult,
@@ -40,6 +40,11 @@ export async function resolveCheckoutPrice(
   if (!config || (!config.cycle && !config.selections)) {
     return { unit: product.price, result: null };
   }
+  const schema = readCheckoutConfig(product.metadata);
+  if (schema) {
+    const errors = validateCheckoutSelection(schema, config);
+    if (errors.length > 0) throw new StoreError(400, `商品配置无效：${errors[0]}`);
+  }
   const provider = providerForProduct({
     providerId: product.providerId,
     fulfillmentType: product.fulfillmentType,
@@ -62,7 +67,6 @@ export async function resolveCheckoutPrice(
     }
     throw new StoreError(400, '商品价格计算失败');
   }
-  const schema = readCheckoutConfig(product.metadata);
   if (!schema) throw new StoreError(400, '该商品不支持配置选择');
   const result = computeCheckoutPrice(schema, config);
   return { unit: result.price, result };

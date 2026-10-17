@@ -165,4 +165,24 @@ export class S3Driver implements StorageDriver {
       },
     );
   }
+
+  /**
+   * Presigned PUT URL so a caller (e.g. a storage provider in `redirect` mode)
+   * can upload bytes directly without routing them through the API.
+   */
+  async signedPutUrl(
+    key: string,
+    options: { contentType?: string; expiresInSeconds?: number } = {},
+  ): Promise<string> {
+    assertSafeStorageKey(key);
+    return getSignedUrl(
+      this.client,
+      new PutObjectCommand({
+        Bucket: this.config.bucket,
+        Key: key,
+        ...(options.contentType ? { ContentType: options.contentType } : {}),
+      }),
+      { expiresIn: Math.max(1, Math.floor(options.expiresInSeconds ?? 900)) },
+    );
+  }
 }

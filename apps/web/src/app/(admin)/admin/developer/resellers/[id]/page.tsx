@@ -1,3 +1,4 @@
+import { SectionTitle } from '@stackpanel/ui';
 import Link from 'next/link';
 import type { ResellerDetailResponse, WebhookDeliveryView } from '@stackpanel/sdk';
 import { ArrowLeft } from 'lucide-react';
@@ -141,7 +142,6 @@ export default async function AdminDeveloperResellerPage({
           </Link>
         }
         title={data ? data.reseller.name : t('admin.developer.resellers.title')}
-        description={t('admin.developer.resellers.description')}
       />
 
       {error ? (
@@ -154,7 +154,7 @@ export default async function AdminDeveloperResellerPage({
         <>
           <Card>
             <CardHeader>
-              <CardTitle>{t('admin.developer.detail.identity')}</CardTitle>
+              <SectionTitle as="h3">{t('admin.developer.detail.identity')}</SectionTitle>
             </CardHeader>
             <CardContent>
               <dl className="grid gap-4 sm:grid-cols-2">
@@ -169,9 +169,9 @@ export default async function AdminDeveloperResellerPage({
           </Card>
 
           <div className="space-y-3">
-            <h2 className="text-sm font-medium text-muted-foreground">
+            <SectionTitle>
               {t('admin.developer.detail.recentDeliveries')}
-            </h2>
+            </SectionTitle>
             <DeliveryTable deliveries={data.deliveries} locale={locale} t={t} />
           </div>
         </>
