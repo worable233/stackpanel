@@ -35,8 +35,9 @@ module.exports = {
     },
     {
       name: 'stackpanel-web',
-      cwd: __dirname,
-      script: './scripts/frontend-supervisor.mjs',
+      cwd: path.join(__dirname, 'apps/web'),
+      script: './node_modules/next/dist/bin/next',
+      args: 'start -p 3000',
       interpreter: 'node',
       instances: 1,
       autorestart: true,
@@ -44,7 +45,6 @@ module.exports = {
       env: {
         NODE_ENV,
         STACKPANEL_DATA_DIR: DATA_DIR,
-        STACKPANEL_FRONTEND_AUTOBUILD: process.env.STACKPANEL_FRONTEND_AUTOBUILD || '1',
       },
       out_file: '../../logs/web-out.log',
       error_file: '../../logs/web-error.log',

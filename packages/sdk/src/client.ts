@@ -24,7 +24,6 @@ import {
   currentUserResponseSchema,
   developerOverviewResponseSchema,
   frontendAuditResponseSchema,
-  frontendApplyStatusResponseSchema,
   frontendDescriptorSchema,
   healthSchema,
   loginResponseSchema,
@@ -84,7 +83,6 @@ import type {
   AdminActionsResponse,
   AuditLogResponse,
   AdminPluginsResponse,
-  FrontendApplyStatusResponse,
   AdminThemesResponse,
   AdminProductsResponse,
   AdminServiceMutationResponse,
@@ -323,11 +321,6 @@ export class ApiClient {
   /** Read all registered plugins with their source/enabled state. */
   getAdminPlugins(): Promise<AdminPluginsResponse> {
     return this.get('/admin/plugins', adminPluginsResponseSchema);
-  }
-
-  /** Read plugin-frontend rebuild/reload progress of the web tier. */
-  getFrontendApplyStatus(): Promise<FrontendApplyStatusResponse> {
-    return this.get('/admin/plugins/frontend-status', frontendApplyStatusResponseSchema);
   }
 
   /** Read the append-only audit trail (admin only). */

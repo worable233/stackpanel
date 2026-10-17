@@ -5,6 +5,7 @@ import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 
 import { cn } from '@/lib/utils';
 import { ChevronRightIcon, CheckIcon } from 'lucide-react';
+import { useFrontendPortalContainer } from '@/components/frontend-scope';
 
 function DropdownMenu({ modal = false, ...props }: MenuPrimitive.Root.Props) {
   // Ordinary action menus keep the page scrollable; callers can opt into modal behavior.
@@ -29,7 +30,7 @@ function DropdownMenuContent({
 }: MenuPrimitive.Popup.Props &
   Pick<MenuPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
   return (
-    <MenuPrimitive.Portal>
+    <MenuPrimitive.Portal container={useFrontendPortalContainer()}>
       <MenuPrimitive.Positioner
         className="isolate z-50 outline-none"
         align={align}

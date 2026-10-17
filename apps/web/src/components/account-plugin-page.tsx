@@ -4,6 +4,7 @@ import type { AccountPageComponentProps, AccountUser } from '@stackpanel/sdk';
 import type { PluginAccountRouteResult } from '@/lib/account-frontend';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
+import { FrontendScopeRoot } from './frontend-scope';
 
 /** Render a resolved plugin account page without exposing transport errors. */
 export async function AccountPluginPage({
@@ -30,7 +31,7 @@ export async function AccountPluginPage({
   }
   const Component = result.component;
   return (
-    <div className="space-y-6">
+    <FrontendScopeRoot scope={`plugins:${pluginId}`} className="block space-y-6">
       {actionError ? (
         <p
           role="alert"
@@ -49,6 +50,6 @@ export async function AccountPluginPage({
         user,
         actions: result.actions,
       } as AccountPageComponentProps)}
-    </div>
+    </FrontendScopeRoot>
   );
 }

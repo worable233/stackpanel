@@ -4,13 +4,8 @@ import type { NotificationStatus, NotificationsService } from '@stackpanel/sdk';
  * 插件 / 主题生命周期通知。管理员执行安装、升级、启用/激活、停用、卸载/删除后，
  * 给**操作者本人**写一条一次性站内通知（进铃铛与收件箱）。
  *
- * 与 `frontend-apply-notifications.ts` 的区别：
- *   - 实况通知（live）：针对**前端构建**这类持续活动，用 `upsert` 原地改写同一条。
- *   - 生命周期通知（本模块）：针对**管理动作的结果**，用 `create` 追加一次性消息。
- *
- * 去重规则：当同一次操作同时触发前端构建（目标存在前端产物）时，安装/升级/卸载
- * 不再发生命周期通知，由 `frontend-apply` 实况通知覆盖结果；启用/停用/激活不触发构建，
- * 始终发通知。详见路由接线。
+ * 去重规则：每次安装/升级/卸载/启用/停用/激活都追加一条一次性通知。运行期装载下
+ * 前端产物随写入即时生效，不再有「前端构建」这一持续活动。
  */
 
 export type LifecycleTarget = 'plugin' | 'theme';
@@ -126,8 +121,7 @@ export function createLifecycleNotifier(options: LifecycleNotifierOptions) {
  * 路由直接调用的一次性入口：惰性构造内核通知服务后写入。best-effort，
  * 任何失败都被吞掉——通知绝不能阻断管理操作。
  *
- * 模块导入惰性化，保持路由对 DB / 事件总线的加载耦合不提前到模块加载期
- * （与 `notifyFrontendApplyQueued` 同构）。
+ * 模块导入惰性化，保持路由对 DB / 事件总线的加载耦合不提前到模块加载期。
  */
 export async function notifyLifecycle(
   userId: string | null | undefined,

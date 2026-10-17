@@ -1154,44 +1154,12 @@
       "description": "Order payments, fulfillment progress and system announcements appear here."
     }
   },
-  "apply": {
-    "queued": "Queued, waiting for the web tier",
-    "processing": "Processing",
-    "applyFailed": "Apply failed",
-    "installed": "Plugin installed.",
-    "installingFrontend": "Plugin installed, applying front-end…",
-    "noun": {
-      "plugin": "plugin",
-      "theme": "theme"
-    },
-    "nounCap": {
-      "plugin": "Plugin",
-      "theme": "Theme"
-    },
-    "labeled": " \"{label}\"",
-    "install": {
-      "failed": "Failed to install {noun}{label}",
-      "succeeded": "{nounCap}{label} installed",
-      "inProgress": "Installing {noun}{label}"
-    },
-    "update": {
-      "failed": "Failed to upgrade {noun}{label}",
-      "succeeded": "{nounCap}{label} upgraded",
-      "inProgress": "Upgrading {noun}{label}"
-    },
-    "remove": {
-      "failed": "Failed to uninstall {noun}{label}",
-      "succeeded": "{nounCap}{label} uninstalled",
-      "inProgress": "Uninstalling {noun}{label}"
-    }
-  },
   "upload": {
     "pluginTrigger": "Upload plugin (ZIP)",
     "pluginTitle": "Upload plugin",
-    "pluginDescription": "Upload a plugin ZIP to install; front-end changes are built automatically.",
+    "pluginDescription": "Upload a plugin ZIP to install; front-end changes take effect immediately.",
     "pluginFile": "Plugin ZIP file",
     "uploading": "Uploading…",
-    "applying": "Applying…",
     "submit": "Upload",
     "themeTrigger": "Upload theme (ZIP)",
     "themeTitle": "Upload theme",
@@ -1201,14 +1169,15 @@
   },
   "pluginPage": {
     "notFound": "Plugin admin page not found.",
-    "denied": "Access denied: requires {permission}."
+    "denied": "Access denied: requires {permission}.",
+    "loading": "Loading plugin page…",
+    "loadFailed": "Plugin page failed to load: {message}"
   },
   "plugin": {
     "uploadSelectZip": "Choose a plugin ZIP to upload",
     "zipTooLarge": "ZIP must be smaller than 2MB",
     "uploadFailed": "Upload failed",
     "uploadFailedStatus": "Upload failed ({status})",
-    "installedApplying": "Plugin installed, applying front-end…",
     "installed": "Plugin installed."
   },
   "api": {

@@ -47,7 +47,6 @@ import type {
   ThemePatchResponse,
   AdminPlugin,
   AdminPluginsResponse,
-  FrontendApplyStatusResponse,
   PluginDependencyStatus,
   PluginConsumesStatus,
   AdminDashboardWidgetsResponse,
@@ -708,17 +707,26 @@ export const frontendManifestSchema = z.object({
   accountRoutes: z.array(accountRouteSchema).default([]),
   accountWidgets: z.array(accountWidgetSchema).default([]),
   files: z.array(z.string()),
+  // Contract 05 §3.2: pre-compiled CSS the package ships, each a path relative
+  // to the frontend package root (e.g. `frontend/dist/<id>.css`). Distinct from
+  // the theme token channel (`theme.css`).
+  styles: z.array(z.string()).default([]),
   settingsSchema: frontendSettingsSchema.optional(),
 });
 
 export const frontendDescriptorSchema = z.object({
   available: z.boolean(),
   manifest: frontendManifestSchema.nullable(),
+  revision: z.string().optional(),
 }) as z.ZodType<FrontendDescriptor>;
 
 export const pluginFrontendDescriptorSchema = z.object({
   id: z.string(),
   manifest: frontendManifestSchema,
+  builtin: z.boolean(),
+  execution: z.enum(['trusted', 'isolated']),
+  serverExecution: z.enum(['allowed', 'declarative']),
+  revision: z.string().optional(),
 });
 
 export const pluginFrontendsResponseSchema = z.object({
@@ -841,23 +849,6 @@ export const frontendAuditResponseSchema = z.object({
 export const adminPluginsResponseSchema = z.object({
   plugins: z.array(adminPluginSchema),
 }) as z.ZodType<AdminPluginsResponse>;
-
-export const frontendApplyStatusSchema = z.object({
-  state: z.enum(['pending', 'building', 'restarting', 'succeeded', 'failed']),
-  at: z.string(),
-  requestedAt: z.string().nullable(),
-  label: z.string().optional(),
-  target: z.enum(['plugin', 'theme']).optional(),
-  action: z.enum(['install', 'update', 'remove']).optional(),
-  step: z.number().optional(),
-  steps: z.array(z.string()).optional(),
-  detail: z.string().optional(),
-  message: z.string().optional(),
-});
-
-export const frontendApplyStatusResponseSchema = z.object({
-  status: frontendApplyStatusSchema.nullable(),
-}) as z.ZodType<FrontendApplyStatusResponse>;
 
 export const pluginToggleResponseSchema = z.object({
   id: z.string(),

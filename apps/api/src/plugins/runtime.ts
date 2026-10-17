@@ -312,6 +312,12 @@ export class PluginRuntime {
     permissions: string[];
     roleTemplates: PluginRoleTemplate[];
     locales: string[];
+    /** Kernel-derived built-in flag (same source as the backend execution decision). */
+    builtin: boolean;
+    /** Execution mode applied by `loadPluginDefinition`. */
+    execution: 'trusted' | 'isolated';
+    /** Explicit platform grant for web-process server execution (contract 03 §3.1). */
+    frontendExecutions: 'declarative' | 'server';
   }> {
     return [...this.plugins.values()].map((p) => ({
       id: p.definition.manifest.id,
@@ -327,6 +333,13 @@ export class PluginRuntime {
       ),
       roleTemplates: p.definition.manifest.roleTemplates ?? [],
       locales: p.definition.manifest.locales ?? [],
+      builtin: p.definition.manifest.builtin === true,
+      // Mirror `loadPluginDefinition` (plugins.ts): built-ins are always
+      // trusted; a non-built-in defaults to isolated in production.
+      execution:
+        p.definition.manifest.execution ??
+        (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted'),
+      frontendExecutions: p.definition.manifest.frontendExecutions ?? 'declarative',
     }));
   }
 

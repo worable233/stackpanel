@@ -1,3 +1,10 @@
+/* Contract 05 §3.4: establish the cascade layer order BEFORE Tailwind's own
+   layer statement so packages' `styles[]` (all wrapped in `@layer sp-plugin`,
+   enforced by validateScopedStylesheet) always rank *below* the host's
+   `components`/`utilities`. Unlayered rules would outrank every host layer,
+   which is exactly what this ordering prevents. */
+@layer theme, base, sp-plugin, components, utilities;
+
 /* Keep generated build artifacts outside Tailwind's class discovery. */
 @import 'tailwindcss' source('../');
 @import 'tw-animate-css';

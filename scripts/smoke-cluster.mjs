@@ -15,7 +15,7 @@
  *   [5] 运行时一致性（S8）   A 上停用插件，B 无需重启即收敛
  *   [6] 健康就绪（S9）       /health 存活、/ready 校验 PG + Redis + 存储
  *   [7] 生产 fail-fast（S9） 生产缺 Redis 时启动即失败（中文提示）
- *   [8] 编排契约（S7/S9）    两份 compose 都带 worker、共享构建卷、单构建者
+ *   [8] 编排契约（S7/S9）    两份 compose 都带 worker，且不再共享构建卷
  *   [8b] 镜像分发契约（IMG-DIST）release 工作流（GHCR/semver/多架构/SBOM/cosign/Release Notes）
  *                              + STACKPANEL_IMAGE 覆盖 + verify-image.sh + deploy.sh --image
  *
@@ -31,10 +31,9 @@
  *
  * 退出码非 0 表示失败。脚本自建自销毁临时库与数据目录，可重复运行。
  *
- * 说明（S7 单一构建者）：前端「只构建一次」由单元测试
- * `apps/api/tests/unit/frontend-build.test.ts` 覆盖；本脚本无法在无 web 镜像的
- * 环境里跑真实 `next build`，故改为**静态校验**两份 compose 的 worker 单实例
- * 与共享构建卷契约（见 [8]）。已在部署文档记录该降级。
+ * 说明（运行期装载）：前端产物在安装时 materialize 到数据目录，web 进程按请求
+ * 即时装载，无需单一构建者与共享构建卷。[8] 只做**静态校验**：两份 compose 都带
+ * 独立 worker，且不再声明构建卷。真实运行期装载由 apps/web 单测与端到端验证覆盖。
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -125,7 +124,6 @@ function startReplica(port, extraEnv = {}) {
       STACKPANEL_DATA_DIR: DATA_DIR,
       STORAGE_DRIVER: 'local',
       STORAGE_LOCAL_ROOT: path.join(DATA_DIR, 'storage'),
-      STACKPANEL_FRONTEND_AUTOBUILD: '0',
       JWT_SECRET: 'smoke_jwt_secret_at_least_32_chars_0123456789',
       SETTINGS_ENCRYPTION_KEY: 'smoke_settings_key_at_least_32_chars_012345',
       STACKPANEL_BOOTSTRAP_EMAIL: ADMIN_EMAIL,
@@ -488,15 +486,9 @@ async function main() {
     const cluster = await readFile(path.join(ROOT, 'docker-compose.cluster.yml'), 'utf8');
     assert(/entrypoint-worker/.test(defaults), '默认档包含独立 worker 服务');
     assert(/entrypoint-worker/.test(cluster), '集群档包含独立 worker 服务');
-    assert(/stackpanel-web-build:/.test(defaults), '默认档声明共享构建卷 stackpanel-web-build');
-    assert(/stackpanel-web-build:/.test(cluster), '集群档声明共享构建卷 stackpanel-web-build');
     assert(
-      /worker:[\s\S]*?replicas:\s*1/.test(cluster),
-      '集群档 worker 固定单副本（唯一构建者，避免并发构建竞态）',
-    );
-    assert(
-      /- stackpanel-web-build:\/app\/apps\/web\/\.next:ro/.test(cluster),
-      '集群档 web 只读挂载构建产物（副本从不自行构建）',
+      !/stackpanel-web-build/.test(defaults) && !/stackpanel-web-build/.test(cluster),
+      '两份 compose 不再声明共享构建卷（运行期装载，无需构建产物共享）',
     );
 
     // ---- [8b] 镜像分发契约（IMG-DIST）------------------------------------

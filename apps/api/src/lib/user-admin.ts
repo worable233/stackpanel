@@ -297,7 +297,14 @@ export class UserAdminService {
     };
   }
 
-  async getUserDetail(id: string) {
+  /**
+   * Admin user detail with server-side order pagination.
+   *
+   * The order list is paginated at the source (store plugin) rather than
+   * truncated after the fact, so an operator can page through a user's full
+   * order history instead of only ever seeing the newest twenty.
+   */
+  async getUserDetail(id: string, page = 1, pageSize = 20) {
     const user = await this.db.user.findUnique({
       where: { id },
       include: { groups: { include: { group: true } } },
@@ -308,9 +315,8 @@ export class UserAdminService {
       this.deps.wallet.listLedger(id, 20),
     ]);
     const services: CommerceService[] = this.commerce ? await this.commerce.listServices(id) : [];
-    const orders: CommerceOrder[] = this.commerce
-      ? (await this.commerce.listOrders(id, 1, 20)).items
-      : [];
+    const orderPage = this.commerce ? await this.commerce.listOrders(id, page, pageSize) : null;
+    const orders: CommerceOrder[] = orderPage?.items ?? [];
     return {
       user: {
         ...toPublicUser(user),
@@ -325,6 +331,7 @@ export class UserAdminService {
         currency: order.currency,
         createdAt: order.createdAt.toISOString(),
       })),
+      ordersPagination: { page, pageSize, total: orderPage?.total ?? 0 },
       ledger: ledger.map((entry) => ({
         id: entry.id,
         amount: entry.amount,

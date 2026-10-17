@@ -5,8 +5,15 @@ import { unzipSync } from 'fflate';
 import * as csstree from 'css-tree';
 import type { CssNode } from 'css-tree';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
-import { FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './frontend.ts';
+import {
+  FrontendError,
+  isAllowedFrontendFile,
+  validateFrontendFiles,
+  validateScopedStylesheet,
+} from './frontend.ts';
 import { packageManager, StagingError, type StageHandle } from '../packages/manager.ts';
+import { preserveRevisions, pruneRevisions } from './frontend-revisions.ts';
+import { materializeAndPublish } from './frontend-storage.ts';
 import { env } from '../config/env.ts';
 import { SignatureError, verifyPackageSignature } from './signatures.ts';
 
@@ -24,6 +31,14 @@ export interface ThemeManifest {
     logo?: string;
     favicon?: string;
   };
+  /**
+   * Pre-compiled CSS files this theme ships beyond the `theme.css` token
+   * channel (contract 05 §3.2). Each path is relative to the theme package root
+   * (typically `frontend/dist/*.css`). Every entry must be present in the
+   * package. The separate `styles[]` inside `frontend/manifest.json` covers the
+   * theme's compiled frontend and is validated by `validateFrontendFiles`.
+   */
+  styles?: string[];
 }
 
 export const THEME_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
@@ -216,6 +231,38 @@ export function parseThemeZip(
     throw new ThemeError(422, 'theme.css 只能包含 :root/.dark 的 token 声明');
   }
 
+  // Contract 05 §3.2: a theme may also declare `styles[]` (pre-compiled CSS in
+  // its frontend package). Each entry must be a `.css` actually shipped in the
+  // package (so it cannot point at a non-existent or executable file).
+  if (manifest.styles !== undefined) {
+    if (!Array.isArray(manifest.styles)) {
+      throw new ThemeError(422, 'theme.json 的 styles 必须是字符串数组');
+    }
+    for (const style of manifest.styles) {
+      if (
+        typeof style !== 'string' ||
+        style.includes('..') ||
+        !style.startsWith('frontend/dist/') ||
+        !style.toLowerCase().endsWith('.css')
+      ) {
+        throw new ThemeError(422, `非法的主题样式路径：${String(style)}`);
+      }
+      if (!files.has(style)) {
+        throw new ThemeError(422, `主题样式文件缺失：${style}`);
+      }
+      // Contract 05 §3.3/§3.4/§3.8: the same scope/layer/origin rules apply.
+      const data = files.get(style);
+      if (data) {
+        try {
+          validateScopedStylesheet(new TextDecoder().decode(data), `主题样式 ${style}`);
+        } catch (err) {
+          if (err instanceof FrontendError) throw new ThemeError(err.status, err.message);
+          throw err;
+        }
+      }
+    }
+  }
+
   for (const [name, data] of files.entries()) {
     if (!name.startsWith('assets/')) continue;
     if (data.length > MAX_ASSET_BYTES) throw new ThemeError(422, `资源文件过大：${name}`);
@@ -241,6 +288,16 @@ export async function writeThemeFiles(
     if (err instanceof StagingError) throw new ThemeError(err.status, err.message);
     throw err;
   });
+  // Contract 04: publish the theme's compiled frontend as an immutable
+  // content-addressed revision and atomically point the theme at it. The
+  // revision is mirrored to object storage so replicas without a shared volume
+  // can localize it (contract 04 §9).
+  await materializeAndPublish('themes', id, handle.target).catch(() => null);
+  // Contract 04 §7: revisions the previous version published must survive an
+  // upgrade so already-open tabs keep resolving their chunks.
+  await preserveRevisions(handle.backup, handle.target).catch(() => 0);
+  // Retain a bounded window of prior revisions (contract 04 §7).
+  await pruneRevisions(handle.target).catch(() => []);
   return handle;
 }
 
@@ -275,6 +332,8 @@ export async function seedDefaultTheme(): Promise<void> {
       if (existsSync(frontendDist)) {
         await cp(frontendDist, path.join(frontendTarget, 'dist'), { recursive: true });
       }
+      // Contract 04: seed the default theme's frontend as an immutable revision.
+      await materializeAndPublish('themes', 'default', dir).catch(() => null);
     }
     // Copy brand assets recursively so nested asset folders are preserved; the
     // previous non-recursive copy silently broke when any asset subdirectory was
