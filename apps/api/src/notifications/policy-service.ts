@@ -1,5 +1,4 @@
-import type { PrismaClient } from '@stackpanel/db';
-import { Prisma } from '@stackpanel/db';
+import type { Prisma, PrismaClient } from '@stackpanel/db';
 import type {
   NotificationChannel,
   NotificationChannelInfo,
@@ -35,6 +34,9 @@ import { INAPP_CHANNEL_ID } from '@stackpanel/sdk';
 /** 管理员级策略存放于公共 `Setting` 表（非机密）。 */
 const POLICY_SETTING_KEY = 'notifications.policy';
 
+/** 未知分类的兜底条目（`noUncheckedIndexedAccess` 下不可用下标断言）。 */
+const OTHER_CATEGORY = { label: '其他', order: 90 };
+
 /** 分类显示名与排序（仅用于 UI 分组；内核文档语言为中文）。 */
 const CATEGORY_META: Record<string, { label: string; order: number }> = {
   system: { label: '系统', order: 10 },
@@ -42,11 +44,11 @@ const CATEGORY_META: Record<string, { label: string; order: number }> = {
   store: { label: '交易与订阅', order: 30 },
   support: { label: '工单', order: 40 },
   agent: { label: 'Agent', order: 50 },
-  other: { label: '其他', order: 90 },
+  other: OTHER_CATEGORY,
 };
 
 function categoryMeta(id: string): { label: string; order: number } {
-  return CATEGORY_META[id] ?? CATEGORY_META.other!;
+  return CATEGORY_META[id] ?? OTHER_CATEGORY;
 }
 
 /**

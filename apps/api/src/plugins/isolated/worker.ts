@@ -390,7 +390,7 @@ const context = {
         publishFailures += 1;
         const message = error instanceof Error ? error.message : String(error);
         void callHost('logger.error', {
-          message: `isolated events.publish failed for "${topic}": ${message.slice(0, 8192)}`,
+          message: `isolated events.publish failed for "${topic}" (total failures: ${publishFailures}): ${message.slice(0, 8192)}`,
         }).catch(() => undefined);
       });
     },
