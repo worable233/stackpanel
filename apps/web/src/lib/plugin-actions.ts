@@ -1,6 +1,5 @@
 'use server';
 
-import type { FrontendApplyStatus } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
 import { getSessionToken } from './auth';
 import { getLocale } from '@/i18n/locale';
@@ -10,20 +9,6 @@ export interface PluginActionState {
   error?: string;
   ok?: boolean;
   message?: string;
-  /** Present when the upload triggered a frontend rebuild; pins the progress UI. */
-  requestedAt?: string;
-  /** Whether a frontend rebuild was requested for this upload. */
-  frontendApply?: boolean;
-}
-
-/** Server action: read the web tier's plugin-frontend rebuild/reload progress. */
-export async function getFrontendApplyStatusAction(): Promise<FrontendApplyStatus | null> {
-  try {
-    const result = await (await getAuthedApiClient()).getFrontendApplyStatus();
-    return result.status;
-  } catch {
-    return null;
-  }
 }
 
 /** Upload one signed or development-mode plugin ZIP through the admin API. */
@@ -53,20 +38,8 @@ export async function uploadPluginAction(
           json?.error ?? translate(locale, 'plugin.uploadFailedStatus', { status: response.status }),
       };
     }
-    const json = (await response.json().catch(() => null)) as {
-      installed?: boolean;
-      id?: string;
-      frontendApply?: { requestedAt?: string } | null;
-    } | null;
-    const requestedAt = json?.frontendApply?.requestedAt;
-    return {
-      ok: true,
-      message: requestedAt
-        ? translate(locale, 'plugin.installedApplying')
-        : translate(locale, 'plugin.installed'),
-      frontendApply: Boolean(requestedAt),
-      ...(requestedAt ? { requestedAt } : {}),
-    };
+    // 运行期装载：安装成功后前端产物即时生效，直接返回成功。
+    return { ok: true, message: translate(locale, 'plugin.installed') };
   } catch {
     return { error: translate(locale, 'plugin.uploadFailed') };
   }

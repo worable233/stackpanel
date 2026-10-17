@@ -35,14 +35,15 @@ import {
   frontendDescriptor,
   resolvedFrontendSettings,
   serveFrontendFile,
+  serveRevisionFile,
   settingsSchemaDescriptor,
   updateFrontendSettings,
 } from '../lib/frontend-service.ts';
+import { isRevisionName } from '../lib/frontend-revisions.ts';
 import { settingsErrorToMessage } from '../lib/frontend-settings.ts';
 import { contentDisposition } from '../media/service.ts';
 import { isActiveContent } from '../media/disposition.ts';
 import { frontendSummary, readFrontendManifest } from '../lib/frontend.ts';
-import { requestFrontendApply } from '../lib/frontend-apply.ts';
 import { notifyLifecycle } from '../notifications/lifecycle-notifications.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { readSigningPublicKey } from '../lib/signing-settings.ts';
@@ -227,11 +228,20 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
     const params = idSchema.safeParse(request.params);
     const asset = (request.params as { '*': string })['*'];
     if (!params.success || !asset) return reply.code(400).send({ error: '请求参数无效' });
+    const packageDir = themePackageDir(params.data.id);
+    if (!existsSync(packageDir)) return reply.code(404).send({ error: '主题不存在' });
+    // Contract 04 §2: a hex-digest head selects the versioned revision store;
+    // `dist/**` (legacy) serves the flat frontend.
+    const [head, ...tail] = asset.split('/');
+    if (head && isRevisionName(head) && tail.length > 0) {
+      return serveRevisionFile(reply, packageDir, head, tail.join('/'), {
+        kind: 'themes',
+        id: params.data.id,
+      });
+    }
     if (asset.includes('..') || asset.includes('\\')) {
       return reply.code(400).send({ error: '非法的前端路径' });
     }
-    const packageDir = themePackageDir(params.data.id);
-    if (!existsSync(packageDir)) return reply.code(404).send({ error: '主题不存在' });
     return serveFrontendFile(reply, packageDir, asset);
   });
 
@@ -320,27 +330,15 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
         meta: { name: manifest.name, version: manifest.version },
         ...auditContext(request),
       });
-      // A theme frontend is only picked up after a registry rebuild + reload.
-      const hasFrontend = Boolean(await readFrontendManifest(themePackageDir(theme.id)));
-      if (hasFrontend) {
-        await requestFrontendApply({
-          reason: 'theme.install',
-          requestedBy: request.user?.id ?? null,
-          target: 'theme',
-          action: 'install',
-          label: manifest.name,
-          rebuild: true,
-        });
-      } else {
-        await notifyLifecycle(request.user?.id, {
-          target: 'theme',
-          action: 'install',
-          label: manifest.name,
-          id: manifest.id,
-          version: manifest.version,
-          ok: true,
-        });
-      }
+      // 运行期装载：主题前端产物即时生效，无需构建/重启。
+      await notifyLifecycle(request.user?.id, {
+        target: 'theme',
+        action: 'install',
+        label: manifest.name,
+        id: manifest.id,
+        version: manifest.version,
+        ok: true,
+      });
       return reply.code(201).send({ theme: { ...theme, frontend, signed } });
     } catch (err) {
       if (err instanceof ThemeError) {
@@ -444,7 +442,6 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
     if (!theme) return reply.code(404).send({ error: '主题不存在' });
     if (theme.isDefault) return reply.code(400).send({ error: '默认主题不可删除' });
     if (theme.active) return reply.code(400).send({ error: '不能删除当前激活的主题' });
-    const hadFrontend = Boolean(await readFrontendManifest(themePackageDir(theme.id)));
     await removeThemeFiles(theme.id);
     await prisma.theme.delete({ where: { id: theme.id } });
     await writeAudit({
@@ -453,25 +450,15 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
       resourceId: theme.id,
       ...auditContext(request),
     });
-    if (hadFrontend) {
-      await requestFrontendApply({
-        reason: 'theme.delete',
-        requestedBy: request.user?.id ?? null,
-        target: 'theme',
-        action: 'remove',
-        label: theme.name,
-        rebuild: true,
-      });
-    } else {
-      await notifyLifecycle(request.user?.id, {
-        target: 'theme',
-        action: 'remove',
-        label: theme.name,
-        id: theme.id,
-        version: theme.version,
-        ok: true,
-      });
-    }
+    // 运行期装载：删除后主题前端即时失效，无需构建/重启。
+    await notifyLifecycle(request.user?.id, {
+      target: 'theme',
+      action: 'remove',
+      label: theme.name,
+      id: theme.id,
+      version: theme.version,
+      ok: true,
+    });
     return reply.code(204).send();
   });
 

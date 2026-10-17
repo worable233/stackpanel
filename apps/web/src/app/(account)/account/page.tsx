@@ -8,6 +8,7 @@ import { getAuthedApiClient } from '@/lib/api';
 import { executeAccountFinder, getPluginAccountWidgets } from '@/lib/account-frontend';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
+import { FrontendScopeRoot } from '@/components/frontend-scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,11 +97,16 @@ export default async function AccountHomePage() {
         <section className="grid gap-4 lg:grid-cols-2">
           {widgets.map((widget) => (
             <Reveal key={`${widget.pluginId}:${widget.id}`} className="h-full [&>a]:h-full">
-              {createElement(widget.component, {
-                pluginId: widget.pluginId,
-                user,
-                settings: widget.settings,
-              })}
+              <FrontendScopeRoot
+                scope={`plugins:${widget.pluginId}`}
+                className="block h-full"
+              >
+                {createElement(widget.component, {
+                  pluginId: widget.pluginId,
+                  user,
+                  settings: widget.settings,
+                })}
+              </FrontendScopeRoot>
             </Reveal>
           ))}
         </section>

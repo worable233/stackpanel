@@ -135,14 +135,10 @@ services:
       WOWID_CLIENT_SECRET: ${WOWID_CLIENT_SECRET:-}
       WOWID_REDIRECT_URI: ${WOWID_REDIRECT_URI:-}
     volumes:
+      # Plugin/theme packages (their frontends are loaded at runtime from here).
       - stackpanel-data:/app/data
-      # Single-builder web bundle (S7); every web replica serves this.
-      - stackpanel-web-build:/app/apps/web/.next
     networks:
       - stackpanel
-    deploy:
-      # Exactly one builder per cluster: parallel builds would race.
-      replicas: 1
 
   web:
     build:
@@ -162,11 +158,8 @@ services:
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
       STACKPANEL_DATA_DIR: /app/data
-      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
     volumes:
       - stackpanel-data:/app/data
-      # Read-only: replicas never build; the worker writes this volume (S7).
-      - stackpanel-web-build:/app/apps/web/.next:ro
     networks:
       - stackpanel
     deploy:
@@ -195,7 +188,6 @@ services:
 
 volumes:
   stackpanel-data:
-  stackpanel-web-build:
   caddy-data:
   caddy-config:
 

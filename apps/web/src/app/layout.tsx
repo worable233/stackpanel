@@ -7,6 +7,8 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { ThemeInitScript } from '@/components/theme-init-script';
 import { Toaster } from '@/components/ui/sonner';
 import ThemeStylesheet from '@/components/theme-stylesheet';
+import FrontendStylesheets from '@/components/frontend-stylesheets';
+import { FrontendAbiBridge } from '@/components/frontend-abi-bridge';
 import { I18nProvider } from '@/i18n/provider';
 import { getLocale } from '@/i18n/locale';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
@@ -73,6 +75,8 @@ export default async function RootLayout({
         <ThemeInitScript nonce={nonce} script={themeBootstrapScript} />
         <ThemeInitScript nonce={nonce} script={getClarityMotionBootstrapScript()} />
         <ThemeStylesheet />
+        <FrontendStylesheets />
+        <FrontendAbiBridge />
         <I18nProvider locale={locale}>
           <ThemeProvider>
             {children}

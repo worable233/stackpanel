@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 
 import { cn } from '@/lib/utils';
+import { useFrontendPortalContainer } from '@/components/frontend-scope';
 
 function TooltipProvider({
   delay = 0,
@@ -34,7 +35,7 @@ function TooltipContent({
 }: TooltipPrimitive.Popup.Props &
   Pick<TooltipPrimitive.Positioner.Props, 'align' | 'side' | 'sideOffset'>) {
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={useFrontendPortalContainer()}>
       <TooltipPrimitive.Positioner
         className="isolate z-50 outline-none"
         align={align}

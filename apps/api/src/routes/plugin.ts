@@ -7,10 +7,12 @@ import {
   frontendDescriptor,
   resolvedFrontendSettings,
   serveFrontendFile,
+  serveRevisionFile,
   settingsSchemaDescriptor,
 } from '../lib/frontend-service.ts';
 import { readFrontendManifest } from '../lib/frontend.ts';
 import { pluginPackageDir } from '../lib/plugins.ts';
+import { isRevisionName, readCurrentRevision, ensureCurrentRevision } from '../lib/frontend-revisions.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { requireAuth } from '../plugins/auth.ts';
@@ -33,11 +35,39 @@ const frontendAuditSchema = z.object({
 /** Public compiled frontend endpoints for installed plugins. */
 export async function pluginRoutes(app: FastifyInstance): Promise<void> {
   app.get('/plugins/frontends', async () => {
-    const frontends: Array<{ id: string; manifest: FrontendManifest }> = [];
+    const frontends: Array<{
+      id: string;
+      manifest: FrontendManifest;
+      builtin: boolean;
+      execution: 'trusted' | 'isolated';
+      serverExecution: 'allowed' | 'declarative';
+      revision?: string;
+    }> = [];
     for (const plugin of app.pluginRuntime.list()) {
       if (plugin.state !== 'active') continue;
-      const manifest = await readFrontendManifest(pluginPackageDir(plugin.id));
-      if (manifest) frontends.push({ id: plugin.id, manifest });
+      const packageDir = pluginPackageDir(plugin.id);
+      const manifest = await readFrontendManifest(packageDir);
+      if (!manifest) continue;
+      // Admission decision for server-side execution in the web process
+      // (contract 03 §3.1): built-in OR an explicit `frontendExecutions:
+      // 'server'` grant. Default is `declarative` (never execute). This is
+      // derived from the SAME builtin flag the backend's execution decision
+      // uses, so the web layer never has to infer trust.
+      const serverExecution =
+        plugin.builtin || plugin.frontendExecutions === 'server'
+          ? ('allowed' as const)
+          : ('declarative' as const);
+      const current =
+        (await readCurrentRevision(packageDir)) ??
+        (await ensureCurrentRevision(packageDir).catch(() => null));
+      frontends.push({
+        id: plugin.id,
+        manifest,
+        builtin: plugin.builtin,
+        execution: plugin.execution,
+        serverExecution,
+        ...(current ? { revision: current.revision } : {}),
+      });
     }
     return { plugins: frontends.sort((left, right) => left.id.localeCompare(right.id)) };
   });
@@ -141,14 +171,26 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
       const params = pluginIdSchema.safeParse(request.params);
       const asset = (request.params as { '*': string })['*'];
       if (!params.success || !asset) return reply.code(400).send({ error: '请求参数无效' });
-      if (asset.includes('..') || asset.includes('\\')) {
-        return reply.code(400).send({ error: '非法的前端路径' });
-      }
       const { id } = params.data;
       if (!app.pluginRuntime.isActive(id) || !existsSync(pluginPackageDir(id))) {
         return reply.code(404).send({ error: '插件不存在' });
       }
-      return serveFrontendFile(reply, pluginPackageDir(id), asset);
+      // Contract 04 §2: `<revision>/<asset...>` serves from the immutable
+      // revision store; a legacy `<asset...>` (starting with `dist/`) serves
+      // from the flat frontend. The revision segment is a hex digest, so the
+      // two shapes are unambiguous and share one route.
+      const packageDir = pluginPackageDir(id);
+      const [head, ...tail] = asset.split('/');
+      if (head && isRevisionName(head) && tail.length > 0) {
+        return serveRevisionFile(reply, packageDir, head, tail.join('/'), {
+          kind: 'plugins',
+          id,
+        });
+      }
+      if (asset.includes('..') || asset.includes('\\')) {
+        return reply.code(400).send({ error: '非法的前端路径' });
+      }
+      return serveFrontendFile(reply, packageDir, asset);
     },
   );
 

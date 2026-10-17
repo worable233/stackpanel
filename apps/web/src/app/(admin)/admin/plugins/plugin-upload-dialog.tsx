@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useActionState } from 'react';
+import { useState, useActionState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,38 +14,18 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { uploadPluginAction, type PluginActionState } from '@/lib/plugin-actions';
-import {
-  FrontendApplyProgress,
-  isFrontendApplyActive,
-  useFrontendApplyStatus,
-} from './frontend-apply-progress';
 import { useTranslator } from '@/i18n/provider';
 
 /**
  * The upload form. Mounted fresh (via `key`) each time the dialog opens so the
- * previous run's action state and progress do not leak into a new upload.
+ * previous run's action state does not leak into a new upload.
  */
-function UploadForm({ onClose }: { onClose: () => void }) {
+function UploadForm() {
   const t = useTranslator();
   const [state, action, pending] = useActionState<PluginActionState, FormData>(
     uploadPluginAction,
     {},
   );
-
-  const requestedAt = state.requestedAt ?? null;
-  const status = useFrontendApplyStatus(null, {
-    enabled: Boolean(requestedAt),
-    requestedAt,
-  });
-  const applying = Boolean(requestedAt) && isFrontendApplyActive(status);
-
-  // Once the frontend apply settles, close the dialog.
-  useEffect(() => {
-    if (requestedAt && status && !isFrontendApplyActive(status)) {
-      const timer = setTimeout(onClose, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [requestedAt, status, onClose]);
 
   return (
     <form action={action} className="mt-4 flex flex-col gap-3">
@@ -54,19 +34,12 @@ function UploadForm({ onClose }: { onClose: () => void }) {
         <Input id="plugin-zip" name="file" type="file" accept=".zip" required />
       </div>
       {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-      {state.ok && !state.frontendApply ? (
-        <p className="text-sm text-muted-foreground">{state.message ?? t('apply.installed')}</p>
-      ) : null}
-      {requestedAt ? (
-        status ? (
-          <FrontendApplyProgress status={status} />
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('apply.installingFrontend')}</p>
-        )
+      {state.ok ? (
+        <p className="text-sm text-muted-foreground">{state.message ?? t('plugin.installed')}</p>
       ) : null}
       <DialogFooter>
-        <Button type="submit" disabled={pending || applying}>
-          {pending ? t('upload.uploading') : applying ? t('upload.applying') : t('upload.submit')}
+        <Button type="submit" disabled={pending}>
+          {pending ? t('upload.uploading') : t('upload.submit')}
         </Button>
       </DialogFooter>
     </form>
@@ -93,7 +66,7 @@ export function PluginUploadDialog() {
           <DialogTitle>{t('upload.pluginTitle')}</DialogTitle>
           <DialogDescription>{t('upload.pluginDescription')}</DialogDescription>
         </DialogHeader>
-        <UploadForm key={runKey} onClose={() => handleOpenChange(false)} />
+        <UploadForm key={runKey} />
       </DialogContent>
     </Dialog>
   );

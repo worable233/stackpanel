@@ -207,17 +207,11 @@ services:
       STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
       STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
       STACKPANEL_DATA_DIR: /app/data
-      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
     volumes:
-      # Plugin/theme packages + the apply request/status files.
+      # Plugin/theme packages (their frontends are loaded at runtime from here).
       - stackpanel-data:/app/data
-      # Single-builder web bundle, shared read-only with every web replica.
-      - stackpanel-web-build:/app/apps/web/.next
     networks:
       - stackpanel
-    deploy:
-      # Exactly one builder: a second replica would race the same artifacts.
-      replicas: 1
 
   web:
     build:
@@ -240,11 +234,8 @@ services:
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
       STACKPANEL_DATA_DIR: /app/data
-      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
     volumes:
       - stackpanel-data:/app/data
-      # Serve the worker-built bundle (S7). Read-mostly: only the worker writes.
-      - stackpanel-web-build:/app/apps/web/.next
     ports:
       - '3000:3000'
     networks:
@@ -275,7 +266,6 @@ services:
 
 volumes:
   stackpanel-data:
-  stackpanel-web-build:
   stackpanel-postgres:
   stackpanel-redis:
   stackpanel-minio:

@@ -1,5 +1,4 @@
 import { AdminWidget } from '@/components/admin-widget';
-import { AdminOverview } from '@/components/admin-overview';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { MetricCard } from '@/components/clarity';
 import { getAuthedApiClient } from '@/lib/api';
@@ -49,18 +48,18 @@ export default async function AdminHome({
           <div className="grid gap-6 md:grid-cols-4">
             <MetricCard
               icon={Users}
-              value={overview.metrics?.totalUsers?.toString() || '0'}
+              value={overview.totals.userCount.toString()}
               label="总用户数"
             />
             <MetricCard
               icon={ShoppingCart}
-              value={overview.metrics?.activeOrders?.toString() || '0'}
+              value={overview.totals.monthOrderCount.toString()}
               label="活跃订单"
               trend="+12%"
             />
             <MetricCard
               icon={DollarSign}
-              value={`¥${overview.metrics?.revenue || '0'}`}
+              value={`¥${(overview.totals.revenue / 100).toFixed(2)}`}
               label="本月收入"
               trend="+23%"
             />

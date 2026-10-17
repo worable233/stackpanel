@@ -321,6 +321,64 @@ describe.skipIf(!dbAvailable)('frontend package integration (real DB)', () => {
     ).toBe(false);
   });
 
+  it('exposes versioned frontend assets pinned to the active revision (contract 04)', async () => {
+    // The descriptor publishes the kernel-authoritative revision digest.
+    const descriptor = await app.inject({
+      method: 'GET',
+      url: '/plugins/frontend-plugin/frontend',
+    });
+    expect(descriptor.statusCode).toBe(200);
+    const revision = (descriptor.json() as { revision?: string }).revision;
+    expect(revision).toMatch(/^[a-f0-9]{12}$/);
+
+    // Versioned asset resolves from the immutable revision store, with JS MIME.
+    const versioned = await app.inject({
+      method: 'GET',
+      url: `/plugins/frontend-plugin/frontend/${revision}/dist/index.js`,
+    });
+    expect(versioned.statusCode).toBe(200);
+    expect(versioned.headers['content-type']).toContain('text/javascript');
+    expect(versioned.body).toContain('export const frontend');
+
+    // The flat (legacy) route still works and serves identical bytes.
+    const flat = await app.inject({
+      method: 'GET',
+      url: '/plugins/frontend-plugin/frontend/dist/index.js',
+    });
+    expect(flat.statusCode).toBe(200);
+    expect(flat.body).toBe(versioned.body);
+
+    // An unknown revision 404s rather than falling back to the live copy.
+    const unknown = await app.inject({
+      method: 'GET',
+      url: '/plugins/frontend-plugin/frontend/000000000000/dist/index.js',
+    });
+    expect(unknown.statusCode).toBe(404);
+
+    // A traversal attempt inside a revision is rejected.
+    const traversal = await app.inject({
+      method: 'GET',
+      url: `/plugins/frontend-plugin/frontend/${revision}/../../manifest.json`,
+    });
+    expect([400, 404]).toContain(traversal.statusCode);
+  });
+
+  it('exposes versioned theme frontend assets (contract 04)', async () => {
+    const descriptor = await app.inject({
+      method: 'GET',
+      url: '/themes/frontend-theme/frontend',
+    });
+    expect(descriptor.statusCode).toBe(200);
+    const revision = (descriptor.json() as { revision?: string }).revision;
+    expect(revision).toMatch(/^[a-f0-9]{12}$/);
+    const versioned = await app.inject({
+      method: 'GET',
+      url: `/themes/frontend-theme/frontend/${revision}/dist/index.js`,
+    });
+    expect(versioned.statusCode).toBe(200);
+    expect(versioned.headers['content-type']).toContain('text/javascript');
+  });
+
   it('rejects frontend source files outside dist', async () => {
     const { payload, boundary } = multipart(
       zip({

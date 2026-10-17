@@ -512,6 +512,30 @@ export interface ThemePreviewMutationResponse {
 export interface PluginFrontendDescriptor {
   id: string;
   manifest: FrontendManifest;
+  /**
+   * Whether the package is a kernel built-in (trusted). Derived by the kernel
+   * from the package's `stackpanel.builtin` metadata — the SAME source the
+   * backend `execution` decision uses (plugins.ts loadPluginDefinition).
+   */
+  builtin: boolean;
+  /**
+   * The backend execution mode this plugin runs under, mirroring
+   * `plugins.ts` `loadPluginDefinition`: built-in → `trusted`, otherwise
+   * `isolated` in production. Whether the plugin is admitted to execute in the
+   * web process is decided by `serverExecution`, NOT by this field.
+   */
+  execution: 'trusted' | 'isolated';
+  /**
+   * Kernel-computed admission decision for server-side execution in the web
+   * process (contract 03 §3.1): `allowed` = built-in OR explicitly authorized
+   * (`frontendExecutions: 'server'`); `declarative` = not admitted (default).
+   */
+  serverExecution: 'allowed' | 'declarative';
+  /**
+   * Active content-addressed revision (contract 04 §1). Present when the kernel
+   * has published the plugin frontend to the immutable revision store.
+   */
+  revision?: string;
 }
 
 /** Response of GET /plugins/frontends. */
@@ -527,37 +551,6 @@ export interface PermissionCheckResponse {
 /** Response of GET /admin/plugins. */
 export interface AdminPluginsResponse {
   plugins: AdminPlugin[];
-}
-
-/** Progress of the web tier's plugin-frontend rebuild/reload (GET /admin/plugins/frontend-status). */
-export type FrontendApplyState = 'pending' | 'building' | 'restarting' | 'succeeded' | 'failed';
-
-/** What kind of frontend change is being applied. */
-export type FrontendApplyAction = 'install' | 'update' | 'remove';
-export type FrontendApplyTarget = 'plugin' | 'theme';
-
-export interface FrontendApplyStatus {
-  state: FrontendApplyState;
-  /** When this status was written (ISO). */
-  at: string;
-  /** Request timestamp this status corresponds to, if any. */
-  requestedAt: string | null;
-  /** Human-readable name of the plugin/theme being applied. */
-  label?: string;
-  target?: FrontendApplyTarget;
-  action?: FrontendApplyAction;
-  /** 1-based current step. */
-  step?: number;
-  /** Ordered step names for this apply. */
-  steps?: string[];
-  /** One-line description of what is happening right now. */
-  detail?: string;
-  message?: string;
-}
-
-/** Response of GET /admin/plugins/frontend-status. Null when never applied. */
-export interface FrontendApplyStatusResponse {
-  status: FrontendApplyStatus | null;
 }
 
 /** A dashboard widget contributed by an active plugin's UI extension. */

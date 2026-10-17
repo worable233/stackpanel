@@ -6,10 +6,13 @@ import { pathToFileURL } from 'node:url';
 import type { PluginDefinition, PluginDependency, PluginExtensionConsumer } from '@stackpanel/sdk';
 import type { PluginPermission, PluginRoleTemplate } from '@stackpanel/sdk';
 import { KERNEL_API_VERSION, kernelApiVersionRange } from '@stackpanel/spec';
+import { validateFrontendExternals } from '@stackpanel/spec';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { unzipSync } from 'fflate';
 import semver from 'semver';
 import { FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './frontend.ts';
+import { preserveRevisions, pruneRevisions } from './frontend-revisions.ts';
+import { materializeAndPublish } from './frontend-storage.ts';
 import { env } from '../config/env.ts';
 import { SignatureError, verifyPackageSignature } from './signatures.ts';
 import { getPrisma } from '../plugins/prisma.ts';
@@ -43,6 +46,33 @@ export const BUILTIN_PLUGIN_IDS: readonly string[] = Object.freeze(discoverBuilt
 /** Reserved ids that third-party uploads may not use. */
 const RESERVED_IDS = new Set<string>([...BUILTIN_PLUGIN_IDS, 'kernel', 'default']);
 
+/**
+ * Kernel-owned allowlist of plugin ids explicitly granted server-side execution
+ * in the WEB process (contract 03 §3.1, rule 2). This is the "platform policy"
+ * half of the grant; `builtin` is the other. Never accepted from an uploaded
+ * package (that would let a plugin self-grant), only from operator config.
+ */
+function frontendServerExecutionAllowlist(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  return new Set(
+    (env['STACKPANEL_FRONTEND_SERVER_EXEC'] ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0),
+  );
+}
+
+/**
+ * Resolve a plugin's explicit web-process server-execution grant. `builtin` is
+ * always admitted; beyond that, only the kernel allowlist can grant it.
+ */
+function resolveFrontendExecutions(
+  id: string,
+  builtin: boolean,
+): 'declarative' | 'server' {
+  if (builtin) return 'server';
+  return frontendServerExecutionAllowlist().has(id) ? 'server' : 'declarative';
+}
+
 const PLUGIN_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
 /** Refined-scope resource name a `PluginPermission.scope` may declare (ADR-0021). */
 const SCOPE_RESOURCE_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -70,6 +100,19 @@ export interface PluginManifestFile {
   permissions?: Array<string | PluginPermission>;
   roleTemplates?: PluginRoleTemplate[];
   execution?: 'trusted' | 'isolated';
+  /**
+   * Platform-admission level for server-side execution in the WEB process
+   * (contract 03 §3.1). Default `declarative` (never execute server-side code
+   * in the web process); `server` is an explicit grant. Built-ins are always
+   * admitted regardless of this field.
+   */
+  frontendExecutions?: 'declarative' | 'server';
+  /**
+   * Host frontend ABI slots this package depends on, with a compatibility
+   * semver range each (contract 02 §5). Validated against the kernel's host ABI
+   * at install time; market and local upload share the same check.
+   */
+  frontendExternals?: Record<string, string>;
   /** Interface locales this plugin ships messages for (ADR-0016 §5). */
   locales?: string[];
   /**
@@ -233,6 +276,18 @@ export function validateManifest(manifest: PluginManifestFile, allowReserved = f
   if (manifest.execution !== undefined && manifest.execution !== 'trusted' && manifest.execution !== 'isolated') {
     throw new PluginError(422, 'execution 必须是 trusted 或 isolated');
   }
+  if (
+    manifest.frontendExecutions !== undefined &&
+    manifest.frontendExecutions !== 'declarative' &&
+    manifest.frontendExecutions !== 'server'
+  ) {
+    throw new PluginError(422, 'frontendExecutions 必须是 declarative 或 server');
+  }
+  // The web-process execution grant is kernel-owned (builtin + operator
+  // allowlist); a package may not self-grant it (ADR-0008 D9, contract 03 §3.1).
+  if (!allowReserved && manifest.frontendExecutions === 'server') {
+    throw new PluginError(422, '插件包不得声明 frontendExecutions: server');
+  }
   if (!manifest.builtin && manifest.execution === 'trusted' && process.env.NODE_ENV === 'production') {
     throw new PluginError(403, '生产环境第三方插件必须使用 isolated 执行模式');
   }
@@ -247,6 +302,9 @@ export function validateManifest(manifest: PluginManifestFile, allowReserved = f
         `插件要求 apiVersion ${manifest.apiVersion}，当前内核为 ${KERNEL_API_VERSION}`,
       );
     }
+  }
+  if (manifest.frontendExternals !== undefined) {
+    validateManifestFrontendExternals(manifest.frontendExternals);
   }
   if (manifest.requires !== undefined) {
     validateRequires(manifest);
@@ -281,6 +339,26 @@ function validateManifestSchemaVersion(version: unknown): void {
       409,
       `插件要求 manifest schemaVersion ${version}，当前内核仅支持 ${MANIFEST_SCHEMA_VERSION}`,
     );
+  }
+}
+
+/**
+ * Validate a package's declared host frontend ABI ranges (contract 02 §5). The
+ * same check runs for market installs and local uploads (both go through
+ * `validateManifest`). Slot/range errors are 422; an unsatisfied host version is
+ * 409 — mirroring the `apiVersion` check.
+ */
+function validateManifestFrontendExternals(externals: unknown): void {
+  if (typeof externals !== 'object' || externals === null || Array.isArray(externals)) {
+    throw new PluginError(422, 'frontendExternals 必须是「槽 → 兼容范围」的对象');
+  }
+  for (const [slot, range] of Object.entries(externals as Record<string, unknown>)) {
+    if (typeof range !== 'string' || !semver.validRange(range)) {
+      throw new PluginError(422, `frontendExternals.${slot} 的兼容范围无效`);
+    }
+  }
+  for (const error of validateFrontendExternals(externals as Record<string, string>)) {
+    throw new PluginError(error.reason === 'unsatisfied' ? 409 : 422, error.detail);
   }
 }
 
@@ -435,6 +513,16 @@ export async function writePluginFiles(
     if (!existsSync(target) && existsSync(backup)) await rename(backup, target);
     throw err;
   }
+  // Contract 04: materialize the compiled frontend into an immutable
+  // content-addressed revision and atomically point the package at it. The
+  // flat `frontend/manifest.json` + `frontend/dist` remain as the
+  // "materialized current" view for existing readers.
+  await materializeAndPublish('plugins', id, target).catch(() => null);
+  // Contract 04 §7: revisions the previous install published must survive an
+  // upgrade so already-open tabs keep resolving their chunks.
+  await preserveRevisions(backup, target).catch(() => 0);
+  // Retain a bounded window of prior revisions, then evict the rest.
+  await pruneRevisions(target).catch(() => []);
   return {
     commit: async () => {
       await rm(backup, { recursive: true, force: true });
@@ -666,8 +754,11 @@ export async function loadPluginDefinition(id: string): Promise<PluginDefinition
   // Existing local development plugins predate the execution field. Keep them
   // usable during development; production always takes the isolated path.
   const execution = manifest.execution ?? (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted');
+  // Web-process server-execution grant. Kernel-owned (builtin + operator
+  // allowlist), never taken from the uploaded manifest (contract 03 §3.1).
+  const frontendExecutions = resolveFrontendExecutions(id, manifest.builtin === true);
   if (!manifest.builtin && execution !== 'trusted') {
-    return loadIsolatedPluginDefinition(id, entry, { ...manifest, execution });
+    return loadIsolatedPluginDefinition(id, entry, { ...manifest, execution, frontendExecutions });
   }
   const url = `${pathToFileURL(entry).href}?v=${Date.now()}`;
   const mod = (await import(url)) as Record<string, unknown>;
@@ -686,6 +777,7 @@ export async function loadPluginDefinition(id: string): Promise<PluginDefinition
       ...(manifest.locales ? { locales: manifest.locales } : {}),
       ...(manifest.builtin ? { builtin: true } : {}),
       ...(execution ? { execution } : {}),
+      frontendExecutions,
     },
   };
 }

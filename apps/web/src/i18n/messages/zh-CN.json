@@ -1117,43 +1117,12 @@
       "description": "订单支付、履约进度和系统公告都会出现在这里。"
     }
   },
-  "apply": {
-    "queued": "已排队，等待 Web 处理",
-    "processing": "正在处理",
-    "installed": "插件已安装。",
-    "installingFrontend": "插件已安装，正在应用前端…",
-    "noun": {
-      "plugin": "插件",
-      "theme": "主题"
-    },
-    "nounCap": {
-      "plugin": "插件",
-      "theme": "主题"
-    },
-    "labeled": "「{label}」",
-    "install": {
-      "failed": "安装{noun}{label}失败",
-      "succeeded": "{noun}{label}安装完成",
-      "inProgress": "正在安装{noun}{label}"
-    },
-    "update": {
-      "failed": "升级{noun}{label}失败",
-      "succeeded": "{noun}{label}升级完成",
-      "inProgress": "正在升级{noun}{label}"
-    },
-    "remove": {
-      "failed": "卸载{noun}{label}失败",
-      "succeeded": "{noun}{label}卸载完成",
-      "inProgress": "正在卸载{noun}{label}"
-    }
-  },
   "upload": {
     "pluginTrigger": "上传插件（ZIP）",
     "pluginTitle": "上传插件",
-    "pluginDescription": "上传插件 ZIP 包即可安装，前端变更会自动构建生效。",
+    "pluginDescription": "上传插件 ZIP 包即可安装，前端变更即时生效。",
     "pluginFile": "插件 ZIP 文件",
     "uploading": "上传中…",
-    "applying": "应用中…",
     "submit": "上传",
     "themeTrigger": "上传主题（ZIP）",
     "themeTitle": "上传主题",
@@ -1163,14 +1132,15 @@
   },
   "pluginPage": {
     "notFound": "未找到插件管理页面。",
-    "denied": "无权限访问：需要 {permission}。"
+    "denied": "无权限访问：需要 {permission}。",
+    "loading": "正在加载插件页面…",
+    "loadFailed": "插件页面加载失败：{message}"
   },
   "plugin": {
     "uploadSelectZip": "请选择要上传的插件 ZIP",
     "zipTooLarge": "ZIP 必须小于 2MB",
     "uploadFailed": "上传失败",
     "uploadFailedStatus": "上传失败（{status}）",
-    "installedApplying": "插件已安装，正在应用前端…",
     "installed": "插件已安装。"
   },
   "api": {

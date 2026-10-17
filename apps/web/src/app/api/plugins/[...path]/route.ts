@@ -47,11 +47,30 @@ const THEME_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
  * Public resources required before a user has a session. These are the only
  * kernel paths that bypass plugin route discovery; mutations and all dynamic
  * plugin routes still go through the authenticated action-target check below.
+ *
+ * Exported for contract tests (contract 04 §5/§6, contract 05 §4).
  */
-function isPublicAssetRequest(method: string, segments: string[]): boolean {
+export function isPublicAssetRequest(method: string, segments: string[]): boolean {
   if (method !== 'GET' && method !== 'HEAD') return false;
   if (segments[0] === 'platform' && segments.length === 3) {
     return segments[1] === 'brand' && (segments[2] === 'logo' || segments[2] === 'favicon');
+  }
+  // Compiled frontend assets (JS/CSS/maps/fonts) are public static resources
+  // (contract 04 §5/§6, contract 05 §4). Both the unversioned
+  // (`/<kind>/<id>/frontend/dist/**`) and versioned
+  // (`/<kind>/<id>/frontend/<revision>/**`) shapes are admitted, so a browser
+  // can fetch a package's chunks without a session or the plugin
+  // action-target check (these routes belong to the kernel, not the plugin).
+  if (
+    (segments[0] === 'plugins' || segments[0] === 'themes') &&
+    segments.length >= 3 &&
+    PLUGIN_NAMESPACE_PATTERN.test(segments[1] ?? '')
+  ) {
+    const rest = segments.slice(2);
+    if (rest[0] === 'frontend' && rest.length >= 2) {
+      const safe = !rest.some((part) => part === '..' || part === '' || part.includes('\\'));
+      if (safe) return true;
+    }
   }
   if (
     segments[0] !== 'themes' ||

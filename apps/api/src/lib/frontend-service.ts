@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyReply } from 'fastify';
@@ -11,11 +12,47 @@ import {
   type FrontendKind,
 } from './frontend-settings.ts';
 import { readFrontendManifest } from './frontend.ts';
+import { readRevisionObject, type FrontendPackageKind } from './frontend-storage.ts';
+import {
+  ensureCurrentRevision,
+  readCurrentRevision,
+  resolveRevisionAsset,
+  revisionDir,
+} from './frontend-revisions.ts';
+
+/** Best-effort MIME for a compiled frontend asset (contract 05 §6). */
+function frontendContentType(asset: string): string {
+  if (asset.endsWith('.js') || asset.endsWith('.mjs')) return 'text/javascript; charset=utf-8';
+  if (asset.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (asset.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (asset.endsWith('.map')) return 'application/json; charset=utf-8';
+  if (asset.endsWith('.woff2')) return 'font/woff2';
+  if (asset.endsWith('.woff')) return 'font/woff';
+  if (asset.endsWith('.png')) return 'image/png';
+  if (asset.endsWith('.svg')) return 'image/svg+xml';
+  if (asset.endsWith('.webp')) return 'image/webp';
+  return 'application/octet-stream';
+}
 
 /** Build the public frontend descriptor response for a package directory. */
 export async function frontendDescriptor(packageDir: string): Promise<FrontendDescriptor> {
   const manifest = await readFrontendManifest(packageDir);
-  return manifest ? { available: true, manifest } : { available: false, manifest: null };
+  if (!manifest) return { available: false, manifest: null };
+  // Ensure the flat frontend has a revision published (idempotent). Failure is
+  // non-fatal: the descriptor still serves the manifest, just unversioned.
+  let revision = (await readCurrentRevision(packageDir))?.revision;
+  if (!revision) {
+    try {
+      revision = (await ensureCurrentRevision(packageDir))?.revision;
+    } catch {
+      revision = undefined;
+    }
+  }
+  return {
+    available: true,
+    manifest,
+    ...(revision ? { revision } : {}),
+  };
 }
 
 /** Build the settings schema response for a package directory. */
@@ -68,14 +105,65 @@ export async function serveFrontendFile(
   }
   try {
     const data = await readFile(full);
-    const contentType =
-      asset.endsWith('.js') || asset.endsWith('.mjs')
-        ? 'text/javascript; charset=utf-8'
-        : asset.endsWith('.json')
-          ? 'application/json; charset=utf-8'
-          : 'application/octet-stream';
-    return reply.type(contentType).send(data);
+    return reply.type(frontendContentType(asset)).send(data);
   } catch {
     return reply.code(404).send({ error: '资源不存在' });
   }
+}
+
+/**
+ * Serve a **versioned** frontend asset from an immutable revision directory
+ * (contract 04 §1/§2). Returns 404 when the revision is unknown or the asset
+ * is absent. The legacy unversioned route remains via {@link serveFrontendFile}.
+ */
+export async function serveRevisionFile(
+  reply: FastifyReply,
+  packageDir: string,
+  revision: string,
+  asset: string,
+  origin?: { kind: FrontendPackageKind; id: string },
+): Promise<FastifyReply> {
+  const full = resolveRevisionAsset(packageDir, revision, asset);
+  if (!full) return reply.code(400).send({ error: '非法的前端路径' });
+  try {
+    const data = await readFile(full);
+    return reply.type(frontendContentType(asset)).send(data);
+  } catch {
+    // Contract 04 §9: a replica without a shared volume may not have localized
+    // the revision yet. Fall back to the object-storage copy so an already-open
+    // tab keeps resolving its chunks while the local materialization catches up.
+    if (origin) {
+      const stored = await readRevisionObject(
+        origin.kind,
+        origin.id,
+        revision,
+        asset,
+      ).catch(() => null);
+      if (stored) return reply.type(frontendContentType(asset)).send(Buffer.from(stored));
+    }
+    return reply.code(404).send({ error: '资源不存在' });
+  }
+}
+
+/**
+ * Localize a revision into the local data dir from object storage when it is
+ * missing here (contract 04 §9). Idempotent and a no-op with a shared volume.
+ */
+export async function ensureRevisionLocalized(
+  kind: FrontendPackageKind,
+  id: string,
+  packageDir: string,
+  revision: string,
+): Promise<boolean> {
+  if (revisionExists(packageDir, revision)) return true;
+  const { localizeRevisionFromStorage } = await import('./frontend-storage.ts');
+  const result = await localizeRevisionFromStorage(kind, id, revision, packageDir).catch(
+    () => null,
+  );
+  return result !== null;
+}
+
+/** Whether a materialized revision directory exists for the package. */
+export function revisionExists(packageDir: string, revision: string): boolean {
+  return existsSync(path.join(revisionDir(packageDir, revision), '.ready'));
 }
