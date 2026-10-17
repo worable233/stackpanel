@@ -227,7 +227,6 @@ services:
       STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
       STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
       STACKPANEL_DATA_DIR: /app/data
-      STACKPANEL_FRONTEND_AUTOBUILD: ${STACKPANEL_FRONTEND_AUTOBUILD:-1}
       # Background jobs (catalog refresh + auto-update) run on the worker.
       DISTRIBUTION_CATALOG_REPOSITORY: ${DISTRIBUTION_CATALOG_REPOSITORY:-}
       DISTRIBUTION_CATALOG_CHANNEL: ${DISTRIBUTION_CATALOG_CHANNEL:-stable}
@@ -240,8 +239,6 @@ services:
     volumes:
       # Plugin/theme packages (their frontends are loaded at runtime from here).
       - stackpanel-data:/app/data
-      # Single-builder web bundle, shared read-only with every web replica.
-      - stackpanel-web-build:/app/apps/web/.next
       # Submit update tasks + read updater status projection.
       - stackpanel-updater-state:/var/lib/stackpanel-updater
     networks:

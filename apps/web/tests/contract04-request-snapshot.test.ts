@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   pinInSnapshot,
   resetFrontendSnapshot,
@@ -12,6 +12,16 @@ import {
  * `server-only`; the slot resolvers are covered elsewhere), so the invariant is
  * checked deterministically rather than through a live render.
  */
+
+/**
+ * Each case runs inside its own snapshot scope. `requireRequestScope` in the
+ * module under test opens a scope when none is active, but a previous case's
+ * scope would otherwise still be visible on the shared async context — so the
+ * reset must happen *outside* the case, before it opens its own.
+ */
+beforeEach(() => {
+  resetFrontendSnapshot();
+});
 
 afterEach(() => {
   resetFrontendSnapshot();

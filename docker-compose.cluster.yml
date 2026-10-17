@@ -157,8 +157,6 @@ services:
     volumes:
       # Plugin/theme packages (their frontends are loaded at runtime from here).
       - stackpanel-data:/app/data
-      # Single-builder web bundle (S7); every web replica serves this.
-      - stackpanel-web-build:/app/apps/web/.next
       # Submit update tasks + read updater status projection.
       - stackpanel-updater-state:/var/lib/stackpanel-updater
     networks:
@@ -255,7 +253,6 @@ services:
 
 volumes:
   stackpanel-data:
-  stackpanel-web-build:
   stackpanel-updater-state:
   caddy-data:
   caddy-config:
