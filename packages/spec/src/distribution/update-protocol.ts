@@ -121,8 +121,19 @@ export interface UpdateTask {
 
 /** 一次更新先计算的**完整部署计划**（§4）。 */
 export interface DeploymentPlan {
-  /** 目标内核版本与镜像。 */
-  kernel: { version: string; digest: string; migration: string };
+  /** 目标内核版本与镜像/产物。 */
+  kernel: {
+    version: string;
+    /** `oci` 载体为镜像 digest；`artifact` 载体为 tarball 的裸 sha256。 */
+    digest: string;
+    migration: string;
+    /** 升级载体（ADR-0025）；缺省 `oci`，与既有计划兼容。 */
+    carrier?: 'oci' | 'artifact';
+    /** 产物包下载地址（仅 `artifact` 载体）。 */
+    url?: string;
+    /** 产物包字节数（仅 `artifact` 载体）。 */
+    size?: number;
+  };
   /** 计划的组件版本（builtin / 可选插件 / 主题）。 */
   packages: PlannedPackage[];
   /** 计划涉及的全部内容摘要，用于求解一致性。 */

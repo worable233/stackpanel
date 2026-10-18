@@ -197,6 +197,173 @@ describe('package manifest contract', () => {
     expect(paths).toContain('images[0].platform');
     expect(paths).toContain('images[0].digest');
   });
+
+  it('accepts an artifact-only kernel manifest (ADR-0025)', () => {
+    const kernel: KernelManifest = {
+      formatVersion: PACKAGE_MANIFEST_FORMAT_VERSION,
+      kind: 'kernel',
+      version: '0.3.0',
+      channel: 'stable',
+      kernelApi: '0.4.0',
+      frontendAbi: '1.0.0',
+      updateProtocol: UPDATE_PROTOCOL_VERSION,
+      upgradeFrom: '>=0.2.0',
+      migrationPath: 'direct',
+      schemaRange: '>=20261001000000',
+      images: [],
+      artifacts: [
+        {
+          role: 'kernel',
+          platform: 'linux/amd64',
+          url: `https://github.com/worable233/stackpanel/releases/download/v0.3.0/stackpanel-kernel-linux-amd64.tar.zst`,
+          sha256: sha('a'),
+          size: 209_715_200,
+          nodeMajor: 22,
+        },
+        {
+          role: 'migrate',
+          platform: 'linux/amd64',
+          url: `https://github.com/worable233/stackpanel/releases/download/v0.3.0/stackpanel-migrate-linux-amd64.tar.zst`,
+          sha256: sha('b'),
+          size: 68_157_440,
+          nodeMajor: 22,
+        },
+      ],
+      corePackages: [],
+      supportedPlatforms: ['linux/amd64'],
+      smokeProbeVersion: 1,
+      databaseMigration: '20261003000000_notification_live',
+    };
+    expect(validateKernelManifest(kernel)).toEqual([]);
+    expect(isValidKernelManifest(kernel)).toBe(true);
+  });
+
+  it('rejects an artifact digest written as a full image reference', () => {
+    // 历史缺陷：把 `repo@sha256:...` 当 digest 拼进产物字段。
+    const kernel = {
+      formatVersion: PACKAGE_MANIFEST_FORMAT_VERSION,
+      kind: 'kernel',
+      version: '0.3.0',
+      channel: 'stable',
+      kernelApi: '0.4.0',
+      frontendAbi: '1.0.0',
+      updateProtocol: UPDATE_PROTOCOL_VERSION,
+      upgradeFrom: '>=0.2.0',
+      migrationPath: 'direct',
+      schemaRange: '>=20261001000000',
+      images: [],
+      artifacts: [
+        {
+          role: 'kernel',
+          platform: 'linux/amd64',
+          url: 'https://example.com/kernel.tar.zst',
+          sha256: `ghcr.io/worable233/stackpanel@sha256:${sha('a')}`,
+          size: 1,
+          nodeMajor: 22,
+        },
+      ],
+      corePackages: [],
+      supportedPlatforms: ['linux/amd64'],
+      smokeProbeVersion: 1,
+      databaseMigration: '20261003000000_x',
+    };
+    const paths = validateKernelManifest(kernel).map((i) => i.path);
+    expect(paths).toContain('artifacts[0].sha256');
+  });
+
+  it('requires a kernel manifest to declare at least one carrier', () => {
+    const kernel = {
+      formatVersion: PACKAGE_MANIFEST_FORMAT_VERSION,
+      kind: 'kernel',
+      version: '0.3.0',
+      channel: 'stable',
+      kernelApi: '0.4.0',
+      frontendAbi: '1.0.0',
+      updateProtocol: UPDATE_PROTOCOL_VERSION,
+      upgradeFrom: '>=0.2.0',
+      migrationPath: 'direct',
+      schemaRange: '>=20261001000000',
+      images: [],
+      corePackages: [],
+      supportedPlatforms: ['linux/amd64'],
+      smokeProbeVersion: 1,
+      databaseMigration: '20261003000000_x',
+    };
+    const issues = validateKernelManifest(kernel);
+    expect(issues.map((i) => i.path)).toContain('images');
+  });
+
+  it('requires every artifact platform to ship both kernel and migrate packs', () => {
+    const base = {
+      formatVersion: PACKAGE_MANIFEST_FORMAT_VERSION,
+      kind: 'kernel',
+      version: '0.3.0',
+      channel: 'stable',
+      kernelApi: '0.4.0',
+      frontendAbi: '1.0.0',
+      updateProtocol: UPDATE_PROTOCOL_VERSION,
+      upgradeFrom: '>=0.2.0',
+      migrationPath: 'direct',
+      schemaRange: '>=20261001000000',
+      images: [],
+      corePackages: [],
+      supportedPlatforms: ['linux/amd64', 'linux/arm64'],
+      smokeProbeVersion: 1,
+      databaseMigration: '20261003000000_x',
+    };
+    const artifact = (role: string, platform: string) => ({
+      role,
+      platform,
+      url: `https://example.com/${role}-${platform.replace('/', '-')}.tar.zst`,
+      sha256: sha('a'),
+      size: 1,
+      nodeMajor: 22,
+    });
+    // amd64 完整，arm64 只有 kernel → 必须报缺少 migrate。
+    const issues = validateKernelManifest({
+      ...base,
+      artifacts: [
+        artifact('kernel', 'linux/amd64'),
+        artifact('migrate', 'linux/amd64'),
+        artifact('kernel', 'linux/arm64'),
+      ],
+    });
+    expect(issues.some((i) => i.message.includes('linux/arm64 缺少 migrate'))).toBe(true);
+  });
+
+  it('rejects duplicate role+platform artifact entries', () => {
+    const artifact = (role: string, platform: string, digest: string) => ({
+      role,
+      platform,
+      url: `https://example.com/${role}.tar.zst`,
+      sha256: sha(digest),
+      size: 1,
+      nodeMajor: 22,
+    });
+    const issues = validateKernelManifest({
+      formatVersion: PACKAGE_MANIFEST_FORMAT_VERSION,
+      kind: 'kernel',
+      version: '0.3.0',
+      channel: 'stable',
+      kernelApi: '0.4.0',
+      frontendAbi: '1.0.0',
+      updateProtocol: UPDATE_PROTOCOL_VERSION,
+      upgradeFrom: '>=0.2.0',
+      migrationPath: 'direct',
+      schemaRange: '>=20261001000000',
+      images: [],
+      artifacts: [
+        artifact('kernel', 'linux/amd64', 'a'),
+        artifact('kernel', 'linux/amd64', 'b'),
+        artifact('migrate', 'linux/amd64', 'c'),
+      ],
+      corePackages: [],
+      supportedPlatforms: ['linux/amd64'],
+      smokeProbeVersion: 1,
+      databaseMigration: '20261003000000_x',
+    });
+    expect(issues.some((i) => i.message.includes('重复的 role+platform'))).toBe(true);
+  });
 });
 
 describe('catalog contract', () => {
@@ -678,6 +845,101 @@ describe('kernel self-upgrade resolution (§13-4)', () => {
       candidates: [kernelManifest('0.5.0', { upgradeFrom: '>=0.3.0' })],
     });
     expect(none.ok).toBe(false);
+  });
+
+  function artifactKernel(version: string, platforms: string[]): KernelManifest {
+    const artifacts = platforms.flatMap((platform) => {
+      const slug = platform.replace('/', '-');
+      return [
+        {
+          role: 'kernel' as const,
+          platform,
+          url: `https://github.com/worable233/stackpanel/releases/download/v${version}/stackpanel-kernel-${slug}.tar.zst`,
+          sha256: sha('a'),
+          size: 209_715_200,
+          nodeMajor: 22,
+        },
+        {
+          role: 'migrate' as const,
+          platform,
+          url: `https://github.com/worable233/stackpanel/releases/download/v${version}/stackpanel-migrate-${slug}.tar.zst`,
+          sha256: sha('b'),
+          size: 68_157_440,
+          nodeMajor: 22,
+        },
+      ];
+    });
+    return kernelManifest(version, {
+      images: [],
+      artifacts,
+      supportedPlatforms: platforms,
+    });
+  }
+
+  it('resolves an artifact carrier without any image digest (ADR-0025)', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      carrier: 'artifact',
+      candidates: [artifactKernel('0.3.0', ['linux/amd64'])],
+    });
+    expect(plan.ok).toBe(true);
+    if (plan.ok) {
+      expect(plan.carrier).toBe('artifact');
+      // 产物载体的 digest 是裸 sha256，不是 `repo@sha256:...`。
+      expect(plan.digest).toBe(sha('a'));
+      expect(plan.url).toContain('stackpanel-kernel-linux-amd64.tar.zst');
+      expect(plan.size).toBe(209_715_200);
+    }
+  });
+
+  it('defaults to the oci carrier so image deployments never switch silently', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      candidates: [kernelManifest('0.3.0')],
+    });
+    expect(plan.ok).toBe(true);
+    if (plan.ok) {
+      expect(plan.carrier).toBe('oci');
+      expect(plan.digest).toContain('@sha256:');
+    }
+  });
+
+  it('blocks the artifact carrier when the platform pack is missing', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      carrier: 'artifact',
+      platform: 'linux/arm64',
+      candidates: [artifactKernel('0.3.0', ['linux/amd64'])],
+    });
+    expect(plan.ok).toBe(false);
+    if (!plan.ok) expect(plan.blocks[0]?.detail).toContain('linux/arm64');
+  });
+
+  it('blocks the artifact carrier when the migrate pack is missing', () => {
+    const kernel = kernelManifest('0.3.0', {
+      images: [],
+      artifacts: [
+        {
+          role: 'kernel',
+          platform: 'linux/amd64',
+          url: 'https://example.com/kernel.tar.zst',
+          sha256: sha('a'),
+          size: 1,
+          nodeMajor: 22,
+        },
+      ],
+    });
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      carrier: 'artifact',
+      candidates: [kernel],
+    });
+    expect(plan.ok).toBe(false);
+    if (!plan.ok) expect(plan.blocks[0]?.detail).toContain('迁移产物包');
   });
 
   it('exposes catalog kernel refs and validates them', () => {

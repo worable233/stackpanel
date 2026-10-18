@@ -126,6 +126,37 @@ export interface KernelImageDigest {
   digest: string;
 }
 
+/**
+ * 内核升级载体（ADR-0025）。`oci` 走镜像，`artifact` 走自包含产物包。
+ * 两种载体在清单中并列声明，安装与升级语义一致，仅执行原语不同。
+ */
+export type KernelCarrier = 'oci' | 'artifact';
+
+/** 产物包用途：运行内核，或仅在升级窗口内使用的迁移工具。 */
+export type ArtifactRole = 'kernel' | 'migrate';
+
+/**
+ * 自包含构建产物（ADR-0025 决策 2）。
+ *
+ * 与 {@link KernelImageDigest} 的关键区别：`sha256` 是 tarball 的裸摘要，
+ * **不是** `repo@sha256:...` 完整引用。历史实现曾把完整引用当摘要拼接，
+ * 产出 `sha256:repo@sha256:...`，因此契约层直接禁止该形态。
+ */
+export interface KernelArtifact {
+  /** 产物用途。`migrate` 包只在升级窗口内下载，运行包不携带 Prisma CLI。 */
+  role: ArtifactRole;
+  /** `linux/amd64` / `linux/arm64`。 */
+  platform: string;
+  /** 下载地址；发布时通常指向 GitHub Release asset。 */
+  url: string;
+  /** tarball 的 SHA-256，裸 64 位小写 hex。 */
+  sha256: string;
+  /** tarball 字节数。 */
+  size: number;
+  /** 目标 Node 主版本；与产物内原生依赖的 ABI 绑定。 */
+  nodeMajor: number;
+}
+
 /** 内核版本清单（主计划 §3.2 末段）。 */
 export interface KernelManifest {
   formatVersion: number;
@@ -147,6 +178,11 @@ export interface KernelManifest {
   schemaRange: string;
   /** 多架构镜像摘要；以 digest 安装，禁止依赖 latest。 */
   images: KernelImageDigest[];
+  /**
+   * 自包含产物包（ADR-0025）。与 `images` 并列，至少其一非空。
+   * 非 Docker 部署只消费 `artifacts`。
+   */
+  artifacts?: KernelArtifact[];
   /** builtin 核心包兼容集合（随内核发布，不独立漂移）。 */
   corePackages: PackageDependency[];
   /** 受支持平台（Node / OS）。 */
@@ -271,6 +307,82 @@ function validateCompatibility(compatibility: unknown): ContractIssue[] {
   return issues;
 }
 
+function validateKernelArtifacts(artifacts: unknown): ContractIssue[] {
+  const issues: ContractIssue[] = [];
+  if (artifacts === undefined) return issues;
+  if (!Array.isArray(artifacts)) return [{ path: 'artifacts', message: '必须是数组' }];
+
+  const seen = new Set<string>();
+  artifacts.forEach((entry, index) => {
+    const path = `artifacts[${index}]`;
+    if (!isPlainObject(entry)) {
+      issues.push({ path, message: '必须是对象' });
+      return;
+    }
+    if (entry.role !== 'kernel' && entry.role !== 'migrate') {
+      issues.push({ path: `${path}.role`, message: '必须是 kernel 或 migrate' });
+    }
+    if (typeof entry.platform !== 'string' || !PLATFORM_PATTERN.test(entry.platform)) {
+      issues.push({ path: `${path}.platform`, message: '必须是 linux|darwin / amd64|arm64' });
+    }
+    requireString(issues, entry.url, `${path}.url`, { pattern: HTTP_URL_PATTERN });
+    // 裸摘要：不接受 `sha256:` 前缀，更不接受完整 `repo@sha256:...` 引用。
+    requireString(issues, entry.sha256, `${path}.sha256`, { pattern: SHA256_PATTERN });
+    if (
+      typeof entry.size !== 'number' ||
+      !Number.isInteger(entry.size) ||
+      entry.size <= 0
+    ) {
+      issues.push({ path: `${path}.size`, message: '必须是正整数' });
+    }
+    if (
+      typeof entry.nodeMajor !== 'number' ||
+      !Number.isInteger(entry.nodeMajor) ||
+      entry.nodeMajor < 18
+    ) {
+      issues.push({ path: `${path}.nodeMajor`, message: '必须是 ≥18 的整数' });
+    }
+
+    // (role, platform) 必须唯一：同一平台不允许出现两个内核包或两个迁移包。
+    if (typeof entry.role === 'string' && typeof entry.platform === 'string') {
+      const key = `${entry.role}@${entry.platform}`;
+      if (seen.has(key)) {
+        issues.push({ path, message: `重复的 role+platform：${key}` });
+      }
+      seen.add(key);
+    }
+  });
+
+  // 每个声明了的平台，必须同时具备 kernel 与 migrate 包——否则升级到一半才发现无法迁移。
+  const byRole = { kernel: new Set<string>(), migrate: new Set<string>() };
+  for (const entry of artifacts) {
+    if (!isPlainObject(entry)) continue;
+    const role = entry.role;
+    const platform = entry.platform;
+    if ((role === 'kernel' || role === 'migrate') && typeof platform === 'string') {
+      byRole[role].add(platform);
+    }
+  }
+  for (const platform of byRole.kernel) {
+    if (!byRole.migrate.has(platform)) {
+      issues.push({
+        path: 'artifacts',
+        message: `平台 ${platform} 缺少 migrate 产物包`,
+      });
+    }
+  }
+  for (const platform of byRole.migrate) {
+    if (!byRole.kernel.has(platform)) {
+      issues.push({
+        path: 'artifacts',
+        message: `平台 ${platform} 只有 migrate 产物包，缺少 kernel 产物包`,
+      });
+    }
+  }
+
+  return issues;
+}
+
 function validateRequires(requires: unknown): ContractIssue[] {
   const issues: ContractIssue[] = [];
   if (requires === undefined) return issues;
@@ -362,6 +474,8 @@ function validateAutomatic(automatic: unknown): ContractIssue[] {
 
 const PLATFORM_PATTERN = /^(linux|darwin|win32)\/(amd64|arm64)$/;
 const DIGEST_REF_PATTERN = /^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$/;
+/** 产物下载地址：必须显式 https，拒绝把任意 URL 当指令来源。 */
+const HTTP_URL_PATTERN = /^https:\/\/[A-Za-z0-9.-]+(?::\d+)?\/\S+$/;
 
 /** 校验内核版本清单。 */
 export function validateKernelManifest(input: unknown): ContractIssue[] {
@@ -396,9 +510,17 @@ export function validateKernelManifest(input: unknown): ContractIssue[] {
     }
   }
   requireString(issues, manifest.schemaRange, 'schemaRange');
-  if (!Array.isArray(manifest.images) || manifest.images.length === 0) {
-    issues.push({ path: 'images', message: '必须是非空数组' });
-  } else {
+
+  // ADR-0025：至少一种升级载体。空数组与缺省都视为"未声明"。
+  const hasImages = Array.isArray(manifest.images) && manifest.images.length > 0;
+  const hasArtifacts = Array.isArray(manifest.artifacts) && manifest.artifacts.length > 0;
+  if (!hasImages && !hasArtifacts) {
+    issues.push({ path: 'images', message: '必须声明至少一种升级载体（images 或 artifacts）' });
+  }
+
+  if (manifest.images !== undefined && !Array.isArray(manifest.images)) {
+    issues.push({ path: 'images', message: '必须是数组' });
+  } else if (Array.isArray(manifest.images)) {
     manifest.images.forEach((image, index) => {
       const path = `images[${index}]`;
       if (!isPlainObject(image)) {
@@ -413,6 +535,9 @@ export function validateKernelManifest(input: unknown): ContractIssue[] {
       }
     });
   }
+
+  issues.push(...validateKernelArtifacts(manifest.artifacts));
+
   issues.push(...validateRequires(manifest.corePackages));
   issues.push(...validateStringArray(manifest.supportedPlatforms, 'supportedPlatforms'));
   if (

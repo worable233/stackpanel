@@ -386,14 +386,31 @@ export function buildPlanDigestInput(
 
 /** 单个内核升级计划的求解结果。 */
 export type KernelUpgradePlan =
-  | { ok: true; target: KernelManifest; path: KernelManifest[]; digest: string }
+  | {
+      ok: true;
+      target: KernelManifest;
+      path: KernelManifest[];
+      /** 升级目标引用：`oci` 载体为镜像 digest，`artifact` 载体为 tarball 的裸 sha256。 */
+      digest: string;
+      /** 载体类型；缺省 `oci`，保持既有调用方语义不变。 */
+      carrier: 'oci' | 'artifact';
+      /** 产物包下载地址（仅 `artifact` 载体）。 */
+      url?: string;
+      /** 产物包字节数（仅 `artifact` 载体）。 */
+      size?: number;
+    }
   | { ok: false; blocks: BlockReasonLike[] };
 
 export interface KernelUpgradeInput {
   /** 当前内核版本（产品版本）。 */
   currentVersion: string;
-  /** 当前部署平台（如 `linux/amd64`）；缺省用第一个候选镜像。 */
+  /** 当前部署平台（如 `linux/amd64`）；缺省用第一个候选镜像/产物。 */
   platform?: string;
+  /**
+   * 期望的升级载体。缺省 `oci`：既有部署都是镜像形态，不显式请求就不会被
+   * 切到产物包（迁移载体属于显式动作）。
+   */
+  carrier?: 'oci' | 'artifact';
   /** 可选的内核候选清单（已按发布者/信任链预过滤，且已剔除撤回）。 */
   candidates: KernelManifest[];
   /** 采纳渠道；只考虑该渠道的内核清单。 */
@@ -491,22 +508,65 @@ export function resolveKernelUpgrade(input: KernelUpgradeInput): KernelUpgradePl
     return { ok: false, blocks: [{ code: 'incompatible_kernel', detail: '没有可升级的内核版本' }] };
   }
 
-  // 平台镜像必须存在（以 digest 安装，禁止依赖 latest）。
-  const platform = input.platform ?? target.images[0]?.platform;
-  const image = platform
-    ? target.images.find((candidate) => candidate.platform === platform)
-    : undefined;
-  if (!image || !image.digest) {
-    return {
-      ok: false,
-      blocks: [
-        {
-          code: 'incompatible_kernel',
-          detail: `目标内核 ${target.version} 没有平台 ${platform ?? '（未知）'} 的镜像 digest`,
-        },
-      ],
-    };
+  // 载体解析：`artifact` 取产物包，`oci` 取镜像 digest（以 digest 安装，禁止依赖 latest）。
+  const carrier = input.carrier ?? 'oci';
+  let digest: string;
+  let artifact: { url: string; size: number } | undefined;
+
+  if (carrier === 'artifact') {
+    const artifacts = target.artifacts ?? [];
+    // 平台缺省时，用产物包声明的平台（而不是 images，产物部署可能完全没有镜像）。
+    const platform = input.platform ?? artifacts.find((a) => a.role === 'kernel')?.platform;
+    const kernelArtifact = platform
+      ? artifacts.find((a) => a.role === 'kernel' && a.platform === platform)
+      : undefined;
+    const migrateArtifact = platform
+      ? artifacts.find((a) => a.role === 'migrate' && a.platform === platform)
+      : undefined;
+    if (!kernelArtifact) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'incompatible_kernel',
+            detail: `目标内核 ${target.version} 没有平台 ${platform ?? '（未知）'} 的产物包`,
+          },
+        ],
+      };
+    }
+    // 迁移包缺失时不在求解阶段放行：否则会停在"已停服才发现无法迁移"。
+    if (!migrateArtifact) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'incompatible_kernel',
+            detail: `目标内核 ${target.version} 缺少平台 ${platform} 的迁移产物包`,
+          },
+        ],
+      };
+    }
+    digest = kernelArtifact.sha256;
+    artifact = { url: kernelArtifact.url, size: kernelArtifact.size };
+  } else {
+    const platform = input.platform ?? target.images[0]?.platform;
+    const image = platform
+      ? target.images.find((candidate) => candidate.platform === platform)
+      : undefined;
+    if (!image || !image.digest) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'incompatible_kernel',
+            detail: `目标内核 ${target.version} 没有平台 ${platform ?? '（未知）'} 的镜像 digest`,
+          },
+        ],
+      };
+    }
+    digest = image.digest;
   }
+
   if (target.updateProtocol > UPDATE_PROTOCOL_MAX) {
     return {
       ok: false,
@@ -523,7 +583,14 @@ export function resolveKernelUpgrade(input: KernelUpgradeInput): KernelUpgradePl
   const path = resolveKernelPath(target, pickForVersion);
   if (!path.ok) return path;
 
-  return { ok: true, target, path: path.path, digest: image.digest };
+  return {
+    ok: true,
+    target,
+    path: path.path,
+    digest,
+    carrier,
+    ...(artifact ? { url: artifact.url, size: artifact.size } : {}),
+  };
 }
 
 /** 当前内核/执行器支持的升级协议上界（单一来源，见 update-protocol）。 */

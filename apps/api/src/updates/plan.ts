@@ -54,14 +54,26 @@ export interface PlanInput {
   catalog: CatalogSnapshot;
   policy: UpdatePolicy;
   instanceId: string;
-  /** 目标内核镜像摘要（内核升级时）；缺省表示只解扩展。 */
-  targetKernel?: { version: string; digest: string; migration: string };
+  /** 目标内核摘要（内核升级时）；缺省表示只解扩展。 */
+  targetKernel?: {
+    version: string;
+    digest: string;
+    migration: string;
+    /** 升级载体（ADR-0025）；缺省 `oci`。 */
+    carrier?: 'oci' | 'artifact';
+    /** 产物包下载地址（仅 `artifact` 载体）。 */
+    url?: string;
+    /** 产物包字节数（仅 `artifact` 载体）。 */
+    size?: number;
+  };
   /**
    * 已验签的内核候选清单（§13-4）。提供则用 {@link resolveKernelUpgrade} 求解内核自身
    * 升级：选中目标内核版本、校验平台镜像、生成迁移路径，并把其 digest/migration 落到
    * 任务。`targetKernel` 显式提供时优先（调用方已求解）。
    */
   kernelCandidates?: KernelManifest[];
+  /** 期望的升级载体（ADR-0025）；缺省 `oci`。 */
+  carrier?: 'oci' | 'artifact';
   /** 显式目标内核版本（缺省自动选最高可升级版本）。 */
   targetKernelVersion?: string;
   /** 当前部署基线代次（updater 指针投影；缺省 0）。 */
@@ -94,6 +106,7 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
       platform: kernel.platform,
       channel: policy.channel,
       candidates: input.kernelCandidates,
+      ...(input.carrier ? { carrier: input.carrier } : {}),
       ...(input.targetKernelVersion ? { targetVersion: input.targetKernelVersion } : {}),
     });
     if (!resolvedKernel.ok) {
@@ -103,6 +116,8 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
       version: resolvedKernel.target.version,
       digest: resolvedKernel.digest,
       migration: resolvedKernel.target.databaseMigration,
+      carrier: resolvedKernel.carrier,
+      ...(resolvedKernel.url ? { url: resolvedKernel.url, size: resolvedKernel.size } : {}),
     };
   }
 
