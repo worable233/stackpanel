@@ -21,6 +21,18 @@ function publicDevOrigins(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: publicDevOrigins(),
+  /**
+   * Emit a self-contained server bundle (`.next/standalone`) so a kernel
+   * artifact can be shipped and run without a full `node_modules` tree
+   * (ADR-0025). This only affects `next build`; `next dev` is unchanged.
+   */
+  output: 'standalone',
+  /**
+   * Monorepo root for dependency tracing. Without this Next walks up from
+   * `apps/web` and fails to include the workspace packages (`@stackpanel/*`)
+   * that the server bundle imports at runtime.
+   */
+  outputFileTracingRoot: path.join(__dirname, '../..'),
   // Spike hook (runtime-frontend-loading, Stage 1): allow the throwaway harness
   // to build into a sibling distDir so it never fights the running dev server's
   // `.next`. Unset in normal runs, so production is unaffected.

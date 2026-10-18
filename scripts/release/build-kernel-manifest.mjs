@@ -42,7 +42,7 @@ async function main() {
   const keyId = args['key-id'];
   if (!inputPath || !keyFile || !keyId) {
     console.error(
-      'Usage: node scripts/release/build-kernel-manifest.mjs --input <meta.json> --key-file <ed25519.pem> --key-id <id> --out <dir> [--keyring <keyring.json>]',
+      'Usage: node scripts/release/build-kernel-manifest.mjs --input <meta.json> --key-file <ed25519.pem> --key-id <id> --out <dir> [--keyring <keyring.json>] [--artifacts <artifacts.json>] [--artifacts-base-url <url>]',
     );
     process.exit(1);
   }
@@ -55,6 +55,36 @@ async function main() {
     kind: 'kernel',
     ...manifestFields,
   };
+
+  // 产物载体（ADR-0025）：把 build-kernel-artifact.mjs 产出的
+  // `<version>-<platform>.artifacts.json` 合入清单。两者分开是刻意的——产物摘要
+  // 只有打包完成后才知道，而清单的其余字段在打包前就能定稿。
+  if (args.artifacts) {
+    const files = Array.isArray(args.artifacts) ? args.artifacts : [args.artifacts];
+    const artifacts = [];
+    for (const file of files) {
+      const summary = JSON.parse(await readFile(file, 'utf8'));
+      for (const item of summary.artifacts ?? []) {
+        artifacts.push({
+          role: item.role,
+          platform: item.platform,
+          // 发布时指向 GitHub Release asset；本地打包脚本不知道最终 URL，
+          // 因此允许显式覆盖，默认按仓库/tag/文件名推导。
+          url:
+            args['artifacts-base-url']
+              ? `${String(args['artifacts-base-url']).replace(/\/+$/, '')}/${item.file}`
+              : `https://github.com/${
+                  (source?.repository ?? 'worable233/stackpanel')
+                }/releases/download/${source?.tag ?? `v${summary.version}`}/${item.file}`,
+          sha256: item.sha256,
+          size: item.size,
+          nodeMajor: summary.nodeMajor,
+        });
+      }
+    }
+    manifest.artifacts = artifacts;
+  }
+
   const issues = spec.validateKernelManifest(manifest);
   if (issues.length > 0) {
     throw new Error(`内核清单非法：${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`);

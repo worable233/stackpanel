@@ -83,6 +83,27 @@ services:
     networks:
       - stackpanel
 
+  # 一次性数据库迁移（ADR-0025）。在 api/worker/web 启动前跑完；失败则整体升级失败，
+  # 不会留下「半个栈」运行在未知 schema 上。api 启动时不再自动迁移。
+  migrate:
+    build:
+      context: .
+      target: runtime
+    image: ${STACKPANEL_IMAGE:-stackpanel-api:latest}
+    restart: 'no'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ['/usr/local/bin/entrypoint-migrate']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-stackpanel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stackpanel}
+    networks:
+      - stackpanel
+
   api:
     build:
       context: .
@@ -105,6 +126,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     entrypoint: ['/usr/local/bin/entrypoint-api']
     environment:
       NODE_ENV: production
@@ -207,6 +230,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     entrypoint: ['/usr/local/bin/entrypoint-worker']
     environment:
       NODE_ENV: production

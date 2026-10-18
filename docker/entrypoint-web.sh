@@ -1,11 +1,14 @@
 #!/bin/sh
 set -e
 
-# Plugin/theme frontends are loaded at runtime from the shared data directory
-# (`STACKPANEL_DATA_DIR`, mounted as the `stackpanel-data` volume), so the web
-# tier no longer rebuilds or restarts on install — it just runs `next start`.
-# Ensure the data directory exists (it may be empty on a fresh volume).
+# Web tier. Since ADR-0025 the build emits `output: 'standalone'`, so the server
+# entry is a self-contained `server.js` instead of `next start` reading `.next`
+# through `node_modules/next`. Both the container and the kernel artifact run
+# the same entrypoint.
+#
+# Plugin/theme frontends are still loaded at runtime from the shared data
+# directory (`STACKPANEL_DATA_DIR`), so installing one does not restart web.
 mkdir -p "${STACKPANEL_DATA_DIR:-/app/data}"
 
-cd /app/apps/web
-exec node node_modules/next/dist/bin/next start -p "${WEB_PORT:-3000}"
+cd /app/apps/web/.next/standalone/apps/web
+exec node server.js

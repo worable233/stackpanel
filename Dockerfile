@@ -87,7 +87,8 @@ COPY --chown=node:node --from=prod-deps /app /app
 COPY docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY docker/entrypoint-web.sh /usr/local/bin/entrypoint-web
 COPY docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker
-RUN chmod +x /usr/local/bin/entrypoint-api /usr/local/bin/entrypoint-web /usr/local/bin/entrypoint-worker
+COPY docker/entrypoint-migrate.sh /usr/local/bin/entrypoint-migrate
+RUN chmod +x /usr/local/bin/entrypoint-api /usr/local/bin/entrypoint-web /usr/local/bin/entrypoint-worker /usr/local/bin/entrypoint-migrate
 # Run as a non-privileged user (security audit M-3). The node base image already
 # ships a `node` user (uid/gid 1000); reuse it. `COPY --chown` hands ownership of
 # the app tree to it without an extra (image-doubling) recursive `chown` layer,

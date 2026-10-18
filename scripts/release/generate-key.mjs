@@ -25,12 +25,12 @@ async function main() {
   const outDir = args['out-dir'] ?? 'keys';
   if (!purpose || !keyId) {
     console.error(
-      'Usage: node scripts/release/generate-key.mjs --purpose catalog|package --key-id <id> --out-dir <dir> [--publisher <p>] [--repo <owner/repo>] [--not-after <iso>]',
+      'Usage: node scripts/release/generate-key.mjs --purpose catalog|package|kernel --key-id <id> --out-dir <dir> [--publisher <p>] [--repo <owner/repo>] [--not-after <iso>]',
     );
     process.exit(1);
   }
-  if (purpose !== 'catalog' && purpose !== 'package') {
-    throw new Error('purpose 必须是 catalog 或 package');
+  if (purpose !== 'catalog' && purpose !== 'package' && purpose !== 'kernel') {
+    throw new Error('purpose 必须是 catalog、package 或 kernel');
   }
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();

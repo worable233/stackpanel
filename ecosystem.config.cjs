@@ -36,8 +36,17 @@ module.exports = {
     {
       name: 'stackpanel-web',
       cwd: path.join(__dirname, 'apps/web'),
-      script: './node_modules/next/dist/bin/next',
-      args: 'start -p 3000',
+      /**
+       * `output: 'standalone'` emits `apps/web/.next/standalone/apps/web/server.js`
+       * (ADR-0025). That server is self-contained: it does not consult
+       * `node_modules/next` from the repo, and `next start` would not read the
+       * standalone tree at all. Run the emitted entrypoint directly so the same
+       * process definition works for both a checkout and a kernel artifact.
+       */
+      script: path.join(
+        __dirname,
+        'apps/web/.next/standalone/apps/web/server.js',
+      ),
       interpreter: 'node',
       instances: 1,
       autorestart: true,
@@ -45,6 +54,8 @@ module.exports = {
       env: {
         NODE_ENV,
         STACKPANEL_DATA_DIR: DATA_DIR,
+        PORT: '3000',
+        HOSTNAME: '0.0.0.0',
       },
       out_file: '../../logs/web-out.log',
       error_file: '../../logs/web-error.log',
