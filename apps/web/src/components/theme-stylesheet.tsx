@@ -1,4 +1,5 @@
 import { apiAssetUrl, getApiClient } from '@/lib/api';
+import { isProvisioningMode } from '@/lib/provisioning';
 
 /**
  * Injects a <link> to the active theme's stylesheet from the API. Theming is
@@ -14,6 +15,9 @@ export default async function ThemeStylesheet() {
   // during the short window while the API is seeding the built-in theme). Keep
   // the host styled in that state instead of falling back to browser defaults.
   let href: string | null = apiAssetUrl('/themes/default/theme.css');
+  // First boot: the provision API has no theme endpoints, so the lookup below
+  // would always 404. Serve the built-in stylesheet without asking (R10).
+  if (isProvisioningMode()) return href ? <link rel="stylesheet" href={href} /> : null;
   try {
     const { theme } = await getApiClient().getActiveTheme();
     if (theme) {

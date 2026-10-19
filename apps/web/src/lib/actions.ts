@@ -143,6 +143,69 @@ export async function sendRegisterCodeAction(
 }
 
 /**
+ * Server action: submit infrastructure settings during first boot
+ * (BOOTSTRAP-R1/R8).
+ *
+ * Returns a structured result instead of redirecting: the API answers 202 as
+ * soon as the candidate is queued, and the page then polls
+ * `GET /setup/status` for the phase. Only stable error codes and a sanitized
+ * failure class ever reach the browser — never a connection string.
+ */
+export async function submitBootstrapAction(input: {
+  setupToken: string;
+  idempotencyKey: string;
+  config: Record<string, string>;
+}): Promise<{ ok: true } | { ok: false; error: string; failure?: string }> {
+  try {
+    await getApiClient().submitBootstrap(input);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      const code = error.code ?? '';
+      // 传输层失败没有业务错误码：把它和"服务端明确拒绝"分开，否则界面会
+      // 提示用户去改配置，而实际原因是 API 没起来。
+      if (error.status === 0 || code === 'network' || code === 'timeout') {
+        return { ok: false, error: 'auth.setup.provision.errorUnreachable' };
+      }
+      if (code === 'bootstrap.token_invalid') {
+        return { ok: false, error: 'auth.setup.provision.errorTokenInvalid' };
+      }
+      if (code === 'bootstrap.not_writable') {
+        return { ok: false, error: 'auth.setup.provision.errorNotWritable' };
+      }
+      if (code === 'bootstrap.idempotency_conflict') {
+        return { ok: false, error: 'auth.setup.provision.errorConflict' };
+      }
+      if (code === 'bootstrap.probe_failed') {
+        const failure = readFailure(error.details);
+        return {
+          ok: false,
+          error: 'auth.setup.provision.errorProbe',
+          ...(failure ? { failure } : {}),
+        };
+      }
+      if (code === 'bootstrap.invalid_config') {
+        return { ok: false, error: 'auth.setup.provision.errorInvalidConfig' };
+      }
+      return { ok: false, error: 'auth.setup.provision.errorGeneric' };
+    }
+    return { ok: false, error: 'auth.setup.provision.errorUnreachable' };
+  }
+}
+
+/**
+ * Extract the sanitized failure class from an API error body.
+ *
+ * Only the classification is read; raw driver messages are never surfaced, so
+ * a database password cannot leak through an error banner.
+ */
+function readFailure(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null) return undefined;
+  const failure = (body as Record<string, unknown>)['failure'];
+  return typeof failure === 'string' ? failure : undefined;
+}
+
+/**
  * Server action: claim an uninitialized instance from the setup wizard. Creates
  * the first administrator, signs it in with a fresh session cookie, and routes
  * to the admin workspace. The API enforces the single-use claim under an

@@ -17,3 +17,4 @@ export * from './contract.js';
 export * from './openapi.js';
 export * from './distribution/index.js';
 export * from './frontend-abi.js';
+export * from './bootstrap.js';

@@ -9,6 +9,8 @@
  * stackpanel-upgrade --request <file>      # CLI 逃生门：直接执行一个任务文件
  * stackpanel-upgrade --rollback            # 回退到上一版 release
  * stackpanel-upgrade --reconcile           # 只读对账（不改变部署）
+ * stackpanel-upgrade --bootstrap           # 首次自举：迁移 + 提升配置 + 重建进程
+ * stackpanel-upgrade --reset-infra         # 受限重置（仅失败态，需本地权限）
  * ```
  *
  * `--drain` 覆盖「执行期间新请求到达」的窗口：runner 不退出，继续认领，直到 inbox 为空。
@@ -40,7 +42,7 @@ import { layoutFromEnv, type RunnerLayout } from './layout.ts';
 export interface RunnerOptions {
   layout: RunnerLayout;
   /** 命令行模式。 */
-  mode: 'drain' | 'request' | 'rollback' | 'reconcile' | 'requeue';
+  mode: 'drain' | 'request' | 'rollback' | 'reconcile' | 'requeue' | 'bootstrap' | 'reset-infra';
   /** `--request` 的任务文件。 */
   requestFile?: string;
   /** 命令执行器（测试注入）。 */
@@ -91,6 +93,29 @@ export async function runUpgrade(options: RunnerOptions): Promise<number> {
   }
   if (options.mode === 'reconcile') {
     const result = await adapter.reconcile();
+    log(result.detail);
+    return result.ok ? 0 : 1;
+  }
+
+  if (options.mode === 'bootstrap') {
+    // 走通道：抢锁 → 认领 inbox 任务 → 执行 → 写结果。任务一被认领就离开
+    // inbox，因此失败不会让 path unit 反复触发同一个迁移（审计 R3）。
+    const { bootstrapCommand } = await import('./bootstrap-command.ts');
+    return bootstrapCommand({
+      layout,
+      runner:
+        options.runner ?? new SpawnCommandRunner([...RUNNER_ALLOWED_FILES, 'node', process.execPath]),
+      ...(options.pm2Bin ? { pm2Bin: options.pm2Bin } : {}),
+      ...(options.pm2Home ? { pm2Home: options.pm2Home } : {}),
+      ...(options.probe ? { probe: options.probe } : {}),
+      now,
+      log,
+    });
+  }
+
+  if (options.mode === 'reset-infra') {
+    const { resetInfra } = await import('./reset-infra.ts');
+    const result = await resetInfra({ layout, now, log });
     log(result.detail);
     return result.ok ? 0 : 1;
   }
@@ -334,10 +359,11 @@ export async function requeueClaimed(layout: RunnerLayout): Promise<number> {
 export function parseRunnerArgs(
   argv: string[],
 ):
-  | { mode: 'drain' | 'rollback' | 'reconcile' | 'requeue' }
+  | { mode: 'drain' | 'rollback' | 'reconcile' | 'requeue' | 'bootstrap' | 'reset-infra' }
   | { mode: 'request'; requestFile: string }
   | { mode: 'help' } {
-  let mode: 'drain' | 'request' | 'rollback' | 'reconcile' | 'requeue' = 'drain';
+  let mode: 'drain' | 'request' | 'rollback' | 'reconcile' | 'requeue' | 'bootstrap' | 'reset-infra' =
+    'drain';
   let requestFile: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -347,6 +373,8 @@ export function parseRunnerArgs(
     else if (token === '--rollback') mode = 'rollback';
     else if (token === '--reconcile') mode = 'reconcile';
     else if (token === '--requeue') mode = 'requeue';
+    else if (token === '--bootstrap') mode = 'bootstrap';
+    else if (token === '--reset-infra') mode = 'reset-infra';
     else if (token === '--request') {
       const next = argv[index + 1];
       if (!next) throw new Error('--request 需要任务文件路径');
@@ -371,6 +399,9 @@ const USAGE = `stackpanel-upgrade — 产物载体内核升级执行者（ADR-00
   stackpanel-upgrade --rollback             回退到上一版 release
   stackpanel-upgrade --reconcile            只读对账（不改变部署）
   stackpanel-upgrade --requeue              把崩溃后遗留的 claimed 任务移回 inbox
+  stackpanel-upgrade --bootstrap            执行首次自举：迁移 + 提升配置 + 重建进程（systemd oneshot）
+  stackpanel-upgrade --reset-infra          仅在失败态把实例退回 needs_infra（备份配置 + 轮换令牌；
+                                            已完成/运行中的实例一律拒绝，需本地文件权限）
 
 环境变量：
   STACKPANEL_ROOT                 安装根，默认 /opt/stackpanel

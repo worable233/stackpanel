@@ -134,68 +134,211 @@ function ecosystemConfig({ version }) {
  *
  * 本文件位于版本目录内。数据与日志**必须**在版本目录之外，否则升级切换
  * 版本时会连同运行期状态一起丢弃。
+ *
+ * 配置来源（单一权威）：引导配置文件（默认 /var/lib/stackpanel/stackpanel.env）。
+ * 本文件**自己读取**它，而不是依赖调用 \`pm2\` 时的 shell 环境：
+ * 升级由 systemd oneshot 触发，那个 shell 里没有任何业务变量，而
+ * \`pm2 start --update-env\` 会用调用者环境重建进程环境。自读文件是唯一
+ * 不依赖"谁在什么时候调用了 pm2"的做法。
+ *
+ * 投影规则（最小暴露面）：API/worker 拿到完整服务端配置；Web 只拿到它真正
+ * 需要的键 —— 数据库、Redis、S3 凭据和根密钥绝不进入 Web 进程环境。
  */
+const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = __dirname;
-const DATA_DIR = process.env.STACKPANEL_DATA_DIR;
-const LOG_DIR = process.env.STACKPANEL_LOG_DIR || path.join(DATA_DIR || ROOT, '..', 'logs');
 const NODE_ENV = 'production';
+const STATE_DIR = process.env.STACKPANEL_STATE_DIR || '/var/lib/stackpanel';
+const ENV_FILE =
+  process.env.STACKPANEL_ENV_FILE || path.join(STATE_DIR, 'stackpanel.env');
+const BOOTSTRAP_DIR = path.join(STATE_DIR, 'bootstrap');
 
-if (!DATA_DIR) {
-  throw new Error('STACKPANEL_DATA_DIR 未设置：数据目录必须在版本目录之外');
+/**
+ * 解析引导配置文件。
+ *
+ * 与内核 \`apps/api/src/bootstrap/config-file.ts\` 保持同一子集：
+ * \`KEY=VALUE\`、整行 \`#\` 注释、可选 \`export \` 前缀、值可用单/双引号包裹。
+ * 引号内**不解释转义**；未加引号时去首尾空白。
+ * 解析失败必须抛出：静默忽略会让进程用错配置启动。
+ */
+function parseEnvFile(file) {
+  const out = {};
+  let content;
+  try {
+    content = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return out;
+    throw error;
+  }
+  const lines = content.split('\\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const line = raw.endsWith('\\r') ? raw.slice(0, -1) : raw;
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
+    const body = trimmed.startsWith('export ') ? trimmed.slice(7).trim() : trimmed;
+    const eq = body.indexOf('=');
+    if (eq <= 0) throw new Error('引导配置第 ' + (i + 1) + ' 行不是 KEY=VALUE');
+    const key = body.slice(0, eq).trim();
+    let value = body.slice(eq + 1);
+    const lead = value.trimStart();
+    if (lead.startsWith('"') || lead.startsWith("'")) {
+      const quote = lead[0];
+      const end = lead.lastIndexOf(quote);
+      if (end <= 0) throw new Error('引导配置第 ' + (i + 1) + ' 行引号未闭合');
+      value = lead.slice(1, end);
+    } else {
+      value = lead.trimEnd();
+    }
+    out[key] = value;
+  }
+  return out;
 }
 
-module.exports = {
-  apps: [
-    {
-      name: 'stackpanel-api',
-      cwd: path.join(ROOT, 'apps/api'),
-      script: path.join(ROOT, 'apps/api/dist/server.js'),
-      instances: 1,
-      autorestart: true,
-      max_memory_restart: '512M',
-      env: { NODE_ENV, STACKPANEL_DATA_DIR: DATA_DIR },
-      out_file: path.join(LOG_DIR, 'api-out.log'),
-      error_file: path.join(LOG_DIR, 'api-error.log'),
-      merge_logs: true,
-      time: true,
-    },
-    {
-      name: 'stackpanel-worker',
-      cwd: path.join(ROOT, 'apps/api'),
-      script: path.join(ROOT, 'apps/api/dist/worker.js'),
-      instances: 1,
-      autorestart: true,
-      max_memory_restart: '512M',
-      env: { NODE_ENV, STACKPANEL_DATA_DIR: DATA_DIR },
-      out_file: path.join(LOG_DIR, 'worker-out.log'),
-      error_file: path.join(LOG_DIR, 'worker-error.log'),
-      merge_logs: true,
-      time: true,
-    },
-    {
-      name: 'stackpanel-web',
-      cwd: path.join(ROOT, 'apps/web'),
-      script: path.join(ROOT, 'apps/web/server.js'),
-      interpreter: 'node',
-      instances: 1,
-      autorestart: true,
-      max_memory_restart: '512M',
-      env: {
-        NODE_ENV,
-        STACKPANEL_DATA_DIR: DATA_DIR,
-        // 端口可被部署环境覆盖；不要在产物里写死，否则反向代理换端口就得改包。
-        PORT: process.env.PORT || '3000',
-        HOSTNAME: process.env.HOSTNAME_BIND || '0.0.0.0',
-      },
-      out_file: path.join(LOG_DIR, 'web-out.log'),
-      error_file: path.join(LOG_DIR, 'web-error.log'),
-      merge_logs: true,
-      time: true,
-    },
-  ],
+const bootstrap = parseEnvFile(ENV_FILE);
+
+/** 环境变量优先（测试/显式覆盖），其次引导配置。 */
+function pick(key) {
+  return process.env[key] !== undefined ? process.env[key] : bootstrap[key];
+}
+
+const DATA_DIR = pick('STACKPANEL_DATA_DIR');
+const LOG_DIR = pick('STACKPANEL_LOG_DIR') || path.join(DATA_DIR || ROOT, '..', 'logs');
+
+if (!DATA_DIR) {
+  throw new Error(
+    'STACKPANEL_DATA_DIR 未设置：数据目录必须在版本目录之外。' +
+      '请检查引导配置 ' + ENV_FILE + '（安装脚本应已写入）。',
+  );
+}
+
+/**
+ * 读取自举阶段。
+ *
+ * 没有状态文件 = 存量部署（自举功能上线前安装的实例）：按正常运行处理，
+ * 绝不把已装实例打回 provision。状态文件损坏同理，让正常启动去报错。
+ */
+function bootstrapPhase() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(BOOTSTRAP_DIR, 'state.json'), 'utf8'));
+    return typeof parsed.phase === 'string' ? parsed.phase : 'complete';
+  } catch {
+    return 'complete';
+  }
+}
+
+const PHASE = bootstrapPhase();
+/**
+ * 两个**不同**的问题，不能用同一个集合回答：
+ *
+ * 1. API 是否只能跑最小 provision app？
+ *    只有「还没有可用的数据库配置」才成立。「starting」起配置已经提升，
+ *    API 必须走正常入口（否则 setup 页会一直看到 provision 模式）。
+ * 2. 现在是否该启动 worker？
+ *    worker 只能在迁移成功之后启动，也就是「starting」及以后。早于它启动
+ *    只会得到崩溃重启循环（审计 R2）。
+ */
+const API_PROVISION_PHASES = new Set([
+  'needs_infra',
+  'validating',
+  'queued',
+  'migrating',
+  'migration_failed',
+]);
+const WORKER_PHASES = new Set(['starting', 'needs_admin', 'complete']);
+const API_PROVISION = API_PROVISION_PHASES.has(PHASE);
+const WORKER_ENABLED = WORKER_PHASES.has(PHASE);
+
+const serverEnv = {
+  NODE_ENV,
+  STACKPANEL_DATA_DIR: DATA_DIR,
+  STACKPANEL_STATE_DIR: STATE_DIR,
+  STACKPANEL_BOOTSTRAP_STATE: API_PROVISION ? 'provision' : 'configured',
 };
+
+// 服务端：把引导配置里的键**全部**投影进去（白名单由写入端保证）。
+// 这里不做二次过滤：写入端只接受 BOOTSTRAP_CONFIG_KEYS 与安装器生成的键。
+for (const [key, value] of Object.entries(bootstrap)) {
+  if (key === 'PORT' || key === 'HOSTNAME') continue;
+  serverEnv[key] = value;
+}
+
+// Web：只给同源 BFF 需要的键。凭据与根密钥不得进入 Web 进程环境。
+const WEB_ALLOWED = new Set([
+  'API_BASE_URL',
+  'PUBLIC_API_BASE_URL',
+  'SESSION_COOKIE_NAME',
+  'SESSION_TTL_SECONDS',
+  'SITE_URL',
+  // STACKPANEL_SETUP_TOKEN 刻意不投影给 Web：令牌只在 API 一侧校验，
+  // Web 只是把用户在表单里输入的值转发过去。少一个持有者，少一处泄漏面。
+]);
+const webEnv = {
+  NODE_ENV,
+  STACKPANEL_DATA_DIR: DATA_DIR,
+  STACKPANEL_STATE_DIR: STATE_DIR,
+  STACKPANEL_BOOTSTRAP_STATE: serverEnv.STACKPANEL_BOOTSTRAP_STATE,
+  // 端口可被部署环境覆盖；不要在产物里写死，否则反向代理换端口就得改包。
+  PORT: pick('PORT') || '3000',
+  HOSTNAME: pick('HOSTNAME_BIND') || '0.0.0.0',
+  // BFF 的服务端调用目标。安装器只在配置里没有该键时写入默认值；这里再兜底
+  // 一次，保证手工维护的 stackpanel.env 漏掉它时 Web 也能找到同机 API。
+  API_BASE_URL: pick('API_BASE_URL') || 'http://127.0.0.1:3001',
+};
+for (const [key, value] of Object.entries(bootstrap)) {
+  if (WEB_ALLOWED.has(key)) webEnv[key] = value;
+}
+
+const apps = [
+  {
+    name: 'stackpanel-api',
+    cwd: path.join(ROOT, 'apps/api'),
+    script: path.join(ROOT, 'apps/api/dist/server.js'),
+    instances: 1,
+    autorestart: true,
+    max_memory_restart: '512M',
+    env: serverEnv,
+    out_file: path.join(LOG_DIR, 'api-out.log'),
+    error_file: path.join(LOG_DIR, 'api-error.log'),
+    merge_logs: true,
+    time: true,
+  },
+  {
+    name: 'stackpanel-web',
+    cwd: path.join(ROOT, 'apps/web'),
+    script: path.join(ROOT, 'apps/web/server.js'),
+    interpreter: 'node',
+    instances: 1,
+    autorestart: true,
+    max_memory_restart: '512M',
+    env: webEnv,
+    out_file: path.join(LOG_DIR, 'web-out.log'),
+    error_file: path.join(LOG_DIR, 'web-error.log'),
+    merge_logs: true,
+    time: true,
+  },
+];
+
+// worker 只在迁移成功后启动：数据库尚未配置时它只会不断崩溃重启，
+// 而退出码 0 也不会被 PM2 视为"应停止"（autorestart 默认生效）。
+if (WORKER_ENABLED) {
+  apps.push({
+    name: 'stackpanel-worker',
+    cwd: path.join(ROOT, 'apps/api'),
+    script: path.join(ROOT, 'apps/api/dist/worker.js'),
+    instances: 1,
+    autorestart: true,
+    max_memory_restart: '512M',
+    env: serverEnv,
+    out_file: path.join(LOG_DIR, 'worker-out.log'),
+    error_file: path.join(LOG_DIR, 'worker-error.log'),
+    merge_logs: true,
+    time: true,
+  });
+}
+
+module.exports = { apps };
 `;
 }
 

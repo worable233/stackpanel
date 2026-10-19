@@ -184,9 +184,46 @@ export const sessionInfoResponseSchema = z.object({
   user: sessionInfoSchema.nullable(),
 }) satisfies z.ZodType<SessionInfoResponse>;
 
+/** `POST /setup/provision` response: the queued operation projection. */
+export const bootstrapProvisionResponseSchema = z.object({
+  operation: z.object({
+    id: z.string(),
+    configGeneration: z.number().int(),
+    targetVersion: z.string(),
+    phase: z.string(),
+    failure: z.string().optional(),
+    diagnosticsRequired: z.boolean().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  }),
+});
+
 export const setupStatusResponseSchema = z.object({
   required: z.boolean(),
   tokenRequired: z.boolean(),
+  phase: z.enum([
+    'needs_infra',
+    'validating',
+    'queued',
+    'migrating',
+    'migration_failed',
+    'starting',
+    'runtime_failed',
+    'needs_admin',
+    'complete',
+  ]),
+  operation: z
+    .object({
+      id: z.string(),
+      configGeneration: z.number().int(),
+      targetVersion: z.string(),
+      phase: z.string(),
+      failure: z.string().optional(),
+      diagnosticsRequired: z.boolean().optional(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    })
+    .optional(),
 }) satisfies z.ZodType<SetupStatusResponse>;
 
 export const connectedIdentitySchema = z.object({

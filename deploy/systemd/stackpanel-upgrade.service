@@ -18,7 +18,11 @@ Environment=STACKPANEL_ROOT=/opt/stackpanel
 Environment=STACKPANEL_STATE_DIR=/var/lib/stackpanel
 Environment=STACKPANEL_UPDATE_INSTANCE_ID=stackpanel
 Environment=STACKPANEL_PM2_HOME=/home/stackpanel/.pm2
+# EnvironmentFile 的优先级：**后面的覆盖前面的**（systemd 语义）。
+# 因此把权威配置放在最后：runner 的 DATABASE_URL 只来自 bootstrap 配置，
+# upgrade.env 只提供路径/保留策略等非机密项，绝不重复声明 DATABASE_URL。
 EnvironmentFile=-/etc/stackpanel/upgrade.env
+EnvironmentFile=-/var/lib/stackpanel/stackpanel.env
 # /ready 探针最长 180s，加迁移与解包余量。
 TimeoutStartSec=2h
 # 失败必须显式暴露，不能自动无限重试（§6：不假报成功、不反复重启）。

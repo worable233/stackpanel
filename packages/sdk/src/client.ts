@@ -78,6 +78,7 @@ import {
   sessionInfoResponseSchema,
   settlementCurrencyResponseSchema,
   setupStatusResponseSchema,
+  bootstrapProvisionResponseSchema,
   signingResponseSchema,
   platformInfoResponseSchema,
   platformBrandResponseSchema,
@@ -125,6 +126,7 @@ import type {
   CurrentUserResponse,
   SessionInfoResponse,
   SetupStatusResponse,
+  BootstrapOperationView,
   ApiTokenCreateResponse,
   ApiTokenListResponse,
   ApiTokenScopesResponse,
@@ -467,6 +469,9 @@ export class ApiClient {
    * `setupToken` is only required when GET /setup/status reports
    * `tokenRequired`. Returns a session like login, so the caller can sign the
    * operator straight in.
+   *
+   * Only meaningful once `phase` is `needs_admin`; the provision app does not
+   * register this route at all.
    */
   completeSetup(input: {
     email: string;
@@ -478,6 +483,30 @@ export class ApiClient {
       '/setup',
       { email, password, ...(setupToken ? { setupToken } : {}) },
       loginResponseSchema,
+    );
+  }
+
+  /**
+   * Submit infrastructure connection settings during first boot
+   * (BOOTSTRAP-R1). Only the provision app exposes this route.
+   *
+   * The call returns as soon as the candidate is durably queued — validation,
+   * migration and the first normal start happen in the upgrade runner, so the
+   * browser must poll {@link getSetupStatus} rather than wait on this promise.
+   */
+  submitBootstrap(input: {
+    setupToken: string;
+    idempotencyKey: string;
+    config: Record<string, string>;
+  }): Promise<{ operation: BootstrapOperationView }> {
+    return this.post(
+      '/setup/provision',
+      {
+        setupToken: input.setupToken,
+        idempotencyKey: input.idempotencyKey,
+        config: input.config,
+      },
+      bootstrapProvisionResponseSchema,
     );
   }
 

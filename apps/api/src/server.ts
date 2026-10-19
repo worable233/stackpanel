@@ -1,101 +1,146 @@
-import { buildApp } from './app.ts';
-import { env } from './config/env.ts';
-import { setupStatus } from './auth/install-claim.ts';
-import { initInfra } from './infra.ts';
-import { startOutboxConsumption } from './plugins/events.ts';
-import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence.ts';
-import { startTracing, stopTracing } from './observability/index.ts';
-import { peekRedis } from '@stackpanel/db';
-import { stopAllIsolatedPlugins } from './plugins/isolated/host.ts';
+/**
+ * 进程入口（审计 R2、R10）。
+ *
+ * 这个文件只做一件事：**决定加载哪一个 app**，然后交给它启动。
+ *
+ * 为什么不能用「一个 app 加运行时分支」：ESM 的静态 import 在模块求值时就执行，
+ * 而 `app.ts` 会连带加载 Prisma、插件宿主、主题发现、审计与限流。
+ * 在尚未配置数据库的首次启动里，这些模块本身就依赖 env 中的 DATABASE_URL；
+ * 即使运行时分支不调用它们，加载期也可能已经失败。
+ *
+ * 因此这里用**动态 import**：provision 模式只加载 `bootstrap/provision-app.ts`，
+ * 其传递依赖里没有 Prisma、没有 Redis、没有插件宿主。
+ *
+ * 阶段判定使用**显式磁盘状态**，不是「数据库连不上」（审计 R3）：
+ * 数据库故障绝不能让生产实例回落到可写配置的页面。
+ */
+
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { BootstrapStateStore, defaultBootstrapStateDir, initialState } from './bootstrap/state.ts';
 
 /**
- * Start tracing before anything else so HTTP instrumentation is installed
- * before Fastify attaches its listener (ADR-0015 §1). No-op unless configured.
+ * 解析状态根目录与自举状态目录。
+ *
+ * 必须与 runner / 安装器一致：
+ * - `<STACKPANEL_STATE_DIR>` 是状态根（配置文件、bootstrap、update 都在它下面）；
+ * - 自举状态在 `<STACKPANEL_STATE_DIR>/bootstrap`。
+ *
+ * 没有 `STACKPANEL_STATE_DIR` 时从数据目录反推（`<state>/data` → `<state>`），
+ * 仅为开发便利；生产由 ecosystem 显式注入。
  */
-startTracing();
-
-/**
- * Connect infrastructure before building the app: the rate limiter needs the
- * shared Redis client at registration time (ADR-0017 §2), and a production
- * misconfiguration must fail fast with a clear message.
- */
-try {
-  await initInfra();
-} catch (err) {
-  console.error('[server] 基础设施初始化失败：', err instanceof Error ? err.message : err);
-  process.exit(1);
+function resolveStateRoots(): { root: string; bootstrapDir: string } {
+  const explicit = process.env['STACKPANEL_STATE_DIR'];
+  if (explicit && explicit.trim().length > 0) {
+    const root = path.resolve(explicit);
+    return { root, bootstrapDir: defaultBootstrapStateDir(root) };
+  }
+  const dataDir = process.env['STACKPANEL_DATA_DIR'];
+  if (dataDir && dataDir.trim().length > 0) {
+    const root = path.dirname(path.resolve(dataDir));
+    return { root, bootstrapDir: defaultBootstrapStateDir(root) };
+  }
+  const root = path.resolve(process.cwd(), '.stackpanel');
+  return { root, bootstrapDir: defaultBootstrapStateDir(root) };
 }
 
-const app = buildApp({ redis: peekRedis() });
-
-async function start(): Promise<void> {
-  try {
-    // First-run guidance: no admin is auto-created. A fresh instance is claimed
-    // from the browser at `/setup` (or by an installed plugin/seed that
-    // provisions an admin out-of-band). We only announce the state; the wizard
-    // itself is authoritative and self-disables once an admin exists.
-    const setup = await setupStatus();
-    if (setup.required) {
-      app.log.warn(
-        '[setup] 实例尚未初始化：请打开 Web 站点按引导创建首个管理员（/setup）。' +
-          (setup.tokenRequired ? ' 本次认领需要 .env 中的 STACKPANEL_SETUP_TOKEN。' : ''),
-      );
+/** 读取目标内核版本；来自产物内的 `RELEASE.json`。 */
+function resolveTargetVersion(moduleUrl: string): string {
+  const here = path.dirname(new URL(moduleUrl).pathname);
+  // dist/server.js → 产物根是 dist 的上一级
+  const candidates = [
+    path.resolve(here, '..', 'RELEASE.json'),
+    path.resolve(here, '..', '..', 'RELEASE.json'),
+  ];
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: string };
+      if (typeof parsed.version === 'string') return parsed.version;
+    } catch {
+      // 读取失败时继续尝试下一个候选。
     }
-    // Ready first so onReady hooks register discovered plugins and seed themes
-    // before we apply persisted plugin enable states.
-    await app.ready();
-    await app.pluginHost.syncEnabledPlugins();
-    // W3 (audit 4B · B-1): begin per-replica durable catch-up only *after* the
-    // plugins above have subscribed. Starting it in initInfra() would advance
-    // this replica's cursor with zero local listeners and lose a restarting
-    // replica's missed events.
-    startOutboxConsumption();
-    // S8: subscribe to cross-replica runtime invalidation once the runtime has
-    // registered all installed plugins (after ready/plugin discovery).
-    await startRuntimeCoherence();
-    await app.listen({ host: env.API_HOST, port: env.API_PORT });
-  } catch (err) {
-    app.log.error(err);
-    process.exit(1);
+  }
+  return 'unknown';
+}
+
+/**
+ * 判断是否进入 provision 模式。
+ *
+ * 规则（与审计 §3 的状态机一致）：
+ * - env 投影 `STACKPANEL_BOOTSTRAP_STATE` 为 `provision` → 进入；
+ * - 否则看磁盘状态：只有 `needs_infra` 才进入；
+ * - **其它任何阶段（含状态文件损坏）都不进入**，按正常启动，让故障暴露。
+ *
+ * 特别注意：`queued` / `migrating` / `starting` 期间 DB 可能已经可用，
+ * 此时必须由正常入口启动（runner 会设置投影），不能回到自举页。
+ */
+async function shouldProvision(stateDir: string): Promise<boolean> {
+  const projected = process.env['STACKPANEL_BOOTSTRAP_STATE'];
+  if (projected === 'provision') return true;
+  if (projected === 'configured') return false;
+
+  const store = new BootstrapStateStore({ dir: stateDir });
+  try {
+    const state = await store.read();
+    return state?.phase === 'needs_infra';
+  } catch {
+    // 状态损坏：不要静默进入可写页面，交给正常启动报错。
+    return false;
   }
 }
 
-/** How long to wait for in-flight raw streams before forcing the process down. */
-const DRAIN_GRACE_MS = 30_000;
+/**
+ * provision 启动路径。
+ *
+ * 只监听，不连数据库、不初始化 Redis、不注册插件。
+ */
+async function startProvision(
+  roots: { root: string; bootstrapDir: string },
+  targetVersion: string,
+): Promise<void> {
+  const { buildProvisionApp } = await import('./bootstrap/provision-app.ts');
+  const store = new BootstrapStateStore({ dir: roots.bootstrapDir, targetVersion });
 
-let shuttingDown = false;
-
-async function shutdown(): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  try {
-    stopAllIsolatedPlugins();
-    // Stop accepting new connections; let long-lived raw streams (SSE / upstream
-    // proxies) finish within a grace window, then force-close the rest.
-    const grace = new Promise<void>((resolve) => setTimeout(resolve, DRAIN_GRACE_MS));
-    let closed = false;
-    const closing = app.close().then(() => {
-      closed = true;
-    });
-    await Promise.race([closing, grace]);
-    if (!closed) {
-      const remaining = app.pluginDispatcher.inFlightRaw;
-      app.log.warn(
-        `Shutdown: forcing exit after ${DRAIN_GRACE_MS}ms (${remaining} raw stream(s) in flight)`,
-      );
-      app.server.closeAllConnections();
-      await closing.catch(() => undefined);
-    }
-  } catch (err) {
-    app.log.error(err);
-  } finally {
-    await stopRuntimeCoherence().catch(() => undefined);
-    await stopTracing().catch(() => undefined);
-    process.exit(0);
+  // 状态文件缺失时先落一个 needs_infra，让发现接口有权威来源。
+  if (!existsSync(path.join(roots.bootstrapDir, 'state.json'))) {
+    await store.write(initialState(new Date()));
   }
+
+  const app = buildProvisionApp({
+    setupToken: process.env['STACKPANEL_SETUP_TOKEN'] ?? '',
+    store,
+    targetVersion,
+    stateDir: roots.root,
+    ...(process.env['STACKPANEL_UPDATE_INSTANCE_ID']
+      ? { instanceId: process.env['STACKPANEL_UPDATE_INSTANCE_ID'] }
+      : {}),
+  });
+
+  const host = process.env['API_HOST'] ?? '127.0.0.1';
+  const port = Number(process.env['API_PORT'] ?? 3001);
+  await app.listen({ host, port });
+  app.log.warn(
+    `[bootstrap] 实例处于首次配置模式（${host}:${port}）。` +
+      '请打开 Web 站点的 /setup 填写基础设施；此模式不接受任何业务请求。',
+  );
 }
 
-void start();
+/** 正常启动路径（与既有行为一致）。 */
+async function startNormal(): Promise<void> {
+  // 动态 import：provision 模式下这些模块根本不会被求值。
+  const { default: run } = await import('./normal-start.ts');
+  await run();
+}
 
-process.on('SIGINT', () => void shutdown());
-process.on('SIGTERM', () => void shutdown());
+async function main(): Promise<void> {
+  const roots = resolveStateRoots();
+  const targetVersion = resolveTargetVersion(import.meta.url);
+  if (await shouldProvision(roots.bootstrapDir)) {
+    await startProvision(roots, targetVersion);
+    return;
+  }
+  await startNormal();
+}
+
+await main();

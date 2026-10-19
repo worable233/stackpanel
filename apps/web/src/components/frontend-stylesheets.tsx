@@ -5,6 +5,7 @@ import {
   type ThemeStyleSource,
 } from '@/lib/frontend-style-links';
 import FrontendStyleLinks from '@/components/frontend-style-links';
+import { isProvisioningMode } from '@/lib/provisioning';
 
 /**
  * Contract 05 §3.6/§3.8 — the single controlled `<link>` injection point.
@@ -26,6 +27,12 @@ import FrontendStyleLinks from '@/components/frontend-style-links';
  * fails to load (contract 06 §1.3).
  */
 export default async function FrontendStylesheets() {
+  // First boot: there is no database, therefore no installed plugins and no
+  // active theme. Both lookups would 404 on every render and can trip the
+  // shared circuit breaker (BOOTSTRAP-R10). Host styles are injected by
+  // `ThemeStylesheet` and `globals.css`.
+  if (isProvisioningMode()) return null;
+
   const client = getApiClient();
   let theme: ThemeStyleSource | null = null;
   const plugins: PluginStyleSource[] = [];

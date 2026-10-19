@@ -96,12 +96,52 @@ export interface SessionInfoResponse {
   user: SessionInfo | null;
 }
 
+/**
+ * Bootstrap phase (BOOTSTRAP-R1). Mirrors `@stackpanel/spec`'s
+ * `BootstrapPhase`; the SDK stays dependency-free so it is duplicated here and
+ * pinned by a contract test in `apps/api/tests/bootstrap-contract.test.ts`.
+ */
+export type BootstrapPhase =
+  | 'needs_infra'
+  | 'validating'
+  | 'queued'
+  | 'migrating'
+  | 'migration_failed'
+  | 'starting'
+  | 'runtime_failed'
+  | 'needs_admin'
+  | 'complete';
+
+/** Public projection of a bootstrap operation (no credentials, no raw errors). */
+export interface BootstrapOperationView {
+  id: string;
+  configGeneration: number;
+  targetVersion: string;
+  /** Phase as reported by the API; kept as string for forward compatibility. */
+  phase: string;
+  failure?: string | undefined;
+  diagnosticsRequired?: boolean | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Public first-run setup state (GET /setup/status). */
 export interface SetupStatusResponse {
-  /** True while the instance has no administrator and `/setup` is enabled. */
+  /**
+   * Compatibility projection: true when the wizard has work for the operator
+   * (infrastructure, a running operation, or the first admin).
+   */
   required: boolean;
   /** True when completion requires the operator-configured claim token. */
   tokenRequired: boolean;
+  /**
+   * Authoritative bootstrap phase (BOOTSTRAP-R1). Both the provision app and
+   * the normal app answer this same endpoint with the same shape, so the page
+   * can branch without probing a second URL.
+   */
+  phase: BootstrapPhase;
+  /** The current (or most recent) bootstrap operation, when one exists. */
+  operation?: BootstrapOperationView | undefined;
 }
 
 /** Input to POST /setup — claims an uninitialized instance. */

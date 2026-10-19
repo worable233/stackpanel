@@ -40,7 +40,7 @@ describe.skipIf(!dbAvailable)('setup wizard — hardened (real DB)', () => {
 
   it('advertises that a token is required', async () => {
     const res = await app.inject({ method: 'GET', url: '/setup/status' });
-    expect(res.json()).toEqual({ required: true, tokenRequired: true });
+    expect(res.json()).toEqual({ required: true, tokenRequired: true, phase: 'needs_admin' });
   });
 
   it('refuses registration that would elect the first admin', async () => {
