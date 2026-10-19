@@ -47,6 +47,13 @@ describe('host frontend ABI table', () => {
       expect(HOST_FRONTEND_ABI['next/navigation']).toBe(next);
     }
   });
+
+  it('matches the installed lucide-react version (drift guard)', () => {
+    const lucide = installedVersion('lucide-react');
+    if (lucide) {
+      expect(HOST_FRONTEND_ABI['lucide-react']).toBe(lucide);
+    }
+  });
 });
 
 describe('validateFrontendExternals', () => {
