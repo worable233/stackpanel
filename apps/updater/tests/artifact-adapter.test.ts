@@ -22,7 +22,7 @@ import {
   parseDfFreeBytes,
 } from '../src/artifact/adapter.ts';
 import { resolveLayout } from '../src/artifact/layout.ts';
-import { parseRunnerArgs } from '../src/artifact/main.ts';
+import { parseRunnerArgs, validateTask } from '../src/artifact/main.ts';
 
 const VERSION = '0.3.0';
 
@@ -226,6 +226,25 @@ describe('archive safety', () => {
       requestFile: '/tmp/t.json',
     });
     expect(() => parseRunnerArgs(['--nope'])).toThrow(/未知参数/);
+  });
+
+  it('rejects tasks that are not artifact carrier or carry a mismatched digest', () => {
+    expect(() => validateTask(task(), 'sp')).not.toThrow();
+
+    const oci = task();
+    oci.plan.kernel.carrier = 'oci';
+    expect(() => validateTask(oci, 'sp')).toThrow(/只执行 artifact 载体/);
+
+    const reference = task();
+    // 历史任务可能残留完整镜像引用；runner 只接受裸 hex。
+    reference.targetDigest = `ghcr.io/o/a@sha256:${'a'.repeat(64)}`;
+    expect(() => validateTask(reference, 'sp')).toThrow(/裸 64 位 hex/);
+
+    const mismatch = task();
+    mismatch.targetDigest = 'b'.repeat(64);
+    expect(() => validateTask(mismatch, 'sp')).toThrow(/不一致/);
+
+    expect(() => validateTask(task(), 'other')).toThrow(/属于实例/);
   });
 });
 

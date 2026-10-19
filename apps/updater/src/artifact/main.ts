@@ -19,7 +19,6 @@ import { readFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
   UPDATE_PROTOCOL_VERSION,
-  digestHex,
   isSha256Hex,
   updateChannelDir,
   updateTaskFileName,
@@ -250,7 +249,8 @@ async function projectResult(
   };
 }
 
-function validateTask(task: UpdateTask, instanceId: string): void {
+/** 任务校验：载体、协议、实例与摘要一致性。导出以便单测覆盖这几条安全边界。 */
+export function validateTask(task: UpdateTask, instanceId: string): void {
   if (task.protocolVersion !== UPDATE_PROTOCOL_VERSION) {
     throw new Error(`不支持的升级协议版本：${task.protocolVersion}`);
   }
@@ -261,12 +261,16 @@ function validateTask(task: UpdateTask, instanceId: string): void {
   if (kernel.carrier !== 'artifact') {
     throw new Error(`runner 只执行 artifact 载体任务，实际为 ${kernel.carrier ?? 'oci'}`);
   }
-  const hex = digestHex(kernel.digest) ?? kernel.digest;
+  // 计划与任务摘要都必须是裸 hex：API 已在求解/落任务时归一，出现引用形态说明投递端
+  // 仍是旧版本。拒绝执行比默默接受更能暴露契约漂移。
+  const hex = kernel.digest;
   if (!isSha256Hex(hex)) {
     throw new Error(`计划的内核摘要必须是裸 64 位 hex：${kernel.digest}`);
   }
-  const taskHex = digestHex(task.targetDigest) ?? task.targetDigest;
-  if (taskHex !== hex) {
+  if (!isSha256Hex(task.targetDigest)) {
+    throw new Error(`task.targetDigest 必须是裸 64 位 hex：${task.targetDigest}`);
+  }
+  if (task.targetDigest !== hex) {
     throw new Error(`task.targetDigest 与计划摘要不一致：${task.targetDigest} vs ${kernel.digest}`);
   }
 }
