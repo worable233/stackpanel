@@ -247,8 +247,9 @@ describe('buildUpdatePlan', () => {
     if (!outcome.ok) return;
     expect(outcome.includesKernel).toBe(true);
     expect(outcome.plan.kernel.version).toBe('0.3.0');
-    expect(outcome.plan.kernel.digest).toContain('f'.repeat(64));
-    expect(outcome.task.targetDigest).toContain('f'.repeat(64));
+    // P0-1：任务与计划里只能是裸 hex，不能是 `repo@sha256:…`。
+    expect(outcome.plan.kernel.digest).toBe('f'.repeat(64));
+    expect(outcome.task.targetDigest).toBe('f'.repeat(64));
   });
 
   it('blocks on an incompatible kernel candidate with a concrete reason', async () => {

@@ -10,6 +10,7 @@
  */
 
 import type { PrismaClient } from '@stackpanel/db';
+import { env } from '../config/env.ts';
 import { buildUpdatePlan, requiresAuthorization } from './plan.ts';
 import { decideAutoUpdate } from './auto.ts';
 import { readUpdatePolicy } from './policy.ts';
@@ -51,6 +52,7 @@ export async function runAutoUpdate(input: {
     instanceId: updateInstanceId(),
     baselineGeneration: status?.generation ?? 0,
     kernelCandidates,
+    carrier: env.DISTRIBUTION_UPDATE_CARRIER,
     now,
   });
   if (!outcome.ok) {

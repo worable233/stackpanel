@@ -18,6 +18,7 @@ import {
 } from '../../updates/index.ts';
 import { auditContext, writeAudit } from '../../plugins/audit.ts';
 import { getPrisma } from '../../plugins/prisma.ts';
+import { env } from '../../config/env.ts';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
@@ -189,6 +190,7 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       instanceId: updateInstanceId(),
       baselineGeneration: status?.generation ?? 0,
       kernelCandidates,
+      carrier: env.DISTRIBUTION_UPDATE_CARRIER,
       ...(idempotencyKey ? { idempotencyKey } : {}),
     });
   }

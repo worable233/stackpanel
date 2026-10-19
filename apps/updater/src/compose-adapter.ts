@@ -12,6 +12,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { digestHex } from '@stackpanel/spec';
 import type { CommandRunner } from './command.ts';
 import type { ComposeProjectConfig } from './compose-config.ts';
 import { FileDeploymentPointer } from './deployment-pointer.ts';
@@ -431,9 +432,14 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
   }
 }
 
-/** `sha256:...` → `sha256:...`；裸十六进制 → `sha256:<hex>`。 */
+/**
+ * 归一为 `sha256:<hex>`。同时接受裸 hex、`sha256:<hex>` 与历史任务里可能残留的
+ * `repo@sha256:<hex>`——后者曾被直接拼成 `sha256:repo@sha256:…`（P0-1）。
+ * 无法识别时原样返回，让 docker 的明确报错暴露问题，而不是伪造一个摘要。
+ */
 export function normalizeDigest(digest: string): string {
-  return digest.startsWith('sha256:') ? digest : `sha256:${digest}`;
+  const hex = digestHex(digest);
+  return hex ? `sha256:${hex}` : digest;
 }
 
 /** 解析 `df -Pk` 输出的可用字节数（第 4 列，KB）。 */

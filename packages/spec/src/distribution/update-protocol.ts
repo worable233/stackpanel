@@ -105,7 +105,10 @@ export interface UpdateTask {
   instanceId: string;
   /** 基线 generation；变化即拒绝执行（防并发/防陈旧计划）。 */
   baselineGeneration: number;
-  /** 目标内核镜像摘要（完整 `@sha256` 引用）。 */
+  /**
+   * 目标内核摘要：**裸 64 位小写 hex**。`oci` 载体为镜像 digest 的 hex 部分，
+   * `artifact` 载体为 tarball 的 sha256。任务里不出现 `repo@sha256:…` 引用。
+   */
   targetDigest: string;
   /** 完整部署计划的摘要（内核+builtin+可选+主题+schema+ABI）。 */
   planDigest: string;
@@ -124,8 +127,9 @@ export interface DeploymentPlan {
   /** 目标内核版本与镜像/产物。 */
   kernel: {
     version: string;
-    /** `oci` 载体为镜像 digest；`artifact` 载体为 tarball 的裸 sha256。 */
+    /** 裸 64 位 hex：`oci` 为镜像 digest 的 hex 部分，`artifact` 为 tarball 的 sha256。 */
     digest: string;
+    /** 目标 schema 版本（迁移目录名）。 */
     migration: string;
     /** 升级载体（ADR-0025）；缺省 `oci`，与既有计划兼容。 */
     carrier?: 'oci' | 'artifact';
@@ -133,6 +137,13 @@ export interface DeploymentPlan {
     url?: string;
     /** 产物包字节数（仅 `artifact` 载体）。 */
     size?: number;
+    /** 迁移产物包（仅 `artifact` 载体）：停服后由 runner 下载并执行。 */
+    migrationArtifact?: {
+      url: string;
+      sha256: string;
+      size: number;
+      nodeMajor: number;
+    };
   };
   /** 计划的组件版本（builtin / 可选插件 / 主题）。 */
   packages: PlannedPackage[];

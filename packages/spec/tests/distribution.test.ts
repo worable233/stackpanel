@@ -760,7 +760,7 @@ describe('kernel self-upgrade resolution (§13-4)', () => {
     expect(plan.ok).toBe(true);
     if (plan.ok) {
       expect(plan.target.version).toBe('0.4.0');
-      expect(plan.digest).toContain(sha('c')); // arm64 image
+      expect(plan.digest).toBe(sha('c')); // arm64 image
     }
   });
 
@@ -902,8 +902,19 @@ describe('kernel self-upgrade resolution (§13-4)', () => {
     expect(plan.ok).toBe(true);
     if (plan.ok) {
       expect(plan.carrier).toBe('oci');
-      expect(plan.digest).toContain('@sha256:');
+      // 契约层直接产出裸 hex：完整 `repo@sha256:…` 引用不得进入任务或适配器。
+      expect(plan.digest).toBe(sha('b'));
     }
+  });
+
+  it('never leaks a repository reference into the OCI digest', () => {
+    const plan = resolveKernelUpgrade({
+      currentVersion: '0.2.0',
+      channel: 'stable',
+      candidates: [kernelManifest('0.3.0')],
+    });
+    expect(plan.ok).toBe(true);
+    if (plan.ok) expect(plan.digest).not.toContain('@');
   });
 
   it('blocks the artifact carrier when the platform pack is missing', () => {

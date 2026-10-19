@@ -12,7 +12,12 @@
  * 本模块为纯函数，可在内核、updater 与测试中复用。
  */
 
-import { type KernelManifest, type PackageManifest, type FrontendMode } from './manifest.js';
+import {
+  digestHex,
+  type KernelManifest,
+  type PackageManifest,
+  type FrontendMode,
+} from './manifest.js';
 import { parseSemver, compareSemver, maxSatisfying, satisfiesRange } from './semver.js';
 import type { PlannedPackage, PlanDigestInput } from './update-protocol.js';
 
@@ -390,7 +395,7 @@ export type KernelUpgradePlan =
       ok: true;
       target: KernelManifest;
       path: KernelManifest[];
-      /** 升级目标引用：`oci` 载体为镜像 digest，`artifact` 载体为 tarball 的裸 sha256。 */
+      /** 升级目标摘要：两种载体统一为**裸 64 位 hex**（oci 为镜像 digest 的 hex 部分）。 */
       digest: string;
       /** 载体类型；缺省 `oci`，保持既有调用方语义不变。 */
       carrier: 'oci' | 'artifact';
@@ -398,6 +403,8 @@ export type KernelUpgradePlan =
       url?: string;
       /** 产物包字节数（仅 `artifact` 载体）。 */
       size?: number;
+      /** 迁移产物包（仅 `artifact` 载体）；runner 停服后据此执行迁移。 */
+      migrationArtifact?: { url: string; sha256: string; size: number; nodeMajor: number };
     }
   | { ok: false; blocks: BlockReasonLike[] };
 
@@ -512,6 +519,8 @@ export function resolveKernelUpgrade(input: KernelUpgradeInput): KernelUpgradePl
   const carrier = input.carrier ?? 'oci';
   let digest: string;
   let artifact: { url: string; size: number } | undefined;
+  let migrationArtifact:
+    { url: string; sha256: string; size: number; nodeMajor: number } | undefined;
 
   if (carrier === 'artifact') {
     const artifacts = target.artifacts ?? [];
@@ -548,6 +557,12 @@ export function resolveKernelUpgrade(input: KernelUpgradeInput): KernelUpgradePl
     }
     digest = kernelArtifact.sha256;
     artifact = { url: kernelArtifact.url, size: kernelArtifact.size };
+    migrationArtifact = {
+      url: migrateArtifact.url,
+      sha256: migrateArtifact.sha256,
+      size: migrateArtifact.size,
+      nodeMajor: migrateArtifact.nodeMajor,
+    };
   } else {
     const platform = input.platform ?? target.images[0]?.platform;
     const image = platform
@@ -564,7 +579,21 @@ export function resolveKernelUpgrade(input: KernelUpgradeInput): KernelUpgradePl
         ],
       };
     }
-    digest = image.digest;
+    // 契约要求裸 hex：镜像清单里的完整引用在求解边界收敛，绝不把
+    // `repo@sha256:…` 透给任务或适配器（历史缺陷：`sha256:repo@sha256:…`）。
+    const hex = digestHex(image.digest);
+    if (!hex) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'incompatible_kernel',
+            detail: `目标内核 ${target.version} 的镜像 digest 不是合法 sha256：${image.digest}`,
+          },
+        ],
+      };
+    }
+    digest = hex;
   }
 
   if (target.updateProtocol > UPDATE_PROTOCOL_MAX) {
@@ -590,6 +619,7 @@ export function resolveKernelUpgrade(input: KernelUpgradeInput): KernelUpgradePl
     digest,
     carrier,
     ...(artifact ? { url: artifact.url, size: artifact.size } : {}),
+    ...(migrationArtifact ? { migrationArtifact } : {}),
   };
 }
 

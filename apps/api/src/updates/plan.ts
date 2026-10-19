@@ -19,6 +19,7 @@ import type { PrismaClient } from '@stackpanel/db';
 import {
   UPDATE_PROTOCOL_VERSION,
   buildPlanDigestInput,
+  digestHex,
   resolveDeployment,
   resolveKernelUpgrade,
   updateChannelDir,
@@ -65,6 +66,13 @@ export interface PlanInput {
     url?: string;
     /** 产物包字节数（仅 `artifact` 载体）。 */
     size?: number;
+    /** 迁移产物包（仅 `artifact` 载体）。 */
+    migrationArtifact?: {
+      url: string;
+      sha256: string;
+      size: number;
+      nodeMajor: number;
+    };
   };
   /**
    * 已验签的内核候选清单（§13-4）。提供则用 {@link resolveKernelUpgrade} 求解内核自身
@@ -83,6 +91,15 @@ export interface PlanInput {
   now?: Date;
 }
 
+/**
+ * 收敛目标摘要为裸 hex。调用方可能仍传入 `repo@sha256:…` 或 `sha256:…`；统一在此
+ * 剥离，使 `task.targetDigest` 与 `plan.kernel.digest` 只含 64 位 hex。无法解析时
+ * 原样保留，交给后续契约校验暴露问题，而不是静默改成错误摘要。
+ */
+function normalizeTargetDigest(digest: string): string {
+  return digestHex(digest) ?? digest;
+}
+
 /** 计划摘要（规范化输入 → 稳定哈希）。 */
 export function planDigest(plan: DeploymentPlan): string {
   return createHash('sha256').update(JSON.stringify(plan.planDigestInput)).digest('hex');
@@ -99,7 +116,10 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
   const candidates: CandidateSource[] = catalogCandidateSources(catalog);
 
   // 内核目标：显式 targetKernel 优先；否则若提供内核候选，用 §4 求解器选目标（§13-4）。
-  let targetKernel = input.targetKernel;
+  // 显式目标也必须收敛到裸 hex：历史调用方可能传入 `repo@sha256:…`（P0-1）。
+  let targetKernel = input.targetKernel
+    ? { ...input.targetKernel, digest: normalizeTargetDigest(input.targetKernel.digest) }
+    : undefined;
   if (!targetKernel && input.kernelCandidates && input.kernelCandidates.length > 0) {
     const resolvedKernel = resolveKernelUpgrade({
       currentVersion: kernel.version,
@@ -118,6 +138,9 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
       migration: resolvedKernel.target.databaseMigration,
       carrier: resolvedKernel.carrier,
       ...(resolvedKernel.url ? { url: resolvedKernel.url, size: resolvedKernel.size } : {}),
+      ...(resolvedKernel.migrationArtifact
+        ? { migrationArtifact: resolvedKernel.migrationArtifact }
+        : {}),
     };
   }
 

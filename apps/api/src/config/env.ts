@@ -92,9 +92,12 @@ const envSchema = z.object({
   DISTRIBUTION_CATALOG_CHANNEL: z.enum(['stable', 'beta']).default('stable'),
   DISTRIBUTION_CATALOG_REF: z.string().default('main'),
   DISTRIBUTION_CATALOG_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
-  // 部署目标平台（内核镜像选择用；如 linux/amd64、linux/arm64）。容器内运行，故与
-  // 开发宿主 `process.platform` 解耦；缺省 linux/amd64。
+  // 部署目标平台（内核镜像/产物选择用；如 linux/amd64、linux/arm64）。容器内运行，
+  // 故与开发宿主 `process.platform` 解耦；缺省 linux/amd64。
   DISTRIBUTION_DEPLOY_PLATFORM: z.string().default('linux/amd64'),
+  // 内核升级载体（ADR-0025）。`oci` 用镜像 digest，`artifact` 用自包含产物包。
+  // 缺省 `oci`：既有镜像部署不会因为升级内核而被静默切到产物载体。
+  DISTRIBUTION_UPDATE_CARRIER: z.enum(['oci', 'artifact']).default('oci'),
   // 升级任务通道（§5.1）。API 把声明式任务投递到实例私有卷；updater 认领并回写结果。
   // 生产里指向 updater 状态卷的 `channel` 子目录；本机/PM2 可共用数据目录。
   DISTRIBUTION_UPDATE_CHANNEL_DIR: z.preprocess(emptyToUndefined, z.string().optional()),

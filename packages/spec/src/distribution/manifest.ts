@@ -203,6 +203,30 @@ export interface ContractIssue {
 const ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
+/** 是否为裸 64 位小写 SHA-256（升级计划与任务的唯一摘要形态）。 */
+export function isSha256Hex(value: string): boolean {
+  return SHA256_PATTERN.test(value);
+}
+
+/**
+ * 从历史与外部输入的三种形态中提取**裸 64 位小写 hex**：
+ * - 裸摘要 `9f…`（当前契约形态）
+ * - `sha256:9f…`
+ * - 完整镜像引用 `ghcr.io/owner/app@sha256:9f…`
+ *
+ * 升级任务的 `targetDigest` 只接受裸摘要；解析器在这里统一收敛，避免
+ * `sha256:repo@sha256:…` 这类拼接缺陷再次出现在适配器里。
+ */
+export function digestHex(value: string): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (SHA256_PATTERN.test(trimmed)) return trimmed;
+  const prefixed = /^sha256:([0-9a-f]{64})$/.exec(trimmed);
+  if (prefixed) return prefixed[1] ?? null;
+  const reference = /@sha256:([0-9a-f]{64})$/.exec(trimmed);
+  return reference?.[1] ?? null;
+}
 const FULL_SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -328,11 +352,7 @@ function validateKernelArtifacts(artifacts: unknown): ContractIssue[] {
     requireString(issues, entry.url, `${path}.url`, { pattern: HTTP_URL_PATTERN });
     // 裸摘要：不接受 `sha256:` 前缀，更不接受完整 `repo@sha256:...` 引用。
     requireString(issues, entry.sha256, `${path}.sha256`, { pattern: SHA256_PATTERN });
-    if (
-      typeof entry.size !== 'number' ||
-      !Number.isInteger(entry.size) ||
-      entry.size <= 0
-    ) {
+    if (typeof entry.size !== 'number' || !Number.isInteger(entry.size) || entry.size <= 0) {
       issues.push({ path: `${path}.size`, message: '必须是正整数' });
     }
     if (
