@@ -19,6 +19,7 @@ import type { DeploymentAdapter } from './deployment-adapter.ts';
 import { composeConfigFromEnv } from './compose-config.ts';
 import { ComposeDeploymentAdapter, ComposeSelfUpdateAdapter } from './compose-adapter.ts';
 import { SpawnCommandRunner } from './command.ts';
+import { isEntrypoint } from './entrypoint.ts';
 import { FileDeploymentPointer } from './deployment-pointer.ts';
 import { FileUpdaterStatus } from './status.ts';
 import {
@@ -389,7 +390,7 @@ export function selectSelfUpdateExecutor(
 }
 
 // 仅在作为入口直接运行时启动（测试导入本模块不启动循环）。
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+if (isEntrypoint(process.argv[1])) {
   main().catch((error) => {
     console.error(error);
     process.exit(1);

@@ -50,7 +50,9 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "e2e:install": "playwright install",
-    "probe:v10": "node scripts/probe-zjmf-v10.mjs"
+    "probe:v10": "node scripts/probe-zjmf-v10.mjs",
+    "release:upgrade-runner": "node scripts/release/build-upgrade-runner.mjs",
+    "install:artifact": "bash scripts/install-artifact.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -47,11 +47,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  EXTERNAL_PACKAGES,
-  collectClosure,
-  materializeClosure,
-} from './collect-runtime-deps.mjs';
+import { EXTERNAL_PACKAGES, collectClosure, materializeClosure } from './collect-runtime-deps.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -186,7 +182,13 @@ module.exports = {
       instances: 1,
       autorestart: true,
       max_memory_restart: '512M',
-      env: { NODE_ENV, STACKPANEL_DATA_DIR: DATA_DIR, PORT: '3000' },
+      env: {
+        NODE_ENV,
+        STACKPANEL_DATA_DIR: DATA_DIR,
+        // 端口可被部署环境覆盖；不要在产物里写死，否则反向代理换端口就得改包。
+        PORT: process.env.PORT || '3000',
+        HOSTNAME: process.env.HOSTNAME_BIND || '0.0.0.0',
+      },
       out_file: path.join(LOG_DIR, 'web-out.log'),
       error_file: path.join(LOG_DIR, 'web-error.log'),
       merge_logs: true,
@@ -402,11 +404,9 @@ async function buildKernel(spec, args, platformInfo) {
 
   // 2) Next 不会把 `.next/static` 与 `public/` 放进 standalone，必须显式补。
   const webDir = path.join(staging, 'apps/web');
-  cpSync(
-    path.join(REPO_ROOT, 'apps/web/.next/static'),
-    path.join(webDir, '.next/static'),
-    { recursive: true },
-  );
+  cpSync(path.join(REPO_ROOT, 'apps/web/.next/static'), path.join(webDir, '.next/static'), {
+    recursive: true,
+  });
   const publicDir = path.join(REPO_ROOT, 'apps/web/public');
   if (existsSync(publicDir)) {
     cpSync(publicDir, path.join(webDir, 'public'), { recursive: true });
@@ -422,11 +422,7 @@ async function buildKernel(spec, args, platformInfo) {
   const closure = collectClosure(
     // Single source of truth, shared with apps/api/tsup.config.ts.
     [...EXTERNAL_PACKAGES, '@prisma/adapter-pg'],
-    [
-      path.join(REPO_ROOT, 'apps/api'),
-      path.join(REPO_ROOT, 'packages/db'),
-      REPO_ROOT,
-    ],
+    [path.join(REPO_ROOT, 'apps/api'), path.join(REPO_ROOT, 'packages/db'), REPO_ROOT],
     (name, from) => {
       if (name.startsWith('@types/') || /^@img\/sharp-/.test(name)) return;
       missing.push(`${name} (${from})`);
@@ -461,17 +457,15 @@ async function buildKernel(spec, args, platformInfo) {
   });
   await validateReleaseJson(spec, release);
   writeFileSync(path.join(staging, 'RELEASE.json'), `${JSON.stringify(release, null, 2)}\n`);
-  writeFileSync(
-    path.join(staging, 'ecosystem.config.cjs'),
-    ecosystemConfig({ version }),
-  );
+  writeFileSync(path.join(staging, 'ecosystem.config.cjs'), ecosystemConfig({ version }));
+
+  // 安装根为 `/opt/stackpanel`：`current` 指向 releases/<version>，产物内进程定义
+  // 用到的相对路径都基于此。runner 与 systemd 单元的安装说明随包提供。
+  cpSync(path.join(REPO_ROOT, 'deploy'), path.join(staging, 'deploy'), { recursive: true });
 
   assertRelocatable(staging, 'kernel 产物');
 
-  const outFile = path.join(
-    args.out,
-    `stackpanel-${version}-kernel-${args.platform}.tar.zst`,
-  );
+  const outFile = path.join(args.out, `stackpanel-${version}-kernel-${args.platform}.tar.zst`);
   packTarZst(staging, outFile, { deterministic: args.deterministic !== false });
   const size = dirSizeBytes(staging);
 
@@ -488,10 +482,7 @@ async function buildKernel(spec, args, platformInfo) {
 
 async function buildMigrate(spec, args, platformInfo) {
   const version = args.version;
-  const staging = path.join(
-    args.out,
-    `.staging-migrate-${version}-${args.platform}`,
-  );
+  const staging = path.join(args.out, `.staging-migrate-${version}-${args.platform}`);
   removeDir(staging);
   ensureDir(staging);
 
@@ -580,10 +571,7 @@ process.exit(result.status ?? 1);
 
   assertRelocatable(staging, 'migrate 产物');
 
-  const outFile = path.join(
-    args.out,
-    `stackpanel-${version}-migrate-${args.platform}.tar.zst`,
-  );
+  const outFile = path.join(args.out, `stackpanel-${version}-migrate-${args.platform}.tar.zst`);
   packTarZst(staging, outFile, { deterministic: args.deterministic !== false });
 
   return {
@@ -612,9 +600,7 @@ async function main() {
   args.out = path.resolve(args.out ?? path.join(REPO_ROOT, 'dist-artifacts'));
   ensureDir(args.out);
 
-  const spec = await import(
-    new URL('../../packages/spec/dist/index.js', import.meta.url).href
-  );
+  const spec = await import(new URL('../../packages/spec/dist/index.js', import.meta.url).href);
 
   const results = [await buildKernel(spec, args, platformInfo)];
   if (!args['skip-migrate']) {

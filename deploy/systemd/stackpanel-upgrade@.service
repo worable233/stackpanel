@@ -1,0 +1,24 @@
+[Unit]
+Description=StackPanel kernel artifact upgrade for instance %i
+Documentation=file:///opt/stackpanel/README.md
+After=local-fs.target
+ConditionPathIsDirectory=/var/lib/stackpanel/update
+
+[Service]
+Type=oneshot
+ExecStart=/opt/stackpanel/bin/stackpanel-upgrade --drain
+User=stackpanel
+Group=stackpanel
+# 多实例部署时通过实例名选择通道；单实例请用 stackpanel-upgrade.service。
+Environment=STACKPANEL_ROOT=/opt/stackpanel
+Environment=STACKPANEL_STATE_DIR=/var/lib/stackpanel
+Environment=STACKPANEL_UPDATE_INSTANCE_ID=%i
+Environment=STACKPANEL_PM2_HOME=/home/stackpanel/.pm2
+EnvironmentFile=-/etc/stackpanel/upgrade.env
+TimeoutStartSec=2h
+Restart=no
+# 不设 ProtectHome：runner 必须能读写业务用户的 PM2_HOME（默认 ~/.pm2）。
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/opt/stackpanel /var/lib/stackpanel

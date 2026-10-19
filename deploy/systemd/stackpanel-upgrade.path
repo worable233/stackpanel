@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch StackPanel update channel for kernel artifact upgrades
+Documentation=file:///opt/stackpanel/README.md
+
+[Path]
+# API 提交任务即写到该目录（原子 rename）。path unit 只负责唤醒 oneshot，
+# 不常驻任何进程（ADR-0025 决策 4）。
+PathExistsGlob=/var/lib/stackpanel/update/inbox/stackpanel/*.json
+# 开机重新武装：中断的升级由权威日志续跑，不依赖内存阶段（§5.3）。
+Unit=stackpanel-upgrade.service
+
+[Install]
+WantedBy=paths.target

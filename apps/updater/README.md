@@ -38,6 +38,15 @@
 | `src/recovery-entry.ts`       | 独立恢复入口：固定恢复页 + 独立 bearer 认证的受限动作（重试 / 回退 / 对账），默认只回环（§5.2）                            |
 | `src/recovery-actions.ts`     | 恢复入口动作接线：重试=以新幂等键**重新投递**已归档任务（不绕过执行权）、回退/对账经适配器受限方法，不假报成功（§5.2、§6） |
 | `src/main.ts`                 | 组装轮询循环；绑定配置齐全时用真实适配器，否则用**未配置即拒绝**的默认适配器；写自更新状态、处理交接、挂恢复入口           |
+| `src/artifact/layout.ts`      | 产物载体布局：`/opt/stackpanel/{current,releases,bin}` 与 `/var/lib/stackpanel/{data,logs,backups,update}`（ADR-0025）     |
+| `src/artifact/adapter.ts`     | 产物载体适配器：下载/校验 tar.zst、原子 symlink 切换、PM2 重建、快照、迁移、探针与回滚                                     |
+| `src/artifact/main.ts`        | 宿主 oneshot 入口：`--drain` / `--request` / `--rollback` / `--reconcile` / `--requeue`（systemd path 触发，无常驻进程）   |
+
+两种载体的执行者（ADR-0025）：
+
+- `oci`：本包的 `src/main.ts` + `src/compose-adapter.ts`，运行在独立 updater 容器中。
+- `artifact`：`src/artifact/main.ts` + `src/artifact/adapter.ts`，作为宿主 systemd
+  oneshot 运行；不依赖 Docker。用法与目录见 `docs/ARTIFACT-UPGRADES.md`。
 
 状态机（§5.3）：
 
@@ -53,7 +62,7 @@ queued → resolving → downloading → verified → preflight
 ## 构建与运行
 
 ```bash
-pnpm --filter @stackpanel/updater build      # tsup 产出 dist/main.js（ESM，node22）
+pnpm --filter @stackpanel/updater build      # tsup 产出 dist/main.js 与 dist/artifact/main.js（ESM，node22）
 pnpm --filter @stackpanel/updater typecheck
 pnpm --filter @stackpanel/updater test       # 假适配器：状态推进 / 续跑 / 恢复 / 停手
 ```

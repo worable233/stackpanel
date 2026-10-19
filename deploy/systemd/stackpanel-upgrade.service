@@ -1,0 +1,36 @@
+[Unit]
+Description=StackPanel kernel artifact upgrade (drain update channel)
+Documentation=file:///opt/stackpanel/README.md
+# 升级期间 API/Worker/Web 全停；不要与 Docker 载体的内核升级并行执行。
+After=local-fs.target network-online.target
+Wants=network-online.target
+ConditionPathIsDirectory=/var/lib/stackpanel/update
+
+[Service]
+Type=oneshot
+# runner 位于版本目录之外，不参与内核自身升级（ADR-0025 决策 4）。
+ExecStart=/opt/stackpanel/bin/stackpanel-upgrade --drain
+# PM2 守护进程由业务用户持有：runner 必须以同一用户、同一 PM2_HOME 运行，
+# 否则会拉起第二个空 daemon（ADR-0025 后果·约束）。
+User=stackpanel
+Group=stackpanel
+Environment=STACKPANEL_ROOT=/opt/stackpanel
+Environment=STACKPANEL_STATE_DIR=/var/lib/stackpanel
+Environment=STACKPANEL_UPDATE_INSTANCE_ID=stackpanel
+Environment=STACKPANEL_PM2_HOME=/home/stackpanel/.pm2
+EnvironmentFile=-/etc/stackpanel/upgrade.env
+# /ready 探针最长 180s，加迁移与解包余量。
+TimeoutStartSec=2h
+# 失败必须显式暴露，不能自动无限重试（§6：不假报成功、不反复重启）。
+Restart=no
+# runner 需要写 releases/、切换 current、操作 PM2；只给必要的宿主权限。
+# 不设 ProtectHome：PM2 daemon 默认状态目录是业务用户的 ~/.pm2，runner 必须能读写，
+# 否则会另起一个空 daemon 或无法与既有进程通信。若要收紧，请把 PM2_HOME 一并
+# 迁到 /var/lib/stackpanel/.pm2，并让业务进程使用同一目录。
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/opt/stackpanel /var/lib/stackpanel
+
+[Install]
+WantedBy=multi-user.target
