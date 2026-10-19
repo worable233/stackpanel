@@ -225,6 +225,9 @@ function makeCtx(
       }),
     } as never,
     auth: {} as never,
+    identity: {} as never,
+    captcha: {} as never,
+    storage: {} as never,
     notifications: {
       create: async (input: Record<string, unknown>) => {
         notifications.push(input);
