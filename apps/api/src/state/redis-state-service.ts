@@ -208,7 +208,8 @@ export class RedisStateService implements StateService {
         ...limits,
       ),
     );
-    return seat > 0 ? { key: candidates[seat - 1]!.key, token } : null;
+    const candidate = candidates[seat - 1];
+    return candidate ? { key: candidate.key, token } : null;
   }
 
   async renewLease(lease: StateLease, ttlMs?: number): Promise<boolean> {
