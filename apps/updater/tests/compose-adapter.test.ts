@@ -124,6 +124,8 @@ describe('ComposeDeploymentAdapter', () => {
         probes.push(url);
         return true;
       },
+      // 默认不发起真实请求：`http://api:3001` 在测试环境不可解析。
+      jsonProbe: async () => null,
       now: () => new Date('2026-10-17T00:00:00Z'),
     });
     return { adapter, calls, probes };
@@ -232,10 +234,62 @@ describe('ComposeDeploymentAdapter', () => {
       runner,
       stateDir: root,
       probe: async () => false,
+      jsonProbe: async () => null,
     });
     await expect(
       adapter.verify({ task: task(), targetDigest: DIGEST, planDigest: 'p', workDir: root }),
     ).rejects.toThrow(/readiness/);
+  });
+
+  it('fails verify when the running kernel still reports the old version', async () => {
+    // `up -d --wait` 只保证容器健康：tag 可复用、compose 也可能复用同名容器。
+    const { runner } = fakeRunner();
+    const adapter = new ComposeDeploymentAdapter({
+      config: config(),
+      runner,
+      stateDir: root,
+      probe: async () => true,
+      jsonProbe: async () => ({ status: 200, body: { status: 'ok', version: '0.2.0' } }),
+    });
+    await expect(
+      adapter.verify({ task: task(), targetDigest: DIGEST, planDigest: 'p', workDir: root }),
+    ).rejects.toThrow(/内核版本仍是 0\.2\.0/);
+  });
+
+  it('accepts verify when the health probe reports the target version', async () => {
+    const { runner } = fakeRunner();
+    const adapter = new ComposeDeploymentAdapter({
+      config: config(),
+      runner,
+      stateDir: root,
+      probe: async () => true,
+      jsonProbe: async () => ({ status: 200, body: { status: 'ok', version: '0.3.0' } }),
+    });
+    const result = await adapter.verify({
+      task: task(),
+      targetDigest: DIGEST,
+      planDigest: 'p',
+      workDir: root,
+    });
+    expect(result.credential).toBe('verify:probes-ok');
+  });
+
+  it('does not fail verify when the health endpoint returns no parseable JSON', async () => {
+    const { runner } = fakeRunner();
+    const adapter = new ComposeDeploymentAdapter({
+      config: config(),
+      runner,
+      stateDir: root,
+      probe: async () => true,
+      jsonProbe: async () => ({ status: 200, body: 'ok' }),
+    });
+    const result = await adapter.verify({
+      task: task(),
+      targetDigest: DIGEST,
+      planDigest: 'p',
+      workDir: root,
+    });
+    expect(result.credential).toBe('verify:probes-ok');
   });
 
   it('commits by advancing the pointer only after probes pass', async () => {

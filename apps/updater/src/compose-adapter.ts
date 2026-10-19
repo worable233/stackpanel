@@ -23,6 +23,12 @@ import type { SelfUpdateAdapter } from './self-update-executor.ts';
 /** HTTP 探针（可注入，测试不发起真实请求）。返回 true = 通过。 */
 export type Probe = (url: string, timeoutMs?: number) => Promise<boolean>;
 
+/** 读取探针端点的 JSON 体（用于确认跑起来的确实是目标版本）。 */
+export type JsonProbe = (
+  url: string,
+  timeoutMs?: number,
+) => Promise<{ status: number; body: unknown } | null>;
+
 export interface ComposeAdapterOptions {
   config: ComposeProjectConfig;
   runner: CommandRunner;
@@ -33,6 +39,8 @@ export interface ComposeAdapterOptions {
   snapshots?: FileSnapshotStore;
   /** 探针实现；缺省走全局 fetch。 */
   probe?: Probe;
+  /** 读取 `/health` JSON 体；缺省走全局 fetch。 */
+  jsonProbe?: JsonProbe;
   /** 时钟（测试）。 */
   now?: () => Date;
 }
@@ -56,6 +64,7 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
   private readonly pointer: FileDeploymentPointer;
   private readonly snapshots: FileSnapshotStore;
   private readonly probe: Probe;
+  private readonly jsonProbe: JsonProbe;
   private readonly now: () => Date;
 
   constructor(options: ComposeAdapterOptions) {
@@ -65,6 +74,7 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
     this.pointer = options.pointer ?? FileDeploymentPointer.resolve(options.stateDir);
     this.snapshots = options.snapshots ?? FileSnapshotStore.resolve(options.stateDir);
     this.probe = options.probe ?? defaultProbe;
+    this.jsonProbe = options.jsonProbe ?? defaultJsonProbe;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -257,7 +267,7 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
   }
 
   // —— §5.4-7 维护态探针 ——
-  async verify(_ctx: StepContext): Promise<{ credential: string }> {
+  async verify(ctx: StepContext): Promise<{ credential: string }> {
     const { probes } = this.config;
     const readiness = await this.probe(probes.readinessUrl, DEFAULT_PROBE_TIMEOUT_MS);
     if (!readiness) {
@@ -275,7 +285,29 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
         throw new DeploymentAdapterError(`登录/权限探针未通过：${probes.loginProbeUrl}`, 'verify');
       }
     }
+    // `up -d --wait` 只保证容器健康，不保证拉到的是目标镜像：镜像 tag 可复用、
+    // 也可能被 compose 缓存在同名容器上。ADR-0025 决策 9 要求确认运行版本。
+    const mismatch = await this.versionMismatch(ctx);
+    if (mismatch) {
+      throw new DeploymentAdapterError(`升级后探针未通过：${mismatch}`, 'verify');
+    }
     return { credential: 'verify:probes-ok' };
+  }
+
+  /**
+   * 比对 `/health` 汇报的版本与计划版本。返回 null 表示一致或无法判定——
+   * 探针端点不返回可解析 JSON 时不判失败，避免绑死自定义部署。
+   */
+  private async versionMismatch(ctx: StepContext): Promise<string | null> {
+    const url = this.config.probes.readinessUrl;
+    const health = await this.jsonProbe(url, DEFAULT_PROBE_TIMEOUT_MS).catch(() => null);
+    if (!health || typeof health.body !== 'object' || health.body === null) return null;
+    const actual = (health.body as Record<string, unknown>)['version'];
+    const expected = ctx.task.plan.kernel.version;
+    if (typeof actual === 'string' && actual !== expected) {
+      return `运行中的内核版本仍是 ${actual}，期望 ${expected}`;
+    }
+    return null;
   }
 
   // —— §5.4-8 提交 ——
@@ -460,6 +492,27 @@ const defaultProbe: Probe = async (url, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS) =>
     return res.ok;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/**
+ * 读取探针端点的 JSON 体。非 2xx、非 JSON 或网络失败一律返回 null，
+ * 由调用方按「无法判定」处理。
+ */
+const defaultJsonProbe: JsonProbe = async (url, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    return { status: res.status, body: JSON.parse(await res.text()) as unknown };
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }
