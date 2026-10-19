@@ -643,6 +643,18 @@ async function main() {
 
   const spec = await import(new URL('../../packages/spec/dist/index.js', import.meta.url).href);
 
+  // 产物的 `/health` 汇报的是编译进包的 `KERNEL_VERSION`，不是 tar 文件名。若两者
+  // 不一致，产物会自称 0.3.0、运行时报 0.2.0，runner 的版本校验与更新中心都会误判。
+  // 产品版本唯一来源是各 package.json 的 version（spec 测试已钉死），这里只是把
+  // 同一规则延伸到打包边界。
+  if (args.version !== spec.KERNEL_VERSION) {
+    throw new Error(
+      `--version ${args.version} 与内核产品版本 ${spec.KERNEL_VERSION} 不一致；` +
+        '请先按发版流程统一提升 root/apps/packages 的 package.json 与 ' +
+        'packages/spec/src/version.ts（KERNEL_VERSION），再打包。',
+    );
+  }
+
   // 失败（例如平台校验不通过）也要清掉 staging，避免在发布目录里留下几 GB 的半成品。
   const cleanupStaging = () => {
     for (const name of readdirSync(args.out)) {

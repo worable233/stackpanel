@@ -492,4 +492,71 @@ describe('artifact adapter', () => {
     expect(result.recovered).toBe(false);
     expect(calls.some((call) => call.file === 'pg_restore')).toBe(false);
   });
+
+  it('refuses to commit when the running kernel still reports the old version', async () => {
+    // 端口通了不等于新版本起来了：PM2 `start` 可能读到旧 cwd。ADR-0025 决策 9
+    // 要求确认运行中的版本，这里是该要求的最小回归。
+    const { runner } = fakeTarRunner({});
+    const adapter = new ArtifactDeploymentAdapter({
+      layout,
+      runner,
+      probe: async () => true,
+      jsonProbe: async () => ({ status: 200, body: { status: 'ok', version: '0.2.0' } }),
+      databaseBackup: false,
+      verifyTimeoutMs: 20,
+      verifyPollMs: 5,
+      assertUrl: () => undefined,
+    });
+    await expect(
+      adapter.verify({
+        task: localTask(),
+        targetDigest: '',
+        planDigest: 'p',
+        workDir: layout.workDir,
+      }),
+    ).rejects.toThrow(/内核版本仍是 0\.2\.0/);
+  });
+
+  it('accepts verify when the health probe reports the target version', async () => {
+    const { runner } = fakeTarRunner({});
+    const adapter = new ArtifactDeploymentAdapter({
+      layout,
+      runner,
+      probe: async () => true,
+      jsonProbe: async () => ({ status: 200, body: { status: 'ok', version: VERSION } }),
+      databaseBackup: false,
+      verifyTimeoutMs: 50,
+      verifyPollMs: 5,
+      assertUrl: () => undefined,
+    });
+    const result = await adapter.verify({
+      task: localTask(),
+      targetDigest: '',
+      planDigest: 'p',
+      workDir: layout.workDir,
+    });
+    expect(result.credential).toContain('probes-ok');
+  });
+
+  it('does not fail verify when the endpoint returns no parseable JSON', async () => {
+    // 自定义部署可能只返回 200 空体：此时端口可达已是能得到的最强信号。
+    const { runner } = fakeTarRunner({});
+    const adapter = new ArtifactDeploymentAdapter({
+      layout,
+      runner,
+      probe: async () => true,
+      jsonProbe: async () => null,
+      databaseBackup: false,
+      verifyTimeoutMs: 50,
+      verifyPollMs: 5,
+      assertUrl: () => undefined,
+    });
+    const result = await adapter.verify({
+      task: localTask(),
+      targetDigest: '',
+      planDigest: 'p',
+      workDir: layout.workDir,
+    });
+    expect(result.credential).toContain('probes-ok');
+  });
 });

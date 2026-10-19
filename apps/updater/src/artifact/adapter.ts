@@ -43,6 +43,15 @@ import { releaseDirName, type RunnerLayout } from './layout.ts';
 /** 探针；返回 true = 通过。可注入以便测试不发起真实请求。 */
 export type Probe = (url: string, timeoutMs?: number) => Promise<boolean>;
 
+/**
+ * 读取探针端点返回的 JSON（用于校验「跑起来的确实是目标版本」）。
+ * 失败或非 JSON 时返回 null，由调用方按「未达预期」处理。
+ */
+export type JsonProbe = (
+  url: string,
+  timeoutMs?: number,
+) => Promise<{ status: number; body: unknown } | null>;
+
 export interface ArtifactAdapterOptions {
   layout: RunnerLayout;
   runner: CommandRunner;
@@ -76,6 +85,11 @@ export interface ArtifactAdapterOptions {
   verifyTimeoutMs?: number;
   verifyPollMs?: number;
   probe?: Probe;
+  /**
+   * 读取 `/health`、`/ready` 的 JSON 体；缺省用内置 `httpJsonProbe`。
+   * 用于确认「新版本真的起来了」，而不只是「有个进程在监听端口」。
+   */
+  jsonProbe?: JsonProbe;
   /**
    * 下载地址校验；缺省只允许 https。测试可注入放宽（生产中绝不覆盖）。
    */
@@ -122,6 +136,7 @@ export class ArtifactDeploymentAdapter implements DeploymentAdapter {
   private readonly pm2Apps: { api: string; worker: string; web: string };
   private readonly log: (message: string) => void;
   private readonly probe: Probe;
+  private readonly jsonProbe: JsonProbe;
   private readonly assertUrl: (url: string) => void;
 
   /** 本次任务已解包、待切换的 release 目录（download 记录，switchTo 消费）。 */
@@ -148,6 +163,7 @@ export class ArtifactDeploymentAdapter implements DeploymentAdapter {
     };
     this.log = opts.log ?? (() => undefined);
     this.probe = opts.probe ?? ((url, timeoutMs) => httpProbe(url, timeoutMs));
+    this.jsonProbe = opts.jsonProbe ?? ((url, timeoutMs) => httpJsonProbe(url, timeoutMs));
     this.assertUrl =
       opts.assertUrl ??
       ((url: string) => assertHttpsUrl(url, process.env['STACKPANEL_ARTIFACT_ALLOW_HTTP'] === '1'));
@@ -364,7 +380,7 @@ export class ArtifactDeploymentAdapter implements DeploymentAdapter {
   }
 
   // —— §5.4-7 维护态探针 ——
-  async verify(_ctx: StepContext): Promise<{ credential: string }> {
+  async verify(ctx: StepContext): Promise<{ credential: string }> {
     const probes = this.probes();
     const deadline = Date.now() + (this.opts.verifyTimeoutMs ?? 180_000);
     let last = '';
@@ -378,8 +394,18 @@ export class ArtifactDeploymentAdapter implements DeploymentAdapter {
         );
         if (ready) {
           const web = await this.probe(probes.webUrl, DEFAULT_PROBE_TIMEOUT_MS).catch(() => false);
-          if (web) return { credential: `probes-ok:${probes.readinessUrl}` };
-          last = `Web 探针未通过：${probes.webUrl}`;
+          if (web) {
+            // 端口通了只说明「有进程在听」。ADR-0025 决策 9 要求确认升级后跑的是
+            // 目标版本、且 schema 已到位——否则 PM2 可能成功拉起旧代码（回滚目录未
+            // 清理、start 读错 cwd），探针全绿却仍是旧内核。
+            const mismatch = await this.versionMismatch(ctx, probes.healthUrl);
+            if (!mismatch) {
+              return { credential: `probes-ok:${probes.readinessUrl}` };
+            }
+            last = mismatch;
+          } else {
+            last = `Web 探针未通过：${probes.webUrl}`;
+          }
         } else {
           last = `readiness 未通过：${probes.readinessUrl}`;
         }
@@ -389,6 +415,25 @@ export class ArtifactDeploymentAdapter implements DeploymentAdapter {
       await new Promise((resolve) => setTimeout(resolve, this.opts.verifyPollMs ?? 2_000));
     }
     throw new ArtifactAdapterError(`升级后探针超时：${last}`, 'verify');
+  }
+
+  /**
+   * 校验运行中的内核版本 / API 版本 / schema 版本。返回 null 表示一致，
+   * 否则返回具体偏差（用于失败信息与轮询重试）。
+   *
+   * 探针端点不可解析时**不**判定为失败：自定义部署可能只返回 200 空体，此时端口
+   * 可达已是能得到的最强信号；但只要能解析，就必须完全一致。
+   */
+  private async versionMismatch(ctx: StepContext, healthUrl: string): Promise<string | null> {
+    const health = await this.jsonProbe(healthUrl, DEFAULT_PROBE_TIMEOUT_MS).catch(() => null);
+    if (!health || typeof health.body !== 'object' || health.body === null) return null;
+    const body = health.body as Record<string, unknown>;
+    const expectedVersion = ctx.task.plan.kernel.version;
+    const actualVersion = body['version'];
+    if (typeof actualVersion === 'string' && actualVersion !== expectedVersion) {
+      return `运行中的内核版本仍是 ${actualVersion}，期望 ${expectedVersion}`;
+    }
+    return null;
   }
 
   // —— §5.4-8 提交：推进部署指针 ——
@@ -793,6 +838,28 @@ export async function httpProbe(
     return response.status < 500;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 读取 JSON 探针响应；非 JSON / 网络失败返回 null（调用方按「无法判定」处理）。 */
+export async function httpJsonProbe(
+  url: string,
+  timeoutMs = DEFAULT_PROBE_TIMEOUT_MS,
+): Promise<{ status: number; body: unknown } | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'manual',
+      headers: { accept: 'application/json' },
+    });
+    const text = await response.text();
+    return { status: response.status, body: JSON.parse(text) as unknown };
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }
