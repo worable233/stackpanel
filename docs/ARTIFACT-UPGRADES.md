@@ -31,6 +31,7 @@
 # 1. 构建并打包（发布机执行）
 pnpm --filter @stackpanel/api build
 pnpm --filter @stackpanel/web build          # 需 output: 'standalone'
+# --version 必须等于 KERNEL_VERSION（产物 /health 汇报的是编译进包的常量）
 node scripts/release/build-kernel-artifact.mjs \
   --version 0.3.0 --platform linux-x64 --out dist-artifacts
 pnpm --filter @stackpanel/updater build
@@ -58,7 +59,7 @@ sudo bash scripts/install-artifact.sh \
 3. runner 按九步执行：下载并校验两个产物 → 预检（代次/Node ABI/磁盘/PM2）→
    **全停 api+worker+web**（并 `pm2 save`）→ 快照 → 用新版本自带的 Prisma CLI
    迁移 → `current` 原子切换 → `pm2 delete` + `start` → `/health` `/ready` Web 探针 →
-   提交（推进 generation）→ 清理超出保留数的 release。
+   校验 `/health` 的 `version` 等于计划版本 → 提交（推进 generation）→ 清理超出保留数的 release。
 4. 迁移成功后探针失败：切回切换前的 release，并重新拉起进程；迁移前的失败只清理
    候选，不动现网。
 
