@@ -6,6 +6,14 @@ process.env.SETTINGS_ENCRYPTION_KEY ??= 'test_settings_key_at_least_32_chars_012
 process.env.API_HOST ??= '127.0.0.1';
 process.env.API_PORT ??= '3001';
 process.env.API_LOG_LEVEL ??= 'silent';
+process.env.AGENT_PUBLIC_ORIGIN ??= 'https://api.stackpanel.test';
+process.env.AGENT_WEB_ORIGIN ??= 'https://web.stackpanel.test';
+// Auth integration tests exercise both verified and unverified registration.
+// Keep the process-wide parsed config aligned with the verification suite.
+process.env.AUTH_EMAIL_VERIFICATION ??= 'required';
+process.env.AUTH_CAPTCHA_MODE ??= 'off';
+process.env.AUTH_CODE_SEND_PER_HOUR ??= '0';
+process.env.AUTH_CODE_SEND_PER_HOUR_PER_IP ??= '0';
 // Integration tests log in repeatedly from the same loopback IP; the login
 // plugin's default 5/min would trip them. Tests disable the limiter.
 process.env.LOGIN_RATE_LIMIT_MAX ??= '0';

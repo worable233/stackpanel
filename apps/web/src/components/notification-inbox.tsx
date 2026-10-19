@@ -143,6 +143,7 @@ export function NotificationInbox({ title, description }: { title: string; descr
     <div ref={visibleRows} className="space-y-6">
       <PageHeader
         title={title}
+        description={description}
         actions={
           <>
             <div className="flex items-center gap-1 rounded-lg bg-muted p-1">

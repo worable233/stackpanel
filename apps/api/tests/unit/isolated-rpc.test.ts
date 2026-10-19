@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadIsolatedPluginDefinition, stopIsolatedPlugin } from '../../src/plugins/isolated/host.ts';
-import type { PluginManifest, RawHttpReply, RawHttpRequest } from '@stackpanel/sdk';
+import type { LlmProvider, PluginContext, PluginManifest, RawHttpReply, RawHttpRequest } from '@stackpanel/sdk';
 
 type Message = {
   protocol: 1;
@@ -690,10 +690,10 @@ describe('isolated worker RPC protocol', () => {
 it('invokes an isolated model provider with unwrapped results and propagates cancellation',async()=>{
   const id=`agent-provider-${randomUUID()}`;
   const plugin=await loadIsolatedPluginDefinition(id,fileURLToPath(new URL('../fixtures/agent-provider-rpc-plugin.mjs',import.meta.url)),{id,name:'Agent fixture',version:'1.0.0'});
-  let provider: import('@stackpanel/sdk').LlmProvider & {aborted():Promise<boolean>};
+  let provider: LlmProvider & {aborted():Promise<boolean>};
   const context={registerExtension:(_point:string,value:typeof provider)=>{provider=value;return()=>undefined;}};
   try {
-    await plugin.onRegister?.(context as unknown as import('@stackpanel/sdk').PluginContext);
+    await plugin.onRegister?.(context as unknown as PluginContext);
     expect((await provider!.listModels())[0]?.id).toBe('fixture');
     const options={callId:'stable-id',runId:'run-id',actorId:'owner'};
     const answer=await provider!.complete({model:'fixture',messages:[]},options);

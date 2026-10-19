@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { PluginError } from '@stackpanel/sdk';
+import type { AgentRunStatus } from '@stackpanel/sdk';
 import { getPrisma } from '../plugins/prisma.ts';
 import { currentUser } from '../plugins/auth.ts';
 import { decryptSecret, encryptSecret, isSecretsEnabled } from '../lib/crypto.ts';
@@ -7,7 +8,7 @@ import { getJobRuntime } from '../jobs/kernel-jobs.ts';
 import { notifyAgent, retryAgentNotices } from '../notifications/agent-notifications.ts';
 
 const keyFor = (runId: string) => `agent.dispatch.${runId}`;
-const terminal: import('@stackpanel/sdk').AgentRunStatus[] = ['DONE', 'FAILED', 'CANCELLED'];
+const terminal: AgentRunStatus[] = ['DONE', 'FAILED', 'CANCELLED'];
 
 export async function authorizeBackground(request: FastifyRequest, runId: string): Promise<void> {
   const user = currentUser(request);

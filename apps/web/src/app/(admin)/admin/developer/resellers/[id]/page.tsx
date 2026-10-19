@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { getLocale } from '@/i18n/locale';
 import type { Locale } from '@/i18n/config';
 import { createTranslator, formatDate, type Translator } from '@/i18n/core';
@@ -37,7 +37,11 @@ function DeliveryTable({
   t: Translator;
 }) {
   if (deliveries.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">{t('admin.developer.detail.noDeliveries')}</p>;
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        {t('admin.developer.detail.noDeliveries')}
+      </p>
+    );
   }
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -95,7 +99,10 @@ export default async function AdminDeveloperResellerPage({
 
   const fields: Array<{ label: string; value: React.ReactNode }> = data
     ? [
-        { label: t('admin.developer.detail.keyId'), value: <span className="font-mono text-xs">{data.reseller.keyId}</span> },
+        {
+          label: t('admin.developer.detail.keyId'),
+          value: <span className="font-mono text-xs">{data.reseller.keyId}</span>,
+        },
         {
           label: t('admin.developer.detail.hasWebhookKey'),
           value: data.reseller.hasWebhookKey
@@ -169,9 +176,7 @@ export default async function AdminDeveloperResellerPage({
           </Card>
 
           <div className="space-y-3">
-            <SectionTitle>
-              {t('admin.developer.detail.recentDeliveries')}
-            </SectionTitle>
+            <SectionTitle>{t('admin.developer.detail.recentDeliveries')}</SectionTitle>
             <DeliveryTable deliveries={data.deliveries} locale={locale} t={t} />
           </div>
         </>
