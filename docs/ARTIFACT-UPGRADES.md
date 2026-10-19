@@ -28,7 +28,8 @@
 ## 安装
 
 ```bash
-# 1. 构建并打包（发布机执行）
+# 1. 构建并打包（发布机执行；产物必须在目标平台构建）
+pnpm --filter @stackpanel/spec build        # 其余包从这里消费契约与 KERNEL_VERSION
 pnpm --filter @stackpanel/api build
 pnpm --filter @stackpanel/web build          # 需 output: 'standalone'
 # --version 必须等于 KERNEL_VERSION（产物 /health 汇报的是编译进包的常量）
