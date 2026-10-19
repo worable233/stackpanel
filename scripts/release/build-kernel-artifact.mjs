@@ -343,6 +343,45 @@ function assertRelocatable(root, label) {
   }
 }
 
+/**
+ * 原生依赖必须与目标平台一致。
+ *
+ * `collectClosure` 只能按包名过滤平台的 optionalDependencies，但 pnpm 的
+ * `node_modules` 里只有**构建机**装过的那一份 `@img/sharp-libvips-*` 与
+ * `@prisma/engines/schema-engine-*`。在 macOS 上交叉打 `linux-x64` 会得到
+ * 「清单声明 linux、实际是 dylib」的包——在目标机上 `require('sharp')` 直接崩，
+ * 且只有升级到那一刻才暴露。这里在打包前显式失败。
+ */
+function assertNativePlatform(root, platformInfo, label) {
+  const foreign = [];
+  const nativePattern =
+    /(?:^|\/)(?:@img\/sharp(?:-libvips)?-(darwin|linux|linuxmusl|win32|freebsd)-|schema-engine-(darwin|linux|windows)-)/;
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      const match = nativePattern.exec(path.relative(root, full));
+      if (!match) continue;
+      const foreignOs = match[1] ?? match[2];
+      if (foreignOs === platformInfo.os) continue;
+      if (platformInfo.os === 'linux' && foreignOs === 'linuxmusl') continue;
+      foreign.push(path.relative(root, full));
+    }
+  };
+  walk(root);
+  if (foreign.length > 0) {
+    throw new Error(
+      `${label} 含与目标平台 ${platformInfo.contract} 不符的原生依赖：\n  - ` +
+        `${foreign.slice(0, 5).join('\n  - ')}` +
+        (foreign.length > 5 ? `\n  ……共 ${foreign.length} 项` : '') +
+        '\n请在目标平台（或对应容器）内构建产物。',
+    );
+  }
+}
+
 /** 用 zstd 压缩一个目录，返回产物路径。 */
 function packTarZst(sourceDir, outFile, { deterministic }) {
   ensureDir(path.dirname(outFile));
@@ -387,7 +426,7 @@ async function buildKernel(spec, args, platformInfo) {
   }
 
   // staging 目录就是解包后的版本目录。
-  const staging = path.join(args.out, `.staging-${version}-${args.platform}`);
+  const staging = path.join(args.out, `.staging-kernel-${version}-${args.platform}`);
   removeDir(staging);
   ensureDir(staging);
 
@@ -464,6 +503,7 @@ async function buildKernel(spec, args, platformInfo) {
   cpSync(path.join(REPO_ROOT, 'deploy'), path.join(staging, 'deploy'), { recursive: true });
 
   assertRelocatable(staging, 'kernel 产物');
+  assertNativePlatform(staging, platformInfo, 'kernel 产物');
 
   const outFile = path.join(args.out, `stackpanel-${version}-kernel-${args.platform}.tar.zst`);
   packTarZst(staging, outFile, { deterministic: args.deterministic !== false });
@@ -570,6 +610,7 @@ process.exit(result.status ?? 1);
   writeFileSync(path.join(staging, 'RELEASE.json'), `${JSON.stringify(release, null, 2)}\n`);
 
   assertRelocatable(staging, 'migrate 产物');
+  assertNativePlatform(staging, platformInfo, 'migrate 产物');
 
   const outFile = path.join(args.out, `stackpanel-${version}-migrate-${args.platform}.tar.zst`);
   packTarZst(staging, outFile, { deterministic: args.deterministic !== false });
@@ -602,14 +643,20 @@ async function main() {
 
   const spec = await import(new URL('../../packages/spec/dist/index.js', import.meta.url).href);
 
-  const results = [await buildKernel(spec, args, platformInfo)];
-  if (!args['skip-migrate']) {
-    results.push(await buildMigrate(spec, args, platformInfo));
-  }
-
-  // staging 目录不留在产物目录里，避免被误发布。
-  for (const name of readdirSync(args.out)) {
-    if (name.startsWith('.staging-')) removeDir(path.join(args.out, name));
+  // 失败（例如平台校验不通过）也要清掉 staging，避免在发布目录里留下几 GB 的半成品。
+  const cleanupStaging = () => {
+    for (const name of readdirSync(args.out)) {
+      if (name.startsWith('.staging-')) removeDir(path.join(args.out, name));
+    }
+  };
+  let results;
+  try {
+    results = [await buildKernel(spec, args, platformInfo)];
+    if (!args['skip-migrate']) {
+      results.push(await buildMigrate(spec, args, platformInfo));
+    }
+  } finally {
+    cleanupStaging();
   }
 
   const summary = {
