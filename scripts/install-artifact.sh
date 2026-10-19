@@ -131,12 +131,17 @@ fi
 # ---- 5. systemd 单元（path + oneshot，无常驻进程） ---------------------------
 if [[ "$SKIP_SYSTEMD" -eq 0 ]] && command -v systemctl >/dev/null 2>&1; then
   info "安装 systemd 单元…"
+  # systemd 单元随内核产物一起发布：目标机可能没有源码树，因此优先用
+  # `releases/<version>/deploy`，只有本地联调才回退到脚本所在仓库。
+  UNIT_SRC="${RELEASE_DIR}/deploy/systemd"
+  [[ -d "${UNIT_SRC}" ]] || UNIT_SRC="${ROOT_DIR}/deploy/systemd"
+  [[ -d "${UNIT_SRC}" ]] || fail "找不到 systemd 单元（产物内与仓库里都没有 deploy/systemd）"
   install -d -m 0755 /etc/stackpanel
   [[ -f /etc/stackpanel/upgrade.env ]] || install -m 0640 \
-    "${ROOT_DIR}/deploy/systemd/upgrade.env.example" /etc/stackpanel/upgrade.env
-  install -m 0644 "${ROOT_DIR}/deploy/systemd/stackpanel-upgrade.service" /etc/systemd/system/
-  install -m 0644 "${ROOT_DIR}/deploy/systemd/stackpanel-upgrade.path" /etc/systemd/system/
-  install -m 0644 "${ROOT_DIR}/deploy/systemd/stackpanel-upgrade@.service" /etc/systemd/system/
+    "${UNIT_SRC}/upgrade.env.example" /etc/stackpanel/upgrade.env
+  install -m 0644 "${UNIT_SRC}/stackpanel-upgrade.service" /etc/systemd/system/
+  install -m 0644 "${UNIT_SRC}/stackpanel-upgrade.path" /etc/systemd/system/
+  install -m 0644 "${UNIT_SRC}/stackpanel-upgrade@.service" /etc/systemd/system/
   systemctl daemon-reload
   systemctl enable --now stackpanel-upgrade.path
   info "已启用 stackpanel-upgrade.path（监听 ${STATE_DIR}/update/inbox/${INSTANCE_ID}）"

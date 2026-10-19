@@ -47,6 +47,10 @@ sudo bash scripts/install-artifact.sh \
 执行一次迁移，并启用 `stackpanel-upgrade.path`。启用后 systemd 只在
 `inbox/*.json` 出现时拉起 oneshot，无常驻进程。
 
+内核产物内自带 `deploy/systemd/`，因此目标机不需要源码树：安装脚本优先从
+`releases/<version>/deploy/systemd` 取单元文件。`/etc/stackpanel/upgrade.env`
+只在不存在时创建，升级不会覆盖运维配置。
+
 ## 升级流程
 
 1. 更新中心（API）求解计划，把声明式任务写到 `inbox/<instance>/<key>.json`。
