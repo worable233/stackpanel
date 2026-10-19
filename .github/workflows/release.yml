@@ -161,6 +161,8 @@ jobs:
           mkdir -p kernel-out
           # 产物载体（ADR-0025）：自包含 tar.zst 必须在签名前打好，摘要要并入清单。
           # 在 ubuntu runner 上构建，原生依赖天然是 linux-x64。
+          # 先构建契约包：其余包与打包脚本都从 packages/spec/dist 消费类型与版本常量。
+          pnpm --filter @stackpanel/spec build
           pnpm --filter @stackpanel/api build
           pnpm --filter @stackpanel/web build
           pnpm --filter @stackpanel/updater build
@@ -198,7 +200,6 @@ jobs:
             }
           }
           EOF
-          pnpm --filter @stackpanel/spec build
           node scripts/release/build-kernel-manifest.mjs \
             --input kernel.meta.json \
             --key-file kernel-signing.pem \
