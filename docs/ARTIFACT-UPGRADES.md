@@ -107,6 +107,22 @@ DISTRIBUTION_UPDATER_STATUS_FILE=/var/lib/stackpanel/update/status.json
 `DISTRIBUTION_UPDATE_CARRIER` 缺省为 `oci`：既有镜像部署不会因为一次内核升级被
 静默切到产物载体。
 
+## 发布
+
+`release.yml` 在打 tag 时（`v*`）会在 ubuntu runner 上完成闭环：
+
+1. `build-kernel-artifact.mjs --platform linux-x64` 产出 kernel / migrate 两个 tar.zst
+   与 `<version>-linux-x64.artifacts.json`；
+2. `build-upgrade-runner.mjs` 产出 `stackpanel-upgrade.mjs` + 包装脚本与摘要清单；
+3. `build-kernel-manifest.mjs --artifacts …` 把产物摘要并入内核清单后再签名。
+
+清单、两个 tar.zst、runner 与 `.artifacts.json` 都挂在同一个 GitHub Release 上，
+`artifacts[].url` 默认指向 `releases/download/<tag>/<file>`，无需额外配置。
+
+**必须在本机平台构建**：打包前会校验原生依赖（`@img/sharp-*`、Prisma
+`schema-engine-*`）与目标 OS 一致；在 macOS 上打 `linux-x64` 会直接失败，
+而不是产出一个到目标机才崩的包。
+
 ## 已知边界
 
 - 只支持 `linux-x64`（首期）；`sharp`/Prisma 引擎按平台绑定。

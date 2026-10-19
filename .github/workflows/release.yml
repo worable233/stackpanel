@@ -159,6 +159,17 @@ jobs:
             exit 1
           fi
           mkdir -p kernel-out
+          # 产物载体（ADR-0025）：自包含 tar.zst 必须在签名前打好，摘要要并入清单。
+          # 在 ubuntu runner 上构建，原生依赖天然是 linux-x64。
+          pnpm --filter @stackpanel/api build
+          pnpm --filter @stackpanel/web build
+          pnpm --filter @stackpanel/updater build
+          node scripts/release/build-kernel-artifact.mjs \
+            --version "${GITHUB_REF_NAME#v}" \
+            --platform linux-x64 \
+            --database-migration "${{ vars.KERNEL_DATABASE_MIGRATION }}" \
+            --out kernel-out
+          node scripts/release/build-upgrade-runner.mjs --out kernel-out
           printf '%s' "$SIGNING_KEY" > kernel-signing.pem
           IMAGE_REF="$IMAGE_REPOSITORY@${{ steps.build.outputs.digest }}"
           cat > kernel.meta.json <<EOF
@@ -192,6 +203,7 @@ jobs:
             --input kernel.meta.json \
             --key-file kernel-signing.pem \
             --key-id "$SIGNING_KEY_ID" \
+            --artifacts kernel-out/stackpanel-${GITHUB_REF_NAME#v}-linux-x64.artifacts.json \
             --out kernel-out
           rm -f kernel-signing.pem
 
@@ -204,9 +216,14 @@ jobs:
             kernel-out/kernel-manifest.json
             kernel-out/kernel-manifest.sig
             kernel-out/kernel-ref.json
+            kernel-out/stackpanel-*.tar.zst
+            kernel-out/stackpanel-upgrade*
+            kernel-out/stackpanel-*.artifacts.json
 
       # 把已签名内核清单作为 Release 资产发布（§13-4）。目录只引用该资产的摘要与 keyId。
-      - name: 发布内核清单资产
+      # 产物载体（ADR-0025）：kernel/migrate tar.zst 与 runner 也作为同一 Release 的资产，
+      # 清单里的 `artifacts[].url` 正是指向这些文件。
+      - name: 发布内核清单与产物资产
         if: startsWith(github.ref, 'refs/tags/v') && hashFiles('kernel-out/kernel-manifest.json') != ''
         uses: softprops/action-gh-release@v2
         with:
@@ -214,6 +231,9 @@ jobs:
           files: |
             kernel-out/kernel-manifest.json
             kernel-out/kernel-manifest.sig
+            kernel-out/stackpanel-*.tar.zst
+            kernel-out/stackpanel-upgrade*
+            kernel-out/stackpanel-*.artifacts.json
 
       # 生成 GitHub Release（Release Notes 由提交历史自动汇总）。内核清单资产已在上一步
       # 以相同 tag 发布，会被 GitHub 合并到同一 Release。
