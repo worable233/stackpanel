@@ -215,14 +215,22 @@ const extensions = {
 
 function provideService(name: string, implementation: unknown): () => void {
   const token = `service:${randomUUID()}`;
+  serviceProxies.set(token, implementation as Record<string, unknown>);
   queueRegistration('services.provide', { name, token, ...implementationShape(implementation) });
-  return () => { void callHost('services.unregister', { token }); };
+  return () => {
+    serviceProxies.delete(token);
+    void callHost('services.unregister', { token });
+  };
 }
 
 function registerExtension(pointId: string, implementation: unknown): () => void {
   const token = `extension:${randomUUID()}`;
+  serviceProxies.set(token, implementation as Record<string, unknown>);
   queueRegistration('extensions.register', { pointId, token, ...implementationShape(implementation) });
-  return () => { void callHost('extensions.unregister', { token }); };
+  return () => {
+    serviceProxies.delete(token);
+    void callHost('extensions.unregister', { token });
+  };
 }
 
 const context = {
