@@ -105,6 +105,7 @@ The kernel owns platform capabilities and plugins own business change; Agents, t
 | --- | --- |
 | Deploy, use published images, or verify signatures | [Docker guide](./docker/README.md) |
 | Back up or restore an instance | `bash scripts/backup.sh` and `bash scripts/restore.sh`; see the scripts for archive contents and recovery requirements. |
+| Browse and install official plugins | [StackPanel official plugins](https://github.com/worable233/stackpanel-plugins) |
 | Develop the kernel, a plugin, a theme, or a frontend package | [Developer Wiki](https://github.com/worable233/stackpanel/wiki) |
 | Read the API contract | [`packages/spec`](./packages/spec) is the single source of truth for the kernel API version and OpenAPI projection. |
 | Set up local development and follow code conventions | [Contributing guide](./CONTRIBUTING.md) |
