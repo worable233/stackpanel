@@ -105,6 +105,7 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<dige
 | --- | --- |
 | 部署、使用发布镜像或验证签名 | [Docker 文档](./docker/README.md) |
 | 备份与恢复 | `bash scripts/backup.sh` 与 `bash scripts/restore.sh`；归档内容和恢复要求见脚本说明。 |
+| 浏览与安装官方插件 | [StackPanel 官方插件仓库](https://github.com/worable233/stackpanel-plugins) |
 | 开发内核、插件、主题或前端包 | [开发者 Wiki](https://github.com/worable233/stackpanel/wiki) |
 | 查阅 API 契约 | [`packages/spec`](./packages/spec) 是内核 API 版本与 OpenAPI 投影的单一来源。 |
 | 本地开发与代码规范 | [贡献指南](./CONTRIBUTING.md) |
