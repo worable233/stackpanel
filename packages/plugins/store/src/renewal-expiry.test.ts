@@ -236,6 +236,9 @@ function makeCtx(
     } as never,
     currency: {} as never,
     auth: {} as never,
+    identity: {} as never,
+    captcha: {} as never,
+    storage: {} as never,
     notifications: {
       create: async (input: Record<string, unknown>) => {
         if (notificationsFail) throw new Error('notifications unavailable');

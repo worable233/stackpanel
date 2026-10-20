@@ -47,13 +47,20 @@ describe('host frontend ABI table', () => {
       expect(HOST_FRONTEND_ABI['next/navigation']).toBe(next);
     }
   });
+
+  it('matches the installed lucide-react version (drift guard)', () => {
+    const lucide = installedVersion('lucide-react');
+    if (lucide) {
+      expect(HOST_FRONTEND_ABI['lucide-react']).toBe(lucide);
+    }
+  });
 });
 
 describe('validateFrontendExternals', () => {
   it('accepts a range the host version satisfies', () => {
     expect(validateFrontendExternals({ react: '^19.0.0' })).toEqual([]);
     expect(validateFrontendExternals({ '@stackpanel/ui': '>=0.2 <0.3' })).toEqual([]);
-    expect(validateFrontendExternals({ 'react/jsx-runtime': '19.2.x' })).toEqual([]);
+    expect(validateFrontendExternals({ 'react/jsx-runtime': '19.3.x' })).toEqual([]);
   });
 
   it('rejects a host version outside the declared range (unsatisfied → 409)', () => {

@@ -42,11 +42,11 @@ describe('SpawnCommandRunner', () => {
   });
 
   it('streams stdout to a file (binary safe)', async () => {
-    const runner = new SpawnCommandRunner(['sh']);
+    const runner = new SpawnCommandRunner(['node']);
     const out = path.join(root, 'dump.bin');
     const result = await runner.run({
-      file: 'sh',
-      args: ['-c', "printf '\\x00\\x01\\x02binary'"],
+      file: 'node',
+      args: ['-e', "process.stdout.write(Buffer.from([0, 1, 2, 98, 105, 110, 97, 114, 121]))"],
       stdoutFile: out,
     });
     expect(result.stdout).toBe('');
