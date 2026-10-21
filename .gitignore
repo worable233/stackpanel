@@ -4,6 +4,8 @@ node_modules/
 
 # Next.js / web build output
 .next/
+# Alternate build roots used by local verification runs (e.g. .next-store-verify)
+.next-*/
 out/
 dist/
 build/
