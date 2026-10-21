@@ -66,7 +66,7 @@ export interface MarketStatus {
 
 /** 市场服务依赖（可注入，便于单元测试）。 */
 export interface MarketServiceDeps {
-  runtime: Pick<PluginRuntime, 'has' | 'register' | 'unregister' | 'activate'>;
+  runtime: Pick<PluginRuntime, 'has' | 'isActive' | 'register' | 'unregister' | 'activate'>;
   prisma?: PrismaClient;
   /** 解析已验证的远程目录上下文；未配置目录仓时返回 null（完全离线）。 */
   catalog?: () => Promise<CatalogInstallContext | null>;
@@ -175,18 +175,45 @@ export class MarketService implements MarketServiceContract {
     kind: 'plugin' | 'theme',
     id: string,
   ): Promise<MarketInstallResult> {
+    // `upgraded` 必须在安装**之前**判定：安装会把 DB 行从「无」变成「有」，
+    // 事后再查会把首次安装误报成升级。
+    const upgraded = await this.wasInstalled(kind, id);
     const result = await this.installLocal(kind, id);
     if (kind === 'theme') {
-      return { id: result.id, version: result.version, upgraded: false, source: 'local' };
+      return { id: result.id, version: result.version, upgraded, source: 'local' };
     }
     // 与 ZIP 上传一致：安装后立即 register/activate，无需重启。
     const runtime = this.deps.runtime;
-    const upgraded = runtime.has(id);
-    if (upgraded) await runtime.unregister(id, { retainData: true });
-    const definition = await this.loadDefinition(id);
-    await runtime.register(definition);
-    await runtime.activate(id);
+    const previousDefinition = upgraded ? await this.loadDefinition(id).catch(() => null) : null;
+    const wasActive = upgraded && runtime.isActive(id);
+    let oldUnregistered = false;
+    let newRegistered = false;
+    try {
+      if (upgraded) {
+        await runtime.unregister(id, { retainData: true });
+        oldUnregistered = true;
+      }
+      const definition = await this.loadDefinition(id);
+      await runtime.register(definition);
+      newRegistered = true;
+      await runtime.activate(id);
+    } catch (err) {
+      // 文件已经是新的，但新定义没跑起来：把旧定义装回去，别让路由静默消失。
+      if (newRegistered) await runtime.unregister(id, { retainData: true }).catch(() => undefined);
+      if (oldUnregistered && previousDefinition) {
+        await runtime.register(previousDefinition).catch(() => undefined);
+        if (wasActive) await runtime.activate(id).catch(() => undefined);
+      }
+      throw err;
+    }
     return { id: result.id, version: result.version, upgraded, source: 'local' };
+  }
+
+  /** 该组件是否已安装（插件看运行时，主题看主题表）。 */
+  private async wasInstalled(kind: 'plugin' | 'theme', id: string): Promise<boolean> {
+    if (kind === 'plugin') return this.deps.runtime.has(id);
+    const row = await this.prisma.theme.findUnique({ where: { id }, select: { id: true } });
+    return row !== null;
   }
 
   private async installFromCatalog(
@@ -196,13 +223,23 @@ export class MarketService implements MarketServiceContract {
   ): Promise<MarketInstallResult> {
     const prepared = await prepareCatalogInstall(context, kind, id);
     const manifest = prepared.packageManifest as { id: string; name: string; version: string };
+    const runtime = this.deps.runtime;
+    // 升级前先记下运行中的旧定义与激活状态：装载新定义失败时必须把它装回去，
+    // 否则文件回滚了、进程里却没有这个插件——路由静默消失，比升级失败更难查。
+    const wasRegistered = kind === 'plugin' && runtime.has(id);
+    const previousDefinition = wasRegistered ? await this.loadDefinition(id).catch(() => null) : null;
+    const wasActive = wasRegistered && runtime.isActive(id);
+    let oldUnregistered = false;
+    let newRegistered = false;
     try {
       if (kind === 'plugin') {
-        const runtime = this.deps.runtime;
-        const upgraded = runtime.has(id);
-        if (upgraded) await runtime.unregister(id, { retainData: true });
+        if (wasRegistered) {
+          await runtime.unregister(id, { retainData: true });
+          oldUnregistered = true;
+        }
         const definition = await this.loadDefinition(id);
         await runtime.register(definition);
+        newRegistered = true;
         await runtime.activate(id);
         await this.prisma.plugin.upsert({
           where: { id },
@@ -239,6 +276,12 @@ export class MarketService implements MarketServiceContract {
     } catch (err) {
       // 文件已暂存但运行时/DB 未提交：恢复旧目录，避免半切换（§7.6）。
       await prepared.handle.rollback();
+      // 与 ZIP 上传路径对齐：把旧定义装回去，别留下「文件是旧的、进程里没有它」。
+      if (newRegistered) await runtime.unregister(id, { retainData: true }).catch(() => undefined);
+      if (oldUnregistered && previousDefinition) {
+        await runtime.register(previousDefinition).catch(() => undefined);
+        if (wasActive) await runtime.activate(id).catch(() => undefined);
+      }
       throw err;
     }
   }

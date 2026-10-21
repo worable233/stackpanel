@@ -13,7 +13,7 @@ import semver from 'semver';
 import { FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './frontend.ts';
 import { packageManager, StagingError } from '../packages/manager.ts';
 import { preserveRevisions, pruneRevisions } from './frontend-revisions.ts';
-import { materializeAndPublish } from './frontend-storage.ts';
+import { materializeAndPublish, purgeRevisionStorage } from './frontend-storage.ts';
 import { env } from '../config/env.ts';
 import { SignatureError, verifyPackageSignature } from './signatures.ts';
 import { getPrisma } from '../plugins/prisma.ts';
@@ -547,6 +547,8 @@ export async function writePluginFiles(
 
 export async function removePluginFiles(id: string): Promise<void> {
   await rm(pluginPackageDir(id), { recursive: true, force: true });
+  // 对象存储里的 revision 是独立副本，必须一并清理（best-effort）。
+  await purgeRevisionStorage('plugins', id).catch(() => 0);
 }
 
 /** Locate the packages/plugins root regardless of the process working directory. */

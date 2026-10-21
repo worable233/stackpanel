@@ -42,6 +42,15 @@ export async function runAutoUpdate(input: {
   if (!context) {
     return { submitted: false, reason: 'no-catalog', detail: '未配置远程目录，跳过自动更新' };
   }
+  // 过期目录不得据其发起**自动**安装（PLAN §3.3）：缓存可继续展示、人工可决策，
+  // 但无人值守地按一份已过期的目录升级生产实例不是可接受的行为。
+  if (context.expired) {
+    return {
+      submitted: false,
+      reason: 'catalog-expired',
+      detail: '目录快照已过期，跳过自动更新（需刷新目录或人工确认）',
+    };
+  }
   const policy = await readUpdatePolicy(input.prisma);
   const status = await readUpdaterStatus();
   const kernelCandidates = await loadKernelCandidates(context);

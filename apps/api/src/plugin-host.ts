@@ -182,6 +182,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
   const market = new MarketService({
     runtime: {
       has: (id) => getRuntime().has(id),
+      isActive: (id) => getRuntime().isActive(id),
       register: (definition) => getRuntime().register(definition),
       unregister: (id, opts) => getRuntime().unregister(id, opts),
       activate: (id) => getRuntime().activate(id),

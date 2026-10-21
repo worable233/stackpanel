@@ -7,6 +7,8 @@ import type { MarketPackage } from '@stackpanel/sdk';
 import type { PluginManifestFile } from './plugins.ts';
 import type { CatalogMarketEntry } from './market-catalog.ts';
 import { readFrontendManifest } from './frontend.ts';
+import { preserveRevisions, pruneRevisions } from './frontend-revisions.ts';
+import { materializeAndPublish } from './frontend-storage.ts';
 import { packageManager } from '../packages/manager.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { env } from '../config/env.ts';
@@ -346,6 +348,12 @@ export async function installMarketPlugin(id: string): Promise<{ id: string; ver
     await rm(tmp, { recursive: true, force: true });
     throw err;
   }
+  // 与 ZIP 上传共用同一套前端契约（Contract 04）：把 `frontend/` 物化成不可变
+  // revision 并镜像到对象存储，保留上一版 revision（已打开的标签页仍要取 chunk），
+  // 再裁剪窗口。缺了这步，本地市场装出来的插件只能走未版本化的扁平路径。
+  await materializeAndPublish('plugins', id, handle.target).catch(() => null);
+  await preserveRevisions(handle.backup, handle.target).catch(() => 0);
+  await pruneRevisions(handle.target).catch(() => []);
   // Sync the plugin record so the admin panel sees the new version.
   const prisma = getPrisma();
   try {
@@ -401,11 +409,38 @@ export async function installMarketTheme(id: string): Promise<{ id: string; vers
       await cp(frontendDist, path.join(tmp, 'frontend', 'dist'), { recursive: true });
     }
   }
+  let handle;
   try {
-    await packageManager.swapDirectory('theme', id, tmp);
+    handle = await packageManager.swapDirectory('theme', id, tmp);
   } catch (err) {
     await rm(tmp, { recursive: true, force: true });
     throw err;
   }
+  // 与 ZIP 上传一致的前端契约（Contract 04）：物化 revision、保留上一版、裁剪窗口。
+  await materializeAndPublish('themes', id, handle.target).catch(() => null);
+  await preserveRevisions(handle.backup, handle.target).catch(() => 0);
+  await pruneRevisions(handle.target).catch(() => []);
+  // 与 ZIP 上传（`routes/theme.ts`）保持同一事务语义：文件已切换，但主题表还没
+  // 指向新版本。不同步 DB 会让主题在后台列表里「装好了但看不见」，而且备份目录
+  // 永远等不到 commit——只能等 GC 六小时后回收。
+  const prisma = getPrisma();
+  try {
+    const existing = await prisma.theme.findUnique({ where: { id } });
+    if (existing) {
+      await prisma.theme.update({
+        where: { id },
+        data: { name: source.name, version: source.version },
+      });
+    } else {
+      await prisma.theme.create({
+        data: { id, name: source.name, version: source.version, active: false },
+      });
+    }
+  } catch (err) {
+    // DB 指针未提交：恢复旧目录，避免半切换（§7.6）。
+    await handle.rollback();
+    throw err;
+  }
+  await handle.commit();
   return { id, version: source.version };
 }

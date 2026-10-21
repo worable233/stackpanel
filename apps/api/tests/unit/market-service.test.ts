@@ -37,6 +37,7 @@ interface Harness {
   installed: Array<{ kind: string; id: string }>;
   imported: string[];
   registered: string[];
+  unregistered: string[];
 }
 
 function harness(
@@ -47,11 +48,21 @@ function harness(
     installError?: Error;
     prepared?: boolean;
     localSources?: { enabled: boolean; reason?: string };
+    /** 安装前已存在的插件 id（用于区分「首次安装」与「升级」）。 */
+    installedPlugins?: string[];
+    /** 安装前已存在的主题 id。 */
+    installedThemes?: string[];
+    /** 激活新定义时抛错（模拟升级失败）。 */
+    activateError?: Error;
   } = {},
 ): Harness {
   const installed: Array<{ kind: string; id: string }> = [];
   const imported: string[] = [];
   const registered: string[] = [];
+  const unregistered: string[] = [];
+  const events: string[] = [];
+  const present = new Set(options.installedPlugins ?? []);
+  const themes = new Set(options.installedThemes ?? []);
   const entries = new Map<string, MarketPackage[]>();
   for (const pkg of options.remote ?? []) {
     entries.set(pkg.id, [pkg]);
@@ -59,20 +70,36 @@ function harness(
 
   const service = new MarketService({
     runtime: {
-      has: () => false,
+      has: (id: string) => present.has(id),
+      isActive: (id: string) => present.has(id),
       register: async (definition: PluginDefinition) => {
         registered.push(definition.manifest.id);
+        events.push(`register:${definition.manifest.version}`);
+        present.add(definition.manifest.id);
       },
-      unregister: async () => undefined,
+      unregister: async (id: string) => {
+        unregistered.push(id);
+        events.push(`unregister:${id}`);
+        present.delete(id);
+      },
       activate: async (id: string) => {
+        if (options.activateError) throw options.activateError;
         registered.push(`active:${id}`);
       },
     },
     prisma: {
       plugin: { upsert: async () => ({}) },
-      theme: { findUnique: async () => null, create: async () => ({}), update: async () => ({}) },
+      theme: {
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          themes.has(where.id) ? { id: where.id } : null,
+        create: async ({ data }: { data: { id: string } }) => {
+          themes.add(data.id);
+          return data;
+        },
+        update: async ({ data }: { data: { id?: string } }) => data,
+      },
     } as never,
-    listLocal: async (kind) => (options.local ?? []).filter(() => kind === 'plugin'),
+    listLocal: async () => options.local ?? [],
     installLocal: async (kind, id) => {
       installed.push({ kind, id });
       const source = (options.local ?? []).find((pkg) => pkg.id === id);
@@ -132,7 +159,7 @@ function harness(
       };
     },
   });
-  return { service, installed, imported, registered };
+  return { service, installed, imported, registered, unregistered };
 }
 
 describe('MarketService（内核保留的分发安全原语）', () => {
@@ -204,5 +231,38 @@ describe('MarketService（内核保留的分发安全原语）', () => {
     await expect(h.service.install('plugin', 'analytics')).rejects.toBeInstanceOf(
       CatalogMarketError,
     );
+  });
+
+  it('本地主题安装会写主题表，并把首次安装与升级区分开', async () => {
+    const fresh = harness({ local: [localPackage('solaris')], installedThemes: [] });
+    const created = await fresh.service.install('theme', 'solaris');
+    // 首次安装不能报 upgraded=true——安装前主题表里没有这一行。
+    expect(created).toMatchObject({ id: 'solaris', source: 'local', upgraded: false });
+
+    const again = harness({ local: [localPackage('solaris')], installedThemes: ['solaris'] });
+    const upgraded = await again.service.install('theme', 'solaris');
+    expect(upgraded).toMatchObject({ id: 'solaris', source: 'local', upgraded: true });
+  });
+
+  it('本地插件升级前已存在时 upgraded=true', async () => {
+    const h = harness({
+      local: [localPackage('analytics')],
+      installedPlugins: ['analytics'],
+    });
+    const result = await h.service.install('plugin', 'analytics');
+    expect(result).toMatchObject({ id: 'analytics', source: 'local', upgraded: true });
+    expect(h.unregistered).toEqual(['analytics']);
+  });
+
+  it('本地升级激活失败时把旧定义装回运行时（不留半切换状态）', async () => {
+    const h = harness({
+      local: [localPackage('analytics')],
+      installedPlugins: ['analytics'],
+      activateError: new Error('激活失败'),
+    });
+    await expect(h.service.install('plugin', 'analytics')).rejects.toThrow('激活失败');
+    // 新定义被卸下后旧定义重新注册——与 ZIP 上传路径同语义。
+    expect(h.unregistered).toContain('analytics');
+    expect(h.registered.filter((entry) => entry === 'analytics')).toHaveLength(2);
   });
 });
