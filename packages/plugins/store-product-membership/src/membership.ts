@@ -82,23 +82,26 @@ export async function grantMembership(
   }
   const now = new Date();
   const startsAt = now.toISOString();
-  const expiresIso = expiresAt ? expiresAt.toISOString() : null;
   // 先写内核成员关系（权威授权），再落本插件记录（撤销依据）。
   // 顺序不能反：若先落记录再授权失败，会留下「记录说已授予、实际没授权」的脏数据，
   // 清扫时又找不到可撤销的行。
-  await context().auth.grantUserGroup({
+  const granted = await context().auth.grantUserGroup({
     userId: ctx.userId,
     groupId: config.groupId,
     expiresAt,
   });
+  // 记录以**内核实际生效的到期时间**为准：若用户本来就有该组的永久成员关系
+  // （管理员手工授予），内核不会把它降级，此时记录也应是永久，否则清扫会误发
+  // 「会员已到期」通知，而用户其实仍然有效。
+  const effectiveExpiry = granted.expiresAt ? new Date(granted.expiresAt) : null;
   const spec: MembershipGrantData = {
     userId: ctx.userId,
     groupId: config.groupId,
     productId: ctx.productId,
     orderId: ctx.orderId,
     startsAt,
-    expiresAt: expiresIso,
-    expiresAtMs: expiresAt ? expiresAt.getTime() : null,
+    expiresAt: effectiveExpiry ? effectiveExpiry.toISOString() : null,
+    expiresAtMs: effectiveExpiry ? effectiveExpiry.getTime() : null,
     status: 'ACTIVE',
   };
   const created = await extensions().create<MembershipGrantData>(membershipModel, spec);
@@ -232,14 +235,16 @@ export async function extendMembership(
   });
   const target = grants.find((item) => (orderId ? item.spec.orderId === orderId : true));
   if (!target) return false;
-  await context().auth.grantUserGroup({ userId, groupId, expiresAt: at });
+  const granted = await context().auth.grantUserGroup({ userId, groupId, expiresAt: at });
+  // 与授予一致：以内核实际生效的到期时间为准（用户可能本来就有永久成员）。
+  const effective = granted.expiresAt ? new Date(granted.expiresAt) : null;
   await extensions().update<MembershipGrantData>(
     membershipModel,
     target.name,
     {
       ...target.spec,
-      expiresAt: at.toISOString(),
-      expiresAtMs: at.getTime(),
+      expiresAt: effective ? effective.toISOString() : null,
+      expiresAtMs: effective ? effective.getTime() : null,
     },
     { expectedVersion: target.version },
   );

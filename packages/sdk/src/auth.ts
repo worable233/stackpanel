@@ -240,6 +240,9 @@ export interface AuthService {
   /**
    * 授予权限组成员关系。幂等：已存在时按新 `expiresAt` 覆盖（续费延长即走这里）。
    * 到期时间在过去时拒绝（抛错），避免写入即过期。
+   *
+   * 已存在的**永久**成员（`expiresAt` 为 null，通常由管理员手工授予）不会被一次
+   * 限时授予降级；此时返回的 `expiresAt` 仍是 `null`，调用方不应把它当成失败。
    */
   grantUserGroup(input: GrantUserGroupInput): Promise<UserGroupGrant>;
   /**

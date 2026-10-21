@@ -60,16 +60,20 @@ export class FakeAuth {
       throw new Error('到期时间必须晚于当前时间');
     }
     this.grantCalls.push(input);
-    this.members.set(`${input.userId}:${input.groupId}`, {
+    const key = `${input.userId}:${input.groupId}`;
+    // 与真实内核一致：永久成员不会被一次限时授予降级。
+    const existing = this.members.get(key);
+    const effective = existing?.expiresAt === null ? null : expiresAt;
+    this.members.set(key, {
       userId: input.userId,
       groupId: input.groupId,
-      expiresAt,
+      expiresAt: effective,
     });
     return {
       userId: input.userId,
       groupId: input.groupId,
       groupName: group.name,
-      expiresAt: expiresAt ? expiresAt.toISOString() : null,
+      expiresAt: effective ? effective.toISOString() : null,
       expired: false,
     };
   }

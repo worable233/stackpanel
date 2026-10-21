@@ -111,6 +111,21 @@ describe('会员商品：授予', () => {
     expect(row.spec['expiresAtMs']).toBeNull();
   });
 
+  it('已有永久成员时，限时会员商品的授予记录也记永久（避免误发到期通知）', async () => {
+    // 管理员先手工授予永久成员。
+    await harness.auth.grantUserGroup({ userId: 'user-1', groupId: 'group_vip', expiresAt: null });
+    const expiresAt = new Date(Date.now() + 30 * DAY).toISOString();
+    const result = await harness.productType().provision(provisionContext({ expiresAt }));
+
+    expect(result.status).toBe('ACTIVE');
+    // 内核不会把永久降级（见 test-harness），插件记录必须与内核实际生效值一致。
+    expect(harness.auth.members.get('user-1:group_vip')?.expiresAt).toBeNull();
+    const row = harness.extensions.all()[0]!;
+    expect(row.spec['expiresAt']).toBeNull();
+    expect(row.spec['expiresAtMs']).toBeNull();
+    expect((result.runtime as { membership: { expiresAt: string | null } }).membership.expiresAt).toBeNull();
+  });
+
   it('商品未配置权限组时拒绝开通', async () => {
     const error = await harness
       .productType()
@@ -243,6 +258,43 @@ describe('会员商品：续费', () => {
     expect(harness.auth.members.get('user-1:group_vip')?.expiresAt?.toISOString()).toBe(nextExpiry);
     expect(harness.extensions.all()[0]?.spec['expiresAt']).toBe(nextExpiry);
     expect(harness.extensions.all()[0]?.spec['expiresAtMs']).toBe(new Date(nextExpiry).getTime());
+  });
+
+  it('用户已有永久成员时，续费不把永久权益改成限时', async () => {
+    const firstExpiry = new Date(Date.now() + 30 * DAY).toISOString();
+    await harness.productType().provision(provisionContext({ expiresAt: firstExpiry }));
+    // 管理员接管：把成员关系改成永久。
+    await harness.auth.grantUserGroup({ userId: 'user-1', groupId: 'group_vip', expiresAt: null });
+
+    const provider = harness.fulfillmentProvider() as ProductTypeProvider;
+    const result = await provider.renew?.(
+      {
+        service: {
+          id: 'svc-1',
+          providerId: null,
+          providerServiceId: null,
+          runtime: { membership: { groupId: 'group_vip' } },
+          credentialsRef: null,
+          userId: 'user-1',
+          orderId: 'order-1',
+          productId: 'product-1',
+          productName: 'VIP 年费会员',
+          status: 'ACTIVE',
+        },
+        secrets: {
+          isAvailable: () => true,
+          get: async () => null,
+          set: async () => {},
+          remove: async () => {},
+        },
+      },
+      { newExpiresAt: new Date(Date.now() + 395 * DAY).toISOString(), months: 12 },
+    );
+
+    expect(harness.auth.members.get('user-1:group_vip')?.expiresAt).toBeNull();
+    expect(harness.extensions.all()[0]?.spec['expiresAt']).toBeNull();
+    expect(harness.extensions.all()[0]?.spec['expiresAtMs']).toBeNull();
+    expect((result as { message: string }).message).toContain('永久');
   });
 
   it('没有可续期的权益时抛错，不静默吞掉用户的续费', async () => {

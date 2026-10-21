@@ -115,7 +115,15 @@ const provider: FulfillmentProvider = {
       // 不能静默吞掉——否则用户付了续费钱却没有任何权益。
       throw new MembershipError(409, '未找到可续期的会员权益，请联系客服');
     }
-    return { message: `会员有效期已延长至 ${info.newExpiresAt.slice(0, 10)}` };
+    // 以内核实际生效值为准：用户若本来就有该组的永久成员，续费不会把它变成限时。
+    const live = await context()
+      .auth.listUserGroupGrants(service.service.userId)
+      .then((rows) => rows.find((row) => row.groupId === groupId))
+      .catch(() => undefined);
+    const effective = live?.expiresAt ?? info.newExpiresAt;
+    return {
+      message: live?.expiresAt === null ? '会员权益为永久有效' : `会员有效期已延长至 ${effective.slice(0, 10)}`,
+    };
   },
 
   /**
