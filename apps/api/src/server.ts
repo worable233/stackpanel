@@ -1,4 +1,5 @@
 import { buildApp } from './app.ts';
+import { loadCatalogSourceConfig } from './distribution/source-config.ts';
 import { env } from './config/env.ts';
 import { setupStatus } from './auth/install-claim.ts';
 import { initInfra } from './infra.ts';
@@ -25,6 +26,10 @@ try {
   console.error('[server] 基础设施初始化失败：', err instanceof Error ? err.message : err);
   process.exit(1);
 }
+
+// 分发源配置可能由后台保存（数据库覆盖环境变量）。`buildApp()` 是同步的且会在
+// 注册内核任务时读取配置，所以先预热一次，避免首次启动用错源。
+await loadCatalogSourceConfig();
 
 const app = buildApp({ redis: peekRedis() });
 

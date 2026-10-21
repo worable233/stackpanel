@@ -147,6 +147,9 @@ const envSchema = z.object({
   DISTRIBUTION_CATALOG_CHANNEL: z.enum(['stable', 'beta']).default('stable'),
   DISTRIBUTION_CATALOG_REF: z.string().default('main'),
   DISTRIBUTION_CATALOG_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+  // GitHub 加速/镜像前缀（如 `https://github.chenc.dev`）。只改变传输路径，不改变
+  // 任何校验；请求镜像时不转发 token。后台「应用市场 → 分发源」可覆盖此项。
+  DISTRIBUTION_CATALOG_MIRROR: z.preprocess(emptyToUndefined, z.string().optional()),
   // 目录签名公钥（PEM）。默认远程源一旦启用，实例必须能验证它的目录签名；数据
   // 目录 keyring 是部署后写入的，这里给运维一个「只填公钥」的入口。它只用于
   // `catalog` 用途并绑定到当前目录仓，不会与包签名共用一把 key。

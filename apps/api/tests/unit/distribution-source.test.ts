@@ -10,6 +10,7 @@ import {
   downloadAsset,
   fetchTextConditional,
   MemorySourceCache,
+  normalizeMirror,
   parseRetryAfter,
   type SourceCache,
 } from '../../src/distribution/github-source.ts';
@@ -276,6 +277,93 @@ describe('github source fetch', () => {
         maxBytes: 1024,
       }),
     ).rejects.toThrow(/上限/);
+  });
+
+  it('rewrites GitHub hosts through the mirror and never forwards the token', async () => {
+    const seen: Array<{ url: string; auth: string | null }> = [];
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      seen.push({ url: String(input), auth: new Headers(init?.headers).get('authorization') });
+      return new Response('{"ok":true}', { status: 200 });
+    });
+    const result = await fetchTextConditional(
+      'https://api.github.com/repos/x/y',
+      new MemorySourceCache(),
+      {
+        fetchImpl,
+        token: 'secret',
+        mirror: 'https://github.chenc.dev',
+      },
+    );
+    expect(result.body).toBe('{"ok":true}');
+    expect(seen[0]?.url).toBe('https://github.chenc.dev/https://api.github.com/repos/x/y');
+    expect(seen[0]?.auth).toBeNull();
+  });
+
+  it('leaves non-GitHub hosts untouched by the mirror', async () => {
+    const seen: string[] = [];
+    await downloadAsset('https://objects.githubusercontent.com/asset', {
+      fetchImpl: async (input: Parameters<typeof fetch>[0]) => {
+        seen.push(String(input));
+        return new Response('ok', { status: 200 });
+      },
+      mirror: 'https://github.chenc.dev',
+    });
+    expect(seen[0]).toBe('https://objects.githubusercontent.com/asset');
+  });
+
+  it('keeps the token for direct GitHub requests without a mirror', async () => {
+    const seen: Array<string | null> = [];
+    await fetchTextConditional('https://api.github.com/repos/x/y', new MemorySourceCache(), {
+      fetchImpl: async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        seen.push(new Headers(init?.headers).get('authorization'));
+        return new Response('{}', { status: 200 });
+      },
+      token: 'secret',
+    });
+    expect(seen[0]).toBe('Bearer secret');
+  });
+
+  it('follows mirror redirects to raw.githubusercontent.com', async () => {
+    // github.chenc.dev answers 301 to `/https:/raw...`; the mirror host and
+    // raw.githubusercontent.com are both allowlisted.
+    const seen: string[] = [];
+    const result = await fetchTextConditional(
+      'https://raw.githubusercontent.com/o/r/main/catalog.json',
+      new MemorySourceCache(),
+      {
+        mirror: 'https://github.chenc.dev',
+        fetchImpl: async (input: Parameters<typeof fetch>[0]) => {
+          const url = String(input);
+          seen.push(url);
+          if (
+            url ===
+            'https://github.chenc.dev/https://raw.githubusercontent.com/o/r/main/catalog.json'
+          ) {
+            return new Response(null, {
+              status: 301,
+              headers: { location: '/https:/raw.githubusercontent.com/o/r/main/catalog.json' },
+            });
+          }
+          return new Response('catalog', { status: 200 });
+        },
+      },
+    );
+    expect(result.body).toBe('catalog');
+    expect(seen[1]).toBe(
+      'https://github.chenc.dev/https:/raw.githubusercontent.com/o/r/main/catalog.json',
+    );
+  });
+
+  it('normalizes mirror prefixes and rejects unsafe ones', () => {
+    expect(normalizeMirror(undefined)).toBeUndefined();
+    expect(normalizeMirror('   ')).toBeUndefined();
+    expect(normalizeMirror('https://github.chenc.dev')).toBe('https://github.chenc.dev');
+    expect(normalizeMirror('https://github.chenc.dev/')).toBe('https://github.chenc.dev');
+    expect(normalizeMirror('https://ghfast.top/proxy/')).toBe('https://ghfast.top/proxy');
+    expect(() => normalizeMirror('http://ghfast.top')).toThrow(/HTTPS/);
+    expect(() => normalizeMirror('https://user:pass@ghfast.top')).toThrow(/凭据/);
+    expect(() => normalizeMirror('https://ghfast.top/?x=1')).toThrow(/查询串/);
+    expect(() => normalizeMirror('not a url')).toThrow(/非法/);
   });
 });
 

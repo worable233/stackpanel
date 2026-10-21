@@ -16,6 +16,7 @@
  * retried on another replica.
  */
 import { buildApp } from './app.ts';
+import { loadCatalogSourceConfig } from './distribution/source-config.ts';
 import type { FastifyInstance } from 'fastify';
 import { initInfra } from './infra.ts';
 import { startOutboxConsumption } from './plugins/events.ts';
@@ -38,6 +39,8 @@ async function main(): Promise<void> {
   // Connect Redis (required in production) + object storage, bind the outbox
   // and start the job backend/worker.
   await initInfra();
+  // 与 API 一致：先读生效的分发源配置（后台可覆盖环境变量）。
+  await loadCatalogSourceConfig();
 
   // Build the same guarded HTTP stack without listening on a socket. Agent jobs
   // dispatch with the original credential through inject(), including on a dedicated worker.

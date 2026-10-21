@@ -40,6 +40,7 @@ import { adminSalesRoutes } from './routes/admin/sales.ts';
 import { adminPermissionGroupRoutes } from './routes/admin/permission-groups.ts';
 import { adminPermissionsRoutes } from './routes/admin/permissions.ts';
 import { adminSigningRoutes } from './routes/admin/signing.ts';
+import { adminDistributionRoutes } from './routes/admin/distribution.ts';
 import { adminUpdateRoutes } from './routes/admin/updates.ts';
 import { adminUiRoutes } from './routes/admin/ui.ts';
 import { adminUserRoutes } from './routes/admin/users.ts';
@@ -422,6 +423,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminSecretsRoutes);
   void app.register(adminAgentModelRoutes);
   void app.register(adminSigningRoutes);
+  void app.register(adminDistributionRoutes);
   void app.register(adminPluginRoutes);
   void app.register(adminUiRoutes);
   void app.register(currencyDefinitionRoutes);

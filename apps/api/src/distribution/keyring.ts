@@ -15,6 +15,7 @@ import path from 'node:path';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { KEYRING_FORMAT_VERSION, type Keyring, type TrustedKey } from '@stackpanel/spec';
 import { env } from '../config/env.ts';
+import { currentCatalogSourceConfig } from './source-config.ts';
 
 export const KEYRING_FILE = path.join('trust', 'keyring.json');
 
@@ -99,14 +100,17 @@ export async function loadKeyring(): Promise<Keyring> {
     keys: [],
   };
   const keys = [...stored.keys];
-  if (env.DISTRIBUTION_CATALOG_PUBLIC_KEY && env.DISTRIBUTION_CATALOG_REPOSITORY) {
+  // 目录公钥/仓库都以**生效配置**为准（后台可覆盖环境变量），否则后台改了源却还在
+  // 用环境变量那把 key 绑定的旧仓库，验签会莫名失败。
+  const config = currentCatalogSourceConfig();
+  if (config.publicKey && config.repository) {
     const exists = keys.some((key) => key.keyId === ENV_CATALOG_KEY_ID);
     if (!exists) {
       keys.push({
         keyId: ENV_CATALOG_KEY_ID,
         purpose: 'catalog',
-        publicKeyPem: env.DISTRIBUTION_CATALOG_PUBLIC_KEY,
-        allowedRepositories: [env.DISTRIBUTION_CATALOG_REPOSITORY],
+        publicKeyPem: config.publicKey,
+        allowedRepositories: [config.repository],
       });
     }
   }

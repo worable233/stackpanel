@@ -71,6 +71,7 @@ export async function loadKernelCandidates(
         cache: context.cache,
         keyring: context.keyring,
         ...(context.token ? { token: context.token } : {}),
+        ...(context.mirror ? { mirror: context.mirror } : {}),
         ...(context.fetchImpl ? { fetchImpl: context.fetchImpl } : {}),
       });
       manifests.push(result.manifest);

@@ -125,6 +125,11 @@ export class CatalogRefreshService {
     return this.opts.options.token;
   }
 
+  /** GitHub 加速前缀（可选）。 */
+  get mirror(): string | undefined {
+    return this.opts.options.mirror;
+  }
+
   /**
    * 当前信任根（每次现取，支持轮换）。安装消费端与刷新协调器共用同一信任根，
    * 避免「刷新信任的包 key 与安装校验的 key 不一致」。

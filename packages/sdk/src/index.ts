@@ -268,7 +268,15 @@ export type { CurrencyDefinition, CurrencyErrorCode, CurrencyService } from './c
 export type { StateCandidate, StateLease, StateService } from './state.js';
 export type { CacheReadOptions, CacheService } from './cache.js';
 export type { MediaReferenceService } from './media.js';
-export type { MarketInstallResult, MarketService } from './market.js';
+export type {
+  DistributionRefreshResult,
+  DistributionSourceConfig,
+  DistributionSourceInput,
+  DistributionSourceResponse,
+  MarketInstallResult,
+  MarketService,
+  MarketStatus,
+} from './market.js';
 export type {
   StorageBackendSpec,
   StorageBeginPutInput,

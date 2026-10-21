@@ -6,7 +6,14 @@ import { requireAuth, requireRole } from '../../plugins/auth.ts';
 import { getPrisma } from '../../plugins/prisma.ts';
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
-const reservedKeys = new Set(['platform.info', 'signing.publicKey', 'agent.conversationRetention', 'agent.conversationCleanup']);
+const reservedKeys = new Set([
+  'platform.info',
+  'signing.publicKey',
+  'agent.conversationRetention',
+  'agent.conversationCleanup',
+  'distribution.catalogSource',
+  'distribution.catalogPublicKey',
+]);
 
 const setSettingSchema = z.object({
   value: z.json(),
