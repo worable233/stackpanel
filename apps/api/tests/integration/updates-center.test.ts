@@ -17,6 +17,7 @@ import {
   setCatalogRefreshForTest,
 } from '../../src/distribution/runtime.ts';
 import { setUpdateChannelForTest } from '../../src/updates/runtime.ts';
+import { setUpdaterStateDirForTest } from '../../src/updates/status.ts';
 
 const dbAvailable = await (async () => {
   try {
@@ -97,6 +98,8 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
     stateDir = await mkdtemp(path.join(tmpdir(), 'sp-updates-it-'));
     channelDir = path.join(stateDir, 'channel');
     setUpdateChannelForTest({ channelRoot: channelDir, instanceId: 'sp-it' });
+    // updater 状态卷与通道同卷（compose 里是同一个 `stackpanel-updater-state`）。
+    setUpdaterStateDirForTest(stateDir);
     const { publicKeyPem, privateKey } = keypair();
     const body = JSON.stringify(catalogSnapshot());
     const digest = catalogDigest(new TextEncoder().encode(body));
@@ -157,6 +160,7 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
     await app.close();
     resetCatalogRefreshForTest();
     setUpdateChannelForTest({ channelRoot: null, instanceId: null });
+    setUpdaterStateDirForTest(null);
     await rm(stateDir, { recursive: true, force: true });
   });
 
@@ -251,6 +255,53 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json() as { results: unknown[] };
     expect(Array.isArray(body.results)).toBe(true);
+  });
+
+  it('submits and cancels an updater self-update request', async () => {
+    const digest = 'b'.repeat(64);
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/admin/updates/self-update',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { candidateDigest: `ghcr.io/acme/updater@sha256:${digest}` },
+    });
+    expect(submit.statusCode).toBe(202);
+    expect((submit.json() as { request: { candidateDigest: string } }).request.candidateDigest).toBe(
+      digest,
+    );
+
+    const pending = await app.inject({
+      method: 'GET',
+      url: '/admin/updates/self-update',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(pending.statusCode).toBe(200);
+    expect((pending.json() as { request: { candidateDigest: string } }).request.candidateDigest).toBe(
+      digest,
+    );
+
+    const cancel = await app.inject({
+      method: 'DELETE',
+      url: '/admin/updates/self-update',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(cancel.statusCode).toBe(200);
+    const after = await app.inject({
+      method: 'GET',
+      url: '/admin/updates/self-update',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect((after.json() as { request: unknown }).request).toBeNull();
+  });
+
+  it('rejects a malformed candidate digest', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/updates/self-update',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { candidateDigest: 'latest' },
+    });
+    expect(res.statusCode).toBe(400);
   });
 
   it('rejects non-admin access', async () => {
