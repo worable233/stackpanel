@@ -42,6 +42,8 @@
   "checkout.settlementAmount": "Settlement amount ({currency})",
   "checkout.fxRate": " · rate {rate}",
   "checkout.breakdownItem": "{label}: {value}",
+  "checkout.configurationDetails": "Configuration details",
+  "checkout.summaryProduct": "Product",
   "product.backToCatalog": "Back to catalog",
   "product.cart": "Cart",
   "product.kind": "Service",
