@@ -46,6 +46,7 @@ function harness(
     catalogConfigured?: boolean;
     installError?: Error;
     prepared?: boolean;
+    localSources?: { enabled: boolean; reason?: string };
   } = {},
 ): Harness {
   const installed: Array<{ kind: string; id: string }> = [];
@@ -81,6 +82,8 @@ function harness(
       imported.push(id);
       return { manifest: { id, name: id, version: '1.0.0' } };
     },
+    localSources: () => options.localSources ?? { enabled: true },
+    catalogRefresh: () => null,
     catalog: async () => {
       if (options.catalogConfigured === false) return null;
       if (options.installError) throw options.installError;
@@ -155,6 +158,25 @@ describe('MarketService（内核保留的分发安全原语）', () => {
     });
     const packages = await h.service.list('plugin');
     expect(packages.map((pkg) => pkg.id)).toEqual(['store']);
+  });
+
+  it('来源健康度报告本地来源与目录状态（不发网络请求）', async () => {
+    const h = harness({ catalogConfigured: false });
+    const status = await h.service.status?.();
+    expect(status?.catalog.configured).toBe(false);
+    expect(status?.catalog.available).toBe(false);
+    expect(status?.catalog.repository).toBeNull();
+    expect(status?.localSources).toEqual({ enabled: true });
+  });
+
+  it('容器形态下本地来源被禁用时，健康度给出可执行原因', async () => {
+    const h = harness({
+      catalogConfigured: false,
+      localSources: { enabled: false, reason: '本地市场来源在容器/生产形态下已禁用' },
+    });
+    const status = await h.service.status?.();
+    expect(status?.localSources.enabled).toBe(false);
+    expect(status?.localSources.reason).toMatch(/容器|生产/);
   });
 
   it('本地安装后立即注册并激活插件（无需重启）', async () => {

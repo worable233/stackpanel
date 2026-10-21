@@ -34,4 +34,28 @@ export interface MarketService {
   list(kind: 'plugin' | 'theme'): Promise<MarketPackage[]>;
   /** 安装/升级一个条目；本地来源优先。 */
   install(kind: 'plugin' | 'theme', id: string): Promise<MarketInstallResult>;
+  /** 来源健康度（本地来源是否可用、远程目录状态与失败原因）；不发网络请求。 */
+  status?(): Promise<MarketStatus>;
+}
+
+/** 市场来源健康度。 */
+export interface MarketStatus {
+  localSources: {
+    /** 容器/生产形态下本地来源被禁用，市场只走已签名远程目录。 */
+    enabled: boolean;
+    /** 被禁用时的可执行原因。 */
+    reason?: string;
+  };
+  catalog: {
+    /** 是否配置了远程目录（内核自带默认源，故通常为 true）。 */
+    configured: boolean;
+    repository: string | null;
+    channel: string | null;
+    /** 是否已拿到一份可用快照。 */
+    available: boolean;
+    sequence?: number;
+    expired?: boolean;
+    /** 最近一次刷新失败原因（成功后清空）。 */
+    failure?: { kind: string; message: string; retryAt?: string };
+  };
 }

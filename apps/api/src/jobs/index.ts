@@ -66,9 +66,9 @@ export interface KernelSweepDeps {
   walletHoldSweep: () => Promise<void>;
   /** Retry due external-notification channel deliveries (audit §5). */
   notificationDeliverySweep: () => Promise<void>;
-  /** 目录刷新（PLAN §10）。缺省为无操作：未配置目录仓的实例完全离线。 */
+  /** 目录刷新（PLAN §10）。缺省为无操作：显式关闭目录源的实例完全离线。 */
   catalogRefresh?: () => Promise<void>;
-  /** 自动更新评估（§13-6）。缺省为无操作：未配置目录仓或策略关闭时完全离线。 */
+  /** 自动更新评估（§13-6）。缺省为无操作：目录源关闭或策略关闭时完全离线。 */
   autoUpdate?: () => Promise<void>;
   logger: { warn: (m: string) => void };
 }
@@ -126,8 +126,8 @@ export async function registerKernelSweeps(
     { everyMs: NOTIFICATION_DELIVERY_SWEEP_MS },
     undefined,
   );
-  // §10：目录刷新每 6 小时 + 抖动（抖动在服务内部按 isDue 施加）。未配置目录仓的
-  // 实例不注册处理器也不排期，保持零出网。
+  // §10：目录刷新每 6 小时 + 抖动（抖动在服务内部按 isDue 施加）。目录源被显式
+  // 关闭（`off`）的实例不注册处理器也不排期，保持零出网。
   if (deps.catalogRefresh) {
     jobs.handle(KERNEL_JOBS.catalogRefresh, async () => {
       await deps.catalogRefresh?.();
@@ -139,7 +139,7 @@ export async function registerKernelSweeps(
     );
   }
   // §13-6：目录刷新后评估自动更新。与刷新同频（刷新内部按 isDue 施加抖动与离线短路）；
-  // 未配置目录仓时 deps.autoUpdate 为 undefined，不注册、零出网。
+  // 目录源关闭时 deps.autoUpdate 为 undefined，不注册、零出网。
   if (deps.catalogRefresh && deps.autoUpdate) {
     jobs.handle(KERNEL_JOBS.autoUpdate, async () => {
       await deps.autoUpdate?.();

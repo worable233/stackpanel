@@ -17,5 +17,10 @@
   "page.title": "App market",
   "page.description": "Browse the local and signed remote catalogs, and install or upgrade plugins and themes.",
   "nav.label": "App market",
-  "nav.group": "Platform"
+  "nav.group": "Platform",
+  "source.localDisabled": "Local sources are disabled: {reason}",
+  "source.catalogOffline": "Remote catalog is turned off (fully offline); only local sources are shown.",
+  "source.catalogFailed": "Remote catalog unavailable: {message}",
+  "source.catalogPending": "Waiting for the first refresh of the remote catalog ({repository}).",
+  "source.catalogExpired": "The remote catalog has expired: cached entries are shown, but automatic installs from it are blocked."
 }

@@ -19,6 +19,7 @@ import type {
   PluginDefinition,
 } from '@stackpanel/sdk';
 import type { CatalogInstallContext } from '../distribution/runtime.ts';
+import type { CatalogRefreshService } from '../distribution/refresh-service.ts';
 import type { PluginRuntime } from '../plugins/runtime.ts';
 import {
   catalogMarketPackageView,
@@ -37,7 +38,31 @@ import {
 } from '../lib/market-catalog.ts';
 import { loadPluginDefinition } from '../lib/plugins.ts';
 import { getPrisma } from '../plugins/prisma.ts';
-import { resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import { getCatalogRefresh, resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import {
+  localMarketSourcesAllowed,
+  localSourcesDisabledReason,
+} from '../distribution/runtime-env.ts';
+
+/** 市场来源健康度（供后台展示「为什么没有条目」）。 */
+export interface MarketStatus {
+  localSources: {
+    enabled: boolean;
+    reason?: string;
+  };
+  catalog: {
+    /** 是否配置了远程目录（默认源也算配置）。 */
+    configured: boolean;
+    repository: string | null;
+    channel: string | null;
+    /** 是否已拿到一份可用快照。 */
+    available: boolean;
+    sequence?: number;
+    expired?: boolean;
+    /** 最近一次刷新失败原因（成功后清空）。 */
+    failure?: { kind: string; message: string; retryAt?: string };
+  };
+}
 
 /** 市场服务依赖（可注入，便于单元测试）。 */
 export interface MarketServiceDeps {
@@ -51,6 +76,10 @@ export interface MarketServiceDeps {
   installLocal?: (kind: 'plugin' | 'theme', id: string) => Promise<{ id: string; version: string }>;
   /** 加载已安装插件定义（测试可注入）。 */
   loadDefinition?: (id: string) => Promise<PluginDefinition>;
+  /** 本地来源策略（测试可注入；默认按容器/生产形态判定）。 */
+  localSources?: () => { enabled: boolean; reason?: string };
+  /** 目录刷新协调器（测试可注入；默认读进程单例）。 */
+  catalogRefresh?: () => CatalogRefreshService | null;
 }
 
 const LOCAL_LABEL: Record<'plugin' | 'theme', string> = { plugin: '插件', theme: '主题' };
@@ -70,6 +99,8 @@ export class MarketService implements MarketServiceContract {
     id: string,
   ) => Promise<{ id: string; version: string }>;
   private readonly loadDefinition: (id: string) => Promise<PluginDefinition>;
+  private readonly localSources: () => { enabled: boolean; reason?: string };
+  private readonly catalogRefresh: () => CatalogRefreshService | null;
 
   constructor(private readonly deps: MarketServiceDeps) {
     this.prisma = deps.prisma ?? getPrisma();
@@ -80,6 +111,13 @@ export class MarketService implements MarketServiceContract {
       deps.installLocal ??
       ((kind, id) => (kind === 'plugin' ? installMarketPlugin(id) : installMarketTheme(id)));
     this.loadDefinition = deps.loadDefinition ?? loadPluginDefinition;
+    this.localSources =
+      deps.localSources ??
+      (() =>
+        localMarketSourcesAllowed()
+          ? { enabled: true }
+          : { enabled: false, reason: localSourcesDisabledReason() });
+    this.catalogRefresh = deps.catalogRefresh ?? getCatalogRefresh;
   }
 
   /** 列出某类可安装条目：本地随包来源 + 已签名远程目录（若配置）。 */
@@ -92,6 +130,30 @@ export class MarketService implements MarketServiceContract {
     const entries = await listCatalogMarketEntries(context.catalog, kind as CatalogKind);
     const remote = entries.map((entry) => catalogMarketPackageView(entry, entry.installedVersion));
     return mergeMarket(local, remote);
+  }
+
+  /**
+   * 市场来源健康度：本地来源是否可用、远程目录是否配置/可用，以及失败原因。
+   *
+   * 默认远程源开启后，「目录取不到」和「本地来源被容器策略禁用」都会让市场看起来
+   * 是空的；没有这份诊断，运维只能猜。**不发网络请求**，只读当前状态。
+   */
+  async status(): Promise<MarketStatus> {
+    const local = this.localSources();
+    const service = this.catalogRefresh();
+    const current = service?.current() ?? null;
+    const failure = service?.lastFailureInfo() ?? null;
+    return {
+      localSources: local,
+      catalog: {
+        configured: service !== null,
+        repository: service?.repository ?? null,
+        channel: service?.channel ?? null,
+        available: current !== null,
+        ...(current ? { sequence: current.sequence, expired: current.expired } : {}),
+        ...(failure ? { failure } : {}),
+      },
+    };
   }
 
   /**

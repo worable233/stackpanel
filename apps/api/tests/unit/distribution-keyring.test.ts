@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { generateKeyPairSync } from 'node:crypto';
-import { parseKeyring, readStoredKeyring, KeyringError } from '../../src/distribution/keyring.ts';
+import { parseKeyring, readStoredKeyring, loadKeyring, KeyringError } from '../../src/distribution/keyring.ts';
+import { env } from '../../src/config/env.ts';
 
 function pem() {
   return generateKeyPairSync('ed25519')
@@ -77,5 +78,54 @@ describe('readStoredKeyring', () => {
 
     await writeFile(file, 'not json');
     await expect(readStoredKeyring()).rejects.toThrow(/信任根文件非法/);
+  });
+});
+
+describe('loadKeyring（默认远程源的信任根）', () => {
+  const original = process.env['STACKPANEL_DATA_DIR'];
+  let dir: string;
+  const originalRepository = env.DISTRIBUTION_CATALOG_REPOSITORY;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'sp-keyring-load-'));
+    process.env['STACKPANEL_DATA_DIR'] = dir;
+  });
+
+  afterEach(async () => {
+    if (original === undefined) delete process.env['STACKPANEL_DATA_DIR'];
+    else process.env['STACKPANEL_DATA_DIR'] = original;
+    delete env.DISTRIBUTION_CATALOG_PUBLIC_KEY;
+    env.DISTRIBUTION_CATALOG_REPOSITORY = originalRepository;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('pins an env catalog key to the configured repository and purpose=catalog', async () => {
+    const key = pem();
+    env.DISTRIBUTION_CATALOG_PUBLIC_KEY = key;
+    env.DISTRIBUTION_CATALOG_REPOSITORY = 'acme/plugins';
+    const keyring = await loadKeyring();
+    const entry = keyring.keys.find((item) => item.keyId === 'env-catalog-key');
+    expect(entry).toBeDefined();
+    expect(entry?.purpose).toBe('catalog');
+    expect(entry?.publicKeyPem).toBe(key);
+    // 绑定到当前目录仓：不会顺带信任别的仓库。
+    expect(entry?.allowedRepositories).toEqual(['acme/plugins']);
+  });
+
+  it('does not pin a catalog key when the catalog source is disabled', async () => {
+    const key = pem();
+    env.DISTRIBUTION_CATALOG_PUBLIC_KEY = key;
+    env.DISTRIBUTION_CATALOG_REPOSITORY = undefined;
+    const keyring = await loadKeyring();
+    expect(keyring.keys.some((item) => item.keyId === 'env-catalog-key')).toBe(false);
+  });
+
+  it('never reuses the package signing key for catalog verification', async () => {
+    const keyring = await loadKeyring();
+    const catalogKeys = keyring.keys.filter((item) => item.purpose === 'catalog');
+    const packageKeys = keyring.keys.filter((item) => item.purpose === 'package');
+    expect(catalogKeys.some((item) => packageKeys.some((p) => p.keyId === item.keyId))).toBe(
+      false,
+    );
   });
 });

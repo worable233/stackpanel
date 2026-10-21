@@ -17,5 +17,10 @@
   "page.title": "应用市场",
   "page.description": "浏览本地与已签名远程目录，安装或升级插件与主题。",
   "nav.label": "应用市场",
-  "nav.group": "平台"
+  "nav.group": "平台",
+  "source.localDisabled": "本地来源已禁用：{reason}",
+  "source.catalogOffline": "远程目录已关闭（完全离线），市场只显示本地来源。",
+  "source.catalogFailed": "远程目录不可用：{message}",
+  "source.catalogPending": "正在等待远程目录（{repository}）的首次刷新结果。",
+  "source.catalogExpired": "远程目录已过期：仍可查看缓存条目，但已禁止据此自动安装。"
 }

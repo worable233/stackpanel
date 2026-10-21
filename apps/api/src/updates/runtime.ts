@@ -3,7 +3,7 @@
  *
  * 把「任务通道根目录」接到实例数据目录，并提供更新中心路由所需的一切依赖：
  * 已验证目录快照（经 {@link resolveCatalogInstallContext}）、更新策略、实例 ID 与
- * 基线代次投影。未配置目录仓时目录快照为 null——更新中心仍可展示本地与策略，但不
+ * 基线代次投影。目录源被显式关闭时目录快照为 null——更新中心仍可展示本地与策略，但不
  * 发起任何 GitHub 请求（自托管离线）。
  */
 
@@ -49,13 +49,13 @@ export function updateInstanceId(): string {
   return instanceIdOverride ?? env.DISTRIBUTION_UPDATE_INSTANCE_ID ?? 'stackpanel';
 }
 
-/** 目录安装/更新上下文；未配置目录仓时为 null（离线）。 */
+/** 目录安装/更新上下文；目录源被显式关闭时为 null（离线）。 */
 export async function updateCatalogContext(): Promise<CatalogInstallContext | null> {
   return resolveCatalogInstallContext();
 }
 
 /**
- * 取回并验签目录引用的**内核候选清单**（§13-4）。未配置目录、目录无内核引用，或某个
+ * 取回并验签目录引用的**内核候选清单**（§13-4）。目录源关闭、目录无内核引用，或某个
  * 引用下载/验签失败时，跳过该引用（不阻断扩展更新）；返回已验签通过的内核清单集合。
  */
 export async function loadKernelCandidates(

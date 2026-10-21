@@ -11,10 +11,40 @@ import { packageManager } from '../packages/manager.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { env } from '../config/env.ts';
 import { verifyPackageSignature } from './signatures.ts';
+import {
+  localMarketSourcesAllowed,
+  localSourcesDisabledReason,
+} from '../distribution/runtime-env.ts';
 
-/** Local market sources: the kernel ships official plugins/themes in packages/. */
-const PLUGINS_SOURCE = path.resolve(process.cwd(), '..', '..', 'packages', 'plugins');
-const THEMES_SOURCE = path.resolve(process.cwd(), '..', '..', 'packages', 'themes');
+/**
+ * 本地市场来源根目录（随内核发布的包）。
+ *
+ * 解析必须同时兼容两种进程工作目录：
+ * - monorepo 开发：`cwd = <repo>/apps/api` → 上两级到仓库根；
+ * - 容器/单进程：`cwd = /app`（镜像 WORKDIR）→ 仓库根**就是** `cwd`。
+ *
+ * 之前只写了 `../..`，在镜像里会解析成 `/packages/plugins`（不存在），导致市场
+ * 本地列表恒为空。这里与 `lib/plugins.ts` 的 `resolvePluginsSourceRoot()` 保持同一
+ * 套候选顺序，避免两处对「仓库根在哪」得出不同答案。
+ */
+function resolveSourceRoot(kind: 'plugins' | 'themes'): string {
+  const cwd = process.cwd();
+  for (const candidate of [
+    path.join(cwd, 'packages', kind),
+    path.join(cwd, '..', '..', 'packages', kind),
+  ]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return path.join(cwd, '..', '..', 'packages', kind);
+}
+
+const PLUGINS_SOURCE = resolveSourceRoot('plugins');
+const THEMES_SOURCE = resolveSourceRoot('themes');
+
+/** 本地来源是否可用：容器/生产形态下一律禁用（安全边界，见 runtime-env）。 */
+function localSourcesEnabled(): boolean {
+  return localMarketSourcesAllowed();
+}
 
 function dataDir(): string {
   return resolveStackPanelDataDir();
@@ -100,6 +130,7 @@ async function readPluginManifestFile(dir: string): Promise<PluginManifestFile |
 
 /** Discover plugin packages available in the local market. */
 export async function listMarketPlugins(): Promise<MarketSourcePackage[]> {
+  if (!localSourcesEnabled()) return [];
   if (!existsSync(PLUGINS_SOURCE)) return [];
   const entries = await readdir(PLUGINS_SOURCE, { withFileTypes: true });
   const results: MarketSourcePackage[] = [];
@@ -124,6 +155,7 @@ export async function listMarketPlugins(): Promise<MarketSourcePackage[]> {
 
 /** Discover theme packages available in the local market. */
 export async function listMarketThemes(): Promise<MarketSourcePackage[]> {
+  if (!localSourcesEnabled()) return [];
   if (!existsSync(THEMES_SOURCE)) return [];
   const entries = await readdir(THEMES_SOURCE, { withFileTypes: true });
   const results: MarketSourcePackage[] = [];
@@ -222,6 +254,7 @@ export function catalogMarketPackageView(
 
 /** Install (or upgrade) a plugin from the market into data/plugins. */
 export async function installMarketPlugin(id: string): Promise<{ id: string; version: string }> {
+  if (!localSourcesEnabled()) throw new Error(localSourcesDisabledReason());
   const sources = await listMarketPlugins();
   const source = sources.find((p) => p.id === id);
   if (!source) throw new Error(`市场中没有插件：${id}`);
@@ -332,6 +365,7 @@ export async function installMarketPlugin(id: string): Promise<{ id: string; ver
 
 /** Install (or upgrade) a theme from the market into data/themes. */
 export async function installMarketTheme(id: string): Promise<{ id: string; version: string }> {
+  if (!localSourcesEnabled()) throw new Error(localSourcesDisabledReason());
   const sources = await listMarketThemes();
   const source = sources.find((t) => t.id === id);
   if (!source) throw new Error(`市场中没有主题：${id}`);

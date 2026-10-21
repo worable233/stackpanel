@@ -36,6 +36,33 @@ const marketPackageSchema = z.object({
 const pluginsResponseSchema = z.object({ plugins: z.array(marketPackageSchema) });
 const themesResponseSchema = z.object({ themes: z.array(marketPackageSchema) });
 
+/**
+ * 来源健康度。`status` 为 null 表示内核版本较旧、未提供该能力——前端按「未知」
+ * 处理而不是报错。
+ */
+const marketStatusSchema = z.object({
+  status: z
+    .object({
+      localSources: z.object({ enabled: z.boolean(), reason: z.string().optional() }),
+      catalog: z.object({
+        configured: z.boolean(),
+        repository: z.string().nullable(),
+        channel: z.string().nullable(),
+        available: z.boolean(),
+        sequence: z.number().optional(),
+        expired: z.boolean().optional(),
+        failure: z
+          .object({
+            kind: z.string(),
+            message: z.string(),
+            retryAt: z.string().optional(),
+          })
+          .optional(),
+      }),
+    })
+    .nullable(),
+});
+
 const marketFinders: Record<string, FinderProvider> = {
   'market.adminPlugins': {
     handler: async (_input, ctx) =>
@@ -44,6 +71,10 @@ const marketFinders: Record<string, FinderProvider> = {
   'market.adminThemes': {
     handler: async (_input, ctx) =>
       (await ctx.api.get('/market/admin/themes', themesResponseSchema)).themes,
+  },
+  'market.adminStatus': {
+    handler: async (_input, ctx) =>
+      (await ctx.api.get('/market/admin/status', marketStatusSchema)).status,
   },
 };
 
@@ -83,6 +114,7 @@ export const frontend: FrontendPackage = {
         data: [
           { finder: 'market.adminPlugins', as: 'plugins' },
           { finder: 'market.adminThemes', as: 'themes' },
+          { finder: 'market.adminStatus', as: 'status' },
         ],
       },
     ],

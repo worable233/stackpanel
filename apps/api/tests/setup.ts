@@ -18,6 +18,9 @@ process.env.AUTH_CODE_SEND_PER_HOUR_PER_IP ??= '0';
 // plugin's default 5/min would trip them. Tests disable the limiter.
 process.env.LOGIN_RATE_LIMIT_MAX ??= '0';
 process.env.REGISTER_RATE_LIMIT_MAX ??= '0';
+// The kernel ships a default remote catalog source; tests must stay hermetic and
+// never dial GitHub. `off` keeps the market on local sources only.
+process.env.DISTRIBUTION_CATALOG_REPOSITORY ??= 'off';
 // CONTRACT-SEC / H2 adds rate limits to credential / admin-write routes. The
 // integration suite drives all of them from one loopback IP, so raise every
 // fixed-window ceiling high enough that legit traffic is never throttled; the

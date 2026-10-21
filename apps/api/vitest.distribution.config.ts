@@ -11,6 +11,7 @@ export default defineConfig({
       'tests/unit/distribution-catalog-consumer.test.ts',
       'tests/unit/distribution-market.test.ts',
       'tests/unit/distribution-runtime.test.ts',
+      'tests/unit/distribution-runtime-env.test.ts',
       'tests/unit/package-transaction.test.ts',
       'tests/unit/frontend-assets.test.ts',
       'tests/unit/updates-plan.test.ts',

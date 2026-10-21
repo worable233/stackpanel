@@ -4,6 +4,47 @@ import 'dotenv/config';
 const emptyToUndefined = (v: unknown): unknown =>
   typeof v === 'string' && v.length === 0 ? undefined : v;
 
+/**
+ * 默认远程目录仓（PLAN-github-distribution-and-updates §2、§10）。
+ *
+ * 内核**自带**这个源：开箱即可浏览/安装官方签名插件与主题，而不是要求运维先找到
+ * 仓库地址再手写环境变量。想完全离线（或使用私有目录）时显式关闭即可。
+ */
+export const DEFAULT_CATALOG_REPOSITORY = 'worable233/stackpanel-plugins';
+
+/** 显式关闭远程目录的取值（大小写不敏感）。 */
+const CATALOG_OFF = /^(off|none|false|-)$/i;
+
+/**
+ * 归一化目录仓写法，同时决定「是否启用远程目录」。
+ *
+ * - 未设置 / 空字符串 → {@link DEFAULT_CATALOG_REPOSITORY}（Compose 的
+ *   `${VAR:-}` 会传空串，不能因此把默认源悄悄关掉）。
+ * - `off` / `none` / `false` / `-` → `undefined`，即完全离线、零出网。
+ * - `owner/repo` 或 `https://github.com/owner/repo(.git)` → 规范化为 `owner/repo`。
+ *
+ * 非法写法直接报错，避免把「拼错的仓库」当成「离线」而静默降级。
+ */
+export function normalizeCatalogRepository(value: unknown): string | undefined {
+  if (value === undefined) return DEFAULT_CATALOG_REPOSITORY;
+  if (typeof value !== 'string') {
+    throw new Error('DISTRIBUTION_CATALOG_REPOSITORY 必须是字符串');
+  }
+  const raw = value.trim();
+  if (raw.length === 0) return DEFAULT_CATALOG_REPOSITORY;
+  if (CATALOG_OFF.test(raw)) return undefined;
+  const url = raw.match(
+    /^https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s#?]+?)(?:\.git)?\/?$/i,
+  );
+  const slug = url ? `${url[1]}/${url[2]}` : raw.replace(/\.git$/i, '');
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(slug)) {
+    throw new Error(
+      `DISTRIBUTION_CATALOG_REPOSITORY 非法：${value}（应为 owner/repo 或 GitHub URL，或 off 表示离线）`,
+    );
+  }
+  return slug;
+}
+
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   // Connection-pool budget for this process (ADR-0022 D3/P3). `pg`'s silent
@@ -87,11 +128,29 @@ const envSchema = z.object({
   STACKPANEL_SIGNING_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   // GitHub 分发（PLAN-github-distribution-and-updates §2、§10）。目录仓地址与渠道
   // 决定后台刷新从哪取签名目录；只读 token 可选（私有目录/提高配额），浏览器与插件
-  // 不可见。未配置仓库时内核不发起任何目录网络请求（自托管默认离线）。
-  DISTRIBUTION_CATALOG_REPOSITORY: z.preprocess(emptyToUndefined, z.string().optional()),
+  // 不可见。**内核自带默认远程目录**（{@link DEFAULT_CATALOG_REPOSITORY}），
+  // 留空即用默认源；设 `off`/`none`/`false` 才完全离线、零出网。
+  DISTRIBUTION_CATALOG_REPOSITORY: z
+    .unknown()
+    .optional()
+    .transform((value, ctx) => {
+      try {
+        return normalizeCatalogRepository(value);
+      } catch (error) {
+        ctx.addIssue({
+          code: 'custom',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return z.NEVER;
+      }
+    }),
   DISTRIBUTION_CATALOG_CHANNEL: z.enum(['stable', 'beta']).default('stable'),
   DISTRIBUTION_CATALOG_REF: z.string().default('main'),
   DISTRIBUTION_CATALOG_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+  // 目录签名公钥（PEM）。默认远程源一旦启用，实例必须能验证它的目录签名；数据
+  // 目录 keyring 是部署后写入的，这里给运维一个「只填公钥」的入口。它只用于
+  // `catalog` 用途并绑定到当前目录仓，不会与包签名共用一把 key。
+  DISTRIBUTION_CATALOG_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   // 部署目标平台（内核镜像/产物选择用；如 linux/amd64、linux/arm64）。容器内运行，
   // 故与开发宿主 `process.platform` 解耦；缺省 linux/amd64。
   DISTRIBUTION_DEPLOY_PLATFORM: z.string().default('linux/amd64'),

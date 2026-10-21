@@ -151,6 +151,23 @@ export const marketPlugin = definePlugin({
       permission: 'market.admin',
       handler: async (): Promise<unknown> => ({ kinds: kindSchema.options }),
     },
+    {
+      /**
+       * 来源健康度：本地来源是否可用、远程目录是否配置/可用、最近失败原因。
+       * 默认远程源开启后，目录不可用会让市场看起来「空」，运维需要这个入口定位。
+       */
+      method: 'GET',
+      path: `${BASE}/status`,
+      auth: 'admin',
+      permission: 'market.admin',
+      handler: async (): Promise<unknown> => {
+        const service = market();
+        if (typeof service.status !== 'function') {
+          return { status: null };
+        }
+        return { status: await service.status() };
+      },
+    },
   ],
 });
 

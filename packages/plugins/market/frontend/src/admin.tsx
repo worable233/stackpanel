@@ -157,16 +157,85 @@ function MarketSection({
   );
 }
 
+interface MarketStatusView {
+  localSources: { enabled: boolean; reason?: string };
+  catalog: {
+    configured: boolean;
+    repository: string | null;
+    channel: string | null;
+    available: boolean;
+    sequence?: number;
+    expired?: boolean;
+    failure?: { kind: string; message: string; retryAt?: string };
+  };
+}
+
+/**
+ * 来源健康度横幅。
+ *
+ * 默认远程源开启后，「目录取不到」与「本地来源在容器里被禁用」都会让列表看起来
+ * 是空的。没有这条提示，运维只会看到「暂无可安装条目」而无从判断是没发布、验签
+ * 失败还是网络问题。
+ */
+function SourceStatus({ status, tr }: { status: MarketStatusView; tr: ReturnType<typeof t> }) {
+  const notes: Array<{ tone: 'warn' | 'error' | 'info'; text: string }> = [];
+
+  if (!status.localSources.enabled) {
+    notes.push({
+      tone: 'info',
+      text: tr('source.localDisabled', { reason: status.localSources.reason ?? '' }),
+    });
+  }
+  if (!status.catalog.configured) {
+    notes.push({ tone: 'info', text: tr('source.catalogOffline') });
+  } else if (status.catalog.failure) {
+    notes.push({
+      tone: 'error',
+      text: tr('source.catalogFailed', { message: status.catalog.failure.message }),
+    });
+  } else if (!status.catalog.available) {
+    notes.push({
+      tone: 'warn',
+      text: tr('source.catalogPending', { repository: status.catalog.repository ?? '' }),
+    });
+  } else if (status.catalog.expired) {
+    notes.push({ tone: 'warn', text: tr('source.catalogExpired') });
+  }
+
+  if (notes.length === 0) return null;
+
+  const toneClass = {
+    warn: 'border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400',
+    error: 'border-destructive/40 bg-destructive/5 text-destructive',
+    info: 'border-border bg-muted/40 text-muted-foreground',
+  } as const;
+
+  return (
+    <ul className="space-y-2">
+      {notes.map((note, index) => (
+        <li
+          key={index}
+          className={`rounded-lg border px-3 py-2 text-sm ${toneClass[note.tone]}`}
+        >
+          {note.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function MarketAdminPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
   const plugins = (props.data.plugins ?? []) as MarketPackageRow[];
   const themes = (props.data.themes ?? []) as MarketPackageRow[];
+  const status = (props.data.status ?? null) as MarketStatusView | null;
   const installPlugin = props.actions['market.install-plugin'];
   const installTheme = props.actions['market.install-theme'];
 
   return (
     <main className="w-full space-y-6">
       <PageHeader title={tr('page.title')} description={tr('page.description')} />
+      {status ? <SourceStatus status={status} tr={tr} /> : null}
       <div className="space-y-8">
         <MarketSection
           title={tr('section.plugins')}

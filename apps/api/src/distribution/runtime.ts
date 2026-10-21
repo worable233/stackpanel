@@ -5,8 +5,9 @@
  * 持久防回放 sequence、信任根加载，以及「同一进程共享一次刷新」。页面渲染与路由只
  * 通过本模块只读地取「上次成功的快照」，永不直接请求 GitHub。
  *
- * 未配置 `DISTRIBUTION_CATALOG_REPOSITORY` 时返回 null——自托管默认完全离线，后台
- * 任务跳过、不产生任何出网请求。
+ * 目录仓**默认自带**（`DEFAULT_CATALOG_REPOSITORY`）；只有显式设为
+ * `off`/`none`/`false` 时 `DISTRIBUTION_CATALOG_REPOSITORY` 才是 undefined，
+ * 此时返回 null——完全离线，后台任务跳过、不产生任何出网请求。
  */
 
 import path from 'node:path';
@@ -27,7 +28,7 @@ export function distributionStateDir(): string {
 }
 
 /**
- * 进程级共享的目录刷新协调器；未配置目录仓时返回 null。
+ * 进程级共享的目录刷新协调器；目录源被显式关闭时返回 null。
  * 惰性构造：测试导入本模块不会触网，也不会因缺少配置而报错。
  */
 export function getCatalogRefresh(): CatalogRefreshService | null {
@@ -65,7 +66,7 @@ export function setCatalogRefreshForTest(service: CatalogRefreshService | null):
 /**
  * 组装「远程目录安装」所需依赖（目录已解析快照 + keyring + 缓存），供市场路由使用。
  *
- * - 未配置目录仓 → 返回 `null`（自托管离线，市场只展示本地来源）。
+ * - 未配置目录仓（显式关闭） → 返回 `null`（完全离线，市场只展示本地来源）。
  * - 无内存快照时触发一次**实例级合并刷新**（单飞，不并发打 GitHub）。
  * - 目录过期仍可返回快照（展示/人工安装），但调用方可据 `expired` 拒绝自动安装。
  */

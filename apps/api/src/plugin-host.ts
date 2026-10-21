@@ -304,7 +304,8 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
             .cleanup()
             .then(() => undefined),
         notificationDeliverySweep: () => notificationDispatcher.sweep(),
-        // §10：后台目录刷新。未配置目录仓时为 undefined（不注册、零出网）。
+        // §10：后台目录刷新。目录源被显式关闭时为 undefined（不注册、零出网）；
+        // 默认源开启时注册，失败会在下方记日志并通过市场/更新中心的状态暴露。
         ...(catalogRefresh
           ? {
               catalogRefresh: async () => {
