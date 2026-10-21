@@ -167,6 +167,9 @@ const envSchema = z.object({
   DISTRIBUTION_UPDATE_INSTANCE_ID: z.preprocess(emptyToUndefined, z.string().optional()),
   // updater 状态投影文件（只读；更新中心展示当前代次/进行中任务）。
   DISTRIBUTION_UPDATER_STATUS_FILE: z.preprocess(emptyToUndefined, z.string().optional()),
+  // updater 共享状态卷根（可写；内核在此写 `self-update-request.json`）。缺省从
+  // 状态投影文件所在目录反推——两者必须同卷，否则 updater 读不到请求。
+  DISTRIBUTION_UPDATER_STATE_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
   // Infrastructure. Redis is mandatory in production (ADR-0017); storage
   // defaults to the local disk in development and S3 in production.
   REDIS_URL: z.preprocess(emptyToUndefined, z.string().optional()),

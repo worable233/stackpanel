@@ -13,6 +13,10 @@ import {
   updateCatalogContext,
   updateChannelRoot,
   updateInstanceId,
+  readSelfUpdateRequest,
+  submitSelfUpdateRequest,
+  clearSelfUpdateRequest,
+  SelfUpdateRequestError,
   type PlanOutcome,
   type UpdatePolicy,
 } from '../../updates/index.ts';
@@ -44,6 +48,14 @@ const installSchema = z.object({
   acknowledge: z.boolean().default(false),
   /** 可选固定幂等键。 */
   idempotencyKey: z.string().min(1).max(128).optional(),
+});
+
+const selfUpdateSchema = z.object({
+  /**
+   * 候选 updater 镜像摘要。接受裸 sha256 hex 或 `repo@sha256:…` / `sha256:…`，
+   * 由 `submitSelfUpdateRequest` 统一收敛成裸 hex（与升级任务 `targetDigest` 同形态）。
+   */
+  candidateDigest: z.string().min(8).max(512),
 });
 
 /**
@@ -174,6 +186,67 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       const result = await readTaskResult(updateChannelRoot(), updateInstanceId(), params.data.key);
       if (!result) return reply.code(404).send({ error: '结果不存在或尚未回写' });
       return { result };
+    },
+  );
+
+  /**
+   * updater 自升级（§5.2「updater 自己的更新」）。
+   *
+   * 执行核心在 `apps/updater`，内核只负责**发起**：写一次共享卷上的请求文件，
+   * 由 updater 在无在途任务时消费（有在途保留、不并行）。此前这条写入路径不存在，
+   * 所以执行能力虽齐备却不可达。
+   */
+  app.get(
+    '/admin/updates/self-update',
+    { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
+    async () => ({ request: await readSelfUpdateRequest() }),
+  );
+
+  app.post(
+    '/admin/updates/self-update',
+    { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
+    async (request, reply) => {
+      const parsed = selfUpdateSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({ error: '请求无效', issues: parsed.error.issues });
+      }
+      try {
+        const submitted = await submitSelfUpdateRequest({
+          candidateDigest: parsed.data.candidateDigest,
+          requestedBy: request.user?.id ?? 'admin',
+        });
+        await writeAudit({
+          action: 'updates.self-update.submit',
+          resource: 'updater',
+          resourceId: submitted.request.candidateDigest,
+          meta: { candidateDigest: submitted.request.candidateDigest },
+          ...auditContext(request),
+        });
+        return reply.code(202).send({ submitted: true, request: submitted.request });
+      } catch (err) {
+        if (err instanceof SelfUpdateRequestError) {
+          // 在途任务/已有待执行请求是「当前状态不允许」，不是请求格式问题。
+          const status = err.kind === 'invalid-digest' ? 400 : 409;
+          return reply.code(status).send({ error: err.message, reason: err.kind });
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.delete(
+    '/admin/updates/self-update',
+    { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
+    async (request) => {
+      const cleared = await clearSelfUpdateRequest();
+      if (cleared) {
+        await writeAudit({
+          action: 'updates.self-update.cancel',
+          resource: 'updater',
+          ...auditContext(request),
+        });
+      }
+      return { cleared };
     },
   );
 
