@@ -38,6 +38,8 @@ interface Harness {
   imported: string[];
   registered: string[];
   unregistered: string[];
+  /** 跨副本失效广播（kind/action/id）。 */
+  notified: Array<{ kind: string; id: string; action: string }>;
 }
 
 function harness(
@@ -60,6 +62,7 @@ function harness(
   const imported: string[] = [];
   const registered: string[] = [];
   const unregistered: string[] = [];
+  const notified: Array<{ kind: string; id: string; action: string }> = [];
   const events: string[] = [];
   const present = new Set(options.installedPlugins ?? []);
   const themes = new Set(options.installedThemes ?? []);
@@ -111,6 +114,9 @@ function harness(
     },
     localSources: () => options.localSources ?? { enabled: true },
     catalogRefresh: () => null,
+    notifyChange: async (change) => {
+      notified.push(change);
+    },
     catalog: async () => {
       if (options.catalogConfigured === false) return null;
       if (options.installError) throw options.installError;
@@ -159,7 +165,7 @@ function harness(
       };
     },
   });
-  return { service, installed, imported, registered, unregistered };
+  return { service, installed, imported, registered, unregistered, notified };
 }
 
 describe('MarketService（内核保留的分发安全原语）', () => {
@@ -264,5 +270,17 @@ describe('MarketService（内核保留的分发安全原语）', () => {
     // 新定义被卸下后旧定义重新注册——与 ZIP 上传路径同语义。
     expect(h.unregistered).toContain('analytics');
     expect(h.registered.filter((entry) => entry === 'analytics')).toHaveLength(2);
+    // 失败路径不得广播「已重载」——其它副本不该被叫去加载一个没装成的版本。
+    expect(h.notified).toEqual([]);
+  });
+
+  it('安装成功后广播跨副本失效（主题 reload / 插件 reload）', async () => {
+    const theme = harness({ local: [localPackage('solaris')] });
+    await theme.service.install('theme', 'solaris');
+    expect(theme.notified).toEqual([{ kind: 'theme', id: 'solaris', action: 'reload' }]);
+
+    const plugin = harness({ local: [localPackage('analytics')] });
+    await plugin.service.install('plugin', 'analytics');
+    expect(plugin.notified).toEqual([{ kind: 'plugin', id: 'analytics', action: 'reload' }]);
   });
 });

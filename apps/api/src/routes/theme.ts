@@ -469,6 +469,8 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
       resourceId: theme.id,
       ...auditContext(request),
     });
+    // 其它副本的主题注册表还是旧的：不发失效广播就会继续提供已删除的主题。
+    await publishRuntimeChange({ kind: 'theme', id: theme.id, action: 'remove' });
     // 运行期装载：删除后主题前端即时失效，无需构建/重启。
     await notifyLifecycle(request.user?.id, {
       target: 'theme',

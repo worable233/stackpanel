@@ -14,7 +14,14 @@ import path from 'node:path';
 
 const UI_DIR = path.join(process.cwd(), 'src/components/ui');
 
-const PORTAL_PRIMITIVES = ['dialog.tsx', 'select.tsx', 'dropdown-menu.tsx', 'tooltip.tsx'];
+const PORTAL_PRIMITIVES = [
+  'dialog.tsx',
+  'alert-dialog.tsx',
+  'select.tsx',
+  'dropdown-menu.tsx',
+  'popover.tsx',
+  'tooltip.tsx',
+];
 
 describe('portal scope propagation (contract 05 §3.5)', () => {
   it.each(PORTAL_PRIMITIVES)('%s portals through the scope-aware container', (file) => {

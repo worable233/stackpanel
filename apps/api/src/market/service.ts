@@ -38,6 +38,7 @@ import {
 } from '../lib/market-catalog.ts';
 import { loadPluginDefinition } from '../lib/plugins.ts';
 import { getPrisma } from '../plugins/prisma.ts';
+import { publishRuntimeChange, type RuntimeChange } from '../runtime/coherence.ts';
 import { getCatalogRefresh, resolveCatalogInstallContext } from '../distribution/runtime.ts';
 import {
   localMarketSourcesAllowed,
@@ -80,6 +81,14 @@ export interface MarketServiceDeps {
   localSources?: () => { enabled: boolean; reason?: string };
   /** 目录刷新协调器（测试可注入；默认读进程单例）。 */
   catalogRefresh?: () => CatalogRefreshService | null;
+  /**
+   * 跨副本运行时失效广播（测试可注入；默认走 Redis Pub/Sub）。
+   *
+   * 安装改动的是**本进程**的内存运行时：别的副本仍持有旧定义/旧主题，直到重启。
+   * 与后台 ZIP 上传、卸载路径一致，这里装完必须广播一次，否则「市场装成功但
+   * 只有一台机器生效」。
+   */
+  notifyChange?: (change: RuntimeChange) => Promise<void>;
 }
 
 const LOCAL_LABEL: Record<'plugin' | 'theme', string> = { plugin: '插件', theme: '主题' };
@@ -101,6 +110,7 @@ export class MarketService implements MarketServiceContract {
   private readonly loadDefinition: (id: string) => Promise<PluginDefinition>;
   private readonly localSources: () => { enabled: boolean; reason?: string };
   private readonly catalogRefresh: () => CatalogRefreshService | null;
+  private readonly notifyChange: (change: RuntimeChange) => Promise<void>;
 
   constructor(private readonly deps: MarketServiceDeps) {
     this.prisma = deps.prisma ?? getPrisma();
@@ -118,6 +128,7 @@ export class MarketService implements MarketServiceContract {
           ? { enabled: true }
           : { enabled: false, reason: localSourcesDisabledReason() });
     this.catalogRefresh = deps.catalogRefresh ?? getCatalogRefresh;
+    this.notifyChange = deps.notifyChange ?? publishRuntimeChange;
   }
 
   /** 列出某类可安装条目：本地随包来源 + 已签名远程目录（若配置）。 */
@@ -180,6 +191,8 @@ export class MarketService implements MarketServiceContract {
     const upgraded = await this.wasInstalled(kind, id);
     const result = await this.installLocal(kind, id);
     if (kind === 'theme') {
+      // 主题注册表同样是进程内缓存：装上后必须让其它副本重载，否则只有本副本换肤。
+      await this.notifyChange({ kind: 'theme', id, action: 'reload' }).catch(() => undefined);
       return { id: result.id, version: result.version, upgraded, source: 'local' };
     }
     // 与 ZIP 上传一致：安装后立即 register/activate，无需重启。
@@ -206,6 +219,8 @@ export class MarketService implements MarketServiceContract {
       }
       throw err;
     }
+    // 其它副本的运行时还是旧定义；广播一次重载，与后台 ZIP 上传路径一致。
+    await this.notifyChange({ kind: 'plugin', id, action: 'reload' }).catch(() => undefined);
     return { id: result.id, version: result.version, upgraded, source: 'local' };
   }
 
@@ -265,6 +280,8 @@ export class MarketService implements MarketServiceContract {
         }
       }
       await prepared.handle.commit();
+      // 提交成功才算「新版本已生效」；此时再广播，避免回滚后触发无意义重载。
+      await this.notifyChange({ kind, id, action: 'reload' }).catch(() => undefined);
       return {
         id,
         version: prepared.version,
