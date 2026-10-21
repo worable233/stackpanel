@@ -8,16 +8,18 @@
  * 共用一套 PostgreSQL + Redis 与同一数据目录，逐项验证「拆掉单机假设」后的
  * 跨副本保证：
  *
- *   [1] 会话共享（S3）       节点 A 登录，节点 B 立即认得同一会话
+ *   [1] 会话共享（S3）       /setup 认领首个管理员，节点 B 立即认得同一会话
  *   [2] 限流共享（S4）       跨副本共用同一计数，超限统一 429
  *   [3] 事件跨节点（S5）     outbox relay 只认领一次，并广播到 Redis 频道
+ *   [3b] 副本身份隔离（#4）  同机两副本各自持有独立游标，不共用（否则丢事件）
  *   [4] 任务唯一执行（S6）   BullMQ 任务只被一个副本消费、不重复执行
  *   [5] 运行时一致性（S8）   A 上停用插件，B 无需重启即收敛
  *   [6] 健康就绪（S9）       /health 存活、/ready 校验 PG + Redis + 存储
  *   [7] 生产 fail-fast（S9） 生产缺 Redis 时启动即失败（中文提示）
  *   [8] 编排契约（S7/S9）    两份 compose 都带 worker，且不再共享构建卷
  *   [8b] 镜像分发契约（IMG-DIST）release 工作流（GHCR/semver/多架构/SBOM/cosign/Release Notes）
- *                              + STACKPANEL_IMAGE 覆盖 + verify-image.sh + deploy.sh --image
+ *                              + 默认档 STACKPANEL_IMAGE 覆盖 + 集群档钉死 digest
+ *                              + verify-image.sh + deploy.sh --image
  *
  * 运行前置：
  *   - 已构建 API：`pnpm --filter @stackpanel/api build`
@@ -58,6 +60,7 @@ const PORT_A = BASE_PORT;
 const PORT_B = BASE_PORT + 1;
 const ADMIN_EMAIL = 'smoke-admin@stackpanel.local';
 const ADMIN_PASSWORD = 'SmokeAdminPass123';
+const SETUP_TOKEN = 'smoke_setup_token_at_least_32_chars_0123456789';
 
 const REDIS_EVENTS_CHANNEL = 'sp:pubsub:events';
 
@@ -126,10 +129,11 @@ function startReplica(port, extraEnv = {}) {
       STORAGE_LOCAL_ROOT: path.join(DATA_DIR, 'storage'),
       JWT_SECRET: 'smoke_jwt_secret_at_least_32_chars_0123456789',
       SETTINGS_ENCRYPTION_KEY: 'smoke_settings_key_at_least_32_chars_012345',
-      STACKPANEL_BOOTSTRAP_EMAIL: ADMIN_EMAIL,
-      STACKPANEL_BOOTSTRAP_PASSWORD: ADMIN_PASSWORD,
       LOGIN_RATE_LIMIT_MAX: '0',
       REGISTER_RATE_LIMIT_MAX: '0',
+      // 首个管理员只经 `/setup` 认领（bootstrap 环境变量已移除）。冒烟用固定
+      // 令牌，避免向导在无人值守时被陌生请求抢注。
+      STACKPANEL_SETUP_TOKEN: SETUP_TOKEN,
       ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -305,6 +309,23 @@ async function main() {
   section('[1] 会话共享（S3）');
   let token = '';
   {
+    // 首个管理员只经 `/setup` 认领（bootstrap 环境变量已移除）。只在 A 上认领：
+    // 认领在共享库上是全局一次性的，两副本并发认领会有一个 409。
+    const claim = await fetchJson(`http://127.0.0.1:${PORT_A}/setup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+        setupToken: SETUP_TOKEN,
+      }),
+    });
+    assert(
+      claim.status === 201 && typeof claim.json?.token === 'string',
+      '节点 A 通过 /setup 认领首个管理员',
+      `status=${claim.status} ${claim.text.slice(0, 200)}`,
+    );
+
     const login = await loginOn(PORT_A, ADMIN_EMAIL, ADMIN_PASSWORD);
     assert(login.status === 200 && typeof login.json?.token === 'string', '节点 A 登录成功');
     token = login.json?.token ?? '';
@@ -383,6 +404,46 @@ async function main() {
     }
   }
 
+  // ---- [3b] 副本身份与游标隔离（#4 多节点验收） ---------------------------
+  section('[3b] 副本身份与游标隔离（#4：同机两副本不得共用游标）');
+  {
+    const { Client } = requireFromApi('pg');
+    const client = new Client({ connectionString: DATABASE_URL });
+    await client.connect();
+    try {
+      // 两个副本都已 startOutboxConsumption()，各自应有一条 replica:<id> 游标。
+      // 若身份退化为裸 hostname，这里只会看到一条——两个副本共用一个游标，
+      // 先消费的会把另一个永久跳过的行推过去。
+      let consumers = [];
+      const both = await waitFor(
+        async () => {
+          const res = await client.query(
+            `SELECT consumer FROM event_cursors WHERE consumer LIKE 'replica:%' ORDER BY consumer`,
+          );
+          consumers = res.rows.map((r) => r.consumer);
+          return consumers.length >= 2;
+        },
+        20_000,
+        '两个副本各自建立游标',
+      ).catch(() => false);
+      assert(both && consumers.length >= 2, '两个副本各自持有独立的 replica:<id> 游标');
+
+      assert(
+        new Set(consumers).size === consumers.length,
+        '副本游标名互不重复（无共享游标）',
+        consumers.join(','),
+      );
+      const bare = consumers.filter((c) => !/-[0-9]+$/.test(c));
+      assert(
+        bare.length === 0,
+        '每个副本身份都带进程判别位（端口/PM2 实例），不是裸主机名',
+        bare.join(','),
+      );
+    } finally {
+      await client.end();
+    }
+  }
+
   // ---- [4] 任务唯一执行（S6） ---------------------------------------------
   section('[4] 任务唯一执行（S6：BullMQ）');
   {
@@ -431,31 +492,36 @@ async function main() {
   // ---- [5] 运行时一致性（S8） ---------------------------------------------
   section('[5] 运行时一致性（S8：跨副本失效）');
   {
-    const before = await fetchJson(`http://127.0.0.1:${PORT_B}/hello`);
-    assert(before.status === 200, '节点 B 初始可服务 hello 插件路由');
+    // `hello` 示例插件已移除；用内置 `market` 插件做同一验证。它没有依赖方
+    // （`store` 被 referral / store-* 依赖，停用会被 409 拒绝）。
+    const route = '/market/admin/plugins';
+    const pluginId = 'market';
+    const auth = { authorization: `Bearer ${token}` };
+    const before = await fetchJson(`http://127.0.0.1:${PORT_B}${route}`, { headers: auth });
+    assert(before.status === 200, `节点 B 初始可服务 ${pluginId} 插件路由`, `status=${before.status}`);
 
-    const off = await fetchJson(`http://127.0.0.1:${PORT_A}/admin/plugins/hello`, {
+    const off = await fetchJson(`http://127.0.0.1:${PORT_A}/admin/plugins/${pluginId}`, {
       method: 'PATCH',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      headers: { ...auth, 'content-type': 'application/json' },
       body: JSON.stringify({ enabled: false }),
     });
-    assert(off.status === 200, '节点 A 停用 hello 插件');
+    assert(off.status === 200, `节点 A 停用 ${pluginId} 插件`, `status=${off.status} ${off.text.slice(0, 200)}`);
 
     const converged = await waitFor(
-      async () => (await fetchJson(`http://127.0.0.1:${PORT_B}/hello`)).status === 404,
+      async () => (await fetchJson(`http://127.0.0.1:${PORT_B}${route}`, { headers: auth })).status === 404,
       8_000,
       'B 收敛为停用',
     ).catch(() => false);
     assert(converged, '节点 B 无需重启即停止服务该插件路由（Redis 失效广播生效）');
 
-    const on = await fetchJson(`http://127.0.0.1:${PORT_B}/admin/plugins/hello`, {
+    const on = await fetchJson(`http://127.0.0.1:${PORT_B}/admin/plugins/${pluginId}`, {
       method: 'PATCH',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      headers: { ...auth, 'content-type': 'application/json' },
       body: JSON.stringify({ enabled: true }),
     });
-    assert(on.status === 200, '节点 B 重新启用 hello 插件');
+    assert(on.status === 200, `节点 B 重新启用 ${pluginId} 插件`, `status=${on.status} ${on.text.slice(0, 200)}`);
     const reconverged = await waitFor(
-      async () => (await fetchJson(`http://127.0.0.1:${PORT_A}/hello`)).status === 200,
+      async () => (await fetchJson(`http://127.0.0.1:${PORT_A}${route}`, { headers: auth })).status === 200,
       8_000,
       'A 收敛为启用',
     ).catch(() => false);
@@ -493,21 +559,29 @@ async function main() {
 
     // ---- [8b] 镜像分发契约（IMG-DIST）------------------------------------
     // 只做静态校验（无 CI runner 无法真正 build/push/签名）。
-    assert(
-      /\$\{STACKPANEL_IMAGE:-/.test(defaults) && /\$\{STACKPANEL_IMAGE:-/.test(cluster),
-      '两份 compose 的镜像可由 STACKPANEL_IMAGE 覆盖（发布版不本地构建）',
-    );
+    //
+    // 两份 compose 的语义**不同**，这是刻意的：
+    //   默认档 = 开发/单机，允许 `STACKPANEL_IMAGE` 覆盖，缺省回落到本地构建；
+    //   集群档 = 生产多副本，必须钉死不可变 digest（`:?` 让缺失时直接失败），
+    //   否则滚动更新会在两个副本上跑出不同镜像。
     assert(
       /image:\s*\$\{STACKPANEL_IMAGE:-stackpanel-api:latest\}/.test(defaults) &&
-        /image:\s*\$\{STACKPANEL_IMAGE:-stackpanel-api:latest\}/.test(cluster),
-      'api / worker 与 web 指向同一可覆盖镜像引用',
+        /image:\s*\$\{STACKPANEL_IMAGE:-stackpanel-web:latest\}/.test(defaults),
+      '默认档的 api / web 镜像可由 STACKPANEL_IMAGE 覆盖（发布版不本地构建）',
+    );
+    assert(
+      /image:\s*\$\{STACKPANEL_IMAGE:\?/.test(cluster) &&
+        /image:\s*\$\{STACKPANEL_WEB_IMAGE:\?/.test(cluster),
+      '集群档要求镜像钉死不可变 digest（缺失即启动失败，不允许漂移）',
     );
 
     const release = await readFile(path.join(ROOT, '.github/workflows/release.yml'), 'utf8');
     assert(/tags:\s*\n\s*- 'v\*'/.test(release), 'release 工作流由 v* 标签触发');
     assert(/ghcr\.io/.test(release) && /IMAGE_NAME:\s*stackpanel/.test(release), '发布镜像推送到 GHCR');
     assert(
-      /docker\/metadata-action@v5/.test(release) &&
+      // 主版本随 dependabot 升级（当前 v6）；只要求仍是 metadata-action 且派生
+      // semver 三段，不把具体主版本钉死，否则每次升级都会误报。
+      /docker\/metadata-action@v[5-9]/.test(release) &&
         /type=semver,pattern=\{\{version\}\}/.test(release) &&
         /type=semver,pattern=\{\{major\}\}/.test(release),
       'semver 标签派生（1.2.3 / 1.2 / 1）',
