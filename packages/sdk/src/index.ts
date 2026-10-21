@@ -253,6 +253,7 @@ export type {
   EnsureSystemUserInput,
   CreatedPlatformToken,
   CreatePlatformTokenInput,
+  GrantUserGroupInput,
   PermissionGroup,
   PlatformTokenView,
   PlatformTokenInspection,
@@ -260,6 +261,7 @@ export type {
   ResolvedPlatformToken,
   SessionCookieConfig,
   SessionResult,
+  UserGroupGrant,
 } from './auth.js';
 export type { FxQuote, FxRate, FxService } from './fx.js';
 export type { CurrencyDefinition, CurrencyErrorCode, CurrencyService } from './currency.js';

@@ -223,6 +223,7 @@ async function callProviderHook(
       productId: service.productId,
       productName: service.productName,
       status: service.status,
+      expiresAt: service.expiresAt ? service.expiresAt.toISOString() : null,
     },
     secrets: context().secrets,
   };

@@ -107,10 +107,15 @@ model UserGroup {
   groupId String
   user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   group   PermissionGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// 时限成员的到期时间（会员商品授予）。null = 永久（管理员手工授予/默认组）。
+  /// 判定**在读路径生效**（hasPermission/listUserGroups 过滤过期行），因此即使
+  /// 清扫任务延迟，过期权益也不会继续生效；清扫只负责清理残留行与发通知。
+  expiresAt DateTime?
 
   @@id([userId, groupId])
   @@map("user_groups")
   @@index([groupId])
+  @@index([expiresAt])
 }
 
 /// Many-to-many: permission group → permission.

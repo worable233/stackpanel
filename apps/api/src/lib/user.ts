@@ -1,5 +1,6 @@
 import type { User } from '@stackpanel/db';
 import { getPrisma } from '../plugins/prisma.ts';
+import { activeMembershipWhere } from '../auth/membership.ts';
 
 export type PublicUser = Omit<User, 'passwordHash'>;
 
@@ -26,11 +27,18 @@ export function toPublicUser(user: User): PublicUser {
 /**
  * Whether `userId` is the last *active* admin-group user. Disabled admins are
  * excluded so an active admin can clean up a disabled one without lockout.
+ *
+ * 过期会员同样排除：到期后该成员关系不再授予任何权限（读路径判定），把它算成
+ * 「还有一位管理员」会让「不能移除最后一位管理员」的保护落在一个已经无权的人身上。
  */
 export async function isLastAdmin(userId: string): Promise<boolean> {
   const prisma = getPrisma();
   const activeAdmins = await prisma.userGroup.findMany({
-    where: { groupId: ADMIN_GROUP_ID, user: { status: 'ACTIVE' } },
+    where: {
+      groupId: ADMIN_GROUP_ID,
+      user: { status: 'ACTIVE' },
+      AND: [activeMembershipWhere()],
+    },
     select: { userId: true },
   });
   if (activeAdmins.length !== 1) return false;

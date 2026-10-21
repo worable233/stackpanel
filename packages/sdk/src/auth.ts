@@ -18,6 +18,40 @@ export interface PermissionGroup {
   description: string | null;
   /** 代理折扣（%），0–99；null/缺省表示无折扣。 */
   discount?: number | null;
+  /**
+   * 该成员关系的到期时间（ISO 8601），`null`/缺省表示永久。
+   *
+   * 只出现在 {@link AuthService.listUserGroupGrants} 的返回里；`listUserGroups`
+   * 已经过滤掉过期成员，不会返回带过去时间的组。
+   */
+  expiresAt?: string | null;
+}
+
+/**
+ * 一条权限组成员关系（含到期时间），供会员类插件核对/展示自己授予的权益。
+ *
+ * 与 {@link PermissionGroup} 的区别：这是「关系」视角，能区分永久（`expiresAt`
+ * 为 null）与限时成员，也不会隐藏已过期但尚未被清扫掉的行。
+ */
+export interface UserGroupGrant {
+  userId: string;
+  groupId: string;
+  groupName: string;
+  /** 到期时间（ISO 8601）；null = 永久。 */
+  expiresAt: string | null;
+  /** 该关系是否已过期（`expiresAt` 非空且不晚于当前时间）。 */
+  expired: boolean;
+}
+
+/** 授予权限组的选项。 */
+export interface GrantUserGroupInput {
+  userId: string;
+  groupId: string;
+  /**
+   * 到期时间。`null`/缺省 = 永久授予。已过去的时刻会被拒绝（避免写入即过期、
+   * 让调用方误以为授予成功）。
+   */
+  expiresAt?: Date | string | null;
 }
 
 /** Authenticated user surface exposed to plugins and the frontend. */
@@ -201,6 +235,31 @@ export interface AuthService {
   hasPermission(userId: string, permission: string): Promise<boolean>;
   /** List a user's permission groups. */
   listUserGroups(userId: string): Promise<PermissionGroup[]>;
+  /** 列出全部权限组（不限用户），供商品类型配置选择「授予哪个组」。 */
+  listPermissionGroups(): Promise<PermissionGroup[]>;
+  /**
+   * 授予权限组成员关系。幂等：已存在时按新 `expiresAt` 覆盖（续费延长即走这里）。
+   * 到期时间在过去时拒绝（抛错），避免写入即过期。
+   */
+  grantUserGroup(input: GrantUserGroupInput): Promise<UserGroupGrant>;
+  /**
+   * 撤销权限组成员关系。幂等：不存在时静默返回 `false`。
+   *
+   * 只应按「自己授予的」关系调用；永久成员（`expiresAt` 为 null）通常是管理员
+   * 手工配置或默认组，调用方必须先读 {@link listUserGroupGrants} 确认。
+   */
+  revokeUserGroup(userId: string, groupId: string): Promise<boolean>;
+  /** 读取某用户的全部成员关系（含到期与过期状态，不做过滤）。 */
+  listUserGroupGrants(userId: string): Promise<UserGroupGrant[]>;
+  /**
+   * 清扫已过期的成员关系：删除 `expiresAt <= now` 的行并返回被删除的关系。
+   *
+   * 过期判定本身已在读路径生效，因此本方法只做数据清理与通知触发点，不承担
+   * 授权正确性。`limit` 有上限，便于集群任务分批处理。
+   */
+  pruneExpiredUserGroups(
+    limit?: number,
+  ): Promise<Array<{ userId: string; groupId: string; groupName: string }>>;
   /** Read a full user record by id (used by the login plugin's /auth/me). */
   getUser(userId: string): Promise<AuthUser | null>;
   /** Read a full user record by email (case-insensitive), or null. */

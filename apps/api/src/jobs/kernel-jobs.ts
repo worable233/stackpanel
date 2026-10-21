@@ -172,4 +172,6 @@ export const KERNEL_JOBS = {
   catalogRefresh: 'distribution.catalog-refresh',
   /** 自动更新评估（§13-6：目录刷新后按策略决定是否自动投递升级任务）。 */
   autoUpdate: 'distribution.auto-update',
+  /** 会员权益到期清理（限时权限组成员关系）。 */
+  membershipSweep: 'membership.sweep-expired',
 } as const;

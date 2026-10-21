@@ -46,6 +46,13 @@ export interface ProvisionContext {
   quantity: number;
   /** 顾客在结算时选择的配置（可配置商品）。 */
   config?: CheckoutSelection;
+  /**
+   * 商店将写入服务实例的初始到期时间（ISO 8601），`null` = 永久/非周期商品。
+   *
+   * 由 store 按商品的计费周期统一推算后传入，提供方**不要**自己再算一遍月数：
+   * 两套周期算法必然漂移，会员类权益的到期时间会与商店展示的到期时间不一致。
+   */
+  expiresAt?: string | null;
   /** 提供方插件自身的加密密钥存储。 */
   secrets: PluginSecrets;
 }
@@ -84,6 +91,8 @@ export interface ProviderServiceContext {
     status: string;
     /** 商品名，供提供方在缺少上游标题时回退展示。 */
     productName?: string;
+    /** 服务实例的到期时间（ISO 8601）；`null` = 永久/无到期。 */
+    expiresAt?: string | null;
   };
   secrets: PluginSecrets;
 }
@@ -371,6 +380,14 @@ export interface ProductConfigField {
   maxLength?: number | undefined;
   /** select / multiselect 的候选项。 */
   options?: Array<{ label: string; value: string }> | undefined;
+  /**
+   * 动态候选项来源：由商店在聚合商品类型时解析成 {@link options}。
+   *
+   * 类型插件只能声明静态 options，而权限组这类数据是运行期产生的。声明来源而
+   * 非让插件自己查内核，既保持插件无 DB 访问，也保证候选项与当前权限组一致。
+   * `permissionGroups` = 平台全部权限组（label 附带折扣）。
+   */
+  optionsSource?: 'permissionGroups' | undefined;
   /** 条件显隐（相对同一表单作用域内的兄弟字段）。 */
   visibleWhen?: ProductConfigVisibility | undefined;
   /** 分组名（同名的字段在 UI 上归入一个分组卡片）。 */

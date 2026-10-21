@@ -346,6 +346,7 @@ const productConfigFieldSchema: z.ZodType<ProductConfigField> = z.lazy(() =>
     max: z.number().optional(),
     maxLength: z.number().optional(),
     options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+    optionsSource: z.literal('permissionGroups').optional(),
     visibleWhen: productConfigVisibilitySchema.optional(),
     group: z.string().optional(),
     columns: z.union([z.literal(1), z.literal(2)]).optional(),
