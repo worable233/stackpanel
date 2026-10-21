@@ -884,7 +884,8 @@
     "catalogTokenSaveFailed": "Failed to save the catalog token",
     "distributionRefreshOffline": "Remote catalog is disabled; nothing to refresh.",
     "distributionRefreshOk": "Catalog refreshed, current sequence {sequence}.",
-    "distributionRefreshFailed": "Catalog refresh failed: {message}"
+    "distributionRefreshFailed": "Catalog refresh failed: {message}",
+    "save": "Save"
   },
   "user": {
     "emailRequired": "Please enter an email",

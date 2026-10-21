@@ -884,7 +884,8 @@
     "catalogTokenSaveFailed": "保存目录 token 失败",
     "distributionRefreshOffline": "远程目录已关闭，无需刷新。",
     "distributionRefreshOk": "目录刷新成功，当前序号 {sequence}。",
-    "distributionRefreshFailed": "目录刷新失败：{message}"
+    "distributionRefreshFailed": "目录刷新失败：{message}",
+    "save": "保存"
   },
   "user": {
     "emailRequired": "请填写邮箱",
