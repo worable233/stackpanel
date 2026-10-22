@@ -86,6 +86,15 @@ export interface ComposeProjectConfig {
   updaterService?: string;
   /** 承载 updater 镜像引用的环境变量名；缺省 `STACKPANEL_UPDATER_IMAGE`。 */
   updaterImageEnv?: string;
+  /**
+   * updater 镜像仓库（如 `ghcr.io/worable233/stackpanel-updater`）。
+   *
+   * 自升级的候选摘要必须与 **updater 自己的**仓库拼成 `repo@sha256:...`。此前复用了
+   * 内核的 `imageRepository`（`.../stackpanel`），拉取的是内核镜像，`docker image inspect`
+   * 自然找不到候选摘要 → 自升级在第一步就失败（恒报「候选镜像摘要不匹配」）。
+   * 缺省时从当前 updater 镜像引用（取 `repo` 部分）推导，避免多配一个变量。
+   */
+  updaterImageRepository?: string;
   /** 快照/备份目录（updater 独立卷内）。缺省用 workDir/backups。 */
   backupDir?: string;
   /** 磁盘空间下限（字节）；不足则在停服前失败（§5.4-1）。 */
@@ -173,6 +182,9 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
     imageRepository: required('UPDATER_IMAGE_REPOSITORY'),
     updaterService: env['UPDATER_SELF_SERVICE'] ?? 'updater',
     updaterImageEnv: env['UPDATER_SELF_IMAGE_ENV'] ?? 'STACKPANEL_UPDATER_IMAGE',
+    ...(env['UPDATER_SELF_IMAGE_REPOSITORY']
+      ? { updaterImageRepository: env['UPDATER_SELF_IMAGE_REPOSITORY'] }
+      : {}),
     allowedServices: allowed,
     database: {
       service: env['UPDATER_DB_SERVICE'] ?? 'postgres',

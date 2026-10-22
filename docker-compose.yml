@@ -361,6 +361,9 @@ services:
       # updater 自升级（§5.2）：切换自身服务镜像的环境变量，候选与回退都用它。
       UPDATER_SELF_SERVICE: updater
       UPDATER_SELF_IMAGE_ENV: STACKPANEL_UPDATER_IMAGE
+      # 自升级候选必须落在 **updater 自己的仓库**，不是内核仓库。留空时由当前
+      # 运行镜像引用推导（`repo:tag` / `repo@sha256:...` → `repo`）。
+      UPDATER_SELF_IMAGE_REPOSITORY: ${UPDATER_SELF_IMAGE_REPOSITORY:-}
       # 独立恢复入口（§5.2）：仅在配置令牌与端口时监听；默认只回环，不进 compose 网络。
       UPDATER_RECOVERY_TOKEN: ${UPDATER_RECOVERY_TOKEN:-}
       UPDATER_RECOVERY_PORT: ${UPDATER_RECOVERY_PORT:-0}

@@ -124,6 +124,12 @@ export interface UpdaterDeps {
    * 计划在候选超时未确认时回退（§5.2）。不注入则完全跳过自升级逻辑。
    */
   selfUpdate?: {
+    /**
+     * 启动时自确认：若本进程正是计划中的候选 updater 且协议兼容，把计划标记为
+     * `committed`。缺了这一步，计划永远停在 `switching`，守护者到点必然回退——
+     * 即「自升级永远无法成功」，且症状是「候选明明起来了，5 分钟后被换回去」。
+     */
+    confirmCandidate: () => Promise<unknown>;
     settleOnStart: () => Promise<unknown>;
     guardTick: () => Promise<unknown>;
     consumeRequest: () => Promise<unknown>;
@@ -335,6 +341,14 @@ async function main(): Promise<void> {
   const selfUpdate = selectSelfUpdateExecutor(config, adapter, log);
   const updater = new Updater({ config, adapter, log, ...(selfUpdate ? { selfUpdate } : {}) });
   await updater.recordSelfState();
+  // 启动自确认：本进程若正是计划中的候选 updater，先标记 committed，守护者才不会
+  // 在候选已正常运行时把它回退掉（此前从未调用，自升级恒在候选超时后回滚）。
+  // 不兼容时**不崩溃**：记日志后照常运行，由守护者按截止时间回退到上一镜像。
+  try {
+    await selfUpdate?.confirmCandidate();
+  } catch (error) {
+    log(`候选自确认失败，等待守护者回退：${error instanceof Error ? error.message : String(error)}`);
+  }
   // 启动对账：若本进程正是已提交候选，清理自升级计划（幂等）。
   await selfUpdate?.settleOnStart();
 

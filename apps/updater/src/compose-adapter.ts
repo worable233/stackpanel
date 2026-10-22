@@ -493,6 +493,20 @@ export function normalizeDigest(digest: string): string {
   return hex ? `sha256:${hex}` : digest;
 }
 
+/**
+ * 从完整镜像引用中取出仓库部分：`repo:tag` → `repo`，`repo@sha256:...` → `repo`。
+ *
+ * 用于「未显式配置 updater 仓库时，从当前运行镜像推导」。带端口的主机名
+ * （`192.168.64.4:5000/x`）与 tag 的冒号必须区分：只有**最后一段**里的冒号才是 tag 分隔符。
+ */
+export function repositoryOf(reference: string): string {
+  const at = reference.indexOf('@');
+  if (at >= 0) return reference.slice(0, at);
+  const lastSlash = reference.lastIndexOf('/');
+  const lastColon = reference.lastIndexOf(':');
+  return lastColon > lastSlash ? reference.slice(0, lastColon) : reference;
+}
+
 /** 解析 `df -Pk` 输出的可用字节数（第 4 列，KB）。 */
 export function parseDfFreeBytes(output: string): number | null {
   const lines = output.trim().split('\n');
@@ -556,6 +570,21 @@ export class ComposeSelfUpdateAdapter implements SelfUpdateAdapter {
     return this.config.updaterImageEnv ?? 'STACKPANEL_UPDATER_IMAGE';
   }
 
+  /**
+   * updater 自己的镜像仓库。
+   *
+   * 不能用 {@link ComposeProjectConfig.imageRepository}——那是**内核**镜像
+   * （`.../stackpanel`）。自升级要拉/校验的是 `.../stackpanel-updater`。此前复用内核
+   * 仓库，`docker pull .../stackpanel@sha256:<updater 摘要>` 必然 404 或 inspect 不到
+   * 该摘要，自升级 100% 失败在「候选镜像摘要不匹配」。
+   */
+  private async updaterRepository(): Promise<string> {
+    if (this.config.updaterImageRepository) return this.config.updaterImageRepository;
+    // 未显式配置时从**当前运行的** updater 镜像引用推导仓库部分
+    // （`repo:tag` → `repo`，`repo@sha256:...` → `repo`），避免多配一个变量。
+    return repositoryOf(await this.currentUpdaterImage());
+  }
+
   private composeRun(
     args: string[],
     opts: { env?: Record<string, string>; allowNonZeroExit?: boolean; timeoutMs?: number } = {},
@@ -603,7 +632,7 @@ export class ComposeSelfUpdateAdapter implements SelfUpdateAdapter {
   }
 
   async pullAndVerifyUpdater(digest: string): Promise<{ credential: string }> {
-    const image = `${this.config.imageRepository}@${normalizeDigest(digest)}`;
+    const image = `${await this.updaterRepository()}@${normalizeDigest(digest)}`;
     await this.runner.run({
       file: 'docker',
       args: ['pull', image],
@@ -628,7 +657,7 @@ export class ComposeSelfUpdateAdapter implements SelfUpdateAdapter {
     // `repo@sha256:...`，避免把 digest 当成 `repo:tag` 形态误用。
     const reference = digest.includes('@')
       ? digest
-      : `${this.config.imageRepository}@${normalizeDigest(digest)}`;
+      : `${await this.updaterRepository()}@${normalizeDigest(digest)}`;
     await this.composeRun(['up', '-d', this.updaterService()], {
       env: { [this.updaterImageEnv()]: reference },
       timeoutMs: 15 * 60_000,

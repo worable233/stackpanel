@@ -9,6 +9,7 @@ import {
   ComposeSelfUpdateAdapter,
   DeploymentAdapterError,
   parseDfFreeBytes,
+  repositoryOf,
 } from '../src/compose-adapter.ts';
 import { validateComposeConfig, type ComposeProjectConfig } from '../src/compose-config.ts';
 import { FileDeploymentPointer } from '../src/deployment-pointer.ts';
@@ -468,7 +469,7 @@ describe('ComposeDeploymentAdapter', () => {
         };
       }
       if (req.args.includes('image') && req.args.includes('inspect')) {
-        return { code: 0, stdout: `ghcr.io/acme/stackpanel@${DIGEST}\n`, stderr: '' };
+        return { code: 0, stdout: `ghcr.io/acme/updater@${DIGEST}\n`, stderr: '' };
       }
       return undefined;
     });
@@ -477,7 +478,50 @@ describe('ComposeDeploymentAdapter', () => {
     await self.pullAndVerifyUpdater(DIGEST);
     await self.switchUpdaterTo(DIGEST);
     const up = calls.find((c) => c.args.includes('up'));
-    expect(up?.env?.['STACKPANEL_UPDATER_IMAGE']).toBe(`ghcr.io/acme/stackpanel@${DIGEST}`);
+    // 自升级必须落在 **updater 自己的仓库**，不是内核仓库（此前复用 `imageRepository`
+    // = 内核仓库，拉取的是内核镜像 → 摘要永远对不上，自升级第一步就失败）。
+    expect(up?.env?.['STACKPANEL_UPDATER_IMAGE']).toBe(`ghcr.io/acme/updater@${DIGEST}`);
     expect(up?.args).toEqual(expect.arrayContaining(['up', '-d', 'updater']));
+    const pull = calls.find((c) => c.args[0] === 'pull');
+    expect(pull?.args[1]).toBe(`ghcr.io/acme/updater@${DIGEST}`);
+  });
+
+  it('uses an explicitly configured updater image repository', async () => {
+    const { runner, calls } = fakeRunner((req) => {
+      if (req.args.includes('images')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ Repository: 'ghcr.io/acme/updater', Tag: '1.0.0' }),
+          stderr: '',
+        };
+      }
+      if (req.args.includes('image') && req.args.includes('inspect')) {
+        return { code: 0, stdout: `internal.example:5000/stackpanel-updater@${DIGEST}\n`, stderr: '' };
+      }
+      return undefined;
+    });
+    const self = new ComposeSelfUpdateAdapter(
+      config({ updaterImageRepository: 'internal.example:5000/stackpanel-updater' }),
+      runner,
+    );
+    await self.pullAndVerifyUpdater(DIGEST);
+    const pull = calls.find((c) => c.args[0] === 'pull');
+    expect(pull?.args[1]).toBe(`internal.example:5000/stackpanel-updater@${DIGEST}`);
+  });
+});
+
+describe('repositoryOf', () => {
+  it('strips a tag but keeps a registry port', () => {
+    expect(repositoryOf('192.168.64.4:5000/stackpanel-updater:v2')).toBe(
+      '192.168.64.4:5000/stackpanel-updater',
+    );
+  });
+
+  it('strips a digest reference', () => {
+    expect(repositoryOf(`ghcr.io/acme/updater@${DIGEST}`)).toBe('ghcr.io/acme/updater');
+  });
+
+  it('returns the reference unchanged when it has neither tag nor digest', () => {
+    expect(repositoryOf('ghcr.io/acme/updater')).toBe('ghcr.io/acme/updater');
   });
 });
