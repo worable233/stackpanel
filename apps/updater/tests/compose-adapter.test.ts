@@ -35,7 +35,7 @@ function config(overrides: Partial<ComposeProjectConfig> = {}): ComposeProjectCo
     projectName: 'sp',
     projectDir: '/srv/stackpanel',
     composeFiles: ['docker-compose.yml'],
-    services: { api: 'api', worker: 'worker', web: 'web' },
+    services: { api: 'api', worker: 'worker', web: 'web', migrate: 'migrate' },
     imageEnv: 'STACKPANEL_IMAGE',
     imageRepository: 'ghcr.io/acme/stackpanel',
     allowedServices: ['api', 'worker', 'web'],
@@ -243,11 +243,17 @@ describe('ComposeDeploymentAdapter', () => {
     expect(up?.args).toEqual(expect.arrayContaining(['api', 'worker', 'web']));
   });
 
-  it('runs migration as a one-shot task on the target image', async () => {
+  it('runs migration via the one-shot migrate service on the target image', async () => {
+    // 回归：曾经写成 `run api pnpm ... migrate:deploy`，但 api 的 entrypoint 忽略
+    // `$@` 并直接起 server，迁移永不执行、命令挂到超时（真机演练抓到）。
     const { adapter, calls } = adapterFor();
     await adapter.migrate({ task: task(), targetDigest: DIGEST, planDigest: 'p', workDir: root });
     const run = calls.find((c) => c.args.includes('run'));
     expect(run?.args).toEqual(expect.arrayContaining(['run', '--rm', '--no-deps']));
+    const target = run?.args[run.args.indexOf('--no-deps') + 1];
+    expect(target).toBe('migrate');
+    expect(run?.args).not.toContain('api');
+    expect(run?.args).not.toContain('pnpm');
     expect(run?.env?.['STACKPANEL_IMAGE']).toBe(`ghcr.io/acme/stackpanel@${DIGEST}`);
   });
 
