@@ -127,6 +127,19 @@ jobs:
           PUBLISHERS: ${{ secrets.CATALOG_PUBLISHERS }}
           TTL_DAYS: ${{ secrets.CATALOG_TTL_DAYS }}
 
+      # 回放保护：把本次 sequence 与**仓库里已发布的最高值**比较。不能拿本次输入当
+      # 「已见最高值」——`isNewerSequence` 是严格大于，那样永远自比失败。
+      - name: 读取已发布最高 sequence
+        id: highest
+        env:
+          GH_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+          REPOSITORY: ${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}
+        run: |
+          highest=$(gh api "repos/$REPOSITORY/git/matching-refs/tags/catalog-v1%2F" \
+            --jq '[.[].ref | capture("catalog-v1/(?<n>[0-9]+)$").n | tonumber] | max // 0' 2>/dev/null || echo 0)
+          echo "highest=${highest:-0}" >> "$GITHUB_OUTPUT"
+          echo "已发布最高 sequence：${highest:-0}"
+
       - name: 回读校验（与实例端同一验证器）
         run: |
           if [ ! -f "$RUNNER_TEMP/keys/keyring.json" ]; then
@@ -137,7 +150,7 @@ jobs:
             --dir "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" \
             --keyring "$RUNNER_TEMP/keys/keyring.json" \
             --repository "${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}" \
-            --highest "${{ inputs.sequence }}"
+            --highest "${{ steps.highest.outputs.highest }}"
 
       - name: 上传目录产物
         uses: actions/upload-artifact@v4
@@ -221,10 +234,17 @@ jobs:
             sha: commit,
           });
           // 4) 默认分支快进到同一提交：channels.json 必须在这里才被实例发现。
-          gh(['api', '-X', 'PATCH', `repos/${repo}/git/refs/heads/main`, '--input', '-'], {
-            sha: commit,
-            force: false,
-          });
+          //    force=false：并发发布时宁可失败，也不覆盖别人刚推进的指针。
+          try {
+            gh(['api', '-X', 'PATCH', `repos/${repo}/git/refs/heads/main`, '--input', '-'], {
+              sha: commit,
+              force: false,
+            });
+          } catch (error) {
+            console.error(`::error::更新 channels.json 失败（默认分支已被推进？）：${error}`);
+            console.error(`目录 tag ${tag} 已创建，但渠道指针未更新——请重跑本次发布。`);
+            process.exit(1);
+          }
           console.log(`已发布 ${tag}（commit ${commit}）并更新 channels.json`);
           NODE
 
