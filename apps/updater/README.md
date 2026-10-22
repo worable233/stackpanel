@@ -91,6 +91,8 @@ docker build -f apps/updater/Dockerfile -t stackpanel-updater .
 | `UPDATER_SERVICE_MIGRATE`        | 一次性迁移服务名，默认 `migrate`（`restart: "no"` + `entrypoint-migrate`） |
 | `UPDATER_DB_SERVICE/USER/NAME`   | 数据库服务名与凭据                                                 |
 | `UPDATER_READINESS_URL`          | 维护态 readiness 探针，默认 `http://api:3001/health`               |
+| `UPDATER_READY_TIMEOUT_MS`       | 等待探针转绿的总预算（毫秒），默认 `180000`                          |
+| `UPDATER_READY_POLL_INTERVAL_MS` | 探针轮询间隔（毫秒），默认 `2000`                                    |
 | `UPDATER_LOGIN_PROBE_URL`        | 登录/权限探针（可选）                                              |
 | `UPDATER_WEB_URL`                | Web 资源探针（可选）                                               |
 | `UPDATER_MIN_FREE_BYTES`         | 磁盘下限（可选；不足则在停服前失败，§5.4-1）                       |

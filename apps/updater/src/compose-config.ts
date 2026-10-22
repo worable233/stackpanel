@@ -38,6 +38,17 @@ export interface ProbeConfig {
   loginProbeUrl?: string;
   /** 目标 Web 资源探针 URL；缺省跳过。 */
   webUrl?: string;
+  /**
+   * 等待探针转绿的总预算（毫秒）。**不是**单次请求超时。
+   *
+   * 为什么必需：切换后 `up -d` 只保证容器被创建，API 还要跑启动自检、连库、
+   * 注册插件，冷启动常见 10–60 秒（装了插件或跑迁移后更久）。用一次 5 秒探针
+   * 判生死，会把**正常升级**系统性误判为失败并自动回退——真机演练里就出现了
+   * 「回退后探针仍未通过，保持维护」，实例被留在维护态。
+   */
+  readyTimeoutMs?: number;
+  /** 轮询间隔（毫秒）；缺省 2000。 */
+  readyPollIntervalMs?: number;
   /** Worker 心跳检查命令（在 worker 容器内执行）；缺省用 compose ps 状态。 */
   workerHeartbeatCommand?: string[];
 }
@@ -111,6 +122,15 @@ export function validateComposeConfig(config: ComposeProjectConfig): ComposeProj
     problems.push('database 配置不完整');
   }
   if (!config.probes.readinessUrl) problems.push('probes.readinessUrl 缺失');
+  if (config.probes.readyTimeoutMs !== undefined && !(config.probes.readyTimeoutMs > 0)) {
+    problems.push('probes.readyTimeoutMs 必须为正数（毫秒）');
+  }
+  if (
+    config.probes.readyPollIntervalMs !== undefined &&
+    !(config.probes.readyPollIntervalMs > 0)
+  ) {
+    problems.push('probes.readyPollIntervalMs 必须为正数（毫秒）');
+  }
   if (config.envFile !== undefined && config.envFile.trim().length === 0) {
     problems.push('envFile 为空字符串（要么不设，要么给路径）');
   }
@@ -163,6 +183,12 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
       readinessUrl: env['UPDATER_READINESS_URL'] ?? 'http://api:3001/health',
       ...(env['UPDATER_LOGIN_PROBE_URL'] ? { loginProbeUrl: env['UPDATER_LOGIN_PROBE_URL'] } : {}),
       ...(env['UPDATER_WEB_URL'] ? { webUrl: env['UPDATER_WEB_URL'] } : {}),
+      ...(env['UPDATER_READY_TIMEOUT_MS']
+        ? { readyTimeoutMs: Number(env['UPDATER_READY_TIMEOUT_MS']) }
+        : {}),
+      ...(env['UPDATER_READY_POLL_INTERVAL_MS']
+        ? { readyPollIntervalMs: Number(env['UPDATER_READY_POLL_INTERVAL_MS']) }
+        : {}),
     },
   };
   if (env['UPDATER_MIN_FREE_BYTES']) {

@@ -354,6 +354,9 @@ services:
       UPDATER_DB_USER: ${POSTGRES_USER:-stackpanel}
       UPDATER_DB_NAME: ${POSTGRES_DB:-stackpanel}
       UPDATER_READINESS_URL: http://api:3001/health
+      # 等待探针转绿的总预算：`up -d` 返回时 API 还在启动自检/连库/注册插件，
+      # 单次探针会把正常升级误判为失败并回退（真机演练抓到）。
+      UPDATER_READY_TIMEOUT_MS: ${UPDATER_READY_TIMEOUT_MS:-180000}
       UPDATER_POLL_INTERVAL_MS: ${UPDATER_POLL_INTERVAL_MS:-5000}
       # updater 自升级（§5.2）：切换自身服务镜像的环境变量，候选与回退都用它。
       UPDATER_SELF_SERVICE: updater

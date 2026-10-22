@@ -40,7 +40,12 @@ function config(overrides: Partial<ComposeProjectConfig> = {}): ComposeProjectCo
     imageRepository: 'ghcr.io/acme/stackpanel',
     allowedServices: ['api', 'worker', 'web'],
     database: { service: 'postgres', user: 'stackpanel', name: 'stackpanel' },
-    probes: { readinessUrl: 'http://api:3001/health' },
+    // 探针预算收紧到毫秒级：默认预算 180s 会让「探针失败」用例真的等 3 分钟。
+    probes: {
+      readinessUrl: 'http://api:3001/health',
+      readyTimeoutMs: 50,
+      readyPollIntervalMs: 5,
+    },
     ...overrides,
   };
 }
@@ -302,6 +307,57 @@ describe('ComposeDeploymentAdapter', () => {
       workDir: root,
     });
     expect(result.credential).toBe('verify:probes-ok');
+  });
+
+  it('keeps polling until the service becomes ready (cold start is not a failure)', async () => {
+    // 真机演练抓到：`up -d` 返回时 API 还在启动自检，单次探针必失败，
+    // 正常升级会被判失败并回滚；这里要求先失败若干次后转绿仍算成功。
+    const { runner } = fakeRunner();
+    let attempts = 0;
+    const adapter = new ComposeDeploymentAdapter({
+      config: config({
+        probes: {
+          readinessUrl: 'http://api:3001/health',
+          readyTimeoutMs: 2_000,
+          readyPollIntervalMs: 5,
+        },
+      }),
+      runner,
+      stateDir: root,
+      probe: async () => {
+        attempts += 1;
+        return attempts >= 3;
+      },
+      jsonProbe: async () => ({ status: 200, body: { status: 'ok', version: '0.3.0' } }),
+    });
+    const result = await adapter.verify({
+      task: task(),
+      targetDigest: DIGEST,
+      planDigest: 'p',
+      workDir: root,
+    });
+    expect(result.credential).toBe('verify:probes-ok');
+    expect(attempts).toBeGreaterThanOrEqual(3);
+  });
+
+  it('gives up after the ready budget instead of hanging forever', async () => {
+    const { runner } = fakeRunner();
+    const adapter = new ComposeDeploymentAdapter({
+      config: config({
+        probes: {
+          readinessUrl: 'http://api:3001/health',
+          readyTimeoutMs: 40,
+          readyPollIntervalMs: 5,
+        },
+      }),
+      runner,
+      stateDir: root,
+      probe: async () => false,
+      jsonProbe: async () => null,
+    });
+    await expect(
+      adapter.verify({ task: task(), targetDigest: DIGEST, planDigest: 'p', workDir: root }),
+    ).rejects.toThrow(/readiness/);
   });
 
   it('does not fail verify when the health endpoint returns no parseable JSON', async () => {

@@ -46,6 +46,13 @@ export interface ComposeAdapterOptions {
 }
 
 const DEFAULT_PROBE_TIMEOUT_MS = 5_000;
+/**
+ * 等待服务转绿的默认总预算。API 冷启动要跑启动自检、连库、注册插件，
+ * 实测 10–60 秒；用单次 5 秒探针判生死会把正常升级误判为失败（真机抓到）。
+ */
+const DEFAULT_READY_TIMEOUT_MS = 180_000;
+/** 轮询间隔：够密以尽快通过，又不至于把维护态日志刷爆。 */
+const DEFAULT_READY_POLL_INTERVAL_MS = 2_000;
 
 export class DeploymentAdapterError extends Error {
   constructor(
@@ -267,18 +274,18 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
   // —— §5.4-7 维护态探针 ——
   async verify(ctx: StepContext): Promise<{ credential: string }> {
     const { probes } = this.config;
-    const readiness = await this.probe(probes.readinessUrl, DEFAULT_PROBE_TIMEOUT_MS);
+    const readiness = await this.waitUntilReady(probes.readinessUrl);
     if (!readiness) {
       throw new DeploymentAdapterError(`readiness 探针未通过：${probes.readinessUrl}`, 'verify');
     }
     if (probes.webUrl) {
-      const web = await this.probe(probes.webUrl, DEFAULT_PROBE_TIMEOUT_MS);
+      const web = await this.waitUntilReady(probes.webUrl);
       if (!web) {
         throw new DeploymentAdapterError(`Web 资源探针未通过：${probes.webUrl}`, 'verify');
       }
     }
     if (probes.loginProbeUrl) {
-      const login = await this.probe(probes.loginProbeUrl, DEFAULT_PROBE_TIMEOUT_MS);
+      const login = await this.waitUntilReady(probes.loginProbeUrl);
       if (!login) {
         throw new DeploymentAdapterError(`登录/权限探针未通过：${probes.loginProbeUrl}`, 'verify');
       }
@@ -290,6 +297,26 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
       throw new DeploymentAdapterError(`升级后探针未通过：${mismatch}`, 'verify');
     }
     return { credential: 'verify:probes-ok' };
+  }
+
+  /**
+   * 轮询直到探针通过或耗尽总预算。
+   *
+   * 单次探针不能用来判定升级成败：`up -d` 返回时容器才刚创建，API 还在跑启动
+   * 自检/连库/注册插件。真机演练中单次 5 秒探针导致**正常升级被判失败并回退**，
+   * 且回退后同样来不及转绿，实例被留在维护态。
+   */
+  private async waitUntilReady(url: string): Promise<boolean> {
+    const budget = this.config.probes.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
+    const interval = this.config.probes.readyPollIntervalMs ?? DEFAULT_READY_POLL_INTERVAL_MS;
+    const deadline = Date.now() + budget;
+    for (;;) {
+      if (await this.probe(url, Math.min(DEFAULT_PROBE_TIMEOUT_MS, budget)).catch(() => false)) {
+        return true;
+      }
+      if (Date.now() + interval > deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
   }
 
   /**
@@ -377,10 +404,7 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
         timeoutMs: 10 * 60_000,
       });
     }
-    const readiness = await this.probe(
-      this.config.probes.readinessUrl,
-      DEFAULT_PROBE_TIMEOUT_MS,
-    ).catch(() => false);
+    const readiness = await this.waitUntilReady(this.config.probes.readinessUrl).catch(() => false);
     return {
       recovered: readiness,
       credential: `recover:${failure.stage}`,
@@ -409,10 +433,7 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
       previousGeneration: pointer.generation,
       updatedAt: this.now().toISOString(),
     });
-    const readiness = await this.probe(
-      this.config.probes.readinessUrl,
-      DEFAULT_PROBE_TIMEOUT_MS,
-    ).catch(() => false);
+    const readiness = await this.waitUntilReady(this.config.probes.readinessUrl).catch(() => false);
     return {
       ok: readiness,
       detail: readiness
