@@ -9,7 +9,6 @@ import {
 } from '../../src/notifications/policy-service.ts';
 import { STORE_NOTIFICATION_TYPES } from '../../../../packages/plugins/store/src/notifications.ts';
 import { LOGIN_NOTIFICATION_TYPES } from '../../../../packages/plugins/login/src/index.ts';
-import { REFERRAL_NOTIFICATION_TYPES } from '../../../../packages/plugins/referral/src/rewards.ts';
 
 /**
  * 「发出即声明」守门测试。
@@ -49,7 +48,6 @@ const PLUGIN_EMITTERS = [
   'packages/plugins/store/src/refund.ts',
   'packages/plugins/store/src/renewal.ts',
   'packages/plugins/store-wallet/src/notifications.ts',
-  'packages/plugins/referral/src/rewards.ts',
   'packages/plugins/market/src/index.ts',
 ];
 
@@ -71,7 +69,6 @@ function declarations(): NotificationTypeDefinition[] {
     ...BUILTIN_NOTIFICATION_TYPES,
     ...(STORE_NOTIFICATION_TYPES as readonly NotificationTypeDefinition[]),
     ...(LOGIN_NOTIFICATION_TYPES as readonly NotificationTypeDefinition[]),
-    ...(REFERRAL_NOTIFICATION_TYPES as readonly NotificationTypeDefinition[]),
   ];
 }
 
