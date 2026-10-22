@@ -341,6 +341,9 @@ services:
       UPDATER_SERVICE_API: api
       UPDATER_SERVICE_WORKER: worker
       UPDATER_SERVICE_WEB: web
+      # 一次性迁移服务（entrypoint-migrate + restart: "no"）。不能复用 api：
+      # api 的 entrypoint 忽略 $@、直接起 server，迁移永不执行。
+      UPDATER_SERVICE_MIGRATE: migrate
       UPDATER_DB_SERVICE: postgres
       UPDATER_DB_USER: ${POSTGRES_USER:-stackpanel}
       UPDATER_DB_NAME: ${POSTGRES_DB:-stackpanel}

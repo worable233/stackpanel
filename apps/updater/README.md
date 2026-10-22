@@ -88,6 +88,7 @@ docker build -f apps/updater/Dockerfile -t stackpanel-updater .
 | `UPDATER_IMAGE_REPOSITORY`       | 目标镜像仓库（不含 digest），如 `ghcr.io/worable233/stackpanel`    |
 | `UPDATER_IMAGE_ENV`              | 承载镜像引用的环境变量名，默认 `STACKPANEL_IMAGE`                  |
 | `UPDATER_SERVICE_API/WORKER/WEB` | 受管服务名，默认 `api` / `worker` / `web`                          |
+| `UPDATER_SERVICE_MIGRATE`        | 一次性迁移服务名，默认 `migrate`（`restart: "no"` + `entrypoint-migrate`） |
 | `UPDATER_DB_SERVICE/USER/NAME`   | 数据库服务名与凭据                                                 |
 | `UPDATER_READINESS_URL`          | 维护态 readiness 探针，默认 `http://api:3001/health`               |
 | `UPDATER_LOGIN_PROBE_URL`        | 登录/权限探针（可选）                                              |

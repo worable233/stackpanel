@@ -11,6 +11,15 @@ export interface ComposeServiceNames {
   api: string;
   worker: string;
   web: string;
+  /**
+   * 一次性迁移服务（`restart: "no"` + `entrypoint-migrate`，ADR-0025）。
+   *
+   * 必须用它而不是 `run api <cmd>`：api 服务的 entrypoint 是
+   * `entrypoint-api.sh`，它**忽略** `$@` 并 `exec node apps/api/dist/server.js`，
+   * 于是 `run api pnpm ... migrate:deploy` 实际启动的是第二个 API 进程，
+   * 迁移永不执行、命令一直挂到超时。
+   */
+  migrate: string;
 }
 
 export interface DatabaseConfig {
@@ -122,8 +131,12 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
     api: env['UPDATER_SERVICE_API'] ?? 'api',
     worker: env['UPDATER_SERVICE_WORKER'] ?? 'worker',
     web: env['UPDATER_SERVICE_WEB'] ?? 'web',
+    migrate: env['UPDATER_SERVICE_MIGRATE'] ?? 'migrate',
   };
-  const allowed = (env['UPDATER_ALLOWED_SERVICES'] ?? Object.values(services).join(','))
+  // 迁移服务不在白名单里：它是 `restart: "no"` 的一次性任务，由 migrate 步骤
+  // 单独 `run`，不该被 `up -d` 当成常驻服务拉起。
+  const allowed = (env['UPDATER_ALLOWED_SERVICES'] ??
+    [services.api, services.worker, services.web].join(','))
     .split(',')
     .map((name) => name.trim())
     .filter((name) => name.length > 0);

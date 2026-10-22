@@ -241,23 +241,16 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
 
   // —— §5.4-5 一次性迁移 ——
   async migrate(ctx: StepContext): Promise<{ credential: string }> {
-    // 用**新镜像**跑独立一次性迁移任务；数据库锁保证单次执行（§5.4-5）。
-    await this.composeRun(
-      [
-        'run',
-        '--rm',
-        '--no-deps',
-        this.config.services.api,
-        'pnpm',
-        '--filter',
-        '@stackpanel/db',
-        'migrate:deploy',
-      ],
-      {
-        env: { [this.config.imageEnv]: this.targetImage(ctx) },
-        timeoutMs: 30 * 60_000,
-      },
-    );
+    // 用**新镜像**跑独立的一次性 `migrate` 服务；数据库锁保证单次执行（§5.4-5）。
+    //
+    // 不能写成 `run api pnpm ... migrate:deploy`：api 服务的 entrypoint 是
+    // `entrypoint-api.sh`，它忽略 `$@` 并直接 `exec node apps/api/dist/server.js`，
+    // 结果是又起了一个 API 进程、迁移永不执行、命令挂到超时（真机演练抓到）。
+    // `migrate` 服务自带 `entrypoint-migrate` 且 `restart: "no"`，才是正确载体。
+    await this.composeRun(['run', '--rm', '--no-deps', this.config.services.migrate], {
+      env: { [this.config.imageEnv]: this.targetImage(ctx) },
+      timeoutMs: 30 * 60_000,
+    });
     return { credential: `migrate:${ctx.task.plan.kernel.migration}` };
   }
 
