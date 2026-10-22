@@ -208,6 +208,20 @@ export function DistributionSourceSettings({
             placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"
           />
         </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="catalogPublicKeyId">
+            {t('admin.settings.distribution.catalogKeyIdLabel')}
+          </Label>
+          <Input
+            id="catalogPublicKeyId"
+            name="keyId"
+            defaultValue={source.publicKeyId ?? ''}
+            placeholder="catalog-2026"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t('admin.settings.distribution.catalogKeyIdHint')}
+          </p>
+        </div>
         {keyState.error ? <p className="text-sm text-destructive">{keyState.error}</p> : null}
         {keyState.ok && keyState.message ? (
           <p className="text-sm text-muted-foreground">{keyState.message}</p>

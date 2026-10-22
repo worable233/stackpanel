@@ -12,6 +12,31 @@ const emptyToUndefined = (v: unknown): unknown =>
  */
 export const DEFAULT_CATALOG_REPOSITORY = 'worable233/stackpanel-plugins';
 
+/**
+ * 默认远程目录的验签公钥（Ed25519，`purpose=catalog`，绑定
+ * {@link DEFAULT_CATALOG_REPOSITORY}）。
+ *
+ * 为什么要把公钥随内核发布：只内置仓库地址而不内置信任根，默认源会「能连上却验签
+ * 失败」——运维还得自己去某个地方找一把 PEM 才能用。信任根必须是**发布产物**的一
+ * 部分（§3.3），随内核一起分发，而不是由下载到的目录自我授权。它只用于 `catalog`
+ * 用途、只绑定这个仓库，与包签名 key 分开。
+ *
+ * 轮换流程：先发布带**新**公钥的内核版本，再换签目录（旧版本会明确报验签失败，
+ * 而不是静默接受）。
+ */
+export const DEFAULT_CATALOG_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA/cF0B0ra0cnhdsg2WxswdNubuymbPIqH4VzmgaD+jmk=
+-----END PUBLIC KEY-----
+`;
+
+/**
+ * 默认目录公钥的 keyId。
+ *
+ * 目录签名里带 keyId（`catalog.sig.keyId`），信任根必须用**同一个** keyId 才能命中
+ * ——所以内置信任根不能只下发 PEM，还要下发它的身份。轮换时两者一起换。
+ */
+export const DEFAULT_CATALOG_KEY_ID = 'catalog-2026';
+
 /** 显式关闭远程目录的取值（大小写不敏感）。 */
 const CATALOG_OFF = /^(off|none|false|-)$/i;
 
@@ -154,6 +179,9 @@ const envSchema = z.object({
   // 目录 keyring 是部署后写入的，这里给运维一个「只填公钥」的入口。它只用于
   // `catalog` 用途并绑定到当前目录仓，不会与包签名共用一把 key。
   DISTRIBUTION_CATALOG_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+  // 目录公钥的 keyId（必须与 `catalog.sig.keyId` 一致；缺省用内核自带默认源的
+  // keyId）。只给 PEM 不给 keyId 会让验签按错误的身份查信任根。
+  DISTRIBUTION_CATALOG_KEY_ID: z.preprocess(emptyToUndefined, z.string().optional()),
   // 部署目标平台（内核镜像/产物选择用；如 linux/amd64、linux/arm64）。容器内运行，
   // 故与开发宿主 `process.platform` 解耦；缺省 linux/amd64。
   DISTRIBUTION_DEPLOY_PLATFORM: z.string().default('linux/amd64'),

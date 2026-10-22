@@ -160,10 +160,15 @@ describe.skipIf(!dbAvailable)('admin distribution source endpoints (real DB)', (
       method: 'PUT',
       url: '/admin/distribution/catalog-key',
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { publicKey: pem },
+      payload: { publicKey: pem, keyId: 'catalog-integration' },
     });
     expect(keyRes.statusCode).toBe(200);
-    expect((keyRes.json() as { source: { publicKey: string } }).source.publicKey).toBe(pem.trim());
+    const keyBody = keyRes.json() as {
+      source: { publicKey: string; publicKeyId: string | null };
+    };
+    expect(keyBody.source.publicKey).toBe(pem.trim());
+    // keyId 必须一起保存并回显：验签是按 catalog.sig.keyId 查信任根的。
+    expect(keyBody.source.publicKeyId).toBe('catalog-integration');
 
     const tokenRes = await app.inject({
       method: 'PUT',

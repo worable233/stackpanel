@@ -1208,6 +1208,7 @@ export const distributionSourceConfigSchema = z.object({
   ref: z.string(),
   mirror: z.string().nullable(),
   publicKey: z.string().nullable(),
+  publicKeyId: z.string().nullable(),
   tokenConfigured: z.boolean(),
   source: z.enum(['stored', 'env']),
   envRepository: z.string().nullable(),

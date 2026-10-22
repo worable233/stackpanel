@@ -270,9 +270,10 @@ export async function saveCatalogKeyAction(
   if (typeof publicKey !== 'string') {
     return { error: translate(locale, 'action.publicKeyRequired') };
   }
+  const keyId = formData.get('keyId');
   try {
     const api = await getAuthedApiClient();
-    await api.setCatalogPublicKey(publicKey);
+    await api.setCatalogPublicKey(publicKey, typeof keyId === 'string' ? keyId : undefined);
     revalidatePath('/admin/settings');
     return {
       ok: true,

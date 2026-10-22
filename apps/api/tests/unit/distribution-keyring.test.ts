@@ -112,6 +112,21 @@ describe('loadKeyring（默认远程源的信任根）', () => {
     expect(entry?.allowedRepositories).toEqual(['acme/plugins']);
   });
 
+  it('pins the configured keyId so catalog.sig.keyId can resolve the key', async () => {
+    // 目录签名声明 keyId（如 catalog-2026），信任根必须用同一个 keyId，否则
+    // 验签按 keyId 查不到 key——只给 PEM 的配置等于永远验不过。
+    const key = pem();
+    env.DISTRIBUTION_CATALOG_PUBLIC_KEY = key;
+    env.DISTRIBUTION_CATALOG_KEY_ID = 'catalog-2026';
+    env.DISTRIBUTION_CATALOG_REPOSITORY = 'acme/plugins';
+    const keyring = await loadKeyring();
+    const entry = keyring.keys.find((item) => item.keyId === 'catalog-2026');
+    expect(entry?.purpose).toBe('catalog');
+    expect(entry?.publicKeyPem).toBe(key);
+    expect(entry?.allowedRepositories).toEqual(['acme/plugins']);
+    delete env.DISTRIBUTION_CATALOG_KEY_ID;
+  });
+
   it('does not pin a catalog key when the catalog source is disabled', async () => {
     const key = pem();
     env.DISTRIBUTION_CATALOG_PUBLIC_KEY = key;

@@ -88,11 +88,14 @@ export async function readStoredKeyring(): Promise<Keyring | null> {
  * 解析内核当前信任根：数据目录 keyring 优先，迁移期把 env 的包公钥并入
  * （keyId 固定为 {@link ENV_PACKAGE_KEY_ID}，不覆盖已声明的同 keyId 条目）。
  *
- * 另外支持用 env 显式固定一把**目录**公钥（{@link ENV_CATALOG_KEY_ID}）。这是
- * 「自带默认远程源」能落地的关键：默认源一旦启用，实例必须能验它的签名，而
- * 数据目录里的 keyring 是部署后写入的。运维只要给出公钥即可，不需要手写 JSON。
- * 它只用于 `catalog` 用途，且 `allowedRepositories` 绑定到当前配置的目录仓，
- * 因此不会顺带信任别的仓库，也不会让包签名与目录签名共用一把 key。
+ * 另外支持用 env/后台显式固定一把**目录**公钥。这是「自带默认远程源」能落地的
+ * 关键：默认源一旦启用，实例必须能验它的签名，而数据目录里的 keyring 是部署后
+ * 写入的。运维只要给出公钥（和它的 keyId）即可，不需要手写 JSON。
+ *
+ * keyId 必须与 `catalog.sig.keyId` 一致——验签是按 keyId 查信任根的，只给 PEM
+ * 不给 keyId 会永远找不到 key（历史实现硬塞 `env-catalog-key`，导致配置了公钥也
+ * 一定验签失败）。它只用于 `catalog` 用途，且 `allowedRepositories` 绑定到当前
+ * 配置的目录仓，因此不会顺带信任别的仓库，也不会让包签名与目录签名共用一把 key。
  */
 export async function loadKeyring(): Promise<Keyring> {
   const stored = (await readStoredKeyring()) ?? {
@@ -104,10 +107,11 @@ export async function loadKeyring(): Promise<Keyring> {
   // 用环境变量那把 key 绑定的旧仓库，验签会莫名失败。
   const config = currentCatalogSourceConfig();
   if (config.publicKey && config.repository) {
-    const exists = keys.some((key) => key.keyId === ENV_CATALOG_KEY_ID);
+    const keyId = config.publicKeyId ?? ENV_CATALOG_KEY_ID;
+    const exists = keys.some((key) => key.keyId === keyId);
     if (!exists) {
       keys.push({
-        keyId: ENV_CATALOG_KEY_ID,
+        keyId,
         purpose: 'catalog',
         publicKeyPem: config.publicKey,
         allowedRepositories: [config.repository],

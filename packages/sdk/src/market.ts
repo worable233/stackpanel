@@ -74,6 +74,8 @@ export interface DistributionSourceConfig {
   mirror: string | null;
   /** 目录验签公钥（PEM）；`null` = 未配置。 */
   publicKey: string | null;
+  /** 该公钥的 keyId（对应 `catalog.sig.keyId`）；`null` = 未知。 */
+  publicKeyId: string | null;
   /** 是否已保存只读 token。 */
   tokenConfigured: boolean;
   /** `stored` = 后台保存的配置；`env` = 环境变量/内核默认。 */

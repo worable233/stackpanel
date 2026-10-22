@@ -54,6 +54,12 @@ vi.mock('../../src/plugins/prisma.ts', () => ({
 
 const { encryptSecret, decryptSecret } = await import('../../src/lib/crypto.ts');
 const {
+  env,
+  DEFAULT_CATALOG_KEY_ID,
+  DEFAULT_CATALOG_PUBLIC_KEY,
+  DEFAULT_CATALOG_REPOSITORY,
+} = await import('../../src/config/env.ts');
+const {
   CATALOG_PUBLIC_KEY_SETTING_KEY,
   CATALOG_SOURCE_SETTING_KEY,
   CATALOG_TOKEN_SECRET_KEY,
@@ -135,13 +141,19 @@ describe('catalog source config', () => {
 
   it('binds the catalog public key separately from the env signing key', async () => {
     const pem = '-----BEGIN PUBLIC KEY-----\ncatalog\n-----END PUBLIC KEY-----';
-    await saveCatalogPublicKey(pem, 'admin-1');
-    expect(settings.get(CATALOG_PUBLIC_KEY_SETTING_KEY)).toEqual({ publicKey: pem });
+    await saveCatalogPublicKey(pem, 'admin-1', 'catalog-2026');
+    // keyId 必须和公钥一起存：验签是按 catalog.sig.keyId 在信任根里查 key 的。
+    expect(settings.get(CATALOG_PUBLIC_KEY_SETTING_KEY)).toEqual({
+      publicKey: pem,
+      keyId: 'catalog-2026',
+    });
     expect(currentCatalogSourceConfig().publicKey).toBe(pem);
+    expect(currentCatalogSourceConfig().publicKeyId).toBe('catalog-2026');
 
     await saveCatalogPublicKey('   ', 'admin-1');
     expect(settings.has(CATALOG_PUBLIC_KEY_SETTING_KEY)).toBe(false);
     expect(currentCatalogSourceConfig().publicKey).toBeNull();
+    expect(currentCatalogSourceConfig().publicKeyId).toBeNull();
   });
 
   it('stores the token encrypted and never echoes it back', async () => {
@@ -171,5 +183,68 @@ describe('catalog source config', () => {
     expect(view.envRepository).toBeNull();
     expect(view.envMirror).toBeNull();
     expect(view.secretsEnabled).toBe(true);
+  });
+});
+
+/**
+ * 默认远程源必须**自带**信任根：只内置仓库地址而不内置公钥，开箱就会「连得上、
+ * 验签失败」。这一组用例钉死三件事——默认源用默认 key、第三方仓库不复用这把 key、
+ * 显式离线时不注入。
+ */
+describe('built-in catalog trust root', () => {
+  const originalRepository = env.DISTRIBUTION_CATALOG_REPOSITORY;
+
+  beforeEach(() => {
+    delete env.DISTRIBUTION_CATALOG_PUBLIC_KEY;
+    env.DISTRIBUTION_CATALOG_REPOSITORY = DEFAULT_CATALOG_REPOSITORY;
+  });
+
+  afterEach(() => {
+    env.DISTRIBUTION_CATALOG_REPOSITORY = originalRepository;
+    delete env.DISTRIBUTION_CATALOG_PUBLIC_KEY;
+    delete env.DISTRIBUTION_CATALOG_KEY_ID;
+  });
+
+  it('ships a catalog-purpose key for the default source so it verifies out of the box', async () => {
+    const config = await loadCatalogSourceConfig();
+    expect(config.repository).toBe(DEFAULT_CATALOG_REPOSITORY);
+    expect(config.publicKey).toBe(DEFAULT_CATALOG_PUBLIC_KEY);
+    // keyId 必须与 catalog.sig 一致，否则信任根命中不了签名者。
+    expect(config.publicKeyId).toBe(DEFAULT_CATALOG_KEY_ID);
+    expect(config.publicKey).toContain('BEGIN PUBLIC KEY');
+  });
+
+  it('never reuses the built-in catalog key for a third-party repository', async () => {
+    await saveCatalogSourceConfig({ repository: 'acme/plugins', mirror: null }, 'admin-1');
+    const config = currentCatalogSourceConfig();
+    expect(config.repository).toBe('acme/plugins');
+    expect(config.publicKey).toBeNull();
+    expect(config.publicKeyId).toBeNull();
+  });
+
+  it('does not inject the built-in key when the remote catalog is off', async () => {
+    env.DISTRIBUTION_CATALOG_REPOSITORY = undefined;
+    const config = await loadCatalogSourceConfig();
+    expect(config.repository).toBeNull();
+    expect(config.publicKey).toBeNull();
+    expect(config.publicKeyId).toBeNull();
+  });
+
+  it('keeps an explicitly configured key over the built-in one', async () => {
+    settings.delete(CATALOG_PUBLIC_KEY_SETTING_KEY);
+    env.DISTRIBUTION_CATALOG_PUBLIC_KEY = '-----BEGIN PUBLIC KEY-----\ncustom\n-----END PUBLIC KEY-----';
+    env.DISTRIBUTION_CATALOG_KEY_ID = 'custom-key';
+    const config = await loadCatalogSourceConfig();
+    expect(config.publicKey).toContain('custom');
+    expect(config.publicKeyId).toBe('custom-key');
+  });
+
+  it('drops the built-in key once the stored source points elsewhere', async () => {
+    // 后台把源改成第三方仓库时，默认 key 必须一起失效——否则等于拿官方目录的
+    // 公钥去验第三方目录，既验不过也让信任边界变得难以解释。
+    await saveCatalogSourceConfig({ repository: 'acme/plugins', mirror: null }, 'admin-1');
+    expect(currentCatalogSourceConfig().publicKey).toBeNull();
+    await saveCatalogSourceConfig({ repository: DEFAULT_CATALOG_REPOSITORY, mirror: null }, 'admin-1');
+    expect(currentCatalogSourceConfig().publicKey).toBe(DEFAULT_CATALOG_PUBLIC_KEY);
   });
 });

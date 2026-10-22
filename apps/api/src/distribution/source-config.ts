@@ -17,7 +17,13 @@
  */
 
 import type { Prisma } from '@stackpanel/db';
-import { env, normalizeCatalogRepository } from '../config/env.ts';
+import {
+  env,
+  normalizeCatalogRepository,
+  DEFAULT_CATALOG_KEY_ID,
+  DEFAULT_CATALOG_PUBLIC_KEY,
+  DEFAULT_CATALOG_REPOSITORY,
+} from '../config/env.ts';
 import { normalizeMirror } from './github-source.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { decryptSecret, encryptSecret, isSecretsEnabled } from '../lib/crypto.ts';
@@ -36,6 +42,14 @@ export interface CatalogSourceConfig {
   mirror: string | null;
   /** 目录验签公钥（PEM）；null 表示未配置。 */
   publicKey: string | null;
+  /**
+   * 该公钥的 keyId（与 `catalog.sig.keyId` 必须一致）。
+   *
+   * 验签是按 keyId 在信任根里找 key 的，因此只给 PEM 不给 keyId 等于永远找不到。
+   * 以前把 env/后台配置的公钥硬塞成 `env-catalog-key`，而目录签出来的是
+   * `catalog-2026`——配置了也一定验签失败。keyId 必须和公钥一起下发。
+   */
+  publicKeyId: string | null;
   /** 只读 token；仅用于 GitHub 主机。null 表示未配置。 */
   token: string | null;
 }
@@ -48,6 +62,8 @@ export interface CatalogSourceConfigView {
   mirror: string | null;
   /** 目录验签公钥（PEM）；null 表示未配置。 */
   publicKey: string | null;
+  /** 该公钥的 keyId（对应 `catalog.sig.keyId`）。 */
+  publicKeyId: string | null;
   /** 是否已保存只读 token（**不返回明文**）。 */
   tokenConfigured: boolean;
   /** `stored` = 数据库覆盖；`env` = 环境变量/内核默认。 */
@@ -59,14 +75,27 @@ export interface CatalogSourceConfigView {
   secretsEnabled: boolean;
 }
 
-const ENV_DEFAULTS = (): CatalogSourceConfig => ({
-  repository: env.DISTRIBUTION_CATALOG_REPOSITORY ?? null,
-  channel: env.DISTRIBUTION_CATALOG_CHANNEL,
-  ref: env.DISTRIBUTION_CATALOG_REF,
-  mirror: normalizeMirror(env.DISTRIBUTION_CATALOG_MIRROR) ?? null,
-  publicKey: env.DISTRIBUTION_CATALOG_PUBLIC_KEY ?? null,
-  token: env.DISTRIBUTION_CATALOG_TOKEN ?? null,
-});
+const ENV_DEFAULTS = (): CatalogSourceConfig => {
+  const repository = env.DISTRIBUTION_CATALOG_REPOSITORY ?? null;
+  const explicitKey = env.DISTRIBUTION_CATALOG_PUBLIC_KEY ?? null;
+  // 默认源与默认信任根是一对：只内置仓库地址而不内置公钥，开箱就会「连得上却验签
+  // 失败」。只在仓库**正是**默认源时注入，避免把官方目录的 key 悄悄绑到第三方仓库；
+  // 显式 `off` 时 repository 为 null，同样不注入。
+  const useBuiltInKey = !explicitKey && repository === DEFAULT_CATALOG_REPOSITORY;
+  return {
+    repository,
+    channel: env.DISTRIBUTION_CATALOG_CHANNEL,
+    ref: env.DISTRIBUTION_CATALOG_REF,
+    mirror: normalizeMirror(env.DISTRIBUTION_CATALOG_MIRROR) ?? null,
+    publicKey: explicitKey ?? (useBuiltInKey ? DEFAULT_CATALOG_PUBLIC_KEY : null),
+    publicKeyId: explicitKey
+      ? (env.DISTRIBUTION_CATALOG_KEY_ID ?? null)
+      : useBuiltInKey
+        ? DEFAULT_CATALOG_KEY_ID
+        : null,
+    token: env.DISTRIBUTION_CATALOG_TOKEN ?? null,
+  };
+};
 
 /**
  * 进程内缓存。构建应用是同步的（`buildApp()`），而读配置是异步的，因此启动时
@@ -133,10 +162,15 @@ function parseStoredSource(value: unknown): Partial<CatalogSourceConfig> | null 
   return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
-function storedPublicKey(value: unknown): string | null {
+function storedPublicKey(value: unknown): { publicKey: string; publicKeyId: string | null } | null {
   if (!isRecord(value)) return null;
   const key = value.publicKey;
-  return typeof key === 'string' && key.trim().length > 0 ? key : null;
+  if (typeof key !== 'string' || key.trim().length === 0) return null;
+  const keyId = value.keyId;
+  return {
+    publicKey: key,
+    publicKeyId: typeof keyId === 'string' && keyId.trim().length > 0 ? keyId.trim() : null,
+  };
 }
 
 /** 读取加密保存的只读 token（未启用密钥存储或未配置时为 null）。 */
@@ -160,7 +194,7 @@ async function readStoredToken(): Promise<string | null> {
 export async function loadCatalogSourceConfig(): Promise<CatalogSourceConfig> {
   const base = ENV_DEFAULTS();
   let stored: Partial<CatalogSourceConfig> | null = null;
-  let publicKey: string | null = null;
+  let storedKey: { publicKey: string; publicKeyId: string | null } | null = null;
   let token: string | null = null;
   try {
     const prisma = getPrisma();
@@ -169,16 +203,37 @@ export async function loadCatalogSourceConfig(): Promise<CatalogSourceConfig> {
       prisma.setting.findUnique({ where: { key: CATALOG_PUBLIC_KEY_SETTING_KEY } }),
     ]);
     stored = parseStoredSource(sourceRow?.value);
-    publicKey = storedPublicKey(keyRow?.value);
+    storedKey = storedPublicKey(keyRow?.value);
     token = await readStoredToken();
   } catch {
     // 数据库不可用（例如首次迁移前）：退回环境变量，不让分发配置阻断启动。
     stored = null;
   }
+  const effectiveRepository = stored?.repository !== undefined ? stored.repository : base.repository;
+  // 默认信任根只在**生效仓库**仍是内核自带默认源时使用：后台把源换成第三方仓库后，
+  // 不能继续用官方目录的 key 去验别人的目录（那会把「官方签名」绑到错误仓库上）。
+  const useBuiltInKey =
+    !storedKey &&
+    !env.DISTRIBUTION_CATALOG_PUBLIC_KEY &&
+    effectiveRepository === DEFAULT_CATALOG_REPOSITORY;
+  const publicKey =
+    storedKey?.publicKey ??
+    env.DISTRIBUTION_CATALOG_PUBLIC_KEY ??
+    (useBuiltInKey ? DEFAULT_CATALOG_PUBLIC_KEY : null);
+  const publicKeyId =
+    storedKey?.publicKeyId ??
+    (storedKey
+      ? env.DISTRIBUTION_CATALOG_KEY_ID ?? null
+      : env.DISTRIBUTION_CATALOG_PUBLIC_KEY
+        ? (env.DISTRIBUTION_CATALOG_KEY_ID ?? null)
+        : useBuiltInKey
+          ? DEFAULT_CATALOG_KEY_ID
+          : null);
   cached = {
     ...base,
     ...(stored ?? {}),
-    publicKey: publicKey ?? base.publicKey,
+    publicKey,
+    publicKeyId,
     token: token ?? base.token,
   };
   cachedSource = stored ? 'stored' : 'env';
@@ -233,17 +288,22 @@ export async function saveCatalogSourceConfig(
   return loadCatalogSourceConfig();
 }
 
-/** 保存目录验签公钥；空串表示清除（回退到环境变量）。 */
+/** 保存目录验签公钥；空串表示清除（回退到环境变量/内核默认）。 */
 export async function saveCatalogPublicKey(
   publicKey: string,
   updatedBy: string | null,
+  keyId?: string | null,
 ): Promise<CatalogSourceConfig> {
   const normalized = publicKey.trim();
+  const normalizedKeyId = keyId?.trim() ?? '';
   const prisma = getPrisma();
   if (normalized.length === 0) {
     await prisma.setting.deleteMany({ where: { key: CATALOG_PUBLIC_KEY_SETTING_KEY } });
   } else {
-    const value: Prisma.InputJsonValue = { publicKey: normalized };
+    // keyId 与公钥一起存：验签按 keyId 查信任根，只存 PEM 会导致永远匹配不到。
+    const value: Prisma.InputJsonValue = normalizedKeyId
+      ? { publicKey: normalized, keyId: normalizedKeyId }
+      : { publicKey: normalized };
     await prisma.setting.upsert({
       where: { key: CATALOG_PUBLIC_KEY_SETTING_KEY },
       create: { key: CATALOG_PUBLIC_KEY_SETTING_KEY, value, updatedBy },
@@ -284,6 +344,7 @@ export function toCatalogSourceView(config: CatalogSourceConfig): CatalogSourceC
     ref: config.ref,
     mirror: config.mirror,
     publicKey: config.publicKey,
+    publicKeyId: config.publicKeyId,
     tokenConfigured: config.token !== null,
     source: cachedSource,
     envRepository: base.repository,
