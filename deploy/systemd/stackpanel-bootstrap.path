@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch StackPanel bootstrap channel for the first-boot task
+Documentation=file:///opt/stackpanel/README.md
+
+[Path]
+# API 在 provision 模式下把任务写入该目录（原子 rename 后才可见）。
+# runner 认领后立即把任务移出 inbox（审计 R3），因此失败不会形成触发循环。
+PathExistsGlob=/var/lib/stackpanel/bootstrap/inbox/stackpanel/*.json
+Unit=stackpanel-bootstrap.service
+
+[Install]
+WantedBy=paths.target

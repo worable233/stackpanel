@@ -26,6 +26,15 @@ export {
   type StorageObjectStat,
 } from './storage/index.ts';
 export { closeRedis, getRedis, peekRedis, pingRedis, type RedisClient } from './redis.ts';
+export {
+  probePostgresForBootstrap,
+  probeRedisForBootstrap,
+  probeS3ForBootstrap,
+  type InfraProbeFailure,
+  type InfraProbeResult,
+  type ProbeBudget,
+  type S3ProbeInput,
+} from './bootstrap-probes.ts';
 
 /** True when the connection string points to a PostgreSQL server. */
 function isPostgresUrl(url: string): boolean {
