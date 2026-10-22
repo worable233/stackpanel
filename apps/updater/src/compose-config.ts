@@ -40,6 +40,16 @@ export interface ComposeProjectConfig {
   projectDir: string;
   /** compose 文件路径（相对 projectDir 或绝对路径）。 */
   composeFiles: string[];
+  /**
+   * compose 变量文件（`--env-file`），相对 projectDir 或绝对路径。
+   *
+   * 为什么必需：`docker/.env` 里是 POSTGRES_PASSWORD / JWT_SECRET / MINIO_ROOT_PASSWORD
+   * 等**生成于安装时**的密钥。updater 在容器里执行 `docker compose`，
+   * 它的进程环境**不含**这些变量；不显式传 `--env-file` 时 compose 会把
+   * `${POSTGRES_PASSWORD}` 等插值成空串，于是 `up -d` 会用空密码重建
+   * postgres / api——一次「成功」的升级会把数据库锁死。
+   */
+  envFile?: string;
   services: ComposeServiceNames;
   /**
    * 承载内核镜像引用的环境变量名（如 `STACKPANEL_IMAGE`）。切换时把它指向目标
@@ -92,6 +102,9 @@ export function validateComposeConfig(config: ComposeProjectConfig): ComposeProj
     problems.push('database 配置不完整');
   }
   if (!config.probes.readinessUrl) problems.push('probes.readinessUrl 缺失');
+  if (config.envFile !== undefined && config.envFile.trim().length === 0) {
+    problems.push('envFile 为空字符串（要么不设，要么给路径）');
+  }
   if (problems.length > 0) {
     throw new Error(`部署配置无效：\n - ${problems.join('\n - ')}`);
   }
@@ -122,6 +135,7 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
       .map((name) => name.trim())
       .filter((name) => name.length > 0),
     services,
+    ...(env['UPDATER_ENV_FILE'] ? { envFile: env['UPDATER_ENV_FILE'] } : {}),
     imageEnv: env['UPDATER_IMAGE_ENV'] ?? 'STACKPANEL_IMAGE',
     imageRepository: required('UPDATER_IMAGE_REPOSITORY'),
     updaterService: env['UPDATER_SELF_SERVICE'] ?? 'updater',

@@ -90,9 +90,14 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
   /** 组装 `docker compose` 基础参数。 */
   private compose(args: string[]): { file: string; args: string[] } {
     const files = this.config.composeFiles.flatMap((f) => ['-f', f]);
+    // `--env-file` 必须在 `-f` 之前也不必，但必须在子命令之前。缺了它，
+    // docker/.env 里的密钥在 updater 进程环境里不存在，compose 会把
+    // ${POSTGRES_PASSWORD} 等插值成空串——一次「成功」的升级会用空密码重建
+    // postgres / api，把实例锁死（真机升级演练抓到）。
+    const envFile = this.config.envFile ? ['--env-file', this.config.envFile] : [];
     return {
       file: 'docker',
-      args: ['compose', '-p', this.config.projectName, ...files, ...args],
+      args: ['compose', '-p', this.config.projectName, ...envFile, ...files, ...args],
     };
   }
 

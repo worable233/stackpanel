@@ -332,6 +332,10 @@ services:
       # 同一 project 执行 docker compose；Docker socket 提供操作能力。
       UPDATER_COMPOSE_PROJECT: /workspace
       UPDATER_COMPOSE_FILES: ${UPDATER_COMPOSE_FILES:-docker-compose.yml}
+      # `--env-file`：updater 进程环境里没有 docker/.env 的密钥，缺了它 compose
+      # 会把 ${POSTGRES_PASSWORD} / ${JWT_SECRET} 插值成空串，up -d 会用空密码
+      # 重建 postgres，把实例锁死（真机升级演练抓到）。
+      UPDATER_ENV_FILE: ${UPDATER_ENV_FILE:-docker/.env}
       UPDATER_IMAGE_REPOSITORY: ${STACKPANEL_IMAGE_REPOSITORY:-ghcr.io/worable233/stackpanel}
       UPDATER_IMAGE_ENV: STACKPANEL_IMAGE
       UPDATER_SERVICE_API: api
