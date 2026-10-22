@@ -191,6 +191,15 @@ export class Updater {
       await this.lock.release();
       return false;
     }
+    // 回收「认领后进程消失」的孤儿任务，把它们移回 inbox 以便续跑。
+    //
+    // 必须在**持有执行权之后**做：否则会抢走另一个活进程正在执行的任务。
+    // 真机演练用 `docker kill` 复现过——任务停在 migrating，重启后既不续跑
+    // 也不恢复，实例永久卡在维护态（`claimed/` 里的文件没人再看一眼）。
+    const reclaimed = await this.channel.reclaimOrphans(this.deps.config.instanceId);
+    for (const orphan of reclaimed) {
+      this.deps.log?.(`回收孤儿任务：${orphan.idempotencyKey}（将按检查点续跑）`);
+    }
     const task = await this.channel.claim(this.deps.config.instanceId);
     if (!task) return false;
     // 归档完整声明，供独立恢复入口在失败后重建重试任务（不依赖内存）。

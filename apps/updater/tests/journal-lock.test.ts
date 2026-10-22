@@ -156,6 +156,42 @@ describe('FileUpdateTaskChannel', () => {
     expect(result.phase).toBe('committed');
   });
 
+  it('reclaims a task whose process died mid-execution (claimed but no result)', async () => {
+    // 真机用 `docker kill` 复现：任务从 inbox 移到 claimed 后进程被杀，
+    // 结果文件不存在，任务就永久留在 claimed —— 既不续跑也不恢复，
+    // 实例卡在维护态。回收后应重新出现在 inbox 并可被认领。
+    const { FileUpdateTaskChannel } = await import('../src/task-channel.ts');
+    const channel = new FileUpdateTaskChannel(path.join(root, 'channel'));
+    const t = task();
+    await channel.submit(t);
+    const claimed = await channel.claim('i1');
+    expect(claimed?.idempotencyKey).toBe('k1');
+    // 模拟进程在此刻死亡：claimed/k1.json 存在，results/k1.json 不存在。
+    expect(await channel.claim('i1')).toBeNull();
+
+    const orphans = await channel.reclaimOrphans('i1');
+    expect(orphans.map((o) => o.idempotencyKey)).toEqual(['k1']);
+
+    // 回收后能被重新认领（这就是「按检查点续跑」的入口）。
+    const again = await channel.claim('i1');
+    expect(again?.idempotencyKey).toBe('k1');
+    expect(again?.plan.kernel.migration).toBe('m1');
+  });
+
+  it('does not resurrect a task that already has a result (only cleans the claim)', async () => {
+    // 有结果说明任务已正常收尾，只是删认领文件前被杀——重跑会重复执行一次升级。
+    const { FileUpdateTaskChannel } = await import('../src/task-channel.ts');
+    const channel = new FileUpdateTaskChannel(path.join(root, 'channel'));
+    const t = task();
+    await channel.submit(t);
+    await channel.claim('i1');
+    await channel.complete(t, { phase: 'committed', checkpoints: [] });
+
+    const orphans = await channel.reclaimOrphans('i1');
+    expect(orphans).toEqual([]);
+    expect(await channel.claim('i1')).toBeNull();
+  });
+
   it('archives the full task declaration and reads it back for recovery retry', async () => {
     const { FileUpdateTaskChannel } = await import('../src/task-channel.ts');
     const channel = new FileUpdateTaskChannel(path.join(root, 'channel'));
