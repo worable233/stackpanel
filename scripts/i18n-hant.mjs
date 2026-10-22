@@ -44,7 +44,9 @@ const HK_TERMS = [
   ['設定', '設置'],
   ['使用者', '用戶'],
   ['登入', '登錄'],
-  ['儲存', '保存'],
+  // `儲存` covers both "storage" and "save" in Traditional Chinese. Rewriting it
+  // to `保存` would turn 「存储桶」(storage bucket) into 「保存桶」(save bucket),
+  // so Hong Kong keeps `儲存` — it is the standard term for both senses there.
   ['檔案', '文件'],
   ['快取', '緩存'],
   ['執行緒', '線程'],
