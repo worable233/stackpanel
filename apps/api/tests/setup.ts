@@ -30,6 +30,7 @@ process.env.API_RATE_LIMIT_MULTIPLIER ??= '1000';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
+import { beforeAll } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -49,13 +50,23 @@ process.env.STACKPANEL_DATA_DIR ??= path.join(appsApiDir, 'data');
 // When a Redis URL is supplied (cluster-oriented runs), connect it up-front so
 // the app uses the shared Redis session + rate-limit stores instead of the
 // in-process fallbacks. Without it, tests stay hermetic and use memory.
+// Connect Redis inside a hook, not at module evaluation time.
+//
+// `tests/setup.ts` runs *before* each test file's own top-level code. Importing
+// `infra.ts` here would pull in `config/env.ts`, which parses and freezes the
+// environment at import time — so a test file that sets `process.env.X` at the
+// top (the documented pattern for the setup-wizard suites) would silently have
+// no effect, but only when `REDIS_URL` is set. That is exactly the discrepancy
+// between a local run (no Redis) and CI (Redis service attached).
 if (process.env.REDIS_URL) {
-  const { initRedis } = await import('../src/infra.ts');
-  try {
-    await initRedis();
-  } catch {
-    // Leave Redis uninitialised; getRedis() will fall back to memory.
-  }
+  beforeAll(async () => {
+    const { initRedis } = await import('../src/infra.ts');
+    try {
+      await initRedis();
+    } catch {
+      // Leave Redis uninitialised; getRedis() will fall back to memory.
+    }
+  });
 }
 
 /** Build a URL for the maintenance database (`postgres`) so we can drop/create. */
