@@ -324,6 +324,12 @@ services:
       postgres:
         condition: service_healthy
     entrypoint: ['/usr/local/bin/entrypoint-updater']
+    # updater 以非 root 的 `node` 用户运行，而 /var/run/docker.sock 属于
+    # root:docker（GID 因宿主而异）。不加这个附加组时，所有 docker 调用都会
+    # `permission denied while trying to connect to the Docker API`——升级必然
+    # 失败（真机升级演练抓到）。`deploy.sh` 会把宿主的实际 GID 写进 docker/.env。
+    group_add:
+      - '${DOCKER_GID:-999}'
     environment:
       NODE_ENV: production
       UPDATER_STATE_DIR: /var/lib/stackpanel-updater
