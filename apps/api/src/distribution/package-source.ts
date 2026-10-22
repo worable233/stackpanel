@@ -53,11 +53,13 @@ export async function resolveReleaseAssetUrl(input: {
   asset: string;
   cache: SourceCache;
   token?: string;
+  mirror?: string;
   fetchImpl?: typeof fetch;
 }): Promise<{ url: string; size: number }> {
   const apiUrl = `https://api.github.com/repos/${input.repository}/releases/tags/${encodeURIComponent(input.tag)}`;
   const result = await fetchTextConditional(apiUrl, input.cache, {
     ...(input.token ? { token: input.token } : {}),
+    ...(input.mirror ? { mirror: input.mirror } : {}),
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
   });
   if (!result.body) throw new PackageFetchError(`Release ${input.tag} 不可用`, 'not_found');
@@ -137,6 +139,7 @@ export async function fetchAndVerifyPackage(input: {
   publisher: string;
   keyId: string;
   token?: string;
+  mirror?: string;
   fetchImpl?: typeof fetch;
   now?: Date;
   /** 注入解压（测试）。缺省 {@link unpackArchive}。 */
@@ -153,6 +156,7 @@ export async function fetchAndVerifyPackage(input: {
       asset,
       cache,
       ...(input.token ? { token: input.token } : {}),
+      ...(input.mirror ? { mirror: input.mirror } : {}),
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
     });
   } catch (error) {
@@ -162,6 +166,7 @@ export async function fetchAndVerifyPackage(input: {
 
   const download = await downloadAsset(resolved.url, {
     ...(input.token ? { token: input.token } : {}),
+    ...(input.mirror ? { mirror: input.mirror } : {}),
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
     maxBytes: MAX_ARCHIVE_BYTES,
   });

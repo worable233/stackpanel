@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.ts';
+import { getInfraConfig } from '../../src/infra.ts';
 import { getPrisma } from '../../src/plugins/prisma.ts';
 import { checkDbAvailable } from '../helpers.ts';
 import { createAdminUser, createTestUser } from '../auth-helpers.ts';
@@ -70,7 +71,9 @@ describe.skipIf(!dbAvailable)('storage plugin (real kernel + real backend)', () 
   beforeAll(async () => {
     // Isolated data dir; the env "default" driver anchors `<dataDir>/storage`.
     dataDir = await mkdtemp(path.join(process.cwd(), '.sp-storage-'));
-    envRoot = path.join(dataDir, 'storage');
+    const fallback = getInfraConfig().storage;
+    if (fallback.driver !== 'local') throw new Error('test requires the local env storage driver');
+    envRoot = fallback.root;
     pluginRoot = path.join(dataDir, 'plugin-storage');
     process.env['STACKPANEL_DATA_DIR'] = dataDir;
     process.env['STORAGE_DRIVER'] = 'local';

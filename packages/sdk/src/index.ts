@@ -253,6 +253,7 @@ export type {
   EnsureSystemUserInput,
   CreatedPlatformToken,
   CreatePlatformTokenInput,
+  GrantUserGroupInput,
   PermissionGroup,
   PlatformTokenView,
   PlatformTokenInspection,
@@ -260,13 +261,22 @@ export type {
   ResolvedPlatformToken,
   SessionCookieConfig,
   SessionResult,
+  UserGroupGrant,
 } from './auth.js';
 export type { FxQuote, FxRate, FxService } from './fx.js';
 export type { CurrencyDefinition, CurrencyErrorCode, CurrencyService } from './currency.js';
 export type { StateCandidate, StateLease, StateService } from './state.js';
 export type { CacheReadOptions, CacheService } from './cache.js';
 export type { MediaReferenceService } from './media.js';
-export type { MarketInstallResult, MarketService } from './market.js';
+export type {
+  DistributionRefreshResult,
+  DistributionSourceConfig,
+  DistributionSourceInput,
+  DistributionSourceResponse,
+  MarketInstallResult,
+  MarketService,
+  MarketStatus,
+} from './market.js';
 export type {
   StorageBackendSpec,
   StorageBeginPutInput,

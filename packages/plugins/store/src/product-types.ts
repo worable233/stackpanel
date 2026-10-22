@@ -1,5 +1,10 @@
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
-import type { HttpRequest, ProductTypeProvider, UpstreamProductSource } from '@stackpanel/sdk';
+import type {
+  HttpRequest,
+  ProductConfigField,
+  ProductTypeProvider,
+  UpstreamProductSource,
+} from '@stackpanel/sdk';
 import { context } from './context';
 import { StoreError } from './errors';
 
@@ -24,7 +29,45 @@ export async function listProductTypes(): Promise<unknown> {
       configFields: implementation.configFields ?? [],
     })),
   );
-  return { types };
+  // 动态候选项（如「授予哪个权限组」）由 store 在聚合时填充：类型插件只能声明
+  // 静态 options，而权限组是运行期数据。填充失败时保留空 options，商品表单仍
+  // 可渲染，只是下拉为空——不能让一个选项源故障拖垮整个类型列表。
+  const permissionGroups = await loadPermissionGroups();
+  return { types: types.map((type) => ({ ...type, configFields: fillOptions(type.configFields, permissionGroups) })) };
+}
+
+/** 当前平台权限组（供 `optionsSource: 'permissionGroups'` 填充）。 */
+async function loadPermissionGroups(): Promise<Array<{ label: string; value: string }>> {
+  try {
+    const groups = await context().auth.listPermissionGroups();
+    return groups.map((group) => ({
+      label: group.discount != null && group.discount > 0 ? `${group.name}（${group.discount}% 折扣）` : group.name,
+      value: group.id,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 按字段声明填充动态候选项。
+ *
+ * `optionsSource` 是类型插件与 store 之间的约定：插件声明「我要哪一类运行期
+ * 选项」，store 负责解析成 `options`，避免插件自己去查内核数据（插件拿不到
+ * 权限组列表以外的上下文，也不该为渲染表单而调管理端接口）。
+ */
+function fillOptions(
+  fields: readonly ProductConfigField[],
+  permissionGroups: Array<{ label: string; value: string }>,
+): ProductConfigField[] {
+  return fields.map((field) => {
+    const withChildren =
+      field.fields && field.fields.length > 0
+        ? { ...field, fields: fillOptions(field.fields, permissionGroups) }
+        : field;
+    if (withChildren.optionsSource !== 'permissionGroups') return withChildren;
+    return { ...withChildren, options: permissionGroups };
+  });
 }
 
 /** 按类型 key 找到已注册的商品类型提供方（用于创建商品时校验类型配置）。 */

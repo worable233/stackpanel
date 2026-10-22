@@ -41,6 +41,8 @@ import {
   marketInstallResponseSchema,
   marketPluginsResponseSchema,
   marketThemesResponseSchema,
+  distributionRefreshResultSchema,
+  distributionSourceResponseSchema,
   navListResponseSchema,
   notificationListResponseSchema,
   notificationMarkAllResponseSchema,
@@ -175,6 +177,11 @@ import type {
   ResellerMutationResponse,
   WebhookDeliveryListResponse,
 } from './types.js';
+import type {
+  DistributionRefreshResult,
+  DistributionSourceInput,
+  DistributionSourceResponse,
+} from './market.js';
 
 export interface ApiClientOptions {
   /** Base URL of the StackPanel API, e.g. `http://127.0.0.1:3001`. */
@@ -1061,10 +1068,7 @@ export class ApiClient {
   }
 
   /** Enable or disable a catalog currency (referenced/settlement ones are refused). */
-  setCurrencyEnabled(
-    code: string,
-    enabled: boolean,
-  ): Promise<CurrencyDefinitionMutationResponse> {
+  setCurrencyEnabled(code: string, enabled: boolean): Promise<CurrencyDefinitionMutationResponse> {
     return this.patch(
       `/admin/currency-definitions/${encodeURIComponent(code)}`,
       { enabled },
@@ -1074,10 +1078,7 @@ export class ApiClient {
 
   /** Read the platform settlement currency and its candidates. */
   getSettlementCurrency(): Promise<SettlementCurrencyResponse> {
-    return this.get(
-      '/admin/settings/settlement-currency',
-      settlementCurrencyResponseSchema,
-    );
+    return this.get('/admin/settings/settlement-currency', settlementCurrencyResponseSchema);
   }
 
   /** Change the platform settlement currency after compatibility checks. */
@@ -1156,6 +1157,42 @@ export class ApiClient {
       {},
       marketInstallResponseSchema,
     );
+  }
+
+  /* -------------------- 分发源配置（PLAN-github-distribution §10） -------------------- */
+
+  /** 读取生效中的分发源配置（token 只报告是否已保存）。 */
+  getDistributionSource(): Promise<DistributionSourceResponse> {
+    return this.get('/admin/distribution/source', distributionSourceResponseSchema);
+  }
+
+  /** 保存分发源配置；保存后服务端立即重建目录协调器，无需重启。 */
+  setDistributionSource(input: DistributionSourceInput): Promise<DistributionSourceResponse> {
+    return this.put('/admin/distribution/source', input, distributionSourceResponseSchema);
+  }
+
+  /** 设置目录验签公钥；空串表示清除并回退到环境变量。 */
+  setCatalogPublicKey(publicKey: string): Promise<DistributionSourceResponse> {
+    return this.put(
+      '/admin/distribution/catalog-key',
+      { publicKey },
+      distributionSourceResponseSchema,
+    );
+  }
+
+  /** 设置私有目录只读 token（加密存储，永不回显）；空串表示清除。 */
+  setCatalogToken(token: string): Promise<DistributionSourceResponse> {
+    return this.put('/admin/distribution/token', { token }, distributionSourceResponseSchema);
+  }
+
+  /** 立即触发一次目录刷新（受退避约束），用于改完配置后自检。 */
+  refreshDistribution(): Promise<DistributionRefreshResult> {
+    return this.post('/admin/distribution/refresh', {}, distributionRefreshResultSchema);
+  }
+
+  /** 重新从数据库读取配置（多副本时让本副本跟上）。 */
+  reloadDistributionSource(): Promise<DistributionSourceResponse> {
+    return this.post('/admin/distribution/reload', {}, distributionSourceResponseSchema);
   }
 
   /* -------------------- 开发者控制台（DEV-CONSOLE P4） -------------------- */

@@ -19,7 +19,7 @@ export async function externalAgentRoutes(app: FastifyInstance): Promise<void> {
   app.put('/admin/agent/mcp-servers/:id', { preHandler: admin }, async (request) => {
     noImpersonation(request); const id = idOf(request.params); const parsed = parseAgent(serverSchema, request.body);
     for (const tool of parsed.tools) {
-      if (JSON.stringify(tool.inputSchema).includes('"$ref"')) throw new PluginError('validation.invalid', 422, '工具 schema 不允许外部引用');
+      if (JSON.stringify(tool.inputSchema).includes('$ref')) throw new PluginError('validation.invalid', 422, '工具 schema 不允许外部引用');
       try { request.compileValidationSchema(tool.inputSchema); } catch { throw new PluginError('validation.invalid', 422, '工具 schema 无效'); }
     }
     const value = { ...parsed, tools: parsed.tools as unknown as Prisma.InputJsonArray };

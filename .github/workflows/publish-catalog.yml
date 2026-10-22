@@ -1,9 +1,14 @@
 # 该文件由 DIST-CONTRACT 流维护：市场目录快照的构建、签名与发布
 # （PLAN-github-distribution-and-updates §12；ADR-0023 提议）。
 #
-# 目标仓库：`worable233/stackpanel-market`（建议新增）。目录采用唯一 Release tag
-# `catalog-v1/<sequence>`，含 `catalog.json` + `catalog.sig`（Ed25519）。目录只**引用**
-# 允许仓库/release/asset/摘要，不保存安装包。
+# 目标仓库：默认 `worable233/stackpanel-plugins`（内核自带的默认远程源，见
+# `apps/api/src/config/env.ts` 的 `DEFAULT_CATALOG_REPOSITORY`）。目录采用唯一
+# Release tag `catalog-v1/<sequence>`，含 `catalog.json` + `catalog.sig`（Ed25519）。
+# 目录只**引用**允许仓库/release/asset/摘要，不保存安装包。
+#
+# 实例发现目录的顺序是：先取仓库默认分支的 `channels.json`（渠道指针 → sequence），
+# 再取 `catalog-v1/<sequence>` 的 catalog.json/catalog.sig。因此发布必须**同时**
+# 提交 channels.json 到默认分支——只建 Release 而不更新指针，实例永远发现不了新目录。
 #
 # 为什么先交付本 workflow：§13 明确「未取得 GitHub 发布权限时先交付 workflows、签名
 # 测试产物和本地完整演练」。因此：
@@ -49,7 +54,7 @@ jobs:
           repository: ${{ github.repository }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -112,7 +117,7 @@ jobs:
           node scripts/release/verify-catalog.mjs \
             --dir "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" \
             --keyring "$RUNNER_TEMP/keys/keyring.json" \
-            --repository "${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-market' }}" \
+            --repository "${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}" \
             --highest "${{ inputs.sequence }}"
 
       - name: 上传目录产物
@@ -130,14 +135,35 @@ jobs:
         run: |
           dir="$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}"
           tag="catalog-v1/${{ inputs.sequence }}"
-          if gh release view "$tag" --repo "${{ secrets.CATALOG_REPOSITORY }}" >/dev/null 2>&1; then
+          repo="${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}"
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
             echo "::error::目录 tag 已存在：$tag（禁止覆盖同一 sequence）"; exit 1
           fi
           gh release create "$tag" \
-            --repo "${{ secrets.CATALOG_REPOSITORY }}" \
+            --repo "$repo" \
             --title "catalog-v1/${{ inputs.sequence }}" \
             --notes "Market catalog snapshot sequence ${{ inputs.sequence }}" \
             "$dir/catalog.json" "$dir/catalog.sig"
+
+      # 更新渠道指针：实例先读默认分支的 channels.json 才能发现新 sequence。
+      # 没有这一步，Release 建了也永远不可见。
+      - name: 更新 channels.json 渠道指针
+        if: ${{ inputs.publish && env.REAL_KEY == '1' }}
+        env:
+          GH_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+        run: |
+          dir="$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}"
+          repo="${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}"
+          if [ ! -f "$dir/channels.json" ]; then
+            echo "::error::缺少 channels.json 渠道指针产物"; exit 1
+          fi
+          # 通过 contents API 写入默认分支（与 Release 同一 token）。
+          sha=$(gh api "repos/$repo/contents/channels.json" --jq .sha 2>/dev/null || true)
+          content=$(base64 < "$dir/channels.json" | tr -d '\n')
+          payload=$(node -e "console.log(JSON.stringify({message:process.argv[1],content:process.argv[2],...(process.argv[3]?{sha:process.argv[3]}:{})}))" \
+            "chore(catalog): point channels to sequence ${{ inputs.sequence }}" "$content" "$sha")
+          printf '%s' "$payload" | gh api -X PUT "repos/$repo/contents/channels.json" --input - >/dev/null
+          echo "channels.json 已指向 sequence ${{ inputs.sequence }}"
 
       - name: 摘要
         run: |

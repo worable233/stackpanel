@@ -19,6 +19,7 @@ import type {
   PluginDefinition,
 } from '@stackpanel/sdk';
 import type { CatalogInstallContext } from '../distribution/runtime.ts';
+import type { CatalogRefreshService } from '../distribution/refresh-service.ts';
 import type { PluginRuntime } from '../plugins/runtime.ts';
 import {
   catalogMarketPackageView,
@@ -37,11 +38,36 @@ import {
 } from '../lib/market-catalog.ts';
 import { loadPluginDefinition } from '../lib/plugins.ts';
 import { getPrisma } from '../plugins/prisma.ts';
-import { resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import { publishRuntimeChange, type RuntimeChange } from '../runtime/coherence.ts';
+import { getCatalogRefresh, resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import {
+  localMarketSourcesAllowed,
+  localSourcesDisabledReason,
+} from '../distribution/runtime-env.ts';
+
+/** 市场来源健康度（供后台展示「为什么没有条目」）。 */
+export interface MarketStatus {
+  localSources: {
+    enabled: boolean;
+    reason?: string;
+  };
+  catalog: {
+    /** 是否配置了远程目录（默认源也算配置）。 */
+    configured: boolean;
+    repository: string | null;
+    channel: string | null;
+    /** 是否已拿到一份可用快照。 */
+    available: boolean;
+    sequence?: number;
+    expired?: boolean;
+    /** 最近一次刷新失败原因（成功后清空）。 */
+    failure?: { kind: string; message: string; retryAt?: string };
+  };
+}
 
 /** 市场服务依赖（可注入，便于单元测试）。 */
 export interface MarketServiceDeps {
-  runtime: Pick<PluginRuntime, 'has' | 'register' | 'unregister' | 'activate'>;
+  runtime: Pick<PluginRuntime, 'has' | 'isActive' | 'register' | 'unregister' | 'activate'>;
   prisma?: PrismaClient;
   /** 解析已验证的远程目录上下文；未配置目录仓时返回 null（完全离线）。 */
   catalog?: () => Promise<CatalogInstallContext | null>;
@@ -51,6 +77,18 @@ export interface MarketServiceDeps {
   installLocal?: (kind: 'plugin' | 'theme', id: string) => Promise<{ id: string; version: string }>;
   /** 加载已安装插件定义（测试可注入）。 */
   loadDefinition?: (id: string) => Promise<PluginDefinition>;
+  /** 本地来源策略（测试可注入；默认按容器/生产形态判定）。 */
+  localSources?: () => { enabled: boolean; reason?: string };
+  /** 目录刷新协调器（测试可注入；默认读进程单例）。 */
+  catalogRefresh?: () => CatalogRefreshService | null;
+  /**
+   * 跨副本运行时失效广播（测试可注入；默认走 Redis Pub/Sub）。
+   *
+   * 安装改动的是**本进程**的内存运行时：别的副本仍持有旧定义/旧主题，直到重启。
+   * 与后台 ZIP 上传、卸载路径一致，这里装完必须广播一次，否则「市场装成功但
+   * 只有一台机器生效」。
+   */
+  notifyChange?: (change: RuntimeChange) => Promise<void>;
 }
 
 const LOCAL_LABEL: Record<'plugin' | 'theme', string> = { plugin: '插件', theme: '主题' };
@@ -70,6 +108,9 @@ export class MarketService implements MarketServiceContract {
     id: string,
   ) => Promise<{ id: string; version: string }>;
   private readonly loadDefinition: (id: string) => Promise<PluginDefinition>;
+  private readonly localSources: () => { enabled: boolean; reason?: string };
+  private readonly catalogRefresh: () => CatalogRefreshService | null;
+  private readonly notifyChange: (change: RuntimeChange) => Promise<void>;
 
   constructor(private readonly deps: MarketServiceDeps) {
     this.prisma = deps.prisma ?? getPrisma();
@@ -80,6 +121,14 @@ export class MarketService implements MarketServiceContract {
       deps.installLocal ??
       ((kind, id) => (kind === 'plugin' ? installMarketPlugin(id) : installMarketTheme(id)));
     this.loadDefinition = deps.loadDefinition ?? loadPluginDefinition;
+    this.localSources =
+      deps.localSources ??
+      (() =>
+        localMarketSourcesAllowed()
+          ? { enabled: true }
+          : { enabled: false, reason: localSourcesDisabledReason() });
+    this.catalogRefresh = deps.catalogRefresh ?? getCatalogRefresh;
+    this.notifyChange = deps.notifyChange ?? publishRuntimeChange;
   }
 
   /** 列出某类可安装条目：本地随包来源 + 已签名远程目录（若配置）。 */
@@ -92,6 +141,30 @@ export class MarketService implements MarketServiceContract {
     const entries = await listCatalogMarketEntries(context.catalog, kind as CatalogKind);
     const remote = entries.map((entry) => catalogMarketPackageView(entry, entry.installedVersion));
     return mergeMarket(local, remote);
+  }
+
+  /**
+   * 市场来源健康度：本地来源是否可用、远程目录是否配置/可用，以及失败原因。
+   *
+   * 默认远程源开启后，「目录取不到」和「本地来源被容器策略禁用」都会让市场看起来
+   * 是空的；没有这份诊断，运维只能猜。**不发网络请求**，只读当前状态。
+   */
+  async status(): Promise<MarketStatus> {
+    const local = this.localSources();
+    const service = this.catalogRefresh();
+    const current = service?.current() ?? null;
+    const failure = service?.lastFailureInfo() ?? null;
+    return {
+      localSources: local,
+      catalog: {
+        configured: service !== null,
+        repository: service?.repository ?? null,
+        channel: service?.channel ?? null,
+        available: current !== null,
+        ...(current ? { sequence: current.sequence, expired: current.expired } : {}),
+        ...(failure ? { failure } : {}),
+      },
+    };
   }
 
   /**
@@ -113,18 +186,49 @@ export class MarketService implements MarketServiceContract {
     kind: 'plugin' | 'theme',
     id: string,
   ): Promise<MarketInstallResult> {
+    // `upgraded` 必须在安装**之前**判定：安装会把 DB 行从「无」变成「有」，
+    // 事后再查会把首次安装误报成升级。
+    const upgraded = await this.wasInstalled(kind, id);
     const result = await this.installLocal(kind, id);
     if (kind === 'theme') {
-      return { id: result.id, version: result.version, upgraded: false, source: 'local' };
+      // 主题注册表同样是进程内缓存：装上后必须让其它副本重载，否则只有本副本换肤。
+      await this.notifyChange({ kind: 'theme', id, action: 'reload' }).catch(() => undefined);
+      return { id: result.id, version: result.version, upgraded, source: 'local' };
     }
     // 与 ZIP 上传一致：安装后立即 register/activate，无需重启。
     const runtime = this.deps.runtime;
-    const upgraded = runtime.has(id);
-    if (upgraded) await runtime.unregister(id, { retainData: true });
-    const definition = await this.loadDefinition(id);
-    await runtime.register(definition);
-    await runtime.activate(id);
+    const previousDefinition = upgraded ? await this.loadDefinition(id).catch(() => null) : null;
+    const wasActive = upgraded && runtime.isActive(id);
+    let oldUnregistered = false;
+    let newRegistered = false;
+    try {
+      if (upgraded) {
+        await runtime.unregister(id, { retainData: true });
+        oldUnregistered = true;
+      }
+      const definition = await this.loadDefinition(id);
+      await runtime.register(definition);
+      newRegistered = true;
+      await runtime.activate(id);
+    } catch (err) {
+      // 文件已经是新的，但新定义没跑起来：把旧定义装回去，别让路由静默消失。
+      if (newRegistered) await runtime.unregister(id, { retainData: true }).catch(() => undefined);
+      if (oldUnregistered && previousDefinition) {
+        await runtime.register(previousDefinition).catch(() => undefined);
+        if (wasActive) await runtime.activate(id).catch(() => undefined);
+      }
+      throw err;
+    }
+    // 其它副本的运行时还是旧定义；广播一次重载，与后台 ZIP 上传路径一致。
+    await this.notifyChange({ kind: 'plugin', id, action: 'reload' }).catch(() => undefined);
     return { id: result.id, version: result.version, upgraded, source: 'local' };
+  }
+
+  /** 该组件是否已安装（插件看运行时，主题看主题表）。 */
+  private async wasInstalled(kind: 'plugin' | 'theme', id: string): Promise<boolean> {
+    if (kind === 'plugin') return this.deps.runtime.has(id);
+    const row = await this.prisma.theme.findUnique({ where: { id }, select: { id: true } });
+    return row !== null;
   }
 
   private async installFromCatalog(
@@ -134,13 +238,23 @@ export class MarketService implements MarketServiceContract {
   ): Promise<MarketInstallResult> {
     const prepared = await prepareCatalogInstall(context, kind, id);
     const manifest = prepared.packageManifest as { id: string; name: string; version: string };
+    const runtime = this.deps.runtime;
+    // 升级前先记下运行中的旧定义与激活状态：装载新定义失败时必须把它装回去，
+    // 否则文件回滚了、进程里却没有这个插件——路由静默消失，比升级失败更难查。
+    const wasRegistered = kind === 'plugin' && runtime.has(id);
+    const previousDefinition = wasRegistered ? await this.loadDefinition(id).catch(() => null) : null;
+    const wasActive = wasRegistered && runtime.isActive(id);
+    let oldUnregistered = false;
+    let newRegistered = false;
     try {
       if (kind === 'plugin') {
-        const runtime = this.deps.runtime;
-        const upgraded = runtime.has(id);
-        if (upgraded) await runtime.unregister(id, { retainData: true });
+        if (wasRegistered) {
+          await runtime.unregister(id, { retainData: true });
+          oldUnregistered = true;
+        }
         const definition = await this.loadDefinition(id);
         await runtime.register(definition);
+        newRegistered = true;
         await runtime.activate(id);
         await this.prisma.plugin.upsert({
           where: { id },
@@ -166,6 +280,8 @@ export class MarketService implements MarketServiceContract {
         }
       }
       await prepared.handle.commit();
+      // 提交成功才算「新版本已生效」；此时再广播，避免回滚后触发无意义重载。
+      await this.notifyChange({ kind, id, action: 'reload' }).catch(() => undefined);
       return {
         id,
         version: prepared.version,
@@ -177,6 +293,12 @@ export class MarketService implements MarketServiceContract {
     } catch (err) {
       // 文件已暂存但运行时/DB 未提交：恢复旧目录，避免半切换（§7.6）。
       await prepared.handle.rollback();
+      // 与 ZIP 上传路径对齐：把旧定义装回去，别留下「文件是旧的、进程里没有它」。
+      if (newRegistered) await runtime.unregister(id, { retainData: true }).catch(() => undefined);
+      if (oldUnregistered && previousDefinition) {
+        await runtime.register(previousDefinition).catch(() => undefined);
+        if (wasActive) await runtime.activate(id).catch(() => undefined);
+      }
       throw err;
     }
   }

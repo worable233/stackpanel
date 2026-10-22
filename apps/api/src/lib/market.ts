@@ -7,14 +7,46 @@ import type { MarketPackage } from '@stackpanel/sdk';
 import type { PluginManifestFile } from './plugins.ts';
 import type { CatalogMarketEntry } from './market-catalog.ts';
 import { readFrontendManifest } from './frontend.ts';
+import { preserveRevisions, pruneRevisions } from './frontend-revisions.ts';
+import { materializeAndPublish } from './frontend-storage.ts';
 import { packageManager } from '../packages/manager.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { env } from '../config/env.ts';
 import { verifyPackageSignature } from './signatures.ts';
+import {
+  localMarketSourcesAllowed,
+  localSourcesDisabledReason,
+} from '../distribution/runtime-env.ts';
 
-/** Local market sources: the kernel ships official plugins/themes in packages/. */
-const PLUGINS_SOURCE = path.resolve(process.cwd(), '..', '..', 'packages', 'plugins');
-const THEMES_SOURCE = path.resolve(process.cwd(), '..', '..', 'packages', 'themes');
+/**
+ * 本地市场来源根目录（随内核发布的包）。
+ *
+ * 解析必须同时兼容两种进程工作目录：
+ * - monorepo 开发：`cwd = <repo>/apps/api` → 上两级到仓库根；
+ * - 容器/单进程：`cwd = /app`（镜像 WORKDIR）→ 仓库根**就是** `cwd`。
+ *
+ * 之前只写了 `../..`，在镜像里会解析成 `/packages/plugins`（不存在），导致市场
+ * 本地列表恒为空。这里与 `lib/plugins.ts` 的 `resolvePluginsSourceRoot()` 保持同一
+ * 套候选顺序，避免两处对「仓库根在哪」得出不同答案。
+ */
+function resolveSourceRoot(kind: 'plugins' | 'themes'): string {
+  const cwd = process.cwd();
+  for (const candidate of [
+    path.join(cwd, 'packages', kind),
+    path.join(cwd, '..', '..', 'packages', kind),
+  ]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return path.join(cwd, '..', '..', 'packages', kind);
+}
+
+const PLUGINS_SOURCE = resolveSourceRoot('plugins');
+const THEMES_SOURCE = resolveSourceRoot('themes');
+
+/** 本地来源是否可用：容器/生产形态下一律禁用（安全边界，见 runtime-env）。 */
+function localSourcesEnabled(): boolean {
+  return localMarketSourcesAllowed();
+}
 
 function dataDir(): string {
   return resolveStackPanelDataDir();
@@ -100,6 +132,7 @@ async function readPluginManifestFile(dir: string): Promise<PluginManifestFile |
 
 /** Discover plugin packages available in the local market. */
 export async function listMarketPlugins(): Promise<MarketSourcePackage[]> {
+  if (!localSourcesEnabled()) return [];
   if (!existsSync(PLUGINS_SOURCE)) return [];
   const entries = await readdir(PLUGINS_SOURCE, { withFileTypes: true });
   const results: MarketSourcePackage[] = [];
@@ -124,6 +157,7 @@ export async function listMarketPlugins(): Promise<MarketSourcePackage[]> {
 
 /** Discover theme packages available in the local market. */
 export async function listMarketThemes(): Promise<MarketSourcePackage[]> {
+  if (!localSourcesEnabled()) return [];
   if (!existsSync(THEMES_SOURCE)) return [];
   const entries = await readdir(THEMES_SOURCE, { withFileTypes: true });
   const results: MarketSourcePackage[] = [];
@@ -222,6 +256,7 @@ export function catalogMarketPackageView(
 
 /** Install (or upgrade) a plugin from the market into data/plugins. */
 export async function installMarketPlugin(id: string): Promise<{ id: string; version: string }> {
+  if (!localSourcesEnabled()) throw new Error(localSourcesDisabledReason());
   const sources = await listMarketPlugins();
   const source = sources.find((p) => p.id === id);
   if (!source) throw new Error(`市场中没有插件：${id}`);
@@ -313,6 +348,12 @@ export async function installMarketPlugin(id: string): Promise<{ id: string; ver
     await rm(tmp, { recursive: true, force: true });
     throw err;
   }
+  // 与 ZIP 上传共用同一套前端契约（Contract 04）：把 `frontend/` 物化成不可变
+  // revision 并镜像到对象存储，保留上一版 revision（已打开的标签页仍要取 chunk），
+  // 再裁剪窗口。缺了这步，本地市场装出来的插件只能走未版本化的扁平路径。
+  await materializeAndPublish('plugins', id, handle.target).catch(() => null);
+  await preserveRevisions(handle.backup, handle.target).catch(() => 0);
+  await pruneRevisions(handle.target).catch(() => []);
   // Sync the plugin record so the admin panel sees the new version.
   const prisma = getPrisma();
   try {
@@ -332,6 +373,7 @@ export async function installMarketPlugin(id: string): Promise<{ id: string; ver
 
 /** Install (or upgrade) a theme from the market into data/themes. */
 export async function installMarketTheme(id: string): Promise<{ id: string; version: string }> {
+  if (!localSourcesEnabled()) throw new Error(localSourcesDisabledReason());
   const sources = await listMarketThemes();
   const source = sources.find((t) => t.id === id);
   if (!source) throw new Error(`市场中没有主题：${id}`);
@@ -367,11 +409,38 @@ export async function installMarketTheme(id: string): Promise<{ id: string; vers
       await cp(frontendDist, path.join(tmp, 'frontend', 'dist'), { recursive: true });
     }
   }
+  let handle;
   try {
-    await packageManager.swapDirectory('theme', id, tmp);
+    handle = await packageManager.swapDirectory('theme', id, tmp);
   } catch (err) {
     await rm(tmp, { recursive: true, force: true });
     throw err;
   }
+  // 与 ZIP 上传一致的前端契约（Contract 04）：物化 revision、保留上一版、裁剪窗口。
+  await materializeAndPublish('themes', id, handle.target).catch(() => null);
+  await preserveRevisions(handle.backup, handle.target).catch(() => 0);
+  await pruneRevisions(handle.target).catch(() => []);
+  // 与 ZIP 上传（`routes/theme.ts`）保持同一事务语义：文件已切换，但主题表还没
+  // 指向新版本。不同步 DB 会让主题在后台列表里「装好了但看不见」，而且备份目录
+  // 永远等不到 commit——只能等 GC 六小时后回收。
+  const prisma = getPrisma();
+  try {
+    const existing = await prisma.theme.findUnique({ where: { id } });
+    if (existing) {
+      await prisma.theme.update({
+        where: { id },
+        data: { name: source.name, version: source.version },
+      });
+    } else {
+      await prisma.theme.create({
+        data: { id, name: source.name, version: source.version, active: false },
+      });
+    }
+  } catch (err) {
+    // DB 指针未提交：恢复旧目录，避免半切换（§7.6）。
+    await handle.rollback();
+    throw err;
+  }
+  await handle.commit();
   return { id, version: source.version };
 }

@@ -19,11 +19,30 @@ export interface UpdaterStatus {
   updatedAt: string;
 }
 
+/**
+ * updater 共享状态卷根目录（状态投影、自升级请求、通道都在这个卷上）。
+ *
+ * 优先显式 `DISTRIBUTION_UPDATER_STATE_DIR`，否则退回通道根目录的上一级
+ * （`docker-compose.yml` 把两者挂在同一个 `stackpanel-updater-state` 卷）。
+ */
+export function updaterStateDir(): string {
+  if (stateDirOverride) return stateDirOverride;
+  if (env.DISTRIBUTION_UPDATER_STATE_DIR) return env.DISTRIBUTION_UPDATER_STATE_DIR;
+  return path.dirname(updateChannelRoot());
+}
+
+/** 测试注入状态卷根（与 `setUpdateChannelForTest` 同风格）；生产恒为 null。 */
+let stateDirOverride: string | null = null;
+
+/** 测试用：覆盖 updater 状态卷根；不传则清除覆盖。 */
+export function setUpdaterStateDirForTest(dir: string | null): void {
+  stateDirOverride = dir;
+}
+
 /** updater 状态投影路径：与通道同卷；由 `DISTRIBUTION_UPDATER_STATUS_FILE` 覆盖。 */
 export function updaterStatusPath(): string {
   if (env.DISTRIBUTION_UPDATER_STATUS_FILE) return env.DISTRIBUTION_UPDATER_STATUS_FILE;
-  // 通道根目录的上一级（updater 状态卷根）下的 status.json。
-  return path.join(path.dirname(updateChannelRoot()), 'status.json');
+  return path.join(updaterStateDir(), 'status.json');
 }
 
 /** 读取状态投影；缺失/损坏即返回 null（页面不阻塞、不出网）。 */

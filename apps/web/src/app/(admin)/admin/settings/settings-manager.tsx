@@ -1,6 +1,7 @@
 'use client';
 import { NotificationPolicySettings } from '@/components/notification-settings';
 import { CurrencySettings } from '@/components/currency-settings';
+import { DistributionSourceSettings } from '@/components/distribution-source-settings';
 import { AgentSettings } from '@/components/agent-settings';
 import { SectionTitle } from '@stackpanel/ui';
 
@@ -11,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import type {
   AdminCurrencyDefinitionView,
   AdminFxRateView,
+  DistributionSourceConfig,
   PlatformInfo,
   SettlementCurrencyResponse,
   SigningStatus,
@@ -28,6 +30,7 @@ import {
   Plug,
   Bell,
   Coins,
+  Download,
 } from 'lucide-react';
 import {
   clearPlatformBrandAction,
@@ -49,6 +52,8 @@ export function SettingsManager({
   brand,
   currency,
   currencyRates = [],
+  distribution,
+  distributionDefaults,
   pluginSections = [],
 }: {
   platform: PlatformInfo;
@@ -56,6 +61,8 @@ export function SettingsManager({
   brand: BrandAssets | null;
   currency?: (SettlementCurrencyResponse & { currencies?: AdminCurrencyDefinitionView[] }) | null;
   currencyRates?: AdminFxRateView[];
+  distribution?: DistributionSourceConfig | null;
+  distributionDefaults?: { repository: string | null; mirror: string | null } | undefined;
   pluginSections?: { id: string; title: string; content: ReactNode }[];
 }) {
   const t = useTranslator();
@@ -78,6 +85,18 @@ export function SettingsManager({
       Icon: ShieldCheck,
       content: <SigningSettings signing={signing} />,
     },
+    ...(distribution
+      ? [
+          {
+            id: 'distribution',
+            title: t('admin.settings.distribution.title'),
+            Icon: Download,
+            content: (
+              <DistributionSourceSettings source={distribution} defaults={distributionDefaults} />
+            ),
+          },
+        ]
+      : []),
     ...(currency
       ? [
           {

@@ -13,7 +13,7 @@ import {
 } from './frontend.ts';
 import { packageManager, StagingError, type StageHandle } from '../packages/manager.ts';
 import { preserveRevisions, pruneRevisions } from './frontend-revisions.ts';
-import { materializeAndPublish } from './frontend-storage.ts';
+import { materializeAndPublish, purgeRevisionStorage } from './frontend-storage.ts';
 import { env } from '../config/env.ts';
 import { SignatureError, verifyPackageSignature } from './signatures.ts';
 
@@ -317,6 +317,8 @@ export async function writeThemeFiles(
 
 export async function removeThemeFiles(id: string): Promise<void> {
   await rm(themePackageDir(id), { recursive: true, force: true });
+  // 对象存储里的 revision 是独立副本，必须一并清理（best-effort）。
+  await purgeRevisionStorage('themes', id).catch(() => 0);
 }
 
 /** Copy the built-in default theme package into the data dir. */

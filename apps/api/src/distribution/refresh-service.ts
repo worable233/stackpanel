@@ -69,6 +69,7 @@ export function backoffMs(attempt: number): number {
 export class CatalogRefreshService {
   private inFlight: Promise<CatalogRefreshResult> | null = null;
   private lastResolved: ResolvedCatalog | null = null;
+  private lastFailure: RefreshFailure | null = null;
   private failureStreak = 0;
   private nextAllowedAt: number = 0;
 
@@ -84,11 +85,22 @@ export class CatalogRefreshService {
   }
 
   /**
+   * 最近一次失败（成功后退避清零但失败记录保留到下次成功），供市场/更新中心展示
+   * 「为什么目录不可用」——默认远程源开启后，缺信任根这类配置错误必须可见。
+   */
+  lastFailureInfo(): RefreshFailure | null {
+    return this.lastFailure;
+  }
+
+  /**
    * 若无内存快照则触发一次（合并）刷新并返回结果；已有则直接返回。
-   * 供**显式**的用户动作（如市场安装）在需要目录时按需取一次，页面渲染路径不用它。
+   *
+   * **失败退避生效**：退避期内直接返回 null，不再打 GitHub——否则市场页每刷新一次
+   * 就会重试一次（默认远程源开启后，这条路径会被频繁走到）。
    */
   async ensureCurrent(): Promise<ResolvedCatalog | null> {
     if (this.lastResolved) return this.lastResolved;
+    if (this.cooldownRemainingMs() > 0) return null;
     const result = await this.refresh();
     return result.resolved;
   }
@@ -103,9 +115,19 @@ export class CatalogRefreshService {
     return this.opts.options.channel;
   }
 
+  /** 当前配置的目录仓（用于后台诊断展示）。 */
+  get repository(): string {
+    return this.opts.options.repository;
+  }
+
   /** 目录仓只读 token（可选）。 */
   get token(): string | undefined {
     return this.opts.options.token;
+  }
+
+  /** GitHub 加速前缀（可选）。 */
+  get mirror(): string | undefined {
+    return this.opts.options.mirror;
   }
 
   /**
@@ -160,12 +182,14 @@ export class CatalogRefreshService {
       // 仅在**验证通过**后才推进防回放 sequence；失败绝不推进。
       await this.opts.state.advance(resolved.sequence, this.opts.options.channel, now);
       this.lastResolved = resolved;
+      this.lastFailure = null;
       this.failureStreak = 0;
       this.nextAllowedAt = 0;
       return { fetched: true, resolved, failure: null };
     } catch (error) {
       this.failureStreak += 1;
       const failure = classifyFailure(error, this.failureStreak, now);
+      this.lastFailure = failure;
       this.nextAllowedAt = this.now().getTime() + backoffMs(this.failureStreak);
       return { fetched: true, resolved: null, failure };
     }
@@ -186,7 +210,13 @@ export function classifyFailure(error: unknown, attempt: number, now: Date): Ref
       : { kind: error.kind, message: error.message };
   }
   if (error instanceof CatalogError) {
-    return { kind: error.kind, message: error.message };
+    // 默认远程源开启后，「没有信任根」是最常见的配置错误。原始报错是
+    // 「目录签名者未被信任：xxx」，运维看不出该去做什么，这里补上可执行指引。
+    const hint =
+      error.kind === 'signature' && /未被信任|找不到目录签名公钥/.test(error.message)
+        ? '：实例信任根缺少该目录签名公钥，请把发布方的公钥写入 <数据目录>/trust/keyring.json（purpose=catalog）'
+        : '';
+    return { kind: error.kind, message: `${error.message}${hint}` };
   }
   return {
     kind: 'unknown',

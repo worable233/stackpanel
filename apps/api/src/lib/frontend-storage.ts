@@ -221,3 +221,36 @@ export async function publishCurrentRevisionToStorage(
   if (!pointer?.revision) return 0;
   return publishRevisionToStorage(kind, id, pointer.revision, packageDir, storage);
 }
+
+/**
+ * Delete **every** revision of a package from object storage.
+ *
+ * 卸载时必须调用：`removePluginFiles` / `removeThemeFiles` 只删本地包目录，而对象
+ * 存储里的 `frontend-revisions/<kind>/<id>/…` 是独立副本。不清理的话，卸载一个
+ * 插件后它的前端代码仍然留在桶里（占用空间，也留下可被继续取到的旧产物），
+ * 而本地目录已经没了——从桶里反而能读到「已卸载」的代码。
+ *
+ * `StorageDriver` 只有单 key `delete`，所以按前缀 list 再逐个删。best-effort：
+ * 清理失败不该让卸载本身失败（否则运维只能手工进桶删）。
+ */
+export async function purgeRevisionStorage(
+  kind: FrontendPackageKind,
+  id: string,
+  storage: StorageDriver = getStorage(),
+): Promise<number> {
+  const driver = storage;
+  if (driver.kind !== 's3') return 0;
+  const prefix = `frontend-revisions/${kind}/${id}/`;
+  const objects = await driver.list(prefix).catch(() => []);
+  let removed = 0;
+  for (const object of objects) {
+    if (!object.key.startsWith(prefix)) continue;
+    try {
+      await driver.delete(object.key);
+      removed += 1;
+    } catch {
+      // 单个对象删除失败继续处理其余对象；返回计数只反映成功数。
+    }
+  }
+  return removed;
+}

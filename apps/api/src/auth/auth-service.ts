@@ -9,12 +9,14 @@ import type {
   CreatedPlatformToken,
   CreatePlatformTokenInput,
   EnsureSystemUserInput,
+  GrantUserGroupInput,
   PermissionGroup,
   PlatformTokenView,
   PlatformTokenInspection,
   RegisterUserInput,
   ResolvedPlatformToken,
   SessionCookieConfig,
+  UserGroupGrant,
 } from '@stackpanel/sdk';
 import {
   generateApiToken,
@@ -32,6 +34,7 @@ import { getSessionStore } from './session-store.ts';
 import { isFirstUser } from './first-user.ts';
 import { firstAdminElectionGuarded, SetupRequiredError } from './install-claim.ts';
 import { writeAudit } from '../plugins/audit.ts';
+import { activeMembershipWhere, isMembershipActive } from './membership.ts';
 
 export interface AuthServiceOptions {
   db: PrismaClient;
@@ -191,6 +194,8 @@ export class KernelAuthService implements AuthService {
     const count = await this.options.db.userGroup.count({
       where: {
         userId,
+        // 过期会员不再授予任何权限（读路径判定，不依赖清扫任务）。
+        AND: [activeMembershipWhere()],
         group: {
           permissions: { some: { permission: { key: permission } } },
         },
@@ -201,7 +206,7 @@ export class KernelAuthService implements AuthService {
 
   async listUserGroups(userId: string): Promise<PermissionGroup[]> {
     const rows = await this.options.db.userGroup.findMany({
-      where: { userId },
+      where: { userId, AND: [activeMembershipWhere()] },
       include: { group: true },
     });
     return rows.map((row) => ({
@@ -209,7 +214,104 @@ export class KernelAuthService implements AuthService {
       name: row.group.name,
       description: row.group.description,
       discount: row.group.discount ?? null,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
     }));
+  }
+
+  async listPermissionGroups(): Promise<PermissionGroup[]> {
+    const rows = await this.options.db.permissionGroup.findMany({
+      orderBy: { name: 'asc' },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      discount: row.discount ?? null,
+    }));
+  }
+
+  async grantUserGroup(input: GrantUserGroupInput): Promise<UserGroupGrant> {
+    const group = await this.options.db.permissionGroup.findUnique({
+      where: { id: input.groupId },
+    });
+    if (!group) {
+      throw new Error(`权限组不存在：${input.groupId}`);
+    }
+    const raw = input.expiresAt ?? null;
+    const expiresAt = raw === null ? null : raw instanceof Date ? raw : new Date(raw);
+    if (expiresAt !== null && Number.isNaN(expiresAt.getTime())) {
+      throw new Error(`到期时间无效：${String(raw)}`);
+    }
+    if (expiresAt !== null && expiresAt.getTime() <= Date.now()) {
+      throw new Error(`到期时间必须晚于当前时间：${expiresAt.toISOString()}`);
+    }
+    const existing = await this.options.db.userGroup.findUnique({
+      where: { userId_groupId: { userId: input.userId, groupId: input.groupId } },
+    });
+    // 永久成员不得被一次限时授予降级：管理员手工给的永久成员是更高的权益，
+    // 会员商品开通/续费不该顺手把它改成会到期——那是一次静默降权。
+    // 反向（限时 → 续期/永久）允许：续费就是靠这个更新延长 `expiresAt`。
+    const row =
+      existing && existing.expiresAt === null && expiresAt !== null
+        ? existing
+        : await this.options.db.userGroup.upsert({
+            where: { userId_groupId: { userId: input.userId, groupId: input.groupId } },
+            create: { userId: input.userId, groupId: input.groupId, expiresAt },
+            update: { expiresAt },
+          });
+    return {
+      userId: row.userId,
+      groupId: row.groupId,
+      groupName: group.name,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      expired: !isMembershipActive(row.expiresAt),
+    };
+  }
+
+  async revokeUserGroup(userId: string, groupId: string): Promise<boolean> {
+    const result = await this.options.db.userGroup.deleteMany({ where: { userId, groupId } });
+    return result.count > 0;
+  }
+
+  async listUserGroupGrants(userId: string): Promise<UserGroupGrant[]> {
+    const rows = await this.options.db.userGroup.findMany({
+      where: { userId },
+      include: { group: true },
+      orderBy: { groupId: 'asc' },
+    });
+    return rows.map((row) => ({
+      userId: row.userId,
+      groupId: row.groupId,
+      groupName: row.group.name,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      expired: !isMembershipActive(row.expiresAt),
+    }));
+  }
+
+  async pruneExpiredUserGroups(
+    limit = 200,
+  ): Promise<Array<{ userId: string; groupId: string; groupName: string }>> {
+    const bounded = Math.min(Math.max(1, Math.trunc(limit)), 1000);
+    const rows = await this.options.db.userGroup.findMany({
+      where: { expiresAt: { lte: new Date() } },
+      include: { group: { select: { name: true } } },
+      orderBy: { expiresAt: 'asc' },
+      take: bounded,
+    });
+    if (rows.length === 0) return [];
+    const removed = await this.options.db.userGroup.deleteMany({
+      where: {
+        OR: rows.map((row) => ({ userId: row.userId, groupId: row.groupId })),
+      },
+    });
+    // 只回报确实被本次删除的行（并发清扫可能已处理掉一部分）。
+    return removed.count === 0
+      ? []
+      : rows.map((row) => ({
+          userId: row.userId,
+          groupId: row.groupId,
+          groupName: row.group.name,
+        }));
   }
 
   async getUser(userId: string): Promise<AuthUser | null> {
@@ -373,7 +475,7 @@ export class KernelAuthService implements AuthService {
   }): Promise<AuthUser> {
     const isAdmin =
       (await this.options.db.userGroup.count({
-        where: { userId: user.id, groupId: 'group_admin' },
+        where: { userId: user.id, groupId: 'group_admin', AND: [activeMembershipWhere()] },
       })) > 0;
     return {
       id: user.id,

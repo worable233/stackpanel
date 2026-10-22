@@ -116,6 +116,7 @@ import type {
 import type { UpstreamProductItem } from './upstream.js';
 import type { ProductConfigField } from './fulfillment.js';
 import type { NotificationView } from './notifications.js';
+import type { DistributionRefreshResult, DistributionSourceResponse } from './market.js';
 import type {
   NotificationListResponse,
   NotificationMarkAllResponse,
@@ -383,6 +384,7 @@ const productConfigFieldSchema: z.ZodType<ProductConfigField> = z.lazy(() =>
     max: z.number().optional(),
     maxLength: z.number().optional(),
     options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+    optionsSource: z.literal('permissionGroups').optional(),
     visibleWhen: productConfigVisibilitySchema.optional(),
     group: z.string().optional(),
     columns: z.union([z.literal(1), z.literal(2)]).optional(),
@@ -1234,6 +1236,42 @@ export const marketInstallResponseSchema = z.object({
   id: z.string(),
   version: z.string(),
 }) as z.ZodType<MarketInstallResponse>;
+
+/* -------------------- 分发源配置（PLAN-github-distribution §2/§10） -------------------- */
+
+export const distributionSourceConfigSchema = z.object({
+  repository: z.string().nullable(),
+  channel: z.enum(['stable', 'beta']),
+  ref: z.string(),
+  mirror: z.string().nullable(),
+  publicKey: z.string().nullable(),
+  tokenConfigured: z.boolean(),
+  source: z.enum(['stored', 'env']),
+  envRepository: z.string().nullable(),
+  envMirror: z.string().nullable(),
+  secretsEnabled: z.boolean(),
+}) satisfies z.ZodType<DistributionSourceResponse['source']>;
+
+export const distributionSourceResponseSchema = z.object({
+  source: distributionSourceConfigSchema,
+  defaults: z
+    .object({ repository: z.string().nullable(), mirror: z.string().nullable() })
+    .optional(),
+}) satisfies z.ZodType<DistributionSourceResponse>;
+
+const distributionFailureSchema = z.object({
+  kind: z.string(),
+  message: z.string(),
+  retryAt: z.string().optional(),
+});
+
+export const distributionRefreshResultSchema = z.object({
+  configured: z.boolean(),
+  available: z.boolean(),
+  failure: distributionFailureSchema.nullable(),
+  sequence: z.number().nullable().optional(),
+  expired: z.boolean().nullable().optional(),
+}) satisfies z.ZodType<DistributionRefreshResult>;
 
 /* -------------------- 开发者控制台（DEV-CONSOLE P4） -------------------- */
 

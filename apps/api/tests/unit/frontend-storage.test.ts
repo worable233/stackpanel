@@ -207,4 +207,33 @@ describe('activation requires a ready revision (contract 04 §4.2)', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('purgeRevisionStorage 删掉该类该 id 的全部 revision，且不碰别的包', async () => {
+    const { publishRevisionToStorage, purgeRevisionStorage } = await import(
+      '../../src/lib/frontend-storage.ts'
+    );
+    const dir = await tmp();
+    const storage = fakeStorage();
+    try {
+      // 两个 revision：模拟升级后旧 revision 仍留在桶里。
+      const first = await materializeRevision(dir, files('export default 1;', manifest));
+      await publishRevisionToStorage('plugins', 'demo', first.revision, dir, storage);
+      await rm(revisionDir(dir, first.revision), { recursive: true, force: true });
+      const second = await materializeRevision(dir, files('export default 2;', manifest));
+      await publishRevisionToStorage('plugins', 'demo', second.revision, dir, storage);
+
+      // 同前缀但不同包/不同类的对象必须保留。
+      await storage.put('frontend-revisions/plugins/demo-extra/rev/dist/index.js', strToU8('x'));
+      await storage.put('frontend-revisions/themes/demo/rev/dist/index.js', strToU8('y'));
+
+      const removed = await purgeRevisionStorage('plugins', 'demo', storage);
+      expect(removed).toBeGreaterThan(0);
+      expect([...storage.objects.keys()].filter((k) => k.startsWith('frontend-revisions/plugins/demo/'))).toEqual([]);
+      // `demo-extra` 不以 `plugins/demo/` 为前缀，不能被误删。
+      expect(await storage.exists('frontend-revisions/plugins/demo-extra/rev/dist/index.js')).toBe(true);
+      expect(await storage.exists('frontend-revisions/themes/demo/rev/dist/index.js')).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

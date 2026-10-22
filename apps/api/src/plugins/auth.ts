@@ -11,6 +11,7 @@ import { scopeSatisfied, type ScopeGovernance } from '../lib/capability-registry
 import type { FastifyInstance } from 'fastify';
 import { auditContext, writeAudit } from './audit.ts';
 import { getPrisma } from './prisma.ts';
+import { activeMembershipWhere } from '../auth/membership.ts';
 
 /**
  * Runtime-aggregated refined-scope governance for this request (ADR-0021).
@@ -59,7 +60,8 @@ declare module 'fastify' {
 /** Load a user's effective permission set (union of their groups' permissions). */
 export async function permissionsOf(userId: string): Promise<Set<string>> {
   const rows = await getPrisma().userGroup.findMany({
-    where: { userId },
+    // 过期会员不得继续生效：判定在读路径完成，不依赖清扫任务。
+    where: { userId, AND: [activeMembershipWhere()] },
     select: { group: { select: { permissions: { select: { permission: { select: { key: true } } } } } } },
   });
   const set = new Set<string>();

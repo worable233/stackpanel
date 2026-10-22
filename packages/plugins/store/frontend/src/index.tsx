@@ -15,7 +15,7 @@ import type {
 import { PageHeader } from '@stackpanel/ui';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, PackageOpen } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, PackageOpen } from 'lucide-react';
 import { z } from 'zod';
 import { messages, t } from './i18n.js';
 
@@ -1018,6 +1018,51 @@ function selectionFromQuery(
   };
 }
 
+/** Renders the current checkout choices consistently in desktop and mobile summaries. */
+function CheckoutSelectionDetails({
+  product,
+  config,
+  selection,
+  tr,
+}: {
+  product: StoreProduct;
+  config: CheckoutConfig | null;
+  selection: Selection | null;
+  tr: ReturnType<typeof t>;
+}): ReactElement {
+  const selections = selection?.selections ?? {};
+  return (
+    <dl className="flex flex-col gap-3 text-xs">
+      <div className="flex justify-between gap-4">
+        <dt className="text-muted-foreground">{tr('checkout.summaryProduct')}</dt>
+        <dd className="min-w-0 break-words text-right">{product.name}</dd>
+      </div>
+      {config?.cycles.length ? (
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">{tr('checkout.cycle')}</dt>
+          <dd className="min-w-0 break-words text-right">
+            {config.cycles.find((cycle) => cycle.id === selection?.cycle)?.label ??
+              config.cycles[0]?.label}
+          </dd>
+        </div>
+      ) : null}
+      {config?.options.map((option) => {
+        const value = selections[option.id];
+        if (value === undefined || !optionVisible(option, selections, selection?.cycle ?? '')) {
+          return null;
+        }
+        const label = option.choices?.find((choice) => choice.id === value)?.label ?? String(value);
+        return (
+          <div key={option.id} className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">{option.label}</dt>
+            <dd className="min-w-0 break-words text-right">{label}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
 /** 计算价格表单：GET 提交到本页，query 由 pricePreview finder 读取。 */
 function CheckoutConfigForm({
   product,
@@ -1219,7 +1264,7 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
   const currentSelection = pricePreview?.selection ?? defaultSelection(checkoutConfig);
   const configJson = currentSelection ? JSON.stringify(currentSelection) : '';
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 sm:py-16 lg:px-8">
+    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 pb-80 sm:px-6 sm:py-16 lg:px-8 lg:pb-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/shop"
@@ -1301,10 +1346,24 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
           </div>
         </section>
 
-        <aside className="h-fit rounded-2xl border bg-card p-6 text-card-foreground shadow-sm lg:sticky lg:top-20">
+        <aside className="fixed inset-x-0 bottom-0 z-40 flex max-h-[calc(100svh-1rem)] flex-col overflow-y-auto border-t bg-card/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-card-foreground shadow-[0_-8px_24px_color-mix(in_oklab,var(--foreground)_8%,transparent)] backdrop-blur lg:sticky lg:top-20 lg:z-auto lg:h-fit lg:max-h-none lg:rounded-2xl lg:border lg:bg-card lg:p-6 lg:shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             {tr('product.price')}
           </p>
+          <details className="group mt-3 border-t pt-3 lg:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              {tr('checkout.configurationDetails')}
+              <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 max-h-[min(16rem,35svh)] overflow-y-auto pr-1">
+              <CheckoutSelectionDetails
+                product={product}
+                config={checkoutConfig}
+                selection={currentSelection}
+                tr={tr}
+              />
+            </div>
+          </details>
           <div className="mt-2 flex flex-wrap items-baseline gap-2 text-3xl">
             <PriceTag amount={pricePreview?.total ?? product.price} currency={product.currency} />
             {pricePreview ? null : (

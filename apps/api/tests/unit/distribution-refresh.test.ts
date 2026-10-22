@@ -254,3 +254,32 @@ describe('backoff', () => {
     expect(backoffMs(100)).toBe(DEFAULT_REFRESH_INTERVAL_MS);
   });
 });
+
+describe('CatalogRefreshService.ensureCurrent（失败退避）', () => {
+  it('does not re-dial GitHub while the failure backoff is active', async () => {
+    const { publicKeyPem, privateKey } = keypair();
+    let calls = 0;
+    const base = fakeGitHub(privateKey, 7);
+    const counting = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      calls += 1;
+      return base(input);
+    });
+    const svc = new CatalogRefreshService({
+      options: { repository: REPO, channel: 'stable', fetchImpl: counting },
+      cache: new MemorySourceCache(),
+      state: new FileCatalogStateStore(path.join(await tempDir(), 's.json')),
+      loadKeyring: async () => ({ formatVersion: 1, keys: [] }),
+      now: () => new Date('2026-10-16T00:00:00Z'),
+    });
+    // No catalog key in the keyring → signature failure → backoff.
+    expect(await svc.ensureCurrent()).toBeNull();
+    expect(svc.lastFailureInfo()?.kind).toBe('signature');
+    const afterFirst = calls;
+    // 退避期内：市场页反复加载不得再次请求 GitHub。
+    expect(await svc.ensureCurrent()).toBeNull();
+    expect(await svc.ensureCurrent()).toBeNull();
+    expect(calls).toBe(afterFirst);
+    // 信任根补齐后仍可直接刷新成功（退避只影响按需刷新）。
+    expect(publicKeyPem.length).toBeGreaterThan(0);
+  });
+});

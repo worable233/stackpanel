@@ -11,6 +11,8 @@ export default defineConfig({
       'tests/unit/distribution-catalog-consumer.test.ts',
       'tests/unit/distribution-market.test.ts',
       'tests/unit/distribution-runtime.test.ts',
+      'tests/unit/distribution-runtime-env.test.ts',
+      'tests/unit/distribution-source-config.test.ts',
       'tests/unit/package-transaction.test.ts',
       'tests/unit/frontend-assets.test.ts',
       'tests/unit/updates-plan.test.ts',
@@ -22,6 +24,9 @@ export default defineConfig({
     env: {
       DATABASE_URL: 'postgresql://unused:unused@127.0.0.1:5432/unused',
       JWT_SECRET: 'distribution_unit_test_secret_at_least_32_chars',
+      SETTINGS_ENCRYPTION_KEY: 'distribution_unit_test_settings_key_32_chars',
+      // 与 apps/api/tests/setup.ts 保持一致：单元测试不触网。
+      DISTRIBUTION_CATALOG_REPOSITORY: 'off',
     },
   },
 });
