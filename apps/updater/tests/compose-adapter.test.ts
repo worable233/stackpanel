@@ -148,6 +148,30 @@ describe('ComposeDeploymentAdapter', () => {
     expect(calls.some((c) => c.args[0] === 'pull')).toBe(true);
   });
 
+  it('每条 compose 命令都带 --env-file（否则密钥被插值成空串）', async () => {
+    // 真机升级演练抓到的 P0：updater 在容器里跑 docker compose，进程环境里
+    // 没有 docker/.env 的 POSTGRES_PASSWORD / JWT_SECRET 等。不带 --env-file 时
+    // compose 把 ${POSTGRES_PASSWORD} 插值成空串，up -d 会用空密码重建 postgres，
+    // 一次「成功」的升级把实例锁死。
+    const { adapter, calls } = adapterFor(undefined, { envFile: 'docker/.env' });
+    await adapter.switchTo({
+      task: task(),
+      targetDigest: DIGEST,
+      planDigest: 'p',
+      workDir: root,
+    });
+    const composeCalls = calls.filter((c) => c.args[0] === 'compose');
+    expect(composeCalls.length).toBeGreaterThan(0);
+    for (const call of composeCalls) {
+      const index = call.args.indexOf('--env-file');
+      expect(index).toBeGreaterThan(-1);
+      expect(call.args[index + 1]).toBe('docker/.env');
+      // 必须在 `-f` 与子命令之前，否则 docker compose 会把它当成子命令参数。
+      expect(index).toBeLessThan(call.args.indexOf('-f'));
+      expect(index).toBeLessThan(call.args.indexOf('up'));
+    }
+  });
+
   it('fails download when the pulled digest does not match', async () => {
     const { adapter } = adapterFor((req) => {
       if (req.args.includes('inspect'))
