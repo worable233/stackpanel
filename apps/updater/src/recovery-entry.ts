@@ -126,13 +126,23 @@ export async function createRecoveryServer(
   const address = server.address();
   const actualPort =
     address && typeof address === 'object' ? address.port : options.port;
+  let closing: Promise<void> | null = null;
   return {
     server,
     url: `http://${host}:${actualPort}`,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
+    // 幂等关闭：SIGTERM 与「主循环自然结束」可能各调一次；重复 close 会抛
+    // ERR_SERVER_NOT_RUNNING 并以未捕获异常退出（真机重启时抓到）。
+    close: () => {
+      if (closing) return closing;
+      closing = new Promise<void>((resolve, reject) => {
+        if (!server.listening) {
+          resolve();
+          return;
+        }
         server.close((error) => (error ? reject(error) : resolve()));
-      }),
+      });
+      return closing;
+    },
   };
 }
 

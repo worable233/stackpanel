@@ -117,3 +117,12 @@ describe('recovery entry', () => {
     expect(res.status).toBe(405);
   });
 });
+
+describe('recovery entry shutdown', () => {
+  it('close() is idempotent and safe before/after listening', async () => {
+    // 真机重启抓到：重复 close 抛 ERR_SERVER_NOT_RUNNING，进程以未捕获异常退出。
+    const handle = await createRecoveryServer({ port: 0, deps: deps() });
+    await handle.close();
+    await expect(handle.close()).resolves.toBeUndefined();
+  });
+});
