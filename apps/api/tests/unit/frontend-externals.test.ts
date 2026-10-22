@@ -23,7 +23,7 @@ describe('manifest frontendExternals (contract 02 §5)', () => {
         manifest({
           frontendExternals: {
             react: '^19.0.0',
-            'react/jsx-runtime': '19.2.x',
+            'react/jsx-runtime': '19.3.x',
             'next/link': '>=16 <17',
             '@stackpanel/ui': '>=0.2 <0.3',
           },

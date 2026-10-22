@@ -52,6 +52,7 @@ export async function fetchAndVerifyKernelManifest(input: {
   cache: SourceCache;
   keyring: Keyring;
   token?: string;
+  mirror?: string;
   fetchImpl?: typeof fetch;
   now?: Date;
   /** 覆盖签名资产名（默认 `kernel-manifest.sig`，与清单同 tag）。 */
@@ -67,6 +68,7 @@ export async function fetchAndVerifyKernelManifest(input: {
       asset,
       cache,
       ...(input.token ? { token: input.token } : {}),
+      ...(input.mirror ? { mirror: input.mirror } : {}),
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
     });
 
@@ -87,11 +89,13 @@ export async function fetchAndVerifyKernelManifest(input: {
   const [manifestDownload, signatureDownload] = await Promise.all([
     downloadAsset(manifestUrl.url, {
       ...(input.token ? { token: input.token } : {}),
+      ...(input.mirror ? { mirror: input.mirror } : {}),
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
       maxBytes: 4 * 1024 * 1024,
     }),
     downloadAsset(signatureUrl.url, {
       ...(input.token ? { token: input.token } : {}),
+      ...(input.mirror ? { mirror: input.mirror } : {}),
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
       maxBytes: 64 * 1024,
     }),

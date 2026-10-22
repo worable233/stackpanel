@@ -4,6 +4,7 @@ import {
   DEFAULT_PLATFORM_INFO,
   type AdminCurrencyDefinitionView,
   type AdminFxRateView,
+  type DistributionSourceConfig,
   type PlatformBrand,
   type PlatformInfo,
   type SettlementCurrencyResponse,
@@ -25,9 +26,11 @@ export default async function AdminSettingsPage() {
   let platform: PlatformInfo = DEFAULT_PLATFORM_INFO;
   let signing: SigningStatus | null = null;
   let brand: PlatformBrand | null = null;
-  let currency: (SettlementCurrencyResponse & { currencies?: AdminCurrencyDefinitionView[] }) | null =
-    null;
+  let currency:
+    (SettlementCurrencyResponse & { currencies?: AdminCurrencyDefinitionView[] }) | null = null;
   let rates: AdminFxRateView[] = [];
+  let distribution: DistributionSourceConfig | null = null;
+  let distributionDefaults: { repository: string | null; mirror: string | null } | undefined;
   let error: string | null = null;
   try {
     const api = await getAuthedApiClient();
@@ -38,6 +41,7 @@ export default async function AdminSettingsPage() {
       currencyResult,
       catalogResult,
       rateResult,
+      distributionResult,
     ] = await Promise.all([
       api.getAdminPlatformInfo(),
       api.getSigningStatus(),
@@ -45,12 +49,15 @@ export default async function AdminSettingsPage() {
       api.getSettlementCurrency(),
       api.getAdminCurrencyDefinitions(),
       api.getAdminCurrencyRates(),
+      api.getDistributionSource(),
     ]);
     platform = platformResult.platform;
     signing = signingResult.signing;
     brand = brandResult.brand;
     currency = { ...currencyResult, currencies: catalogResult.currencies };
     rates = rateResult.rates;
+    distribution = distributionResult.source;
+    distributionDefaults = distributionResult.defaults;
   } catch (err) {
     error = await apiErrorMessage(err);
   }
@@ -77,6 +84,8 @@ export default async function AdminSettingsPage() {
           brand={brandAssets}
           currency={currency}
           currencyRates={rates}
+          distribution={distribution}
+          distributionDefaults={distributionDefaults}
           pluginSections={pluginSettings.map((section) => ({
             id: section.id,
             title: section.title,

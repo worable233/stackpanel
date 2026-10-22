@@ -37,3 +37,13 @@ export { decideAutoUpdate } from './auto.ts';
 export type { AutoUpdateDecision, AutoUpdateInput, AutoUpdateSkipReason } from './auto.ts';
 export { runAutoUpdate } from './auto-run.ts';
 export type { AutoUpdateResult } from './auto-run.ts';
+export {
+  setSelfUpdateStateDirForTest,
+  selfUpdateRequestPath,
+  readSelfUpdateRequest,
+  submitSelfUpdateRequest,
+  clearSelfUpdateRequest,
+  SelfUpdateRequestError,
+} from './self-update.ts';
+export { updaterStateDir, setUpdaterStateDirForTest, updaterStatusPath } from './status.ts';
+export type { SelfUpdateRequestFile } from './self-update.ts';

@@ -1398,7 +1398,7 @@ const ProductDetailPage = (
   const quantity = purchaseQuantity(props.searchParams?.quantity);
   const canBuy = product.purchasable === true && product.stock >= quantity;
   return (
-    <main className="flex min-w-0 w-full flex-col gap-6 pb-64 lg:pb-8">
+    <main className="flex min-w-0 w-full flex-col gap-6 pb-80 lg:pb-16">
       <PageHeader
         backHref="/account/store"
         backLabel={tr('product.backToCatalog')}

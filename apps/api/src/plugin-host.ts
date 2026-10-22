@@ -183,6 +183,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
   const market = new MarketService({
     runtime: {
       has: (id) => getRuntime().has(id),
+      isActive: (id) => getRuntime().isActive(id),
       register: (definition) => getRuntime().register(definition),
       unregister: (id, opts) => getRuntime().unregister(id, opts),
       activate: (id) => getRuntime().activate(id),
@@ -305,7 +306,16 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
             .cleanup()
             .then(() => undefined),
         notificationDeliverySweep: () => notificationDispatcher.sweep(),
-        // §10：后台目录刷新。未配置目录仓时为 undefined（不注册、零出网）。
+        // 会员权益到期清理：删除已过期的限时成员关系（会员商品授予）。
+        // 授权正确性由读路径保证，这里只是数据清理。
+        membershipSweep: async () => {
+          const removed = await authService.pruneExpiredUserGroups();
+          if (removed.length > 0) {
+            logger.info(`[membership] 清理 ${removed.length} 条过期会员权益`);
+          }
+        },
+        // §10：后台目录刷新。目录源被显式关闭时为 undefined（不注册、零出网）；
+        // 默认源开启时注册，失败会在下方记日志并通过市场/更新中心的状态暴露。
         ...(catalogRefresh
           ? {
               catalogRefresh: async () => {

@@ -15,11 +15,20 @@ import path from 'node:path';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { KEYRING_FORMAT_VERSION, type Keyring, type TrustedKey } from '@stackpanel/spec';
 import { env } from '../config/env.ts';
+import { currentCatalogSourceConfig } from './source-config.ts';
 
 export const KEYRING_FILE = path.join('trust', 'keyring.json');
 
 /** 迁移期 env 公钥在 keyring 中的稳定 keyId。 */
 export const ENV_PACKAGE_KEY_ID = 'env-package-key';
+
+/**
+ * 用 env 显式固定的目录公钥 keyId。
+ *
+ * 与 {@link ENV_PACKAGE_KEY_ID} 分开，保证「包签名」与「目录签名」不共用一把 key
+ * （见本文件顶部约束）。
+ */
+export const ENV_CATALOG_KEY_ID = 'env-catalog-key';
 
 export class KeyringError extends Error {
   constructor(message: string) {
@@ -78,27 +87,42 @@ export async function readStoredKeyring(): Promise<Keyring | null> {
 /**
  * 解析内核当前信任根：数据目录 keyring 优先，迁移期把 env 的包公钥并入
  * （keyId 固定为 {@link ENV_PACKAGE_KEY_ID}，不覆盖已声明的同 keyId 条目）。
+ *
+ * 另外支持用 env 显式固定一把**目录**公钥（{@link ENV_CATALOG_KEY_ID}）。这是
+ * 「自带默认远程源」能落地的关键：默认源一旦启用，实例必须能验它的签名，而
+ * 数据目录里的 keyring 是部署后写入的。运维只要给出公钥即可，不需要手写 JSON。
+ * 它只用于 `catalog` 用途，且 `allowedRepositories` 绑定到当前配置的目录仓，
+ * 因此不会顺带信任别的仓库，也不会让包签名与目录签名共用一把 key。
  */
 export async function loadKeyring(): Promise<Keyring> {
   const stored = (await readStoredKeyring()) ?? {
     formatVersion: KEYRING_FORMAT_VERSION,
     keys: [],
   };
-  if (env.STACKPANEL_SIGNING_PUBLIC_KEY) {
-    const exists = stored.keys.some((key) => key.keyId === ENV_PACKAGE_KEY_ID);
+  const keys = [...stored.keys];
+  // 目录公钥/仓库都以**生效配置**为准（后台可覆盖环境变量），否则后台改了源却还在
+  // 用环境变量那把 key 绑定的旧仓库，验签会莫名失败。
+  const config = currentCatalogSourceConfig();
+  if (config.publicKey && config.repository) {
+    const exists = keys.some((key) => key.keyId === ENV_CATALOG_KEY_ID);
     if (!exists) {
-      return {
-        ...stored,
-        keys: [
-          ...stored.keys,
-          {
-            keyId: ENV_PACKAGE_KEY_ID,
-            purpose: 'package',
-            publicKeyPem: env.STACKPANEL_SIGNING_PUBLIC_KEY,
-          },
-        ],
-      };
+      keys.push({
+        keyId: ENV_CATALOG_KEY_ID,
+        purpose: 'catalog',
+        publicKeyPem: config.publicKey,
+        allowedRepositories: [config.repository],
+      });
     }
   }
-  return stored;
+  if (env.STACKPANEL_SIGNING_PUBLIC_KEY) {
+    const exists = keys.some((key) => key.keyId === ENV_PACKAGE_KEY_ID);
+    if (!exists) {
+      keys.push({
+        keyId: ENV_PACKAGE_KEY_ID,
+        purpose: 'package',
+        publicKeyPem: env.STACKPANEL_SIGNING_PUBLIC_KEY,
+      });
+    }
+  }
+  return { ...stored, keys };
 }

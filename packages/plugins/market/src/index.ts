@@ -24,13 +24,6 @@ const BASE = '/market/admin';
 
 const kindSchema = z.enum(['plugin', 'theme']);
 const idSchema = z.object({ id: z.string().min(1).max(64) });
-const sourceSchema = z.object({
-  repository: z.string().trim().max(255),
-  channel: z.enum(['stable', 'beta']),
-  ref: z.string().trim().max(191),
-  token: z.string().max(4096).optional(),
-  clearToken: z.boolean().optional(),
-});
 
 let ctx: PluginContext | null = null;
 
@@ -196,43 +189,20 @@ export const marketPlugin = definePlugin({
       handler: async (): Promise<unknown> => ({ kinds: kindSchema.options }),
     },
     {
+      /**
+       * 来源健康度：本地来源是否可用、远程目录是否配置/可用、最近失败原因。
+       * 默认远程源开启后，目录不可用会让市场看起来「空」，运维需要这个入口定位。
+       */
       method: 'GET',
-      path: `${BASE}/source`,
+      path: `${BASE}/status`,
       auth: 'admin',
       permission: 'market.admin',
-      handler: async (): Promise<unknown> => ({ source: await market().getSourceConfig() }),
-    },
-    {
-      method: 'PUT',
-      path: `${BASE}/source`,
-      auth: 'admin',
-      permission: 'market.admin',
-      handler: async (req, reply): Promise<unknown> => {
-        const parsed = sourceSchema.safeParse(req.body ?? {});
-        if (!parsed.success) return reply.code(400).send({ error: '市场源配置无效' });
-        try {
-          const source = await market().updateSourceConfig({
-            repository: parsed.data.repository,
-            channel: parsed.data.channel,
-            ref: parsed.data.ref,
-            ...(parsed.data.token !== undefined ? { token: parsed.data.token } : {}),
-            ...(parsed.data.clearToken !== undefined ? { clearToken: parsed.data.clearToken } : {}),
-          });
-          await requireContext().auth.audit({
-            action: 'market.source.update',
-            resource: 'market',
-            resourceId: 'catalog',
-            ...(req.user ? { actorId: req.user.id } : {}),
-            meta: { repository: source.repository, channel: source.channel, ref: source.ref },
-          });
-          return { source };
-        } catch (error) {
-          throw new PluginError(
-            'market.sourceInvalid',
-            422,
-            error instanceof Error ? error.message : String(error),
-          );
+      handler: async (): Promise<unknown> => {
+        const service = market();
+        if (typeof service.status !== 'function') {
+          return { status: null };
         }
+        return { status: await service.status() };
       },
     },
   ],

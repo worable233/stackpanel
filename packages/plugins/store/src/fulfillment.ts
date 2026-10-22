@@ -238,19 +238,19 @@ async function runTask(taskId: string): Promise<void> {
   }
 
   const snapshot = (task.payload ?? {}) as Partial<TaskProductSnapshot>;
+  const selection = (snapshot.config ?? null) as CheckoutSelection | null;
   const placeholder = await createServiceInstance(
     {
       userId: task.userId,
       orderId: task.orderId,
       productId: task.productId,
-      productName:
-        (snapshot.config as CheckoutSelection | undefined)?.instanceName ?? task.productName,
+      productName: selection?.instanceName ?? task.productName,
       fulfillmentType: task.fulfillmentType,
       providerId: product.providerId,
       providerServiceId: null,
       state: 'PROVISIONING',
       credentialsRef: null,
-      runtime: mergeRuntime(undefined, snapshot.config as CheckoutSelection | undefined),
+      runtime: mergeRuntime(undefined, selection ?? undefined),
       amount: snapshot.price ?? product.price,
       currency: snapshot.currency ?? product.currency,
       provisionedAt: null,
@@ -263,6 +263,9 @@ async function runTask(taskId: string): Promise<void> {
       state: 'PROVISIONING',
     });
   }
+  // 周期商品的初始到期时间由 store 统一推算（唯一一套周期算法），先算后传给
+  // 提供方，避免提供方自己再算一遍导致权益到期时间与商店展示不一致。
+  const initialExpiry = initialExpiryAt(product.metadata, selection?.cycle, new Date());
   const provisionCtx: ProvisionContext = {
     fulfillmentId: task.id,
     recoveryGeneration: (task.payload as { recoveryGeneration?: number } | null)?.recoveryGeneration ?? 0,
@@ -279,9 +282,8 @@ async function runTask(taskId: string): Promise<void> {
       providerProductId: product.providerProductId ?? snapshot.providerProductId ?? null,
     },
     quantity: task.quantity,
-    ...(snapshot.config !== undefined && snapshot.config !== null
-      ? { config: snapshot.config as CheckoutSelection }
-      : {}),
+    ...(selection ? { config: selection } : {}),
+    expiresAt: initialExpiry ? initialExpiry.toISOString() : null,
     secrets: context().secrets,
     resumePayment: placeholder.providerServiceId !== null && (task.payload as { resumePayment?: boolean } | null)?.resumePayment === true,
     checkpoint: async result => {
@@ -305,10 +307,7 @@ async function runTask(taskId: string): Promise<void> {
     // 周期商品按结账周期落一个初始到期时间（缺省取第一个周期）；永久商品为 null。
     // 异步开通（PENDING）也在下单时起算，避免上游开通后无到期时间。
     const awaitingPayment = result.runtime?.paid === false;
-    const initialExpiry =
-      result.status !== 'FAILED' && !awaitingPayment
-        ? initialExpiryAt(product.metadata, provisionCtx.config?.cycle, new Date())
-        : null;
+    const serviceExpiry = result.status !== 'FAILED' && !awaitingPayment ? initialExpiry : null;
     const serviceData = {
       userId: task.userId,
       orderId: task.orderId,
@@ -327,7 +326,7 @@ async function runTask(taskId: string): Promise<void> {
       runtime: mergeRuntime(result.runtime, provisionCtx.config),
       amount: snapshot.price ?? product.price,
       currency: snapshot.currency ?? product.currency,
-      ...(initialExpiry ? { expiresAt: initialExpiry.toISOString() } : {}),
+      ...(serviceExpiry ? { expiresAt: serviceExpiry.toISOString() } : {}),
       provisionedAt: result.status === 'ACTIVE' ? new Date().toISOString() : null,
     };
     await replaceServiceInstance(placeholder.id, { ...toServiceData(placeholder), ...serviceData });
@@ -499,6 +498,7 @@ function serviceContext(service: ServiceInstanceRecord): ProviderServiceContext 
       productId: service.productId,
       productName: service.productName,
       status: service.status,
+      expiresAt: service.expiresAt ? service.expiresAt.toISOString() : null,
     },
     secrets: context().secrets,
   };

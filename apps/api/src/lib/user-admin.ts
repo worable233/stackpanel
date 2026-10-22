@@ -27,6 +27,7 @@ import { formatMinorCurrency } from '@stackpanel/sdk';
 import { ADMIN_GROUP_ID, isLastAdmin, toPublicUser } from './user.ts';
 import type { AuditInput } from '../plugins/audit.ts';
 import { writeAudit } from '../plugins/audit.ts';
+import { activeMembershipWhere } from '../auth/membership.ts';
 import { notifyUserBestEffort, upsertUserBestEffort } from '../notifications/notify.ts';
 
 /** Request-derived audit fields, forwarded to every write. */
@@ -207,6 +208,7 @@ export class UserAdminService {
     const count = await this.db.userGroup.count({
       where: {
         userId,
+        AND: [activeMembershipWhere()],
         OR: [
           { groupId: ADMIN_GROUP_ID },
           { group: { permissions: { some: { permission: { key: PLATFORM_ADMIN } } } } },
@@ -450,10 +452,24 @@ export class UserAdminService {
     }
     await this.db.$transaction(async (tx) => {
       if (groupIds) {
-        await tx.userGroup.deleteMany({ where: { userId: id } });
-        await tx.userGroup.createMany({
-          data: groupIds.map((groupId) => ({ userId: id, groupId })),
+        // 只增删差异，不整组重建：整组重建会把会员商品授予的限时成员
+        // （`expiresAt`）悄悄改成永久成员——那是一次静默提权。
+        const current = await tx.userGroup.findMany({
+          where: { userId: id },
+          select: { groupId: true },
         });
+        const currentIds = new Set(current.map((row) => row.groupId));
+        const nextIds = new Set(groupIds);
+        const removed = [...currentIds].filter((groupId) => !nextIds.has(groupId));
+        const added = groupIds.filter((groupId) => !currentIds.has(groupId));
+        if (removed.length > 0) {
+          await tx.userGroup.deleteMany({ where: { userId: id, groupId: { in: removed } } });
+        }
+        if (added.length > 0) {
+          await tx.userGroup.createMany({
+            data: added.map((groupId) => ({ userId: id, groupId })),
+          });
+        }
       }
       if (status !== undefined) {
         await tx.user.update({ where: { id }, data: { status } });

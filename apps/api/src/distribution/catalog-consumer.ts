@@ -154,6 +154,7 @@ export async function fetchCatalogPackage(input: {
   keyring: Keyring;
   cache: SourceCache;
   token?: string;
+  mirror?: string;
   fetchImpl?: typeof fetch;
   now?: Date;
 }): Promise<FetchCatalogPackageResult> {
@@ -166,6 +167,7 @@ export async function fetchCatalogPackage(input: {
     publisher: binding.publisher,
     keyId,
     ...(input.token ? { token: input.token } : {}),
+    ...(input.mirror ? { mirror: input.mirror } : {}),
     ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
     ...(input.now ? { now: input.now } : {}),
   });

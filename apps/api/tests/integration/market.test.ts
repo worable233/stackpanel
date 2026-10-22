@@ -76,8 +76,31 @@ describe.skipIf(!dbAvailable)('admin application market (real DB)', () => {
     expect(defaultTheme?.installed).toBe(true);
   });
 
-  it('rejects market install for an unknown id', async () => {
+  it('reports source health so an empty market is explainable', async () => {
     const res = await app.inject({
+      method: 'GET',
+      url: '/market/admin/status',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const { status } = res.json() as {
+      status: {
+        localSources: { enabled: boolean; reason?: string };
+        catalog: {
+          configured: boolean;
+          repository: string | null;
+          available: boolean;
+          failure?: { kind: string; message: string };
+        };
+      };
+    };
+    // The integration env pins DISTRIBUTION_CATALOG_REPOSITORY=off (hermetic).
+    expect(status.catalog.configured).toBe(false);
+    expect(status.catalog.available).toBe(false);
+    expect(status.localSources.enabled).toBe(true);
+  });
+
+  it('rejects market install for an unknown id', async () => {    const res = await app.inject({
       method: 'POST',
       url: '/market/admin/plugins/does-not-exist/install',
       headers: { authorization: `Bearer ${adminToken}` },

@@ -66,10 +66,12 @@ export interface KernelSweepDeps {
   walletHoldSweep: () => Promise<void>;
   /** Retry due external-notification channel deliveries (audit §5). */
   notificationDeliverySweep: () => Promise<void>;
-  /** 目录刷新（PLAN §10）。缺省为无操作：未配置目录仓的实例完全离线。 */
+  /** 目录刷新（PLAN §10）。缺省为无操作：显式关闭目录源的实例完全离线。 */
   catalogRefresh?: () => Promise<void>;
-  /** 自动更新评估（§13-6）。缺省为无操作：未配置目录仓或策略关闭时完全离线。 */
+  /** 自动更新评估（§13-6）。缺省为无操作：目录源关闭或策略关闭时完全离线。 */
   autoUpdate?: () => Promise<void>;
+  /** 清理已过期的限时权限组成员关系（会员权益）。缺省不注册。 */
+  membershipSweep?: () => Promise<void>;
   logger: { warn: (m: string) => void };
 }
 
@@ -84,6 +86,8 @@ const NOTIFICATION_DELIVERY_SWEEP_MS = 30_000;
 const OUTBOX_CLEANUP_EVERY = Math.max(1, Math.round((60 * 60_000) / OUTBOX_RELAY_MS));
 /** §10: catalog refresh cadence (jitter applied by the service's `isDue`). */
 const CATALOG_REFRESH_MS = 6 * 60 * 60_000;
+/** 会员权益到期清理：每小时。过期判定在读路径，频率只影响清理及时性。 */
+const MEMBERSHIP_SWEEP_MS = 60 * 60_000;
 
 /**
  * Register the kernel's recurring jobs. Missing handlers are simply absent on a
@@ -126,8 +130,8 @@ export async function registerKernelSweeps(
     { everyMs: NOTIFICATION_DELIVERY_SWEEP_MS },
     undefined,
   );
-  // §10：目录刷新每 6 小时 + 抖动（抖动在服务内部按 isDue 施加）。未配置目录仓的
-  // 实例不注册处理器也不排期，保持零出网。
+  // §10：目录刷新每 6 小时 + 抖动（抖动在服务内部按 isDue 施加）。目录源被显式
+  // 关闭（`off`）的实例不注册处理器也不排期，保持零出网。
   if (deps.catalogRefresh) {
     jobs.handle(KERNEL_JOBS.catalogRefresh, async () => {
       await deps.catalogRefresh?.();
@@ -139,12 +143,24 @@ export async function registerKernelSweeps(
     );
   }
   // §13-6：目录刷新后评估自动更新。与刷新同频（刷新内部按 isDue 施加抖动与离线短路）；
-  // 未配置目录仓时 deps.autoUpdate 为 undefined，不注册、零出网。
+  // 目录源关闭时 deps.autoUpdate 为 undefined，不注册、零出网。
   if (deps.catalogRefresh && deps.autoUpdate) {
     jobs.handle(KERNEL_JOBS.autoUpdate, async () => {
       await deps.autoUpdate?.();
     });
     await jobs.schedule(KERNEL_JOBS.autoUpdate, { everyMs: CATALOG_REFRESH_MS }, undefined);
+  }
+  // 会员权益到期清理：删除已过期的限时成员关系。授权正确性由读路径保证
+  // （过期成员不授予任何权限），这里只做数据清理，晚跑一小时也不会放行过期会员。
+  if (deps.membershipSweep) {
+    jobs.handle(KERNEL_JOBS.membershipSweep, async () => {
+      await deps.membershipSweep?.();
+    });
+    await jobs.schedule(
+      KERNEL_JOBS.membershipSweep,
+      { everyMs: MEMBERSHIP_SWEEP_MS },
+      undefined,
+    );
   }
 }
 

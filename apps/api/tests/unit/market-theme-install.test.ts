@@ -14,9 +14,14 @@ vi.mock('@stackpanel/sdk/paths', async (importOriginal) => ({
 vi.mock('../../src/plugins/prisma.ts', () => ({
   getPrisma: () => ({ theme: {
     findUnique: async () => state.record,
-    upsert: async ({ create, update }: { create: NonNullable<typeof state.record>; update: Partial<NonNullable<typeof state.record>> }) => {
+    update: async ({ data }: { data: Partial<NonNullable<typeof state.record>> }) => {
       if (state.failWrite) throw new Error('registry unavailable');
-      state.record = state.record ? { ...state.record, ...update } : create;
+      state.record = { ...state.record!, ...data };
+      return state.record;
+    },
+    create: async ({ data }: { data: NonNullable<typeof state.record> }) => {
+      if (state.failWrite) throw new Error('registry unavailable');
+      state.record = data;
       return state.record;
     },
   } }),

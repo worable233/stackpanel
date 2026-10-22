@@ -38,9 +38,41 @@ export const DEFAULT_ALLOWED_REDIRECT_HOSTS: readonly string[] = [
   'ghcr.io',
 ];
 
+/**
+ * 会被镜像改写的 GitHub 主机。只有这些主机的请求走加速前缀；镜像自身与其重定向
+ * 目标不再二次改写（否则会无限套娃）。
+ */
+const MIRRORABLE_HOSTS: readonly string[] = [
+  'github.com',
+  'api.github.com',
+  'raw.githubusercontent.com',
+  'codeload.github.com',
+];
+
+/** GitHub 自有主机：只有请求这些主机时才允许携带只读 token。 */
+const GITHUB_TOKEN_HOSTS: readonly string[] = [
+  ...MIRRORABLE_HOSTS,
+  'objects.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'pkg-containers.githubusercontent.com',
+  'ghcr.io',
+];
+
 export interface GitHubSourceOptions {
   /** 只读 token（公共源可省略）。 */
   token?: string;
+  /**
+   * GitHub 加速/镜像前缀，如 `https://github.chenc.dev`。
+   *
+   * 语义与常见 ghproxy 一致：把原始地址拼在前缀之后（`<mirror>/<url>`）。镜像只
+   * 改变**传输路径**，不改变任何校验：目录签名、摘要、大小、发布者绑定照旧，镜像
+   * 无法让一个未签名的包变得可安装。
+   *
+   * 安全约束：镜像主机必须是公网 HTTPS；请求镜像时**不转发 GitHub token**（第三方
+   * 代理不该看到它），因此「镜像 + 私有仓库 token」组合会退化为匿名读取。
+   */
+  mirror?: string;
   /** 注入的 fetch（测试）。缺省使用全局 `fetch`。 */
   fetchImpl?: typeof fetch;
   /** 单请求超时（毫秒）。 */
@@ -108,6 +140,38 @@ interface RequestResult {
 }
 
 /**
+ * 归一化加速前缀。返回 `undefined` 表示不使用镜像。
+ *
+ * 只接受公网 HTTPS（镜像会把请求转发给 GitHub，明文或内网地址不可信），并去掉末尾
+ * 斜杠，避免拼出 `//`。非法值抛错而不是静默忽略——运维填错了要立刻看到。
+ */
+export function normalizeMirror(value: string | undefined): string | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new GitHubSourceError(`加速地址非法：${value}（应为 https://...）`, 'invalid');
+  }
+  if (url.protocol !== 'https:') {
+    throw new GitHubSourceError(`加速地址必须使用 HTTPS：${value}`, 'invalid');
+  }
+  if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
+    throw new GitHubSourceError(`加速地址不能包含凭据、查询串或片段：${value}`, 'invalid');
+  }
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+}
+
+/** 把 GitHub 地址改写成镜像地址；非 GitHub 主机原样返回。 */
+function mirrorUrl(url: string, mirror: string | undefined): string {
+  if (!mirror) return url;
+  const parsed = new URL(url);
+  if (!MIRRORABLE_HOSTS.includes(parsed.hostname)) return url;
+  return `${mirror}/${url}`;
+}
+
+/**
  * 发起一次受限请求：超时、逐跳校验重定向、跨源剥离 token。
  */
 async function boundedRequest(
@@ -118,10 +182,16 @@ async function boundedRequest(
   const doFetch = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 30_000;
   const allowed = new Set(options.allowedRedirectHosts ?? DEFAULT_ALLOWED_REDIRECT_HOSTS);
+  const mirror = normalizeMirror(options.mirror);
+  if (mirror) allowed.add(new URL(mirror).hostname);
   const sameOriginWithToken = init.headers !== undefined;
 
-  let url = input;
+  let url = mirrorUrl(input, mirror);
   let headers = new Headers(init.headers);
+  // 只把 token 发给 GitHub 自有主机；加速前缀是第三方，绝不转发。
+  if (!GITHUB_TOKEN_HOSTS.includes(new URL(url).hostname)) {
+    headers.delete('authorization');
+  }
   let method = init.method ?? 'GET';
   // 逐跳最多 5 次重定向（GitHub 资产通常 1 跳）。
   for (let hop = 0; hop < 5; hop += 1) {
@@ -159,6 +229,8 @@ async function boundedRequest(
     }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
+      // 重定向响应体没有价值；显式 cancel 释放连接，避免连接池被占满导致下一跳超时。
+      await response.body?.cancel().catch(() => undefined);
       if (!location) {
         throw new GitHubSourceError(`重定向缺少 Location：${url}`, 'redirect');
       }

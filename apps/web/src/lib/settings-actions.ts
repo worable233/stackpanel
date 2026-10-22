@@ -223,3 +223,127 @@ export async function deleteCurrencyRateAction(
     };
   }
 }
+
+/**
+ * Save the distribution source (catalog repository / channel / ref / mirror).
+ *
+ * The API re-validates everything: a malformed repository or a non-HTTPS mirror
+ * is rejected here rather than silently breaking updates later.
+ */
+export async function saveDistributionSourceAction(
+  _prev: SettingsActionState,
+  formData: FormData,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  const enabled = formData.get('remoteEnabled') === 'on';
+  const repository = formData.get('repository');
+  const channel = formData.get('channel');
+  const ref = formData.get('ref');
+  const mirror = formData.get('mirror');
+  if (enabled && (typeof repository !== 'string' || !repository.trim())) {
+    return { error: translate(locale, 'action.distributionRepositoryRequired') };
+  }
+  try {
+    const api = await getAuthedApiClient();
+    await api.setDistributionSource({
+      repository: enabled && typeof repository === 'string' ? repository.trim() : null,
+      ...(channel === 'stable' || channel === 'beta' ? { channel } : {}),
+      ...(typeof ref === 'string' && ref.trim() ? { ref: ref.trim() } : {}),
+      mirror: typeof mirror === 'string' && mirror.trim() ? mirror.trim() : null,
+    });
+    revalidatePath('/admin/settings');
+    return { ok: true, message: translate(locale, 'action.distributionSourceSaved') };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.distributionSourceSaveFailed')),
+    };
+  }
+}
+
+/** Save the catalog signing key (empty clears it and falls back to the env var). */
+export async function saveCatalogKeyAction(
+  _prev: SettingsActionState,
+  formData: FormData,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  const publicKey = formData.get('publicKey');
+  if (typeof publicKey !== 'string') {
+    return { error: translate(locale, 'action.publicKeyRequired') };
+  }
+  try {
+    const api = await getAuthedApiClient();
+    await api.setCatalogPublicKey(publicKey);
+    revalidatePath('/admin/settings');
+    return {
+      ok: true,
+      message: translate(
+        locale,
+        publicKey.trim() ? 'action.catalogKeySaved' : 'action.catalogKeyCleared',
+      ),
+    };
+  } catch (err) {
+    return { error: await apiErrorMessage(err, translate(locale, 'action.catalogKeySaveFailed')) };
+  }
+}
+
+/** Save the read-only catalog token (encrypted at rest, never echoed back). */
+export async function saveCatalogTokenAction(
+  _prev: SettingsActionState,
+  formData: FormData,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  const token = formData.get('token');
+  if (typeof token !== 'string') {
+    return { error: translate(locale, 'action.catalogTokenRequired') };
+  }
+  try {
+    const api = await getAuthedApiClient();
+    await api.setCatalogToken(token);
+    revalidatePath('/admin/settings');
+    return {
+      ok: true,
+      message: translate(
+        locale,
+        token.trim() ? 'action.catalogTokenSaved' : 'action.catalogTokenCleared',
+      ),
+    };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.catalogTokenSaveFailed')),
+    };
+  }
+}
+
+/** Trigger an immediate catalog refresh so the admin can verify the config. */
+export async function refreshDistributionAction(): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  try {
+    const api = await getAuthedApiClient();
+    const result = await api.refreshDistribution();
+    if (!result.configured) {
+      return { ok: true, message: translate(locale, 'action.distributionRefreshOffline') };
+    }
+    if (result.available) {
+      return {
+        ok: true,
+        message: translate(locale, 'action.distributionRefreshOk', {
+          sequence: String(result.sequence ?? 0),
+        }),
+      };
+    }
+    return {
+      error: translate(locale, 'action.distributionRefreshFailed', {
+        message: result.failure?.message ?? '',
+      }),
+    };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(
+        err,
+        translate(locale, 'action.distributionRefreshFailed', {
+          message: '',
+        }),
+      ),
+    };
+  }
+}

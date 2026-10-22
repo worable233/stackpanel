@@ -52,6 +52,7 @@ export interface CatalogInstallDeps {
   cache: SourceCache;
   channel: 'stable' | 'beta';
   token?: string;
+  mirror?: string;
   fetchImpl?: typeof fetch;
   now?: Date;
 }
@@ -179,6 +180,7 @@ export async function prepareCatalogInstall(
       keyring: deps.keyring,
       cache: deps.cache,
       ...(deps.token ? { token: deps.token } : {}),
+      ...(deps.mirror ? { mirror: deps.mirror } : {}),
       ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });

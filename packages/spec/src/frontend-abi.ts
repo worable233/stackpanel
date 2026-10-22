@@ -46,15 +46,15 @@ export const HOST_FRONTEND_ABI_SLOTS: readonly string[] = Object.freeze([
  * 使用 workspace 包版本；React / next / lucide 使用宿主安装版本。
  */
 export const HOST_FRONTEND_ABI: Readonly<Record<string, string>> = Object.freeze({
-  react: '19.2.4',
-  'react-dom': '19.2.4',
-  'react/jsx-runtime': '19.2.4',
-  'next/link': '16.3.8',
-  'next/form': '16.3.8',
-  'next/navigation': '16.3.8',
+  react: '19.3.1',
+  'react-dom': '19.3.1',
+  'react/jsx-runtime': '19.3.1',
+  'next/link': '16.4.2',
+  'next/form': '16.4.2',
+  'next/navigation': '16.4.2',
   '@stackpanel/ui': '0.2.0',
   '@stackpanel/sdk': '0.4.0',
-  'lucide-react': '1.31.0',
+  'lucide-react': '0.577.0',
 });
 
 export interface FrontendExternalsError {

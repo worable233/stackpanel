@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { cn } from "@/lib/utils"
+import { useFrontendPortalContainer } from "@/components/frontend-scope"
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -24,8 +25,10 @@ function PopoverContent({
     PopoverPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
+  // Contract 05 §3.5: keep a package-scoped overlay inside its style scope.
+  const container = useFrontendPortalContainer()
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal {...(container ? { container } : {})}>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

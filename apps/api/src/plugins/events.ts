@@ -24,14 +24,25 @@ const CATCH_UP_BATCH = 50;
  * Stable replica identity used as the key for this replica's durable
  * consumption cursor (`replica:<id>`).
  *
- * Priority: `STACKPANEL_INSTANCE_ID` → `os.hostname()`. The value is normalized
- * to `[a-z0-9_-]` (truncated + short hash) so it is safe as a cursor key.
+ * Priority: `STACKPANEL_INSTANCE_ID` → `os.hostname()` + a per-process
+ * discriminator (`NODE_APP_INSTANCE` for PM2 cluster, else `API_PORT`). The
+ * value is normalized to `[a-z0-9_-]` (truncated + short hash) so it is safe as
+ * a cursor key.
+ *
  * A stable id matters: with a fresh id on every boot the process starts from
  * "now" (see `CATCH_UP` window) and never resumes its previous position.
+ *
+ * A *unique* id matters just as much: two replicas that resolve the same id
+ * share one cursor, so whichever consumes first advances it past rows the other
+ * never saw — the exact event-loss shape W3 exists to remove, moved from
+ * "restart" to "two replicas on one host". Hence the discriminator: hostname
+ * alone is identical for every container on a host (and for every PM2 cluster
+ * worker). Set `STACKPANEL_INSTANCE_ID` explicitly when replicas run on
+ * different hosts but must be named deliberately.
  */
 export function resolveInstanceId(): string {
   const configured = (process.env.STACKPANEL_INSTANCE_ID ?? '').trim();
-  const raw = configured || hostname() || 'unknown';
+  const raw = configured || defaultIdentity();
   const slug = raw
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-')
@@ -40,6 +51,20 @@ export function resolveInstanceId(): string {
   if (safe.length <= 96) return safe;
   // Keep it readable but bounded; the hash prevents truncation collisions.
   return `${safe.slice(0, 88)}-${createHash('sha256').update(raw).digest('hex').slice(0, 6)}`;
+}
+
+/**
+ * Host-derived identity with a per-process discriminator, so two replicas on
+ * the same host (containers, PM2 cluster workers, two ports) never collide.
+ * Ordering is deliberate: `NODE_APP_INSTANCE` is what PM2 sets for cluster
+ * workers sharing a port, `API_PORT` distinguishes plain parallel processes.
+ */
+function defaultIdentity(): string {
+  const base = hostname() || 'unknown';
+  const pm2 = (process.env.NODE_APP_INSTANCE ?? '').trim();
+  if (pm2) return `${base}-${pm2}`;
+  const port = (process.env.API_PORT ?? '').trim();
+  return port ? `${base}-${port}` : base;
 }
 
 /** Cursor consumer name for a replica's durable consumption position. */

@@ -45,6 +45,14 @@ export function baseConfig(extraIgnores = []) {
         '@typescript-eslint/consistent-type-imports': 'error',
       },
     },
+    {
+      files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+      rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
+    },
+    {
+      files: ['**/*.mjs'],
+      languageOptions: { globals: { ...globals.node } },
+    },
   );
 }
 
