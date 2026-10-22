@@ -96,7 +96,7 @@ function parseChannel(value: unknown): CatalogChannel | null {
 function parseRef(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const ref = value.trim();
-  return /^[A-Za-z0-9._\/-]{1,120}$/.test(ref) ? ref : null;
+  return /^[A-Za-z0-9._/-]{1,120}$/.test(ref) ? ref : null;
 }
 
 /** 解析数据库里的源配置；非法字段整体忽略该字段（回退到环境变量）。 */
@@ -173,7 +173,6 @@ export async function loadCatalogSourceConfig(): Promise<CatalogSourceConfig> {
     token = await readStoredToken();
   } catch {
     // 数据库不可用（例如首次迁移前）：退回环境变量，不让分发配置阻断启动。
-    stored = null;
   }
   cached = {
     ...base,

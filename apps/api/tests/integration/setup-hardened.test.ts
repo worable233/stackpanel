@@ -9,6 +9,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  */
 const TOKEN = 'test_setup_token_0123456789abcdef0123456789abcdef';
 process.env.STACKPANEL_SETUP_TOKEN = TOKEN;
+// The hardened-mode guard must trigger before email verification: a missing
+// code would otherwise surface as `auth.code_missing` (400) and mask the real
+// answer. Both are read at import time, so pin verification off here.
+process.env.AUTH_EMAIL_VERIFICATION = 'off';
 
 const { buildApp } = await import('../../src/app.ts');
 const { getPrisma } = await import('../../src/plugins/prisma.ts');
