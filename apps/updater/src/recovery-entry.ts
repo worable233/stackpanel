@@ -87,9 +87,17 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 /**
- * 创建恢复入口。未配置令牌时抛错——恢复 API 绝不无认证监听。
+ * 创建并**启动**恢复入口。未配置令牌时抛错——恢复 API 绝不无认证监听。
+ *
+ * 必须由本函数自己完成 `listen()`：真机演练抓到，此前它只构造 server 就返回，
+ * 由调用方负责 listen，而 `main.ts` 忘了调用——日志照常打印「恢复入口监听
+ * http://0.0.0.0:8088」，实际端口根本没绑定，`/recovery/api/*` 全部连接被拒。
+ * 恢复入口是升级卡死时**唯一**的人工出口，静默不监听等于该能力不存在。
+ * 做成 async 并在此处 await，让「忘记 listen」在类型层面无法发生。
  */
-export function createRecoveryServer(options: RecoveryServerOptions): RecoveryServerHandle {
+export async function createRecoveryServer(
+  options: RecoveryServerOptions,
+): Promise<RecoveryServerHandle> {
   const { deps } = options;
   if (!deps.token || deps.token.length < 16) {
     throw new Error('恢复入口需要至少 16 字符的独立令牌；拒绝无认证监听');
@@ -101,9 +109,26 @@ export function createRecoveryServer(options: RecoveryServerOptions): RecoverySe
       sendJson(res, 500, { error: '内部错误' });
     });
   });
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = (): void => {
+      server.off('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(options.port, host);
+  });
+  // 端口可能由操作系统分配（port: 0），以实际绑定为准回报 URL。
+  const address = server.address();
+  const actualPort =
+    address && typeof address === 'object' ? address.port : options.port;
   return {
     server,
-    url: `http://${host}:${options.port}`,
+    url: `http://${host}:${actualPort}`,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));

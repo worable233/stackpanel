@@ -307,7 +307,7 @@ async function main(): Promise<void> {
     log,
   });
   if (recoveryToken && recoveryPort > 0) {
-    recovery = createRecoveryServer({
+    recovery = await createRecoveryServer({
       port: recoveryPort,
       host: process.env['UPDATER_RECOVERY_HOST'] ?? '127.0.0.1',
       deps: {
