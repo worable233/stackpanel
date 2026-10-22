@@ -869,3 +869,12 @@ model AgentMessageAttachment {
   @@id([messageId, attachmentId])
   @@map("agent_message_attachments")
 }
+
+/// 真机升级演练专用表（drill/v0.2.1 分支，不合并回 main）。
+model DrillUpgradeMarker {
+  id            String   @id @default(cuid())
+  kernelVersion String
+  appliedAt     DateTime @default(now())
+
+  @@map("drill_upgrade_marker")
+}

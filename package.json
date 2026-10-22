@@ -1,6 +1,6 @@
 {
   "name": "stackpanel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "API-first, microkernel plugin-based digital goods / hosting business management system.",
   "packageManager": "pnpm@11.5.1",
