@@ -1,8 +1,9 @@
 /**
  * Extension 引擎：DDL 迁移器（ADR-0009 §6 / PLAN-E1 §4.3–§4.4）。
  *
- * 只支持增量安全变更：建表、加可空列、增删非唯一索引、加唯一索引（先查重）。
- * 改类型 / 删列 / 改唯一性 / 改表名一律 {@link ExtensionUnsupportedMigration}。
+ * 只支持增量安全变更：建表、加可空列、增删非唯一索引、加唯一索引（先查重）、
+ * 无损加宽类型（int4 → float8）。
+ * 其余改类型 / 删列 / 改唯一性 / 改表名一律 {@link ExtensionUnsupportedMigration}。
  *
  * 元表 `extension_schema` 记录定义哈希；哈希一致即跳过，不一致才做真实 diff。
  * DDL 只在激活 / 迁移期执行，且整段包在同一事务里（PostgreSQL 支持 DDL 回滚）。
@@ -29,6 +30,22 @@ const TYPE_NAMES: Record<ModelFieldType, string> = {
   number: 'double precision',
   boolean: 'boolean',
 };
+
+/**
+ * 允许**无损加宽**的类型变更（existing → declared）。
+ *
+ * 为什么需要：epoch 毫秒这类值（≈1.7e12）装不进 int4（上限 2.1e9），一旦某个
+ * 模型把字段从 `integer` 改成 `number`，已部署实例的表里仍是 int4。若不支持加宽，
+ * 升级会以「类型已变更」直接拒绝迁移，运维只能手工改库——比缺陷本身更难排查。
+ *
+ * 只放行**不会丢精度、不会截断**的方向：int4 → float8 对所有 int4 值都精确可表示。
+ * 反向（float8 → int4）以及 text/boolean 之间的任何变更仍一律拒绝。
+ */
+const WIDENINGS: ReadonlyArray<readonly [string, string]> = [['integer', 'double precision']];
+
+function isLosslessWidening(actual: string, declared: string): boolean {
+  return WIDENINGS.some(([from, to]) => from === actual && to === declared);
+}
 
 interface ActualIndex {
   name: string;
@@ -130,6 +147,13 @@ async function applyDiff(
     if (type === undefined) {
       await db.$executeRawUnsafe(addColumnSql(table.tableName, column));
     } else if (type !== TYPE_NAMES[column.type]) {
+      if (isLosslessWidening(type, TYPE_NAMES[column.type])) {
+        // 无损加宽（int4 → float8）：就地 ALTER，保留既有数据。
+        await db.$executeRawUnsafe(
+          `ALTER TABLE ${quoteIdentifier(table.tableName)} ALTER COLUMN ${quoteIdentifier(column.column)} TYPE ${TYPE_NAMES[column.type]}`,
+        );
+        continue;
+      }
       throw new ExtensionUnsupportedMigration(
         `模型 ${table.kind} 的字段 ${column.field} 类型已变更（${type} → ${TYPE_NAMES[column.type]}）`,
       );

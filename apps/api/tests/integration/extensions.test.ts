@@ -446,6 +446,68 @@ describe.skipIf(!dbAvailable)('Extension 引擎（真实库）', () => {
     });
   });
 
+  it('迁移：int4 → float8 无损加宽放行并保留数据；反向仍拒绝', async () => {
+    // 回归：channel 插件的 nextAttemptAt（epoch ms ≈1.7e12）曾声明成 integer，
+    // 写入直接 out of range。修 schema 只能救新库；已部署实例的列仍是 int4，
+    // 必须允许无损加宽，否则升级以「类型已变更」拒绝迁移，运维只能手工改库。
+    const narrow = defineModel({
+      kind: 'e1test/widen',
+      label: '加宽小部件',
+      schema: z.object({ name: z.string(), dueAt: z.number().int().default(0) }),
+      indexes: [
+        { fields: ['name'], unique: true, types: { name: 'string' } },
+        { fields: ['dueAt'], types: { dueAt: 'integer' } },
+      ],
+    });
+    await ensureExtensionModels(getPrisma(), 'e1-test', [narrow]);
+
+    const columnType = async (): Promise<string | undefined> => {
+      const rows = await getPrisma().$queryRawUnsafe<Array<{ data_type: string }>>(
+        `SELECT data_type FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'ext_e1test_widen'
+            AND column_name = 'f_dueAt'`,
+      );
+      return rows[0]?.data_type;
+    };
+    expect(await columnType()).toBe('integer');
+
+    // 既有数据（int4 范围内）必须在加宽后原样保留。
+    await getPrisma().$executeRawUnsafe(
+      `INSERT INTO "ext_e1test_widen"
+         ("id", "version", "f_name", "f_dueAt", "spec", "status", "labels", "annotations", "finalizers", "created_at", "updated_at")
+       VALUES ('widen-1', 1, 'W', 1234, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, now(), now())`,
+    );
+
+    const wide = defineModel({
+      kind: 'e1test/widen',
+      label: '加宽小部件',
+      schema: z.object({ name: z.string(), dueAt: z.number().default(0) }),
+      indexes: [
+        { fields: ['name'], unique: true, types: { name: 'string' } },
+        { fields: ['dueAt'], types: { dueAt: 'number' } },
+      ],
+    });
+    await ensureExtensionModels(getPrisma(), 'e1-test', [wide]);
+    expect(await columnType()).toBe('double precision');
+
+    // 加宽后能装下 epoch ms（int4 上限 2.1e9，装不下 1.7e12）。
+    await getPrisma().$executeRawUnsafe(
+      `UPDATE "ext_e1test_widen" SET "f_dueAt" = 1792668840645 WHERE "id" = 'widen-1'`,
+    );
+    const rows = await getPrisma().$queryRawUnsafe<Array<{ f_dueAt: number }>>(
+      `SELECT "f_dueAt" FROM "ext_e1test_widen" WHERE "id" = 'widen-1'`,
+    );
+    expect(Number(rows[0]?.f_dueAt)).toBe(1792668840645);
+
+    // 反向（float8 → int4）不是无损加宽，必须拒绝。
+    await expect(ensureExtensionModels(getPrisma(), 'e1-test', [narrow])).rejects.toMatchObject({
+      code: 'extension.unsupported_migration',
+      detail: expect.stringContaining('类型已变更'),
+    });
+
+    await getPrisma().$executeRawUnsafe(`DELETE FROM "ext_e1test_widen" WHERE "id" = 'widen-1'`);
+  });
+
   it('保留策略：retain 保留表，delete 删表', async () => {
     await service.applyRetention('e1-test', [retainedModel]);
     expect(await tableExists('ext_e1test_retained')).toBe(true);

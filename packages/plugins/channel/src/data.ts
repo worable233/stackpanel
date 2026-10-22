@@ -52,14 +52,22 @@ export const deliveryModel = defineModel({
     maxAttempts: z.number().int().default(6),
     responseCode: z.number().int().nullable().default(null),
     error: z.string().nullable().default(null),
-    /** Earliest next attempt, epoch ms (0 = due immediately). */
-    nextAttemptAt: z.number().int().default(0),
+    /**
+     * Earliest next attempt, epoch ms (0 = due immediately).
+     *
+     * epoch ms ≈ 1.7e12，超出 PostgreSQL `integer`（int4，上限 2.1e9）范围：
+     * 声明成 `integer` 会让每次退避写入直接 `out of range`，投递记录永远停在
+     * PENDING，最终被反复判死。必须用 `number`（double precision），与
+     * referral 的 `freezeUntil`、store 的 `expiresAtMs` 同款处理。
+     */
+    nextAttemptAt: z.number().default(0),
     deliveredAt: z.string().nullable().default(null),
   }),
   indexes: [
     { fields: ['partnerId'], types: { partnerId: 'string' } },
     { fields: ['state'], types: { state: 'string' } },
     { fields: ['attempts'], types: { attempts: 'integer' } },
-    { fields: ['nextAttemptAt'], types: { nextAttemptAt: 'integer' } },
+    // epoch ms 必须用 `number`（double precision），int4 装不下（见字段注释）。
+    { fields: ['nextAttemptAt'], types: { nextAttemptAt: 'number' } },
   ],
 });
