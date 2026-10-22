@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "faf86efeb39f",
+  "revision": "6e313e83cc37",
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
@@ -27,6 +27,7 @@
   "actions": [
     {
       "id": "wallet.create-topup",
+      "silent": true,
       "method": "POST",
       "path": "/wallet/topups",
       "permission": "store.wallet",
@@ -58,6 +59,9 @@
     },
     {
       "id": "wallet.cancel-topup",
+      "successFeedback": {
+        "messageKey": "records.cancelled"
+      },
       "method": "POST",
       "path": "/wallet/topups/:id/cancel",
       "permission": "store.wallet",
@@ -146,6 +150,11 @@
       "records.unavailable": "资金记录暂时无法加载，请刷新重试。",
       "records.empty": "暂无记录",
       "records.provider": "支付渠道",
+      "records.status.PENDING": "待支付",
+      "records.status.SUCCEEDED": "成功",
+      "records.status.FAILED": "失败",
+      "records.status.REVIEW": "待复核",
+      "records.status.CANCELLED": "已取消",
       "records.continuePayment": "继续付款",
       "records.cancel": "取消",
       "overview.title": "费用概览",
@@ -205,7 +214,8 @@
       "recharge.paymentMethod": "支付方式",
       "recharge.noMethods": "暂无支付方式",
       "recharge.submitting": "正在提交",
-      "recharge.submit": "确认充值"
+      "recharge.submit": "确认充值",
+      "records.cancelled": "充值已取消。"
     },
     "zh-TW": {
       "nav.overview": "概覽",
@@ -223,6 +233,11 @@
       "records.unavailable": "資金記錄暫時無法載入，請重新整理重試。",
       "records.empty": "暫無記錄",
       "records.provider": "支付渠道",
+      "records.status.PENDING": "待支付",
+      "records.status.SUCCEEDED": "成功",
+      "records.status.FAILED": "失敗",
+      "records.status.REVIEW": "待複核",
+      "records.status.CANCELLED": "已取消",
       "records.continuePayment": "繼續付款",
       "records.cancel": "取消",
       "overview.title": "費用概覽",
@@ -282,7 +297,8 @@
       "recharge.paymentMethod": "支付方式",
       "recharge.noMethods": "暫無支付方式",
       "recharge.submitting": "正在提交",
-      "recharge.submit": "確認充值"
+      "recharge.submit": "確認充值",
+      "records.cancelled": "充值已取消。"
     },
     "zh-HK": {
       "nav.overview": "概覽",
@@ -300,6 +316,11 @@
       "records.unavailable": "資金記錄暫時無法載入，請重新整理重試。",
       "records.empty": "暫無記錄",
       "records.provider": "支付渠道",
+      "records.status.PENDING": "待支付",
+      "records.status.SUCCEEDED": "成功",
+      "records.status.FAILED": "失敗",
+      "records.status.REVIEW": "待複核",
+      "records.status.CANCELLED": "已取消",
       "records.continuePayment": "繼續付款",
       "records.cancel": "取消",
       "overview.title": "費用概覽",
@@ -359,7 +380,8 @@
       "recharge.paymentMethod": "支付方式",
       "recharge.noMethods": "暫無支付方式",
       "recharge.submitting": "正在提交",
-      "recharge.submit": "確認充值"
+      "recharge.submit": "確認充值",
+      "records.cancelled": "充值已取消。"
     },
     "en-US": {
       "nav.overview": "Overview",
@@ -377,6 +399,11 @@
       "records.unavailable": "Fund records are unavailable right now. Refresh and try again.",
       "records.empty": "No records yet",
       "records.provider": "Payment channel",
+      "records.status.PENDING": "Awaiting payment",
+      "records.status.SUCCEEDED": "Succeeded",
+      "records.status.FAILED": "Failed",
+      "records.status.REVIEW": "Under review",
+      "records.status.CANCELLED": "Cancelled",
       "records.continuePayment": "Continue payment",
       "records.cancel": "Cancel",
       "overview.title": "Billing overview",
@@ -436,7 +463,8 @@
       "recharge.paymentMethod": "Payment method",
       "recharge.noMethods": "No payment methods available",
       "recharge.submitting": "Submitting…",
-      "recharge.submit": "Confirm top-up"
+      "recharge.submit": "Confirm top-up",
+      "records.cancelled": "Top-up cancelled."
     }
   }
 }

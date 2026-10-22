@@ -47,6 +47,7 @@ export function CartCheckout(props: CartCheckoutProps) {
   );
   const [methodId, setMethodId] = useState(props.methods[0]?.id ?? '');
   const [pending, setPending] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [step, setStep] = useState(1);
   const result = props.result;
   const paid = result?.status === 'PAID';
@@ -302,8 +303,13 @@ export function CartCheckout(props: CartCheckoutProps) {
               <>
                 <form
                   action={async (data) => {
+                    setSubmitError(null);
                     try {
                       if (action) await action(data);
+                    } catch {
+                      // Keep the buyer on the payment step with a localised,
+                      // actionable message instead of failing silently.
+                      setSubmitError(c.failedHelp);
                     } finally {
                       setPending(false);
                     }
@@ -339,6 +345,11 @@ export function CartCheckout(props: CartCheckoutProps) {
                       props.labels.submit
                     )}
                   </Button>
+                  {submitError ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {submitError}
+                    </p>
+                  ) : null}
                 </form>
                 <Button type="button" variant="ghost" disabled={pending} onClick={() => setStep(1)}>
                   <ArrowLeft data-icon="inline-start" />

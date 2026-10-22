@@ -54,6 +54,13 @@ describe('host frontend ABI table', () => {
       expect(HOST_FRONTEND_ABI['lucide-react']).toBe(lucide);
     }
   });
+
+  it('matches the installed sonner version (drift guard)', () => {
+    const sonner = installedVersion('sonner');
+    if (sonner) {
+      expect(HOST_FRONTEND_ABI['sonner']).toBe(sonner);
+    }
+  });
 });
 
 describe('validateFrontendExternals', () => {

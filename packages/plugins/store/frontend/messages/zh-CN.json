@@ -377,6 +377,9 @@
   "product.notPurchasable": "当前账户没有购买权限。",
   "cart.loadFailed": "购物车暂时无法加载，请刷新重试。",
   "cart.unavailable": "商品已下架或库存不足，请调整数量或移除。",
+  "cart.reason.inactive": "商品已下架。",
+  "cart.reason.out_of_stock": "库存不足，请调整数量或移除。",
+  "cart.reason.forbidden": "当前账户无权购买该商品。",
   "cart.separateCurrencies": "不同币种的商品需要分别结算。",
   "cart.groupTotal": "本组全部商品：{amount}",
   "cart.proceed": "结算所选商品",
@@ -406,5 +409,14 @@
   "refund.approve": "批准",
   "refund.reject": "拒绝",
   "refund.failureReason": "{state}：{reason}",
-  "orders.requestRefund": "申请退款（退平台余额）"
+  "refund.state.PENDING": "待审核",
+  "refund.state.APPROVED": "已通过",
+  "refund.state.REJECTED": "已拒绝",
+  "refund.state.FAILED": "失败",
+  "orders.requestRefund": "申请退款（退平台余额）",
+  "feedback.orderCancelled": "订单已取消。",
+  "feedback.refundRequested": "退款申请已提交，等待审核。",
+  "feedback.serviceTransferred": "服务已转移。",
+  "feedback.refundProcessed": "退款已处理。",
+  "feedback.productSaved": "商品已保存。"
 }

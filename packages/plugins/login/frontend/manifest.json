@@ -1,6 +1,6 @@
 {
   "version": "0.2.0",
-  "revision": "73366eb7c36d",
+  "revision": "9e36160852e0",
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
@@ -26,6 +26,7 @@
   "actions": [
     {
       "id": "login.configure",
+      "silent": true,
       "method": "POST",
       "path": "/login/admin/config",
       "permission": "platform.admin",
@@ -98,10 +99,10 @@
       "settings.emailVerificationUnavailable": "當前沒有可用的郵箱驗證碼傳送外掛，請先在“SMTP 郵件”設置中完成配置。",
       "settings.phoneGroup": "手機號註冊",
       "settings.phoneGroupHint": "需要簡訊驗證外掛，當前尚未提供。",
-      "settings.save": "保存配置",
-      "settings.saving": "保存中…",
-      "settings.saved": "登錄配置已保存",
-      "settings.saveFailed": "保存失敗"
+      "settings.save": "儲存配置",
+      "settings.saving": "儲存中…",
+      "settings.saved": "登錄配置已儲存",
+      "settings.saveFailed": "儲存失敗"
     },
     "en-US": {
       "admin.systemSettings": "Sign-in & registration",

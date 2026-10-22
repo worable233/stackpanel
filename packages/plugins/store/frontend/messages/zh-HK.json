@@ -377,6 +377,9 @@
   "product.notPurchasable": "當前賬戶沒有購買許可權。",
   "cart.loadFailed": "購物車暫時無法載入，請重新整理重試。",
   "cart.unavailable": "商品已下架或庫存不足，請調整數量或移除。",
+  "cart.reason.inactive": "商品已下架。",
+  "cart.reason.out_of_stock": "庫存不足，請調整數量或移除。",
+  "cart.reason.forbidden": "當前賬戶無權購買該商品。",
   "cart.separateCurrencies": "不同幣種的商品需要分別結算。",
   "cart.groupTotal": "本組全部商品：{amount}",
   "cart.proceed": "結算所選商品",
@@ -406,5 +409,14 @@
   "refund.approve": "批准",
   "refund.reject": "拒絕",
   "refund.failureReason": "{state}：{reason}",
-  "orders.requestRefund": "申請退款（退平臺餘額）"
+  "refund.state.PENDING": "待稽核",
+  "refund.state.APPROVED": "已通過",
+  "refund.state.REJECTED": "已拒絕",
+  "refund.state.FAILED": "失敗",
+  "orders.requestRefund": "申請退款（退平臺餘額）",
+  "feedback.orderCancelled": "訂單已取消。",
+  "feedback.refundRequested": "退款申請已提交，等待稽核。",
+  "feedback.serviceTransferred": "服務已轉移。",
+  "feedback.refundProcessed": "退款已處理。",
+  "feedback.productSaved": "商品已儲存。"
 }

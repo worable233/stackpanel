@@ -23,7 +23,7 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
   async function save() {
     setBusy(true);
     try {
-      const res = await fetch('/api/plugins/login/login/admin/config', {
+      const res = await fetch('/api/plugins/login/admin/config', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -35,7 +35,8 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
       toast.success(tr('settings.saved'));
       window.location.reload();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : tr('settings.saveFailed'));
+      console.error('[login] save failed', e);
+      toast.error(tr('settings.saveFailed'));
     } finally {
       setBusy(false);
     }

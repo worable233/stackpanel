@@ -25,12 +25,15 @@ export const frontend: FrontendPackage = {
     actions: [
       {
         id: 'storage.test-connection',
+        // The admin form renders the connection result inline.
+        silent: true,
         method: 'POST',
         path: '/storage/admin/test',
         permission: 'storage.admin',
       },
       {
         id: 'storage.save-config',
+        successFeedback: { messageKey: 'status.saved' },
         method: 'POST',
         path: '/storage/admin/config',
         permission: 'storage.admin',

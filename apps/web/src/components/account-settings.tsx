@@ -333,8 +333,8 @@ function PersonalAgentSettings() {
         }
       })
       .catch((cause) => {
-        if (active)
-          setError(cause instanceof Error ? cause.message : t('account.settings.agent.loadFailed'));
+        console.error('[account-settings] agent tools load failed', cause);
+        if (active) setError(t('account.settings.agent.loadFailed'));
       });
     return () => {
       active = false;
@@ -416,7 +416,8 @@ function ToolCredential({
         remove ? t('account.settings.agent.removed') : t('account.settings.agent.saved'),
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t('account.settings.agent.saveFailed'));
+      console.error('[account-settings] agent tool save failed', cause);
+      setError(t('account.settings.agent.saveFailed'));
     } finally {
       setBusy(false);
     }

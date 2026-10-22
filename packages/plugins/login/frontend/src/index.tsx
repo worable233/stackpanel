@@ -30,6 +30,8 @@ const frontend: FrontendPackage = {
     actions: [
       {
         id: 'login.configure',
+        // Admin form toasts on success itself.
+        silent: true,
         method: 'POST',
         path: '/login/admin/config',
         permission: 'platform.admin',

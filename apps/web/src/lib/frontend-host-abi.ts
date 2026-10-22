@@ -27,6 +27,7 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import * as react from 'react';
 import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
+import * as sonner from 'sonner';
 // NOTE: do **not** import `recharts` here. This module is evaluated inside the
 // RSC server graph, and Recharts calls `React.createContext` at module scope —
 // the server React build has no `createContext`, so the import throws
@@ -73,6 +74,7 @@ export function publishHostServerAbi(): HostServerAbi {
       '@stackpanel/ui': ui,
       '@stackpanel/sdk': sdk,
       'lucide-react': lucide,
+      sonner,
     };
   }
   // Refresh client references after development hot reload as new capabilities are added.

@@ -246,6 +246,11 @@ function Ledger({
   tr: ReturnType<typeof t>;
   locale?: string;
 }): ReactElement {
+  const statusLabel = (status: string) => {
+    const key = `records.status.${status}`;
+    const label = tr(key);
+    return label === key ? status : label;
+  };
   return (
     <section id={titleKey === 'records.ledger' ? 'ledger' : undefined} className="scroll-mt-24">
       <SectionTitle icon={<Clock />} className="mb-3">
@@ -262,7 +267,7 @@ function Ledger({
                 <p className="truncate">
                   {'type' in row
                     ? (row.note ?? row.type)
-                    : `${row.providerId ?? tr('records.provider')} · ${row.status}`}
+                    : `${row.providerId ?? tr('records.provider')} · ${statusLabel(row.status)}`}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {formatDate(row.createdAt, locale)}
@@ -326,6 +331,8 @@ export const frontend: FrontendPackage = {
     actions: [
       {
         id: 'wallet.create-topup',
+        // Redirects to the payment page; a toast would be lost on navigation.
+        silent: true,
         method: 'POST',
         path: '/wallet/topups',
         permission: 'store.wallet',
@@ -338,6 +345,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'wallet.cancel-topup',
+        successFeedback: { messageKey: 'records.cancelled' },
         method: 'POST',
         path: '/wallet/topups/:id/cancel',
         permission: 'store.wallet',

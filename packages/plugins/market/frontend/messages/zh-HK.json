@@ -34,5 +34,6 @@
   "source.catalogOffline": "遠端目錄已關閉（完全離線），市場只顯示本地來源。",
   "source.catalogFailed": "遠端目錄不可用：{message}",
   "source.catalogPending": "正在等待遠端目錄（{repository}）的首次重新整理結果。",
-  "source.catalogExpired": "遠端目錄已過期：仍可檢視緩存條目，但已禁止據此自動安裝。"
+  "source.catalogExpired": "遠端目錄已過期：仍可檢視緩存條目，但已禁止據此自動安裝。",
+  "feedback.installed": "已安裝，重新整理頁面後生效。"
 }

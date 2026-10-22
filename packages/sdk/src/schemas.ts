@@ -753,6 +753,7 @@ export const pluginActionSchema = z.object({
       message: 'successFeedback 需要 message 或 messageKey',
     })
     .optional(),
+  silent: z.boolean().optional(),
 }) as z.ZodType<PluginActionDefinition>;
 
 export const adminActionSchema = z.object({

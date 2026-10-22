@@ -36,6 +36,7 @@ export const HOST_FRONTEND_ABI_SLOTS: readonly string[] = Object.freeze([
   '@stackpanel/ui',
   '@stackpanel/sdk',
   'lucide-react',
+  'sonner',
 ]);
 
 /**
@@ -54,7 +55,8 @@ export const HOST_FRONTEND_ABI: Readonly<Record<string, string>> = Object.freeze
   'next/navigation': '16.4.2',
   '@stackpanel/ui': '0.2.0',
   '@stackpanel/sdk': '0.4.0',
-  'lucide-react': '0.577.0',
+  'lucide-react': '1.31.0',
+  sonner: '2.0.8',
 });
 
 export interface FrontendExternalsError {

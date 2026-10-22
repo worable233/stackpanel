@@ -75,7 +75,7 @@ export default async function AdminSettingsPage() {
       <Separator className="my-4 lg:my-6" />
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.settings.serviceUnavailable', { error })}
+          {t('admin.settings.serviceUnavailable')}
         </p>
       ) : (
         <SettingsManager

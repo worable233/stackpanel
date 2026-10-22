@@ -1,6 +1,7 @@
 'use client';
 
 import { Component, type ReactElement, type ReactNode } from 'react';
+import { useTranslator } from '@/i18n/provider';
 
 /**
  * Contract 06 §1.3 — render-failure degradation.
@@ -16,12 +17,12 @@ import { Component, type ReactElement, type ReactNode } from 'react';
  */
 export class FrontendRenderBoundary extends Component<
   { children: ReactNode; label: string },
-  { message: string | null }
+  { failed: boolean }
 > {
-  state: { message: string | null } = { message: null };
+  state: { failed: boolean } = { failed: false };
 
-  static getDerivedStateFromError(error: Error): { message: string } {
-    return { message: error.message || 'render failed' };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
   }
 
   componentDidCatch(error: Error): void {
@@ -30,15 +31,19 @@ export class FrontendRenderBoundary extends Component<
   }
 
   render(): ReactNode {
-    if (this.state.message !== null) {
-      return (
-        <p role="alert" className="text-sm text-destructive">
-          {this.state.message}
-        </p>
-      );
-    }
+    if (this.state.failed) return <FrontendRenderError />;
     return this.props.children;
   }
+}
+
+/** Static, localised fallback; the raw exception stays in the console. */
+function FrontendRenderError(): ReactElement {
+  const t = useTranslator();
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      {t('frontend.renderFailed')}
+    </p>
+  );
 }
 
 /** Convenience wrapper so callers do not repeat the label. */

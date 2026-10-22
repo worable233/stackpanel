@@ -9,6 +9,7 @@ import { Toaster } from '@/components/ui/sonner';
 import ThemeStylesheet from '@/components/theme-stylesheet';
 import FrontendStylesheets from '@/components/frontend-stylesheets';
 import { FrontendAbiBridge } from '@/components/frontend-abi-bridge';
+import { ActionFeedbackToaster } from '@/components/action-feedback-toaster';
 import { I18nProvider } from '@/i18n/provider';
 import { getLocale } from '@/i18n/locale';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
@@ -81,6 +82,8 @@ export default async function RootLayout({
           <ThemeProvider>
             {children}
             <Toaster />
+            {/* Global: plugin actions redirect back with `?error=`/`?success=`. */}
+            <ActionFeedbackToaster />
           </ThemeProvider>
         </I18nProvider>
       </body>

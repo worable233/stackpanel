@@ -28,7 +28,7 @@ export default async function AdminPluginsPage() {
       />
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.plugins.serviceUnavailable', { error })}
+          {t('admin.plugins.serviceUnavailable')}
         </p>
       ) : (
         <div className="space-y-8">

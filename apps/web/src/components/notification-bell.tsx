@@ -2,6 +2,7 @@
 
 import { Bell, Check, CircleAlert, Loader } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { useCallback, useEffect, useState } from 'react';
 import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
 import { BackendToolbarButton } from '@/components/backend-toolbar-button';
@@ -105,13 +106,17 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
 
   const markAllRead = async () => {
     try {
-      await fetch('/api/notifications/read-all', { method: 'POST' });
+      const response = await fetch('/api/notifications/read-all', { method: 'POST' });
+      if (!response.ok) throw new Error(`read-all failed: ${response.status}`);
       setUnreadCount(0);
       setItems((prev) =>
         prev.map((item) => ({ ...item, readAt: item.readAt ?? new Date().toISOString() })),
       );
     } catch {
-      // ignore
+      // Do not claim success locally: re-read the server snapshot instead.
+      toast.error(t('notification.markAllReadFailed'));
+      void refreshCount();
+      void loadRecent();
     }
   };
 
@@ -120,7 +125,7 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
       const response = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
         method: 'POST',
       });
-      if (!response.ok) return;
+      if (!response.ok) throw new Error(`mark-read failed: ${response.status}`);
       window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
       void refreshCount();
       setItems((prev) =>
@@ -129,7 +134,7 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
         ),
       );
     } catch {
-      // ignore
+      toast.error(t('notification.markReadFailed'));
     }
   };
 
