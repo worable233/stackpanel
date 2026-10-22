@@ -718,7 +718,7 @@
         "refreshing": "刷新中…",
         "catalogKeyTitle": "目录验签公钥",
         "catalogKeyConfigured": "已配置目录公钥；远程目录条目必须通过它的验签才会被安装。",
-        "catalogKeyUnconfigured": "未配置目录公钥；远程目录条目无法安装（仅本地包可用）。",
+        "catalogKeyUnconfigured": "未配置目录公钥；内置默认源已自带，自定义目录需要填写。",
         "catalogKeyLabel": "Ed25519 公钥（PEM，purpose=catalog）",
         "catalogKeySubmit": "保存目录公钥",
         "catalogTokenTitle": "私有目录只读 token",
@@ -727,7 +727,9 @@
         "catalogTokenDisabled": "密钥存储未启用（缺少 SETTINGS_ENCRYPTION_KEY），无法保存 token。",
         "catalogTokenLabel": "GitHub 只读 token",
         "catalogTokenPlaceholderSaved": "已保存；留空表示不修改，填写空值提交表示清除",
-        "catalogTokenSubmit": "保存 token"
+        "catalogTokenSubmit": "保存 token",
+        "catalogKeyIdLabel": "公钥 keyId",
+        "catalogKeyIdHint": "必须与目录签名文件里的 keyId 一致（默认源为 catalog-2026）；只给公钥不给 keyId 会验签失败。"
       }
     },
     "themes": {

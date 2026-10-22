@@ -39,7 +39,11 @@ const sourceSchema = z.object({
   mirror: z.string().max(300).nullable(),
 });
 
-const publicKeySchema = z.object({ publicKey: z.string().max(8192) });
+const publicKeySchema = z.object({
+  publicKey: z.string().max(8192),
+  // 公钥身份必须显式给出（或留空用内核默认源的 keyId）：验签按 keyId 查信任根。
+  keyId: z.string().max(128).optional(),
+});
 const tokenSchema = z.object({ token: z.string().max(4096) });
 
 /** 变更后重建协调器，使新配置立刻生效（无需重启）。 */
@@ -116,7 +120,11 @@ export async function adminDistributionRoutes(app: FastifyInstance): Promise<voi
           error: '目录公钥无效：需要 Ed25519 公钥（PEM）',
         });
       }
-      const config = await saveCatalogPublicKey(publicKey, request.user?.id ?? null);
+      const config = await saveCatalogPublicKey(
+        publicKey,
+        request.user?.id ?? null,
+        body.data.keyId ?? null,
+      );
       applyConfig();
       await writeAudit({
         action: body.data.publicKey.trim()

@@ -1171,10 +1171,10 @@ export class ApiClient {
   }
 
   /** 设置目录验签公钥；空串表示清除并回退到环境变量。 */
-  setCatalogPublicKey(publicKey: string): Promise<DistributionSourceResponse> {
+  setCatalogPublicKey(publicKey: string, keyId?: string): Promise<DistributionSourceResponse> {
     return this.put(
       '/admin/distribution/catalog-key',
-      { publicKey },
+      { publicKey, ...(keyId ? { keyId } : {}) },
       distributionSourceResponseSchema,
     );
   }

@@ -96,17 +96,49 @@ jobs:
           fi
           printf '%s\n' "$KEYRING_JSON" > "$RUNNER_TEMP/keys/keyring.json"
 
-      # 条目来源：由市场仓 PR 提供的清单（此处以主仓 _dist/catalog/entries 为例，
-      # 实施时改为 checkout 市场仓的 entries 目录）。
+      # 条目来源：由市场仓 PR 提供的清单（此处以主仓 `catalog/entries` 为例，
+      # 实施时改为 checkout 市场仓的 entries 目录）。配置里的 sequence 必须来自
+      # 本次运行输入，否则「发布 sequence N」会签出另一个序号的快照。
       - name: 构建并签名目录快照
         run: |
           mkdir -p "$RUNNER_TEMP/catalog/entries"
-          cp -r _dist/catalog/entries/. "$RUNNER_TEMP/catalog/entries/" 2>/dev/null || true
-          args=(--entries "$RUNNER_TEMP/catalog/entries" --config _dist/catalog/catalog.config.json --key-file "$RUNNER_TEMP/keys/catalog.private.pem" --out "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" --key-id "${{ secrets.CATALOG_KEY_ID || 'catalog-2026' }}")
+          cp -r catalog/entries/. "$RUNNER_TEMP/catalog/entries/" 2>/dev/null || true
+          node -e '
+            const fs = require("node:fs");
+            const config = {
+              sequence: Number(process.env.SEQUENCE),
+              channels: ["stable", "beta"],
+              ttlDays: Number(process.env.TTL_DAYS || 14),
+              keyId: process.env.KEY_ID,
+              repository: process.env.REPOSITORY,
+              publishers: JSON.parse(process.env.PUBLISHERS || "[]"),
+            };
+            fs.writeFileSync(process.env.RUNNER_TEMP + "/catalog/catalog.config.json", JSON.stringify(config, null, 2));
+          '
+          args=(--entries "$RUNNER_TEMP/catalog/entries" --config "$RUNNER_TEMP/catalog/catalog.config.json" --key-file "$RUNNER_TEMP/keys/catalog.private.pem" --out "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" --key-id "$KEY_ID")
           if [ -f "$RUNNER_TEMP/keys/keyring.json" ]; then
             args+=(--keyring "$RUNNER_TEMP/keys/keyring.json")
           fi
           node scripts/release/build-catalog.mjs "${args[@]}"
+        env:
+          SEQUENCE: ${{ inputs.sequence }}
+          KEY_ID: ${{ secrets.CATALOG_KEY_ID || 'catalog-2026' }}
+          REPOSITORY: ${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}
+          PUBLISHERS: ${{ secrets.CATALOG_PUBLISHERS }}
+          TTL_DAYS: ${{ secrets.CATALOG_TTL_DAYS }}
+
+      # 回放保护：把本次 sequence 与**仓库里已发布的最高值**比较。不能拿本次输入当
+      # 「已见最高值」——`isNewerSequence` 是严格大于，那样永远自比失败。
+      - name: 读取已发布最高 sequence
+        id: highest
+        env:
+          GH_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+          REPOSITORY: ${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}
+        run: |
+          highest=$(gh api "repos/$REPOSITORY/git/matching-refs/tags/catalog-v1%2F" \
+            --jq '[.[].ref | capture("catalog-v1/(?<n>[0-9]+)$").n | tonumber] | max // 0' 2>/dev/null || echo 0)
+          echo "highest=${highest:-0}" >> "$GITHUB_OUTPUT"
+          echo "已发布最高 sequence：${highest:-0}"
 
       - name: 回读校验（与实例端同一验证器）
         run: |
@@ -118,7 +150,7 @@ jobs:
             --dir "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" \
             --keyring "$RUNNER_TEMP/keys/keyring.json" \
             --repository "${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}" \
-            --highest "${{ inputs.sequence }}"
+            --highest "${{ steps.highest.outputs.highest }}"
 
       - name: 上传目录产物
         uses: actions/upload-artifact@v4
@@ -127,43 +159,94 @@ jobs:
           path: ${{ runner.temp }}/out/catalog-v1/${{ inputs.sequence }}/
           retention-days: 30
 
-      # 实际发布到市场仓 Release（仅真实密钥 + 显式 publish）。
-      - name: 发布 catalog-v1 Release
+      # 发布到市场仓：把 catalog.json / catalog.sig 写进 **tag 指向的树**，并同时把
+      # channels.json 提交到默认分支。
+      #
+      # 为什么不能用 `gh release create` 只传 asset：实例是按
+      # `raw.githubusercontent.com/<repo>/catalog-v1/<seq>/catalog.json` 取文件的，
+      # Release asset 不在 tag 的树里，raw 读不到——Release 建成功、实例却永远 404。
+      # 因此这里用 Git Data API 造一个提交（树里含目录文件与渠道指针），再把 tag
+      # 指过去、把默认分支快进到同一个提交。
+      - name: 发布目录到市场仓（tag 树 + 渠道指针）
         if: ${{ inputs.publish && env.REAL_KEY == '1' }}
         env:
           GH_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
+          SEQUENCE: ${{ inputs.sequence }}
+          REPOSITORY: ${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}
         run: |
-          dir="$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}"
-          tag="catalog-v1/${{ inputs.sequence }}"
-          repo="${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}"
-          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            echo "::error::目录 tag 已存在：$tag（禁止覆盖同一 sequence）"; exit 1
-          fi
-          gh release create "$tag" \
-            --repo "$repo" \
-            --title "catalog-v1/${{ inputs.sequence }}" \
-            --notes "Market catalog snapshot sequence ${{ inputs.sequence }}" \
-            "$dir/catalog.json" "$dir/catalog.sig"
+          node --input-type=module - <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
 
-      # 更新渠道指针：实例先读默认分支的 channels.json 才能发现新 sequence。
-      # 没有这一步，Release 建了也永远不可见。
-      - name: 更新 channels.json 渠道指针
-        if: ${{ inputs.publish && env.REAL_KEY == '1' }}
-        env:
-          GH_TOKEN: ${{ secrets.MARKET_REPO_TOKEN }}
-        run: |
-          dir="$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}"
-          repo="${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel-plugins' }}"
-          if [ ! -f "$dir/channels.json" ]; then
-            echo "::error::缺少 channels.json 渠道指针产物"; exit 1
-          fi
-          # 通过 contents API 写入默认分支（与 Release 同一 token）。
-          sha=$(gh api "repos/$repo/contents/channels.json" --jq .sha 2>/dev/null || true)
-          content=$(base64 < "$dir/channels.json" | tr -d '\n')
-          payload=$(node -e "console.log(JSON.stringify({message:process.argv[1],content:process.argv[2],...(process.argv[3]?{sha:process.argv[3]}:{})}))" \
-            "chore(catalog): point channels to sequence ${{ inputs.sequence }}" "$content" "$sha")
-          printf '%s' "$payload" | gh api -X PUT "repos/$repo/contents/channels.json" --input - >/dev/null
-          echo "channels.json 已指向 sequence ${{ inputs.sequence }}"
+          const repo = process.env.REPOSITORY;
+          const sequence = process.env.SEQUENCE;
+          const dir = `${process.env.RUNNER_TEMP}/out/catalog-v1/${sequence}`;
+          const tag = `catalog-v1/${sequence}`;
+          const gh = (args, input) =>
+            execFileSync('gh', args, {
+              encoding: 'utf8',
+              input: input === undefined ? undefined : JSON.stringify(input),
+            }).trim();
+
+          // 1) 同 sequence 的 tag 已存在 → 拒绝（目录序号只能向前）。
+          try {
+            gh(['api', `repos/${repo}/git/ref/tags/${encodeURIComponent(tag)}`]);
+            console.error(`::error::目录 tag 已存在：${tag}（禁止覆盖同一 sequence）`);
+            process.exit(1);
+          } catch {
+            // 不存在是预期。
+          }
+
+          // 2) 目录公钥自检已在上一步完成；这里只负责把字节原样搬进仓库。
+          const head = gh(['api', `repos/${repo}/git/ref/heads/main`, '--jq', '.object.sha']);
+          const baseTree = gh(['api', `repos/${repo}/git/commits/${head}`, '--jq', '.tree.sha']);
+          const blob = (file) =>
+            gh(
+              ['api', '-X', 'POST', `repos/${repo}/git/blobs`, '--input', '-', '--jq', '.sha'],
+              {
+                content: readFileSync(`${dir}/${file}`).toString('base64'),
+                encoding: 'base64',
+              },
+            );
+
+          const tree = gh(
+            ['api', '-X', 'POST', `repos/${repo}/git/trees`, '--input', '-', '--jq', '.sha'],
+            {
+              base_tree: baseTree,
+              tree: [
+                { path: 'catalog.json', mode: '100644', type: 'blob', sha: blob('catalog.json') },
+                { path: 'catalog.sig', mode: '100644', type: 'blob', sha: blob('catalog.sig') },
+                { path: 'channels.json', mode: '100644', type: 'blob', sha: blob('channels.json') },
+              ],
+            },
+          );
+          const commit = gh(
+            ['api', '-X', 'POST', `repos/${repo}/git/commits`, '--input', '-', '--jq', '.sha'],
+            {
+              message: `chore(catalog): publish signed catalog snapshot sequence ${sequence}`,
+              tree,
+              parents: [head],
+            },
+          );
+          // 3) tag 指向该提交（实例从这里读目录字节）。
+          gh(['api', '-X', 'POST', `repos/${repo}/git/refs`, '--input', '-'], {
+            ref: `refs/tags/${tag}`,
+            sha: commit,
+          });
+          // 4) 默认分支快进到同一提交：channels.json 必须在这里才被实例发现。
+          //    force=false：并发发布时宁可失败，也不覆盖别人刚推进的指针。
+          try {
+            gh(['api', '-X', 'PATCH', `repos/${repo}/git/refs/heads/main`, '--input', '-'], {
+              sha: commit,
+              force: false,
+            });
+          } catch (error) {
+            console.error(`::error::更新 channels.json 失败（默认分支已被推进？）：${error}`);
+            console.error(`目录 tag ${tag} 已创建，但渠道指针未更新——请重跑本次发布。`);
+            process.exit(1);
+          }
+          console.log(`已发布 ${tag}（commit ${commit}）并更新 channels.json`);
+          NODE
 
       - name: 摘要
         run: |

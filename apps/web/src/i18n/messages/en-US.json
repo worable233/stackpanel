@@ -718,7 +718,7 @@
         "refreshing": "Refreshing…",
         "catalogKeyTitle": "Catalog signing key",
         "catalogKeyConfigured": "Catalog key configured; remote entries must verify against it before install.",
-        "catalogKeyUnconfigured": "No catalog key; remote entries cannot be installed (local packages only).",
+        "catalogKeyUnconfigured": "No catalog key; the built-in default source ships one, custom catalogs need it here.",
         "catalogKeyLabel": "Ed25519 public key (PEM, purpose=catalog)",
         "catalogKeySubmit": "Save catalog key",
         "catalogTokenTitle": "Read-only token for a private catalog",
@@ -727,7 +727,9 @@
         "catalogTokenDisabled": "Secret storage is disabled (SETTINGS_ENCRYPTION_KEY missing), so tokens cannot be saved.",
         "catalogTokenLabel": "GitHub read-only token",
         "catalogTokenPlaceholderSaved": "Saved; leave blank to keep it, submit an empty value to clear it",
-        "catalogTokenSubmit": "Save token"
+        "catalogTokenSubmit": "Save token",
+        "catalogKeyIdLabel": "Public key keyId",
+        "catalogKeyIdHint": "Must match the keyId inside catalog.sig (catalog-2026 for the default source); a key without its keyId cannot verify."
       }
     },
     "themes": {
