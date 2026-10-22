@@ -112,6 +112,14 @@ export interface UpdaterDeps {
   /** 日志（测试可注入）。 */
   log?: (message: string) => void;
   /**
+   * 本进程的执行权所有者标识（测试可注入）。
+   *
+   * 缺省 `hostname:pid` 在**单进程内无法模拟「另一个副本」**——两次
+   * `new Updater()` 会得到同一个 owner，锁被当成「同进程重复 acquire」而幂等通过。
+   * 注入不同 owner 才能在单测里覆盖多副本互斥。
+   */
+  owner?: string;
+  /**
    * 自升级执行器（可选）。启动时确认是否为已提交候选，每轮守卫空闲的 `switching`
    * 计划在候选超时未确认时回退（§5.2）。不注入则完全跳过自升级逻辑。
    */
@@ -141,7 +149,7 @@ export class Updater {
     this.journal = new FileUpdateJournal(path.join(config.stateDir, 'update-journal.jsonl'));
     this.lock = new ExecutorLock({
       filePath: path.join(config.stateDir, 'executor.lock'),
-      owner: `${process.env['HOSTNAME'] ?? 'updater'}:${process.pid}`,
+      owner: deps.owner ?? `${process.env['HOSTNAME'] ?? 'updater'}:${process.pid}`,
       ...(deps.now ? { now: deps.now } : {}),
     });
     this.engine = new UpdateEngine({
@@ -201,33 +209,41 @@ export class Updater {
       await this.lock.release();
       return false;
     }
-    // 回收「认领后进程消失」的孤儿任务，把它们移回 inbox 以便续跑。
+
+    // **先拿执行权，再碰通道。**
     //
-    // 必须在**持有执行权之后**做：否则会抢走另一个活进程正在执行的任务。
-    // 真机演练用 `docker kill` 复现过——任务停在 migrating，重启后既不续跑
-    // 也不恢复，实例永久卡在维护态（`claimed/` 里的文件没人再看一眼）。
+    // 顺序至关重要：`reclaimOrphans()` 会把 `claimed/` 里没有结果的任务移回
+    // `inbox/`。若在没有执行权时做，就会把**另一个副本正在执行**的任务抢回队列，
+    // 造成同一任务被两个进程同时跑（真机双执行器演练抓到：B 正在跑 task-conc-1，
+    // A 每轮都把它回收走，两边互相踩）。
+    //
+    // 抢不到说明别的副本在干活——这是多副本下的正常状态，退让即可。
+    try {
+      await this.lock.acquire();
+    } catch (error) {
+      if (error instanceof ExecutorLockError) return false;
+      throw error;
+    }
+
+    // 到这里为止执行权在本进程手里，`claimed/` 里残留的才是真正的孤儿
+    // （原进程已死）。回收后它们会回到 inbox，交给下面正常认领并**按检查点续跑**。
     const reclaimed = await this.channel.reclaimOrphans(this.deps.config.instanceId);
     for (const orphan of reclaimed) {
       this.deps.log?.(`回收孤儿任务：${orphan.idempotencyKey}（将按检查点续跑）`);
     }
+
     const task = await this.channel.claim(this.deps.config.instanceId);
-    if (!task) return false;
+    if (!task) {
+      // 本轮无任务：释放执行权，别占着锁让别的副本空等。
+      await this.lock.release();
+      return false;
+    }
     // 归档完整声明，供独立恢复入口在失败后重建重试任务（不依赖内存）。
     await this.channel.archiveTask(task);
     await this.publishStatus(task.idempotencyKey);
-    let result: Awaited<ReturnType<UpdateEngine['run']>>;
-    try {
-      result = await this.engine.run(task, true);
-    } catch (error) {
-      if (error instanceof ExecutorLockError) {
-        // 另一个副本正在执行：把任务放回 inbox，本轮不处理，下一轮重试。
-        // 不能留在 claimed（会被当成孤儿反复回收），也不能标记失败。
-        await this.channel.returnToInbox(task);
-        this.deps.log?.(`执行权被其他副本持有，任务 ${task.idempotencyKey} 稍后重试`);
-        return false;
-      }
-      throw error;
-    }
+    // `engine.run()` 内部也会 `acquire()`；同一 owner 重复获取是幂等的。
+    // 它会在结束时 `release()`，因此这里无需再释放。
+    const result = await this.engine.run(task, true);
     const projection = await this.toTaskResult(task, result);
     await this.channel.complete(task, projection);
     await this.publishStatus(null, { idempotencyKey: task.idempotencyKey, result: projection });
