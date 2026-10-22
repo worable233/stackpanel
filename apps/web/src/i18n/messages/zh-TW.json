@@ -718,7 +718,7 @@
         "refreshing": "重新整理中…",
         "catalogKeyTitle": "目錄驗籤公鑰",
         "catalogKeyConfigured": "已配置目錄公鑰；遠端目錄條目必須通過它的驗籤才會被安裝。",
-        "catalogKeyUnconfigured": "未配置目錄公鑰；遠端目錄條目無法安裝（僅本地包可用）。",
+        "catalogKeyUnconfigured": "未配置目錄公鑰；內建預設源已自帶，自定義目錄需要填寫。",
         "catalogKeyLabel": "Ed25519 公鑰（PEM，purpose=catalog）",
         "catalogKeySubmit": "儲存目錄公鑰",
         "catalogTokenTitle": "私有目錄只讀 token",
@@ -727,7 +727,9 @@
         "catalogTokenDisabled": "金鑰儲存未啟用（缺少 SETTINGS_ENCRYPTION_KEY），無法儲存 token。",
         "catalogTokenLabel": "GitHub 只讀 token",
         "catalogTokenPlaceholderSaved": "已儲存；留空表示不修改，填寫空值提交表示清除",
-        "catalogTokenSubmit": "儲存 token"
+        "catalogTokenSubmit": "儲存 token",
+        "catalogKeyIdLabel": "公鑰 keyId",
+        "catalogKeyIdHint": "必須與目錄簽名檔案裡的 keyId 一致（預設源為 catalog-2026）；只給公鑰不給 keyId 會驗籤失敗。"
       }
     },
     "themes": {
