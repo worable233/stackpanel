@@ -38,6 +38,10 @@ const HOST_ABI_ADAPTER_ALIASES = [
   '--alias:@stackpanel/ui=/api/frontend-abi/@stackpanel/ui',
   '--alias:@stackpanel/sdk=/api/frontend-abi/@stackpanel/sdk',
   '--alias:lucide-react=/api/frontend-abi/lucide-react',
+  // `sonner` is host ABI so a plugin's `toast` calls reach the host `<Toaster />`.
+  // Without the alias the runtime bundle keeps a bare specifier the browser
+  // cannot resolve, and a bundled copy would own a second, disconnected store.
+  '--alias:sonner=/api/frontend-abi/sonner',
 ];
 
 const { sourcePackages } = await discoverFrontendPackages();
@@ -99,6 +103,9 @@ async function buildFrontendPackageFromSource(pkg) {
       // likewise bundled for the server entry because it is not a host ABI
       // slot and runtime imports must remain self-contained.
       '--external:lucide-react',
+      // `sonner` is host ABI (toast must reach the host <Toaster />); the loader
+      // resolves it through the published server ABI as well.
+      '--external:sonner',
       '--main-fields=module,main',
     ],
     { cwd: pkg.source, stdio: 'inherit' },

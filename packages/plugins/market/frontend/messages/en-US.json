@@ -34,5 +34,6 @@
   "source.catalogOffline": "Remote catalog is turned off (fully offline); only local sources are shown.",
   "source.catalogFailed": "Remote catalog unavailable: {message}",
   "source.catalogPending": "Waiting for the first refresh of the remote catalog ({repository}).",
-  "source.catalogExpired": "The remote catalog has expired: cached entries are shown, but automatic installs from it are blocked."
+  "source.catalogExpired": "The remote catalog has expired: cached entries are shown, but automatic installs from it are blocked.",
+  "feedback.installed": "Installed. Refresh the page to see it."
 }

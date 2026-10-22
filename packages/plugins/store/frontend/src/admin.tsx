@@ -624,7 +624,8 @@ function ProductForm({
       setCheckoutConfigJson(json.checkoutConfig ? JSON.stringify(json.checkoutConfig, null, 2) : '');
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : tr('editor.upstreamConfigFailed'));
+      console.error('[store] upstream config failed', cause);
+      setError(tr('editor.upstreamConfigFailed'));
     } finally {
       setLoadingUpstreamConfig(false);
     }
@@ -734,7 +735,8 @@ function ProductForm({
           await saveProductCategories(result.product.id, selectedCategoryIds, tr);
         onDone();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : tr('editor.saveFailedRetry'));
+        console.error('[store] product save failed', cause);
+        setError(tr('editor.saveFailedRetry'));
       }
     });
   }
@@ -1554,7 +1556,7 @@ function StoreApprovalsPage(props: AdminPageComponentProps) {
               }
               showFeedback('success', tr('review.recovered'));
               router.refresh();
-            } catch (failure) { setError(failure instanceof Error ? failure.message : tr('review.failed')); }
+            } catch (failure) { console.error('[store] approval action failed', failure); setError(tr('review.failed')); }
           });
         }}>{tr('review.recover')}</Button> : null}
         <Button
@@ -1656,6 +1658,12 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
     )?.requests ?? [];
   const [busy, start] = useTransition();
   const router = useRouter();
+  // Refund states are machine values; never render them verbatim.
+  const stateLabel = (state: string) => {
+    const key = `refund.state.${state}`;
+    const label = tr(key);
+    return label === key ? state : label;
+  };
   const review = (id: string, decision: 'approve' | 'reject') =>
     start(async () => {
       await fetch(`/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`, {
@@ -1687,16 +1695,16 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
                 <tr key={row.id} className="border-b last:border-0">
                   <td className="p-3 font-mono text-xs">{row.orderId}</td>
                   <td className="p-3">{row.userId}</td>
-                  <td className="p-3">
-                    {row.amount} {row.currency}
+                  <td className="p-3 tabular-nums">
+                    {money(row.amount, row.currency, props.locale)}
                   </td>
                   <td className="p-3">
                     {row.failureReason
                       ? tr('refund.failureReason', {
-                          state: row.state,
+                          state: stateLabel(row.state),
                           reason: row.failureReason,
                         })
-                      : row.state}
+                      : stateLabel(row.state)}
                   </td>
                   <td className="p-3">
                     {row.state === 'PENDING' ? (

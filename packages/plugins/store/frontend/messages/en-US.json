@@ -377,6 +377,9 @@
   "product.notPurchasable": "Your account cannot purchase this service.",
   "cart.loadFailed": "Unable to load cart. Please retry.",
   "cart.unavailable": "Unavailable or insufficient stock. Update quantity or remove.",
+  "cart.reason.inactive": "This product is no longer available.",
+  "cart.reason.out_of_stock": "Insufficient stock. Update quantity or remove it.",
+  "cart.reason.forbidden": "Your account is not allowed to buy this product.",
   "cart.separateCurrencies": "Check out each currency separately.",
   "cart.groupTotal": "All items in this group: {amount}",
   "cart.proceed": "Check out selected items",
@@ -406,5 +409,14 @@
   "refund.approve": "Approve",
   "refund.reject": "Reject",
   "refund.failureReason": "{state}: {reason}",
-  "orders.requestRefund": "Request refund (to platform balance)"
+  "refund.state.PENDING": "Pending review",
+  "refund.state.APPROVED": "Approved",
+  "refund.state.REJECTED": "Rejected",
+  "refund.state.FAILED": "Failed",
+  "orders.requestRefund": "Request refund (to platform balance)",
+  "feedback.orderCancelled": "Order cancelled.",
+  "feedback.refundRequested": "Refund request submitted for review.",
+  "feedback.serviceTransferred": "Service transferred.",
+  "feedback.refundProcessed": "Refund processed.",
+  "feedback.productSaved": "Product saved."
 }

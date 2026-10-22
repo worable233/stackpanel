@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "revision": "c2aaba1407cb",
+  "revision": "8c8bc42c9bd1",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -523,7 +523,7 @@
       "home.scenes": "一個平臺，覆蓋所有上雲場景",
       "home.scene.server": "雲伺服器",
       "home.scene.bandwidth": "彈性頻寬",
-      "home.scene.storage": "資料保存",
+      "home.scene.storage": "資料儲存",
       "home.scene.cdn": "CDN 加速",
       "home.scene.highDefense": "高防節點",
       "home.scene.billing": "計費靈活",

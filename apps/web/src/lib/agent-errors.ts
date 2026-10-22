@@ -20,9 +20,10 @@ export class AgentApiError extends Error {
 /**
  * Resolve an Agent failure to display text.
  *
- * A stable `code` from our own proxy is translated from the kernel catalog;
- * anything else (upstream prose) passes through, and an unknown failure falls
- * back to the caller's localized message.
+ * A stable `code` from our own proxy (`agentRoute.*`) is a top-level catalog key;
+ * a problem `code` forwarded from the API (`agent.budget_exhausted`, …) lives
+ * under the `error.*` namespace like every other API code. Both are tried before
+ * falling back, so upstream prose only shows when we genuinely have no copy.
  */
 export function agentErrorText(
   t: (key: string) => string,
@@ -30,8 +31,10 @@ export function agentErrorText(
   fallback: string,
 ): string {
   if (cause instanceof AgentApiError && cause.code) {
-    const localized = t(cause.code);
-    if (localized !== cause.code) return localized;
+    for (const key of [`error.${cause.code}`, cause.code]) {
+      const localized = t(key);
+      if (localized !== key) return localized;
+    }
   }
   return cause instanceof Error && cause.message ? cause.message : fallback;
 }

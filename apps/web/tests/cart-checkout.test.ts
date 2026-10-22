@@ -101,7 +101,7 @@ describe('checkout directly from cart', () => {
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(true);
     expect(tree.some((node) => node.type === 'form')).toBe(false);
   });
-  it('releases the pending lock after a failed payment action', async () => {
+  it('releases the pending lock and shows an inline error after a failed payment action', async () => {
     const ui = setup();
     ui.wallet.mockRejectedValue(new Error('rejected'));
     ui.payment()
@@ -109,11 +109,11 @@ describe('checkout directly from cart', () => {
       .props.onSubmit({ preventDefault: vi.fn() });
     let tree = ui.render();
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(true);
-    await expect(
-      tree.find((node) => node.type === 'form')!.props.action(new FormData()),
-    ).rejects.toThrow('rejected');
+    // Failures stay on the payment step with a localised notice; the raw error is not rethrown.
+    await tree.find((node) => node.type === 'form')!.props.action(new FormData());
     tree = ui.render();
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(false);
+    expect(tree.some((node) => node.props.role === 'alert')).toBe(true);
   });
   it('starts at review and returns there from payment without submitting an order', () => {
     const ui = setup();

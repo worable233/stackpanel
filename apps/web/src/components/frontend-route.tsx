@@ -39,7 +39,6 @@ export async function FrontendRoute({
   params = {},
   fallback = {},
   themeId,
-  actionError,
   searchParams = {},
   standalone = false,
   settingsOverride,
@@ -50,12 +49,11 @@ export async function FrontendRoute({
   params?: Record<string, string>;
   fallback?: Record<string, unknown>;
   themeId?: string;
-  actionError?: string;
   searchParams?: Record<string, string | string[] | undefined>;
 }): Promise<ReactElement> {
   const resolved = await resolveFrontendRoute(path, params, fallback, themeId, searchParams, settingsOverride);
   if (!resolved || resolved.fallback) notFound();
-  return renderResolution(resolved, actionError, standalone, themeId, settingsOverride);
+  return renderResolution(resolved, standalone, themeId, settingsOverride);
 }
 
 /**
@@ -64,14 +62,13 @@ export async function FrontendRoute({
  */
 export async function FrontendFallback(): Promise<ReactElement> {
   const resolved = await resolveFallbackRoute('/');
-  if (resolved) return renderResolution(resolved, undefined);
+  if (resolved) return renderResolution(resolved);
   return <DefaultNotFound />;
 }
 
 /** Render a resolved page (and its layout shell) into an element tree. */
 async function renderResolution(
   resolved: PageResolution,
-  actionError: string | undefined,
   standalone = false,
   themeId?: string,
   settingsOverride?: FrontendSettings,
@@ -86,19 +83,9 @@ async function renderResolution(
     assetsBaseUrl: resolved.assetsBaseUrl ?? KERNEL_BFF_PREFIX,
     locale,
   } as never) as unknown as ReactElement;
-  const page = actionError ? (
-    <>
-      <p
-        role="alert"
-        className="mx-auto mt-4 w-[min(100%-2rem,72rem)] rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-      >
-        {actionError}
-      </p>
-      {content}
-    </>
-  ) : (
-    content
-  );
+  // Action results are toasted once by `<ActionFeedbackToaster />`; rendering
+  // `?error=` inline here duplicated the same message on public pages.
+  const page = content;
   // Contract 05 §3.3: wrap the package's render root in a stable scope marker so
   // its `styles[]` selectors can be scoped to its own DOM. `display: contents`
   // means the wrapper generates no box, so the package's layout is unchanged.

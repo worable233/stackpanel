@@ -74,7 +74,7 @@ export default async function AdminPluginDetailPage({
           title={t('admin.plugins.detail.title')}
         />
         <p className="text-sm text-destructive">
-          {t('admin.plugins.detail.serviceUnavailable', { error })}
+          {t('admin.plugins.detail.serviceUnavailable')}
         </p>
       </main>
     );

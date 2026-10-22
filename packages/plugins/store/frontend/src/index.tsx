@@ -1777,7 +1777,9 @@ function StoreCartPage(props: AccountPageComponentProps): ReactElement {
                     <>
                       {!cartItemAvailable(item) ? (
                         <p className="basis-full text-xs text-destructive">
-                          {item.unavailableReason ?? tr('cart.unavailable')}
+                          {item.unavailableReason
+                            ? tr(`cart.reason.${item.unavailableReason}`)
+                            : tr('cart.unavailable')}
                         </p>
                       ) : null}
                       {props.actions['store.update-cart-item'] ? (
@@ -3788,6 +3790,8 @@ export const frontend: FrontendPackage = {
     actions: [
       {
         id: 'store.add-to-cart',
+        // Redirects to the cart/next path.
+        silent: true,
         method: 'POST',
         path: '/cart/items',
         permission: 'store.buy',
@@ -3800,6 +3804,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.update-cart-item',
+        // The cart summary updates inline.
+        silent: true,
         method: 'PATCH',
         path: '/cart/items/:id',
         permission: 'store.buy',
@@ -3810,6 +3816,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.remove-cart-item',
+        // The cart summary updates inline.
+        silent: true,
         method: 'DELETE',
         path: '/cart/items/:id',
         permission: 'store.buy',
@@ -3817,6 +3825,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.checkout-wallet',
+        // Redirects to the order result page.
+        silent: true,
         method: 'POST',
         path: '/cart/checkout',
         permission: 'store.buy',
@@ -3828,6 +3838,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.checkout-external',
+        // Redirects to the external payment page.
+        silent: true,
         method: 'POST',
         path: '/cart/checkout',
         permission: 'store.buy',
@@ -3841,6 +3853,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.cancel-order',
+        successFeedback: { messageKey: 'feedback.orderCancelled' },
         method: 'POST',
         path: '/orders/:id/cancel',
         permission: 'store.buy',
@@ -3848,6 +3861,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.request-refund',
+        successFeedback: { messageKey: 'feedback.refundRequested' },
         method: 'POST',
         path: '/orders/:id/refund-requests',
         permission: 'store.buy',
@@ -3858,6 +3872,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-action',
+        // Service actions report their result inline in the console.
+        silent: true,
         method: 'POST',
         path: '/services/:id/actions',
         permission: 'store.view',
@@ -3873,6 +3889,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.renew-service-wallet',
+        // Redirects after a wallet renewal.
+        silent: true,
         method: 'POST',
         path: '/services/:id/renew',
         permission: 'store.buy',
@@ -3885,6 +3903,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-resource-create',
+        // Resource mutations refresh their own panel inline.
+        silent: true,
         method: 'POST',
         path: '/services/:id/resources/:kind',
         permission: 'store.buy',
@@ -3897,6 +3917,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-resource-action',
+        // Resource mutations refresh their own panel inline.
+        silent: true,
         method: 'POST',
         path: '/services/:id/resources/:kind/:resourceId/actions/:actionId',
         permission: 'store.buy',
@@ -3910,6 +3932,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-change-wallet',
+        // Redirects after a wallet upgrade/downgrade.
+        silent: true,
         method: 'POST',
         path: '/services/:id/change',
         permission: 'store.buy',
@@ -3923,6 +3947,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.admin-transfer-service',
+        successFeedback: { messageKey: 'feedback.serviceTransferred' },
         method: 'POST',
         path: '/store/admin/services/:id/transfer',
         permission: 'store.admin',
@@ -3933,6 +3958,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.admin-refund-order',
+        successFeedback: { messageKey: 'feedback.refundProcessed' },
         method: 'POST',
         path: '/store/admin/orders/:id/refund',
         permission: 'store.admin',
@@ -3944,6 +3970,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.create-product',
+        successFeedback: { messageKey: 'feedback.productSaved' },
         method: 'POST',
         path: '/store/admin/products',
         permission: 'store.admin',
@@ -3962,6 +3989,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.update-product',
+        successFeedback: { messageKey: 'feedback.productSaved' },
         method: 'PATCH',
         path: '/store/admin/products/:id',
         permission: 'store.admin',

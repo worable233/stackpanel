@@ -91,7 +91,8 @@
       "continueWith": "使用 {name} 登入",
       "orContinueWith": "或使用以下方式繼續",
       "noAccount": "還沒有賬戶？",
-      "register": "註冊"
+      "register": "註冊",
+      "oauthFailed": "OAuth 登入失敗，請重試。"
     },
     "register": {
       "title": "建立你的賬戶",
@@ -184,14 +185,16 @@
     "viewAll": "檢視全部",
     "all": "全部",
     "unread": "未讀",
-    "serviceUnavailable": "通知服務不可用：{error}",
+    "serviceUnavailable": "通知服務不可用",
     "emptyAll": "暫無通知",
     "emptyUnread": "暫無未讀通知",
     "markRead": "標為已讀",
     "view": "檢視",
     "loading": "載入中…",
     "loadMore": "載入更多",
-    "unknownError": "未知錯誤"
+    "unknownError": "未知錯誤",
+    "markReadFailed": "標記已讀失敗，請重試",
+    "markAllReadFailed": "全部標為已讀失敗，請重試"
   },
   "admin": {
     "recentTickets": "最近工單",
@@ -304,7 +307,7 @@
       "filterActorPlaceholder": "使用者 ID 前 12 位",
       "search": "查詢",
       "reset": "重置",
-      "serviceUnavailable": "日誌服務不可用：{error}",
+      "serviceUnavailable": "日誌服務不可用",
       "colTime": "時間",
       "colAction": "操作",
       "colResource": "物件",
@@ -319,7 +322,7 @@
     "developer": {
       "title": "開發者控制台",
       "description": "面向平臺運營者：管理第三方渠道夥伴的接入憑證與呼叫限額、webhook 回撥投遞狀態，以及對外介面的呼叫審計。",
-      "serviceUnavailable": "控制台資料不可用：{error}",
+      "serviceUnavailable": "控制台資料不可用",
       "empty": "暫無記錄。",
       "pagination": "共 {total} 條 · 第 {page} / {pages} 頁",
       "prev": "上一頁",
@@ -549,13 +552,13 @@
       "searchPlaceholder": "搜尋許可權組…",
       "permissionNone": "未分配許可權",
       "showing": "顯示第 {start}-{end} 項，共 {total} 項",
-      "serviceUnavailable": "許可權服務不可用：{error}"
+      "serviceUnavailable": "許可權服務不可用"
     },
     "plugins": {
       "detail": {
         "back": "返回外掛管理",
         "title": "外掛詳情",
-        "serviceUnavailable": "外掛服務不可用：{error}",
+        "serviceUnavailable": "外掛服務不可用",
         "notFound": "外掛不存在",
         "enabled": "已啟用",
         "disabled": "已停用",
@@ -594,7 +597,12 @@
       "disable": "停用",
       "title": "外掛管理",
       "pageDescription": "管理外掛安裝、啟停與升級。",
-      "serviceUnavailable": "外掛服務不可用：{error}"
+      "serviceUnavailable": "外掛服務不可用",
+      "toggled": "外掛狀態已更新",
+      "deleted": "外掛已刪除",
+      "mutationFailed": "外掛操作失敗，請稍後再試",
+      "deleteConfirmTitle": "刪除外掛？",
+      "deleteConfirmDescription": "將移除外掛「{name}」及其前端資源，此操作不可撤銷。"
     },
     "users": {
       "title": "使用者管理",
@@ -669,7 +677,7 @@
       },
       "title": "系統設定",
       "pageDescription": "管理平臺資訊與包簽名配置。",
-      "serviceUnavailable": "設定服務不可用：{error}",
+      "serviceUnavailable": "設定服務不可用",
       "currency": {
         "title": "幣種與結算",
         "description": "平臺受控的幣種目錄與結算幣種。已產生交易或被設為結算幣種的條目不可停用。",
@@ -749,9 +757,15 @@
       "activate": "啟用",
       "activateSuccess": "主題已啟用",
       "activateFailed": "主題啟用失敗",
+      "deleted": "主題已刪除",
+      "deleteFailed": "主題刪除失敗，請稍後再試",
+      "previewFailed": "主題預覽操作失敗，請稍後再試",
+      "previewCleared": "已退出主題預覽",
+      "deleteConfirmTitle": "刪除主題？",
+      "deleteConfirmDescription": "將移除主題「{name}」及其前端資源，此操作不可撤銷。",
       "title": "主題管理",
       "description": "管理主題上傳、預覽與啟用。",
-      "serviceUnavailable": "主題服務不可用：{error}"
+      "serviceUnavailable": "主題服務不可用"
     },
     "fallbackUser": "管理員",
     "userDetailPage": {
@@ -763,7 +777,7 @@
     "market": {
       "title": "應用市場",
       "description": "瀏覽並一鍵安裝官方外掛與主題。安裝後需重新構建前端以重新整理主題/外掛頁面。",
-      "serviceUnavailable": "市場服務不可用：{error}",
+      "serviceUnavailable": "市場服務不可用",
       "plugins": "外掛",
       "themes": "主題"
     },
@@ -785,7 +799,7 @@
     "updates": {
       "title": "更新中心",
       "pageDescription": "通過獨立執行器求解並應用核心/外掛升級。",
-      "serviceUnavailable": "更新中心不可用：{error}",
+      "serviceUnavailable": "更新中心不可用",
       "currentDeployment": "當前部署",
       "generation": "代次",
       "digest": "摘要",
@@ -921,6 +935,7 @@
     "unbindFailed": "解綁失敗",
     "createFailed": "建立使用者失敗",
     "statusUpdateFailed": "更新狀態失敗",
+    "impersonateFailed": "無法以該使用者身份進入，請稍後再試",
     "groupsUpdateFailed": "更新許可權組失敗",
     "balanceAdjustFailed": "調整餘額失敗",
     "serviceUpdateFailed": "更新服務失敗",
@@ -947,7 +962,9 @@
       "code_purpose_invalid": "不支援的驗證碼用途",
       "captcha_required": "請完成人機驗證",
       "captcha_failed": "人機驗證未通過，請重試",
-      "captcha_unavailable": "人機驗證服務不可用"
+      "captcha_unavailable": "人機驗證服務不可用",
+      "email_registration_disabled": "當前未開放郵箱註冊",
+      "impersonation_credential_forbidden": "該憑據不允許用於身份模擬"
     },
     "setup": {
       "already_completed": "例項已完成初始化，請直接登入",
@@ -963,7 +980,9 @@
       "conflict": "操作衝突，請重新整理後重試",
       "rate_limited": "操作太頻繁，請稍後再試",
       "idempotency_key_required": "寫操作必須攜帶 Idempotency-Key",
-      "concurrent_request": "相同請求正在處理中，請稍候"
+      "concurrent_request": "相同請求正在處理中，請稍候",
+      "idempotency_conflict": "相同請求正在處理中，請稍候",
+      "unauthorized": "未授權"
     },
     "internal": {
       "unexpected": "伺服器開小差了，請稍後重試",
@@ -1030,7 +1049,11 @@
       "card": {
         "empty_import": "沒有可匯入的卡密",
         "not_ready": "髮卡服務暫不可用，請稍後重試"
-      }
+      },
+      "cloud_server": {
+        "provider_required": "請選擇雲伺服器提供商"
+      },
+      "insufficient_stock": "庫存不足"
     },
     "wallet": {
       "amount_invalid": "金額無效",
@@ -1044,7 +1067,10 @@
         "params_invalid": "調整引數無效"
       },
       "user_not_found": "使用者不存在",
-      "not_ready": "錢包服務暫不可用，請稍後重試"
+      "not_ready": "錢包服務暫不可用，請稍後重試",
+      "account": {
+        "not_found": "錢包賬戶不存在"
+      }
     },
     "payment": {
       "method_unavailable": "所選支付方式不可用",
@@ -1171,7 +1197,148 @@
       "payment_method_unsupported": "所選支付方式不支援該結算幣種",
       "referenced": "該幣種已被支付記錄或支付方式引用，不能停用"
     },
-    "circuit_open": "上游介面連續失敗，已熔斷以保護本站"
+    "circuit_open": "上游介面連續失敗，已熔斷以保護本站",
+    "agent": {
+      "approval": {
+        "capability_unavailable": "該能力當前不可用，無法執行此操作",
+        "conflict": "審批狀態已變化，請重新整理後重試",
+        "definition_changed": "工具定義已更新，請重新發起審批",
+        "forbidden": "無權審批該請求",
+        "human_required": "該操作需要人工確認",
+        "not_owner": "只能處理自己的審批請求"
+      },
+      "approval_not_found": "審批請求不存在",
+      "children_limit": "子任務數量已達上限",
+      "credential_invalid": "憑據無效，請重新登入",
+      "daily_limit": "今日額度已用完，請明天再試",
+      "disabled": "智慧體功能已關閉，請聯絡管理員",
+      "family_limit": "同一會話的任務數量已達上限",
+      "idempotency_conflict": "相同請求正在處理中，請稍候",
+      "impersonation_forbidden": "該操作不允許以他人身份執行",
+      "llm_unconfigured": "尚未配置模型服務，請聯絡管理員",
+      "model": {
+        "base_url_rejected": "模型服務地址不被允許"
+      },
+      "model_not_allowed": "該模型不在允許列表中",
+      "original_token_required": "需要原始憑據才能繼續",
+      "parent_invalid": "父任務無效",
+      "parent_stopped": "父任務已停止",
+      "pricing_unknown": "缺少該模型的計價資訊，請聯絡管理員",
+      "run": {
+        "busy": "任務正在執行中，請稍候",
+        "not_cancellable": "該任務當前無法取消",
+        "not_resumable": "該任務無法繼續"
+      },
+      "run_not_found": "任務不存在",
+      "token_not_found": "憑據不存在",
+      "token_required": "缺少憑據",
+      "action_changed": "操作定義已變化，請重新發起",
+      "action_failed": "操作執行失敗",
+      "action_forbidden": "無權執行該操作",
+      "action_output_large": "操作輸出過大",
+      "action_timeout": "操作超時",
+      "attachment_invalid": "附件無效",
+      "budget_exhausted": "本次任務額度已用完",
+      "budget_invalid": "額度設定無效",
+      "conversation_not_found": "會話不存在",
+      "invalid_usage": "用量資料無效",
+      "mcp_error": "MCP 服務返回錯誤",
+      "mcp_forbidden": "無權訪問該 MCP 服務",
+      "mcp_protocol": "MCP 協議錯誤",
+      "mcp_remote": "遠端 MCP 服務不可用",
+      "mcp_revision_changed": "MCP 服務版本已變化，請重試",
+      "mcp_tool_missing": "MCP 服務上沒有該工具",
+      "mcp_unavailable": "MCP 服務不可用",
+      "mcp_write_required": "該 MCP 工具需要寫許可權",
+      "message_conflict": "訊息狀態已變化，請重新整理後重試",
+      "model_call_conflict": "模型呼叫衝突，請稍後重試",
+      "model_result_unknown": "模型呼叫結果未知",
+      "network_forbidden": "不允許訪問該網路地址",
+      "oauth_origin_insecure": "OAuth 回撥地址必須使用 HTTPS",
+      "oauth_unconfigured": "尚未配置該 OAuth 服務",
+      "operation_busy": "該操作正在處理中，請稍候",
+      "operation_unknown": "未知操作",
+      "payload_large": "請求內容過大",
+      "price_bound_broken": "計價配置已失效，請聯絡管理員",
+      "remote_unavailable": "遠端服務不可用",
+      "sandbox_unavailable": "沙箱暫不可用",
+      "session_required": "需要會話才能繼續"
+    },
+    "backup": {
+      "maintenance": "系統正在維護，請稍後再試"
+    },
+    "commerce": {
+      "unavailable": "商城服務暫時不可用"
+    },
+    "custom": {
+      "unknown_model": "未知的模型"
+    },
+    "distribution": {
+      "catalogKey": {
+        "invalid": "目錄公鑰格式無效"
+      },
+      "source": {
+        "invalid": "分發源配置無效"
+      }
+    },
+    "market": {
+      "installFailed": "安裝失敗，請稍後再試",
+      "serviceMissing": "缺少市場服務",
+      "unavailable": "市場暫時不可用"
+    },
+    "mcp": {
+      "sse_unsupported": "暫不支援 MCP 的 SSE 連線方式"
+    },
+    "media": {
+      "empty": "檔案為空",
+      "forbidden": "無權訪問該附件",
+      "no_content": "缺少檔案內容",
+      "not_found": "附件不存在",
+      "reference_missing": "引用的附件不存在",
+      "too_large": "檔案過大",
+      "unsupported_type": "不支援的檔案型別"
+    },
+    "product": {
+      "inactive": "商品已下架",
+      "not_found": "商品不存在"
+    },
+    "secret": {
+      "storage": {
+        "disabled": "未配置加密金鑰儲存，請聯絡管理員"
+      }
+    },
+    "service": {
+      "already_bound": "該服務已繫結",
+      "not_found": "服務不存在"
+    },
+    "sp_v1": {
+      "body_too_large": "請求體過大"
+    },
+    "theme": {
+      "configuration_conflict": "主題配置衝突，請重新整理後重試",
+      "configuration_invalid": "主題配置無效",
+      "configuration_missing": "缺少主題配置"
+    },
+    "upstream": {
+      "ambiguous_service": "上游服務不唯一，無法確定目標",
+      "not_found": "上游不存在",
+      "service_not_found": "上游服務不存在"
+    },
+    "user": {
+      "admin_required": "該操作需要管理員許可權",
+      "disabled": "賬號已被停用，請聯絡管理員",
+      "email_taken": "該郵箱已被註冊",
+      "group_not_found": "許可權組不存在",
+      "last_admin": "至少保留一個管理員",
+      "not_found": "使用者不存在",
+      "self_demote": "不能降低自己的許可權"
+    },
+    "oauth": {
+      "human_consent_required": "需要你本人確認授權",
+      "invalid_client": "OAuth 客戶端無效",
+      "invalid_scope": "OAuth 授權範圍無效",
+      "invalid_target": "OAuth 目標地址無效"
+    }
   },
   "auditAction": {
     "auth": {
@@ -1515,7 +1682,8 @@
     "notFound": "未找到外掛管理頁面。",
     "denied": "無許可權訪問：需要 {permission}。",
     "loading": "正在載入外掛頁面…",
-    "loadFailed": "外掛頁面載入失敗：{message}"
+    "loadFailed": "外掛頁面載入失敗，請重新整理後重試。",
+    "renderFailed": "外掛頁面渲染失敗，請重新整理後重試。"
   },
   "plugin": {
     "uploadSelectZip": "請選擇要上傳的外掛 ZIP",
@@ -1535,7 +1703,8 @@
   },
   "frontend": {
     "pageNotFound": "頁面不存在",
-    "backHome": "返回首頁"
+    "backHome": "返回首頁",
+    "renderFailed": "此內容暫時無法顯示，請重新整理後重試。"
   },
   "statusBadge": {
     "operational": "所有服務正常執行",

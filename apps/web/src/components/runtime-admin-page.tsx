@@ -58,7 +58,7 @@ export function RuntimeAdminPage({
         {bridge}
         <main className="mx-auto w-full max-w-3xl">
           <p role="alert" className="text-sm text-destructive">
-            {t('pluginPage.loadFailed', { message: state.message })}
+            {t('pluginPage.loadFailed')}
           </p>
         </main>
       </>
@@ -109,14 +109,20 @@ export class RuntimeErrorBoundary extends Component<
       // Server actions use this exception as navigation control flow. Catching
       // it here leaves the URL change intact but renders its digest as an error.
       if (isNextRedirectError(this.state.error)) throw this.state.error;
-      return (
-        <p role="alert" className="text-sm text-destructive">
-          {this.state.error.message}
-        </p>
-      );
+      return <RuntimeRenderError />;
     }
     return this.props.children;
   }
+}
+
+/** Static, localised render failure; the exception itself stays in the console. */
+function RuntimeRenderError(): ReactElement {
+  const t = useTranslator();
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      {t('pluginPage.renderFailed')}
+    </p>
+  );
 }
 
 function extractAdminPages(

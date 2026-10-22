@@ -116,3 +116,6 @@ apps/web/src/i18n/README.md
 /security/
 design/glass-cloud-object.svg
 design/glass-cloud-showcase.svg
+
+# Local MCP export snapshot (generated tooling output)
+mcp-export.json

@@ -516,6 +516,13 @@ export interface PluginActionDefinition {
   input?: PluginActionInputField[];
   redirect?: PluginActionRedirect;
   successFeedback?: PluginActionSuccessFeedback;
+  /**
+   * The package owns the success receipt (inline result, redirect, or its own
+   * toast). Declare this instead of `successFeedback` so the host does not add a
+   * second, duplicate notice. Mutating actions must declare exactly one of the
+   * two — see `feedback-success-feedback.test.ts`.
+   */
+  silent?: boolean;
 }
 
 /** A compact account overview module contributed by an active plugin. */

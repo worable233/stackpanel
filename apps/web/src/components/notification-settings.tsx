@@ -90,7 +90,8 @@ function useNotificationSettings<T extends View>(url: string, schema: z.ZodType<
       }
     } catch (cause) {
       if (!signal?.aborted) {
-        setError(cause instanceof Error ? cause.message : t('notificationSettings.unavailable'));
+        console.error('[notification-settings] load failed', cause);
+        setError(t('notificationSettings.unavailable'));
         setStatus('idle');
       }
     }
@@ -108,7 +109,8 @@ function useNotificationSettings<T extends View>(url: string, schema: z.ZodType<
       })
       .catch((cause) => {
         if (!abort.signal.aborted) {
-          setError(cause instanceof Error ? cause.message : t('notificationSettings.unavailable'));
+          console.error('[notification-settings] load failed', cause);
+          setError(t('notificationSettings.unavailable'));
           setStatus('idle');
         }
       });
@@ -130,9 +132,10 @@ function useNotificationSettings<T extends View>(url: string, schema: z.ZodType<
       return true;
     } catch (cause) {
       if (!signal?.aborted) {
-        const message = cause instanceof Error ? cause.message : t('notificationSettings.failed');
-        setError(message);
-        toast.error(message);
+        console.error('[notification-settings] save failed', cause);
+        // One channel only: the toast carries the failure, the panel keeps its
+        // previous (valid) state instead of showing a stale inline error too.
+        toast.error(t('notificationSettings.failed'));
         setStatus('idle');
       }
       return false;

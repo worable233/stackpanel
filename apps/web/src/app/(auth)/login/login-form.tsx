@@ -11,12 +11,15 @@ import { loginAction } from '@/lib/actions';
 
 export function LoginForm({
   nextPath,
+  oauthError = false,
   providers = [],
   platformName,
   logoSrc,
   posts = [],
 }: {
   nextPath?: string;
+  /** The OAuth callback redirected back with `?error=oauth`. */
+  oauthError?: boolean;
   providers?: AuthProvider[];
   platformName: string;
   logoSrc?: string | null;
@@ -25,6 +28,7 @@ export function LoginForm({
   const [state, action, pending] = useActionState(loginAction, {});
   const [showPassword, setShowPassword] = useState(false);
   const t = useTranslator();
+  const errorMessage = state.error ?? (oauthError ? t('auth.login.oauthFailed') : null);
   return (
     <AuthShell
       mode="login"
@@ -69,7 +73,7 @@ export function LoginForm({
             </button>
           </div>
         </div>
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+        {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
         <Button type="submit" disabled={pending} className="h-10 w-full text-base">
           {pending ? t('auth.login.submitting') : t('auth.login.submit')}
         </Button>

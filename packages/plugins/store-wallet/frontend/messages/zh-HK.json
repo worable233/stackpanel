@@ -14,6 +14,11 @@
   "records.unavailable": "資金記錄暫時無法載入，請重新整理重試。",
   "records.empty": "暫無記錄",
   "records.provider": "支付渠道",
+  "records.status.PENDING": "待支付",
+  "records.status.SUCCEEDED": "成功",
+  "records.status.FAILED": "失敗",
+  "records.status.REVIEW": "待複核",
+  "records.status.CANCELLED": "已取消",
   "records.continuePayment": "繼續付款",
   "records.cancel": "取消",
   "overview.title": "費用概覽",
@@ -73,5 +78,6 @@
   "recharge.paymentMethod": "支付方式",
   "recharge.noMethods": "暫無支付方式",
   "recharge.submitting": "正在提交",
-  "recharge.submit": "確認充值"
+  "recharge.submit": "確認充值",
+  "records.cancelled": "充值已取消。"
 }

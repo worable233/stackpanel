@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "800e4158332e",
+  "revision": "851ad57a8afc",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -241,6 +241,7 @@
   "actions": [
     {
       "id": "store.add-to-cart",
+      "silent": true,
       "method": "POST",
       "path": "/cart/items",
       "permission": "store.buy",
@@ -270,6 +271,7 @@
     },
     {
       "id": "store.update-cart-item",
+      "silent": true,
       "method": "PATCH",
       "path": "/cart/items/:id",
       "permission": "store.buy",
@@ -291,6 +293,7 @@
     },
     {
       "id": "store.remove-cart-item",
+      "silent": true,
       "method": "DELETE",
       "path": "/cart/items/:id",
       "permission": "store.buy",
@@ -305,6 +308,7 @@
     },
     {
       "id": "store.checkout-wallet",
+      "silent": true,
       "method": "POST",
       "path": "/cart/checkout",
       "permission": "store.buy",
@@ -328,6 +332,7 @@
     },
     {
       "id": "store.checkout-external",
+      "silent": true,
       "method": "POST",
       "path": "/cart/checkout",
       "permission": "store.buy",
@@ -364,6 +369,9 @@
     },
     {
       "id": "store.cancel-order",
+      "successFeedback": {
+        "messageKey": "feedback.orderCancelled"
+      },
       "method": "POST",
       "path": "/orders/:id/cancel",
       "permission": "store.buy",
@@ -378,6 +386,9 @@
     },
     {
       "id": "store.request-refund",
+      "successFeedback": {
+        "messageKey": "feedback.refundRequested"
+      },
       "method": "POST",
       "path": "/orders/:id/refund-requests",
       "permission": "store.buy",
@@ -397,6 +408,7 @@
     },
     {
       "id": "store.service-action",
+      "silent": true,
       "method": "POST",
       "path": "/services/:id/actions",
       "permission": "store.view",
@@ -432,6 +444,7 @@
     },
     {
       "id": "store.renew-service-wallet",
+      "silent": true,
       "method": "POST",
       "path": "/services/:id/renew",
       "permission": "store.buy",
@@ -461,6 +474,7 @@
     },
     {
       "id": "store.service-resource-create",
+      "silent": true,
       "method": "POST",
       "path": "/services/:id/resources/:kind",
       "permission": "store.buy",
@@ -486,6 +500,7 @@
     },
     {
       "id": "store.service-resource-action",
+      "silent": true,
       "method": "POST",
       "path": "/services/:id/resources/:kind/:resourceId/actions/:actionId",
       "permission": "store.buy",
@@ -523,6 +538,7 @@
     },
     {
       "id": "store.service-change-wallet",
+      "silent": true,
       "method": "POST",
       "path": "/services/:id/change",
       "permission": "store.buy",
@@ -555,6 +571,9 @@
     },
     {
       "id": "store.admin-transfer-service",
+      "successFeedback": {
+        "messageKey": "feedback.serviceTransferred"
+      },
       "method": "POST",
       "path": "/store/admin/services/:id/transfer",
       "permission": "store.admin",
@@ -575,6 +594,9 @@
     },
     {
       "id": "store.admin-refund-order",
+      "successFeedback": {
+        "messageKey": "feedback.refundProcessed"
+      },
       "method": "POST",
       "path": "/store/admin/orders/:id/refund",
       "permission": "store.admin",
@@ -600,6 +622,9 @@
     },
     {
       "id": "store.create-product",
+      "successFeedback": {
+        "messageKey": "feedback.productSaved"
+      },
       "method": "POST",
       "path": "/store/admin/products",
       "permission": "store.admin",
@@ -664,6 +689,9 @@
     },
     {
       "id": "store.update-product",
+      "successFeedback": {
+        "messageKey": "feedback.productSaved"
+      },
       "method": "PATCH",
       "path": "/store/admin/products/:id",
       "permission": "store.admin",
@@ -1303,6 +1331,9 @@
       "product.notPurchasable": "当前账户没有购买权限。",
       "cart.loadFailed": "购物车暂时无法加载，请刷新重试。",
       "cart.unavailable": "商品已下架或库存不足，请调整数量或移除。",
+      "cart.reason.inactive": "商品已下架。",
+      "cart.reason.out_of_stock": "库存不足，请调整数量或移除。",
+      "cart.reason.forbidden": "当前账户无权购买该商品。",
       "cart.separateCurrencies": "不同币种的商品需要分别结算。",
       "cart.groupTotal": "本组全部商品：{amount}",
       "cart.proceed": "结算所选商品",
@@ -1332,7 +1363,16 @@
       "refund.approve": "批准",
       "refund.reject": "拒绝",
       "refund.failureReason": "{state}：{reason}",
-      "orders.requestRefund": "申请退款（退平台余额）"
+      "refund.state.PENDING": "待审核",
+      "refund.state.APPROVED": "已通过",
+      "refund.state.REJECTED": "已拒绝",
+      "refund.state.FAILED": "失败",
+      "orders.requestRefund": "申请退款（退平台余额）",
+      "feedback.orderCancelled": "订单已取消。",
+      "feedback.refundRequested": "退款申请已提交，等待审核。",
+      "feedback.serviceTransferred": "服务已转移。",
+      "feedback.refundProcessed": "退款已处理。",
+      "feedback.productSaved": "商品已保存。"
     },
     "zh-TW": {
       "review.recover": "核驗原賬單並重新送審",
@@ -1713,6 +1753,9 @@
       "product.notPurchasable": "當前賬戶沒有購買許可權。",
       "cart.loadFailed": "購物車暫時無法載入，請重新整理重試。",
       "cart.unavailable": "商品已下架或庫存不足，請調整數量或移除。",
+      "cart.reason.inactive": "商品已下架。",
+      "cart.reason.out_of_stock": "庫存不足，請調整數量或移除。",
+      "cart.reason.forbidden": "當前賬戶無權購買該商品。",
       "cart.separateCurrencies": "不同幣種的商品需要分別結算。",
       "cart.groupTotal": "本組全部商品：{amount}",
       "cart.proceed": "結算所選商品",
@@ -1742,7 +1785,16 @@
       "refund.approve": "批准",
       "refund.reject": "拒絕",
       "refund.failureReason": "{state}：{reason}",
-      "orders.requestRefund": "申請退款（退平臺餘額）"
+      "refund.state.PENDING": "待稽核",
+      "refund.state.APPROVED": "已通過",
+      "refund.state.REJECTED": "已拒絕",
+      "refund.state.FAILED": "失敗",
+      "orders.requestRefund": "申請退款（退平臺餘額）",
+      "feedback.orderCancelled": "訂單已取消。",
+      "feedback.refundRequested": "退款申請已提交，等待稽核。",
+      "feedback.serviceTransferred": "服務已轉移。",
+      "feedback.refundProcessed": "退款已處理。",
+      "feedback.productSaved": "商品已儲存。"
     },
     "zh-HK": {
       "review.recover": "核驗原賬單並重新送審",
@@ -1791,8 +1843,8 @@
       "settings.store.mode": "付款後的開通方式",
       "settings.store.manual": "手動開通（管理員稽核後開通）",
       "settings.store.automatic": "自動開通（付款成功後進入開通佇列）",
-      "settings.store.help": "僅影響設置保存後新入隊的訂單；已有待稽核訂單仍需稽核。開通與開關機狀態分開處理。",
-      "settings.store.save": "保存設置",
+      "settings.store.help": "僅影響設置儲存後新入隊的訂單；已有待稽核訂單仍需稽核。開通與開關機狀態分開處理。",
+      "settings.store.save": "儲存設置",
       "settings.store.approve": "稽核通過並開通",
       "settings.store.empty": "暫無待稽核開通任務",
       "settings.store.failed": "操作失敗，請重新整理後重試",
@@ -1819,7 +1871,7 @@
       "configure.publicImage": "公共映象",
       "configure.privateImage": "私有映象",
       "configure.imageHint": "該套餐將按服務配置開通系統映象。",
-      "configure.storage": "保存",
+      "configure.storage": "儲存",
       "configure.storageHint": "系統盤型別已由套餐固定。",
       "configure.privateNetwork": "私有網絡",
       "configure.privateNetworkHint": "當前商品未提供可配置的私有網絡。",
@@ -2017,14 +2069,14 @@
       "editor.amountInvalid": "成本與原價須為有效的非負金額（{currency} 最多 {digits} 位小數）",
       "editor.stockInvalid": "庫存須為 0 至 1000000 的整數",
       "editor.discountInvalid": "折扣須為 0 至 99 的整數",
-      "editor.saveFailed": "商品保存失敗",
-      "editor.categorySaveFailed": "分類保存失敗：{status}",
-      "editor.saveFailedRetry": "保存失敗，請重試",
+      "editor.saveFailed": "商品儲存失敗",
+      "editor.categorySaveFailed": "分類儲存失敗：{status}",
+      "editor.saveFailedRetry": "儲存失敗，請重試",
       "editor.back": "返回商店管理",
       "editor.titleEdit": "編輯商品",
       "editor.titleNew": "新建商品",
-      "editor.saving": "保存中…",
-      "editor.save": "保存商品",
+      "editor.saving": "儲存中…",
+      "editor.save": "儲存商品",
       "editor.basicTitle": "基礎資訊",
       "editor.basicDescription": "展示給用戶的商品名稱、簡介與圖示。",
       "editor.nameLabel": "名稱 *",
@@ -2043,7 +2095,7 @@
       "editor.costLabel": "成本（人工維護）",
       "editor.upstreamPrice": "上游源價 {price}",
       "editor.useUpstreamPrice": "採用上游價",
-      "editor.upstreamInventoryManaged": "上游同步管理：當前成本 {cost} · 當前庫存 {stock}。保存後將以最新上游資料為準。",
+      "editor.upstreamInventoryManaged": "上游同步管理：當前成本 {cost} · 當前庫存 {stock}。儲存後將以最新上游資料為準。",
       "editor.originalPriceLabel": "原價（可選，劃線展示）",
       "editor.discountLabel": "商品折扣（%，可選）",
       "editor.configTitle": "產品配置",
@@ -2123,6 +2175,9 @@
       "product.notPurchasable": "當前賬戶沒有購買許可權。",
       "cart.loadFailed": "購物車暫時無法載入，請重新整理重試。",
       "cart.unavailable": "商品已下架或庫存不足，請調整數量或移除。",
+      "cart.reason.inactive": "商品已下架。",
+      "cart.reason.out_of_stock": "庫存不足，請調整數量或移除。",
+      "cart.reason.forbidden": "當前賬戶無權購買該商品。",
       "cart.separateCurrencies": "不同幣種的商品需要分別結算。",
       "cart.groupTotal": "本組全部商品：{amount}",
       "cart.proceed": "結算所選商品",
@@ -2152,7 +2207,16 @@
       "refund.approve": "批准",
       "refund.reject": "拒絕",
       "refund.failureReason": "{state}：{reason}",
-      "orders.requestRefund": "申請退款（退平臺餘額）"
+      "refund.state.PENDING": "待稽核",
+      "refund.state.APPROVED": "已通過",
+      "refund.state.REJECTED": "已拒絕",
+      "refund.state.FAILED": "失敗",
+      "orders.requestRefund": "申請退款（退平臺餘額）",
+      "feedback.orderCancelled": "訂單已取消。",
+      "feedback.refundRequested": "退款申請已提交，等待稽核。",
+      "feedback.serviceTransferred": "服務已轉移。",
+      "feedback.refundProcessed": "退款已處理。",
+      "feedback.productSaved": "商品已儲存。"
     },
     "en-US": {
       "review.recover": "Verify invoices and request approval",
@@ -2533,6 +2597,9 @@
       "product.notPurchasable": "Your account cannot purchase this service.",
       "cart.loadFailed": "Unable to load cart. Please retry.",
       "cart.unavailable": "Unavailable or insufficient stock. Update quantity or remove.",
+      "cart.reason.inactive": "This product is no longer available.",
+      "cart.reason.out_of_stock": "Insufficient stock. Update quantity or remove it.",
+      "cart.reason.forbidden": "Your account is not allowed to buy this product.",
       "cart.separateCurrencies": "Check out each currency separately.",
       "cart.groupTotal": "All items in this group: {amount}",
       "cart.proceed": "Check out selected items",
@@ -2562,7 +2629,16 @@
       "refund.approve": "Approve",
       "refund.reject": "Reject",
       "refund.failureReason": "{state}: {reason}",
-      "orders.requestRefund": "Request refund (to platform balance)"
+      "refund.state.PENDING": "Pending review",
+      "refund.state.APPROVED": "Approved",
+      "refund.state.REJECTED": "Rejected",
+      "refund.state.FAILED": "Failed",
+      "orders.requestRefund": "Request refund (to platform balance)",
+      "feedback.orderCancelled": "Order cancelled.",
+      "feedback.refundRequested": "Refund request submitted for review.",
+      "feedback.serviceTransferred": "Service transferred.",
+      "feedback.refundProcessed": "Refund processed.",
+      "feedback.productSaved": "Product saved."
     }
   }
 }

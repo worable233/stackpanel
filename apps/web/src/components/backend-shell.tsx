@@ -33,7 +33,6 @@ import { BackendSearch } from '@/components/backend-search';
 import { useTheme } from '@/components/theme-provider';
 import { NotificationBell } from '@/components/notification-bell';
 import { NotificationToaster } from '@/components/notification-toaster';
-import { ActionFeedbackToaster } from '@/components/action-feedback-toaster';
 import { BackendRouteProgress } from '@/components/backend-route-progress';
 import { AgentSidebar } from '@/components/agent-sidebar';
 import { LocaleSwitcher } from '@/components/locale-switcher';
@@ -317,7 +316,6 @@ export function BackendShell({
     <div className="backend-shell relative isolate flex min-h-dvh flex-col bg-background text-foreground">
       <BackendRouteProgress />
       <NotificationToaster />
-      <ActionFeedbackToaster />
       <div className="backend-shell__glow pointer-events-none absolute inset-x-0 top-0 z-0 h-96" />
       <div className="backend-shell__header sticky top-0 z-30 overflow-hidden border-b border-border/40 bg-background/80 shadow-[0_1px_12px_color-mix(in_oklab,var(--foreground)_4%,transparent)] backdrop-blur-2xl">
         <header
