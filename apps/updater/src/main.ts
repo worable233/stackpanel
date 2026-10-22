@@ -12,6 +12,7 @@
 import path from 'node:path';
 import type { UpdateTask, UpdateTaskResult } from '@stackpanel/spec';
 import { UpdateEngine } from './engine.ts';
+import { ExecutorLockError } from './executor-lock.ts';
 import { FileUpdateJournal } from './journal.ts';
 import { ExecutorLock } from './executor-lock.ts';
 import { FileUpdateTaskChannel } from './task-channel.ts';
@@ -183,7 +184,16 @@ export class Updater {
     this.handedOver = true;
   }
 
-  /** 单轮：认领一个任务并执行；返回是否处理了任务。 */
+  /**
+   * 单轮：认领一个任务并执行；返回是否处理了任务。
+   *
+   * **执行权被他人持有时不算失败**：`engine.run()` 会 `lock.acquire()`，抢不到就抛
+   * `ExecutorLockError`。多副本部署下这是**正常状态**（另一个副本正在升级），
+   * 必须原地退让、下一轮再试，而不是让进程崩溃。
+   *
+   * 真机双执行器演练抓到：A 在 B 持锁时抛 `ExecutorLockError` 未捕获，
+   * 进程直接退出——一个「为了避免并行」的保护，反而把等待方打死了。
+   */
   async tick(): Promise<boolean> {
     if (this.handedOver) return false;
     await this.checkHandover();
@@ -205,7 +215,19 @@ export class Updater {
     // 归档完整声明，供独立恢复入口在失败后重建重试任务（不依赖内存）。
     await this.channel.archiveTask(task);
     await this.publishStatus(task.idempotencyKey);
-    const result = await this.engine.run(task, true);
+    let result: Awaited<ReturnType<UpdateEngine['run']>>;
+    try {
+      result = await this.engine.run(task, true);
+    } catch (error) {
+      if (error instanceof ExecutorLockError) {
+        // 另一个副本正在执行：把任务放回 inbox，本轮不处理，下一轮重试。
+        // 不能留在 claimed（会被当成孤儿反复回收），也不能标记失败。
+        await this.channel.returnToInbox(task);
+        this.deps.log?.(`执行权被其他副本持有，任务 ${task.idempotencyKey} 稍后重试`);
+        return false;
+      }
+      throw error;
+    }
     const projection = await this.toTaskResult(task, result);
     await this.channel.complete(task, projection);
     await this.publishStatus(null, { idempotencyKey: task.idempotencyKey, result: projection });

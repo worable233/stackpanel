@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -190,6 +191,24 @@ describe('FileUpdateTaskChannel', () => {
     const orphans = await channel.reclaimOrphans('i1');
     expect(orphans).toEqual([]);
     expect(await channel.claim('i1')).toBeNull();
+  });
+
+  it('returns a claimed task to the inbox without writing a result', async () => {
+    // 执行权被另一个副本持有时，任务必须原样放回，不能被标记完成或卡在 claimed。
+    const { FileUpdateTaskChannel } = await import('../src/task-channel.ts');
+    const channel = new FileUpdateTaskChannel(path.join(root, 'channel'));
+    const t = task();
+    await channel.submit(t);
+    const claimed = await channel.claim('i1');
+    expect(claimed?.idempotencyKey).toBe('k1');
+
+    await channel.returnToInbox(t);
+
+    // 没有结果文件（不能伪造成功）。
+    expect(existsSync(path.join(root, 'channel', 'results', 'i1', 'k1.json'))).toBe(false);
+    // 回到 inbox，可被下一轮重新认领。
+    const again = await channel.claim('i1');
+    expect(again?.idempotencyKey).toBe('k1');
   });
 
   it('archives the full task declaration and reads it back for recovery retry', async () => {

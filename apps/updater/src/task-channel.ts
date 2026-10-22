@@ -52,6 +52,14 @@ export interface UpdateTaskChannel {
    * 返回的任务需要调用方自行判断是否可续跑（见 `Updater.tick`）。
    */
   reclaimOrphans(instanceId: string): Promise<UpdateTask[]>;
+  /**
+   * 把已认领的任务**放回** inbox（不动日志、不写结果）。
+   *
+   * 用于「本轮不该执行」的情况：例如执行权被另一个副本持有。直接 `complete()`
+   * 会写一个假结果，留在 `claimed/` 又会被 `reclaimOrphans()` 反复回收——
+   * 正确做法是原样放回，让下一轮重新认领。
+   */
+  returnToInbox(task: UpdateTask): Promise<void>;
 }
 
 const FILE_PATTERN = /\.json$/;
@@ -186,6 +194,18 @@ export class FileUpdateTaskChannel implements UpdateTaskChannel {
       }
     }
     return reclaimed;
+  }
+
+  async returnToInbox(task: UpdateTask): Promise<void> {
+    const name = updateTaskFileName(task.idempotencyKey);
+    const claimed = path.join(this.claimedDir(task.instanceId), name);
+    const inbox = this.inboxDir(task.instanceId);
+    await mkdir(inbox, { recursive: true });
+    try {
+      await rename(claimed, path.join(inbox, name));
+    } catch {
+      // 认领文件已不在（被清理或另一轮已处理）：保持幂等，不当作错误。
+    }
   }
 
   async readArchivedTask(instanceId: string, idempotencyKey: string): Promise<UpdateTask | null> {
