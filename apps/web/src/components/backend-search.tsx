@@ -29,7 +29,12 @@ export function BackendSearch({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey) && !event.altKey) {
+      if (
+        typeof event.key === 'string' &&
+        event.key.toLowerCase() === 'k' &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey
+      ) {
         event.preventDefault();
         setOpen((value) => !value);
       }
@@ -50,10 +55,10 @@ export function BackendSearch({
         aria-label={t('common.search')}
         aria-keyshortcuts="Meta+K Control+K"
         onClick={() => setOpen(true)}
-        className="h-9 w-9 justify-center rounded-xl border-border/70 bg-muted/25 px-0 text-muted-foreground shadow-none has-[>svg]:px-0 md:w-44 md:justify-start md:gap-2 md:px-3 md:has-[>svg]:px-3 2xl:w-52"
+        className="h-9 w-full min-w-0 flex-1 justify-start gap-2 rounded-xl border-border/70 bg-muted/25 px-3 text-muted-foreground shadow-none has-[>svg]:px-3 lg:w-44 lg:flex-none 2xl:w-52"
       >
         <Search className="size-4" />
-        <span className="hidden md:inline">{t('common.search')}</span>
+        <span className="truncate">{t('common.search')}</span>
         <kbd className="ml-auto hidden h-5 items-center rounded border bg-muted px-1.5 font-mono text-[10px] md:inline-flex">
           ⌘ K
         </kbd>

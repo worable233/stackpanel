@@ -358,6 +358,70 @@
   }
 }
 
+/* Keep host and previously bundled plugin cards on the same compact geometry. */
+:root :is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])) {
+  position: relative;
+  isolation: isolate;
+  gap: 0.75rem;
+  padding-block: 1rem;
+}
+
+/* Older installed plugin bundles retain the same effect without DOM injection. */
+:is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])):not(
+    [data-spotlight]
+  )::before,
+:is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])):not(
+    [data-spotlight]
+  )::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  border-radius: inherit;
+  opacity: 0;
+}
+
+:is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])):not(
+    [data-spotlight]
+  )::before {
+  inset: -1px;
+  z-index: 10;
+  padding: 1px;
+  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  mask-clip: content-box, border-box;
+  mask-composite: exclude;
+}
+
+:is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])):not(
+    [data-spotlight]
+  )::after {
+  inset: 0;
+  z-index: 0;
+}
+
+:root :is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])) > .px-6 {
+  padding-inline: 1rem;
+}
+
+:root :is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])) > .pb-6 {
+  padding-bottom: 1rem;
+}
+
+:root :is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])) > .pt-6 {
+  padding-top: 1rem;
+}
+
+:root
+  :is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group']))
+  > :not([data-spotlight-layer]) {
+  position: relative;
+  z-index: 1;
+}
+
+.backend-dashboard [data-slot='card'].backend-dashboard__metric {
+  gap: 0.25rem;
+  padding-block: 0.375rem;
+}
+
 /* Sonner toast surface follows the theme tokens (no inline style needed). */
 @utility cn-toast {
   --normal-bg: var(--popover);

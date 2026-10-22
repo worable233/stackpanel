@@ -46,6 +46,23 @@ describe('message catalogs', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort());
   });
 
+  it('keeps every shipped locale on the same key set', () => {
+    const expected = Object.keys(zh).sort();
+    for (const locale of LOCALES) {
+      const keys = Object.keys(flatten(CATALOGS[locale] as Record<string, unknown>)).sort();
+      expect(keys, locale).toEqual(expected);
+    }
+  });
+
+  it('names every shipped locale in every catalog so the picker renders', () => {
+    for (const locale of LOCALES) {
+      for (const target of LOCALES) {
+        const key = `locale.${target}`;
+        expect(lookupMessage(CATALOGS[locale], key), `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
   it('has non-empty strings for every message', () => {
     for (const locale of LOCALES) {
       for (const key of Object.keys(flatten(CATALOGS[locale] as Record<string, unknown>))) {
@@ -73,9 +90,14 @@ describe('message catalogs', () => {
   });
 
   it('keeps placeholder sets identical across locales (documented exceptions only)', () => {
-    for (const key of Object.keys(zh)) {
-      if (key in PLACEHOLDER_EXCEPTIONS) continue;
-      expect(placeholderNames(zh[key]!), key).toEqual(placeholderNames(en[key]!));
+    for (const locale of LOCALES) {
+      const catalog = flatten(CATALOGS[locale] as Record<string, unknown>);
+      for (const key of Object.keys(zh)) {
+        if (key in PLACEHOLDER_EXCEPTIONS) continue;
+        expect(placeholderNames(catalog[key] ?? ''), `${locale}:${key}`).toEqual(
+          placeholderNames(zh[key]!),
+        );
+      }
     }
   });
 

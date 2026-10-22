@@ -20,6 +20,7 @@ import { auditContext, writeAudit } from '../../plugins/audit.ts';
 import { getPrisma } from '../../plugins/prisma.ts';
 import { env } from '../../config/env.ts';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
+import { notifyUserBestEffort } from '../../notifications/notify.ts';
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
 
@@ -150,6 +151,29 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
         },
         ...auditContext(request),
       });
+      // 更新任务的执行是异步的（updater 在实例私有通道取任务），因此这里只回执
+      // 「已投递」。结果由 `/admin/updates/results` 与运行日志呈现。
+      const actorId = request.user?.id;
+      if (actorId) {
+        await notifyUserBestEffort(
+          { notifications: app.notifications, logger: request.log },
+          {
+            userId: actorId,
+            type: 'system.update.submit',
+            title: '更新任务已提交',
+            body: `已投递 ${outcome.plan.packages.length} 个包的升级任务，完成后可在更新中心查看结果。`,
+            link: '/admin/updates',
+            data: {
+              kind: 'update',
+              action: 'submit',
+              idempotencyKey: outcome.task.idempotencyKey,
+              planDigest: outcome.task.planDigest,
+              packages: outcome.plan.packages.length,
+            },
+            status: 'info',
+          },
+        );
+      }
       return reply.code(202).send({
         submitted: true,
         idempotencyKey: outcome.task.idempotencyKey,

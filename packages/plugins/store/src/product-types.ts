@@ -48,6 +48,13 @@ function upstreamSourceById(providerId: string): UpstreamProductSource | undefin
     .find((source) => source.id === providerId);
 }
 
+function sourceOptions(req: HttpRequest): { sourceRef?: string } | undefined {
+  const sourceRef = req.query['sourceRef'];
+  return typeof sourceRef === 'string' && sourceRef
+    ? { sourceRef: sourceRef.slice(0, 191) }
+    : undefined;
+}
+
 /** GET /store/upstream-products/:provider?q= —— 搜索上游商品（商品表单关联选择器）。 */
 export async function searchUpstreamProducts(req: HttpRequest): Promise<unknown> {
   const provider = req.params['provider'];
@@ -66,7 +73,7 @@ export async function getUpstreamProduct(req: HttpRequest): Promise<unknown> {
   if (!provider || !productId) throw new StoreError(400, '缺少参数');
   const source = upstreamSourceById(provider);
   if (!source) throw new StoreError(404, '上游不存在或未启用');
-  const item = await source.get(productId);
+  const item = await source.get(productId, sourceOptions(req));
   return { item };
 }
 
@@ -81,6 +88,6 @@ export async function getUpstreamProductConfig(req: HttpRequest): Promise<unknow
   const source = upstreamSourceById(provider);
   if (!source) throw new StoreError(404, '上游不存在或未启用');
   if (!source.getConfig) return { checkoutConfig: null };
-  const checkoutConfig = await source.getConfig(productId);
+  const checkoutConfig = await source.getConfig(productId, sourceOptions(req));
   return { checkoutConfig };
 }

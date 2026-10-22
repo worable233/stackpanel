@@ -206,7 +206,6 @@ export function validateFrontendFiles(files: Map<string, Uint8Array>): FrontendM
     finderNames.add(finder);
   }
   const adminRoutePaths = new Set<string>();
-  const adminRouteComponents = new Set<string>();
   for (const route of manifest.adminRoutes) {
     if (!route.path.startsWith('/')) {
       throw new FrontendError(422, '插件后台路由路径必须以 / 开头');
@@ -215,10 +214,6 @@ export function validateFrontendFiles(files: Map<string, Uint8Array>): FrontendM
       throw new FrontendError(422, `重复的插件后台路由：${route.path}`);
     }
     adminRoutePaths.add(route.path);
-    if (adminRouteComponents.has(route.component)) {
-      throw new FrontendError(422, `重复的插件后台组件：${route.component}`);
-    }
-    adminRouteComponents.add(route.component);
   }
   const adminActionIds = new Set<string>();
   const adminActionComponents = new Set<string>();

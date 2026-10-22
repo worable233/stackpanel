@@ -12,8 +12,14 @@ import { getPrisma } from '../plugins/prisma.ts';
 import { env } from '../config/env.ts';
 import { verifyPackageSignature } from './signatures.ts';
 
-/** Local market sources: the kernel ships official plugins/themes in packages/. */
-const PLUGINS_SOURCE = path.resolve(process.cwd(), '..', '..', 'packages', 'plugins');
+/** Local market sources: built-ins plus the optional sibling plugin checkout. */
+const PLUGINS_SOURCES = [
+  ...(process.env.STACKPANEL_PLUGIN_SOURCES ?? '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((directory) => path.resolve(directory)),
+  path.resolve(process.cwd(), '..', '..', 'packages', 'plugins'),
+];
 const THEMES_SOURCE = path.resolve(process.cwd(), '..', '..', 'packages', 'themes');
 
 function dataDir(): string {
@@ -100,24 +106,28 @@ async function readPluginManifestFile(dir: string): Promise<PluginManifestFile |
 
 /** Discover plugin packages available in the local market. */
 export async function listMarketPlugins(): Promise<MarketSourcePackage[]> {
-  if (!existsSync(PLUGINS_SOURCE)) return [];
-  const entries = await readdir(PLUGINS_SOURCE, { withFileTypes: true });
   const results: MarketSourcePackage[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const sourceDir = path.join(PLUGINS_SOURCE, entry.name);
-    const manifest = await readPluginManifestFile(sourceDir);
-    const pkg = await readPackageJson(sourceDir);
-    if (!manifest && !pkg) continue;
-    results.push({
-      id: entry.name,
-      name: manifest?.name ?? pkg?.name ?? entry.name,
-      version: manifest?.version ?? pkg?.version ?? '0.0.0',
-      ...(manifest?.description ? { description: manifest.description } : {}),
-      ...(manifest?.author ? { author: manifest.author } : {}),
-      ...(pkg?.builtin ? { builtin: true } : {}),
-      sourceDir,
-    });
+  const seen = new Set<string>();
+  for (const sourceRoot of PLUGINS_SOURCES) {
+    if (!existsSync(sourceRoot)) continue;
+    const entries = await readdir(sourceRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || seen.has(entry.name)) continue;
+      const sourceDir = path.join(sourceRoot, entry.name);
+      const manifest = await readPluginManifestFile(sourceDir);
+      const pkg = await readPackageJson(sourceDir);
+      if (!manifest && !pkg) continue;
+      seen.add(entry.name);
+      results.push({
+        id: entry.name,
+        name: manifest?.name ?? pkg?.name ?? entry.name,
+        version: manifest?.version ?? pkg?.version ?? '0.0.0',
+        ...(manifest?.description ? { description: manifest.description } : {}),
+        ...(manifest?.author ? { author: manifest.author } : {}),
+        ...(pkg?.builtin ? { builtin: true } : {}),
+        sourceDir,
+      });
+    }
   }
   return results.sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -152,9 +162,13 @@ export async function marketPackageView(
   source: MarketSourcePackage,
 ): Promise<MarketPackage> {
   const installedDir = kind === 'plugin' ? pluginDataDir(source.id) : themeDataDir(source.id);
-  const installed = existsSync(
+  const filesPresent = existsSync(
     path.join(installedDir, kind === 'plugin' ? 'manifest.json' : 'theme.json'),
   );
+  // Theme management is backed by the DB registry, not merely unpacked files.
+  const installed = filesPresent && (kind === 'plugin' || Boolean(
+    await getPrisma().theme.findUnique({ where: { id: source.id }, select: { id: true } }),
+  ));
   let installedVersion: string | null = null;
   if (installed) {
     if (kind === 'plugin') {
@@ -367,11 +381,24 @@ export async function installMarketTheme(id: string): Promise<{ id: string; vers
       await cp(frontendDist, path.join(tmp, 'frontend', 'dist'), { recursive: true });
     }
   }
+  let handle;
   try {
-    await packageManager.swapDirectory('theme', id, tmp);
+    handle = await packageManager.swapDirectory('theme', id, tmp);
   } catch (err) {
     await rm(tmp, { recursive: true, force: true });
     throw err;
   }
+  try {
+    await getPrisma().theme.upsert({
+      where: { id },
+      create: { id, name: source.name, version: source.version, active: false },
+      // Reinstallation/upgrades must preserve the selected active theme.
+      update: { name: source.name, version: source.version },
+    });
+  } catch (err) {
+    await handle.rollback();
+    throw err;
+  }
+  await handle.commit();
   return { id, version: source.version };
 }

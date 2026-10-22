@@ -32,6 +32,7 @@ const HOST_ABI_SLOTS = new Set([
   '@stackpanel/ui',
   '@stackpanel/sdk',
   'lucide-react',
+  'recharts',
 ]);
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;

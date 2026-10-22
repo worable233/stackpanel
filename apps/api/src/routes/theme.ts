@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Prisma } from '@stackpanel/db';
 import { z } from 'zod';
+import { frontendSettingsValueSchema } from '@stackpanel/sdk';
 
 const ASSET_CONTENT_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
@@ -37,7 +38,6 @@ import {
   serveFrontendFile,
   serveRevisionFile,
   settingsSchemaDescriptor,
-  updateFrontendSettings,
 } from '../lib/frontend-service.ts';
 import { isRevisionName } from '../lib/frontend-revisions.ts';
 import { settingsErrorToMessage } from '../lib/frontend-settings.ts';
@@ -50,6 +50,8 @@ import { readSigningPublicKey } from '../lib/signing-settings.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { requireAuth, requireRole } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
+import { themeConfigurationRoutes } from './theme-configuration.ts';
+import { saveThemeConfiguration } from '../lib/theme-configuration.ts';
 import { publishRuntimeChange } from '../runtime/coherence.ts';
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
@@ -58,12 +60,12 @@ const idSchema = z.object({ id: z.string().regex(THEME_ID_PATTERN) });
 const patchBodySchema = z.object({ active: z.boolean() });
 const previewBodySchema = z.object({ themeId: z.string().regex(THEME_ID_PATTERN) });
 const THEME_PREVIEW_KEY = 'theme.preview';
-const settingsPatchSchema = z.object({
-  settings: z.record(
-    z.string(),
-    z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
-  ),
-});
+const settingsPatchSchema = z
+  .object({
+    settings: frontendSettingsValueSchema,
+    expectedVersion: z.string().length(64).optional(),
+  })
+  .strict();
 
 /** Seed the built-in default theme and ensure exactly one theme is active. */
 export async function initThemes(): Promise<void> {
@@ -110,7 +112,9 @@ async function themeLocales(id: string): Promise<string[]> {
     const raw = await readFile(themeManifestPath(id), 'utf8');
     const parsed = JSON.parse(raw) as { locales?: unknown };
     return Array.isArray(parsed.locales)
-      ? parsed.locales.filter((value): value is string => typeof value === 'string' && value.length > 0)
+      ? parsed.locales.filter(
+          (value): value is string => typeof value === 'string' && value.length > 0,
+        )
       : [];
   } catch {
     return [];
@@ -188,6 +192,7 @@ async function serveFile(
  * data/themes/<id>/; the themes table tracks installation and activation.
  */
 export async function themeRoutes(app: FastifyInstance): Promise<void> {
+  await themeConfigurationRoutes(app);
   app.get('/themes', async () => {
     const prisma = getPrisma();
     const rows = await prisma.theme.findMany({ orderBy: { installedAt: 'asc' } });
@@ -299,82 +304,86 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
     return { themes };
   });
 
-  app.post('/admin/themes', { preHandler: adminOnly, ...rateLimitConfig('upload') }, async (request, reply) => {
-    let data: Buffer;
-    try {
-      const part = await request.file();
-      if (!part) return reply.code(400).send({ error: '未上传文件' });
-      data = await part.toBuffer();
-    } catch {
-      return reply.code(413).send({ error: '文件过大或不是有效的 multipart 表单' });
-    }
-    let themeInfo: { id: string; name: string; version: string } | null = null;
-    try {
-      const { manifest, files } = parseThemeZip(data, await readSigningPublicKey());
-      themeInfo = { id: manifest.id, name: manifest.name, version: manifest.version };
-      const prisma = getPrisma();
-      const existing = await prisma.theme.findUnique({ where: { id: manifest.id } });
-      const upgraded = Boolean(existing);
-      // 主题与插件共用同一安装事务：先把完整产物暂存，再提交 DB 指针（§7、§13-3）。
-      const fileWrite = await writeThemeFiles(manifest.id, files);
-      let theme: { id: string; name: string; version: string; active: boolean };
+  app.post(
+    '/admin/themes',
+    { preHandler: adminOnly, ...rateLimitConfig('upload') },
+    async (request, reply) => {
+      let data: Buffer;
       try {
-        theme = existing
-          ? await prisma.theme.update({
-              where: { id: manifest.id },
-              data: { name: manifest.name, version: manifest.version },
-            })
-          : await prisma.theme.create({
-              data: {
-                id: manifest.id,
-                name: manifest.name,
-                version: manifest.version,
-                active: false,
-              },
-            });
-      } catch (err) {
-        // 文件已暂存但 DB 指针未提交：恢复旧目录（升级时还原旧版本），避免半切换（§7.6）。
-        await fileWrite.rollback();
-        throw err;
+        const part = await request.file();
+        if (!part) return reply.code(400).send({ error: '未上传文件' });
+        data = await part.toBuffer();
+      } catch {
+        return reply.code(413).send({ error: '文件过大或不是有效的 multipart 表单' });
       }
-      await fileWrite.commit();
-      const frontend = frontendSummary(await readFrontendManifest(themePackageDir(theme.id)));
-      const signed = existsSync(path.join(themePackageDir(theme.id), 'signature.json'));
-      await writeAudit({
-        action: upgraded ? 'theme.upgrade' : 'theme.install',
-        resource: 'theme',
-        resourceId: manifest.id,
-        meta: { name: manifest.name, version: manifest.version },
-        ...auditContext(request),
-      });
-      // 运行期装载：主题前端产物即时生效，无需构建/重启（contract 01 §7）。
-      await notifyLifecycle(request.user?.id, {
-        target: 'theme',
-        action: upgraded ? 'update' : 'install',
-        label: manifest.name,
-        id: manifest.id,
-        version: manifest.version,
-        ok: true,
-      });
-      return reply
-        .code(upgraded ? 200 : 201)
-        .send({ theme: { ...theme, frontend, signed }, upgraded });
-    } catch (err) {
-      if (err instanceof ThemeError) {
+      let themeInfo: { id: string; name: string; version: string } | null = null;
+      try {
+        const { manifest, files } = parseThemeZip(data, await readSigningPublicKey());
+        themeInfo = { id: manifest.id, name: manifest.name, version: manifest.version };
+        const prisma = getPrisma();
+        const existing = await prisma.theme.findUnique({ where: { id: manifest.id } });
+        const upgraded = Boolean(existing);
+        // 主题与插件共用同一安装事务：先把完整产物暂存，再提交 DB 指针（§7、§13-3）。
+        const fileWrite = await writeThemeFiles(manifest.id, files);
+        let theme: { id: string; name: string; version: string; active: boolean };
+        try {
+          theme = existing
+            ? await prisma.theme.update({
+                where: { id: manifest.id },
+                data: { name: manifest.name, version: manifest.version },
+              })
+            : await prisma.theme.create({
+                data: {
+                  id: manifest.id,
+                  name: manifest.name,
+                  version: manifest.version,
+                  active: false,
+                },
+              });
+        } catch (err) {
+          // 文件已暂存但 DB 指针未提交：恢复旧目录（升级时还原旧版本），避免半切换（§7.6）。
+          await fileWrite.rollback();
+          throw err;
+        }
+        await fileWrite.commit();
+        const frontend = frontendSummary(await readFrontendManifest(themePackageDir(theme.id)));
+        const signed = existsSync(path.join(themePackageDir(theme.id), 'signature.json'));
+        await writeAudit({
+          action: upgraded ? 'theme.upgrade' : 'theme.install',
+          resource: 'theme',
+          resourceId: manifest.id,
+          meta: { name: manifest.name, version: manifest.version },
+          ...auditContext(request),
+        });
+        // 运行期装载：主题前端产物即时生效，无需构建/重启（contract 01 §7）。
         await notifyLifecycle(request.user?.id, {
           target: 'theme',
-          action: 'install',
-          label: themeInfo?.name ?? '未知主题',
-          id: themeInfo?.id ?? 'unknown',
-          ...(themeInfo?.version ? { version: themeInfo.version } : {}),
-          ok: false,
-          error: err.message,
+          action: upgraded ? 'update' : 'install',
+          label: manifest.name,
+          id: manifest.id,
+          version: manifest.version,
+          ok: true,
         });
-        return reply.code(err.status).send({ error: err.message });
+        return reply
+          .code(upgraded ? 200 : 201)
+          .send({ theme: { ...theme, frontend, signed }, upgraded });
+      } catch (err) {
+        if (err instanceof ThemeError) {
+          await notifyLifecycle(request.user?.id, {
+            target: 'theme',
+            action: 'install',
+            label: themeInfo?.name ?? '未知主题',
+            id: themeInfo?.id ?? 'unknown',
+            ...(themeInfo?.version ? { version: themeInfo.version } : {}),
+            ok: false,
+            error: err.message,
+          });
+          return reply.code(err.status).send({ error: err.message });
+        }
+        throw err;
       }
-      throw err;
-    }
-  });
+    },
+  );
 
   app.patch('/admin/themes/:id', { preHandler: adminOnly }, async (request, reply) => {
     const params = idSchema.safeParse(request.params);
@@ -504,13 +513,12 @@ export async function themeRoutes(app: FastifyInstance): Promise<void> {
     const packageDir = themePackageDir(params.data.id);
     if (!existsSync(packageDir)) return reply.code(404).send({ error: '主题不存在' });
     try {
-      const settings = await updateFrontendSettings(
+      const { settings } = await saveThemeConfiguration(
         getPrisma(),
-        'theme',
         params.data.id,
-        packageDir,
         body.data.settings,
         request.user?.id ?? null,
+        body.data.expectedVersion,
       );
       await writeAudit({
         action: 'theme.settings.update',

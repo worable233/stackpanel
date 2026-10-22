@@ -61,16 +61,14 @@ export async function getPluginAccountMenus(): Promise<PluginAccountMenu[]> {
     const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const route of candidate.manifest.accountRoutes) {
       if (!route.nav || !(await isAllowed(api, route.permission))) continue;
-      const group = packageLabel(
-        messages,
-        locale,
-        route.nav.groupKey,
-        route.nav.group,
-        [DEFAULT_LOCALE],
-      );
+      const group = packageLabel(messages, locale, route.nav.groupKey, route.nav.group, [
+        DEFAULT_LOCALE,
+      ]);
       menus.push({
         pluginId: candidate.id,
-        label: packageLabel(messages, locale, route.nav.labelKey, route.nav.label, [DEFAULT_LOCALE]),
+        label: packageLabel(messages, locale, route.nav.labelKey, route.nav.label, [
+          DEFAULT_LOCALE,
+        ]),
         href: accountHref(route.path),
         order: route.nav.order,
         activePaths: route.nav.activePaths?.map(accountHref),
@@ -93,7 +91,12 @@ export async function executeAccountFinder(
   const candidates = await listPluginFrontendCandidates();
   for (const candidate of candidates) {
     if (!candidateAdmitsServerExecution(candidate)) continue;
-    const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest, candidate.revision);
+    const pkg = await importFrontendPackage(
+      'plugins',
+      candidate.id,
+      candidate.manifest,
+      candidate.revision,
+    );
     if (!pkg?.finders || !pkg.finders[finderId]) continue;
     const settings = await readPluginSettings(candidate.id);
     try {
@@ -117,6 +120,7 @@ export async function executeAccountFinder(
 export async function resolvePluginAccountRoute(
   path: string,
   user: AccountUser,
+  searchParams: Record<string, string> = {},
 ): Promise<PluginAccountRouteResult> {
   const candidates = await listPluginFrontendCandidates();
   const matches = candidates.flatMap((candidate) =>
@@ -132,7 +136,12 @@ export async function resolvePluginAccountRoute(
   if (!(await isAllowed(api, route.permission))) {
     return { status: 'denied', permission: route.permission ?? 'account.permission' };
   }
-  const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest, candidate.revision);
+  const pkg = await importFrontendPackage(
+    'plugins',
+    candidate.id,
+    candidate.manifest,
+    candidate.revision,
+  );
   const component = pkg?.ui?.accountPages?.[route.component];
   if (!component) return { status: 'not-found' };
 
@@ -141,7 +150,14 @@ export async function resolvePluginAccountRoute(
   // Trust boundary (contract 03 §3.1): an unauthorized package's finders must
   // not execute in the web process.
   const finders = candidateAdmitsServerExecution(candidate) ? (pkg.finders ?? {}) : {};
-  const data = await executeRouteData(route.data ?? [], finders, params, settings, user);
+  const data = await executeRouteData(
+    route.data ?? [],
+    finders,
+    params,
+    settings,
+    user,
+    searchParams,
+  );
   try {
     await api.recordFrontendAudit('frontend.account.route.render', candidate.id, path, {
       route: route.path,
@@ -156,7 +172,11 @@ export async function resolvePluginAccountRoute(
     settings,
     data,
     params,
-    actions: bindPluginActions(candidate.id, candidate.manifest.actions, `/account${path}`),
+    actions: bindPluginActions(
+      candidate.id,
+      candidate.manifest.actions,
+      `/account${path}${Object.keys(searchParams).some((key) => key !== 'error') ? `?${new URLSearchParams(Object.entries(searchParams).filter(([key]) => key !== 'error')).toString()}` : ''}`,
+    ),
   };
 }
 
@@ -168,7 +188,12 @@ export async function getPluginAccountWidgets(): Promise<PluginAccountWidget[]> 
   const widgets: PluginAccountWidget[] = [];
   for (const candidate of candidates) {
     if (!candidateAdmitsServerExecution(candidate)) continue;
-    const pkg = await importFrontendPackage('plugins', candidate.id, candidate.manifest, candidate.revision);
+    const pkg = await importFrontendPackage(
+      'plugins',
+      candidate.id,
+      candidate.manifest,
+      candidate.revision,
+    );
     if (!pkg) continue;
     const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const definition of candidate.manifest.accountWidgets) {
@@ -178,7 +203,9 @@ export async function getPluginAccountWidgets(): Promise<PluginAccountWidget[]> 
       widgets.push({
         id: definition.id,
         pluginId: candidate.id,
-        title: packageLabel(messages, locale, definition.titleKey, definition.title, [DEFAULT_LOCALE]),
+        title: packageLabel(messages, locale, definition.titleKey, definition.title, [
+          DEFAULT_LOCALE,
+        ]),
         component,
         settings: await readPluginSettings(candidate.id),
       });
@@ -209,6 +236,7 @@ async function executeRouteData(
   params: Record<string, string>,
   settings: FrontendSettings,
   user: AccountUser,
+  searchParams: Record<string, string> = {},
 ): Promise<Record<string, unknown>> {
   const api = await getAuthedApiClient();
   const values = await Promise.all(
@@ -219,7 +247,7 @@ async function executeRouteData(
       try {
         return [
           requirement.as,
-          await finder.handler(resolveFinderInput(requirement, params), {
+          await finder.handler(resolveFinderInput(requirement, params, searchParams), {
             params,
             settings,
             api,
@@ -239,13 +267,16 @@ async function executeRouteData(
 function resolveFinderInput(
   requirement: FrontendPageDataRequirement,
   params: Record<string, string>,
+  searchParams: Record<string, string>,
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(requirement.input ?? {}).map(([key, value]) => [
       key,
-      typeof value === 'string' && value.startsWith(':')
-        ? (params[value.slice(1)] ?? value)
-        : value,
+      key === '$query'
+        ? searchParams
+        : typeof value === 'string' && value.startsWith(':')
+          ? (params[value.slice(1)] ?? value)
+          : (searchParams[key] ?? value),
     ]),
   );
 }

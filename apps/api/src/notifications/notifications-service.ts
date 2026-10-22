@@ -115,7 +115,30 @@ export class KernelNotificationsService implements NotificationsService {
     };
   }
 
+  private warnedTypes = new Set<string>();
+
+  /**
+   * 未声明类型守卫（仅开发/测试）。
+   *
+   * 目录驱动是本系统的核心规则：目录里没有的类型没有配置项、永远投递。这通常
+   * 是「插件忘了注册 `notification.type`」或「类型名写错」的信号——生产环境
+   * 静默（保持投递），开发环境每种类型只告警一次，便于在集成时发现。
+   */
+  private guardDeclared(type: string): void {
+    if (process.env['NODE_ENV'] === 'production') return;
+    const policy = this.options.policy;
+    const declares = policy?.declares;
+    if (!policy || typeof declares !== 'function') return;
+    if (declares.call(policy, type) || this.warnedTypes.has(type)) return;
+    this.warnedTypes.add(type);
+    process.emitWarning(
+      `notification type "${type}" is not declared; it will always be delivered and cannot be configured. Register it via EXTENSION_POINTS.notificationType (or BUILTIN_NOTIFICATION_TYPES).`,
+      'StackpanelNotificationWarning',
+    );
+  }
+
   async create(input: CreateNotificationInput): Promise<NotificationView> {
+    this.guardDeclared(input.type);
     const data = {
       userId: input.userId,
       type: input.type,
@@ -150,6 +173,7 @@ export class KernelNotificationsService implements NotificationsService {
   }
 
   async upsert(input: UpsertNotificationInput): Promise<NotificationView> {
+    this.guardDeclared(input.type);
     const key = { userId: input.userId, dedupeKey: input.dedupeKey };
     // A read activity that advances must re-surface as unread; each rewrite
     // clears `readAt`. This is also what makes the bell badge track progress.

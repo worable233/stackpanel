@@ -1,11 +1,11 @@
-import Link from 'next/link';
 import { PageHeader } from '@stackpanel/ui';
-import { SettingsForm } from '@/components/settings-form';
+import { ThemeJsonEditor } from '@/components/theme-json-editor';
+import { themeConfigurationSchema } from '@/lib/theme-configuration';
 import { getAuthedApiClient } from '@/lib/api';
-import { saveThemeSettingsAction } from '@/lib/frontend-settings-actions';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 import { DEFAULT_LOCALE } from '@/i18n/config';
+import type { FrontendSettingsSchema } from '@stackpanel/sdk';
 import { localizeSettingsSchema, readPackageMessages } from '@/i18n/package-messages';
 import { themeFrontendCandidate } from '@/lib/slots';
 
@@ -20,15 +20,20 @@ export default async function AdminThemeSettingsPage({
   const locale = await getLocale();
   const t = createTranslator(locale);
   const api = await getAuthedApiClient();
-  const [schemaResult, settingsResult, candidate] = await Promise.all([
+  const [schemaResult, candidate] = await Promise.all([
     api.getThemeSettingsSchema(id),
-    api.getThemeSettings(id),
     themeFrontendCandidate(id),
   ]);
   // The schema's labels are declared by the theme; resolve them through the
   // theme's own catalog so the admin form follows the interface language
   // (ADR-0016 §5).
   const { messages } = readPackageMessages(id, candidate?.manifest.messages);
+  const configuration = schemaResult.schema
+    ? ((await api.get(
+        `/admin/themes/${encodeURIComponent(id)}/configuration`,
+        themeConfigurationSchema,
+      )) as unknown as import('@/lib/theme-configuration').ThemeConfiguration)
+    : null;
   const schema = schemaResult.schema
     ? localizeSettingsSchema(schemaResult.schema, messages, locale, [DEFAULT_LOCALE])
     : null;
@@ -36,22 +41,16 @@ export default async function AdminThemeSettingsPage({
   return (
     <main className="w-full space-y-6">
       <PageHeader
-        eyebrow={
-          <Link
-            href="/admin/themes"
-            className="mb-1 inline-flex text-sm text-muted-foreground hover:text-foreground"
-          >
-            {t('admin.themeSettings.back')}
-          </Link>
-        }
+        backHref="/admin/themes"
+        backLabel={t('admin.themeSettings.back')}
         title={t('admin.themeSettings.title')}
       />
       <div>
-        {schema ? (
-          <SettingsForm
+        {schema && configuration ? (
+          <ThemeJsonEditor
+            themeId={id}
             schema={schema}
-            initial={settingsResult.settings}
-            save={saveThemeSettingsAction.bind(null, id)}
+            configuration={{ ...configuration, schema: schema as FrontendSettingsSchema }}
           />
         ) : (
           <p className="text-sm text-muted-foreground">{t('admin.themeSettings.noSettings')}</p>

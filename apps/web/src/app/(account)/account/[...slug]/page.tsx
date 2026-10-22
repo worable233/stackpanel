@@ -29,7 +29,7 @@ export default async function PluginAccountRoute({
     role: currentUser.user.role,
   };
   const path = `/${slug.join('/')}`;
-  const result = await resolvePluginAccountRoute(path, user);
+  const result = await resolvePluginAccountRoute(path, user, flattenSearchParams(query));
   return (
     <AccountPluginPage
       pluginId={result.status === 'ok' ? result.pluginId : 'unknown'}

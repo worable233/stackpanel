@@ -14,6 +14,8 @@
 import type { PrismaClient } from '@stackpanel/db';
 import type {
   MarketInstallResult,
+  MarketSourceConfig,
+  MarketSourceConfigInput,
   MarketPackage,
   MarketService as MarketServiceContract,
   PluginDefinition,
@@ -38,6 +40,12 @@ import {
 import { loadPluginDefinition } from '../lib/plugins.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import {
+  MARKET_SOURCE_SECRET_KEY,
+  MARKET_SOURCE_SETTING_KEY,
+  resetCatalogRefresh,
+} from '../distribution/runtime.ts';
+import { encryptSecret, isSecretsEnabled } from '../lib/crypto.ts';
 
 /** 市场服务依赖（可注入，便于单元测试）。 */
 export interface MarketServiceDeps {
@@ -109,13 +117,63 @@ export class MarketService implements MarketServiceContract {
     return this.installFromCatalog(context, kind, id);
   }
 
+  async getSourceConfig(): Promise<MarketSourceConfig> {
+    const row = await this.prisma.setting.findUnique({ where: { key: MARKET_SOURCE_SETTING_KEY } });
+    const value = row?.value;
+    const record =
+      typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const secret = await this.prisma.secret.findUnique({
+      where: { key: MARKET_SOURCE_SECRET_KEY },
+      select: { ciphertext: true },
+    });
+    return {
+      repository: typeof record.repository === 'string' ? record.repository : '',
+      channel: record.channel === 'beta' ? 'beta' : 'stable',
+      ref: typeof record.ref === 'string' && record.ref ? record.ref : 'main',
+      tokenConfigured: Boolean(secret?.ciphertext),
+    };
+  }
+
+  async updateSourceConfig(input: MarketSourceConfigInput): Promise<MarketSourceConfig> {
+    const repository = input.repository.trim();
+    if (repository && !/^[^/\s]+\/[^/\s]+$/.test(repository)) {
+      throw new Error('市场源必须是 owner/repository 格式');
+    }
+    const ref = input.ref.trim() || 'main';
+    await this.prisma.setting.upsert({
+      where: { key: MARKET_SOURCE_SETTING_KEY },
+      create: {
+        key: MARKET_SOURCE_SETTING_KEY,
+        value: { repository, channel: input.channel, ref },
+      },
+      update: { value: { repository, channel: input.channel, ref } },
+    });
+    if (input.clearToken || !repository) {
+      await this.prisma.secret.deleteMany({ where: { key: MARKET_SOURCE_SECRET_KEY } });
+    } else if (input.token?.trim()) {
+      if (!isSecretsEnabled()) throw new Error('密钥存储不可用，请先配置 SETTINGS_ENCRYPTION_KEY');
+      await this.prisma.secret.upsert({
+        where: { key: MARKET_SOURCE_SECRET_KEY },
+        create: { key: MARKET_SOURCE_SECRET_KEY, ciphertext: encryptSecret(input.token.trim()) },
+        update: { ciphertext: encryptSecret(input.token.trim()) },
+      });
+    }
+    resetCatalogRefresh();
+    return this.getSourceConfig();
+  }
+
   private async installFromLocal(
     kind: 'plugin' | 'theme',
     id: string,
   ): Promise<MarketInstallResult> {
+    const existingTheme = kind === 'theme'
+      ? await this.prisma.theme.findUnique({ where: { id }, select: { id: true } })
+      : null;
     const result = await this.installLocal(kind, id);
     if (kind === 'theme') {
-      return { id: result.id, version: result.version, upgraded: false, source: 'local' };
+      return { id: result.id, version: result.version, upgraded: Boolean(existingTheme), source: 'local' };
     }
     // 与 ZIP 上传一致：安装后立即 register/activate，无需重启。
     const runtime = this.deps.runtime;

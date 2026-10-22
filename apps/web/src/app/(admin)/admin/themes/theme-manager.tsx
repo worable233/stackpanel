@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { AdminTheme } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   activateThemeAction,
   clearPreviewThemeAction,
@@ -120,8 +121,13 @@ export function ThemeManager({
                       startTransition(async () => {
                         const form = new FormData();
                         form.set('id', theme.id);
-                        await activateThemeAction(form);
-                        router.refresh();
+                        try {
+                          await activateThemeAction(form);
+                          toast.success(t('admin.themes.activateSuccess'));
+                          router.refresh();
+                        } catch (error) {
+                          toast.error(error instanceof Error ? error.message : t('admin.themes.activateFailed'));
+                        }
                       });
                     }}
                   >

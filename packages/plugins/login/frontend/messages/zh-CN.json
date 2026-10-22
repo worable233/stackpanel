@@ -1,0 +1,16 @@
+{
+  "admin.systemSettings": "登录与注册",
+  "settings.title": "登录与注册",
+  "settings.description": "配置用户注册方式和邮箱验证策略。",
+  "settings.emailGroup": "邮箱注册",
+  "settings.emailGroupHint": "用户使用邮箱和密码创建账号。",
+  "settings.emailVerification": "注册时验证邮箱",
+  "settings.emailVerificationHint": "开启后，用户必须输入发送到邮箱的验证码才能完成注册。",
+  "settings.emailVerificationUnavailable": "当前没有可用的邮箱验证码发送插件，请先在“SMTP 邮件”设置中完成配置。",
+  "settings.phoneGroup": "手机号注册",
+  "settings.phoneGroupHint": "需要短信验证插件，当前尚未提供。",
+  "settings.save": "保存配置",
+  "settings.saving": "保存中…",
+  "settings.saved": "登录配置已保存",
+  "settings.saveFailed": "保存失败"
+}

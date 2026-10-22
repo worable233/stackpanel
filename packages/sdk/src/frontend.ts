@@ -245,8 +245,8 @@ export type FrontendSettingsScalar = string | number | boolean;
 /** A scalar field declaration (everything except the recursive `list` type). */
 export type FrontendSettingsScalarField = Exclude<FrontendSettingsField, { type: 'list' }>;
 
-/** A repeatable row inside a `list` settings field. */
-export type FrontendSettingsListItem = Record<string, FrontendSettingsScalar>;
+/** A repeatable row inside a `list` settings field, including nested lists. */
+export type FrontendSettingsListItem = { [key: string]: FrontendSettingsValue };
 
 /** Stored value for one settings field: scalar, or an array of rows for `list`. */
 export type FrontendSettingsValue = FrontendSettingsScalar | FrontendSettingsListItem[];
@@ -310,8 +310,10 @@ export type FrontendSettingsField =
       name: string;
       label?: string;
       labelKey?: string;
-      fields: FrontendSettingsScalarField[];
+      fields: FrontendSettingsField[];
       default?: FrontendSettingsListItem[];
+      /** Legacy field alias, or legacy fields to assemble into ordered rows. Consumed on read/import. */
+      migrateFrom?: string | Array<Record<string, string>>;
       /** Sub-field used as the collapsed row title in the admin form. */
       itemLabelField?: string;
       help?: string;
@@ -485,6 +487,23 @@ export interface PluginActionRedirect {
 }
 
 /**
+ * Optional success feedback rendered by the host after a form-compatible
+ * action finishes. The message is manifest data, never an untrusted response
+ * payload, so it is safe to carry through the return URL.
+ */
+export interface PluginActionSuccessFeedback {
+  /** Literal fallback for locales the package does not ship (ADR-0016 §5). */
+  message?: string;
+  /**
+   * Message id in this package's catalog; localized by the host and preferred
+   * over the literal `message`. Use this when the package ships catalogs.
+   */
+  messageKey?: string;
+  /** Numeric response paths interpolated into `{name}` placeholders in message. */
+  params?: Record<string, string>;
+}
+
+/**
  * A form-compatible mutation declared by a frontend package. The platform
  * validates the declaration and owns session, permission, input, audit, and
  * BFF concerns before dispatching to the plugin backend.
@@ -496,6 +515,7 @@ export interface PluginActionDefinition {
   permission?: string;
   input?: PluginActionInputField[];
   redirect?: PluginActionRedirect;
+  successFeedback?: PluginActionSuccessFeedback;
 }
 
 /** A compact account overview module contributed by an active plugin. */
@@ -692,7 +712,51 @@ export function buildZodFromSettingsSchema(
     }
     groupShape[group.id] = z.object(fieldShape).default(groupDefaults);
   }
-  return z.object(groupShape) as unknown as z.ZodType<FrontendSettings>;
+  return z.preprocess(
+    (value) =>
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.values(value).every(
+        (group) => group && typeof group === 'object' && !Array.isArray(group),
+      )
+        ? migrateFrontendSettings(schema, value as FrontendSettings)
+        : value,
+    z.object(groupShape),
+  ) as unknown as z.ZodType<FrontendSettings>;
+}
+
+/** Upgrade renamed/list settings using package-declared mappings; never replace an explicit new value. */
+export function migrateFrontendSettings(
+  schema: FrontendSettingsSchema,
+  stored: FrontendSettings | undefined,
+): FrontendSettings | undefined {
+  if (!stored) return stored;
+  const result = mergeFrontendSettings({}, stored);
+  for (const group of schema.groups) {
+    const values = result[group.id];
+    if (!values || typeof values !== 'object' || Array.isArray(values)) continue;
+    for (const field of group.fields) {
+      if (field.type !== 'list' || !field.migrateFrom) continue;
+      const source = field.migrateFrom;
+      const keys =
+        typeof source === 'string' ? [source] : source.flatMap((row) => Object.values(row));
+      if (values[field.name] === undefined && keys.some((key) => values[key] !== undefined)) {
+        values[field.name] =
+          typeof source === 'string'
+            ? values[source]!
+            : source.map((mapping, index) => {
+                const row = { ...field.default?.[index] };
+                for (const [target, key] of Object.entries(mapping)) {
+                  if (values[key] !== undefined) row[target] = values[key]!;
+                }
+                return row;
+              });
+      }
+      for (const key of keys) if (key !== field.name) delete values[key];
+    }
+  }
+  return result;
 }
 
 /** Effective default value for a field, mirroring `buildFieldSchema`. */
@@ -761,7 +825,7 @@ function buildFieldSchema(field: FrontendSettingsField): z.ZodTypeAny {
       return z.enum(values as [string, ...string[]]).default(field.default ?? values[0] ?? '');
     }
     case 'list': {
-      const row = z.object(buildFieldShape(field.fields));
+      const row = z.object(buildFieldShape(field.fields)).strict();
       const base = z.array(row);
       return (field.default ? base.default(field.default) : base.default([])) as z.ZodTypeAny;
     }

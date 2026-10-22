@@ -1,4 +1,8 @@
-import { computeCheckoutPrice, readCheckoutConfig, validateCheckoutSelection } from '@stackpanel/sdk';
+import {
+  computeCheckoutPrice,
+  readCheckoutConfig,
+  validateCheckoutSelection,
+} from '@stackpanel/sdk';
 import type {
   CheckoutPriceContext,
   CheckoutPriceResult,
@@ -11,6 +15,21 @@ import { context } from './context';
 import { getProduct } from './repository';
 import { providerForProduct } from './fulfillment';
 import { parseCheckoutSelection } from './utils';
+
+/** Same discount policy as authoritative order creation. */
+export async function effectiveDiscount(userId: string): Promise<number> {
+  const groups = await context().auth.listUserGroups(userId);
+  return Math.max(0, ...groups.map((group) => group.discount ?? 0));
+}
+
+export function discountedPrice(
+  unit: number,
+  productDiscount: number | null | undefined,
+  groupDiscount: number,
+): number {
+  const discount = Math.max(productDiscount ?? 0, groupDiscount);
+  return discount > 0 ? Math.round((unit * (100 - discount)) / 100) : unit;
+}
 
 /** 商品的结账计价上下文（product 快照）。 */
 export interface PricedLine {
@@ -39,10 +58,11 @@ export async function resolveCheckoutPrice(
   quantity: number,
   config: CheckoutSelection | undefined,
 ): Promise<{ unit: number; result: CheckoutPriceResult | null }> {
+  const schema = readCheckoutConfig(product.metadata);
   if (!config || (!config.cycle && !config.selections)) {
+    if (schema) throw new StoreError(400, '商品配置无效：请选择商品配置');
     return { unit: product.price, result: null };
   }
-  const schema = readCheckoutConfig(product.metadata);
   if (schema) {
     const errors = validateCheckoutSelection(schema, config);
     if (errors.length > 0) throw new StoreError(400, `商品配置无效：${errors[0]}`);
@@ -64,7 +84,7 @@ export async function resolveCheckoutPrice(
   };
   if (provider?.calculateCheckoutPrice) {
     const result = await provider.calculateCheckoutPrice(priceCtx);
-    if (result && Number.isFinite(result.price)) {
+    if (result && Number.isSafeInteger(result.price) && result.price >= 0) {
       return { unit: result.price, result };
     }
     throw new StoreError(400, '商品价格计算失败');
@@ -82,8 +102,17 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
   if (!product || product.status !== 'ACTIVE') throw new StoreError(404, '商品不存在');
   const body = (req.body ?? {}) as Record<string, unknown>;
   const config = parseCheckoutSelection(body['config']);
-  const quantity = typeof body['quantity'] === 'number' ? body['quantity'] : 1;
-  const { unit, result } = await resolveCheckoutPrice(product, quantity, config);
+  const quantity = Number(body['quantity'] ?? 1);
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) {
+    throw new StoreError(400, '请求参数无效');
+  }
+  const priced = await resolveCheckoutPrice(product, quantity, config);
+  const unit = discountedPrice(
+    priced.unit,
+    product.discount,
+    req.user ? await effectiveDiscount(req.user.id) : 0,
+  );
+  const result = priced.result;
   const total = unit * quantity;
   // Settlement preview (plan §5): show the original amount *and* what the buyer
   // will actually be charged. A missing rate must not break the preview — the
@@ -95,6 +124,7 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
     currency: product.currency,
     quantity,
     total,
+    originalTotal: priced.unit * quantity,
     ...(settlement
       ? {
           settlementCurrency: settlement.toCurrency,
@@ -104,7 +134,11 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
       : {}),
     ...(result
       ? {
-          renewPrice: result.renewPrice ?? unit,
+          renewPrice: discountedPrice(
+            result.renewPrice ?? priced.unit,
+            product.discount,
+            req.user ? await effectiveDiscount(req.user.id) : 0,
+          ),
           breakdown: result.breakdown ?? [],
           summary: result.summary,
         }
@@ -113,10 +147,7 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
 }
 
 /** Best-effort settlement quote for the public price preview. */
-async function previewSettlement(
-  currency: string,
-  totalMinor: number,
-): Promise<FxQuote | null> {
+async function previewSettlement(currency: string, totalMinor: number): Promise<FxQuote | null> {
   try {
     return await context().fx.quoteToSettlement(currency, totalMinor);
   } catch {

@@ -34,4 +34,23 @@ export interface MarketService {
   list(kind: 'plugin' | 'theme'): Promise<MarketPackage[]>;
   /** 安装/升级一个条目；本地来源优先。 */
   install(kind: 'plugin' | 'theme', id: string): Promise<MarketInstallResult>;
+  /** 管理员可配置的远程目录源（密钥只返回是否已配置）。 */
+  getSourceConfig(): Promise<MarketSourceConfig>;
+  updateSourceConfig(input: MarketSourceConfigInput): Promise<MarketSourceConfig>;
+}
+
+export interface MarketSourceConfig {
+  repository: string;
+  channel: 'stable' | 'beta';
+  ref: string;
+  tokenConfigured: boolean;
+}
+
+export interface MarketSourceConfigInput {
+  repository: string;
+  channel: 'stable' | 'beta';
+  ref: string;
+  /** 留空表示保留已有密钥；clearToken 删除已有密钥。 */
+  token?: string;
+  clearToken?: boolean;
 }

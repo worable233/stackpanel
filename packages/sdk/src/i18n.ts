@@ -47,6 +47,66 @@ export function formatPackageMessage(template: string, params?: PackageMessagePa
 }
 
 /**
+ * Expand a requested tag into the catalog tags to try, most specific first.
+ *
+ * A host may hand a package any BCP 47 tag (`zh-Hant`, `zh-Hant-HK`, `en-GB`),
+ * while the package only ships a fixed set of catalogs (`zh-CN`, `zh-TW`,
+ * `zh-HK`, `en-US`). Blindly falling back to the site default would show
+ * Simplified Chinese to a Traditional Chinese reader, so the script subtag is
+ * honoured for Chinese before the plain language base is considered.
+ */
+export function packageLocaleChain(
+  locale: string | undefined,
+  catalogs: PackageCatalogs,
+): string[] {
+  const available = Object.keys(catalogs);
+  const chain: string[] = [];
+  const push = (tag: string | undefined) => {
+    if (!tag) return;
+    const match = available.find((candidate) => candidate.toLowerCase() === tag.toLowerCase());
+    if (match && !chain.includes(match)) chain.push(match);
+  };
+
+  push(locale);
+  if (typeof locale === 'string') {
+    const [language, ...subtags] = locale.split('-');
+    const script = subtags.find((part) => part.length === 4)?.toLowerCase();
+    const region = subtags
+      .find((part) => part.length === 2 || part.length === 3)
+      ?.toUpperCase();
+    const base = language?.toLowerCase();
+
+    if (base === 'zh') {
+      if (script === 'hans') {
+        push('zh-CN');
+        push('zh-Hans');
+      } else if (script === 'hant' || region === 'TW' || region === 'HK' || region === 'MO') {
+        // Traditional Chinese: prefer the requested region, then the other
+        // regional catalog, and never silently drop to Simplified.
+        if (region === 'HK' || region === 'MO') {
+          push('zh-HK');
+          push('zh-TW');
+        } else {
+          push('zh-TW');
+          push('zh-HK');
+        }
+        push('zh-Hant');
+      }
+    } else if (region) {
+      // `en-GB` should still find the shipped `en-US` before the base lookup.
+      push(`${language}-${region}`);
+    }
+  }
+  if (typeof locale === 'string') {
+    const base = locale.split('-')[0]?.toLowerCase();
+    for (const candidate of available) {
+      if (candidate.split('-')[0]?.toLowerCase() === base) push(candidate);
+    }
+  }
+  return chain;
+}
+
+/**
  * Build a translator for one package.
  *
  * @param locale    Resolved interface locale from props (`undefined` falls back).
@@ -59,8 +119,8 @@ export function createPackageTranslator(
   catalogs: PackageCatalogs,
   fallbacks: readonly string[] = [],
 ): PackageTranslator {
-  const chain = [locale, ...fallbacks].filter(
-    (tag): tag is string => typeof tag === 'string' && tag in catalogs,
+  const chain = [...packageLocaleChain(locale, catalogs), ...fallbacks].filter(
+    (tag, index, all) => typeof tag === 'string' && tag in catalogs && all.indexOf(tag) === index,
   );
   return (key, params) => {
     for (const tag of chain) {

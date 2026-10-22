@@ -3,6 +3,7 @@ import { activeThemeCandidate, importFrontendPackage, readThemeSettings } from '
 import type { ReactElement } from 'react';
 import { z } from 'zod';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
+import type { FrontendSettings } from '@stackpanel/sdk';
 import { notFound } from 'next/navigation';
 import { FrontendScopeRoot } from '@/components/frontend-scope';
 import { FrontendRenderBoundary } from '@/components/frontend-render-boundary';
@@ -41,8 +42,10 @@ export async function FrontendRoute({
   actionError,
   searchParams = {},
   standalone = false,
+  settingsOverride,
 }: {
   standalone?: boolean;
+  settingsOverride?: FrontendSettings;
   path: string;
   params?: Record<string, string>;
   fallback?: Record<string, unknown>;
@@ -50,9 +53,9 @@ export async function FrontendRoute({
   actionError?: string;
   searchParams?: Record<string, string | string[] | undefined>;
 }): Promise<ReactElement> {
-  const resolved = await resolveFrontendRoute(path, params, fallback, themeId, searchParams);
+  const resolved = await resolveFrontendRoute(path, params, fallback, themeId, searchParams, settingsOverride);
   if (!resolved || resolved.fallback) notFound();
-  return renderResolution(resolved, actionError, standalone, themeId);
+  return renderResolution(resolved, actionError, standalone, themeId, settingsOverride);
 }
 
 /**
@@ -71,11 +74,12 @@ async function renderResolution(
   actionError: string | undefined,
   standalone = false,
   themeId?: string,
+  settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
   const locale = await getLocale();
   const content = createElement(resolved.component, {
     params: resolved.params,
-    settings: resolved.settings,
+    settings: settingsOverride ?? resolved.settings,
     data: resolved.data,
     actions: resolved.actions,
     // Same-origin BFF, never the server-only `API_BASE_URL` (see renderPublicLayout).
@@ -114,7 +118,7 @@ async function renderResolution(
   if (!resolved.layout) return scoped;
   const shared = await getPublicThemeLayout();
   if (!standalone && resolved.layout === shared) return scoped;
-  return renderPublicLayout(resolved.layout, scoped, resolved.assetsBaseUrl, locale, themeId);
+  return renderPublicLayout(resolved.layout, scoped, resolved.assetsBaseUrl, locale, themeId, settingsOverride);
 }
 
 export const getPublicThemeLayout = cache(async () => {
@@ -136,6 +140,7 @@ async function renderPublicLayout(
   assetsBaseUrl?: string,
   locale?: string,
   themeId?: string,
+  settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
   const [navigation, token, platform, categories, brand, settings] = await Promise.all([
     getApiClient()
@@ -155,7 +160,9 @@ async function renderPublicLayout(
       .getPlatformBrand()
       .then((result) => result.brand)
       .catch(() => null),
-    themeId
+    settingsOverride
+      ? Promise.resolve(settingsOverride)
+      : themeId
       ? readThemeSettings(themeId)
       : activeThemeCandidate().then((candidate) =>
           candidate ? readThemeSettings(candidate.id) : {},

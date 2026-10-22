@@ -103,6 +103,7 @@ export {
   defineFrontend,
   matchFrontendPagePath,
   mergeFrontendSettings,
+  migrateFrontendSettings,
   resolveFrontendPageSource,
   resolveThemeOverride,
   selectFrontendPageDefinition,
@@ -266,7 +267,12 @@ export type { CurrencyDefinition, CurrencyErrorCode, CurrencyService } from './c
 export type { StateCandidate, StateLease, StateService } from './state.js';
 export type { CacheReadOptions, CacheService } from './cache.js';
 export type { MediaReferenceService } from './media.js';
-export type { MarketInstallResult, MarketService } from './market.js';
+export type {
+  MarketInstallResult,
+  MarketService,
+  MarketSourceConfig,
+  MarketSourceConfigInput,
+} from './market.js';
 export type {
   StorageBackendSpec,
   StorageBeginPutInput,
@@ -443,7 +449,12 @@ export type {
   AgentStepKind,
   AgentStepView,
 } from './agent.js';
-export { createPackageTranslator, formatPackageMessage, PACKAGE_FALLBACK_LOCALE } from './i18n.js';
+export {
+  createPackageTranslator,
+  formatPackageMessage,
+  packageLocaleChain,
+  PACKAGE_FALLBACK_LOCALE,
+} from './i18n.js';
 export type {
   PackageCatalog,
   PackageCatalogs,

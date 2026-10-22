@@ -16,7 +16,7 @@ import { formatMinorCurrency } from '@stackpanel/sdk';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
-import { ArrowLeft, Clock, Plus, Wallet } from 'lucide-react';
+import { Clock, Plus, Wallet } from 'lucide-react';
 import { overviewSchema, WalletOverviewPage } from './overview';
 import { messages, t } from './i18n.js';
 
@@ -148,17 +148,11 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
   const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
   return (
     <main className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={tr('balance.back')}
-          render={<Link href="/account/billing" />}
-        >
-          <ArrowLeft />
-        </Button>
-        <PageHeader title={tr('balance.title')} />
-      </div>
+      <PageHeader
+        backHref="/account/billing"
+        backLabel={tr('balance.back')}
+        title={tr('balance.title')}
+      />
       <Card className="max-w-5xl">
         <CardContent>
           {wallet ? (
@@ -183,7 +177,11 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
                 submit: tr('recharge.submit'),
               }}
               cancelLink={
-                <Button variant="ghost" render={<Link href="/account/billing" />}>
+                <Button
+                  variant="ghost"
+                  nativeButton={false}
+                  render={<Link href="/account/billing" />}
+                >
                   {tr('balance.cancel')}
                 </Button>
               }
@@ -202,7 +200,11 @@ function WalletAccountRecordsPage(props: AccountPageComponentProps): ReactElemen
   const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
   return (
     <main className="flex flex-col gap-6">
-      <PageHeader title={tr('records.title')} />
+      <PageHeader
+        backHref="/account/billing"
+        backLabel={tr('balance.back')}
+        title={tr('records.title')}
+      />
       {wallet ? (
         <>
           <Ledger
@@ -315,7 +317,7 @@ const walletFinders: Record<string, FinderProvider> = {
 };
 
 export const frontend: FrontendPackage = {
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   finders: walletFinders,
   pages: [],

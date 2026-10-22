@@ -22,6 +22,7 @@ import {
   adminPluginsResponseSchema,
   adminThemesResponseSchema,
   authConfigResponseSchema,
+  accountMutationResponseSchema,
   sendRegisterCodeResponseSchema,
   connectedIdentityListResponseSchema,
   currencyDefinitionListResponseSchema,
@@ -130,6 +131,7 @@ import type {
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
   AuthConfigResponse,
+  AccountMutationResponse,
   FrontendAuditAction,
   Health,
   LoginResponse,
@@ -524,6 +526,14 @@ export class ApiClient {
     return this.get('/auth/config', authConfigResponseSchema);
   }
 
+  changePassword(currentPassword: string, newPassword: string): Promise<AccountMutationResponse> {
+    return this.post('/auth/password', { currentPassword, newPassword }, accountMutationResponseSchema);
+  }
+
+  changeEmail(currentPassword: string, email: string): Promise<AccountMutationResponse> {
+    return this.post('/auth/email', { currentPassword, email }, accountMutationResponseSchema);
+  }
+
   /** Read the authenticated account identity. */
   getCurrentUser(): Promise<CurrentUserResponse> {
     return this.get('/auth/me', currentUserResponseSchema);
@@ -748,7 +758,7 @@ export class ApiClient {
   /** Bind an upstream already-purchased service to a user. */
   bindAdminUserUpstreamService(
     id: string,
-    input: { sourceId: string; providerServiceId: string },
+    input: { sourceId: string; providerServiceId: string; sourceRef?: string },
   ): Promise<AdminUserServicesResponse> {
     return this.post(
       `/admin/users/${encodeURIComponent(id)}/upstream-services`,
@@ -818,10 +828,28 @@ export class ApiClient {
   }
 
   /** Fetch a single upstream product (echo current association). */
-  getUpstreamProduct(providerId: string, productId: string): Promise<UpstreamProductResponse> {
+  getUpstreamProduct(
+    providerId: string,
+    productId: string,
+    options?: { sourceRef?: string },
+  ): Promise<UpstreamProductResponse> {
+    const qs = options?.sourceRef ? `?sourceRef=${encodeURIComponent(options.sourceRef)}` : '';
     return this.get(
-      `/store/upstream-products/${encodeURIComponent(providerId)}/${encodeURIComponent(productId)}`,
+      `/store/upstream-products/${encodeURIComponent(providerId)}/${encodeURIComponent(productId)}${qs}`,
       upstreamProductResponseSchema,
+    );
+  }
+
+  /** Read checkout configuration for a selected upstream product. */
+  getUpstreamProductConfig(
+    providerId: string,
+    productId: string,
+    options?: { sourceRef?: string },
+  ): Promise<{ checkoutConfig: unknown | null }> {
+    const qs = options?.sourceRef ? `?sourceRef=${encodeURIComponent(options.sourceRef)}` : '';
+    return this.get(
+      `/store/upstream-products/${encodeURIComponent(providerId)}/${encodeURIComponent(productId)}/config${qs}`,
+      z.object({ checkoutConfig: z.unknown().nullable() }),
     );
   }
 
@@ -940,10 +968,10 @@ export class ApiClient {
   }
 
   /** Update a theme's frontend settings (admin). */
-  updateThemeSettings(id: string, settings: FrontendSettings): Promise<SettingsResponse> {
+  updateThemeSettings(id: string, settings: FrontendSettings, expectedVersion?: string): Promise<SettingsResponse> {
     return this.patch(
       `/admin/themes/${encodeURIComponent(id)}/settings`,
-      { settings },
+      { settings, ...(expectedVersion ? { expectedVersion } : {}) },
       settingsResponseSchema,
     );
   }

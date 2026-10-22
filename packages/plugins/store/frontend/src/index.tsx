@@ -10,14 +10,57 @@ import type {
   AdminWidgetProps,
   FinderProvider,
   FrontendPackage,
-  FrontendPageComponent,
+  FrontendPageProps,
+  FrontendActionExecutor,
 } from '@stackpanel/sdk';
-import { PageHeader } from '@stackpanel/ui';
+import {
+  PageHeader,
+  Button,
+  Input,
+  Field,
+  FieldGroup,
+  Select,
+  Slider,
+  ConfigurationSlider,
+  ConfigurationQuantity,
+  ConfigurationImages,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from '@stackpanel/ui';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, PackageOpen } from 'lucide-react';
+import { redirect } from 'next/navigation';
+import {
+  ArrowUpRight,
+  PackageOpen,
+  Search,
+  ArrowLeft,
+  Cpu,
+  MemoryStick,
+  HardDrive,
+  ArrowUp,
+  ArrowDown,
+  Monitor,
+  Power,
+  RotateCw,
+  Square,
+  KeyRound,
+  CalendarDays,
+  Activity,
+  Shield,
+  Settings2,
+  List,
+  ChevronDown,
+} from 'lucide-react';
 import { z } from 'zod';
 import { messages, t } from './i18n.js';
+import { AutoSubmitForm, CartCheckout } from './auto-submit.js';
+import { reconcileSelection } from './checkout-model.js';
+import { canManageService, serviceDate, serviceInstanceName } from './service-presentation.js';
 
 interface StoreProduct {
   id: string;
@@ -32,6 +75,10 @@ interface StoreProduct {
   providerId?: string | null;
   providerProductId?: string | null;
   categoryId?: string | null;
+  originalPrice?: number | null;
+  discount?: number | null;
+  purchasable?: boolean;
+  unavailableReason?: 'inactive' | 'out_of_stock' | 'forbidden' | null;
 }
 
 interface CheckoutCycle {
@@ -43,6 +90,8 @@ interface CheckoutCycle {
 }
 
 interface CheckoutChoice {
+  qtyMin?: number;
+  qtyMax?: number;
   id: string;
   label: string;
   price?: number;
@@ -79,17 +128,18 @@ interface CheckoutConfig {
 }
 
 interface PricePreview {
+  originalTotal?: number | undefined;
   productId: string;
   price: number;
   currency: string;
   quantity: number;
   total: number;
-  settlementCurrency?: string;
-  settlementTotal?: number;
-  fxRate?: number | null;
-  renewPrice?: number;
-  breakdown?: Array<{ label: string; value: string; price?: number }>;
-  summary?: string;
+  settlementCurrency?: string | undefined;
+  settlementTotal?: number | undefined;
+  fxRate?: number | null | undefined;
+  renewPrice?: number | undefined;
+  breakdown?: Array<{ label: string; value: string; price?: number | undefined }> | undefined;
+  summary?: string | undefined;
 }
 
 interface StorePayment {
@@ -105,8 +155,8 @@ interface StoreOrder {
   total: number;
   currency: string;
   /** Frozen settlement snapshot (plan §5.2). */
-  settlementCurrency?: string;
-  settlementTotal?: number;
+  settlementCurrency?: string | undefined;
+  settlementTotal?: number | undefined;
   status: string;
   payment?: StorePayment | null;
 }
@@ -125,6 +175,9 @@ interface CartItem {
     createdAt: string;
   };
   total: number;
+  config?: unknown;
+  unavailableReason?: string | undefined;
+  summary?: string | undefined;
 }
 
 interface CartPayload {
@@ -142,6 +195,12 @@ interface CatalogCategoryNode {
   sortOrder: number;
   productCount: number;
   children: CatalogCategoryNode[];
+}
+
+interface AccountCategoryNode {
+  id: string;
+  name: string;
+  children: AccountCategoryNode[];
 }
 
 interface CatalogEntry {
@@ -203,6 +262,7 @@ const storePublicProductSchema = z.object({
 });
 
 const storePurchasableProductSchema = storePublicProductSchema.extend({
+  quoteAvailable: z.boolean().optional(),
   purchasable: z.boolean(),
   unavailableReason: z.enum(['inactive', 'out_of_stock', 'forbidden']).nullable(),
 });
@@ -225,12 +285,14 @@ const cartSchema = z.object({
       total: z.number(),
       config: z.unknown().optional(),
       summary: z.string().optional(),
+      unavailableReason: z.string().optional(),
     }),
   ),
   total: z.number(),
 });
 
 const pricePreviewSchema = z.object({
+  originalTotal: z.number().optional(),
   productId: z.string(),
   price: z.number(),
   currency: z.string(),
@@ -296,6 +358,9 @@ const publicProductListSchema = z.object({ products: z.array(storePublicProductS
 const publicProductSchema = z.object({ product: storePublicProductSchema });
 const purchasableProductListSchema = z.object({
   products: z.array(storePurchasableProductSchema),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
 });
 const purchasableProductSchema = z.object({ product: storePurchasableProductSchema });
 const orderListSchema = z.object({ orders: z.array(storeOrderSchema) });
@@ -334,7 +399,21 @@ const upstreamSourceListSchema = z.object({
   sources: z.array(z.object({ id: z.string(), name: z.string() })),
 });
 
+const accountCategoryNodeSchema: z.ZodType<AccountCategoryNode> = z.lazy(() =>
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    slug: z.string().nullable().optional(),
+    sortOrder: z.number().optional(),
+    providerId: z.string().nullable().optional(),
+    fulfillmentTypes: z.array(z.string()).optional(),
+    children: z.array(accountCategoryNodeSchema),
+  }),
+);
+const categoryListSchema = z.object({ categories: z.array(accountCategoryNodeSchema) });
+
 const serviceSummarySchema = z.object({
+  configuration: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
   id: z.string(),
   productName: z.string(),
   fulfillmentType: z.string(),
@@ -520,6 +599,7 @@ const FULFILLMENT_LABELS: Record<string, string> = {
 };
 
 function fulfillmentLabel(type: string, tr: ReturnType<typeof t>): string {
+  if (type === 'cloud_server') return tr('fulfillment.cloudServer');
   const key = FULFILLMENT_LABELS[type];
   return key ? tr(key) : type;
 }
@@ -568,7 +648,7 @@ function ProductCard({
 }): ReactElement {
   return (
     <Link
-      href={`/shop/${product.id}`}
+      href={`/account/store/${encodeURIComponent(product.id)}`}
       className="group relative flex flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-md"
     >
       <div
@@ -609,7 +689,7 @@ function ProductCard({
   );
 }
 
-function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElement {
+function ProductListPage(props: FrontendPageProps): ReactElement {
   const tr = t(props.locale);
   const products = (props.data.products as StoreProduct[] | undefined) ?? [];
   const categories = (props.data.categories as CatalogCategoryNode[] | undefined) ?? [];
@@ -639,7 +719,7 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              href="/shop/cart"
+              href="/account/store/cart"
               className="inline-flex h-10 items-center gap-2 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
             >
               <Icon name="cart" />
@@ -714,7 +794,7 @@ function ProductListPage(props: Parameters<FrontendPageComponent>[0]): ReactElem
         </div>
       ) : (
         <div className="mt-10">
-          <Empty text={tr('catalog.empty')} />
+          <p className="py-8 text-center text-sm text-muted-foreground">{tr('catalog.empty')}</p>
         </div>
       )}
     </main>
@@ -914,6 +994,7 @@ function Pager({
 }
 
 interface Selection {
+  instanceName?: string;
   cycle?: string;
   selections?: Record<string, string | number>;
 }
@@ -1002,6 +1083,7 @@ function choicePrice(choice: CheckoutChoice, cycleId: string): number | undefine
 /** 从 GET 表单 query 重建选择（字段名：cycle + cfg_<optionId>）。 */
 function selectionFromQuery(
   query: Record<string, string | string[] | undefined>,
+  config?: CheckoutConfig | null,
 ): Selection | null {
   const cycle = typeof query['cycle'] === 'string' && query['cycle'] ? query['cycle'] : undefined;
   const selections: Record<string, string | number> = {};
@@ -1009,10 +1091,15 @@ function selectionFromQuery(
     if (!key.startsWith('cfg_')) continue;
     const optionId = key.slice(4);
     if (!optionId || typeof value !== 'string' || value === '') continue;
-    selections[optionId] = /^\d+$/.test(value) ? Number(value) : value;
+    selections[optionId] =
+      config?.options.find((option) => option.id === optionId)?.type === 'quantity'
+        ? Number(value)
+        : value;
   }
-  if (!cycle && Object.keys(selections).length === 0) return null;
+  const instanceName = typeof query.instanceName === 'string' ? query.instanceName.trim() : '';
+  if (!cycle && !instanceName && Object.keys(selections).length === 0) return null;
   return {
+    ...(instanceName ? { instanceName } : {}),
     ...(cycle ? { cycle } : {}),
     ...(Object.keys(selections).length ? { selections } : {}),
   };
@@ -1029,6 +1116,7 @@ function CheckoutConfigForm({
   product: StoreProduct;
   config: CheckoutConfig;
   selection: Selection | null;
+  quantity?: number;
   tr: ReturnType<typeof t>;
   locale: string | undefined;
 }): ReactElement {
@@ -1044,108 +1132,153 @@ function CheckoutConfigForm({
     else groups.push({ name, options: [option] });
   }
   return (
-    <form method="get" action={`/shop/${product.id}`} className="mt-6 space-y-5 border-t pt-5">
-      <div className="grid gap-1.5">
-        <label className="text-sm font-medium">{tr('checkout.cycle')}</label>
-        <select
-          name="cycle"
-          defaultValue={cycle}
-          className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
-        >
-          {config.cycles.map((item) => (
-            <option key={item.id} value={item.id}>
-              {tr('checkout.cycleOption', {
-                label: item.label,
-                price: money(item.price, product.currency, locale),
-              })}
-            </option>
-          ))}
-        </select>
-      </div>
+    <form
+      id="product-selection"
+      method="get"
+      action={`/account/store/${encodeURIComponent(product.id)}`}
+      className="flex flex-col gap-8 py-7"
+    >
+      <AutoSubmitForm formId="product-selection" />
+      <input type="hidden" name="productId" value={product.id} />
       {groups.map((group) => (
-        <fieldset key={group.name || 'default'} className="space-y-4 rounded-xl border p-4">
-          {group.name ? (
-            <legend className="px-1 text-xs font-semibold text-muted-foreground">
-              {group.name}
-            </legend>
-          ) : null}
-          {group.options.map((option) => {
-            const current = sel[option.id];
-            if (option.type === 'quantity') {
-              const unit = choicePrice(
-                allowedChoices(option, sel, cycle)[0] ?? { id: '', label: '' },
-                cycle,
-              );
+        <fieldset
+          key={group.name || 'default'}
+          className="grid min-w-0 gap-4 md:grid-cols-[7.5rem_minmax(0,1fr)]"
+        >
+          {group.name ? <legend className="sr-only">{group.name}</legend> : null}
+          <h2 className="text-sm font-medium">{group.name || tr('configure.options')}</h2>
+          <FieldGroup className="min-w-0 gap-6">
+            {group.options.map((option) => {
+              const current = sel[option.id];
+              if (option.type === 'quantity') {
+                const unit = choicePrice(
+                  allowedChoices(option, sel, cycle)[0] ?? { id: '', label: '' },
+                  cycle,
+                );
+                return (
+                  <Field key={option.id} className="flex flex-col gap-2">
+                    <label htmlFor={`option-${option.id}`} className="text-sm font-medium">
+                      {option.label}
+                      {option.unit ? `（${option.unit}）` : ''}
+                    </label>
+                    <div className="flex flex-col gap-2">
+                      <ConfigurationQuantity
+                        key={`${option.id}-${String(current)}`}
+                        name={`cfg_${option.id}`}
+                        min={option.min ?? 0}
+                        max={option.max ?? allowedChoices(option, sel, cycle)[0]?.qtyMax}
+                        step={option.step ?? 1}
+                        defaultValue={typeof current === 'number' ? current : (option.min ?? 0)}
+                        label={option.label}
+                        unit={option.unit}
+                      />
+                      {unit != null ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          {tr('checkout.unitPrice', {
+                            price: money(unit, product.currency, locale),
+                            unit: option.unit ?? tr('checkout.unit'),
+                          })}
+                        </span>
+                      ) : null}
+                    </div>
+                  </Field>
+                );
+              }
+              const choices = allowedChoices(option, sel, cycle);
+              const selected =
+                (typeof current === 'string' && choices.some((choice) => choice.id === current)
+                  ? current
+                  : choices[0]?.id) ?? '';
               return (
-                <div key={option.id} className="grid gap-1.5">
-                  <label className="text-sm font-medium">
+                <Field key={option.id} className="flex min-w-0 flex-col gap-2">
+                  <label htmlFor={`option-${option.id}`} className="text-sm font-medium">
                     {option.label}
-                    {option.unit ? `（${option.unit}）` : ''}
+                    {option.required ? ' *' : ''}
                   </label>
-                  <input
-                    name={`cfg_${option.id}`}
-                    type="number"
-                    min={option.min ?? 0}
-                    max={option.max ?? undefined}
-                    step={option.step ?? 1}
-                    defaultValue={typeof current === 'number' ? current : (option.min ?? 0)}
-                    className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
-                  />
-                  {unit != null ? (
-                    <span className="text-[11px] text-muted-foreground">
-                      {tr('checkout.unitPrice', {
-                        price: money(unit, product.currency, locale),
-                        unit: option.unit ?? tr('checkout.unit'),
+                  {/操作系统|镜像|operating.system|^os$|image/i.test(`${option.label}`) ? (
+                    <ConfigurationImages
+                      versionLabel={tr('configure.imageVersion')}
+                      otherLabel={tr('configure.otherImages')}
+                      key={`${option.id}-${selected}`}
+                      name={`cfg_${option.id}`}
+                      label={option.label}
+                      choices={choices}
+                      defaultValue={selected}
+                    />
+                  ) : /cpu|内存|memory|ram|带宽|bandwidth|系统盘|磁盘|disk|storage|流量|traffic|IP\s*数量|IP\s*(?:count|quantity)|快照数量|snapshot/i.test(
+                      `${option.id} ${option.label}`,
+                    ) ? (
+                    <ConfigurationSlider
+                      key={`${option.id}-${selected}`}
+                      name={`cfg_${option.id}`}
+                      label={option.label}
+                      choices={choices}
+                      defaultValue={selected}
+                    />
+                  ) : choices.length === 1 ? (
+                    <>
+                      <input type="hidden" name={`cfg_${option.id}`} value={selected} />
+                      <p
+                        id={`option-${option.id}`}
+                        className="flex min-h-12 items-center rounded-lg border bg-muted/40 px-3 text-sm"
+                      >
+                        {choices[0]?.label}
+                      </p>
+                    </>
+                  ) : (
+                    <Select
+                      id={`option-${option.id}`}
+                      name={`cfg_${option.id}`}
+                      required={option.required}
+                      disabled={choices.length === 0}
+                      defaultValue={selected}
+                      className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
+                    >
+                      {choices.map((choice) => {
+                        const price = choicePrice(choice, cycle);
+                        return (
+                          <option key={choice.id} value={choice.id}>
+                            {choice.label}
+                            {price != null && price > 0
+                              ? choice.recurring === false
+                                ? tr('checkout.choicePriceFirst', {
+                                    price: money(price, product.currency, locale),
+                                  })
+                                : tr('checkout.choicePrice', {
+                                    price: money(price, product.currency, locale),
+                                  })
+                              : ''}
+                          </option>
+                        );
                       })}
-                    </span>
+                    </Select>
+                  )}
+                  {option.help ? (
+                    <span className="text-[11px] text-muted-foreground">{option.help}</span>
                   ) : null}
-                </div>
+                </Field>
               );
-            }
-            const choices = allowedChoices(option, sel, cycle);
-            return (
-              <div key={option.id} className="grid gap-1.5">
-                <label className="text-sm font-medium">
-                  {option.label}
-                  {option.required ? ' *' : ''}
-                </label>
-                <select
-                  name={`cfg_${option.id}`}
-                  defaultValue={typeof current === 'string' ? current : (choices[0]?.id ?? '')}
-                  className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
-                >
-                  {choices.map((choice) => {
-                    const price = choicePrice(choice, cycle);
-                    return (
-                      <option key={choice.id} value={choice.id}>
-                        {choice.label}
-                        {price != null && price > 0
-                          ? choice.recurring === false
-                            ? tr('checkout.choicePriceFirst', {
-                                price: money(price, product.currency, locale),
-                              })
-                            : tr('checkout.choicePrice', {
-                                price: money(price, product.currency, locale),
-                              })
-                          : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-                {option.help ? (
-                  <span className="text-[11px] text-muted-foreground">{option.help}</span>
-                ) : null}
-              </div>
-            );
-          })}
+            })}
+          </FieldGroup>
         </fieldset>
       ))}
-      <button
-        type="submit"
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
-      >
-        {tr('checkout.calculatePrice')}
-      </button>
+      {product.fulfillmentType === 'cloud_server' ? (
+        <FieldGroup className="grid gap-4 md:grid-cols-[7.5rem_minmax(0,1fr)]">
+          <h2 className="text-sm font-medium">{tr('configure.identity')}</h2>
+          <Field>
+            <label htmlFor="instance-name" className="text-sm font-medium">
+              {tr('configure.instanceName')}
+            </label>
+            <Input
+              id="instance-name"
+              name="instanceName"
+              maxLength={64}
+              defaultValue={selection?.instanceName ?? ''}
+              placeholder={product.name}
+            />
+          </Field>
+        </FieldGroup>
+      ) : null}
     </form>
   );
 }
@@ -1162,52 +1295,90 @@ function CheckoutPricePreview({
   tr: ReturnType<typeof t>;
   locale: string | undefined;
 }): ReactElement | null {
+  const charged = preview.breakdown?.filter((item) => item.price != null && item.price !== 0) ?? [];
+  const hasSettlement =
+    preview.settlementCurrency &&
+    preview.settlementTotal !== undefined &&
+    preview.settlementCurrency !== currency;
+  if (!charged.length && !hasSettlement) return null;
   return (
-    <div className="mt-4 rounded-xl border bg-muted/40 p-4 text-sm">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-muted-foreground">{tr('checkout.configPrice')}</span>
-        <span className="text-xl font-semibold">{money(preview.total, currency, locale)}</span>
-      </div>
+    <div className="flex flex-col gap-3 text-xs">
       {preview.settlementCurrency &&
       preview.settlementTotal !== undefined &&
       preview.settlementCurrency !== currency ? (
-        <div className="mt-2 flex items-baseline justify-between gap-3 border-t pt-2 text-xs text-muted-foreground">
+        <p className="flex flex-wrap justify-between gap-2 text-muted-foreground">
           <span>{tr('checkout.settlementAmount', { currency: preview.settlementCurrency })}</span>
-          <span className="tabular-nums">
-            {money(preview.settlementTotal, preview.settlementCurrency, locale)}
-            {preview.fxRate
-              ? tr('checkout.fxRate', { rate: (preview.fxRate / 1_000_000).toFixed(6) })
-              : ''}
-          </span>
-        </div>
+          <span>{money(preview.settlementTotal, preview.settlementCurrency, locale)}</span>
+        </p>
       ) : null}
-      {preview.summary ? (
-        <p className="mt-1 text-xs text-muted-foreground">{preview.summary}</p>
-      ) : null}
-      {preview.breakdown && preview.breakdown.length > 0 ? (
-        <ul className="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
-          {preview.breakdown.map((item, index) => (
-            <li key={index} className="flex justify-between gap-3">
-              <span>{tr('checkout.breakdownItem', { label: item.label, value: item.value })}</span>
-              {item.price != null ? <span>{money(item.price, currency, locale)}</span> : null}
-            </li>
-          ))}
-        </ul>
+      {charged.length ? (
+        <details>
+          <summary className="cursor-pointer text-muted-foreground">
+            {tr('configure.priceDetails')}
+          </summary>
+          <ul className="mt-3 flex flex-col gap-2">
+            {charged.map((item, index) => (
+              <li key={index} className="flex justify-between gap-3">
+                <span>{item.label}</span>
+                <span>{money(item.price!, currency, locale)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       ) : null}
     </div>
   );
 }
 
-const ProductDetailPage: FrontendPageComponent = (props) => {
+/**
+ * 云服务器尚未声明 checkoutConfig 时，仍使用与实例创建一致的布局展示固定规格。
+ * 控件被明确禁用，避免把没有服务端报价契约的字段伪装成可购买配置。
+ */
+function FixedProductConfiguration({
+  product,
+  specs,
+  tr,
+  locale,
+}: {
+  product: StoreProduct;
+  specs: Record<string, unknown> | null;
+  tr: ReturnType<typeof t>;
+  locale: string | undefined;
+}): ReactElement {
+  return (
+    <FieldGroup className="py-6">
+      <Field className="grid gap-4 md:grid-cols-[7.5rem_minmax(0,1fr)]">
+        <h2 className="text-sm font-medium">{tr('configure.billing')}</h2>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm">{tr('configure.fixedPlan')}</p>
+          <p className="text-xs text-muted-foreground">
+            {money(product.price, product.currency, locale)}
+          </p>
+        </div>
+      </Field>
+      {Object.entries(specs ?? {}).map(([key, value]) => (
+        <Field key={key} className="grid gap-4 md:grid-cols-[7.5rem_minmax(0,1fr)]">
+          <h2 className="text-sm font-medium">{key}</h2>
+          <div className="flex min-w-0 flex-col gap-2">
+            <p className="text-sm">
+              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+            </p>
+            {/cpu|内存|memory|ram|带宽|bandwidth|系统盘|磁盘|disk|storage/i.test(key) ? (
+              <Slider disabled aria-label={key} defaultValue={[0]} min={0} max={1} />
+            ) : null}
+          </div>
+        </Field>
+      ))}
+    </FieldGroup>
+  );
+}
+
+const ProductDetailPage = (
+  props: FrontendPageProps & { searchParams?: Record<string, string> },
+) => {
   const tr = t(props.locale);
   const product = props.data.product as StoreProduct | undefined;
-  const methods = props.data.methods as z.infer<typeof paymentMethodsSchema> | undefined;
   if (!product) return <ProductNotFound tr={tr} />;
-  const walletPurchase = props.actions['store.create-order-wallet'];
-  const externalPurchase = props.actions['store.create-order-external'];
-  const addToCart = props.actions['store.add-to-cart'];
-  const viewer = props.data.viewer as { authenticated: boolean } | undefined;
-  const isAuthed = Boolean(viewer?.authenticated);
   const metadata = product.metadata ?? {};
   const specs =
     metadata && typeof metadata.specs === 'object' && metadata.specs !== null
@@ -1216,44 +1387,42 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
   const checkoutConfig = readCheckoutConfig(metadata);
   const pricePreview = props.data.pricePreview as
     (PricePreview & { selection?: Selection }) | undefined;
-  const currentSelection = pricePreview?.selection ?? defaultSelection(checkoutConfig);
-  const configJson = currentSelection ? JSON.stringify(currentSelection) : '';
+  const requestedSelection =
+    pricePreview?.selection ??
+    selectionFromQuery(props.searchParams ?? {}, checkoutConfig) ??
+    defaultSelection(checkoutConfig);
+  const currentSelection =
+    checkoutConfig && requestedSelection
+      ? reconcileSelection(checkoutConfig, requestedSelection)
+      : requestedSelection;
+  const quantity = purchaseQuantity(props.searchParams?.quantity);
+  const canBuy = product.purchasable === true && product.stock >= quantity;
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 sm:py-16 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href="/shop"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <span className="rotate-180">
-            <Icon name="arrow" />
-          </span>
-          {tr('product.backToCatalog')}
-        </Link>
-        <Link
-          href="/shop/cart"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <Icon name="cart" />
-          {tr('product.cart')}
-        </Link>
-      </div>
+    <main className="flex min-w-0 w-full flex-col gap-6 pb-64 lg:pb-8">
+      <PageHeader
+        backHref="/account/store"
+        backLabel={tr('product.backToCatalog')}
+        title={
+          product.fulfillmentType === 'cloud_server'
+            ? tr('configure.createInstance')
+            : tr('configure.title')
+        }
+        actions={
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/account/store/cart" />}
+          >
+            <Icon name="cart" />
+            {tr('product.cart')}
+          </Button>
+        }
+      />
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm">
-          <div className="relative flex h-40 items-center justify-center bg-muted/40">
-            <div
-              className="pointer-events-none absolute inset-0 opacity-60 [background:radial-gradient(24rem_10rem_at_50%_120%,color-mix(in_oklch,var(--primary)_14%,transparent),transparent)]"
-              aria-hidden="true"
-            />
-            <span className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <span className="text-2xl">
-                <Icon name="package" />
-              </span>
-            </span>
-          </div>
-          <div className="p-6 sm:p-8">
-            <div className="flex flex-wrap items-center gap-3">
+      <div className="grid min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <section className="min-w-0">
+          <div className="flex min-w-0 flex-col">
+            <div className="hidden">
               <p className="text-xs font-semibold uppercase tracking-widest text-primary">
                 {tr('product.kind')}
               </p>
@@ -1266,28 +1435,9 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
                 <StockBadge stock={product.stock} tr={tr} />
               </div>
             </div>
-            <h1 className="mt-3 text-balance text-2xl font-bold tracking-tight sm:text-3xl">
-              {product.name}
-            </h1>
+            <h2 className="pt-5 text-base font-semibold">{product.name}</h2>
             {product.description ? (
-              <p className="mt-5 max-w-2xl text-sm leading-7 text-muted-foreground">
-                {product.description}
-              </p>
-            ) : null}
-            {specs ? (
-              <dl className="mt-8 grid gap-x-8 gap-y-4 border-t pt-6 text-sm sm:grid-cols-2">
-                {Object.entries(specs).map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between gap-4 rounded-lg bg-muted/40 px-3.5 py-2.5"
-                  >
-                    <dt className="text-muted-foreground">{key}</dt>
-                    <dd className="text-right font-medium">
-                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{product.description}</p>
             ) : null}
             {checkoutConfig ? (
               <CheckoutConfigForm
@@ -1297,313 +1447,420 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
                 tr={tr}
                 locale={props.locale}
               />
-            ) : null}
-          </div>
-        </section>
-
-        <aside className="h-fit rounded-2xl border bg-card p-6 text-card-foreground shadow-sm lg:sticky lg:top-20">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            {tr('product.price')}
-          </p>
-          <div className="mt-2 flex flex-wrap items-baseline gap-2 text-3xl">
-            <PriceTag amount={pricePreview?.total ?? product.price} currency={product.currency} />
-            {pricePreview ? null : (
+            ) : (
               <>
-                {product.originalPrice != null && product.originalPrice > product.price ? (
-                  <span className="text-base text-muted-foreground/60 line-through">
-                    {money(product.originalPrice, product.currency, props.locale)}
-                  </span>
-                ) : null}
-                {product.discount != null && product.discount > 0 ? (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    {tr('product.discount', { percent: product.discount })}
-                  </span>
-                ) : null}
+                <FixedProductConfiguration
+                  product={product}
+                  specs={specs}
+                  tr={tr}
+                  locale={props.locale}
+                />
+                <form
+                  id="product-selection"
+                  method="get"
+                  action={`/account/store/${encodeURIComponent(product.id)}`}
+                >
+                  <AutoSubmitForm formId="product-selection" />
+                  <input type="hidden" name="productId" value={product.id} />
+                </form>
               </>
             )}
           </div>
-          {checkoutConfig && !pricePreview ? (
-            <p className="mt-2 text-xs text-muted-foreground">{tr('product.configPriceHint')}</p>
-          ) : null}
-          {pricePreview ? (
-            <CheckoutPricePreview
-              preview={pricePreview}
-              currency={product.currency}
-              tr={tr}
-              locale={props.locale}
-            />
-          ) : null}
-          <p className="mt-4 text-sm text-muted-foreground">
-            {product.stock > 0
-              ? tr('product.stockCount', { count: product.stock })
-              : tr('product.outOfStock')}
+        </section>
+
+        <aside className="fixed inset-x-0 bottom-0 z-40 mt-0 flex h-fit flex-col gap-3 border-t bg-background/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_color-mix(in_oklab,var(--foreground)_8%,transparent)] backdrop-blur lg:sticky lg:top-20 lg:z-auto lg:mt-2 lg:gap-5 lg:rounded-lg lg:border lg:bg-background lg:p-4 lg:shadow-none">
+          <h2 className="hidden text-base font-semibold lg:block">{tr('configure.summary')}</h2>
+          <dl className="hidden flex-col gap-3 text-xs lg:flex">
+            {currentSelection?.instanceName ? (
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{tr('configure.instanceName')}</dt>
+                <dd className="min-w-0 break-words text-right">{currentSelection.instanceName}</dd>
+              </div>
+            ) : null}
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">{tr('configure.product')}</dt>
+              <dd className="text-right">{product.name}</dd>
+            </div>
+            {Object.entries(currentSelection?.selections ?? {}).map(([key, value]) => (
+              <div key={key} className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">
+                  {checkoutConfig?.options.find((option) => option.id === key)?.label ?? key}
+                </dt>
+                <dd>
+                  {checkoutConfig?.options
+                    .find((option) => option.id === key)
+                    ?.choices?.find((choice) => choice.id === value)?.label ?? String(value)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <FieldGroup className={checkoutConfig ? 'grid grid-cols-2 items-end gap-3' : undefined}>
+            <Field>
+              <Quantity tr={tr} defaultValue={quantity} form="product-selection" />
+            </Field>
+            {checkoutConfig ? (
+              <Field>
+                <label htmlFor="checkout-cycle" className="text-xs text-muted-foreground">
+                  {tr('configure.billing')}
+                </label>
+                <Select
+                  id="checkout-cycle"
+                  name="cycle"
+                  form="product-selection"
+                  defaultValue={currentSelection?.cycle ?? checkoutConfig.cycles[0]?.id ?? ''}
+                >
+                  {checkoutConfig.cycles.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : null}
+          </FieldGroup>
+          <noscript>
+            <Button type="submit" form="product-selection" variant="outline">
+              {tr('checkout.calculatePrice')}
+            </Button>
+          </noscript>
+          <p
+            hidden
+            data-quote-status="product-selection"
+            role="status"
+            className="text-xs text-muted-foreground"
+          >
+            {tr('configure.updating')}
           </p>
-          {product.stock > 0 ? (
-            <div className="mt-6 space-y-3 border-t pt-5">
-              {addToCart ? (
-                isAuthed ? (
-                  <form action={addToCart}>
-                    <input type="hidden" name="productId" value={product.id} />
-                    {configJson ? <input type="hidden" name="config" value={configJson} /> : null}
-                    <Quantity tr={tr} />
-                    <button
-                      type="submit"
-                      className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
-                    >
-                      <Icon name="cart" />
-                      {tr('product.addToCart')}
-                    </button>
-                  </form>
-                ) : (
-                  <Link
-                    href={`/login?next=${encodeURIComponent(`/shop/${product.id}`)}`}
-                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
-                  >
-                    <Icon name="cart" />
-                    {tr('product.loginToAdd')}
-                  </Link>
-                )
-              ) : null}
-              {walletPurchase ? (
-                <form action={walletPurchase}>
-                  <input type="hidden" name="productId" value={product.id} />
-                  {configJson ? <input type="hidden" name="config" value={configJson} /> : null}
-                  <Quantity tr={tr} />
-                  <button
-                    type="submit"
-                    className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
-                  >
-                    <Icon name="wallet" />
-                    {tr('product.payWithBalance')}
-                  </button>
-                </form>
-              ) : null}
-              {externalPurchase
-                ? methods?.providers.flatMap((provider) =>
-                    provider.methods.map((method) => (
-                      <form key={`${provider.id}-${method.id}`} action={externalPurchase}>
-                        <input type="hidden" name="productId" value={product.id} />
-                        <input type="hidden" name="providerId" value={provider.id} />
-                        <input type="hidden" name="paymentMethod" value={method.id} />
-                        {configJson ? (
-                          <input type="hidden" name="config" value={configJson} />
-                        ) : null}
-                        <Quantity tr={tr} />
-                        <button
-                          type="submit"
-                          className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
-                        >
-                          {method.label}
-                        </button>
-                      </form>
-                    )),
-                  )
-                : null}
+          {!pricePreview ? (
+            <div className="hidden flex-col gap-2 lg:flex">
+              <p role="alert" className="text-sm text-destructive">
+                {tr('checkout.priceUnavailable')}
+              </p>
+              <Button type="submit" form="product-selection" variant="outline">
+                {tr('checkout.calculatePrice')}
+              </Button>
             </div>
           ) : null}
+          <details className="group -mx-1 border-t px-1 pt-3 lg:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              {tr('configure.details')}
+              <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <dl className="mt-3 flex max-h-[min(16rem,35svh)] flex-col gap-3 overflow-y-auto pr-1 text-xs">
+              {currentSelection?.instanceName ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{tr('configure.instanceName')}</dt>
+                  <dd className="min-w-0 break-words text-right">{currentSelection.instanceName}</dd>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{tr('configure.product')}</dt>
+                <dd className="text-right">{product.name}</dd>
+              </div>
+              {Object.entries(currentSelection?.selections ?? {}).map(([key, value]) => (
+                <div key={key} className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">
+                    {checkoutConfig?.options.find((option) => option.id === key)?.label ?? key}
+                  </dt>
+                  <dd className="text-right">
+                    {checkoutConfig?.options
+                      .find((option) => option.id === key)
+                      ?.choices?.find((choice) => choice.id === value)?.label ?? String(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+          <div className="flex flex-col gap-2 border-t pt-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-3xl font-semibold tracking-tight tabular-nums">
+                {pricePreview
+                  ? money(pricePreview.total, pricePreview.currency, props.locale)
+                  : '—'}
+              </p>
+              {pricePreview && product.discount != null && product.discount > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  {tr('product.discount', { percent: product.discount })}
+                </span>
+              ) : null}
+            </div>
+            {pricePreview?.originalTotal !== undefined ? (
+              <dl className="hidden text-xs text-muted-foreground lg:block">
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt>{tr('configure.originalPrice')}</dt>
+                  <dd className="text-right tabular-nums">
+                    {money(pricePreview.originalTotal, pricePreview.currency, props.locale)}
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
+            {pricePreview?.renewPrice !== undefined ? (
+              <dl className="hidden text-xs text-muted-foreground lg:block">
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-muted-foreground">{tr('configure.renewalLabel')}</dt>
+                  <dd className="text-right">
+                    {money(pricePreview.renewPrice * quantity, pricePreview.currency, props.locale)}
+                    {checkoutConfig ? (
+                      <span className="text-muted-foreground">
+                        {' / '}
+                        {
+                          checkoutConfig.cycles.find((item) => item.id === currentSelection?.cycle)
+                            ?.label
+                        }
+                      </span>
+                    ) : null}
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
+          {checkoutConfig && !pricePreview ? (
+            <p className="mt-2 hidden text-xs text-muted-foreground lg:block">{tr('product.configPriceHint')}</p>
+          ) : null}
+          {pricePreview &&
+          (pricePreview.breakdown?.length ||
+            pricePreview.summary ||
+            (pricePreview.settlementCurrency &&
+              pricePreview.settlementCurrency !== product.currency)) ? (
+            <div className="hidden lg:block">
+              <CheckoutPricePreview
+                preview={pricePreview}
+                currency={product.currency}
+                tr={tr}
+                locale={props.locale}
+              />
+            </div>
+          ) : null}
+          {product.stock > 0 ? (
+            <p className="hidden text-xs text-muted-foreground lg:block">
+              {tr('product.stockCount', { count: product.stock })}
+            </p>
+          ) : null}
+          {canBuy && pricePreview ? (
+            <form
+              action={props.actions['store.add-to-cart']}
+              className="flex flex-col gap-2 border-t pt-4"
+            >
+              <input type="hidden" name="productId" value={product.id} />
+              <input type="hidden" name="quantity" value={quantity} />
+              {currentSelection ? (
+                <input type="hidden" name="config" value={JSON.stringify(currentSelection)} />
+              ) : null}
+              <Button
+                data-quote-purchase="product-selection"
+                data-unavailable={!props.actions['store.add-to-cart']}
+                type="submit"
+                disabled={!props.actions['store.add-to-cart']}
+                className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                {tr('product.addToCart')}
+              </Button>
+            </form>
+          ) : (
+            <Button disabled variant="outline" className="w-full">
+              {!pricePreview
+                ? tr('checkout.priceUnavailable')
+                : product.stock < quantity
+                  ? tr('stock.outOfStock')
+                  : tr('product.notPurchasable')}
+            </Button>
+          )}
         </aside>
       </div>
     </main>
   );
 };
 
-function StoreCartPage(props: Parameters<FrontendPageComponent>[0]): ReactElement {
+function purchaseQuantity(value: unknown): number {
+  const number = Number(value || 1);
+  return Number.isSafeInteger(number) && number >= 1 && number <= 100 ? number : 1;
+}
+
+function cartItemAvailable(item: CartItem): boolean {
+  return (
+    !item.unavailableReason &&
+    item.product.status === 'ACTIVE' &&
+    item.product.stock >= item.quantity
+  );
+}
+
+function StoreCartPage(props: AccountPageComponentProps): ReactElement {
   const tr = t(props.locale);
   const cart = props.data.cart as CartPayload | undefined;
-  const updateQty = props.actions['store.update-cart-item'];
-  const removeItem = props.actions['store.remove-cart-item'];
-  const checkoutWallet = props.actions['store.checkout-wallet'];
-  const checkoutExternal = props.actions['store.checkout-external'];
   const methods = props.data.methods as z.infer<typeof paymentMethodsSchema> | undefined;
-  const items = (cart?.items ?? []).filter((item) => item.product.status === 'ACTIVE');
-  const hasProviders = Boolean(methods?.providers.length);
+  const result = props.data.cartOrder as
+    | { id: string; status: string; total: number; currency: string; paymentUrl: string | null }
+    | null
+    | undefined;
+  const resultRequested = Boolean(props.searchParams?.orderId);
+  const items = cart?.items ?? [];
+  const currencies = [...new Set(items.map((item) => item.product.currency))];
+  const labels = {
+    items: tr('cart.selectItems'),
+    total: tr('cart.total'),
+    payment: tr('checkout.payment'),
+    submit: tr('cart.payNow'),
+    unavailable: tr('checkout.methodsUnavailable'),
+  };
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-16 lg:px-8">
-      <Link
-        href="/shop"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <span className="rotate-180">
-          <Icon name="arrow" />
-        </span>
-        {tr('cart.backToCatalog')}
-      </Link>
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{tr('cart.title')}</h1>
-        </div>
-      </div>
-      {items.length ? (
-        <div className="mt-8 space-y-8">
-          <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
-            {items.map((item) => (
-              <li
-                key={item.id}
-                className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_7rem_8rem_auto] sm:items-center sm:px-6"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-3">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Icon name="package" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{item.product.name}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {tr('cart.unitPrice', {
-                          price: money(item.product.price, item.product.currency, props.locale),
-                        })}
-                      </p>
-                      {item.summary ? (
-                        <p className="mt-0.5 text-xs text-muted-foreground">{item.summary}</p>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-                {updateQty ? (
-                  <div className="flex items-center gap-2">
-                    <form action={updateQty} className="flex items-center gap-2">
-                      <input type="hidden" name="id" value={item.id} />
-                      <input
-                        name="quantity"
-                        type="number"
-                        min="1"
-                        max={Math.min(item.product.stock, 100)}
-                        defaultValue={item.quantity}
-                        className="h-9 w-20 rounded-lg border bg-background px-2 text-center text-sm"
-                      />
-                      <button
-                        type="submit"
-                        className="inline-flex h-9 items-center gap-1 rounded-lg bg-muted px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted/70"
-                      >
-                        {tr('cart.update')}
-                      </button>
-                    </form>
-                  </div>
-                ) : null}
-                <span className="font-mono text-sm font-semibold tabular-nums">
-                  {money(item.total, item.product.currency, props.locale)}
-                </span>
-                <div className="flex items-start gap-3">
-                  {removeItem ? (
-                    <form action={removeItem}>
-                      <input type="hidden" name="id" value={item.id} />
-                      <button
-                        type="submit"
-                        className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                        aria-label={tr('cart.remove')}
-                      >
-                        <Icon name="trash" />
-                      </button>
-                    </form>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          <section className="rounded-2xl border bg-card p-6 shadow-sm">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm text-muted-foreground">{tr('cart.total')}</span>
-              <div className="text-2xl">
-                <PriceTag
-                  amount={cart?.total ?? 0}
-                  currency={cart?.items[0]?.product.currency ?? 'CNY'}
-                />
-              </div>
-            </div>
-            <div className="mt-6 space-y-3 border-t pt-5">
-              <p className="text-sm font-semibold">{tr('cart.selectItems')}</p>
-              {checkoutWallet ? (
-                <form action={checkoutWallet} className="space-y-3">
-                  <ul className="divide-y rounded-xl border bg-background">
-                    {items.map((item) => (
-                      <li key={item.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                        <input
-                          type="checkbox"
-                          name="cartItemIds"
-                          value={item.id}
-                          defaultChecked
-                          className="size-4 accent-primary"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{item.product.name}</span>
-                        <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                          {money(item.total, item.product.currency, props.locale)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="submit"
-                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
-                  >
-                    <Icon name="wallet" />
-                    {tr('cart.checkoutWallet')}
-                  </button>
-                </form>
-              ) : null}
-              {checkoutExternal && hasProviders
-                ? methods.providers.flatMap((provider) =>
-                    provider.methods.map((method) => (
-                      <form
-                        key={`${provider.id}-${method.id}`}
-                        action={checkoutExternal}
-                        className="space-y-3"
-                      >
-                        <ul className="divide-y rounded-xl border bg-background">
-                          {items.map((item) => (
-                            <li
-                              key={item.id}
-                              className="flex items-center gap-3 px-4 py-2.5 text-sm"
-                            >
-                              <input
-                                type="checkbox"
-                                name="cartItemIds"
-                                value={item.id}
-                                defaultChecked
-                                className="size-4 accent-primary"
-                              />
-                              <span className="min-w-0 flex-1 truncate">{item.product.name}</span>
-                              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                                {money(item.total, item.product.currency, props.locale)}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                        <input type="hidden" name="providerId" value={provider.id} />
-                        <input type="hidden" name="paymentMethod" value={method.id} />
-                        <button
-                          type="submit"
-                          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
-                        >
-                          {tr('cart.checkoutExternal', { method: method.label })}
-                        </button>
-                      </form>
-                    )),
-                  )
-                : null}
-            </div>
-          </section>
-        </div>
+    <main className="flex min-w-0 flex-col gap-6 pb-8">
+      <PageHeader
+        title={tr('cart.title')}
+        actions={
+          <Button variant="outline" nativeButton={false} render={<Link href="/account/store" />}>
+            {tr('cart.backToCatalog')}
+          </Button>
+        }
+      />
+      {resultRequested ? (
+        <CartCheckout
+          lines={[]}
+          methods={[]}
+          currency={result?.currency ?? 'CNY'}
+          locale={props.locale}
+          labels={labels}
+          resultRequested
+          result={result}
+        />
+      ) : !cart ? (
+        <p role="alert" className="text-sm text-destructive">
+          {tr('cart.loadFailed')}
+        </p>
+      ) : !items.length ? (
+        <Empty text={tr('cart.empty')} />
       ) : (
-        <div className="mt-10">
-          <Empty text={tr('cart.empty')} />
-        </div>
+        <>
+          {currencies.length > 1 ? (
+            <p className="text-sm text-muted-foreground">{tr('cart.separateCurrencies')}</p>
+          ) : null}
+          {currencies.map((currency) => (
+            <CartCheckout
+              key={
+                currency +
+                ':' +
+                items.map((item) => item.id + ':' + item.quantity + ':' + item.total).join(',')
+              }
+              currency={currency}
+              locale={props.locale}
+              labels={labels}
+              wallet={props.actions['store.checkout-wallet']}
+              external={props.actions['store.checkout-external']}
+              methods={
+                methods
+                  ? [
+                      ...(props.actions['store.checkout-wallet']
+                        ? [{ id: 'wallet', label: methods.wallet.label }]
+                        : []),
+                      ...(props.actions['store.checkout-external']
+                        ? methods.providers.flatMap((provider) =>
+                            provider.methods.map((method) => ({
+                              id: provider.id + ':' + method.id,
+                              label: method.label,
+                              providerId: provider.id,
+                              paymentMethod: method.id,
+                            })),
+                          )
+                        : []),
+                    ]
+                  : []
+              }
+              lines={items
+                .filter((item) => item.product.currency === currency)
+                .map((item) => ({
+                  id: item.id,
+                  name: item.product.name,
+                  quantity: item.quantity,
+                  total: item.total,
+                  summary: item.summary,
+                  available: cartItemAvailable(item),
+                  controls: (
+                    <>
+                      {!cartItemAvailable(item) ? (
+                        <p className="basis-full text-xs text-destructive">
+                          {item.unavailableReason ?? tr('cart.unavailable')}
+                        </p>
+                      ) : null}
+                      {props.actions['store.update-cart-item'] ? (
+                        <form
+                          action={props.actions['store.update-cart-item']}
+                          className="flex items-center gap-2"
+                        >
+                          <input type="hidden" name="id" value={item.id} />
+                          <label
+                            className="shrink-0 whitespace-nowrap text-xs text-muted-foreground"
+                            htmlFor={'cart-quantity-' + item.id}
+                          >
+                            {tr('cart.quantity')}
+                          </label>
+                          <Input
+                            id={'cart-quantity-' + item.id}
+                            aria-label={item.product.name + ' ' + tr('cart.quantity')}
+                            name="quantity"
+                            type="number"
+                            min={1}
+                            max={Math.max(1, Math.min(100, item.product.stock))}
+                            defaultValue={item.quantity}
+                            className="w-20"
+                          />
+                          <Button
+                            type="submit"
+                            size="sm"
+                            variant="outline"
+                            disabled={item.product.status !== 'ACTIVE' || item.product.stock < 1}
+                          >
+                            {tr('cart.update')}
+                          </Button>
+                        </form>
+                      ) : null}
+                      {props.actions['store.remove-cart-item'] ? (
+                        <form action={props.actions['store.remove-cart-item']} className="ml-auto">
+                          <input type="hidden" name="id" value={item.id} />
+                          <Button
+                            type="submit"
+                            size="sm"
+                            variant="ghost"
+                            aria-label={tr('cart.remove') + ' ' + item.product.name}
+                          >
+                            <Icon name="trash" />
+                            {tr('cart.remove')}
+                          </Button>
+                        </form>
+                      ) : null}
+                    </>
+                  ),
+                }))}
+            />
+          ))}
+        </>
       )}
     </main>
   );
 }
 
-function Quantity({ tr }: { tr: ReturnType<typeof t> }): ReactElement {
+function StoreCheckoutPage(_props: AccountPageComponentProps): ReactElement {
+  redirect('/account/store/cart');
+}
+
+function Quantity({
+  tr,
+  defaultValue = 1,
+  form,
+}: {
+  tr: ReturnType<typeof t>;
+  defaultValue?: number;
+  form?: string;
+}): ReactElement {
   return (
     <label className="block text-xs text-muted-foreground">
       {tr('cart.quantity')}
-      <input
+      <Input
+        form={form}
         name="quantity"
         type="number"
         min="1"
         max="100"
-        defaultValue="1"
-        className="mt-1 h-10 w-full rounded-lg border bg-background px-3 text-sm"
+        defaultValue={defaultValue}
+        className="mt-1 h-9 w-full rounded-lg border bg-background px-3 text-sm"
       />
     </label>
   );
@@ -1616,7 +1873,7 @@ function ProductNotFound({ tr }: { tr: ReturnType<typeof t> }): ReactElement {
       </p>
       <p className="mt-4 text-sm text-muted-foreground">{tr('product.notFound')}</p>
       <Link
-        href="/shop"
+        href="/account/store"
         className="mt-8 inline-flex h-10 items-center gap-2 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm transition-opacity hover:opacity-90"
       >
         {tr('product.backToCatalog')}
@@ -1627,12 +1884,233 @@ function ProductNotFound({ tr }: { tr: ReturnType<typeof t> }): ReactElement {
 }
 function Empty({ text }: { text: string }): ReactElement {
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed px-6 py-16 text-center">
-      <span className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+      <span className="text-muted-foreground/50">
         <Icon name="package" />
       </span>
-      <p className="mt-4 text-sm font-medium">{text}</p>
+      <p className="text-sm font-medium text-muted-foreground">{text}</p>
     </div>
+  );
+}
+
+function StoreAccountCatalogPage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
+  const result = props.data.products as z.infer<typeof purchasableProductListSchema> | undefined;
+  const categories =
+    (props.data.categories as { categories: AccountCategoryNode[] } | undefined)?.categories ?? [];
+  const query = props.searchParams ?? {};
+  const flatten = (
+    nodes: AccountCategoryNode[],
+    prefix = '',
+  ): Array<{ id: string; name: string; label: string }> =>
+    nodes.flatMap((node) => [
+      { id: node.id, name: node.name, label: prefix + node.name },
+      ...flatten(node.children, prefix + node.name + ' / '),
+    ]);
+  const categoryOptions = flatten(categories);
+  const activeCategory = categoryOptions.find((node) => node.id === query.categoryId);
+  const page = result?.page ?? 1;
+  const pages = Math.max(1, Math.ceil((result?.total ?? 0) / (result?.pageSize ?? 12)));
+  const catalogHref = (categoryId = '', nextPage = 1, search = query.q ?? '') => {
+    const params = new URLSearchParams();
+    if (search) params.set('q', search);
+    if (categoryId) params.set('categoryId', categoryId);
+    if (nextPage > 1) params.set('page', String(nextPage));
+    return `/account/store${params.size ? `?${params}` : ''}`;
+  };
+
+  return (
+    <main className="flex min-w-0 flex-col gap-5">
+      <PageHeader
+        title={tr('catalog.title')}
+        actions={
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/account/store/cart" />}
+          >
+            <ShoppingCart data-icon="inline-start" />
+            {tr('catalog.cart')}
+          </Button>
+        }
+      />
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[10rem_minmax(0,1fr)] lg:gap-6">
+        {categoryOptions.length ? (
+          <nav aria-label={tr('catalog.categoriesAria')} className="min-w-0 lg:pt-1">
+            <p className="mb-3 hidden px-2.5 text-xs font-medium text-muted-foreground lg:block">
+              {tr('catalog.categoriesAria')}
+            </p>
+            <div className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+              {[
+                { id: '', name: tr('catalog.allCategories'), label: tr('catalog.allCategories') },
+                ...categoryOptions,
+              ].map((node) => {
+                const active = node.id === (query.categoryId ?? '');
+                return (
+                  <Button
+                    key={node.id}
+                    variant={active ? 'secondary' : 'ghost'}
+                    nativeButton={false}
+                    render={<Link href={catalogHref(node.id)} />}
+                    aria-current={active ? 'page' : undefined}
+                    title={node.label}
+                    className="lg:w-full lg:justify-start"
+                  >
+                    <span className="truncate">{node.label}</span>
+                  </Button>
+                );
+              })}
+            </div>
+          </nav>
+        ) : null}
+        <div className="flex min-w-0 flex-col gap-4 lg:first:col-span-2">
+          <form
+            key={`${query.categoryId ?? ''}:${query.q ?? ''}`}
+            method="get"
+            action="/account/store"
+            className="flex min-w-0 items-center gap-2"
+          >
+            {query.categoryId ? (
+              <input type="hidden" name="categoryId" value={query.categoryId} />
+            ) : null}
+            <FieldGroup className="min-w-0 flex-1">
+              <Field>
+                <label className="sr-only" htmlFor="store-query">
+                  {tr('catalog.search')}
+                </label>
+                <Input
+                  id="store-query"
+                  name="q"
+                  type="search"
+                  maxLength={120}
+                  placeholder={tr('catalog.search')}
+                  defaultValue={query.q ?? ''}
+                />
+              </Field>
+            </FieldGroup>
+            <Button type="submit" variant="outline">
+              <Search data-icon="inline-start" />
+              {tr('catalog.searchAction')}
+            </Button>
+          </form>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h2 className="truncate text-sm font-medium">
+                {activeCategory?.name ?? tr('catalog.allServices')}
+              </h2>
+              {result ? (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {tr('catalog.resultCount', { count: result.total })}
+                </span>
+              ) : null}
+            </div>
+            {query.q || query.categoryId ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                nativeButton={false}
+                render={<Link href="/account/store" />}
+              >
+                {tr('catalog.clearFilters')}
+              </Button>
+            ) : null}
+          </div>
+          {!result ? (
+            <p role="alert" className="text-sm text-destructive">
+              {tr('catalog.loadFailed')}
+            </p>
+          ) : !result.products.length ? (
+            <Empty text={query.q ? tr('catalog.noResults') : tr('catalog.emptyCategory')} />
+          ) : (
+            <div className="grid min-w-0 gap-3 min-[560px]:grid-cols-2 xl:grid-cols-3">
+              {result.products.map((product) => (
+                <Card key={product.id} className="min-w-0">
+                  <CardHeader>
+                    <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                      <span className="truncate text-xs text-muted-foreground">
+                        {categoryOptions.find((node) => node.id === product.categoryId)?.name ??
+                          fulfillmentLabel(product.fulfillmentType, tr)}
+                      </span>
+                      <StockBadge stock={product.stock} tr={tr} />
+                    </div>
+                    <CardTitle className="text-sm leading-5">
+                      <Link
+                        href={`/account/store/${encodeURIComponent(product.id)}`}
+                        className="hover:underline underline-offset-4"
+                      >
+                        {product.name}
+                      </Link>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1">
+                    <CardDescription className="line-clamp-2 leading-5">
+                      {product.description}
+                    </CardDescription>
+                  </CardContent>
+                  <CardFooter className="items-end justify-between gap-2">
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {product.originalPrice !== null && product.originalPrice > product.price ? (
+                        <span className="text-xs text-muted-foreground line-through">
+                          {money(product.originalPrice, product.currency, props.locale)}
+                        </span>
+                      ) : null}
+                      <span className="text-lg font-semibold tracking-tight tabular-nums">
+                        {product.quoteAvailable === false
+                          ? tr('checkout.priceUnavailable')
+                          : money(product.price, product.currency, props.locale)}
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      nativeButton={false}
+                      render={<Link href={`/account/store/${encodeURIComponent(product.id)}`} />}
+                    >
+                      {tr(product.purchasable ? 'catalog.configure' : 'catalog.viewDetails')}
+                      <ArrowRight data-icon="inline-end" />
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          )}
+          {result && result.total > 0 ? (
+            <nav
+              aria-label={tr('catalog.pagination')}
+              className="flex flex-wrap items-center justify-between gap-3"
+            >
+              <span className="text-xs text-muted-foreground">
+                {tr('catalog.pagerSummary', { total: result.total, page, pages })}
+              </span>
+              {pages > 1 ? (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    nativeButton={false}
+                    render={<Link href={catalogHref(query.categoryId, page - 1)} />}
+                  >
+                    <ArrowLeft data-icon="inline-start" />
+                    {tr('catalog.previous')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= pages}
+                    nativeButton={false}
+                    render={<Link href={catalogHref(query.categoryId, page + 1)} />}
+                  >
+                    {tr('catalog.next')}
+                    <ArrowRight data-icon="inline-end" />
+                  </Button>
+                </div>
+              ) : null}
+            </nav>
+          ) : null}
+        </div>
+      </div>
+    </main>
   );
 }
 
@@ -1640,8 +2118,9 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
   const tr = t(props.locale);
   const orders = (props.data.orders as StoreOrder[] | undefined) ?? [];
   const cancel = props.actions?.['store.cancel-order'];
+  const refund = props.actions?.['store.request-refund'];
   return (
-    <main>
+    <main className="flex flex-col gap-6">
       <PageHeader title={tr('orders.title')} />
       {orders.length ? (
         <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -1663,6 +2142,12 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
                       amount: money(order.settlementTotal, order.settlementCurrency, props.locale),
                     })}
                   </span>
+                ) : null}
+                {refund && ['PAID', 'PARTIALLY_REFUNDED'].includes(order.status) ? (
+                  <form action={refund}>
+                    <input type="hidden" name="id" value={order.id} />
+                    <button type="submit" className="text-muted-foreground hover:text-destructive">{tr('orders.requestRefund')}</button>
+                  </form>
                 ) : null}
               </span>
               <OrderStatus status={order.status} tr={tr} />
@@ -1720,6 +2205,9 @@ function ServiceStatusBadge({
 
 /** Service status -> message id. Keys are persisted API values, not copy. */
 const SERVICE_STATUS_LABELS: Record<string, string> = {
+  AWAITING_UPSTREAM_PAYMENT: 'serviceStatus.upstreamPayment',
+  REQUIRES_RECONCILIATION: 'serviceStatus.reconciliation',
+  AWAITING_APPROVAL: 'serviceStatus.awaitingApproval',
   ACTIVE: 'serviceStatus.active',
   PENDING_PROVISION: 'serviceStatus.pendingProvision',
   PROVISIONING: 'serviceStatus.provisioning',
@@ -1762,7 +2250,7 @@ function MetricsChart({
         const h = 96;
         const poly = pts
           .map((p, i) => {
-            const x = (i / (pts.length - 1)) * w;
+            const x = pts.length === 1 ? w / 2 : (i / (pts.length - 1)) * w;
             const y = h - ((p.v - min) / span) * (h - 8) - 4;
             return `${x.toFixed(1)},${y.toFixed(1)}`;
           })
@@ -1779,7 +2267,235 @@ function MetricsChart({
             </div>
             <svg viewBox={`0 0 ${w} ${h}`} className="mt-2 w-full" aria-hidden="true">
               <polyline points={poly} fill="none" stroke={color} strokeWidth="2" />
+              {pts.length === 1 ? <circle cx={w / 2} cy={h - 4} r={3} fill={color} /> : null}
             </svg>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+type ServiceCardSummary = z.infer<typeof serviceSummarySchema> & {
+  metrics?: z.infer<typeof serviceMetricsSchema>['metrics'];
+  publicIp?: string;
+};
+
+function ServiceUsage({
+  tr,
+  metrics = [],
+  networkOnly = false,
+}: {
+  tr: ReturnType<typeof t>;
+  metrics?: z.infer<typeof serviceMetricsSchema>['metrics'];
+  networkOnly?: boolean;
+}): ReactElement {
+  const latest = (pattern: RegExp) => {
+    const series = metrics.find((item) => pattern.test(`${item.id} ${item.label}`));
+    const value = series?.points.at(-1)?.v;
+    return typeof value === 'number' && Number.isFinite(value)
+      ? { value, unit: series!.unit }
+      : null;
+  };
+  const upload = latest(/upload|tx|上行|发送/i);
+  const download = latest(/download|rx|下行|接收/i);
+  return (
+    <div className="flex flex-col gap-3">
+      {(!networkOnly
+        ? [
+            [tr('console.cpuUsage'), latest(/cpu|处理器/i)] as const,
+            [tr('console.memoryUsage'), latest(/memory|mem|内存/i)] as const,
+          ]
+        : []
+      ).map(([label, raw]) => {
+        const metric = raw as { value: number; unit: string } | null;
+        return (
+          <div key={label} className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="font-mono">
+                {metric ? `${metric.value.toFixed(1)} ${metric.unit}` : '—'}
+              </span>
+            </div>
+            {metric?.unit === '%' && metric.value >= 0 && metric.value <= 100 ? (
+              <meter
+                className="h-1 w-full"
+                min={0}
+                max={100}
+                value={metric.value}
+                aria-label={String(label)}
+              />
+            ) : (
+              <div className="h-1 rounded-full bg-muted" aria-label={`${label} —`} />
+            )}
+          </div>
+        );
+      })}
+      <div className="flex items-center gap-5 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <ArrowUp className="size-3" aria-hidden="true" />
+          {tr('console.upload')}{' '}
+          <span className="font-mono text-foreground">
+            {upload ? `${upload.value.toFixed(1)} ${upload.unit}` : '—'}
+          </span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ArrowDown className="size-3" aria-hidden="true" />
+          {tr('console.download')}{' '}
+          <span className="font-mono text-foreground">
+            {download ? `${download.value.toFixed(1)} ${download.unit}` : '—'}
+          </span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ServiceInstanceCard({
+  service,
+  locale,
+  tr,
+}: {
+  service: ServiceCardSummary;
+  locale: string | undefined;
+  tr: ReturnType<typeof t>;
+}): ReactElement {
+  const config = service.configuration ?? [];
+  const value = (label: RegExp) => config.find((item) => label.test(item.label))?.value ?? '—';
+  const runtime = service.runtime as { ip?: unknown } | null;
+  const ip =
+    service.publicIp ?? (typeof runtime?.ip === 'string' && runtime.ip.trim() ? runtime.ip : '—');
+  return (
+    <Card className="h-full min-w-0">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="min-w-0 break-words">
+            <Link href={`/account/services/${service.id}`}>
+              {serviceInstanceName(service.runtime) ?? service.productName}
+            </Link>
+          </CardTitle>
+          <ServiceStatusBadge status={service.status} tr={tr} />
+        </div>
+        <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">{tr('console.serviceId')}</p>
+            <p className="mt-1 truncate font-mono text-xs" title={service.id}>
+              {service.id}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`/account/services/${service.id}`} />}
+          >
+            {tr('console.manage')}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <section
+          className="flex flex-col gap-3 border-t pt-4"
+          aria-label={tr('console.configuration')}
+        >
+          <p className="text-sm font-medium">{value(/区域|地区|region|location/i)}</p>
+          <dl className="grid grid-cols-3 gap-3">
+            {[
+              [tr('console.cpu'), value(/^cpu$|处理器/i), Cpu],
+              [tr('console.memory'), value(/内存|memory|ram/i), MemoryStick],
+              [tr('console.disk'), value(/系统盘|disk|storage/i), HardDrive],
+            ].map(([label, val, Icon]) => {
+              const ItemIcon = Icon as typeof Cpu;
+              return (
+                <div key={String(label)} className="min-w-0">
+                  <dt className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <ItemIcon className="size-3" aria-hidden="true" />
+                    {String(label)}
+                  </dt>
+                  <dd className="mt-1 break-words text-sm font-medium">{String(val)}</dd>
+                </div>
+              );
+            })}
+          </dl>
+          <div className="flex min-w-0 items-baseline gap-2 text-xs">
+            <span className="shrink-0 text-muted-foreground">{tr('console.publicIp')}</span>
+            <span className="break-all font-mono">{ip}</span>
+          </div>
+        </section>
+        <section className="border-t pt-4" aria-label={tr('service.metrics')}>
+          <ServiceUsage tr={tr} metrics={service.metrics ?? []} />
+        </section>
+        <dl className="flex flex-col gap-2 border-t pt-4 text-xs">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-muted-foreground">{tr('console.os')}</dt>
+            <dd className="min-w-0 break-words text-right">
+              {value(/操作系统|镜像|operating.?system|^os$/i)}
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-muted-foreground">{tr('console.expires')}</dt>
+            <dd className="text-right tabular-nums">{serviceDate(service.expiresAt, locale)}</dd>
+          </div>
+        </dl>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ServiceMonitorOverview({
+  metrics,
+  tr,
+}: {
+  metrics: z.infer<typeof serviceMetricsSchema>['metrics'];
+  tr: ReturnType<typeof t>;
+}): ReactElement {
+  return (
+    <div className="grid grid-cols-2 gap-5">
+      {(
+        [
+          [tr('console.cpu'), /cpu|处理器/i],
+          [tr('console.memory'), /memory|mem|内存/i],
+        ] as const
+      ).map(([label, pattern]) => {
+        const metric = metrics.find((item) => pattern.test(`${item.id} ${item.label}`));
+        const last = metric?.points.at(-1)?.v;
+        const valid = typeof last === 'number' && Number.isFinite(last);
+        const percentage = valid && metric?.unit === '%' && last >= 0 && last <= 100 ? last : null;
+        return (
+          <div key={label} className="flex flex-col items-center gap-3 py-2">
+            <div className="relative size-28">
+              <svg viewBox="0 0 100 100" className="size-full -rotate-90" aria-hidden="true">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="44"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="5"
+                  className="text-muted"
+                />
+                {percentage !== null ? (
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="44"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    pathLength="100"
+                    strokeDasharray={`${percentage} 100`}
+                    className="text-primary"
+                  />
+                ) : null}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                <span className="text-xs text-muted-foreground">{label}</span>
+                <span className="text-lg font-semibold tabular-nums">
+                  {valid ? `${last.toFixed(1)}${metric?.unit ?? ''}` : '—'}
+                </span>
+              </div>
+            </div>
           </div>
         );
       })}
@@ -1789,25 +2505,15 @@ function MetricsChart({
 
 function StoreAccountServicesPage(props: AccountPageComponentProps): ReactElement {
   const tr = t(props.locale);
-  const services =
-    (props.data.services as Array<z.infer<typeof serviceSummarySchema>> | undefined) ?? [];
+  const services = (props.data.services as ServiceCardSummary[] | undefined) ?? [];
   return (
-    <main>
+    <main className="flex flex-col gap-6">
       <PageHeader title={tr('services.title')} />
       {services.length ? (
-        <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <ul className="grid min-w-0 gap-5 md:grid-cols-2 2xl:grid-cols-3">
           {services.map((service) => (
             <li key={service.id}>
-              <a
-                href={`/account/services/${service.id}`}
-                className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_8rem_auto] sm:items-center sm:px-6"
-              >
-                <span className="truncate font-semibold">{service.productName}</span>
-                <span className="font-mono text-muted-foreground">
-                  {money(service.amount, service.currency, props.locale)}
-                </span>
-                <ServiceStatusBadge status={service.status} tr={tr} />
-              </a>
+              <ServiceInstanceCard service={service} locale={props.locale} tr={tr} />
             </li>
           ))}
         </ul>
@@ -1853,55 +2559,377 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
     | null
     | undefined;
   const changeQuote = props.data.changeQuote as
-    { diff: number; currency: string; summary?: string; selection: Selection } | null | undefined;
+    | { diff: number; currency: string; summary?: string | undefined; selection: Selection }
+    | null
+    | undefined;
   if (!service) return <Empty text={tr('service.missing')} />;
   const fields = service.detail?.fields ?? [];
   const actions = service.detail?.actions ?? [];
-  const renewable = service.status === 'ACTIVE' || service.status === 'SUSPENDED';
+  const renewable = canManageService(service.status);
+  const networkFields = fields.filter(
+    (field) =>
+      !field.secret && /(^ip\b|ip地址|公网|内网|ipv[46]|网关|gateway|netmask)/i.test(field.label),
+  );
+  const informationFields = fields.filter((field) => !networkFields.includes(field));
+  const configuration =
+    changeOptions?.config?.options.flatMap((option) => {
+      const selected = changeOptions.current?.selections?.[option.id];
+      const choice = option.choices?.find((item) => item.id === String(selected));
+      return choice ? [{ label: option.label, value: choice.label }] : [];
+    }) ?? [];
+  const configValue = (pattern: RegExp) =>
+    configuration.find((item) => pattern.test(item.label))?.value ?? '—';
+  const safeField = (pattern: RegExp) =>
+    fields.find((field) => !field.secret && pattern.test(field.label))?.value ?? '—';
+  const publicFields = networkFields.filter((field) =>
+    /公网|public|^ip$|ipv4|ipv6/i.test(field.label),
+  );
+  const publicIp = publicFields[0]?.value ?? '—';
+  const selectedPanel =
+    typeof props.searchParams?.panel === 'string' ? props.searchParams.panel : 'overview';
+  const availablePanels = [
+    'overview',
+    ...(resourceGroups.length ? ['resources'] : []),
+    ...(renewable && actions.length && runAction ? ['operations'] : []),
+    ...(renewable && changeAction && changeOptions?.config ? ['change'] : []),
+    ...(renewable && renewAction ? ['renew'] : []),
+  ];
+  const panel = availablePanels.includes(selectedPanel) ? selectedPanel : 'overview';
+  const baseHref = `/account/services/${encodeURIComponent(service.id)}`;
+  const operationLinks = [
+    { label: tr('console.vnc'), icon: Monitor, pattern: /vnc|console|控制台|远程/i },
+    { label: tr('console.powerOn'), icon: Power, pattern: /^(start|boot|power.?on)$|开机/i },
+    { label: tr('console.reboot'), icon: RotateCw, pattern: /reboot|restart|重启/i },
+    { label: tr('console.powerOff'), icon: Square, pattern: /^(stop|shutdown|power.?off)$|关机/i },
+    { label: tr('console.resetPassword'), icon: KeyRound, pattern: /password|密码/i },
+  ];
+  const rows = [
+    [tr('console.serviceId'), service.id],
+    [tr('console.instanceName'), serviceInstanceName(service.runtime) ?? '—'],
+    [tr('console.region'), configValue(/区域|地区|region|location/i)],
+    [tr('console.os'), configValue(/操作系统|镜像|operating.?system|^os$/i)],
+    [tr('console.created'), serviceDate(service.createdAt, props.locale)],
+    [tr('console.provisioned'), serviceDate(service.provisionedAt, props.locale)],
+    [tr('console.expires'), serviceDate(service.expiresAt, props.locale)],
+  ];
   return (
-    <main className="space-y-6">
-      <PageHeader title={service.detail?.title ?? service.productName} />
-      <div className="flex items-center gap-3">
-        <ServiceStatusBadge
-          status={service.detail?.status ?? service.status}
-          label={service.detail?.statusLabel}
-          tr={tr}
-        />
-        <span className="font-mono text-xs text-muted-foreground">{service.id}</span>
-        {service.expiresAt ? (
-          <span className="text-xs text-muted-foreground">
-            {tr('service.expires', { date: service.expiresAt.slice(0, 10) })}
-          </span>
-        ) : null}
+    <main className="flex min-w-0 flex-col gap-5">
+      <PageHeader
+        backHref="/account/services"
+        backLabel={tr('services.title')}
+        title={serviceInstanceName(service.runtime) ?? service.detail?.title ?? service.productName}
+      />
+      <div
+        className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3"
+        aria-label={tr('console.management')}
+      >
+        {operationLinks.map(({ label, icon: Icon, pattern }) => {
+          const action = actions.find((item) => pattern.test(item.id) || pattern.test(item.label));
+          return action && renewable && runAction ? (
+            <Button
+              key={label}
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={
+                <Link
+                  href={`${baseHref}?panel=operations#service-action-${encodeURIComponent(action.id)}`}
+                />
+              }
+            >
+              <Icon data-icon="inline-start" />
+              {label}
+            </Button>
+          ) : (
+            <Button key={label} variant="outline" size="sm" disabled>
+              <Icon data-icon="inline-start" />
+              {label}
+            </Button>
+          );
+        })}
+        {renewable && renewAction ? (
+          <Button
+            variant="outline"
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`${baseHref}?panel=renew`} />}
+          >
+            <CalendarDays data-icon="inline-start" />
+            {tr('console.renewal')}
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" disabled>
+            <CalendarDays data-icon="inline-start" />
+            {tr('console.renewal')}
+          </Button>
+        )}
       </div>
-
-      {fields.length ? (
-        <dl className="grid gap-px overflow-hidden rounded-2xl border bg-border/60 sm:grid-cols-2">
-          {fields.map((field) => (
-            <div key={field.label} className="bg-card p-4">
-              <dt className="text-xs text-muted-foreground">{field.label}</dt>
-              <dd className="mt-1 break-all font-mono text-sm">
-                {field.secret ? (
-                  '••••••••'
-                ) : isHttpUrl(field.value) ? (
-                  <a
-                    href={field.value}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary underline underline-offset-2"
-                  >
-                    {field.value}
-                  </a>
-                ) : (
-                  field.value
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
+      <nav
+        aria-label={tr('console.sections')}
+        className="flex min-w-0 flex-wrap items-center gap-1 border-b pb-2"
+      >
+        <Button
+          variant={panel === 'overview' ? 'secondary' : 'ghost'}
+          size="sm"
+          nativeButton={false}
+          render={<Link href={baseHref} aria-current={panel === 'overview' ? 'page' : undefined} />}
+        >
+          <Activity data-icon="inline-start" />
+          {tr('console.informationMonitoring')}
+        </Button>
+        {resourceGroups.length ? (
+          <Button
+            variant={panel === 'resources' ? 'secondary' : 'ghost'}
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`${baseHref}?panel=resources`} />}
+          >
+            <HardDrive data-icon="inline-start" />
+            {tr('console.resources')}
+          </Button>
+        ) : (
+          <Button variant="ghost" size="sm" disabled>
+            <HardDrive data-icon="inline-start" />
+            {tr('console.resources')}
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" disabled>
+          <Shield data-icon="inline-start" />
+          {tr('console.firewall')}
+        </Button>
+        {renewable && actions.length && runAction ? (
+          <Button
+            variant={panel === 'operations' ? 'secondary' : 'ghost'}
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`${baseHref}?panel=operations`} />}
+          >
+            <Settings2 data-icon="inline-start" />
+            {tr('console.systemOperations')}
+          </Button>
+        ) : (
+          <Button variant="ghost" size="sm" disabled>
+            <Settings2 data-icon="inline-start" />
+            {tr('console.systemOperations')}
+          </Button>
+        )}
+        {changeOptions?.config && renewable ? (
+          <Button
+            variant={panel === 'change' ? 'secondary' : 'ghost'}
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`${baseHref}?panel=change`} />}
+          >
+            <ArrowUpRight data-icon="inline-start" />
+            {tr('console.change')}
+          </Button>
+        ) : (
+          <Button variant="ghost" size="sm" disabled>
+            <ArrowUpRight data-icon="inline-start" />
+            {tr('console.change')}
+          </Button>
+        )}
+        {renewable && renewAction ? (
+          <Button
+            variant={panel === 'renew' ? 'secondary' : 'ghost'}
+            size="sm"
+            nativeButton={false}
+            render={<Link href={`${baseHref}?panel=renew`} />}
+          >
+            <CalendarDays data-icon="inline-start" />
+            {tr('console.renewal')}
+          </Button>
+        ) : (
+          <Button variant="ghost" size="sm" disabled>
+            <CalendarDays data-icon="inline-start" />
+            {tr('console.renewal')}
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" disabled>
+          <List data-icon="inline-start" />
+          {tr('console.logs')}
+        </Button>
+      </nav>
+      {panel === 'overview' ? (
+        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-5">
+            <Card className="min-w-0">
+              <CardHeader>
+                <CardTitle>{tr('console.serverInformation')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="divide-y rounded-lg border text-sm">
+                  <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                    <dt className="text-muted-foreground">{tr('console.runningStatus')}</dt>
+                    <dd>
+                      <ServiceStatusBadge
+                        status={service.detail?.status ?? service.status}
+                        label={service.detail?.statusLabel}
+                        tr={tr}
+                      />
+                    </dd>
+                  </div>
+                  {rows.map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-4 py-3"
+                    >
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd
+                        className={
+                          label === tr('console.serviceId')
+                            ? 'min-w-0 truncate font-mono text-xs leading-5'
+                            : 'min-w-0 break-words text-sm tabular-nums'
+                        }
+                        title={value}
+                      >
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+                <h3 className="mb-3 mt-6 text-sm font-medium">{tr('console.remoteConnection')}</h3>
+                <dl className="divide-y rounded-lg border text-sm">
+                  {[
+                    [tr('console.publicIp'), publicIp],
+                    [tr('console.remoteUsername'), safeField(/用户名|username|login.?user/i)],
+                    [
+                      tr('console.remotePassword'),
+                      fields.some((field) => /密码|password/i.test(field.label)) ? '••••••••' : '—',
+                    ],
+                    [tr('console.remotePort'), safeField(/端口|port/i)],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-4 py-3"
+                    >
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="min-w-0 break-all font-mono text-xs leading-5">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </CardContent>
+            </Card>
+            <Card className="min-w-0">
+              <CardHeader>
+                <CardTitle>{tr('console.configuration')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-5 text-sm">
+                  {(configuration.length
+                    ? configuration
+                    : [
+                        { label: tr('console.cpu'), value: '—' },
+                        { label: tr('console.memory'), value: '—' },
+                        { label: tr('console.disk'), value: '—' },
+                        { label: tr('console.bandwidth'), value: '—' },
+                      ]
+                  ).map((item) => (
+                    <div key={item.label}>
+                      <dt className="text-xs text-muted-foreground">{item.label}</dt>
+                      <dd className="mt-1 break-words font-medium">{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="flex min-w-0 flex-col gap-5">
+            <Card id="instance-network" className="min-w-0">
+              <CardHeader>
+                <CardTitle>{tr('console.publicIpList')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-muted/40 text-xs text-muted-foreground">
+                      <tr>
+                        <th scope="col" className="px-4 py-3 font-medium">
+                          {tr('console.ipAddress')}
+                        </th>
+                        <th scope="col" className="px-4 py-3 font-medium">
+                          {tr('console.remark')}
+                        </th>
+                        <th scope="col" className="px-4 py-3 font-medium">
+                          {tr('console.operations')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {(publicFields.length ? publicFields : [{ label: '—', value: '—' }]).map(
+                        (field, index) => (
+                          <tr key={`${field.label}-${index}`}>
+                            <td className="break-all px-4 py-3 font-mono text-xs">{field.value}</td>
+                            <td className="px-4 py-3 text-muted-foreground">—</td>
+                            <td className="px-4 py-3 text-muted-foreground">—</td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+            <Card id="instance-monitoring" className="min-w-0">
+              <CardHeader>
+                <CardTitle>{tr('console.realtimeMonitoring')}</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-5">
+                <ServiceMonitorOverview metrics={metrics} tr={tr} />
+                <ServiceUsage
+                  tr={tr}
+                  metrics={metrics.filter(
+                    (item) => !/cpu|处理器|memory|mem|内存/i.test(`${item.id} ${item.label}`),
+                  )}
+                  networkOnly
+                />
+                {metrics.some((item) => item.points.length > 0) ? (
+                  <MetricsChart series={metrics} tr={tr} />
+                ) : null}
+              </CardContent>
+            </Card>
+            {informationFields.filter(
+              (field) => !/密码|password|用户名|username|端口|port/i.test(field.label),
+            ).length ? (
+              <Card className="min-w-0">
+                <CardHeader>
+                  <CardTitle>{tr('console.additionalInformation')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="grid grid-cols-2 gap-4">
+                    {informationFields
+                      .filter(
+                        (field) => !/密码|password|用户名|username|端口|port/i.test(field.label),
+                      )
+                      .map((field) => (
+                        <div key={field.label}>
+                          <dt className="text-xs text-muted-foreground">{field.label}</dt>
+                          <dd className="mt-1 break-all text-sm">
+                            {field.secret ? (
+                              '••••••••'
+                            ) : isHttpUrl(field.value) ? (
+                              <a
+                                href={field.value}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary underline underline-offset-2"
+                              >
+                                {field.value}
+                              </a>
+                            ) : (
+                              field.value
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
+        </div>
       ) : null}
-
-      {actions.length && runAction ? (
+      {panel === 'operations' && renewable && actions.length && runAction ? (
         <div className="flex flex-wrap gap-3">
           {actions.map((action) => {
             const extraParams = (action.params ?? []).filter(
@@ -1910,6 +2938,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
             return (
               <form
                 key={action.id}
+                id={`service-action-${action.id}`}
                 action={runAction}
                 className="flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-4"
               >
@@ -1997,6 +3026,12 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                     </span>
                   </div>
                 ) : null}
+                {action.confirm || action.danger ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" required />
+                    {tr('console.confirmOperation', { action: action.label })}
+                  </label>
+                ) : null}
                 <button
                   type="submit"
                   className={
@@ -2013,7 +3048,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
         </div>
       ) : null}
 
-      {renewable && renewAction ? (
+      {panel === 'renew' && renewable && renewAction ? (
         <form
           action={renewAction}
           className="flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-4"
@@ -2043,33 +3078,33 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
         </form>
       ) : null}
 
-      {changeAction && changeOptions?.config ? (
-        <ServiceChangePanel
-          serviceId={service.id}
-          currency={service.currency}
-          config={changeOptions.config}
-          current={changeOptions.current}
-          quote={changeQuote ?? null}
-          changeAction={changeAction}
-          tr={tr}
-          locale={props.locale}
-        />
+      {panel === 'change' && renewable && changeAction && changeOptions?.config ? (
+        <details open className="rounded-xl border bg-card p-4">
+          <summary className="cursor-pointer text-sm font-medium">{tr('console.change')}</summary>
+          <div className="pt-4">
+            <ServiceChangePanel
+              serviceId={service.id}
+              currency={service.currency}
+              config={changeOptions.config}
+              current={changeOptions.current}
+              quote={changeQuote ?? null}
+              changeAction={changeAction}
+              tr={tr}
+              locale={props.locale}
+            />
+          </div>
+        </details>
       ) : null}
 
-      {resourceGroups.length ? (
+      {panel === 'resources' && resourceGroups.length ? (
         <ServiceResourcesPanel
           serviceId={service.id}
           groups={resourceGroups}
-          createAction={resourceCreateAction}
-          runAction={resourceRunAction}
+          createAction={renewable ? resourceCreateAction : undefined}
+          runAction={renewable ? resourceRunAction : undefined}
           tr={tr}
         />
       ) : null}
-
-      <div>
-        <SectionTitle className="mb-3">{tr('service.metrics')}</SectionTitle>
-        <MetricsChart series={metrics} tr={tr} />
-      </div>
     </main>
   );
 }
@@ -2089,8 +3124,13 @@ function ServiceChangePanel({
   currency: string;
   config: CheckoutConfig;
   current: Selection | null;
-  quote: { diff: number; currency: string; summary?: string; selection: Selection } | null;
-  changeAction: string;
+  quote: {
+    diff: number;
+    currency: string;
+    summary?: string | undefined;
+    selection: Selection;
+  } | null;
+  changeAction: FrontendActionExecutor;
   tr: ReturnType<typeof t>;
   locale: string | undefined;
 }): ReactElement {
@@ -2213,8 +3253,8 @@ function ServiceResourcesPanel({
     kind: z.infer<typeof resourceKindSchema>;
     resources: Array<z.infer<typeof resourceListSchema>['resources'][number]>;
   }>;
-  createAction?: string;
-  runAction?: string;
+  createAction?: FrontendActionExecutor | undefined;
+  runAction?: FrontendActionExecutor | undefined;
   tr: ReturnType<typeof t>;
 }): ReactElement {
   return (
@@ -2376,6 +3416,37 @@ function StoreSummaryWidget(_props: AdminWidgetProps): ReactElement {
 }
 
 const storeFinders: Record<string, FinderProvider> = {
+  'store.settings': {
+    handler: async (_input, ctx) =>
+      ctx.api.get(
+        '/store/admin/settings',
+        z.object({ provisioningMode: z.enum(['manual', 'automatic']) }),
+      ),
+  },
+  'store.approvals': {
+    handler: async (input, ctx) =>
+      ctx.api.get(
+        `/store/admin/delivery-tasks?status=attention&page=${Math.max(1, Number((input as { page?: string })?.page) || 1)}`,
+        z.object({
+          total: z.number(), page: z.number(), pageSize: z.number(),
+          tasks: z.array(
+            z.object({
+              id: z.string(),
+              orderId: z.string(),
+              productName: z.string(),
+              quantity: z.number(),
+              status: z.string(),
+              userId: z.string(), reason: z.string().nullable(),
+              attempts: z.number(),
+              upstreamServiceId: z.string().nullable(), invoiceId: z.string().nullable(), paymentState: z.string().nullable(), canResumePayment: z.boolean(),
+            }),
+          ),
+        }),
+      ),
+  },
+  'store.refundRequests': {
+    handler: async (_input, ctx) => ctx.api.get('/store/admin/refund-requests', z.object({ requests: z.array(z.object({ id: z.string(), orderId: z.string(), userId: z.string(), amount: z.number(), currency: z.string(), state: z.string(), reason: z.string().nullable(), failureReason: z.string().nullable() })) })),
+  },
   'store.products': {
     handler: async (input, ctx) =>
       (
@@ -2396,13 +3467,45 @@ const storeFinders: Record<string, FinderProvider> = {
   },
   // 账户商城：可购买目录与详情（需登录 + store.view）。服务端给出 purchasable。
   'store.accountProducts': {
-    handler: async (input, ctx) =>
-      (
-        await ctx.api.get(
-          `/store/account/products?page=${typeof input.page === 'number' ? input.page : 1}&pageSize=${typeof input.pageSize === 'number' ? input.pageSize : 20}`,
-          purchasableProductListSchema,
-        )
-      ).products,
+    handler: async (input, ctx) => {
+      const query = new URLSearchParams({
+        page: String(input.page ?? 1),
+        pageSize: String(input.pageSize ?? 12),
+      });
+      for (const key of ['categoryId', 'q'] as const) {
+        const value = input[key];
+        if (typeof value === 'string' && value) query.set(key, value);
+      }
+      const catalog = await ctx.api.get(
+        `/store/account/products?${query.toString()}`,
+        purchasableProductListSchema,
+      );
+      // Reuse the checkout pricing authority, including upstream and group discounts.
+      const products = await Promise.all(
+        catalog.products.map(async (product) => {
+          const config = defaultSelection(readCheckoutConfig(product.metadata));
+          const quote = await ctx.api
+            .post(
+              `/store/products/${encodeURIComponent(product.id)}/price`,
+              { quantity: '1', ...(config ? { config: JSON.stringify(config) } : {}) },
+              pricePreviewSchema,
+            )
+            .catch(() => null);
+          return {
+            ...product,
+            price: quote?.price ?? product.price,
+            originalPrice: quote
+              ? Math.max(quote.originalTotal ?? quote.price, product.originalPrice ?? 0)
+              : product.originalPrice,
+            quoteAvailable: quote !== null,
+          };
+        }),
+      );
+      return { ...catalog, products };
+    },
+  },
+  'store.categories': {
+    handler: async (_input, ctx) => ctx.api.get('/categories', categoryListSchema),
   },
   'store.accountProduct': {
     handler: async (input, ctx) =>
@@ -2421,18 +3524,23 @@ const storeFinders: Record<string, FinderProvider> = {
       const id = typeof input.id === 'string' ? input.id : '';
       if (!id) return null;
       const query = (input['$query'] ?? {}) as Record<string, string | string[] | undefined>;
-      const selection = selectionFromQuery(query);
-      if (!selection) return null;
-      const body: Record<string, string> = {
-        config: JSON.stringify(selection),
-        quantity: String(typeof input.quantity === 'number' ? input.quantity : 1),
-      };
-      const price = await ctx.api.post(
-        `/store/products/${encodeURIComponent(id)}/price`,
-        body,
-        pricePreviewSchema,
+      const { product } = await ctx.api.get(
+        `/store/account/products/${encodeURIComponent(id)}`,
+        purchasableProductSchema,
       );
-      return { ...price, selection };
+      const config = readCheckoutConfig(product.metadata);
+      const rawSelection = selectionFromQuery(query, config) ?? defaultSelection(config);
+      const selection =
+        config && rawSelection ? reconcileSelection(config, rawSelection) : rawSelection;
+      const quantity = purchaseQuantity(query.quantity ?? input.quantity);
+      const body: Record<string, string> = {
+        quantity: String(quantity),
+      };
+      if (selection) body.config = JSON.stringify(selection);
+      const price = await ctx.api
+        .post(`/store/products/${encodeURIComponent(id)}/price`, body, pricePreviewSchema)
+        .catch(() => null);
+      return price ? { ...price, selection } : null;
     },
   },
   'store.pendingOrderCount': {
@@ -2456,7 +3564,37 @@ const storeFinders: Record<string, FinderProvider> = {
       (await ctx.api.get('/orders?page=1&pageSize=50', orderListSchema)).orders,
   },
   'store.myServices': {
-    handler: async (_input, ctx) => (await ctx.api.get('/services', serviceListSchema)).services,
+    handler: async (_input, ctx) => {
+      const { services } = await ctx.api.get('/services', serviceListSchema);
+      const result: ServiceCardSummary[] = [];
+      // Bound upstream fan-out; one provider failing must not hide the user's other instances.
+      for (let offset = 0; offset < services.length; offset += 4) {
+        result.push(
+          ...(await Promise.all(
+            services.slice(offset, offset + 4).map(async (service): Promise<ServiceCardSummary> => {
+              if (!canManageService(service.status)) return service;
+              const id = encodeURIComponent(service.id);
+              const [detail, metrics] = await Promise.allSettled([
+                ctx.api.get(`/services/${id}`, serviceSchema),
+                ctx.api.get(`/services/${id}/metrics`, serviceMetricsSchema),
+              ]);
+              const publicIp =
+                detail.status === 'fulfilled'
+                  ? detail.value.service.detail.fields.find(
+                      (field) => !field.secret && /公网|public.?ip|^ipv4$|^ip$/i.test(field.label),
+                    )?.value
+                  : undefined;
+              return {
+                ...service,
+                ...(publicIp ? { publicIp } : {}),
+                ...(metrics.status === 'fulfilled' ? { metrics: metrics.value.metrics } : {}),
+              };
+            }),
+          )),
+        );
+      }
+      return result;
+    },
   },
   'store.myService': {
     handler: async (input, ctx) =>
@@ -2592,17 +3730,40 @@ const storeFinders: Record<string, FinderProvider> = {
   'store.cart': {
     handler: async (_input, ctx) => ctx.api.get('/cart', cartSchema),
   },
+  'store.cartOrder': {
+    handler: async (input, ctx) => {
+      const query = (input['$query'] ?? {}) as Record<string, string | undefined>;
+      if (!query.orderId || query.orderId.length > 191) return null;
+      const result = await ctx.api
+        .get(
+          `/orders/${encodeURIComponent(query.orderId)}`,
+          z.object({
+            order: z.object({
+              id: z.string(),
+              status: z.string(),
+              total: z.number(),
+              currency: z.string(),
+              paymentUrl: z.string().nullable(),
+            }),
+          }),
+        )
+        .catch(() => null);
+      return result?.order ?? null;
+    },
+  },
   'store.viewer': {
     handler: async (_input, ctx) => ({ authenticated: Boolean(ctx.session) }),
   },
 };
 
 export const frontend: FrontendPackage = {
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   settingsSchema,
   finders: storeFinders,
   pages: [
+    { path: '/shop/cart', component: 'legacy-cart' },
+    { path: '/shop/:id', component: 'legacy-product' },
     {
       path: '/shop',
       component: 'shop',
@@ -2616,64 +3777,15 @@ export const frontend: FrontendPackage = {
         },
       ],
     },
-    {
-      path: '/shop/:id',
-      component: 'product',
-      data: [
-        { finder: 'store.product', as: 'product', input: { id: ':id' } },
-        { finder: 'store.paymentMethods', as: 'methods' },
-        { finder: 'store.viewer', as: 'viewer' },
-        {
-          finder: 'store.pricePreview',
-          as: 'pricePreview',
-          input: { id: ':id', $query: '1', quantity: '' },
-        },
-      ],
-    },
-    {
-      path: '/shop/cart',
-      component: 'cart',
-      data: [
-        { finder: 'store.cart', as: 'cart' },
-        { finder: 'store.paymentMethods', as: 'methods' },
-      ],
-    },
   ],
   pageComponents: {
     shop: ProductListPage,
-    product: ProductDetailPage,
-    cart: StoreCartPage,
+    'legacy-cart': () => redirect('/account/store/cart'),
+    'legacy-product': (props) =>
+      redirect(`/account/store/${encodeURIComponent(props.params.id ?? '')}`),
   },
   ui: {
     actions: [
-      {
-        id: 'store.create-order-wallet',
-        method: 'POST',
-        path: '/orders',
-        permission: 'store.buy',
-        input: [
-          { name: 'productId', type: 'string', required: true, maxLength: 191 },
-          { name: 'quantity', type: 'integer', default: 1, min: 1, max: 100 },
-          { name: 'paymentMode', type: 'string', default: 'wallet' },
-          { name: 'config', type: 'string', maxLength: 40000 },
-        ],
-        redirect: { responsePath: 'nextPath' },
-      },
-      {
-        id: 'store.create-order-external',
-        method: 'POST',
-        path: '/orders',
-        permission: 'store.buy',
-        input: [
-          { name: 'productId', type: 'string', required: true, maxLength: 191 },
-          { name: 'quantity', type: 'integer', default: 1, min: 1, max: 100 },
-          { name: 'paymentMode', type: 'string', default: 'external' },
-          { name: 'providerId', type: 'string', required: true, maxLength: 64 },
-          { name: 'paymentMethod', type: 'string', required: true, maxLength: 64 },
-          { name: 'config', type: 'string', maxLength: 40000 },
-        ],
-        redirect: { responsePath: 'payment.paymentUrl', external: true },
-      },
       {
         id: 'store.add-to-cart',
         method: 'POST',
@@ -2733,6 +3845,16 @@ export const frontend: FrontendPackage = {
         path: '/orders/:id/cancel',
         permission: 'store.buy',
         input: [{ name: 'id', type: 'string', required: true, maxLength: 191 }],
+      },
+      {
+        id: 'store.request-refund',
+        method: 'POST',
+        path: '/orders/:id/refund-requests',
+        permission: 'store.buy',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'reason', type: 'string', maxLength: 191 },
+        ],
       },
       {
         id: 'store.service-action',
@@ -2861,6 +3983,27 @@ export const frontend: FrontendPackage = {
     adminWidgets: { 'store-summary': StoreSummaryWidget },
     adminRoutes: [
       {
+        path: '/settings',
+        component: 'admin/settings',
+        permission: 'platform.admin',
+        systemSettings: { labelKey: 'settings.store.title', order: 60 },
+        data: [{ finder: 'store.settings', as: 'settings' }],
+      },
+      {
+        path: '/approvals',
+        component: 'admin/approvals',
+        permission: 'store.admin',
+        nav: { labelKey: 'settings.store.approvals', groupKey: 'nav.groupStore', order: 25 },
+        data: [{ finder: 'store.approvals', as: 'approvals', input: { $query: '1' } }],
+      },
+      {
+        path: '/refunds',
+        component: 'admin/refunds',
+        permission: 'store.admin',
+        nav: { labelKey: 'settings.store.refunds', groupKey: 'nav.groupStore', order: 26 },
+        data: [{ finder: 'store.refundRequests', as: 'refunds' }],
+      },
+      {
         path: '/overview',
         component: 'admin/summary',
         permission: 'store.admin',
@@ -2919,6 +4062,48 @@ export const frontend: FrontendPackage = {
     ],
     accountRoutes: [
       {
+        path: '/store',
+        component: 'account/store',
+        permission: 'store.view',
+        nav: { labelKey: 'nav.shop', order: 5, activePaths: ['/store'] },
+        data: [
+          {
+            finder: 'store.accountProducts',
+            as: 'products',
+            input: { page: 1, pageSize: 12, q: '', categoryId: '' },
+          },
+          { finder: 'store.categories', as: 'categories' },
+        ],
+      },
+      {
+        path: '/store/cart',
+        component: 'account/cart',
+        permission: 'store.buy',
+        data: [
+          { finder: 'store.cart', as: 'cart' },
+          { finder: 'store.paymentMethods', as: 'methods' },
+          { finder: 'store.cartOrder', as: 'cartOrder', input: { $query: '1' } },
+        ],
+      },
+      {
+        path: '/store/checkout',
+        component: 'account/checkout',
+        permission: 'store.buy',
+      },
+      {
+        path: '/store/:id',
+        component: 'account/product',
+        permission: 'store.view',
+        data: [
+          { finder: 'store.accountProduct', as: 'product', input: { id: ':id' } },
+          {
+            finder: 'store.pricePreview',
+            as: 'pricePreview',
+            input: { id: ':id', $query: '1', quantity: '' },
+          },
+        ],
+      },
+      {
         path: '/services',
         component: 'account/services',
         permission: 'store.view',
@@ -2950,6 +4135,12 @@ export const frontend: FrontendPackage = {
       },
     ],
     accountPages: {
+      'account/store': StoreAccountCatalogPage,
+      'account/product': (props: AccountPageComponentProps) => (
+        <ProductDetailPage {...props} data={{ ...props.data, viewer: { authenticated: true } }} />
+      ),
+      'account/cart': StoreCartPage,
+      'account/checkout': StoreCheckoutPage,
       'account/orders': StoreAccountOrdersPage,
       'account/services': StoreAccountServicesPage,
       'account/service-detail': StoreAccountServiceDetailPage,

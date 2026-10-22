@@ -69,7 +69,7 @@ const marketActions: PluginActionDefinition[] = [
 ];
 
 export const frontend: FrontendPackage = {
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   finders: marketFinders,
   ui: {

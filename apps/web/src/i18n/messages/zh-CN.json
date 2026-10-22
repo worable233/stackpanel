@@ -241,6 +241,8 @@
         "title": "购买的服务",
         "description": "列出该账号已购或已绑定的服务；可从上游已购服务中绑定，也可改到期时间、改状态或解绑。",
         "bind": "绑定上游服务",
+        "upstreamProduct": "上游云产品",
+        "allProducts": "全部云产品",
         "bindDescription": "从上游已购买的服务中选择一条绑定到该账号，使其显示为该账号已购买（不会重新开通）。",
         "bindLoading": "正在从上游拉取已购服务…",
         "bindEmpty": "该上游暂无已购服务，或未启用任何上游插件。",
@@ -711,6 +713,8 @@
       "settings": "设置",
       "preview": "预览",
       "activate": "启用",
+      "activateSuccess": "主题已启用",
+      "activateFailed": "主题启用失败",
       "title": "主题管理",
       "description": "管理主题上传、预览与激活。",
       "serviceUnavailable": "主题服务不可用：{error}"
@@ -780,9 +784,20 @@
   },
   "locale": {
     "zh-CN": "简体中文",
+    "zh-TW": "繁體中文（台灣）",
+    "zh-HK": "繁體中文（香港）",
     "en-US": "English"
   },
   "action": {
+    "feedback": {
+      "failed": "操作失败",
+      "succeeded": "操作已完成",
+      "upstreamSyncFailed": "上游同步失败",
+      "upstreamSyncSucceeded": "上游同步完成",
+      "upstreamCreateFailed": "添加上游失败",
+      "upstreamDeleteFailed": "删除上游失败"
+    },
+    "save": "保存",
     "publicKeyRequired": "请填写公钥",
     "publicKeySaved": "签名公钥已保存。",
     "publicKeyCleared": "签名公钥已清除。",
@@ -1245,6 +1260,32 @@
     "emailRequired": "请填写邮箱",
     "passwordTooShort": "密码至少 8 位，或留空由系统生成"
   },
+  "themeJson": {
+    "format": "格式化",
+    "defaults": "恢复默认",
+    "undo": "撤销未保存修改",
+    "import": "导入 JSON",
+    "export": "导出 JSON",
+    "preview": "草稿预览",
+    "closePreview": "关闭预览",
+    "save": "保存配置",
+    "hint": "配置按主题声明的结构校验；AI 可通过 MCP 使用相同的读取、校验和保存接口。",
+    "editor": "主题配置 JSON",
+    "unknownField": "未知字段",
+    "invalid": "JSON 格式无效",
+    "fileTooLarge": "JSON 文件不能超过 512 KB",
+    "saved": "配置已保存",
+    "unsaved": "有 {count} 项字段发生变化",
+    "saving": "保存中…",
+    "publish": "确认保存",
+    "review": "确认保存 {count} 项修改",
+    "fields": "配置字段说明",
+    "history": "历史版本",
+    "historyHint": "保留最近 20 个已保存版本。选择一个版本可载入并检查差异，确认后再保存。",
+    "loadVersion": "载入此版本",
+    "previewUpdating": "正在更新草稿预览…",
+    "previewHint": "此预览使用当前未保存草稿，仅当前管理员可访问，有效期 10 分钟。"
+  },
   "settingsForm": {
     "saved": "设置已保存。",
     "saving": "保存中…",
@@ -1336,7 +1377,19 @@
         "loginEmail": "登录邮箱",
         "emailVerified": "邮箱已验证。",
         "emailUnverified": "邮箱尚未验证。",
-        "emailChangeHint": "如需更换登录邮箱，请联系管理员。",
+        "emailVerificationOff": "当前未启用邮箱验证。",
+        "securityTitle": "登录安全",
+        "securityHint": "更换邮箱或密码需要验证当前密码。修改密码后，其他设备上的登录会失效。",
+        "changeEmail": "更换邮箱",
+        "changeEmailHint": "更换后需要重新登录；如果启用了邮箱验证，新邮箱需要重新验证。",
+        "newEmail": "新邮箱",
+        "changePassword": "修改密码",
+        "changePasswordHint": "请设置一个至少 8 位的新密码。",
+        "currentPassword": "当前密码",
+        "newPassword": "新密码",
+        "save": "保存",
+        "saved": "邮箱已更新，请重新登录。",
+        "passwordSaved": "密码已更新，请重新登录。",
         "accountId": "账户 ID",
         "accountIdHint": "联系支持人员时，可提供此 ID 协助定位账户。",
         "status": "账户状态",
@@ -1388,6 +1441,13 @@
         "removed": "授权已移除",
         "removeTitle": "移除工具授权？",
         "removeDescription": "将删除 {name} 的个人凭证。重新保存凭证后才能继续使用此工具。"
+      },
+      "saving": "保存中…",
+      "security": {
+        "passwordInvalid": "请输入当前密码和至少 8 位的新密码",
+        "passwordChangeFailed": "修改密码失败",
+        "emailInvalid": "请输入新邮箱和当前密码",
+        "emailChangeFailed": "更换邮箱失败"
       }
     }
   },
@@ -1778,5 +1838,35 @@
     "missingImage": "缺少图片",
     "invalidImage": "图片格式无效",
     "uploadFailed": "图片上传失败，请重试"
+  },
+  "checkout": {
+    "progress": "结算进度",
+    "steps": {
+      "review": "核对商品",
+      "pay": "下单与付款",
+      "done": "完成"
+    },
+    "next": "下一步，前往付款",
+    "back": "返回核对",
+    "review": "核对你的商品配置",
+    "reviewHelp": "确认商品、配置和数量，准备好后继续。",
+    "pay": "选择支付方式，完成购买",
+    "payHelp": "确认付款后创建订单，请勿重复提交。",
+    "selected": "已选商品",
+    "quantity": "数量",
+    "success": "购买成功",
+    "successHelp": "订单已支付。实例可能仍在等待审核或开通，可前往云服务查看进度。",
+    "orders": "查看订单",
+    "services": "查看云服务",
+    "waiting": "等待付款",
+    "waitingHelp": "订单已创建，请完成付款并等待支付结果更新。",
+    "failed": "订单尚未支付成功",
+    "failedHelp": "请先查看订单状态，再决定是否重新购买，避免重复下单。",
+    "unknown": "暂时无法核实订单",
+    "unknownHelp": "请刷新或查看订单，不要重复付款。",
+    "refresh": "刷新状态",
+    "resume": "继续付款",
+    "submitting": "正在提交…",
+    "order": "订单编号"
   }
 }

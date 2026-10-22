@@ -16,7 +16,7 @@ const finders: Record<string, FinderProvider> = {
 };
 
 export const frontend: FrontendPackage = {
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   finders,
   pages: [],

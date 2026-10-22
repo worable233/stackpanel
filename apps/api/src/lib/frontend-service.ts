@@ -23,6 +23,7 @@ import { readFrontendManifest } from './frontend.ts';
 import { readRevisionObject, type FrontendPackageKind } from './frontend-storage.ts';
 import {
   ensureCurrentRevision,
+  isRevisionComplete,
   readCurrentRevision,
   resolveRevisionAsset,
   revisionDir,
@@ -34,7 +35,10 @@ export async function frontendDescriptor(packageDir: string): Promise<FrontendDe
   if (!manifest) return { available: false, manifest: null };
   // Ensure the flat frontend has a revision published (idempotent). Failure is
   // non-fatal: the descriptor still serves the manifest, just unversioned.
-  let revision = (await readCurrentRevision(packageDir))?.revision;
+  const current = await readCurrentRevision(packageDir);
+  let revision = current && (await isRevisionComplete(packageDir, current.revision))
+    ? current.revision
+    : undefined;
   if (!revision) {
     try {
       revision = (await ensureCurrentRevision(packageDir))?.revision;

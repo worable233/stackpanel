@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import prettier from 'prettier';
+import { annotateAdapterImportsSource } from './lib/annotate-adapter-imports.mjs';
 
 const root = process.cwd();
 const dataDir = process.env.STACKPANEL_DATA_DIR
@@ -89,10 +90,14 @@ async function buildFrontendPackageFromSource(pkg) {
       '--external:next/navigation',
       // Keep this client entry separate from the server-rendered theme bundle.
       '--external:./route-progress.js',
+      // Host-absorbed behaviour used by SSR account pages.
+      '--external:./auto-submit.js',
       '--external:@stackpanel/sdk',
       '--external:@stackpanel/ui',
       // lucide-react is host ABI (contract 02 §5); zod is bundled by the
-      // publisher, so it is intentionally NOT external here.
+      // publisher, so it is intentionally NOT external here. Recharts is
+      // likewise bundled for the server entry because it is not a host ABI
+      // slot and runtime imports must remain self-contained.
       '--external:lucide-react',
       '--main-fields=module,main',
     ],
@@ -114,6 +119,25 @@ async function buildFrontendPackageFromSource(pkg) {
         '--external:react',
         '--external:react/jsx-runtime',
         '--external:next/navigation',
+      ],
+      { cwd: pkg.source, stdio: 'inherit' },
+    );
+  }
+  if (existsSync(path.join(pkg.source, 'src', 'auto-submit.tsx'))) {
+    execFileSync(
+      esbuildBin,
+      [
+        'src/auto-submit.tsx',
+        '--bundle',
+        '--format=esm',
+        '--outdir=dist',
+        '--platform=neutral',
+        '--target=es2020',
+        '--jsx=automatic',
+        '--sourcemap',
+        '--banner:js="use client";',
+        '--external:react',
+        '--external:react/jsx-runtime',
       ],
       { cwd: pkg.source, stdio: 'inherit' },
     );
@@ -156,6 +180,8 @@ async function buildFrontendPackageFromSource(pkg) {
         '--external:@stackpanel/ui',
         // lucide-react is host ABI; zod is bundled (contract 02 §5).
         '--external:lucide-react',
+        '--external:recharts',
+        '--external:sonner',
         '--main-fields=module,main',
       ],
       { cwd: pkg.source, stdio: 'inherit' },
@@ -201,6 +227,7 @@ async function buildFrontendPackageFromSource(pkg) {
   await writeFile(
     probeLinkStub,
     'export default function Link(props) { return props.children ?? null; }\n' +
+      'export function redirect(url) { throw new Error("NEXT_REDIRECT;" + url); }\n' +
       'export function notFound() { throw new Error("NEXT_HTTP_ERROR_FALLBACK;404"); }\n' +
       'export function usePathname() { return "/"; }\n' +
       'export function useSearchParams() { return new URLSearchParams(); }\n',
@@ -219,6 +246,11 @@ async function buildFrontendPackageFromSource(pkg) {
       `--alias:next/link=${probeLinkStub}`,
       `--alias:next/form=${probeLinkStub}`,
       `--alias:next/navigation=${probeLinkStub}`,
+      `--alias:react/jsx-runtime=${path.join(root, 'apps', 'web', 'node_modules', 'react', 'jsx-runtime.js')}`,
+      `--alias:react=${path.join(root, 'apps', 'web', 'node_modules', 'react')}`,
+      `--alias:@stackpanel/ui=${path.join(root, 'packages', 'ui', 'dist', 'index.js')}`,
+      `--alias:lucide-react=${path.join(root, 'apps', 'web', 'node_modules', 'lucide-react')}`,
+      `--alias:recharts=${path.join(root, 'apps', 'web', 'node_modules', 'recharts')}`,
       '--main-fields=module,main',
     ],
     { cwd: path.join(root, 'apps', 'web'), stdio: 'inherit' },
@@ -311,9 +343,9 @@ async function discoverFrontendPackages() {
   const dataPackages = [];
   const sourceIds = new Set();
   const externalPluginGroups = (process.env.STACKPANEL_PLUGIN_SOURCES ?? '')
-      .split(path.delimiter)
-      .filter(Boolean)
-      .map((directory) => ({ kind: 'plugins', root: path.resolve(directory) }));
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((directory) => ({ kind: 'plugins', root: path.resolve(directory) }));
   const sourceGroups = [
     { kind: 'themes', root: path.join(root, 'packages', 'themes') },
     // An optional plugin checkout takes precedence over the matching built-in
@@ -540,50 +572,20 @@ async function listFiles(dir) {
 }
 
 /**
- * Stage 4 M2 — annotate a compiled client bundle's host-ABI adapter imports with
- * the exact named bindings it uses (`/api/frontend-abi/react?names=useState,useEffect`).
+ * Stage 4 M2 — annotate the host-ABI adapter imports of a compiled client bundle.
  *
- * Why: the adapter route runs on the server, and `react` resolves to the
- * `react-server` build there, whose named exports differ from the browser's React
- * (no `useState`, ...). The browser React namespace is also un-enumerable without
- * instantiating it, so the only reliable source of the right export names is what
- * the bundle actually imports. This scans `import ... from "/api/frontend-abi/<slot>"`
- * statements and rewrites each specifier to carry its `names`.
+ * The rewrite itself lives in `scripts/lib/annotate-adapter-imports.mjs` so it can
+ * be unit-tested (see `apps/api/tests/unit/frontend-runtime-bundle.test.ts`)
+ * without invoking the whole frontend build.
+ *
+ * @param {string} file Absolute path to `dist/admin.runtime.js`.
  */
 async function annotateAdapterImports(file) {
   if (!existsSync(file)) return;
   const source = await readFile(file, 'utf8');
-  // Collect per-slot named bindings from `import { a, b as c } from "...";`
-  const imports = new Map();
-  const re = /import\s*\{([^}]*)\}\s*from\s*"(\/api\/frontend-abi\/[^"?]+)"/g;
-  let m;
-  while ((m = re.exec(source)) !== null) {
-    const names = m[1]
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const asMatch = /^\S+\s+as\s+(\S+)$/.exec(part);
-        return asMatch ? asMatch[1] : part;
-      })
-      .filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name));
-    const existing = imports.get(m[2]) ?? new Set();
-    for (const name of names) existing.add(name);
-    imports.set(m[2], existing);
-  }
-  if (imports.size === 0) return;
-  // Rewrite each adapter specifier (deduping when the same slot is imported twice).
-  const rewritten = source.replace(
-    /(\/api\/frontend-abi\/[^"?]+)(\?names=[^"]*)?/g,
-    (match, specifier) => {
-      const names = imports.get(specifier);
-      if (!names || names.size === 0) return specifier;
-      return `${specifier}?names=${[...names].sort().join(',')}`;
-    },
-  );
-  await writeFile(file, rewritten);
+  const rewritten = annotateAdapterImportsSource(source);
+  if (rewritten !== source) await writeFile(file, rewritten);
 }
-
 
 async function revisionOf(rootDir, files) {
   const hash = createHash('sha1');

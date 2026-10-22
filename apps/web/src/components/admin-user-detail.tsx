@@ -444,6 +444,10 @@ function ServicesSection({
   const [hasSources, setHasSources] = useState(false);
   const [candidates, setCandidates] = useState<AdminUpstreamServiceItem[]>([]);
   const [selected, setSelected] = useState<string>('');
+  const [inventoryProduct, setInventoryProduct] = useState('all');
+  const productKey = (item: AdminUpstreamServiceItem) => JSON.stringify([item.sourceId, item.sourceRef ?? null, item.productId ?? item.productName]);
+  const inventoryProducts = [...new Map(candidates.map(item => [productKey(item), item])).entries()];
+  const visibleCandidates = candidates.filter(item => inventoryProduct === 'all' || productKey(item) === inventoryProduct);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editExpiresAt, setEditExpiresAt] = useState('');
@@ -468,6 +472,7 @@ function ServicesSection({
     if (!next) return;
     setBindError(null);
     setSelected('');
+    setInventoryProduct('all');
     setCandidates([]);
     setBindLoading(true);
     void listUpstreamServicesAction(userId)
@@ -480,7 +485,7 @@ function ServicesSection({
           const first = result.data.services.find(
             (item) => !item.boundServiceId && !item.boundUserId,
           );
-          if (first) setSelected(`${first.sourceId}:${first.id}`);
+          if (first) setSelected(JSON.stringify([first.sourceId, first.sourceRef ?? null, first.id]));
         }
       })
       .catch(() => setBindError(t('admin.userDetail.services.bindLoadFailed')))
@@ -489,7 +494,7 @@ function ServicesSection({
 
   function bind() {
     const item = candidates.find(
-      (candidate) => `${candidate.sourceId}:${candidate.id}` === selected,
+      (candidate) => JSON.stringify([candidate.sourceId, candidate.sourceRef ?? null, candidate.id]) === selected,
     );
     if (!item) {
       setState({ error: t('admin.userDetail.services.selectUpstream') });
@@ -499,6 +504,7 @@ function ServicesSection({
       bindUpstreamServiceAction(userId, {
         sourceId: item.sourceId,
         providerServiceId: item.id,
+        ...(item.sourceRef ? { sourceRef: item.sourceRef } : {}),
       }),
     );
   }
@@ -576,19 +582,29 @@ function ServicesSection({
                 </p>
               ) : (
                 <div className="flex flex-col gap-1">
+                  <Label htmlFor="bind-product">{t('admin.userDetail.services.upstreamProduct')}</Label>
+                  <Select value={inventoryProduct} onValueChange={value => { setInventoryProduct(value ?? 'all'); setSelected(''); }}>
+                    <SelectTrigger id="bind-product" className="w-full">
+                      <SelectValue>{inventoryProduct === 'all' ? t('admin.userDetail.services.allProducts') : inventoryProducts.find(([key]) => key === inventoryProduct)?.[1].productName}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent><SelectGroup>
+                      <SelectItem value="all">{t('admin.userDetail.services.allProducts')}</SelectItem>
+                      {inventoryProducts.map(([key, item]) => <SelectItem key={key} value={key}>{item.productName ?? item.name}{item.sourceRef ? ` · ${item.sourceRef}` : ''}</SelectItem>)}
+                    </SelectGroup></SelectContent>
+                  </Select>
                   <Label htmlFor="bind-service">
                     {t('admin.userDetail.services.upstreamService')}
                   </Label>
                   <Select value={selected} onValueChange={(value) => setSelected(value ?? '')}>
                     <SelectTrigger id="bind-service" className="w-full">
                       <SelectValue>
-                        {candidates.find((item) => `${item.sourceId}:${item.id}` === selected)
+                        {candidates.find((item) => JSON.stringify([item.sourceId, item.sourceRef ?? null, item.id]) === selected)
                           ?.name ?? t('admin.userDetail.services.selectUpstream')}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        {candidates.map((item) => {
+                        {visibleCandidates.map((item) => {
                           const boundMine = Boolean(item.boundServiceId);
                           const boundOther = Boolean(item.boundUserId);
                           const suffix = boundMine
@@ -598,11 +614,14 @@ function ServicesSection({
                               : '';
                           return (
                             <SelectItem
-                              key={`${item.sourceId}:${item.id}`}
-                              value={`${item.sourceId}:${item.id}`}
+                              key={JSON.stringify([item.sourceId, item.sourceRef ?? null, item.id])}
+                              value={JSON.stringify([item.sourceId, item.sourceRef ?? null, item.id])}
                               disabled={boundMine || boundOther}
                             >
                               {item.name}
+                              {item.productName ? ` · ${item.productName}` : ''}
+                              {` · #${item.id}`}
+                              {item.sourceRef ? ` · ${item.sourceRef}` : ''}
                               {item.host ? ` · ${item.host}` : ''}
                               {suffix}
                             </SelectItem>

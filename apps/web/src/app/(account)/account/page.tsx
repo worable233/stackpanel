@@ -71,7 +71,7 @@ export default async function AccountHomePage() {
         </div>
         <Button render={<Link href="/shop" />}>{t('nav.shop')}</Button>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {pendingOrders !== undefined ? (
           <SummaryCard
             title={t('account.home.pendingOrders')}
@@ -107,7 +107,7 @@ export default async function AccountHomePage() {
           />
         ) : null}
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         {pendingTickets !== undefined ? (
           <SummaryCard
             title={t('account.home.pendingTickets')}
@@ -118,19 +118,17 @@ export default async function AccountHomePage() {
             secondary={{ label: t('account.home.newTicket'), href: '/account/tickets/new' }}
           />
         ) : null}
-        <Card className="min-h-52">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <ShieldCheck className="size-5 text-success" />
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <ShieldCheck className="size-4 text-success" />
               {t('account.home.securityTitle')}
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-1 flex-col gap-6">
-            <dl className="grid flex-1 grid-cols-2 gap-4">
+          <CardContent className="flex flex-col gap-4">
+            <dl className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-2">
-                <dt className="text-sm text-muted-foreground">
-                  {t('account.home.accountStatus')}
-                </dt>
+                <dt className="text-xs text-muted-foreground">{t('account.home.accountStatus')}</dt>
                 <dd className="font-medium">
                   {userResult.user.status === 'ACTIVE'
                     ? t('account.home.statusActive')
@@ -138,7 +136,7 @@ export default async function AccountHomePage() {
                 </dd>
               </div>
               <div className="flex flex-col gap-2">
-                <dt className="text-sm text-muted-foreground">
+                <dt className="text-xs text-muted-foreground">
                   {t('account.home.linkedIdentities')}
                 </dt>
                 <dd className="font-medium">
@@ -150,7 +148,7 @@ export default async function AccountHomePage() {
             </dl>
             <Link
               href="/account/settings#security"
-              className="flex items-center justify-between border-t pt-4 text-sm text-muted-foreground hover:text-foreground"
+              className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground hover:text-foreground"
             >
               {t('account.home.securityCenter')} <ArrowRight className="size-4" />
             </Link>
@@ -203,18 +201,18 @@ function SummaryCard({
   secondary?: { label: string; href: string };
 }) {
   return (
-    <Card className="min-h-52">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <span className="text-muted-foreground [&_svg]:size-5">{icon}</span>
+    <Card>
+      <CardHeader className="pb-1">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground [&_svg]:size-4">{icon}</span>
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col justify-between gap-6">
-        <p className={`text-5xl font-semibold tabular-nums ${tone}`}>
-          {value} {unit ? <span className="text-xl text-foreground">{unit}</span> : null}
+      <CardContent className="flex flex-col gap-3">
+        <p className={`text-3xl font-semibold tabular-nums ${tone}`}>
+          {value} {unit ? <span className="text-base text-foreground">{unit}</span> : null}
         </p>
-        <div className="flex items-center justify-between gap-3 border-t pt-4 text-sm text-muted-foreground">
+        <div className="flex items-center justify-between gap-3 border-t pt-3 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-4">
             <Link href={href} className="hover:text-foreground">
               {footer}

@@ -241,6 +241,8 @@
         "title": "Purchased services",
         "description": "Services this account owns or has bound; bind an already-purchased upstream service, or edit expiry, status, or unbind.",
         "bind": "Bind upstream service",
+        "upstreamProduct": "Upstream cloud product",
+        "allProducts": "All cloud products",
         "bindDescription": "Pick an already-purchased upstream service to bind to this account, making it appear as owned by this account (no re-provisioning).",
         "bindLoading": "Loading already-purchased upstream services…",
         "bindEmpty": "No already-purchased upstream service, or no upstream plugin is enabled.",
@@ -711,6 +713,8 @@
       "settings": "Settings",
       "preview": "Preview",
       "activate": "Activate",
+      "activateSuccess": "Theme activated",
+      "activateFailed": "Could not activate theme",
       "title": "Theme management",
       "description": "Manage theme upload, preview and activation.",
       "serviceUnavailable": "Theme service unavailable: {error}"
@@ -780,9 +784,20 @@
   },
   "locale": {
     "zh-CN": "简体中文",
+    "zh-TW": "繁體中文（台灣）",
+    "zh-HK": "繁體中文（香港）",
     "en-US": "English"
   },
   "action": {
+    "feedback": {
+      "failed": "Operation failed",
+      "succeeded": "Operation completed",
+      "upstreamSyncFailed": "Upstream sync failed",
+      "upstreamSyncSucceeded": "Upstream sync completed",
+      "upstreamCreateFailed": "Add upstream failed",
+      "upstreamDeleteFailed": "Delete upstream failed"
+    },
+    "save": "Save",
     "publicKeyRequired": "Please enter a public key",
     "publicKeySaved": "Signing public key saved.",
     "publicKeyCleared": "Signing public key cleared.",
@@ -1245,6 +1260,32 @@
     "emailRequired": "Enter an email address",
     "passwordTooShort": "Password must be at least 8 characters, or leave it blank to auto-generate"
   },
+  "themeJson": {
+    "format": "Format",
+    "defaults": "Restore defaults",
+    "undo": "Discard unsaved changes",
+    "import": "Import JSON",
+    "export": "Export JSON",
+    "preview": "Draft preview",
+    "closePreview": "Close preview",
+    "save": "Save configuration",
+    "hint": "The configuration is validated against the theme schema. AI tools use the same MCP read, validate, and save operations.",
+    "editor": "Theme configuration JSON",
+    "unknownField": "Unknown field",
+    "invalid": "Invalid JSON",
+    "fileTooLarge": "JSON files must not exceed 512 KB",
+    "saved": "Configuration saved",
+    "unsaved": "{count} fields have changed",
+    "saving": "Saving…",
+    "publish": "Confirm save",
+    "review": "Review {count} changes",
+    "fields": "Configuration field reference",
+    "history": "Version history",
+    "historyHint": "The latest 20 saved versions are retained. Load one to inspect and compare it before saving.",
+    "loadVersion": "Load version",
+    "previewUpdating": "Updating draft preview…",
+    "previewHint": "This preview uses your unsaved draft and is available to this administrator for 10 minutes."
+  },
   "settingsForm": {
     "saved": "Settings saved.",
     "saving": "Saving…",
@@ -1336,7 +1377,19 @@
         "loginEmail": "Sign-in email",
         "emailVerified": "Email verified.",
         "emailUnverified": "Email not verified yet.",
-        "emailChangeHint": "Contact an administrator to change your sign-in email.",
+        "emailVerificationOff": "Email verification is currently disabled.",
+        "securityTitle": "Sign-in security",
+        "securityHint": "Your current password is required to change the email or password. Changing the password signs out other devices.",
+        "changeEmail": "Change email",
+        "changeEmailHint": "You will need to sign in again. A new email must be verified when verification is enabled.",
+        "newEmail": "New email",
+        "changePassword": "Change password",
+        "changePasswordHint": "Use a password with at least 8 characters.",
+        "currentPassword": "Current password",
+        "newPassword": "New password",
+        "save": "Save",
+        "saved": "Email updated. Please sign in again.",
+        "passwordSaved": "Password updated. Please sign in again.",
         "accountId": "Account ID",
         "accountIdHint": "Share this ID with support to help locate your account.",
         "status": "Account status",
@@ -1388,6 +1441,13 @@
         "removed": "Authorization removed",
         "removeTitle": "Remove tool authorization?",
         "removeDescription": "This deletes the personal credential for {name}. You must save a credential again to keep using this tool."
+      },
+      "saving": "Saving…",
+      "security": {
+        "passwordInvalid": "Enter your current password and a new password of at least 8 characters",
+        "passwordChangeFailed": "Could not change the password",
+        "emailInvalid": "Enter the new email address and your current password",
+        "emailChangeFailed": "Could not change the email address"
       }
     }
   },
@@ -1778,5 +1838,35 @@
     "missingImage": "Missing image",
     "invalidImage": "Invalid image format",
     "uploadFailed": "Image upload failed. Try again."
+  },
+  "checkout": {
+    "progress": "Checkout progress",
+    "steps": {
+      "review": "Review products",
+      "pay": "Order & payment",
+      "done": "Complete"
+    },
+    "next": "Continue to payment",
+    "back": "Review products",
+    "review": "Review your configuration",
+    "reviewHelp": "Check products and quantities before continuing.",
+    "pay": "Choose how to pay",
+    "payHelp": "Confirming payment creates your order. Please submit only once.",
+    "selected": "Selected products",
+    "quantity": "Quantity",
+    "success": "Purchase successful",
+    "successHelp": "Payment confirmed. Your service may still be awaiting approval or provisioning.",
+    "orders": "View orders",
+    "services": "View cloud services",
+    "waiting": "Waiting for payment",
+    "waitingHelp": "Your order exists. Complete payment and wait for the verified result.",
+    "failed": "Order not paid",
+    "failedHelp": "Check your order before trying again to avoid duplicate purchases.",
+    "unknown": "Unable to verify this order",
+    "unknownHelp": "Refresh or check your orders. Do not submit another payment.",
+    "refresh": "Refresh status",
+    "resume": "Continue payment",
+    "submitting": "Submitting…",
+    "order": "Order number"
   }
 }

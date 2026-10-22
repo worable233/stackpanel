@@ -1,7 +1,5 @@
 import { SectionTitle } from '@stackpanel/ui';
-import Link from 'next/link';
 import type { ResellerDetailResponse, WebhookDeliveryView } from '@stackpanel/sdk';
-import { ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
@@ -37,7 +35,11 @@ function DeliveryTable({
   t: Translator;
 }) {
   if (deliveries.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">{t('admin.developer.detail.noDeliveries')}</p>;
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        {t('admin.developer.detail.noDeliveries')}
+      </p>
+    );
   }
   return (
     <div className="overflow-x-auto rounded-lg border">
@@ -95,7 +97,10 @@ export default async function AdminDeveloperResellerPage({
 
   const fields: Array<{ label: string; value: React.ReactNode }> = data
     ? [
-        { label: t('admin.developer.detail.keyId'), value: <span className="font-mono text-xs">{data.reseller.keyId}</span> },
+        {
+          label: t('admin.developer.detail.keyId'),
+          value: <span className="font-mono text-xs">{data.reseller.keyId}</span>,
+        },
         {
           label: t('admin.developer.detail.hasWebhookKey'),
           value: data.reseller.hasWebhookKey
@@ -132,15 +137,8 @@ export default async function AdminDeveloperResellerPage({
   return (
     <main className="w-full space-y-6">
       <PageHeader
-        eyebrow={
-          <Link
-            href="/admin/developer"
-            className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            {t('admin.developer.detail.backToList')}
-          </Link>
-        }
+        backHref="/admin/developer"
+        backLabel={t('admin.developer.detail.backToList')}
         title={data ? data.reseller.name : t('admin.developer.resellers.title')}
       />
 
@@ -169,9 +167,7 @@ export default async function AdminDeveloperResellerPage({
           </Card>
 
           <div className="space-y-3">
-            <SectionTitle>
-              {t('admin.developer.detail.recentDeliveries')}
-            </SectionTitle>
+            <SectionTitle>{t('admin.developer.detail.recentDeliveries')}</SectionTitle>
             <DeliveryTable deliveries={data.deliveries} locale={locale} t={t} />
           </div>
         </>

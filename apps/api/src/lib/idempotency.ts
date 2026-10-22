@@ -21,13 +21,68 @@ const LOCK_TTL_MS = 60 * 1000;
 
 const KEY_PREFIX = 'idem:';
 
-/** Resolve the caller's idempotency key, namespaced per identity. */
+interface MemoizedResponse {
+  status: number;
+  body: unknown;
+  /** Canonical method/path/query/body fingerprint of the original intent. */
+  requestHash: string;
+}
+
+/** Serialize JSON-shaped HTTP input deterministically, independent of key order. */
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number') return Number.isFinite(value) ? JSON.stringify(value) : 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`;
+  }
+  return JSON.stringify(String(value));
+}
+
+/** Bind a retry key to the complete request intent, not just the endpoint. */
+function requestHash(request: FastifyRequest): string {
+  const path = request.url.split('?', 1)[0] ?? request.url;
+  return createHash('sha256')
+    .update(
+      canonicalJson({
+        method: request.method,
+        path,
+        query: request.query,
+        body: request.body,
+      }),
+    )
+    .digest('hex');
+}
+
+async function sendConflict(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  await reply.code(409).send(
+    buildProblem({
+      status: 409,
+      code: 'request.idempotency_conflict',
+      detail: '同一 Idempotency-Key 已用于不同的请求参数',
+      instance: request.url,
+      requestId: request.id,
+    }),
+  );
+}
+
+/** Resolve the caller's idempotency key, namespaced per identity and operation. */
 function idempotencyKey(request: FastifyRequest): string | null {
   const header = request.headers['idempotency-key'];
   const raw = Array.isArray(header) ? header[0] : header;
   if (typeof raw !== 'string' || raw.length < 8 || raw.length > 200) return null;
   const scope = request.user?.id ?? 'anon';
-  const hash = createHash('sha256').update(raw).digest('hex');
+  // `routeOptions.url` is `/*` for plugin dispatch, so use the concrete URL
+  // pathname. Query parameters are compared in `requestHash`: the same key
+  // with different query values is a conflict, not a new operation.
+  const path = request.url.split('?', 1)[0] ?? request.url;
+  const hash = createHash('sha256').update(`${request.method}:${path}:${raw}`).digest('hex');
   return `${KEY_PREFIX}${scope}:${hash}`;
 }
 
@@ -58,9 +113,22 @@ export async function runIdempotent(
     return;
   }
   const store = getStateService();
+  const intentHash = requestHash(request);
   const cached = await store.get(key);
   if (cached) {
-    const replayed = JSON.parse(cached) as { status: number; body: unknown };
+    let replayed: MemoizedResponse | null = null;
+    try {
+      replayed = JSON.parse(cached) as MemoizedResponse;
+    } catch {
+      // A malformed cache entry must never be replayed as a valid success.
+    }
+    // Entries written before intent binding have no requestHash. Reject them
+    // for the remainder of their short TTL instead of guessing that a retry is
+    // semantically equivalent.
+    if (!replayed || replayed.requestHash !== intentHash) {
+      await sendConflict(request, reply);
+      return;
+    }
     reply.header('idempotency-replayed', 'true');
     await reply.code(replayed.status).send(replayed.body);
     return;
@@ -79,12 +147,31 @@ export async function runIdempotent(
     return;
   }
   try {
-    const body = await handler();
-    // A handler may reply directly (e.g. `reply.code(201).send(...)`). In that
-    // case there is nothing left to send; still release the lock so a retry is
-    // not blocked, but skip memoisation (the response already went out).
-    if (reply.sent || reply.raw.headersSent) return;
-    const result = { status: reply.statusCode, body };
+    // Plugin HttpReply handlers commonly use `reply.code(...).send(...)`. Hold
+    // that send until their handler returns, then cache and emit it through the
+    // same path as a returned body. This avoids silently skipping memoisation.
+    const originalSend = reply.send;
+    let directSend = false;
+    let directBody: unknown;
+    reply.send = ((payload?: unknown) => {
+      directSend = true;
+      directBody = payload;
+      // The SDK contract is `HttpReply.send(): void`. Returning Fastify's
+      // thenable reply would make an `async` plugin handler wait forever for a
+      // response that this wrapper intentionally has not emitted yet.
+      return undefined;
+    }) as unknown as typeof reply.send;
+    let body: unknown;
+    try {
+      body = await handler();
+    } finally {
+      reply.send = originalSend;
+    }
+    if (reply.sent || reply.raw.headersSent) {
+      throw new Error('幂等操作不得绕过 HttpReply.send 直接写入响应');
+    }
+    if (directSend) body = directBody;
+    const result: MemoizedResponse = { status: reply.statusCode, body, requestHash: intentHash };
     await store.set(key, JSON.stringify(result), REPLAY_TTL_MS);
     await reply.send(body);
   } finally {

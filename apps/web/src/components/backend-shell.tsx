@@ -33,6 +33,7 @@ import { BackendSearch } from '@/components/backend-search';
 import { useTheme } from '@/components/theme-provider';
 import { NotificationBell } from '@/components/notification-bell';
 import { NotificationToaster } from '@/components/notification-toaster';
+import { ActionFeedbackToaster } from '@/components/action-feedback-toaster';
 import { BackendRouteProgress } from '@/components/backend-route-progress';
 import { AgentSidebar } from '@/components/agent-sidebar';
 import { LocaleSwitcher } from '@/components/locale-switcher';
@@ -123,7 +124,7 @@ function UserDropdown({
           </p>
           <p className="mt-1 truncate text-sm leading-tight text-muted-foreground">{user.email}</p>
         </div>
-        <DropdownMenuGroup>
+        <DropdownMenuGroup className="mt-1">
           <DropdownMenuItem render={<Link href="/account" className="flex items-center gap-2" />}>
             <User className="size-4" />
             {t('nav.accountOverview')}
@@ -253,7 +254,9 @@ function NavDropdown({
       <DropdownMenuContent align="start" className="min-w-40">
         <DropdownMenuGroup>
           {items.map((item) => {
-            const ItemIcon = isBackendOverview(item) ? Gauge : icons[item.href] ?? defaultIcon ?? User;
+            const ItemIcon = isBackendOverview(item)
+              ? Gauge
+              : (icons[item.href] ?? defaultIcon ?? User);
             const active = item.href === activeHref;
             return (
               <DropdownMenuItem
@@ -314,8 +317,9 @@ export function BackendShell({
     <div className="backend-shell relative isolate flex min-h-dvh flex-col bg-background text-foreground">
       <BackendRouteProgress />
       <NotificationToaster />
+      <ActionFeedbackToaster />
       <div className="backend-shell__glow pointer-events-none absolute inset-x-0 top-0 z-0 h-96" />
-      <div className="backend-shell__header sticky top-0 z-30 overflow-hidden rounded-b-2xl border-b border-border/40 bg-background/80 shadow-[0_1px_12px_color-mix(in_oklab,var(--foreground)_4%,transparent)] backdrop-blur-2xl">
+      <div className="backend-shell__header sticky top-0 z-30 overflow-hidden border-b border-border/40 bg-background/80 shadow-[0_1px_12px_color-mix(in_oklab,var(--foreground)_4%,transparent)] backdrop-blur-2xl">
         <header
           className={cn(
             'relative mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-5 px-5 sm:px-8 lg:px-12 lg:h-[72px]',
@@ -366,7 +370,7 @@ export function BackendShell({
               ))}
             </div>
           </nav>
-          <div className="col-start-3 row-start-1 flex shrink-0 items-center gap-1 sm:gap-2">
+          <div className="col-start-2 col-span-2 row-start-1 flex w-full min-w-0 items-center gap-1 sm:gap-2 lg:col-start-3 lg:col-span-1 lg:w-auto lg:shrink-0">
             <BackendSearch
               items={items.map((item) => ({
                 href: item.href,
@@ -379,11 +383,15 @@ export function BackendShell({
                   : undefined,
               }))}
             />
-            <AgentSidebar open={agentOpen} onOpenChange={setAgentOpen} contextLabel={
+            <AgentSidebar
+              open={agentOpen}
+              onOpenChange={setAgentOpen}
+              contextLabel={
                 rootHref === '/admin'
                   ? t('adminShell.workspaceAdmin')
                   : t('adminShell.workspaceAccount')
-              } />
+              }
+            />
             <NotificationBell inboxHref={`${rootHref}/notifications`} />
             <LocaleSwitcher
               locale={locale}

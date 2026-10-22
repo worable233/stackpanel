@@ -35,6 +35,10 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   { type: 'order.pending', category: 'store', label: '订单待支付', order: 10 },
   { type: 'order.paid', category: 'store', label: '订单支付成功', order: 20 },
   { type: 'order.refunded', category: 'store', label: '订单已退款', order: 30 },
+  { type: 'order.refund.requested', category: 'store', label: '退款申请待审核', audience: 'admin', order: 31 },
+  { type: 'order.refund.rejected', category: 'store', label: '退款申请未通过', order: 32 },
+  { type: 'order.refund.succeeded', category: 'store', label: '退款已进入平台余额', order: 33 },
+  { type: 'order.refund.failed', category: 'store', label: '退款处理失败', order: 34 },
   {
     type: 'service.provisioning',
     category: 'store',
@@ -54,7 +58,11 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   { type: 'service.renewed', category: 'store', label: '服务续费成功', order: 80 },
   { type: 'service.expiring', category: 'store', label: '服务即将到期', order: 90 },
   { type: 'service.suspended', category: 'store', label: '服务已停用', order: 100 },
+  { type: 'service.resumed', category: 'store', label: '服务已恢复', order: 105 },
   { type: 'service.terminated', category: 'store', label: '服务已终止', order: 110 },
+  { type: 'service.changed', category: 'store', label: '服务配置已变更', order: 115 },
+  { type: 'service.transferred', category: 'store', label: '服务已转移', order: 117 },
+  { type: 'order.cancelled', category: 'store', label: '订单已取消', order: 35 },
 ];
 
 /** 写入一条 store 业务通知。失败只告警，不抛出。 */

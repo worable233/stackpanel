@@ -11,8 +11,7 @@ describe('distribution runtime wiring', () => {
   });
 
   it('stays fully offline when no catalog repository is configured', () => {
-    // The distribution unit env is hermetic and sets no DISTRIBUTION_CATALOG_REPOSITORY,
-    // so a self-hosted instance must not create a refresher (and never dial GitHub).
+    // No persisted market source means a self-hosted instance stays offline.
     resetCatalogRefreshForTest();
     expect(getCatalogRefresh()).toBeNull();
     // Idempotent: repeated lookups stay null and never throw.

@@ -10,6 +10,7 @@ import type {
   FrontendPageManifestEntry,
   FrontendSettings,
   FrontendSettingsField,
+  FrontendSettingsValue,
   FrontendSummary,
   SettingsResponse,
   SettingsSchemaResponse,
@@ -28,6 +29,7 @@ import type {
   AdminFxRateView,
   ConnectedIdentity,
   ConnectedIdentityListResponse,
+  AccountMutationResponse,
   CurrencyDefinitionListResponse,
   CurrencyDefinitionMutationResponse,
   CurrencyDefinitionView,
@@ -139,6 +141,8 @@ export const userSchema = z.object({
 }) satisfies z.ZodType<User>;
 
 export const authConfigResponseSchema = z.object({
+  registrationMethods: z.array(z.enum(['email', 'phone'])),
+  emailVerificationSupported: z.boolean(),
   emailVerificationRequired: z.boolean(),
   captcha: z.object({
     mode: z.enum(['off', 'optional', 'required']),
@@ -179,6 +183,10 @@ export const sessionInfoSchema = z.object({
   id: z.string(),
   role: z.enum(['ADMIN', 'USER']),
 });
+
+export const accountMutationResponseSchema = z.object({
+  ok: z.literal(true),
+}) satisfies z.ZodType<AccountMutationResponse>;
 
 export const sessionInfoResponseSchema = z.object({
   user: sessionInfoSchema.nullable(),
@@ -395,6 +403,8 @@ export const upstreamProductResponseSchema = z.object({
 }) satisfies z.ZodType<UpstreamProductResponse>;
 
 export const adminUpstreamServiceItemSchema = z.object({
+  sourceRef: z.string().nullable().optional(),
+  productId: z.string().nullable().optional(),
   id: z.string(),
   name: z.string(),
   productName: z.string().nullable(),
@@ -620,6 +630,9 @@ const optionFieldSchema = z.object({
 });
 
 const settingsScalarSchema = z.union([z.string(), z.number(), z.boolean()]);
+const settingsFieldValueSchema: z.ZodType<FrontendSettingsValue> = z.lazy(() =>
+  z.union([settingsScalarSchema, z.array(z.record(z.string(), settingsFieldValueSchema))]),
+);
 
 const listFieldSchema = z.lazy(() =>
   z.object({
@@ -628,7 +641,8 @@ const listFieldSchema = z.lazy(() =>
     label: z.string().optional(),
     labelKey: z.string().min(1).max(160).optional(),
     fields: z.array(frontendSettingsFieldSchema).min(1),
-    default: z.array(z.record(z.string(), settingsScalarSchema)).optional(),
+    default: z.array(z.record(z.string(), settingsFieldValueSchema)).optional(),
+    migrateFrom: z.union([z.string(), z.array(z.record(z.string(), z.string()))]).optional(),
     itemLabelField: z.string().optional(),
     help: z.string().optional(),
     helpKey: z.string().min(1).max(160).optional(),
@@ -717,6 +731,24 @@ export const pluginActionSchema = z.object({
     .object({
       responsePath: z.string().regex(/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/),
       external: z.boolean().optional(),
+    })
+    .optional(),
+  successFeedback: z
+    .object({
+      message: z.string().trim().min(1).max(256).optional(),
+      messageKey: z.string().min(1).max(160).optional(),
+      params: z
+        .record(
+          z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/),
+          z.string().regex(/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/),
+        )
+        .refine((params) => Object.keys(params).length <= 8, {
+          message: 'successFeedback.params 最多 8 个字段',
+        })
+        .optional(),
+    })
+    .refine((feedback) => Boolean(feedback.message || feedback.messageKey), {
+      message: 'successFeedback 需要 message 或 messageKey',
     })
     .optional(),
 }) as z.ZodType<PluginActionDefinition>;
@@ -823,15 +855,7 @@ export const settingsSchemaResponseSchema = z.object({
 
 export const frontendSettingsValueSchema = z.record(
   z.string(),
-  z.record(
-    z.string(),
-    z.union([
-      z.string(),
-      z.number(),
-      z.boolean(),
-      z.array(z.record(z.string(), settingsScalarSchema)),
-    ]),
-  ),
+  z.record(z.string(), settingsFieldValueSchema),
 ) satisfies z.ZodType<FrontendSettings>;
 
 export const settingsResponseSchema = z.object({

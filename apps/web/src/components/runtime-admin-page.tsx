@@ -12,6 +12,7 @@ import { FrontendAbiBridge } from './frontend-abi-bridge';
 import { FrontendScopeRoot } from './frontend-scope';
 import { useRuntimeModule } from '@/lib/use-runtime-module';
 import { useLocale, useTranslator } from '@/i18n/provider';
+import { isNextRedirectError } from '@/lib/next-navigation';
 
 /**
  * 主计划 §5 阶段 4 M2：固定客户端容器 + 运行期浏览器模块。
@@ -36,11 +37,9 @@ export interface RuntimeAdminResult {
 export function RuntimeAdminPage({
   moduleUrl,
   result,
-  actionError,
 }: {
   moduleUrl: string;
   result: RuntimeAdminResult;
-  actionError?: string;
 }): ReactElement {
   const t = useTranslator();
   const locale = useLocale();
@@ -88,14 +87,6 @@ export function RuntimeAdminPage({
     <>
       {bridge}
       <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="block space-y-6">
-        {actionError ? (
-          <p
-            role="alert"
-            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-          >
-            {actionError}
-          </p>
-        ) : null}
         <RuntimeErrorBoundary>
           {createElement(Component, props as never) as unknown as ReactElement}
         </RuntimeErrorBoundary>
@@ -105,19 +96,22 @@ export function RuntimeAdminPage({
 }
 
 /** 渲染期错误边界：装载成功但渲染抛错时降级（契约 06 §1.2）。 */
-class RuntimeErrorBoundary extends Component<
+export class RuntimeErrorBoundary extends Component<
   { children: ReactElement },
-  { message: string | null }
+  { error: Error | null }
 > {
-  state = { message: null as string | null };
+  state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) {
-    return { message: error.message };
+    return { error };
   }
   render() {
-    if (this.state.message) {
+    if (this.state.error) {
+      // Server actions use this exception as navigation control flow. Catching
+      // it here leaves the URL change intact but renders its digest as an error.
+      if (isNextRedirectError(this.state.error)) throw this.state.error;
       return (
         <p role="alert" className="text-sm text-destructive">
-          {this.state.message}
+          {this.state.error.message}
         </p>
       );
     }
