@@ -15,6 +15,7 @@ import { CommerceError } from '@stackpanel/sdk';
 import { extensions, runTransaction } from './context';
 import { orderModel, productModel, serviceInstanceModel, type StoreOrderData } from './data';
 import { applyServiceLifecycleAction } from './fulfillment';
+import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import type { OrderRecord, ProductRecord, ServiceInstanceRecord } from './repository';
 import {
   createServiceInstance,
@@ -118,7 +119,14 @@ export const storeOperations: CommerceOperations = {
     if (!product || product.status !== 'ACTIVE') {
       throw new CommerceError('product_unavailable', '商品不可用或库存不足');
     }
-    const total = product.price * quantity;
+    // 合作方下单必须与站内下单算出同一个金额：否则同一个用户、同一件商品，
+    // 经 SP v1 和经商城会得到两个价格（此前这条路径完全不打折）。
+    const groupDiscount = await effectiveGroupDiscount(input.userId);
+    const unitPrice = applyDiscount(
+      product.price,
+      betterDiscount(product.discount, groupDiscount),
+    );
+    const total = unitPrice * quantity;
     if (!Number.isSafeInteger(total) || total < 1 || total > MAX_MINOR_AMOUNT) {
       throw new CommerceError('amount_invalid', '订单金额无效');
     }
@@ -135,7 +143,9 @@ export const storeOperations: CommerceOperations = {
       const created = await tx.extensions.create<StoreOrderData>(orderModel, {
         userId: input.userId,
         items: {
-          items: [{ productId: product.id, quantity, price: product.price, name: product.name }],
+          items: [
+            { productId: product.id, quantity, price: unitPrice, name: product.name },
+          ],
           // 标记本单为「合作方预付」（SP v1）——平台未实际收款，禁止退款入账。
           settlement: 'partner_prepaid',
         },

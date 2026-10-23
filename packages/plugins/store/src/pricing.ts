@@ -8,6 +8,7 @@ import type {
 } from '@stackpanel/sdk';
 import { StoreError } from './errors';
 import { context } from './context';
+import { anonymousGroupDiscount, applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import { getProduct } from './repository';
 import { providerForProduct } from './fulfillment';
 import { parseCheckoutSelection } from './utils';
@@ -24,7 +25,10 @@ export interface PricedLine {
  * 解析「商品 + 结账配置」的权威单价（minor units）。
  * 1. 若商品有履约提供方且实现了 `calculateCheckoutPrice` → 以其为准（上游 get_total / 本地类型插件）。
  * 2. 否则回退：用商品 metadata 的 checkoutConfig 做本地静态计价。
- * 3. 无配置 → 返回商品静态价格（沿用商品自身/权限组折扣在 orders.ts 中应用）。
+ * 3. 无配置 → 返回商品静态价格。
+ *
+ * **不含折扣**：本函数只解析「配置带来的单价」，折扣由调用方用 `discount.ts`
+ * 统一应用（`applyDiscount` + `betterDiscount`）。展示与下单必须共用同一套规则。
  */
 export async function resolveCheckoutPrice(
   product: {
@@ -83,7 +87,13 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
   const body = (req.body ?? {}) as Record<string, unknown>;
   const config = parseCheckoutSelection(body['config']);
   const quantity = typeof body['quantity'] === 'number' ? body['quantity'] : 1;
-  const { unit, result } = await resolveCheckoutPrice(product, quantity, config);
+  const { unit: baseUnit, result } = await resolveCheckoutPrice(product, quantity, config);
+  // 折扣必须与下单同源（discount.ts）：页面试算若不打折，用户看到的价与实际
+  // 扣款不一致。未登录时只有商品折扣，登录后再叠加（取更优）权限组折扣。
+  const userId = req.user?.id;
+  const groupDiscount = userId ? await effectiveGroupDiscount(userId) : anonymousGroupDiscount();
+  const discount = betterDiscount(product.discount, groupDiscount);
+  const unit = applyDiscount(baseUnit, discount);
   const total = unit * quantity;
   // Settlement preview (plan §5): show the original amount *and* what the buyer
   // will actually be charged. A missing rate must not break the preview — the
@@ -92,6 +102,9 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
   return {
     productId: id,
     price: unit,
+    // 未打折单价：前端用来展示划线原价与折扣标签（`price` 已是实付单价）。
+    basePrice: baseUnit,
+    discount: discount > 0 ? discount : null,
     currency: product.currency,
     quantity,
     total,
@@ -104,7 +117,8 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
       : {}),
     ...(result
       ? {
-          renewPrice: result.renewPrice ?? unit,
+          // 续费价同样要打折：否则「首期便宜、续费恢复原价」会静默发生。
+          renewPrice: applyDiscount(result.renewPrice ?? baseUnit, discount),
           breakdown: result.breakdown ?? [],
           summary: result.summary,
         }

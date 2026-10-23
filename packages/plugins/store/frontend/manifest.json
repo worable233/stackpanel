@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "79fa02303adb",
+  "revision": "ea88ebc0d979",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -933,6 +933,8 @@
       "checkout.settlementAmount": "结算金额（{currency}）",
       "checkout.fxRate": " · 汇率 {rate}",
       "checkout.breakdownItem": "{label}：{value}",
+      "checkout.configurationDetails": "配置详情",
+      "checkout.summaryProduct": "商品",
       "product.backToCatalog": "返回服务目录",
       "product.cart": "购物车",
       "product.kind": "服务",
@@ -1144,6 +1146,8 @@
       "checkout.settlementAmount": "Settlement amount ({currency})",
       "checkout.fxRate": " · rate {rate}",
       "checkout.breakdownItem": "{label}: {value}",
+      "checkout.configurationDetails": "Configuration details",
+      "checkout.summaryProduct": "Product",
       "product.backToCatalog": "Back to catalog",
       "product.cart": "Cart",
       "product.kind": "Service",

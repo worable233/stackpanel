@@ -81,6 +81,9 @@ interface CheckoutConfig {
 interface PricePreview {
   productId: string;
   price: number;
+  /** 未打折单价（`price` 已扣折扣）；服务端按 discount.ts 计算。 */
+  basePrice?: number;
+  discount?: number | null;
   currency: string;
   quantity: number;
   total: number;
@@ -217,6 +220,9 @@ const cartSchema = z.object({
         id: z.string(),
         name: z.string(),
         price: z.number(),
+        // 未打折单价与折扣百分比：服务端已按 `discount.ts` 应用到 `price`。
+        originalPrice: z.number().optional(),
+        discount: z.number().nullable().optional(),
         currency: z.string(),
         stock: z.number(),
         status: z.string(),
@@ -233,6 +239,9 @@ const cartSchema = z.object({
 const pricePreviewSchema = z.object({
   productId: z.string(),
   price: z.number(),
+  // 未打折单价（`price` 已扣折扣）。服务端算，前端只负责展示划线价。
+  basePrice: z.number().optional(),
+  discount: z.number().nullable().optional(),
   currency: z.string(),
   quantity: z.number(),
   total: z.number(),
@@ -1366,20 +1375,31 @@ const ProductDetailPage: FrontendPageComponent = (props) => {
           </details>
           <div className="mt-2 flex flex-wrap items-baseline gap-2 text-3xl">
             <PriceTag amount={pricePreview?.total ?? product.price} currency={product.currency} />
-            {pricePreview ? null : (
-              <>
-                {product.originalPrice != null && product.originalPrice > product.price ? (
-                  <span className="text-base text-muted-foreground/60 line-through">
-                    {money(product.originalPrice, product.currency, props.locale)}
-                  </span>
-                ) : null}
-                {product.discount != null && product.discount > 0 ? (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    {tr('product.discount', { percent: product.discount })}
-                  </span>
-                ) : null}
-              </>
-            )}
+            {/* 折扣信息始终展示：有试算时用服务端算出的未打折单价，否则退回商品字段。
+                此前 `pricePreview` 存在时整块被隐藏，用户看不到自己拿到了折扣。 */}
+            {(() => {
+              const base = pricePreview?.basePrice;
+              const percent = pricePreview ? pricePreview.discount : product.discount;
+              const showStrike =
+                base != null
+                  ? base > (pricePreview?.price ?? 0)
+                  : product.originalPrice != null && product.originalPrice > product.price;
+              const strikeAmount = base != null ? base : (product.originalPrice ?? null);
+              return (
+                <>
+                  {showStrike && strikeAmount != null ? (
+                    <span className="text-base text-muted-foreground/60 line-through">
+                      {money(strikeAmount, product.currency, props.locale)}
+                    </span>
+                  ) : null}
+                  {percent != null && percent > 0 ? (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      {tr('product.discount', { percent })}
+                    </span>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           {checkoutConfig && !pricePreview ? (
             <p className="mt-2 text-xs text-muted-foreground">{tr('product.configPriceHint')}</p>

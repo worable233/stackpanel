@@ -36,6 +36,7 @@ import {
   parsePagination,
 } from './utils';
 import { resolveCheckoutPrice } from './pricing';
+import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import { formatAmountPair, quoteSettlement, sameCurrency } from './currency';
 import { notifyUser } from './notifications';
 import { auditActor, recordStoreAudit, STORE_AUDIT_ACTIONS } from './audit';
@@ -58,12 +59,7 @@ interface ResolvedLine {
 
 /** 用户所在权限组的最大代理折扣（%），无折扣返回 0。 */
 async function effectiveDiscount(userId: string): Promise<number> {
-  const groups = await context().auth.listUserGroups(userId);
-  let max = 0;
-  for (const group of groups) {
-    if (group.discount != null && group.discount > max) max = group.discount;
-  }
-  return max;
+  return effectiveGroupDiscount(userId);
 }
 
 interface Reserved {
@@ -99,9 +95,8 @@ async function reserve(
     }
     orderCurrency = product.currency;
     const config = parseCheckoutSelection(line.config);
-    // 折扣计价：商品自身折扣与用户权限组折扣取更优（% off）。
-    const productDiscount = product.discount ?? 0;
-    const effective = Math.max(discount, productDiscount);
+    // 折扣计价：商品自身折扣与用户权限组折扣取更优（% off），与展示路径同源。
+    const effective = betterDiscount(product.discount, discount);
     let baseUnit = product.price;
     let configSummary: string | undefined;
     if (config) {
@@ -113,8 +108,7 @@ async function reserve(
       baseUnit = unit;
       configSummary = result?.summary;
     }
-    const discountedUnit =
-      effective > 0 ? Math.round((baseUnit * (100 - effective)) / 100) : baseUnit;
+    const discountedUnit = applyDiscount(baseUnit, effective);
     // Pricing policy seam: interceptors may rewrite the per-unit price before
     // the order total is computed.
     const unit = bus().waterfall<OrderPriceContext>(

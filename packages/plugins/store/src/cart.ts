@@ -1,6 +1,7 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
 import { StoreError } from './errors';
 import { resolveCheckoutPrice } from './pricing';
+import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import {
   createCartItem,
   deleteCartItems,
@@ -15,6 +16,8 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
   const userId = req.user?.id;
   if (!userId) throw new StoreError(401, '未登录');
   const items = await listCartItemsByUser(userId);
+  // 与下单同源：购物车合计若不含折扣，用户在购物车看到的金额会高于实际扣款。
+  const groupDiscount = await effectiveGroupDiscount(userId);
   const rows: Array<{
     id: string;
     productId: string;
@@ -24,6 +27,8 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
       id: string;
       name: string;
       price: number;
+      originalPrice: number;
+      discount: number | null;
       currency: string;
       stock: number;
       status: string;
@@ -37,7 +42,9 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
     const product = await getProduct(item.productId);
     if (!product) continue;
     const config = item.config ? parseCheckoutSelection(item.config) : undefined;
-    const { unit, result } = await resolveCheckoutPrice(product, item.quantity, config);
+    const { unit: baseUnit, result } = await resolveCheckoutPrice(product, item.quantity, config);
+    const discount = betterDiscount(product.discount, groupDiscount);
+    const unit = applyDiscount(baseUnit, discount);
     const lineTotal = unit * item.quantity;
     total += lineTotal;
     rows.push({
@@ -48,7 +55,9 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
       product: {
         id: product.id,
         name: product.name,
-        price: product.price,
+        price: unit,
+        originalPrice: baseUnit,
+        discount: discount > 0 ? discount : null,
         currency: product.currency,
         stock: product.stock,
         status: product.status,

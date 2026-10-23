@@ -637,7 +637,8 @@ export const storePlugin = definePlugin({
     {
       method: 'POST',
       path: '/store/products/:id/price',
-      auth: 'public',
+      // 匿名可试算（只有商品折扣），登录后按权限组折扣计价 —— 与下单同源。
+      auth: 'optional',
       handler: handle(calculateProductPrice),
     },
     {

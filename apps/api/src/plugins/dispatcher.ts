@@ -9,7 +9,7 @@ import type {
   RouteAuth,
   RouteHandler,
 } from '@stackpanel/sdk';
-import { requireAuth, requirePermission, requireOpenScope } from './auth.ts';
+import { extractSession, requireAuth, requirePermission, requireOpenScope } from './auth.ts';
 import { limitedRawBodyStream } from './body.ts';
 import { normalizeErrorBody } from '../lib/problem.ts';
 import { runIdempotent } from '../lib/idempotency.ts';
@@ -431,6 +431,13 @@ async function runGuards(
   if (!route.isActive()) {
     await reply.code(404).send({ error: '资源不存在' });
     return false;
+  }
+  // `optional`: try to resolve a session, but never reject. Lets a public route
+  // (e.g. storefront price preview) price per identity when the caller happens to
+  // be signed in, without turning anonymous browsing into a 401.
+  if (route.auth === 'optional') {
+    const user = await extractSession(request, reply).catch(() => null);
+    if (user) request.user = user;
   }
   // A declared permission implies the route must be reachable only by an
   // authenticated user, even when the plugin did not set `auth` explicitly.

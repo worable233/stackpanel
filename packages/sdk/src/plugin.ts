@@ -317,8 +317,16 @@ export interface EventBus {
 /** HTTP method set exposed to plugins. */
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD';
 
-/** Auth requirement the kernel applies to a plugin route. */
-export type RouteAuth = 'public' | 'user' | 'admin';
+/**
+ * Auth requirement the kernel applies to a plugin route.
+ *
+ * - `public`：不解析会话，`req.user` 永远缺失。
+ * - `optional`：**尽力**解析会话——带上有效凭据时 `req.user` 有值，匿名请求照常
+ *   通行且不返回 401。用于「匿名可看、登录后按身份计价」的公开读接口（例如商品页
+ *   试算价要应用权限组折扣），避免为了展示折扣而把公开页面变成必须登录。
+ * - `user` / `admin`：必须登录（`admin` 另外要求 `platform.admin`）。
+ */
+export type RouteAuth = 'public' | 'optional' | 'user' | 'admin';
 
 /** Framework-agnostic request view handed to plugin route handlers. */
 export interface HttpRequest {
@@ -418,7 +426,12 @@ export interface CorsPolicy {
 export interface PluginRouteBase {
   method: HttpMethod;
   path: string;
-  /** Auth requirement applied by the kernel. Default 'public'. */
+  /**
+   * Auth requirement applied by the kernel. Default 'public'.
+   *
+   * `optional` 会尽力解析会话：凭据有效则注入 `req.user`，无效或缺失都按匿名
+   * 放行（不返回 401）。
+   */
   auth?: RouteAuth;
   /** Permission required after auth; ADMIN always passes. */
   permission?: string;
