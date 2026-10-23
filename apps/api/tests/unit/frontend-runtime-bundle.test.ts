@@ -97,10 +97,11 @@ describe('hostAbiSlotFor', () => {
     expect(hostAbiSlotFor('react/jsx-runtime')).toBe('react/jsx-runtime');
     expect(hostAbiSlotFor('react-dom/client')).toBe('react-dom');
     expect(hostAbiSlotFor('lucide-react')).toBe('lucide-react');
+    // sonner 是宿主槽位：宿主持有唯一的 toast store，插件不得自带第二份。
+    expect(hostAbiSlotFor('sonner')).toBe('sonner');
   });
 
   it('returns null for non-host packages', () => {
-    expect(hostAbiSlotFor('sonner')).toBeNull();
     expect(hostAbiSlotFor('zod')).toBeNull();
   });
 });
@@ -149,7 +150,7 @@ describe('rewriteHostAbiImports', () => {
   });
 
   it('fails closed when a bare specifier is not a host ABI slot', () => {
-    const src = 'import { toast } from "sonner";\nimport { Button } from "@stackpanel/ui";';
+    const src = 'import { z } from "zod";\nimport { Button } from "@stackpanel/ui";';
     expect(rewriteHostAbiImports(src)).toBeNull();
   });
 
@@ -180,7 +181,7 @@ describe('isRuntimeAdminBundleValid', () => {
   });
 
   it('rejects leftover bare specifiers', () => {
-    expect(isRuntimeAdminBundleValid('import { toast } from "sonner";')).toBe(false);
+    expect(isRuntimeAdminBundleValid('import { z } from "zod";')).toBe(false);
   });
 
   it('rejects adapter imports pointing at an unknown slot', () => {
@@ -229,7 +230,7 @@ describe('ensureRuntimeAdminBundle', () => {
 
   it('fails closed when the source has a non-host bare specifier', async () => {
     await writePackage({
-      'frontend/dist/admin.js': 'import { toast } from "sonner";\n',
+      'frontend/dist/admin.js': 'import { z } from "zod";\n',
     });
 
     expect(await ensureRuntimeAdminBundle(dir)).toBe(false);

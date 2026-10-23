@@ -1,9 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
+import type { BootstrapPhase } from '@stackpanel/spec';
 import { env } from '../config/env.ts';
 import { hashPassword } from '../lib/password.ts';
 import { writeAudit } from '../plugins/audit.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { hasAdmin, lockFirstUser } from './first-user.ts';
+import { markAdminClaimed } from '../bootstrap/claim-state.ts';
 
 /**
  * First-run installation claim (the `/setup` wizard).
@@ -67,10 +69,22 @@ export class SetupTokenError extends Error {
 }
 
 export interface SetupStatus {
-  /** True while the instance has no administrator and the wizard is enabled. */
+  /**
+   * True while the instance has no administrator and the wizard is enabled.
+   * Kept as a compatibility projection of `phase` (BOOTSTRAP-R1).
+   */
   required: boolean;
   /** True when the deployment requires a claim token to complete setup. */
   tokenRequired: boolean;
+  /**
+   * Authoritative bootstrap phase. Normal mode only ever reports
+   * `needs_admin` or `complete`; provision mode reports the
+   * `needs_infra`…`starting` family from `@stackpanel/spec`.
+   *
+   * The web page branches on this value, so an unreachable API can no longer
+   * be mistaken for "already installed".
+   */
+  phase: BootstrapPhase;
 }
 
 /** Whether the wizard is enabled at all for this deployment. */
@@ -103,12 +117,17 @@ function tokensMatch(provided: string, expected: string): boolean {
 
 /** Read the public setup state. No side effects; safe to call unauthenticated. */
 export async function setupStatus(): Promise<SetupStatus> {
-  if (!setupEnabled()) return { required: false, tokenRequired: false };
+  const tokenRequired = env.STACKPANEL_SETUP_TOKEN !== undefined;
+  if (!setupEnabled()) {
+    return { required: false, tokenRequired, phase: 'complete' };
+  }
   const prisma = getPrisma();
   const adminCount = await prisma.userGroup.count({ where: { groupId: 'group_admin' } });
+  const phase: BootstrapPhase = adminCount === 0 ? 'needs_admin' : 'complete';
   return {
     required: adminCount === 0,
-    tokenRequired: env.STACKPANEL_SETUP_TOKEN !== undefined,
+    tokenRequired,
+    phase,
   };
 }
 
@@ -176,6 +195,11 @@ export async function claimInstallation(
     await tx.userGroup.create({ data: { userId: user.id, groupId: adminGroup.id } });
     return user.id;
   });
+
+  // BOOTSTRAP-R4: the token stays valid until this point; only now may the
+  // bootstrap state become `complete`. This is bookkeeping — the database is
+  // authoritative — so a failure here must not fail the claim.
+  await markAdminClaimed();
 
   await writeAudit({
     action: 'setup.complete',

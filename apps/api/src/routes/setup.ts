@@ -17,14 +17,24 @@ import {
  * session yet), but they are safe by construction:
  *
  * - `GET /setup/status` is a read-only boolean probe with no side effects.
+ *   It is the **single discovery endpoint** shared with provision mode
+ *   (BOOTSTRAP-R1): both apps answer the same path and shape, so the web page
+ *   never has to guess which mode it is talking to.
  * - `POST /setup` is the sole HTTP path that may mint the first administrator.
  *   It is rate-limited, token-gated when `STACKPANEL_SETUP_TOKEN` is configured,
  *   and serialized under the shared first-user advisory lock, so it can only
  *   ever run once and only when no admin exists. It 409s (not 403s) after the
  *   instance is claimed, so a completed instance never lingers as recon surface.
+ *
+ * `POST /setup/provision` is deliberately **not** registered here: in normal
+ * mode the route must not exist at all (BOOTSTRAP-R3), not merely return 403.
  */
 export async function setupRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/setup/status', async () => setupStatus());
+  app.get('/setup/status', async (_request, reply) => {
+    const status = await setupStatus();
+    reply.header('Cache-Control', 'no-store');
+    return status;
+  });
 
   app.post(
     '/setup',

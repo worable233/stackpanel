@@ -28,7 +28,7 @@ describe.skipIf(!dbAvailable)('setup wizard (real DB)', () => {
   it('reports the instance as unclaimed with no token required', async () => {
     const res = await app.inject({ method: 'GET', url: '/setup/status' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ required: true, tokenRequired: false });
+    expect(res.json()).toEqual({ required: true, tokenRequired: false, phase: 'needs_admin' });
   });
 
   it('rejects a weak password', async () => {
@@ -78,7 +78,7 @@ describe.skipIf(!dbAvailable)('setup wizard (real DB)', () => {
 
   it('self-disables after the instance is claimed', async () => {
     const status = await app.inject({ method: 'GET', url: '/setup/status' });
-    expect(status.json()).toEqual({ required: false, tokenRequired: false });
+    expect(status.json()).toEqual({ required: false, tokenRequired: false, phase: 'complete' });
 
     const again = await app.inject({
       method: 'POST',

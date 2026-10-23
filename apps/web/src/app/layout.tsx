@@ -14,6 +14,7 @@ import { I18nProvider } from '@/i18n/provider';
 import { getLocale } from '@/i18n/locale';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { themeBootstrapScript } from '@/lib/theme';
+import { isProvisioningMode } from '@/lib/provisioning';
 import './globals.css';
 
 const geistSans = localFont({
@@ -29,6 +30,15 @@ const geistMono = localFont({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
+  // During first boot the provision API only serves health + setup: platform
+  // info and branding do not exist yet, so asking would log a 404 per page
+  // render. The static defaults are exactly what the setup page should show.
+  if (isProvisioningMode()) {
+    return {
+      title: DEFAULT_PLATFORM_INFO.name,
+      description: DEFAULT_PLATFORM_INFO.description,
+    };
+  }
   const [platform, brand] = await Promise.all([
     getApiClient()
       .getPlatformInfo()

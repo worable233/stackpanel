@@ -1,0 +1,40 @@
+[Unit]
+Description=StackPanel first-boot bootstrap (migrate + promote config + start services)
+Documentation=file:///opt/stackpanel/README.md
+# 只有自举阶段才有任务文件；正常升级走 stackpanel-upgrade.service。
+# 必须等基础设施可用，但**不**自动重试失败任务（见下方 Restart）。
+After=local-fs.target network-online.target
+Wants=network-online.target
+ConditionPathIsDirectory=/var/lib/stackpanel/bootstrap
+
+[Service]
+Type=oneshot
+# runner 与升级共用一个可执行体，共用同一把实例执行锁：
+# 自举与内核升级不得并行（审计 R3）。
+ExecStart=/opt/stackpanel/bin/stackpanel-upgrade --bootstrap
+# PM2 守护进程由业务用户持有；必须以同一用户、同一 PM2_HOME 运行。
+User=stackpanel
+Group=stackpanel
+Environment=STACKPANEL_ROOT=/opt/stackpanel
+Environment=STACKPANEL_STATE_DIR=/var/lib/stackpanel
+Environment=STACKPANEL_UPDATE_INSTANCE_ID=stackpanel
+Environment=STACKPANEL_PM2_HOME=/home/stackpanel/.pm2
+# 引导配置由 ecosystem 自己读取；这里只需要路径。
+Environment=STACKPANEL_ENV_FILE=/var/lib/stackpanel/stackpanel.env
+# EnvironmentFile 的优先级：**后面的覆盖前面的**（systemd 语义）。
+# 权威配置必须最后加载：它是 DATABASE_URL 的唯一来源，runner 不得重复声明；
+# upgrade.env 只放路径与保留策略等非机密项。
+EnvironmentFile=-/etc/stackpanel/upgrade.env
+EnvironmentFile=-/var/lib/stackpanel/stackpanel.env
+# 迁移 + 首次启动探针；给足余量但必须有限。
+TimeoutStartSec=2h
+# 失败必须显式暴露。任务文件已被 runner 移出 inbox，因此不会形成失败循环；
+# 操作员修正配置后由 /setup 重新提交（生成新的代次与任务）。
+Restart=no
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/opt/stackpanel /var/lib/stackpanel
+
+[Install]
+WantedBy=multi-user.target

@@ -1,11 +1,16 @@
 import { DocumentScrollbar } from '@stackpanel/ui';
+import { isProvisioningMode } from '@/lib/provisioning';
 import { activeThemeCandidate } from '@/lib/slots';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
+  // During first boot there is no installed/enabled theme to resolve (and the
+  // provision API has no theme endpoints). Skipping the lookup avoids a
+  // guaranteed 404 on every render (BOOTSTRAP-R10). Host styles still apply.
+  const provisionMode = isProvisioningMode();
   const [theme, t] = await Promise.all([
-    activeThemeCandidate(),
+    provisionMode ? Promise.resolve(null) : activeThemeCandidate(),
     getLocale().then((locale) => createTranslator(locale)),
   ]);
   return (

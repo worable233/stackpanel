@@ -33,7 +33,7 @@ describe.skipIf(!dbAvailable)('setup wizard — disabled (real DB)', () => {
   it('never advertises the wizard', async () => {
     const res = await app.inject({ method: 'GET', url: '/setup/status' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ required: false, tokenRequired: false });
+    expect(res.json()).toEqual({ required: false, tokenRequired: false, phase: 'complete' });
   });
 
   it('refuses to claim an unclaimed instance', async () => {

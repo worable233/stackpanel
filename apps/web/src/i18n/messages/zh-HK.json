@@ -135,7 +135,51 @@
         "continue": "下一步",
         "initialize": "初始化並進入後臺"
       },
-      "pageTitle": "初始化"
+      "unavailable": {
+        "title": "暫時無法讀取初始化狀態",
+        "description": "可能是 API 尚未就緒或網絡中斷。稍後重試；若持續失敗，請檢查伺服器上的 API 日誌。",
+        "retry": "重試"
+      },
+      "pageTitle": "初始化",
+      "provision": {
+        "title": "配置基礎設施",
+        "titleProgress": "正在應用配置",
+        "desc": "填寫資料庫與物件儲存連線。提交後會先驗證連線，再執行遷移並啟動服務。",
+        "descProgress": "配置已提交。正在驗證、遷移並啟動服務，此頁面會自動重新整理。",
+        "failed": "服務未能正常啟動。請檢視伺服器日誌中的 bootstrap 記錄，修正後重新提交。",
+        "progress": "處理中…（遷移可能需要數十秒到數分鐘）",
+        "token": "初始化令牌",
+        "tokenHint": "安裝指令碼輸出的 STACKPANEL_SETUP_TOKEN（儲存在 /var/lib/stackpanel/stackpanel.env）。",
+        "database": "資料庫連線串",
+        "databaseHint": "必須是已存在的空庫（或已有 StackPanel 例項的庫），賬號需要 CREATE 許可權。",
+        "redis": "Redis 連線串",
+        "redisHint": "生產環境必填：會話、限流與佇列都依賴 Redis。",
+        "storage": "物件儲存",
+        "driverS3": "S3 相容（生產所需）",
+        "driverLocal": "本地磁碟（僅開發環境）",
+        "endpoint": "S3 Endpoint",
+        "region": "Region",
+        "bucket": "Bucket",
+        "bucketHint": "Bucket 需已存在；探測時會做一次私有讀寫驗證。",
+        "accessKey": "Access Key ID",
+        "secretKey": "Secret Access Key",
+        "forcePathStyle": "使用 path-style 定址（MinIO 等自建儲存通常需要）",
+        "failurePrefix": "失敗類別：",
+        "submit": "驗證並應用配置",
+        "submitting": "提交中…",
+        "errorToken": "請輸入初始化令牌",
+        "errorDatabase": "請輸入資料庫連線串",
+        "errorTokenInvalid": "初始化令牌無效",
+        "errorNotWritable": "當前階段不接受新的配置，請重新整理頁面檢視進度",
+        "errorConflict": "同一提交標識對應了不同配置，請重新整理頁面後重試",
+        "errorProbe": "基礎設施預檢未通過，請檢查連線串與賬號許可權",
+        "errorInvalidConfig": "配置格式不正確",
+        "errorGeneric": "提交失敗，請稍後重試",
+        "errorUnreachable": "提交失敗：無法連線 API",
+        "titleBlocked": "需要人工處理",
+        "descBlocked": "資料庫遷移失敗且無法安全自動重試。請檢視伺服器日誌中的 bootstrap 記錄，處理後重新提交。",
+        "diagnosticsRequired": "檢測到需要人工介入的狀態（例如目標庫非空或存在失敗的遷移記錄）。在完成資料庫側修復前，請勿重複提交。"
+      }
     },
     "panel": {
       "highlightTitle": "開箱即用",
@@ -1338,7 +1382,9 @@
       "invalid_client": "OAuth 客戶端無效",
       "invalid_scope": "OAuth 授權範圍無效",
       "invalid_target": "OAuth 目標地址無效"
-    }
+    },
+    "rate_limited": "請求過於頻繁，請稍後再試",
+    "not_writable": "當前狀態不接受該操作，請稍後再試"
   },
   "auditAction": {
     "auth": {

@@ -38,16 +38,56 @@ node scripts/release/build-kernel-artifact.mjs \
 pnpm --filter @stackpanel/updater build
 node scripts/release/build-upgrade-runner.mjs --out dist-artifacts
 
-# 2. 目标机安装（root 执行）
+# 2. 目标机安装（root 执行，首次安装）
+#    必须提供 --manifest：安装器按清单校验 sha256，并交叉核对
+#    kernel/migrate 的 role / version / platform / nodeMajor。
 sudo bash scripts/install-artifact.sh \
   --kernel   dist-artifacts/stackpanel-0.3.0-kernel-linux-x64.tar.zst \
   --migrate  dist-artifacts/stackpanel-0.3.0-migrate-linux-x64.tar.zst \
-  --runner   dist-artifacts/stackpanel-upgrade.mjs
+  --runner   dist-artifacts/stackpanel-upgrade.mjs \
+  --manifest dist-artifacts/stackpanel-0.3.0-linux-x64.artifacts.json \
+  --site-url https://panel.example.com   # 可选
 ```
 
-安装脚本会创建目录、原子切换 `current`、把 runner 放在 `bin/`（不随版本替换）、
-执行一次迁移，并启用 `stackpanel-upgrade.path`。启用后 systemd 只在
-`inbox/*.json` 出现时拉起 oneshot，无常驻进程。
+安装脚本会创建目录/业务用户、**保留完整 migrate 解包根**到
+`migrate/<version>/`（首装不执行迁移——此时还没有数据库）、生成根密钥与
+一次性初始化令牌写入 `/var/lib/stackpanel/stackpanel.env`（`0640`，属主=业务用户）、
+原子切换 `current`、把 runner 放在 `bin/`（不随版本替换）、启动 API+Web
+（**不启动 worker**）并启用 `stackpanel-upgrade.path` 与 `stackpanel-bootstrap.path`。
+
+已有实例默认**拒绝**重新初始化（防止覆盖 `JWT_SECRET` / `SETTINGS_ENCRYPTION_KEY`）；
+确实要覆盖需显式 `--allow-reinstall`。密钥只在缺失时生成，重复安装不轮换。
+
+## 首次自举（零配置文件）
+
+1. 用 HTTPS 或 SSH 隧道打开 `/setup`（例如 `ssh -L 3000:127.0.0.1:3000 <user>@<host>`），
+   不要在公网明文 HTTP 上填写数据库密码。
+2. 填入数据库 / Redis / S3 与初始化令牌（`grep '^STACKPANEL_SETUP_TOKEN=' /var/lib/stackpanel/stackpanel.env`）。
+3. 提交后 API 先做有界预检（PG 版本/DDL 权限/迁移状态、Redis 读写、S3 私有前缀读写删），
+   通过才写不可变候选 `bootstrap/config.candidate-<generation>.env` 并发布任务，返回 `202`。
+4. `stackpanel-bootstrap.path` 唤醒 `stackpanel-upgrade --bootstrap`：抢同一把实例锁 →
+   认领任务（移出 inbox，失败不会反复触发）→ 迁移 → 合并提升配置 → `pm2 delete/start/save` →
+   探针 → 阶段到 `needs_admin`。
+5. 在 `/setup` 创建首个管理员；成功后阶段推进到 `complete`，初始化令牌在此之前一直有效。
+
+阶段：`needs_infra → validating → queued → migrating → starting → needs_admin → complete`，
+失败停在 `migration_failed`（可直接修正候选）或 `runtime_failed`（**不**重开配置写接口）。
+
+`GET /setup/status` 是未认证的公开投影，只给阶段与失败分类。查看详细诊断（最近一次
+runner 结果、三个独立结果）需要带上同一个令牌：
+
+```bash
+TOKEN="$(sed -n 's/^STACKPANEL_SETUP_TOKEN="\(.*\)"/\1/p' /var/lib/stackpanel/stackpanel.env)"
+curl -s -H "X-Setup-Token: ${TOKEN}" http://127.0.0.1:3001/setup/diagnostics
+```
+
+返回内容中的 DSN、密码、token、长密钥都会被脱敏成 `<redacted>`，并做长度截断。
+
+崩溃恢复：`stackpanel-bootstrap.service` 在开机时也会运行，inbox 为空但状态停在
+`queued`/`migrating`/`starting` 时会自动续跑；`starting` 只重建进程，不重跑迁移。
+
+逃生门：`stackpanel-upgrade --reset-infra` 仅在失败态可用，会备份配置、轮换令牌、
+清空候选与任务通道；**不会**回退已经执行过的数据库迁移。
 
 内核产物内自带 `deploy/systemd/`，因此目标机不需要源码树：安装脚本优先从
 `releases/<version>/deploy/systemd` 取单元文件。`/etc/stackpanel/upgrade.env`
@@ -78,6 +118,12 @@ sudo systemctl start stackpanel-upgrade.service
 /opt/stackpanel/bin/stackpanel-upgrade --reconcile
 /opt/stackpanel/bin/stackpanel-upgrade --rollback
 /opt/stackpanel/bin/stackpanel-upgrade --requeue
+
+# 首次自举（通常由 stackpanel-bootstrap.path 触发，也可手工执行）
+/opt/stackpanel/bin/stackpanel-upgrade --bootstrap
+
+# 受限重置：仅在失败态可用（备份配置 + 轮换令牌，不回退已执行的迁移）
+/opt/stackpanel/bin/stackpanel-upgrade --reset-infra
 ```
 
 ## 环境变量
@@ -90,7 +136,7 @@ runner 读取 `/etc/stackpanel/upgrade.env`（`deploy/systemd/upgrade.env.exampl
 | `STACKPANEL_STATE_DIR`                                  | 状态根，默认 `/var/lib/stackpanel`                            |
 | `STACKPANEL_UPDATE_INSTANCE_ID`                         | 实例 ID；必须与 API 的 `DISTRIBUTION_UPDATE_INSTANCE_ID` 一致 |
 | `STACKPANEL_PM2_HOME`                                   | 必须与业务进程同一用户、同一 PM2_HOME                         |
-| `DATABASE_URL`                                          | 迁移与快照使用                                                |
+| `DATABASE_URL`                                          | **不在此文件配置**：唯一来源是 `/var/lib/stackpanel/stackpanel.env`（systemd 单元把它放在最后加载；同名键后者覆盖前者） |
 | `STACKPANEL_RELEASE_RETENTION`                          | 保留 release 数，默认 2                                       |
 | `STACKPANEL_HEALTH_URL` / `_READINESS_URL` / `_WEB_URL` | 维护态探针地址                                                |
 | `STACKPANEL_DATABASE_BACKUP=off`                        | 备份由外部系统负责时跳过 `pg_dump`                            |
