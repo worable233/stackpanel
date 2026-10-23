@@ -95,6 +95,15 @@ export interface ComposeProjectConfig {
    * 缺省时从当前 updater 镜像引用（取 `repo` 部分）推导，避免多配一个变量。
    */
   updaterImageRepository?: string;
+  /**
+   * 仓库在**宿主**上的绝对路径。
+   *
+   * 自升级要切换 updater 自己：在 updater 容器里直接跑 `compose up -d updater` 会
+   * 在替换容器时把 CLI 一起杀掉（新容器停在 `Created`、旧容器 `Exited 137`）。因此
+   * 切换必须交给一个**脱离本容器的临时助手容器**执行；助手需要以宿主的绝对路径挂载
+   * 仓库，否则 compose 里的相对绑定路径会被解析到错误位置。缺省等于 `projectDir`。
+   */
+  hostProjectDir?: string;
   /** 快照/备份目录（updater 独立卷内）。缺省用 workDir/backups。 */
   backupDir?: string;
   /** 磁盘空间下限（字节）；不足则在停服前失败（§5.4-1）。 */
@@ -180,6 +189,7 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
     ...(env['UPDATER_ENV_FILE'] ? { envFile: env['UPDATER_ENV_FILE'] } : {}),
     imageEnv: env['UPDATER_IMAGE_ENV'] ?? 'STACKPANEL_IMAGE',
     imageRepository: required('UPDATER_IMAGE_REPOSITORY'),
+    ...(env['UPDATER_HOST_PROJECT_DIR'] ? { hostProjectDir: env['UPDATER_HOST_PROJECT_DIR'] } : {}),
     updaterService: env['UPDATER_SELF_SERVICE'] ?? 'updater',
     updaterImageEnv: env['UPDATER_SELF_IMAGE_ENV'] ?? 'STACKPANEL_UPDATER_IMAGE',
     ...(env['UPDATER_SELF_IMAGE_REPOSITORY']

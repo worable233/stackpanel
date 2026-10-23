@@ -361,6 +361,11 @@ services:
       # updater 自升级（§5.2）：切换自身服务镜像的环境变量，候选与回退都用它。
       UPDATER_SELF_SERVICE: updater
       UPDATER_SELF_IMAGE_ENV: STACKPANEL_UPDATER_IMAGE
+      # 仓库在**宿主**上的绝对路径：自升级用独立助手容器执行 `compose up -d updater`，
+      # 助手必须按宿主路径挂载仓库，否则相对绑定路径解析错误。
+      UPDATER_HOST_PROJECT_DIR: ${STACKPANEL_HOST_DIR:-}
+      # 宿主 docker 组 GID：助手容器以非 root 运行，需要附加组才能访问 socket。
+      DOCKER_GID: ${DOCKER_GID:-999}
       # 自升级候选必须落在 **updater 自己的仓库**，不是内核仓库。留空时由当前
       # 运行镜像引用推导（`repo:tag` / `repo@sha256:...` → `repo`）。
       UPDATER_SELF_IMAGE_REPOSITORY: ${UPDATER_SELF_IMAGE_REPOSITORY:-}
@@ -372,7 +377,14 @@ services:
       # 唯一持有 Docker socket 的进程（§5.1）。
       - /var/run/docker.sock:/var/run/docker.sock
       # 只读挂载 project 目录，使其能对绑定 project 执行 docker compose。
-      - ./:/workspace:ro
+      #
+      # **必须用绝对宿主路径**：updater 会从**容器内**执行 `docker compose up -d updater`
+      # 来完成自升级。compose 客户端以「当前工作目录」解析相对绑定路径，在容器里那就是
+      # `/workspace`；该绝对路径被原样交给宿主 daemon，于是新容器挂载到一个空的
+      # `/workspace`，重启后连 `docker-compose.yml` 都读不到（真机自升级抓到：候选容器
+      # 起来后 `ls /workspace` 为空、compose 报 `couldn't find env file`）。
+      # `deploy.sh` 会把仓库绝对路径写入 `docker/.env`。
+      - ${STACKPANEL_HOST_DIR:-.}:/workspace:ro
       # updater 独立持久卷：权威日志、锁、部署指针、备份。
       - stackpanel-updater-state:/var/lib/stackpanel-updater
     networks:

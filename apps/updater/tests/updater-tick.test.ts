@@ -173,3 +173,41 @@ describe('Updater.tick — 执行权与通道的顺序', () => {
     expect(existsSync(path.join(root, 'executor.lock'))).toBe(false);
   });
 });
+
+describe('Updater.run — 自升级失败不得打死执行器', () => {
+  /**
+   * 真机缺陷：`run()` 里 `guardTick()` / `consumeRequest()` / `settleOnStart()` 的异常
+   * 没人接。一次自升级失败（当时是「读不到当前镜像引用」）抛出后进程非零退出，容器按
+   * `restart` 策略反复重启，每轮重启又撞同一个错误——一个本应「下次再试」的失败被放大成
+   * 全实例不可用，连内核升级都做不了。
+   */
+  it('keeps ticking after a self-update step throws', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'sp-selfloop-'));
+    const logs: string[] = [];
+    let consumeCalls = 0;
+    const updater = new Updater({
+      config: { stateDir: dir, instanceId: 'sp', composeProject: 'sp', pollIntervalMs: 1 },
+      adapter: adapter(),
+      log: (m) => logs.push(m),
+      owner: 'test:run',
+      sleep: async () => {
+        updater.stop();
+      },
+      selfUpdate: {
+        confirmCandidate: async () => undefined,
+        settleOnStart: async () => undefined,
+        guardTick: async () => {
+          throw new Error('自升级守卫炸了');
+        },
+        consumeRequest: async () => {
+          consumeCalls += 1;
+          throw new Error('自升级消费炸了');
+        },
+      },
+    });
+    await updater.run();
+    expect(consumeCalls).toBe(1);
+    expect(logs.some((m) => m.includes('自升级 guard 失败'))).toBe(true);
+    expect(logs.some((m) => m.includes('自升级 consume 失败'))).toBe(true);
+  });
+});

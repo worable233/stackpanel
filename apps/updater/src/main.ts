@@ -311,11 +311,27 @@ export class Updater {
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     while (!this.stopping) {
       const handled = await this.tick();
-      // 自升级守卫：空闲时检查候选是否超时未确认，超时则回退（§5.2）。
-      await this.deps.selfUpdate?.guardTick();
-      // 消费管理端提交的自升级请求（无在途计划/任务时）。
-      await this.deps.selfUpdate?.consumeRequest();
+      // 自升级守卫/请求消费**不得让进程崩溃**。真机抓到：一次自升级失败（读不到镜像
+      // 引用）抛出的错误没人接，进程非零退出、容器按 restart 策略反复重启，而每轮
+      // 重启又撞同一个错误——一个本应「下次再试/回退」的失败被放大成全实例不可用。
+      // 自升级是可选能力：失败只记录，不影响内核升级主循环。
+      await this.runSelfUpdateStep('guard', () => this.deps.selfUpdate?.guardTick());
+      await this.runSelfUpdateStep('consume', () => this.deps.selfUpdate?.consumeRequest());
       if (!handled) await sleep(this.deps.config.pollIntervalMs);
+    }
+  }
+
+  /** 执行一步自升级动作，吞掉异常并记录（绝不中断主循环）。 */
+  private async runSelfUpdateStep(
+    step: 'guard' | 'consume',
+    action: () => Promise<unknown> | undefined,
+  ): Promise<void> {
+    try {
+      await action();
+    } catch (error) {
+      this.deps.log?.(
+        `自升级 ${step} 失败（不影响升级主循环）：${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -350,7 +366,12 @@ async function main(): Promise<void> {
     log(`候选自确认失败，等待守护者回退：${error instanceof Error ? error.message : String(error)}`);
   }
   // 启动对账：若本进程正是已提交候选，清理自升级计划（幂等）。
-  await selfUpdate?.settleOnStart();
+  // 同样不因自升级问题拒绝启动——否则执行器永久起不来，连内核升级也做不了。
+  try {
+    await selfUpdate?.settleOnStart();
+  } catch (error) {
+    log(`自升级启动对账失败（不影响内核升级）：${error instanceof Error ? error.message : String(error)}`);
+  }
 
   // 独立恢复入口（§5.2）：仅在显式配置令牌时监听，默认只回环。
   let recovery: RecoveryServerHandle | null = null;

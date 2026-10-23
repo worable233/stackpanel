@@ -9,6 +9,8 @@ import {
   ComposeSelfUpdateAdapter,
   DeploymentAdapterError,
   parseDfFreeBytes,
+  findImageReference,
+  imageOfComposeConfig,
   repositoryOf,
 } from '../src/compose-adapter.ts';
 import { validateComposeConfig, type ComposeProjectConfig } from '../src/compose-config.ts';
@@ -42,6 +44,7 @@ function config(overrides: Partial<ComposeProjectConfig> = {}): ComposeProjectCo
     allowedServices: ['api', 'worker', 'web'],
     database: { service: 'postgres', user: 'stackpanel', name: 'stackpanel' },
     // 探针预算收紧到毫秒级：默认预算 180s 会让「探针失败」用例真的等 3 分钟。
+    envFile: 'docker/.env',
     probes: {
       readinessUrl: 'http://api:3001/health',
       readyTimeoutMs: 50,
@@ -477,13 +480,26 @@ describe('ComposeDeploymentAdapter', () => {
     expect(await self.currentUpdaterImage()).toBe('ghcr.io/acme/updater:1.0.0');
     await self.pullAndVerifyUpdater(DIGEST);
     await self.switchUpdaterTo(DIGEST);
-    const up = calls.find((c) => c.args.includes('up'));
     // 自升级必须落在 **updater 自己的仓库**，不是内核仓库（此前复用 `imageRepository`
     // = 内核仓库，拉取的是内核镜像 → 摘要永远对不上，自升级第一步就失败）。
-    expect(up?.env?.['STACKPANEL_UPDATER_IMAGE']).toBe(`ghcr.io/acme/updater@${DIGEST}`);
-    expect(up?.args).toEqual(expect.arrayContaining(['up', '-d', 'updater']));
     const pull = calls.find((c) => c.args[0] === 'pull');
     expect(pull?.args[1]).toBe(`ghcr.io/acme/updater@${DIGEST}`);
+    // 切换必须由**独立助手容器**执行：在本容器里 `compose up -d updater` 会在替换
+    // 容器时把 CLI 一起杀掉，新容器永远停在 `Created`（真机抓到）。
+    const helper = calls.find((c) => c.args[0] === 'run');
+    expect(helper).toBeDefined();
+    expect(helper?.args).toEqual(expect.arrayContaining(['-d', '--rm']));
+    expect(helper?.args).toEqual(
+      expect.arrayContaining(['-v', '/var/run/docker.sock:/var/run/docker.sock']),
+    );
+    expect(helper?.args).toEqual(
+      expect.arrayContaining([`${'STACKPANEL_UPDATER_IMAGE'}=ghcr.io/acme/updater@${DIGEST}`]),
+    );
+    expect(helper?.args).toEqual(expect.arrayContaining(['up', '-d', 'updater']));
+    // 助手同样必须带 `--env-file`，否则用默认值插值（`stackpanel-updater:latest`）。
+    expect(helper?.args).toEqual(expect.arrayContaining(['--env-file', 'docker/.env']));
+    // 助手按**宿主绝对路径**挂载仓库（相对路径在容器内解析错误）。
+    expect(helper?.args).toEqual(expect.arrayContaining(['-v', '/srv/stackpanel:/srv/stackpanel']));
   });
 
   it('uses an explicitly configured updater image repository', async () => {
@@ -507,6 +523,114 @@ describe('ComposeDeploymentAdapter', () => {
     await self.pullAndVerifyUpdater(DIGEST);
     const pull = calls.find((c) => c.args[0] === 'pull');
     expect(pull?.args[1]).toBe(`internal.example:5000/stackpanel-updater@${DIGEST}`);
+  });
+});
+
+describe('currentUpdaterImage 优先级', () => {
+  /**
+   * 真机缺陷：自升级切换只给助手容器注入候选镜像变量，**不改** `docker/.env`。
+   * 因此 compose 的声明值仍是旧镜像；若先读声明值，候选启动后的自确认会拿旧引用
+   * 与候选摘要比较、永远不匹配 → 计划停在 `switching` → 到点被错误回退。
+   */
+  it('prefers the running container over the declared compose value', async () => {
+    const { runner } = fakeRunner((req) => {
+      if (req.args.includes('images')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify([{ Repository: 'ghcr.io/acme/updater', Tag: '2.0.0' }]),
+          stderr: '',
+        };
+      }
+      if (req.args.includes('config')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ services: { updater: { image: 'ghcr.io/acme/updater:1.0.0' } } }),
+          stderr: '',
+        };
+      }
+      return undefined;
+    });
+    const self = new ComposeSelfUpdateAdapter(config(), runner);
+    expect(await self.currentUpdaterImage()).toBe('ghcr.io/acme/updater:2.0.0');
+  });
+
+  it('falls back to the declared value when no container is running', async () => {
+    const { runner } = fakeRunner((req) => {
+      if (req.args.includes('images')) return { code: 0, stdout: '[]', stderr: '' };
+      if (req.args.includes('config')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ services: { updater: { image: 'ghcr.io/acme/updater:3.0.0' } } }),
+          stderr: '',
+        };
+      }
+      return undefined;
+    });
+    const self = new ComposeSelfUpdateAdapter(config(), runner);
+    expect(await self.currentUpdaterImage()).toBe('ghcr.io/acme/updater:3.0.0');
+  });
+});
+
+describe('imageOfComposeConfig', () => {
+  it('reads the declared image for the named service only', () => {
+    const out = JSON.stringify({
+      services: {
+        updater: { image: 'ghcr.io/acme/updater:v3' },
+        postgres: { image: 'postgres:16-alpine' },
+      },
+    });
+    expect(imageOfComposeConfig(out, 'updater')).toBe('ghcr.io/acme/updater:v3');
+  });
+
+  it('returns null for a missing service or unparsable output', () => {
+    expect(imageOfComposeConfig(JSON.stringify({ services: {} }), 'updater')).toBeNull();
+    expect(imageOfComposeConfig('not json', 'updater')).toBeNull();
+  });
+});
+
+describe('findImageReference', () => {
+  /**
+   * 真机缺陷：compose v5 的 `images --format json` 输出**一个数组**，而解析器只按
+   * NDJSON（每行一个对象）处理，于是每一行都解析失败 → 自升级在「读当前 updater
+   * 镜像」这一步就抛错，功能整体不可用。
+   */
+  it('parses the array form emitted by newer compose versions', () => {
+    const out = JSON.stringify([
+      { Repository: '192.168.64.4:5000/stackpanel-updater', Tag: 'v2', Image: 'x' },
+    ]);
+    expect(findImageReference(out)).toBe('x');
+    expect(
+      findImageReference(
+        JSON.stringify([{ Repository: 'ghcr.io/acme/updater', Tag: '1.2.3' }]),
+      ),
+    ).toBe('ghcr.io/acme/updater:1.2.3');
+  });
+
+  it('still parses the NDJSON form emitted by older compose versions', () => {
+    const out = '{"Repository":"ghcr.io/acme/updater","Tag":"1.0.0"}\n';
+    expect(findImageReference(out)).toBe('ghcr.io/acme/updater:1.0.0');
+  });
+
+  it('restores a digest tag with @ instead of :', () => {
+    const out = JSON.stringify([
+      { Repository: 'ghcr.io/acme/updater', Tag: `sha256:${'a'.repeat(64)}` },
+    ]);
+    expect(findImageReference(out)).toBe(`ghcr.io/acme/updater@sha256:${'a'.repeat(64)}`);
+  });
+
+  it('falls back to the image ID when the reference is a digest (empty Tag)', () => {
+    // 真机缺陷：digest 引用的镜像 `Tag` 为空，若只拼 `repo:${Tag}` 会得到 `repo:`
+    // （无摘要），候选自确认永远匹配不上。
+    const out = JSON.stringify([
+      { Repository: '192.168.64.4:5000/stackpanel-updater', Tag: '', ID: DIGEST },
+    ]);
+    expect(findImageReference(out)).toBe(`192.168.64.4:5000/stackpanel-updater@${DIGEST}`);
+  });
+
+  it('returns null for empty or unusable output', () => {
+    expect(findImageReference('')).toBeNull();
+    expect(findImageReference('no such service')).toBeNull();
+    expect(findImageReference('[]')).toBeNull();
   });
 });
 

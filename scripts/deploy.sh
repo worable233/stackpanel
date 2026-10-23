@@ -181,6 +181,10 @@ if [[ "$CLUSTER" == "1" ]]; then
   # 会在解析期直接报错——本地构建路径也会中招。这里补齐本地构建所需的默认 tag；
   # 用 --image 时上面的 set_env 已写入真实引用，不会被覆盖。
   [[ -n "$(sed -n 's/^STACKPANEL_IMAGE=//p' "$DOCKER_ENV" | tail -n1)" ]] || set_env STACKPANEL_IMAGE "stackpanel-api:latest"
+  # updater 从容器内执行 `docker compose` 完成自升级；相对绑定路径会被解析成
+  # 容器内的 `/workspace`，宿主 daemon 会把它当成宿主绝对路径 → 新容器挂到空目录。
+  # 写入仓库绝对路径，让内外两处解析结果一致。
+  set_env STACKPANEL_HOST_DIR "$ROOT_DIR"
   [[ -n "$(sed -n 's/^STACKPANEL_WEB_IMAGE=//p' "$DOCKER_ENV" | tail -n1)" ]] || set_env STACKPANEL_WEB_IMAGE "stackpanel-web:latest"
   grep -qE '^CADDY_IMAGE=.+' "$DOCKER_ENV" || set_env CADDY_IMAGE "caddy:2-alpine"
 fi

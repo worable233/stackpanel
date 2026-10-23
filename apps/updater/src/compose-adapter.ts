@@ -507,6 +507,81 @@ export function repositoryOf(reference: string): string {
   return lastColon > lastSlash ? reference.slice(0, lastColon) : reference;
 }
 
+/** `docker compose images --format json` 的一行（字段随 compose 版本增减）。 */
+interface ComposeImageRow {
+  Repository?: string;
+  Tag?: string;
+  Image?: string;
+  /** 容器镜像 ID（`sha256:...`）。digest 引用时 `Tag` 为空，只能用它对上摘要。 */
+  ID?: string;
+}
+
+/**
+ * 从 `docker compose config --format json` 输出里取指定服务的镜像引用。
+ *
+ * 只读**声明**，不依赖容器运行状态：自升级切换后进程立即重启，此刻 `compose images`
+ * （只列运行中容器）可能为空。解析失败一律返回 null，由调用方回退到下一来源。
+ */
+export function imageOfComposeConfig(output: string, service: string): string | null {
+  try {
+    const parsed = JSON.parse(output) as { services?: Record<string, { image?: unknown }> };
+    const image = parsed.services?.[service]?.image;
+    return typeof image === 'string' && image.length > 0 ? image : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 从 `docker compose images --format json` 输出中取出镜像引用。
+ *
+ * **两种输出形态都必须支持**：compose v2 早期每行一个 JSON 对象（NDJSON），较新版本
+ * 输出单个 JSON **数组**。只按行解析会在数组形态下把所有行都解析失败、最终报
+ * 「无法读取当前 updater 镜像引用」——自升级因此在第一步就死掉（真机抓到）。
+ *
+ * Tag 可能是 `sha256:...`（digest 引用）或普通 tag，都要还原成可直接比较的完整引用。
+ */
+export function findImageReference(output: string): string | null {
+  const referenceOf = (row: ComposeImageRow): string | null => {
+    if (row.Image) return row.Image;
+    if (row.Repository && row.Tag) {
+      const sep = row.Tag.startsWith('sha256:') ? '@' : ':';
+      return `${row.Repository}${sep}${row.Tag}`;
+    }
+    // **digest 引用的镜像 `Tag` 为空**（`repo@sha256:...` 没有 tag）。此时必须回落到
+    // 镜像 ID，否则会拼出 `repo:`（无摘要）——自升级候选自确认拿它和候选摘要比较
+    // 永远不匹配，计划停在 `switching`、到点被错误回退（真机抓到）。
+    if (row.Repository && row.ID?.startsWith('sha256:')) {
+      return `${row.Repository}@${row.ID}`;
+    }
+    return null;
+  };
+
+  const trimmed = output.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const rows = JSON.parse(trimmed) as ComposeImageRow[];
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const reference = referenceOf(row);
+        if (reference) return reference;
+      }
+    } catch {
+      // 落到逐行解析。
+    }
+  }
+  for (const line of trimmed.split('\n')) {
+    const text = line.trim();
+    if (text.length === 0) continue;
+    try {
+      const reference = referenceOf(JSON.parse(text) as ComposeImageRow);
+      if (reference) return reference;
+    } catch {
+      // 非 JSON 行忽略。
+    }
+  }
+  return null;
+}
+
 /** 解析 `df -Pk` 输出的可用字节数（第 4 列，KB）。 */
 export function parseDfFreeBytes(output: string): number | null {
   const lines = output.trim().split('\n');
@@ -590,10 +665,15 @@ export class ComposeSelfUpdateAdapter implements SelfUpdateAdapter {
     opts: { env?: Record<string, string>; allowNonZeroExit?: boolean; timeoutMs?: number } = {},
   ): Promise<string> {
     const files = this.config.composeFiles.flatMap((f) => ['-f', f]);
+    // `--env-file` 与主适配器同理、同样必要：缺了它 compose 用默认值插值
+    // （`STACKPANEL_UPDATER_IMAGE` 未定义 → `stackpanel-updater:latest`），
+    // 自升级于是去拉一个根本不存在的仓库。此前主适配器修过这个缺陷，但自升级
+    // 适配器是独立实现，漏掉了同一处（真机「自升级 consume 失败：docker 退出码 1」）。
+    const envFile = this.config.envFile ? ['--env-file', this.config.envFile] : [];
     return this.runner
       .run({
         file: 'docker',
-        args: ['compose', '-p', this.config.projectName, ...files, ...args],
+        args: ['compose', '-p', this.config.projectName, ...files, ...envFile, ...args],
         cwd: this.config.projectDir,
         ...(opts.env ? { env: opts.env } : {}),
         ...(opts.allowNonZeroExit ? { allowNonZeroExit: true } : {}),
@@ -602,32 +682,46 @@ export class ComposeSelfUpdateAdapter implements SelfUpdateAdapter {
       .then((result) => result.stdout);
   }
 
-  /** 读取当前 updater 服务镜像引用（compose 解析后的实际值）。 */
+  /**
+   * 读取当前 updater 服务镜像引用。
+   *
+   * **不能只靠 `compose images`**：该命令只列**运行中**的容器。候选刚被切换、
+   * 容器正在重启、或正被替换时，服务没有运行实例 → 输出为空 → 报「无法读取当前
+   * updater 镜像引用」。真机上自升级切换后进程立即重启，启动自确认读的正是这个值，
+   * 于是每次自升级都会在重启后崩掉（容器反复重启）。
+   *
+   * 因此按可靠度依次回退：`compose config --images`（只解析声明，不依赖运行态）→
+   * `compose images`（运行态现场）→ 环境变量里的镜像引用。
+   */
   async currentUpdaterImage(): Promise<string> {
-    const out = await this.composeRun(['images', '--format', 'json', this.updaterService()], {
+    const service = this.updaterService();
+
+    // 1) 运行态现场：**优先**用真实容器镜像。
+    //    自升级切换时只给助手容器注入 `STACKPANEL_UPDATER_IMAGE=<候选>`，并未改写
+    //    `docker/.env`；因此 compose 的**声明值**仍是旧镜像。若先读声明值，候选启动后
+    //    自确认会拿旧引用与候选摘要比较、永远不匹配 → 计划停在 `switching` → 到点被
+    //    错误回退。运行态才是「我现在到底是谁」的唯一事实来源。
+    const out = await this.composeRun(['images', '--format', 'json', service], {
       allowNonZeroExit: true,
       timeoutMs: 60_000,
-    });
-    // compose images --format json 每行一个对象；取含镜像引用的字段。Tag 可能是 `sha256:...`
-    // （digest 引用）或普通 tag，两者都要还原成可直接比较的完整引用。
-    for (const line of out.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed.length === 0) continue;
-      try {
-        const parsed = JSON.parse(trimmed) as {
-          Repository?: string;
-          Tag?: string;
-          Image?: string;
-        };
-        if (parsed.Image) return parsed.Image;
-        if (parsed.Repository && parsed.Tag) {
-          const sep = parsed.Tag.startsWith('sha256:') ? '@' : ':';
-          return `${parsed.Repository}${sep}${parsed.Tag}`;
-        }
-      } catch {
-        // 非 JSON 行忽略。
-      }
-    }
+    }).catch(() => '');
+    const reference = findImageReference(out);
+    if (reference) return reference;
+
+    // 2) 声明值：容器没起（正在重启/刚被删）时仍能读到目标镜像引用。
+    //    用 `config --format json` 按服务名取值——`config --images <svc>` 会把依赖服务
+    //    （postgres 等）一并列出，按行取第一个并不可靠。
+    const configured = await this.composeRun(['config', '--format', 'json', service], {
+      allowNonZeroExit: true,
+      timeoutMs: 60_000,
+    }).catch(() => '');
+    const declared = imageOfComposeConfig(configured, service);
+    if (declared) return declared;
+
+    // 3) 环境变量兜底（容器可能连 compose 都来不及解析）。
+    const fromEnv = process.env[this.updaterImageEnv()];
+    if (fromEnv && fromEnv.length > 0) return fromEnv;
+
     throw new DeploymentAdapterError('无法读取当前 updater 镜像引用', 'self-update-current');
   }
 
@@ -658,19 +752,78 @@ export class ComposeSelfUpdateAdapter implements SelfUpdateAdapter {
     const reference = digest.includes('@')
       ? digest
       : `${await this.updaterRepository()}@${normalizeDigest(digest)}`;
-    await this.composeRun(['up', '-d', this.updaterService()], {
-      env: { [this.updaterImageEnv()]: reference },
-      timeoutMs: 15 * 60_000,
-    });
+    await this.replaceSelf(reference, 'switch');
     return { credential: `self-switched:${reference}` };
   }
 
   async restoreUpdater(digest: string): Promise<{ credential: string }> {
-    await this.composeRun(['up', '-d', this.updaterService()], {
-      env: { [this.updaterImageEnv()]: digest },
-      allowNonZeroExit: true,
-      timeoutMs: 15 * 60_000,
-    });
+    await this.replaceSelf(digest, 'restore');
     return { credential: `self-restored:${digest}` };
+  }
+
+  /**
+   * 在**独立助手容器**里执行 `compose up -d updater` 来替换自己。
+   *
+   * 为什么不能直接在本容器里跑：`docker compose up -d updater` 会停掉并删除当前
+   * updater 容器——而 compose 客户端正是跑在这个容器里。真机现象：旧容器
+   * `Exited (137)`，新容器停在 `Created` 从未启动，升级流程整体悬空。
+   *
+   * 助手容器由同一镜像启动（自带 docker/compose），`-d` 分离、`--rm` 自清理，
+   * 因此即便本容器被杀，切换仍会完成。仓库以**宿主绝对路径**挂到同一路径，
+   * 使 compose 里的相对绑定路径在容器内外解析一致。
+   */
+  private async replaceSelf(reference: string, action: 'switch' | 'restore'): Promise<void> {
+    const service = this.updaterService();
+    const hostDir = this.config.hostProjectDir ?? this.config.projectDir;
+    const name = `sp-self-update-${action}-${Date.now()}`;
+    const files = this.config.composeFiles.flatMap((f) => ['-f', f]);
+    const envFile = this.config.envFile ? ['--env-file', this.config.envFile] : [];
+    // 助手以当前 updater 镜像启动：它一定已在本地，且自带 docker/compose。
+    // 覆盖 entrypoint 为 docker，跳过业务入口。
+    const helperImage = await this.currentUpdaterImage();
+    // 镜像以非 root 的 `node` 运行，socket 属 root:docker；宿主 GID 因机而异，
+    // 由 compose 注入的 DOCKER_GID 传入（缺省 999）。
+    const dockerGid = process.env['DOCKER_GID'] ?? '999';
+    await this.runner.run({
+      file: 'docker',
+      args: [
+        'run',
+        '-d',
+        '--rm',
+        '--name',
+        name,
+        // **必须覆盖 compose 标签**：助手用的镜像可能本身就带
+        // `com.docker.compose.service=updater`（例如从运行中容器提交的镜像，或任何
+        // 被 compose 起过的镜像层），那样 compose 会把助手当成 updater 的容器一起
+        // 「Recreate」——助手把自己杀掉，切换永远完不成。
+        '--label',
+        'com.docker.compose.project=sp-self-update',
+        '--label',
+        'com.docker.compose.service=helper',
+        '--group-add',
+        dockerGid,
+        '-v',
+        '/var/run/docker.sock:/var/run/docker.sock',
+        '-v',
+        `${hostDir}:${hostDir}`,
+        '-w',
+        hostDir,
+        '-e',
+        `${this.updaterImageEnv()}=${reference}`,
+        '--entrypoint',
+        'docker',
+        helperImage,
+        'compose',
+        '-p',
+        this.config.projectName,
+        ...files,
+        ...envFile,
+        'up',
+        '-d',
+        service,
+      ],
+      cwd: this.config.projectDir,
+      timeoutMs: 60_000,
+    });
   }
 }
