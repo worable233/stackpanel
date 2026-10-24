@@ -1,5 +1,4 @@
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -302,9 +301,21 @@ async function buildFrontendPackageFromSource(pkg) {
     throw new Error(`Frontend package ${pkg.id} did not export a frontend package`);
   }
   const packageJson = JSON.parse(await readFile(path.join(pkg.source, 'package.json'), 'utf8'));
+  // `revision` is deliberately absent here.
+  //
+  // It used to be a digest of `dist/`, which is gitignored — so the tracked
+  // `frontend/manifest.json` in a package's *source* tree changed on every
+  // build, leaving the repository permanently dirty for a value no consumer
+  // reads. The kernel is the authority: `materializeRevision` re-hashes all
+  // externally-visible bytes (manifest body plus every shipped file) and
+  // rewrites the flat manifest with the result
+  // (`apps/api/src/lib/frontend-revisions.ts`). Whatever a source manifest
+  // claims would be overwritten on first read anyway.
+  //
+  // The written manifest therefore omits the field; `frontendManifestSchema`
+  // supplies an empty default and the kernel fills in the real digest.
   const manifest = {
     version: packageJson.version ?? '0.0.0',
-    revision: await revisionOf(path.join(pkg.source, 'dist'), distFiles),
     entry: 'frontend/dist/index.js',
     pages: (frontendPackage.pages ?? []).map((page) => ({
       path: page.path,
@@ -341,7 +352,7 @@ async function buildFrontendPackageFromSource(pkg) {
   });
   await writeFile(path.join(pkg.source, 'manifest.json'), manifestJson);
   await writeFile(path.join(webTarget, 'frontend', 'manifest.json'), manifestJson);
-  console.log(`Built frontend ${pkg.kind}/${pkg.id} (${manifest.revision})`);
+  console.log(`Built frontend ${pkg.kind}/${pkg.id}`);
 }
 
 /** Discover source packages and already-built data packages. */
@@ -592,13 +603,4 @@ async function annotateAdapterImports(file) {
   const source = await readFile(file, 'utf8');
   const rewritten = annotateAdapterImportsSource(source);
   if (rewritten !== source) await writeFile(file, rewritten);
-}
-
-async function revisionOf(rootDir, files) {
-  const hash = createHash('sha1');
-  for (const file of files) {
-    hash.update(file);
-    hash.update(await readFile(path.join(rootDir, file)));
-  }
-  return hash.digest('hex').slice(0, 12);
 }

@@ -515,6 +515,7 @@ const context = {
     'isEnabled',
     'enabledChannels',
     'inAppExclusions',
+    'declares',
   ]),
   identity: serviceProxy('identity', [
     'requiresEmailVerification',
@@ -578,8 +579,15 @@ const context = {
     'adjust',
     'listAccounts',
     'listLedger',
+    'getMonthlySpending',
   ]),
-  fx: serviceProxy('fx', ['quote', 'getRate', 'listRates']),
+  fx: serviceProxy('fx', [
+    'quote',
+    'quoteToSettlement',
+    'getSettlementCurrency',
+    'getRate',
+    'listRates',
+  ]),
   // Currency catalog. `list`/`listEnabled`/`get`/`requireEnabled` are async and
   // proxy over IPC; `toMinor`/`format` are synchronous in the kernel contract
   // (`CurrencyService`), so they run locally from SDK pure functions — a

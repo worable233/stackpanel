@@ -1,6 +1,5 @@
 {
   "version": "0.0.1",
-  "revision": "05ad833fffdc",
   "entry": "frontend/dist/index.js",
   "pages": [
     {

@@ -9,7 +9,7 @@ import {
   selectFrontendPageDefinition,
   settingsDefaultsFromSchema,
 } from '../src/frontend.js';
-import { frontendPageDataRequirementSchema } from '../src/schemas.js';
+import { frontendManifestSchema, frontendPageDataRequirementSchema } from '../src/schemas.js';
 import type { FrontendPageDefinition, FrontendSettingsSchema } from '../src/frontend.js';
 
 const schema: FrontendSettingsSchema = {
@@ -113,12 +113,8 @@ describe('frontend settings list field', () => {
   it('validates rows and rejects unknown scalar types', () => {
     const zod = buildZodFromSettingsSchema(listSchema);
     expect(zod.parse({}).regions?.items).toEqual([{ city: '上海', lat: 31.23 }]);
-    expect(
-      zod.safeParse({ regions: { items: [{ city: '北京', lat: 39.9 }] } }).success,
-    ).toBe(true);
-    expect(zod.safeParse({ regions: { items: [{ city: '北京', lat: 'x' }] } }).success).toBe(
-      false,
-    );
+    expect(zod.safeParse({ regions: { items: [{ city: '北京', lat: 39.9 }] } }).success).toBe(true);
+    expect(zod.safeParse({ regions: { items: [{ city: '北京', lat: 'x' }] } }).success).toBe(false);
   });
 
   it('defaults a missing list to an empty array', () => {
@@ -246,5 +242,29 @@ describe('page data requirement schema', () => {
 
   it('rejects unknown properties instead of silently ignoring them', () => {
     expect(parse({ as: 'summary', fetch: { path: '/a', body: {} } }).success).toBe(false);
+  });
+});
+
+describe('frontend manifest revision', () => {
+  const baseManifest = {
+    version: '1.0.0',
+    entry: 'frontend/dist/index.js',
+    files: ['frontend/dist/index.js'],
+  };
+
+  it('accepts a manifest that omits `revision`', () => {
+    // The kernel owns the digest (`materializeRevision`); a source-tree manifest
+    // that omits it is the normal case, not a broken package.
+    const result = frontendManifestSchema.safeParse(baseManifest);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.revision).toBe('');
+  });
+
+  it('keeps a published revision intact', () => {
+    const result = frontendManifestSchema.safeParse({
+      ...baseManifest,
+      revision: 'abc123def456',
+    });
+    expect(result.success && result.data.revision).toBe('abc123def456');
   });
 });
