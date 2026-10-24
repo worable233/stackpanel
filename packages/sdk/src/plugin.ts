@@ -220,6 +220,25 @@ export interface PlatformEvents {
     total?: number;
     currency?: string;
   };
+  /**
+   * An order was refunded to the buyer's platform balance.
+   *
+   * `full` distinguishes "the whole order was reversed" from a partial refund.
+   * Consumers that grant value conditioned on the purchase (e.g. referral
+   * commission) should only reverse on a full refund: proportional clawback of
+   * a partial refund produces arithmetic that cannot be explained to the user.
+   */
+  'order.refunded': {
+    orderId: string;
+    /** Account the order belongs to; required to find downstream rewards. */
+    userId?: string;
+    /** Refunded amount in minor units (this refund, not the order total). */
+    amount?: number;
+    /** Settlement currency of the refund. */
+    currency?: string;
+    /** True when the order moved to `REFUNDED` (nothing left on it). */
+    full?: boolean;
+  };
   'ticket.created': { ticketId: string; userId: string };
   'ticket.message.added': { ticketId: string; authorId: string };
   'ticket.status.changed': { ticketId: string; status: string };

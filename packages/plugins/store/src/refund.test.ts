@@ -424,7 +424,10 @@ describe('refundOrder', () => {
     } as never);
 
     expect(published).toEqual([
-      { topic: 'order.refunded', payload: { orderId: 'order-tx', amount: 10000, userId: 'user-1' } },
+      {
+        topic: 'order.refunded',
+        payload: { orderId: 'order-tx', amount: 10000, userId: 'user-1', full: true },
+      },
     ]);
   });
 });
