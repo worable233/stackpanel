@@ -1,3 +1,5 @@
+import { PluginError } from '@stackpanel/sdk';
+
 export const RPC_PROTOCOL = 1 as const;
 export const RPC_TIMEOUT_MS = 10_000;
 export const RPC_MAX_BYTES = 1024 * 1024;
@@ -74,4 +76,68 @@ export function wireError(error: unknown): { message: string; code?: string; sta
     ...(typeof candidate?.status === 'number' ? { status: candidate.status } : {}),
     ...(candidate?.details !== undefined ? { details: encodeWire(candidate.details) } : {}),
   };
+}
+
+/**
+ * Parse a `tx.<group>.<operation>` capability into its parts, or `null` when
+ * the capability is not a transactional call.
+ *
+ * `extensions` is deliberately excluded: `tx.extensions.create` has the same
+ * `tx.<group>.<op>` shape, so a naive pattern matched it here and every
+ * isolated plugin's transactional extension call died in the wallet/payments
+ * branch with "未知事务操作：extensions.create". The dedicated extensions handler
+ * further down resolves the model and dispatches those calls instead.
+ *
+ * Method names are camelCase (`settleHold`), hence the uppercase in group two.
+ */
+export function parseTransactionCapability(
+  capability: string,
+): { group: string; operation: string } | null {
+  const match = /^tx\.(?!extensions\.)([a-z]+)\.([a-zA-Z]+)$/.exec(capability);
+  if (!match) return null;
+  return { group: match[1] ?? '', operation: match[2] ?? '' };
+}
+
+/** Structured error shape sent across the worker boundary. */
+export interface WireError {
+  message: string;
+  code?: string;
+  status?: number;
+  details?: unknown;
+}
+
+/**
+ * Rebuild a worker-thrown error on the host side.
+ *
+ * The worker runs in a separate process, so a plugin's `PluginError` arrives as
+ * plain data. Re-wrapping it in a bare `Error` and copying `code`/`status` was
+ * not enough: `isPluginError` matches on a brand that only lives on the SDK
+ * class, so the kernel error boundary saw an unknown fault and demoted every
+ * deterministic 4xx (403 "no access to this ticket", 404 "not found") to a
+ * generic 500. Rebuilding a branded `PluginError` restores the contract.
+ *
+ * Errors missing either a code or a status stay plain `Error`s, so genuine
+ * crashes are still reported as internal faults rather than client errors.
+ */
+export function reviveWireError(input: WireError): Error {
+  const details = input.details !== undefined ? decodeWire(input.details) : undefined;
+  if (input.code === undefined || input.status === undefined) {
+    const error = new Error(input.message) as Error & {
+      code?: string;
+      status?: number;
+      details?: unknown;
+    };
+    if (input.code !== undefined) error.code = input.code;
+    if (input.status !== undefined) error.status = input.status;
+    if (details !== undefined) error.details = details;
+    return error;
+  }
+  const error = new PluginError(input.code, input.status, input.message);
+  // `PluginError` sets `message` to the code; keep the worker's human-readable
+  // text so logs and the problem-details `detail` stay meaningful.
+  error.message = input.message;
+  const branded = error as PluginError & { statusCode?: number; details?: unknown };
+  branded.statusCode = input.status;
+  if (details !== undefined) branded.details = details;
+  return error;
 }
