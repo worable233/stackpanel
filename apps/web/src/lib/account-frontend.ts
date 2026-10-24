@@ -3,9 +3,7 @@ import type {
   AccountPageComponent,
   AccountUser,
   AccountWidgetComponent,
-  FinderProvider,
   FrontendActionExecutors,
-  FrontendPageDataRequirement,
   FrontendSettings,
 } from '@stackpanel/sdk';
 import { matchFrontendPagePath } from '@stackpanel/sdk';
@@ -17,6 +15,7 @@ import {
   readPluginSettings,
 } from './slots';
 import { bindPluginActions } from './frontend-plugin-actions';
+import { executePageData } from './frontend-page-data';
 import { getLocale } from '@/i18n/locale';
 import { DEFAULT_LOCALE } from '@/i18n/config';
 import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
@@ -150,14 +149,15 @@ export async function resolvePluginAccountRoute(
   // Trust boundary (contract 03 §3.1): an unauthorized package's finders must
   // not execute in the web process.
   const finders = candidateAdmitsServerExecution(candidate) ? (pkg.finders ?? {}) : {};
-  const data = await executeRouteData(
-    route.data ?? [],
+  const data = await executePageData(route.data ?? [], {
     finders,
     params,
-    settings,
-    user,
     searchParams,
-  );
+    settings,
+    session: { role: user.role },
+    api,
+    isAllowed: (permission) => isAllowed(api, permission),
+  });
   try {
     await api.recordFrontendAudit('frontend.account.route.render', candidate.id, path, {
       route: route.path,
@@ -228,57 +228,6 @@ async function isAllowed(
   } catch {
     return false;
   }
-}
-
-async function executeRouteData(
-  requirements: FrontendPageDataRequirement[],
-  finders: Record<string, FinderProvider>,
-  params: Record<string, string>,
-  settings: FrontendSettings,
-  user: AccountUser,
-  searchParams: Record<string, string> = {},
-): Promise<Record<string, unknown>> {
-  const api = await getAuthedApiClient();
-  const values = await Promise.all(
-    requirements.map(async (requirement) => {
-      if (!(await isAllowed(api, requirement.permission))) return null;
-      const finder = finders[requirement.finder];
-      if (!finder) return null;
-      try {
-        return [
-          requirement.as,
-          await finder.handler(resolveFinderInput(requirement, params, searchParams), {
-            params,
-            settings,
-            api,
-            session: { role: user.role },
-          }),
-        ] as const;
-      } catch {
-        return null;
-      }
-    }),
-  );
-  return Object.fromEntries(
-    values.filter((value): value is readonly [string, unknown] => value !== null),
-  );
-}
-
-function resolveFinderInput(
-  requirement: FrontendPageDataRequirement,
-  params: Record<string, string>,
-  searchParams: Record<string, string>,
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(requirement.input ?? {}).map(([key, value]) => [
-      key,
-      key === '$query'
-        ? searchParams
-        : typeof value === 'string' && value.startsWith(':')
-          ? (params[value.slice(1)] ?? value)
-          : (searchParams[key] ?? value),
-    ]),
-  );
 }
 
 function capturePathParams(pattern: string, path: string): Record<string, string> {

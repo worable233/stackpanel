@@ -44,9 +44,17 @@ const settingsPatchSchema = z.object({
   ),
 });
 
-/** Whether a plugin id is a built-in (immutable via upload). */
-function isBuiltin(id: string): boolean {
-  return (BUILTIN_PLUGIN_IDS as readonly string[]).includes(id);
+/**
+ * Whether an operator may uninstall a plugin id.
+ *
+ * Reports the runtime's `removable` (kernel-owned policy) rather than asking
+ * "is this a built-in?", so the two concepts can diverge — a package can ship
+ * with the kernel and still be removable, or be installed by an operator and
+ * still be pinned. Pre-field installs keep the old built-in rule.
+ */
+function isRemovable(id: string, runtime: PluginRuntime): boolean {
+  const plugin = runtime.list().find((item) => item.id === id);
+  return plugin ? plugin.removable : !(BUILTIN_PLUGIN_IDS as readonly string[]).includes(id);
 }
 
 async function persistDependencyEnabledState(
@@ -109,7 +117,8 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           version: p.version,
           state: p.state,
           enabled: enabledById.get(p.id) ?? false,
-          source: isBuiltin(p.id) ? 'builtin' : 'dynamic',
+          source: p.builtin ? 'builtin' : 'dynamic',
+          removable: p.removable,
           hotReload: true,
           frontend: frontendSummary(await readFrontendManifest(pluginPackageDir(p.id))),
           requires: p.requires,
@@ -402,10 +411,10 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
       const params = pluginIdSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: '插件 ID 无效' });
       const { id } = params.data;
-      if (isBuiltin(id)) {
-        return reply.code(400).send({ error: '内置插件不可删除' });
-      }
       const runtime = app.pluginRuntime;
+      if (!isRemovable(id, runtime)) {
+        return reply.code(400).send({ error: '该插件随内核分发，不可删除' });
+      }
       const removedName = runtime.list().find((p) => p.id === id)?.name ?? id;
       try {
         await runtime.unregister(id);

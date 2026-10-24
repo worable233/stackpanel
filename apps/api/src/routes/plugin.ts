@@ -60,12 +60,11 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
       const manifest = await readFrontendManifest(packageDir);
       if (!manifest) continue;
       // Admission decision for server-side execution in the web process
-      // (contract 03 §3.1): built-in OR an explicit `frontendExecutions:
-      // 'server'` grant. Default is `declarative` (never execute). This is
-      // derived from the SAME builtin flag the backend's execution decision
-      // uses, so the web layer never has to infer trust.
+      // (contract 03 §3.1). The runtime already resolved this to the concrete
+      // grant (`builtin` OR operator allowlist ⇒ `server`), so the web layer
+      // reads one field instead of re-deriving trust from provenance.
       const serverExecution =
-        plugin.builtin || plugin.frontendExecutions === 'server'
+        plugin.frontendExecutions === 'server'
           ? ('allowed' as const)
           : ('declarative' as const);
       const pointer = await readCurrentRevision(packageDir);
