@@ -895,3 +895,22 @@ model SeoPage {
   @@index([noindex])
   @@map("seo_pages")
 }
+
+/// 菜单显示覆写（对标 #12.3）：排序、改名、隐藏，以及运营自定义的链接。
+/// 只影响「怎么显示」，不参与任何授权判断 —— 隐藏菜单不等于禁止访问。
+model NavEntry {
+  id String @id
+  surface String
+  href String
+  label String?
+  sortOrder Int?
+  hidden Boolean @default(false)
+  custom Boolean @default(false)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([surface, href])
+  @@index([surface])
+  @@map("nav_entries")
+}

@@ -37,6 +37,7 @@ import { adminCurrencyRoutes } from './routes/admin/currency-rates.ts';
 import { currencyDefinitionRoutes } from './routes/currency-definitions.ts';
 import { adminPaymentsRoutes } from './routes/admin/payments.ts';
 import { adminSalesRoutes } from './routes/admin/sales.ts';
+import { adminNavRoutes } from './routes/admin/nav.ts';
 import { adminPermissionGroupRoutes } from './routes/admin/permission-groups.ts';
 import { adminPermissionsRoutes } from './routes/admin/permissions.ts';
 import { adminSigningRoutes } from './routes/admin/signing.ts';
@@ -450,6 +451,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminCurrencyRoutes);
   void app.register(adminPaymentsRoutes);
   void app.register(adminSalesRoutes);
+  void app.register(adminNavRoutes);
   void app.register(adminPermissionGroupRoutes);
   void app.register(adminPermissionsRoutes);
   void app.register(adminBackupRoutes);

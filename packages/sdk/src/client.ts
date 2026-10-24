@@ -47,6 +47,8 @@ import {
   distributionRefreshResultSchema,
   distributionSourceResponseSchema,
   navListResponseSchema,
+  adminNavResponseSchema,
+  adminNavCustomResponseSchema,
   notificationListResponseSchema,
   notificationMarkAllResponseSchema,
   notificationUnreadCountResponseSchema,
@@ -148,6 +150,9 @@ import type {
   MarketPluginsResponse,
   MarketThemesResponse,
   NavListResponse,
+  AdminNavResponse,
+  AdminNavCustomResponse,
+  AdminNavLayoutItemInput,
   NotificationListResponse,
   NotificationMarkAllResponse,
   NotificationUnreadCountResponse,
@@ -632,6 +637,31 @@ export class ApiClient {
   /** Read navigation items contributed by plugins for a surface. */
   getNav(surface: 'public' | 'account' | 'admin'): Promise<NavListResponse> {
     return this.get(`/nav/${surface}`, navListResponseSchema);
+  }
+
+  /** 后台菜单编辑视图（含隐藏项与来源信息）。 */
+  getAdminNav(surface: 'public' | 'account' | 'admin' = 'admin'): Promise<AdminNavResponse> {
+    return this.get(`/admin/nav?surface=${surface}`, adminNavResponseSchema);
+  }
+
+  /** 保存一次排布：数组顺序即最终顺序，label 为空表示沿用默认文案。 */
+  saveAdminNavLayout(
+    surface: 'public' | 'account' | 'admin',
+    items: AdminNavLayoutItemInput[],
+  ): Promise<AdminNavResponse> {
+    return this.put(`/admin/nav/${surface}`, { items }, adminNavResponseSchema);
+  }
+
+  addAdminNavItem(
+    surface: 'public' | 'account' | 'admin',
+    input: { label: string; href: string },
+  ): Promise<AdminNavCustomResponse> {
+    return this.post(`/admin/nav/${surface}/items`, input, adminNavCustomResponseSchema);
+  }
+
+  /** 删除一条覆写：自定义项消失，默认项恢复原样。 */
+  deleteAdminNavItem(id: string): Promise<{ ok: boolean }> {
+    return this.del(`/admin/nav/items/${id}`, okResponseSchema);
   }
 
   /** Read the active/installed theme's compiled frontend descriptor. */
