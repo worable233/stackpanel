@@ -132,7 +132,24 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // one place (ADR-0012). Success bodies pass through untouched. Legacy
     // `{ error }` bodies are promoted to `detail`; the compat `error` member is
     // no longer emitted (compatibility window closed).
-    if (reply.statusCode >= 400 && typeof payload === 'string' && payload.length > 0) {
+    //
+    // Health probes are exempt. `GET /ready` answers 503 with its *own* payload
+    // (`status`, `database`, `redis`, `pendingFrontends`, …) — that payload is
+    // the diagnosis an orchestrator acts on. Normalising it replaced the whole
+    // body with an opaque `internal.unavailable` problem, so a degraded replica
+    // reported "service unavailable" and nothing else (the pending-frontend list
+    // was lost exactly when it was needed).
+    const isHealthProbe =
+      request.url === '/health' ||
+      request.url === '/ready' ||
+      request.url.startsWith('/ready?') ||
+      request.url.startsWith('/ready/');
+    if (
+      !isHealthProbe &&
+      reply.statusCode >= 400 &&
+      typeof payload === 'string' &&
+      payload.length > 0
+    ) {
       const contentType = String(reply.getHeader('content-type') ?? '');
       if (contentType.includes('application/json')) {
         try {
