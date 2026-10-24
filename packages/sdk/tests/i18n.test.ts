@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createPackageTranslator,
   formatPackageMessage,
+  packageLocaleChain,
   PACKAGE_FALLBACK_LOCALE,
 } from '../src/i18n.js';
 
@@ -31,6 +32,40 @@ describe('createPackageTranslator', () => {
     const tr = createPackageTranslator('zh-CN', catalogs);
     expect(tr('cart.count', { count: 3 })).toBe('共 3 件');
     expect(tr('cart.count')).toBe('共 {count} 件');
+  });
+
+  it('resolves a base language to the shipped region', () => {
+    expect(createPackageTranslator('en', catalogs)('page.title')).toBe('Store');
+  });
+
+  it('never resolves Traditional Chinese to the Simplified catalog', () => {
+    const traditional = {
+      'zh-CN': { 'page.title': '商店' },
+      'zh-TW': { 'page.title': '商店（臺）' },
+      'zh-HK': { 'page.title': '商店（港）' },
+    };
+    expect(createPackageTranslator('zh-Hant', traditional)('page.title')).toBe('商店（臺）');
+    expect(createPackageTranslator('zh-Hant-HK', traditional)('page.title')).toBe('商店（港）');
+    expect(createPackageTranslator('zh-MO', traditional)('page.title')).toBe('商店（港）');
+    expect(createPackageTranslator('zh-Hans-CN', traditional)('page.title')).toBe('商店');
+  });
+});
+
+describe('packageLocaleChain', () => {
+  it('orders candidates from most to least specific', () => {
+    const traditional = {
+      'zh-CN': {},
+      'zh-TW': {},
+      'zh-HK': {},
+      'en-US': {},
+    };
+    expect(packageLocaleChain('zh-Hant-HK', traditional)).toEqual(['zh-HK', 'zh-TW', 'zh-CN']);
+    expect(packageLocaleChain('en-GB', traditional)).toEqual(['en-US']);
+  });
+
+  it('returns an empty chain for an unsupported language', () => {
+    expect(packageLocaleChain('ja-JP', catalogs)).toEqual([]);
+    expect(packageLocaleChain(undefined, catalogs)).toEqual([]);
   });
 });
 

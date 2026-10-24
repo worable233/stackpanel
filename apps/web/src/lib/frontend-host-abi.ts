@@ -27,7 +27,15 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import * as react from 'react';
 import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
-import { RouteProgress } from '@/components/frontend-absorbed-clients';
+import * as sonner from 'sonner';
+// NOTE: do **not** import `recharts` here. This module is evaluated inside the
+// RSC server graph, and Recharts calls `React.createContext` at module scope —
+// the server React build has no `createContext`, so the import throws
+// "createContext only works in Client Components" and every page 500s.
+// If a plugin ever needs charts, publish them from a `'use client'` module the
+// way `frontend-abi-bridge.tsx` publishes the rest of the client ABI.
+import { AutoSubmitForm, RouteProgress } from '@/components/frontend-absorbed-clients';
+import { CartCheckout } from '@/components/cart-checkout';
 
 /**
  * Host-absorbed client capabilities, keyed by the **dist file stem** of the client
@@ -41,6 +49,7 @@ import { RouteProgress } from '@/components/frontend-absorbed-clients';
  */
 const ABSORBED_CLIENT_CAPABILITIES: Record<string, unknown> = {
   'route-progress': { RouteProgress },
+  'auto-submit': { AutoSubmitForm, CartCheckout },
 };
 
 export type HostServerAbi = Record<string, unknown>;
@@ -65,11 +74,11 @@ export function publishHostServerAbi(): HostServerAbi {
       '@stackpanel/ui': ui,
       '@stackpanel/sdk': sdk,
       'lucide-react': lucide,
+      sonner,
     };
   }
-  if (!g.__STACKPANEL_ABSORBED_CLIENT__) {
-    g.__STACKPANEL_ABSORBED_CLIENT__ = ABSORBED_CLIENT_CAPABILITIES;
-  }
+  // Refresh client references after development hot reload as new capabilities are added.
+  g.__STACKPANEL_ABSORBED_CLIENT__ = ABSORBED_CLIENT_CAPABILITIES;
   return g.__STACKPANEL_SERVER_ABI__;
 }
 

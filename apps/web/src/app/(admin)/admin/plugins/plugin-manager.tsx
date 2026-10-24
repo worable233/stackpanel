@@ -4,8 +4,20 @@ import { SectionTitle } from '@stackpanel/ui';
 import { useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import type { AdminPlugin, PluginDependencyStatus } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { deletePluginAction, togglePluginAction } from '@/lib/plugin-actions';
 import { useTranslator } from '@/i18n/provider';
 import type { Translator } from '@/i18n/core';
@@ -54,12 +66,19 @@ export function PluginManager({ plugins }: { plugins: AdminPlugin[] }) {
 
   const mutate = async (form: FormData) => {
     startTransition(async () => {
-      if (form.get('_op') === 'delete') {
-        await deletePluginAction(form);
-      } else {
-        await togglePluginAction(form);
+      const deleting = form.get('_op') === 'delete';
+      try {
+        if (deleting) {
+          await deletePluginAction(form);
+          toast.success(t('admin.plugins.deleted'));
+        } else {
+          await togglePluginAction(form);
+          toast.success(t('admin.plugins.toggled'));
+        }
+        router.refresh();
+      } catch {
+        toast.error(t('admin.plugins.mutationFailed'));
       }
-      router.refresh();
     });
   };
 
@@ -178,18 +197,35 @@ export function PluginManager({ plugins }: { plugins: AdminPlugin[] }) {
                   </Button>
                 </form>
                 {plugin.source === 'dynamic' ? (
-                  <form
-                    action={async () => {
-                      const form = new FormData();
-                      form.set('_op', 'delete');
-                      form.set('id', plugin.id);
-                      await mutate(form);
-                    }}
-                  >
-                    <Button type="submit" variant="destructive" size="sm" disabled={isMutating}>
+                  <AlertDialog>
+                    <AlertDialogTrigger
+                      render={<Button variant="destructive" size="sm" disabled={isMutating} />}
+                    >
                       {t('common.delete')}
-                    </Button>
-                  </form>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('admin.plugins.deleteConfirmTitle')}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t('admin.plugins.deleteConfirmDescription', { name: plugin.name })}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction
+                          variant="destructive"
+                          onClick={() => {
+                            const form = new FormData();
+                            form.set('_op', 'delete');
+                            form.set('id', plugin.id);
+                            void mutate(form);
+                          }}
+                        >
+                          {t('common.delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 ) : null}
               </div>
             </li>

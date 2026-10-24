@@ -7,6 +7,7 @@ import {
   activateRevision,
   computeRevisionDigest,
   ensureCurrentRevision,
+  isRevisionComplete,
   isRevisionName,
   listRevisions,
   materializeFromPackageDir,
@@ -63,6 +64,21 @@ describe('revision name safety', () => {
 });
 
 describe('computeRevisionDigest (contract 04 §1.2)', () => {
+  it('allows multiple admin routes to reuse one editor component', () => {
+    const files = frontendFiles(
+      'export default 1;',
+      '.x{}',
+      baseManifest({
+        adminRoutes: [
+          { path: '/records/new', component: 'admin/record-editor' },
+          { path: '/records/:id/edit', component: 'admin/record-editor' },
+        ],
+      }),
+    );
+
+    expect(() => validateFrontendFiles(files)).not.toThrow();
+  });
+
   it('is stable for identical bytes and independent of the manifest revision field', () => {
     const a = frontendFiles('export default 1;', '.x{}', baseManifest({ revision: '' }));
     const b = frontendFiles('export default 1;', '.x{}', baseManifest({ revision: 'ignored' }));
@@ -122,6 +138,29 @@ describe('materializeRevision + activation (contract 04 §4)', () => {
       expect(second.revision).toBe(first.revision);
       expect(second.reused).toBe(true);
       expect((await listRevisions(dir)).length).toBe(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rebuilds a ready revision that is missing a manifest-declared asset', async () => {
+    const dir = await tmp();
+    try {
+      const files = frontendFiles('export default 1;', '.x{}', baseManifest());
+      const first = await materializeRevision(dir, files, { activate: true });
+      await rm(path.join(revisionDir(dir, first.revision), 'dist', 'index.js'));
+      await mkdir(path.join(dir, 'frontend', 'dist'), { recursive: true });
+      await writeFile(path.join(dir, 'frontend', 'dist', 'index.js'), 'export default 1;');
+      await writeFile(path.join(dir, 'frontend', 'dist', 'index.css'), '.x{}');
+
+      expect(await isRevisionComplete(dir, first.revision)).toBe(false);
+      const repaired = await ensureCurrentRevision(dir);
+
+      expect(repaired).toMatchObject({ revision: first.revision, reused: false, activated: true });
+      expect(await isRevisionComplete(dir, first.revision)).toBe(true);
+      expect(await readFile(path.join(revisionDir(dir, first.revision), 'dist', 'index.js'), 'utf8')).toBe(
+        'export default 1;',
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

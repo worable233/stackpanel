@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useActionState, useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bot, Palette, ShieldCheck, UserRound, Plug, ArrowUpRight, Bell } from 'lucide-react';
@@ -15,6 +15,7 @@ import { useLocale } from '@/i18n/provider';
 import { localeOptions } from '@/i18n/core';
 import { setLocaleAction } from '@/i18n/actions';
 import { agentFetch } from '@/components/agent-workspace';
+import { changeEmailAction, changePasswordAction } from '@/lib/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldDescription, FieldGroup, FieldError } from '@/components/ui/field';
@@ -40,11 +41,13 @@ type Identity = {
 
 export function AccountSettings({
   user,
+  emailVerificationRequired,
   identities,
   agentEnabled,
   apiKeys,
 }: {
   user: User;
+  emailVerificationRequired: boolean;
   identities: Identity[] | null;
   agentEnabled: boolean;
   apiKeys: React.ReactNode;
@@ -55,7 +58,7 @@ export function AccountSettings({
       id: 'profile',
       title: t('account.settings.sections.profile'),
       Icon: UserRound,
-      content: <ProfileSettings user={user} />,
+      content: <ProfileSettings user={user} emailVerificationRequired={emailVerificationRequired} />,
     },
     {
       id: 'appearance',
@@ -97,7 +100,7 @@ function Heading({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ProfileSettings({ user }: { user: User }) {
+function ProfileSettings({ user, emailVerificationRequired }: { user: User; emailVerificationRequired: boolean }) {
   const t = useTranslator();
   const locale = useLocale();
   const date = (value: string | null) =>
@@ -112,10 +115,11 @@ function ProfileSettings({ user }: { user: User }) {
           </FieldLabel>
           <Input id="settings-email" value={user.email} readOnly />
           <FieldDescription>
-            {user.emailVerifiedAt
-              ? t('account.settings.profile.emailVerified')
-              : t('account.settings.profile.emailUnverified')}
-            {t('account.settings.profile.emailChangeHint')}
+            {emailVerificationRequired
+              ? user.emailVerifiedAt
+                ? t('account.settings.profile.emailVerified')
+                : t('account.settings.profile.emailUnverified')
+              : t('account.settings.profile.emailVerificationOff')}
           </FieldDescription>
         </Field>
         <Field>
@@ -124,6 +128,14 @@ function ProfileSettings({ user }: { user: User }) {
           <FieldDescription>{t('account.settings.profile.accountIdHint')}</FieldDescription>
         </Field>
       </FieldGroup>
+      <div className="flex flex-col gap-4 border-t pt-5">
+        <SectionTitle>{t('account.settings.profile.securityTitle')}</SectionTitle>
+        <p className="text-sm text-muted-foreground">{t('account.settings.profile.securityHint')}</p>
+        <div className="flex flex-wrap gap-2">
+          <ChangeEmailForm currentEmail={user.email} />
+          <ChangePasswordForm />
+        </div>
+      </div>
       <dl className="flex flex-col gap-4 text-sm">
         <div className="flex items-center justify-between gap-4">
           <dt className="text-muted-foreground">{t('account.settings.profile.status')}</dt>
@@ -145,6 +157,48 @@ function ProfileSettings({ user }: { user: User }) {
         </div>
       </dl>
     </section>
+  );
+}
+
+function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
+  const t = useTranslator();
+  const [state, action, pending] = useActionState(changeEmailAction, {});
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button type="button" variant="outline" onClick={() => setOpen(true)}>{t('account.settings.profile.changeEmail')}</Button>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{t('account.settings.profile.changeEmail')}</DialogTitle><DialogDescription>{t('account.settings.profile.changeEmailHint')}</DialogDescription></DialogHeader>
+        <form action={action} className="flex flex-col gap-4">
+          <Field><FieldLabel htmlFor="change-email">{t('account.settings.profile.newEmail')}</FieldLabel><Input id="change-email" name="email" type="email" defaultValue={currentEmail} required /></Field>
+          <Field><FieldLabel htmlFor="change-email-password">{t('account.settings.profile.currentPassword')}</FieldLabel><Input id="change-email-password" name="currentPassword" type="password" autoComplete="current-password" required /></Field>
+          {state.error && <FieldError>{state.error}</FieldError>}
+          {state.ok && <p className="text-sm text-muted-foreground">{t('account.settings.profile.saved')}</p>}
+          <DialogFooter><Button type="submit" disabled={pending}>{pending ? t('account.settings.saving') : t('account.settings.profile.save')}</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ChangePasswordForm() {
+  const t = useTranslator();
+  const [state, action, pending] = useActionState(changePasswordAction, {});
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button type="button" variant="outline" onClick={() => setOpen(true)}>{t('account.settings.profile.changePassword')}</Button>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{t('account.settings.profile.changePassword')}</DialogTitle><DialogDescription>{t('account.settings.profile.changePasswordHint')}</DialogDescription></DialogHeader>
+        <form action={action} className="flex flex-col gap-4">
+          <Field><FieldLabel htmlFor="current-password">{t('account.settings.profile.currentPassword')}</FieldLabel><Input id="current-password" name="currentPassword" type="password" autoComplete="current-password" required /></Field>
+          <Field><FieldLabel htmlFor="new-password">{t('account.settings.profile.newPassword')}</FieldLabel><Input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={8} required /></Field>
+          {state.error && <FieldError>{state.error}</FieldError>}
+          {state.ok && <p className="text-sm text-muted-foreground">{t('account.settings.profile.passwordSaved')}</p>}
+          <DialogFooter><Button type="submit" disabled={pending}>{pending ? t('account.settings.saving') : t('account.settings.profile.save')}</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -279,8 +333,8 @@ function PersonalAgentSettings() {
         }
       })
       .catch((cause) => {
-        if (active)
-          setError(cause instanceof Error ? cause.message : t('account.settings.agent.loadFailed'));
+        console.error('[account-settings] agent tools load failed', cause);
+        if (active) setError(t('account.settings.agent.loadFailed'));
       });
     return () => {
       active = false;
@@ -362,7 +416,8 @@ function ToolCredential({
         remove ? t('account.settings.agent.removed') : t('account.settings.agent.saved'),
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t('account.settings.agent.saveFailed'));
+      console.error('[account-settings] agent tool save failed', cause);
+      setError(t('account.settings.agent.saveFailed'));
     } finally {
       setBusy(false);
     }

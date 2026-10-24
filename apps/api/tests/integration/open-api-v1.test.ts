@@ -93,7 +93,7 @@ describe.skipIf(!dbAvailable)('open API v1 (real DB)', () => {
     expect(body.code).toBe('request.idempotency_key_required');
   });
 
-  it('replays the same response for a repeated Idempotency-Key', async () => {
+  it('replays only the same request intent for a repeated Idempotency-Key', async () => {
     const key = `idem-${suffix}-0001`;
     const first = await app.inject({
       method: 'PATCH',
@@ -108,9 +108,19 @@ describe.skipIf(!dbAvailable)('open API v1 (real DB)', () => {
       headers: { authorization: `Bearer ${adminToken}`, 'idempotency-key': key },
       payload: { name: 'Changed Name', description: 'should not apply', url: null },
     });
-    expect(second.statusCode).toBe(200);
-    expect(second.headers['idempotency-replayed']).toBe('true');
-    expect(second.json()).toEqual(first.json());
+    expect(second.statusCode).toBe(409);
+    expect(second.headers['idempotency-replayed']).toBeUndefined();
+    expect((second.json() as { code: string }).code).toBe('request.idempotency_conflict');
+
+    const replay = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/platform',
+      headers: { authorization: `Bearer ${adminToken}`, 'idempotency-key': key },
+      payload: { name: 'Open API', description: 'via open api', url: null },
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    expect(replay.json()).toEqual(first.json());
   });
 
   it('serves the caller wallet balance and ledger, and admin can list accounts', async () => {

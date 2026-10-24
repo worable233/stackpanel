@@ -40,7 +40,18 @@ function resolveSourceRoot(kind: 'plugins' | 'themes'): string {
   return path.join(cwd, '..', '..', 'packages', kind);
 }
 
-const PLUGINS_SOURCE = resolveSourceRoot('plugins');
+/**
+ * 插件来源可以有多个：`STACKPANEL_PLUGIN_SOURCES` 里的额外检出（可选插件仓，
+ * 用 `path.delimiter` 分隔）排在前面，内核自带 `packages/plugins` 始终兜底；
+ * 同名目录以先出现者为准。
+ */
+const PLUGINS_SOURCES = [
+  ...(process.env.STACKPANEL_PLUGIN_SOURCES ?? '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((directory) => path.resolve(directory)),
+  resolveSourceRoot('plugins'),
+];
 const THEMES_SOURCE = resolveSourceRoot('themes');
 
 /** 本地来源是否可用：容器/生产形态下一律禁用（安全边界，见 runtime-env）。 */
@@ -133,24 +144,28 @@ async function readPluginManifestFile(dir: string): Promise<PluginManifestFile |
 /** Discover plugin packages available in the local market. */
 export async function listMarketPlugins(): Promise<MarketSourcePackage[]> {
   if (!localSourcesEnabled()) return [];
-  if (!existsSync(PLUGINS_SOURCE)) return [];
-  const entries = await readdir(PLUGINS_SOURCE, { withFileTypes: true });
   const results: MarketSourcePackage[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const sourceDir = path.join(PLUGINS_SOURCE, entry.name);
-    const manifest = await readPluginManifestFile(sourceDir);
-    const pkg = await readPackageJson(sourceDir);
-    if (!manifest && !pkg) continue;
-    results.push({
-      id: entry.name,
-      name: manifest?.name ?? pkg?.name ?? entry.name,
-      version: manifest?.version ?? pkg?.version ?? '0.0.0',
-      ...(manifest?.description ? { description: manifest.description } : {}),
-      ...(manifest?.author ? { author: manifest.author } : {}),
-      ...(pkg?.builtin ? { builtin: true } : {}),
-      sourceDir,
-    });
+  const seen = new Set<string>();
+  for (const sourceRoot of PLUGINS_SOURCES) {
+    if (!existsSync(sourceRoot)) continue;
+    const entries = await readdir(sourceRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || seen.has(entry.name)) continue;
+      const sourceDir = path.join(sourceRoot, entry.name);
+      const manifest = await readPluginManifestFile(sourceDir);
+      const pkg = await readPackageJson(sourceDir);
+      if (!manifest && !pkg) continue;
+      seen.add(entry.name);
+      results.push({
+        id: entry.name,
+        name: manifest?.name ?? pkg?.name ?? entry.name,
+        version: manifest?.version ?? pkg?.version ?? '0.0.0',
+        ...(manifest?.description ? { description: manifest.description } : {}),
+        ...(manifest?.author ? { author: manifest.author } : {}),
+        ...(pkg?.builtin ? { builtin: true } : {}),
+        sourceDir,
+      });
+    }
   }
   return results.sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -186,9 +201,13 @@ export async function marketPackageView(
   source: MarketSourcePackage,
 ): Promise<MarketPackage> {
   const installedDir = kind === 'plugin' ? pluginDataDir(source.id) : themeDataDir(source.id);
-  const installed = existsSync(
+  const filesPresent = existsSync(
     path.join(installedDir, kind === 'plugin' ? 'manifest.json' : 'theme.json'),
   );
+  // Theme management is backed by the DB registry, not merely unpacked files.
+  const installed = filesPresent && (kind === 'plugin' || Boolean(
+    await getPrisma().theme.findUnique({ where: { id: source.id }, select: { id: true } }),
+  ));
   let installedVersion: string | null = null;
   if (installed) {
     if (kind === 'plugin') {
@@ -427,6 +446,7 @@ export async function installMarketTheme(id: string): Promise<{ id: string; vers
   try {
     const existing = await prisma.theme.findUnique({ where: { id } });
     if (existing) {
+      // 重装/升级必须保留用户已选中的 active 状态。
       await prisma.theme.update({
         where: { id },
         data: { name: source.name, version: source.version },

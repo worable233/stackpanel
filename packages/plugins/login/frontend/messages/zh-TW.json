@@ -1,0 +1,16 @@
+{
+  "admin.systemSettings": "登入與註冊",
+  "settings.title": "登入與註冊",
+  "settings.description": "配置使用者註冊方式和郵箱驗證策略。",
+  "settings.emailGroup": "郵箱註冊",
+  "settings.emailGroupHint": "使用者使用郵箱和密碼建立賬號。",
+  "settings.emailVerification": "註冊時驗證郵箱",
+  "settings.emailVerificationHint": "開啟後，使用者必須輸入傳送到郵箱的驗證碼才能完成註冊。",
+  "settings.emailVerificationUnavailable": "當前沒有可用的郵箱驗證碼傳送外掛，請先在“SMTP 郵件”設定中完成配置。",
+  "settings.phoneGroup": "手機號註冊",
+  "settings.phoneGroupHint": "需要簡訊驗證外掛，當前尚未提供。",
+  "settings.save": "儲存配置",
+  "settings.saving": "儲存中…",
+  "settings.saved": "登入配置已儲存",
+  "settings.saveFailed": "儲存失敗"
+}

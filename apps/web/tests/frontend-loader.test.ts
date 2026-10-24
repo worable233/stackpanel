@@ -45,6 +45,23 @@ describe('resolveFrontendSpecifier (stage 4 runtime bridge)', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('redirects the SSR form auto-submit capability to the host client reference', () => {
+    g.__STACKPANEL_ABSORBED_CLIENT__ = { 'auto-submit': { AutoSubmitForm: 'HOST_AUTO_SUBMIT' } };
+    const result = resolveFrontendSpecifier('./auto-submit.js', context, next);
+    expect(result.shortCircuit).toBe(true);
+    expect(decode(result.url)).toContain('export const AutoSubmitForm = ns["AutoSubmitForm"];');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the shim export list when the host adds cart checkout during hot reload', () => {
+    g.__STACKPANEL_ABSORBED_CLIENT__ = { 'auto-submit': { AutoSubmitForm: 'FORM' } };
+    const first = resolveFrontendSpecifier('./auto-submit.js', context, next);
+    g.__STACKPANEL_ABSORBED_CLIENT__ = { 'auto-submit': { AutoSubmitForm: 'FORM', CartCheckout: 'CART' } };
+    const updated = resolveFrontendSpecifier('./auto-submit.js', context, next);
+    expect(updated.url).not.toBe(first.url);
+    expect(decode(updated.url)).toContain('export const CartCheckout = ns["CartCheckout"];');
+  });
+
   it('delegates unknown bare specifiers to nextResolve', () => {
     g.__STACKPANEL_SERVER_ABI__ = { react: {} };
     const result = resolveFrontendSpecifier('zod', context, next);

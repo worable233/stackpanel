@@ -1,6 +1,8 @@
 import { createPackageTranslator } from '@stackpanel/sdk';
 import enUS from '../messages/en-US.json';
 import zhCN from '../messages/zh-CN.json';
+import zhTW from '../messages/zh-TW.json';
+import zhHK from '../messages/zh-HK.json';
 
 /**
  * Theme-local catalogs (ADR-0016 §5).
@@ -13,7 +15,12 @@ import zhCN from '../messages/zh-CN.json';
  * - *Site content* (hero copy, feature blurbs) is a settings default, so the
  *   operator's value always wins; the Chinese default is the seed value only.
  */
-export const messages = { 'zh-CN': zhCN, 'en-US': enUS } as const;
+export const messages = {
+  'zh-CN': zhCN,
+  'zh-TW': zhTW,
+  'zh-HK': zhHK,
+  'en-US': enUS,
+} as const;
 
 export const t = (locale?: string) =>
   createPackageTranslator(locale, messages, ['zh-CN']);

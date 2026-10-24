@@ -11,8 +11,14 @@ import {
   settingsSchemaDescriptor,
 } from '../lib/frontend-service.ts';
 import { readFrontendManifest } from '../lib/frontend.ts';
+import { ensureRuntimeAdminBundle } from '../lib/frontend-runtime-bundle.ts';
 import { pluginPackageDir } from '../lib/plugins.ts';
-import { isRevisionName, readCurrentRevision, ensureCurrentRevision } from '../lib/frontend-revisions.ts';
+import {
+  isRevisionName,
+  readCurrentRevision,
+  ensureCurrentRevision,
+  isRevisionComplete,
+} from '../lib/frontend-revisions.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { requireAuth } from '../plugins/auth.ts';
@@ -46,6 +52,11 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
     for (const plugin of app.pluginRuntime.list()) {
       if (plugin.state !== 'active') continue;
       const packageDir = pluginPackageDir(plugin.id);
+      // 兼容旧的 admin 前端产物：早于运行期装载的安装只有 `dist/admin.js`，缺少
+      // 浏览器可装载的 `dist/admin.runtime.js`，会让 web 侧的动态 import 404。
+      // 必须在读取 manifest 与计算 revision **之前**补齐，这样派生的产物既进入
+      // `files[]` 白名单，也进入 revision 摘要。幂等且失败不影响其余字段。
+      const repaired = await ensureRuntimeAdminBundle(packageDir).catch(() => false);
       const manifest = await readFrontendManifest(packageDir);
       if (!manifest) continue;
       // Admission decision for server-side execution in the web process
@@ -57,9 +68,11 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
         plugin.builtin || plugin.frontendExecutions === 'server'
           ? ('allowed' as const)
           : ('declarative' as const);
+      const pointer = await readCurrentRevision(packageDir);
       const current =
-        (await readCurrentRevision(packageDir)) ??
-        (await ensureCurrentRevision(packageDir).catch(() => null));
+        pointer && !repaired && (await isRevisionComplete(packageDir, pointer.revision))
+          ? pointer
+          : await ensureCurrentRevision(packageDir).catch(() => null);
       frontends.push({
         id: plugin.id,
         manifest,

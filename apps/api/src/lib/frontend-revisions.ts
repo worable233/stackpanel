@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';import path from 'node:path';
-import type { FrontendManifest } from '@stackpanel/sdk';
+import { frontendManifestSchema, type FrontendManifest } from '@stackpanel/sdk';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { FRONTEND_MANIFEST_FILE, FrontendError, isAllowedFrontendFile, validateFrontendFiles } from './frontend.ts';
 
@@ -70,6 +70,33 @@ export function isRevisionName(value: string): boolean {
   return REVISION_PATTERN.test(value);
 }
 
+/** Whether a ready revision still contains every asset its manifest declares. */
+export async function isRevisionComplete(packageDir: string, revision: string): Promise<boolean> {
+  if (!isRevisionName(revision)) return false;
+  const dir = revisionDir(packageDir, revision);
+  if (!existsSync(path.join(dir, READY_FILE))) return false;
+
+  let manifest: FrontendManifest;
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path.join(dir, 'manifest.json'), 'utf8'));
+    const result = frontendManifestSchema.safeParse(parsed);
+    if (!result.success) return false;
+    manifest = result.data as unknown as FrontendManifest;
+  } catch {
+    return false;
+  }
+
+  for (const file of manifest.files) {
+    if (!isAllowedFrontendFile(file)) return false;
+    try {
+      if (!(await stat(path.join(dir, file.slice('frontend/'.length)))).isFile()) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * The canonical revision digest for a frontend package's bytes.
  *
@@ -126,10 +153,9 @@ export async function activateRevision(packageDir: string, revision: string): Pr
   if (!isRevisionName(revision)) {
     throw new FrontendError(400, `非法的 revision：${revision}`);
   }
-  // Contract 04 §4.2: never point the package at a revision that has not
-  // finished materializing on this node. `.ready` is the last write of the
-  // materializer, so its absence means a partially written directory.
-  if (!existsSync(path.join(revisionDir(packageDir, revision), READY_FILE))) {
+  // `.ready` is written last, but a stale or manually damaged revision must
+  // also contain every manifest-declared asset before it can become current.
+  if (!(await isRevisionComplete(packageDir, revision))) {
     throw new FrontendError(409, `revision 尚未就绪：${revision}`);
   }
   const target = currentPointerPath(packageDir);
@@ -166,7 +192,7 @@ export async function materializeRevision(
   const readyPath = path.join(dir, READY_FILE);
 
   let reused = false;
-  if (existsSync(readyPath)) {
+  if (await isRevisionComplete(packageDir, revision)) {
     reused = true;
   } else {
     // Stage into a temp directory <revisions>/.<rev>.<pid>.tmp then rename.
@@ -317,7 +343,7 @@ export async function ensureCurrentRevision(
   }
   const revision = computeRevisionDigest(manifest, files);
   const current = await readCurrentRevision(packageDir);
-  if (current?.revision === revision && existsSync(path.join(revisionDir(packageDir, revision), READY_FILE))) {
+  if (current?.revision === revision && (await isRevisionComplete(packageDir, revision))) {
     return { revision, dir: revisionDir(packageDir, revision), reused: true, activated: false };
   }
   return materializeRevision(packageDir, files, options);

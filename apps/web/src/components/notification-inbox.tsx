@@ -2,6 +2,7 @@
 
 import { Check, ExternalLink, CircleAlert, Loader } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { useCallback, useEffect, useState } from 'react';
 import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
@@ -55,16 +56,16 @@ export function NotificationInbox({ title, description }: { title: string; descr
         if (cursor) query.set('cursor', cursor);
         const res = await fetch(`/api/notifications?${query.toString()}`, { cache: 'no-store' });
         if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(body?.error ?? t('notification.serviceUnavailable', { error: '' }));
+          throw new Error(`notifications ${res.status}`);
         }
         const result = (await res.json()) as NotificationListResponse;
         setData((prev) =>
           cursor && prev ? { ...result, items: [...prev.items, ...result.items] } : result,
         );
         setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : t('notification.unknownError'));
+      } catch {
+        // Never render the raw response/exception text in the page-level alert.
+        setError(t('notification.serviceUnavailable'));
       } finally {
         setLoading(false);
       }
@@ -99,7 +100,7 @@ export function NotificationInbox({ title, description }: { title: string; descr
       const response = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
         method: 'POST',
       });
-      if (!response.ok) return;
+      if (!response.ok) throw new Error(`mark-read failed: ${response.status}`);
       window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
       setData((prev) =>
         prev
@@ -114,13 +115,14 @@ export function NotificationInbox({ title, description }: { title: string; descr
           : prev,
       );
     } catch {
-      // ignore
+      toast.error(t('notification.markReadFailed'));
     }
   };
 
   const markAllRead = async () => {
     try {
-      await fetch('/api/notifications/read-all', { method: 'POST' });
+      const response = await fetch('/api/notifications/read-all', { method: 'POST' });
+      if (!response.ok) throw new Error(`read-all failed: ${response.status}`);
       setData((prev) =>
         prev
           ? {
@@ -133,7 +135,9 @@ export function NotificationInbox({ title, description }: { title: string; descr
           : prev,
       );
     } catch {
-      // ignore
+      // Keep the previous state and tell the user instead of faking success.
+      toast.error(t('notification.markAllReadFailed'));
+      void load();
     }
   };
 
@@ -187,7 +191,7 @@ export function NotificationInbox({ title, description }: { title: string; descr
 
       {error ? (
         <p className="text-sm text-destructive">
-          {t('notification.serviceUnavailable', { error })}
+          {t('notification.serviceUnavailable')}
         </p>
       ) : null}
 

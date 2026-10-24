@@ -144,4 +144,25 @@ describe('refined open-API scopes', () => {
     expect(ids(['user:read'])).toContain('user.list');
     expect(ids(['user:write'])).not.toContain('user.list');
   });
+
+  it('does not advertise refined capabilities to a coarse-only API token', () => {
+    const capability: Capability = {
+      id: 'user.create',
+      method: 'POST',
+      path: '/api/v1/users',
+      scope: 'user:write',
+      summary: 'Create a user',
+      mutating: true,
+    };
+    const coarseOnly = new Set(['platform.manage.users']);
+
+    // A browser session may act through its full delegated role.
+    expect(capabilitiesFor(coarseOnly, [capability]).map((cap) => cap.id)).toContain('user.create');
+    // A token must name `user:write`, matching requireOpenScope at execution.
+    expect(
+      capabilitiesFor(coarseOnly, [capability], ['platform.manage.users'], undefined, true).map(
+        (cap) => cap.id,
+      ),
+    ).not.toContain('user.create');
+  });
 });

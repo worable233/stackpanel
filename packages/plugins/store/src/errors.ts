@@ -88,6 +88,7 @@ export function stockItems(order: {
 }): Array<{
   productId: string;
   quantity: number;
+  price?: number;
   config?: unknown;
   /** 续费订单行：指向被续费的服务实例 id（非空则本行不产生交付任务）。 */
   renewalServiceId?: string;
@@ -116,6 +117,7 @@ export function stockItems(order: {
     items?: Array<{
       productId?: unknown;
       quantity?: unknown;
+      price?: unknown;
       config?: unknown;
       renewalServiceId?: unknown;
       renewMonths?: unknown;
@@ -139,6 +141,7 @@ export function stockItems(order: {
           {
             productId: item.productId,
             quantity: item.quantity,
+            ...(typeof item.price === 'number' && Number.isSafeInteger(item.price) && item.price >= 0 ? { price: item.price } : {}),
             ...(item.config !== undefined && item.config !== null
               ? { config: item.config }
               : {}),

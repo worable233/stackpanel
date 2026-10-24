@@ -162,7 +162,7 @@ export async function listUpstreamServicesAction(
 /** Bind an upstream already-purchased service to the user. */
 export async function bindUpstreamServiceAction(
   userId: string,
-  input: { sourceId: string; providerServiceId: string },
+  input: { sourceId: string; providerServiceId: string; sourceRef?: string },
 ): Promise<UserActionResult> {
   const locale = await getLocale();
   if (!input.sourceId || !input.providerServiceId) {

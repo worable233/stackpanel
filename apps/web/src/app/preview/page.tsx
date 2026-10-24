@@ -1,4 +1,6 @@
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
+import { themeSettingsSchema } from '@/lib/theme-configuration';
 import { FrontendRoute } from '@/components/frontend-route';
 import { apiAssetUrl, getAuthedApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
@@ -8,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function PreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ theme?: string; path?: string }>;
+  searchParams: Promise<{ theme?: string; path?: string; draft?: string }>;
 }) {
   // Preview renders any installed theme/plugin frontend, bypassing the live
   // route gating, and the kernel's preview endpoints are admin-only
@@ -30,6 +32,11 @@ export default async function PreviewPage({
   const routePath =
     typeof params.path === 'string' && params.path.startsWith('/') ? params.path : '/';
 
+  let settingsOverride;
+  if (params.draft === '1' && themeId) {
+    const api = await getAuthedApiClient();
+    settingsOverride = (await api.get(`/admin/themes/${encodeURIComponent(themeId)}/configuration/preview`, z.object({ settings: themeSettingsSchema.nullable() }))).settings ?? undefined;
+  }
   return (
     <>
       {themeId ? (
@@ -38,7 +45,7 @@ export default async function PreviewPage({
           href={apiAssetUrl(`/themes/${encodeURIComponent(themeId)}/theme.css`)}
         />
       ) : null}
-      <FrontendRoute standalone path={routePath} themeId={themeId ?? undefined} />
+      <FrontendRoute standalone path={routePath} themeId={themeId ?? undefined} settingsOverride={settingsOverride} />
     </>
   );
 }

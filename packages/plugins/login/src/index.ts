@@ -53,6 +53,11 @@ const sendCodeSchema = z.object({
   email: z.string().email(),
   captchaToken: z.string().trim().min(1).max(4096).optional(),
 });
+const loginConfigSchema = z.object({
+  registrationMethods: z.array(z.enum(['email', 'phone'])).min(1).max(2),
+  emailVerificationRequired: z.boolean().default(false),
+});
+const LOGIN_CONFIG_KEY = 'login-config';
 
 /** Fixed-window rate limiter backed by the kernel shared state (Redis-ready). */
 const WINDOW_MS = 60_000;
@@ -69,6 +74,22 @@ let ctx: PluginContext | null = null;
 function auth(): PluginContext {
   if (!ctx) throw new Error('登录插件未就绪');
   return ctx;
+}
+
+async function loginConfig(): Promise<{ registrationMethods: Array<'email' | 'phone'>; emailVerificationRequired: boolean }> {
+  const saved = await auth().secrets.get(LOGIN_CONFIG_KEY);
+  // Registration policy is managed from the administrator settings page.
+  // Keep the first-run default deterministic and independent of deployment env.
+  if (!saved) return { registrationMethods: ['email'], emailVerificationRequired: false };
+  try {
+    return loginConfigSchema.parse(JSON.parse(saved));
+  } catch {
+    return { registrationMethods: ['email'], emailVerificationRequired: false };
+  }
+}
+
+function emailVerificationEnabled(config: { emailVerificationRequired: boolean }): boolean {
+  return config.emailVerificationRequired && auth().identity.isDeliveryConfigured();
 }
 
 /**
@@ -238,7 +259,8 @@ const sendCode = handle(async (req: HttpRequest, reply: HttpReply) => {
 
   // Fail fast when email verification is off and no code is wanted: avoid
   // spending a challenge/email for a flow that ignores it.
-  if (!auth().identity.requiresEmailVerification()) {
+  const configured = await loginConfig();
+  if (!emailVerificationEnabled(configured)) {
     throw new PluginError('auth.code_not_required', 400, '当前未启用注册邮箱验证');
   }
 
@@ -277,6 +299,10 @@ const register = handle(async (req: HttpRequest, reply: HttpReply) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
   const { email, password, affid, code } = parsed.data;
+  const configured = await loginConfig();
+  if (!configured.registrationMethods.includes('email')) {
+    throw new PluginError('auth.email_registration_disabled', 403, '邮箱注册已关闭');
+  }
   if (!(await allow('user', email.toLowerCase(), rateLimits().register))) {
     throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
   }
@@ -288,7 +314,7 @@ const register = handle(async (req: HttpRequest, reply: HttpReply) => {
     ...(ip ? { remoteIp: ip } : {}),
   });
 
-  const requireVerification = auth().identity.requiresEmailVerification();
+  const requireVerification = emailVerificationEnabled(configured);
   if (requireVerification) {
     // Consume the code *before* creating the account: a verified email is a
     // precondition for an ACTIVE account, and single-use consumption is atomic
@@ -358,8 +384,13 @@ const me = handle(async (req: HttpRequest) => {
  * register form from hard-coding deployment policy.
  */
 const authConfig = handle(async () => {
+  const configured = await loginConfig();
   return {
-    emailVerificationRequired: auth().identity.requiresEmailVerification(),
+    registrationMethods: configured.registrationMethods,
+    // Public clients receive the effective policy. A saved requirement cannot
+    // activate verification until a delivery extension is available.
+    emailVerificationRequired: emailVerificationEnabled(configured),
+    emailVerificationSupported: auth().identity.isDeliveryConfigured(),
     captcha: {
       mode: auth().captcha.mode(),
       configured: auth().captcha.isConfigured(),
@@ -369,11 +400,23 @@ const authConfig = handle(async () => {
   };
 });
 
+const adminConfig = handle(async (req, reply) => {
+  if (!auth().secrets.isAvailable()) return reply.code(503).send({ error: '平台加密密钥未配置，无法保存登录配置' });
+  const parsed = loginConfigSchema.safeParse(req.body);
+  if (!parsed.success) return reply.code(400).send({ error: '至少选择一种注册方式' });
+  if (parsed.data.emailVerificationRequired && !auth().identity.isDeliveryConfigured()) {
+    return reply.code(400).send({ error: '当前没有可用的邮箱验证码发送插件，请先配置 SMTP 邮件' });
+  }
+  await auth().secrets.set(LOGIN_CONFIG_KEY, JSON.stringify(parsed.data));
+  return loginConfig();
+});
+
 export const loginPlugin = definePlugin({
   manifest: {
     id: 'login',
     name: '登录插件',
     version: '0.2.0',
+    permissions: ['platform.admin'],
     description:
       '内置登录/注册插件：登录、注册与注销流程，支持可选的注册邮箱验证与人机验证。验证与令牌签发由平台 ctx 完成。',
   },
@@ -382,6 +425,17 @@ export const loginPlugin = definePlugin({
     { method: 'POST', path: '/register', auth: 'public', handler: register },
     { method: 'POST', path: '/register/send-code', auth: 'public', handler: sendCode },
     { method: 'GET', path: '/auth/config', auth: 'public', handler: authConfig },
+    {
+      method: 'GET',
+      path: '/login/admin/config',
+      auth: 'admin',
+      permission: 'platform.admin',
+      handler: handle(async () => ({
+        ...(await loginConfig()),
+        emailVerificationSupported: auth().identity.isDeliveryConfigured(),
+      })),
+    },
+    { method: 'POST', path: '/login/admin/config', auth: 'admin', permission: 'platform.admin', handler: adminConfig },
     { method: 'POST', path: '/logout', auth: 'user', handler: logout },
     { method: 'GET', path: '/auth/me', auth: 'user', handler: me },
   ],

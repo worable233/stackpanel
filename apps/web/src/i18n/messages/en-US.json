@@ -91,7 +91,8 @@
       "continueWith": "Continue with {name}",
       "orContinueWith": "Or continue with",
       "noAccount": "Don't have an account?",
-      "register": "Register"
+      "register": "Register",
+      "oauthFailed": "OAuth sign-in failed. Please try again."
     },
     "register": {
       "title": "Create your account",
@@ -228,14 +229,16 @@
     "viewAll": "View all",
     "all": "All",
     "unread": "Unread",
-    "serviceUnavailable": "Notification service unavailable: {error}",
+    "serviceUnavailable": "Notification service unavailable",
     "emptyAll": "No notifications",
     "emptyUnread": "No unread notifications",
     "markRead": "Mark as read",
     "view": "View",
     "loading": "Loading…",
     "loadMore": "Load more",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "markReadFailed": "Could not mark as read. Please try again.",
+    "markAllReadFailed": "Could not mark all as read. Please try again."
   },
   "admin": {
     "recentTickets": "Recent tickets",
@@ -285,6 +288,8 @@
         "title": "Purchased services",
         "description": "Services this account owns or has bound; bind an already-purchased upstream service, or edit expiry, status, or unbind.",
         "bind": "Bind upstream service",
+        "upstreamProduct": "Upstream cloud product",
+        "allProducts": "All cloud products",
         "bindDescription": "Pick an already-purchased upstream service to bind to this account, making it appear as owned by this account (no re-provisioning).",
         "bindLoading": "Loading already-purchased upstream services…",
         "bindEmpty": "No already-purchased upstream service, or no upstream plugin is enabled.",
@@ -346,7 +351,7 @@
       "filterActorPlaceholder": "First 12 chars of the user ID",
       "search": "Search",
       "reset": "Reset",
-      "serviceUnavailable": "Audit service unavailable: {error}",
+      "serviceUnavailable": "Audit service unavailable",
       "colTime": "Time",
       "colAction": "Action",
       "colResource": "Resource",
@@ -361,7 +366,7 @@
     "developer": {
       "title": "Developer Console",
       "description": "For platform operators: manage third-party channel partners' credentials and rate limits, webhook delivery status, and external API call audit.",
-      "serviceUnavailable": "Console data unavailable: {error}",
+      "serviceUnavailable": "Console data unavailable",
       "empty": "No records yet.",
       "pagination": "{total} entries · page {page} / {pages}",
       "prev": "Previous",
@@ -591,13 +596,13 @@
       "searchPlaceholder": "Search groups…",
       "permissionNone": "No permissions",
       "showing": "Showing {start}-{end} of {total}",
-      "serviceUnavailable": "Permission service unavailable: {error}"
+      "serviceUnavailable": "Permission service unavailable"
     },
     "plugins": {
       "detail": {
         "back": "Back to plugins",
         "title": "Plugin details",
-        "serviceUnavailable": "Plugin service unavailable: {error}",
+        "serviceUnavailable": "Plugin service unavailable",
         "notFound": "Plugin not found",
         "enabled": "Enabled",
         "disabled": "Disabled",
@@ -636,7 +641,12 @@
       "disable": "Disable",
       "title": "Plugins",
       "pageDescription": "Manage plugin installation, enablement and upgrades.",
-      "serviceUnavailable": "Plugin service unavailable: {error}"
+      "serviceUnavailable": "Plugin service unavailable",
+      "toggled": "Plugin status updated.",
+      "deleted": "Plugin deleted.",
+      "mutationFailed": "Plugin operation failed. Please try again.",
+      "deleteConfirmTitle": "Delete this plugin?",
+      "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone."
     },
     "users": {
       "title": "Users",
@@ -711,7 +721,7 @@
       },
       "title": "System settings",
       "pageDescription": "Manage platform info and package signing.",
-      "serviceUnavailable": "Settings service unavailable: {error}",
+      "serviceUnavailable": "Settings service unavailable",
       "currency": {
         "title": "Currencies & settlement",
         "description": "Platform-controlled currency catalog and settlement currency. Entries used by transactions or set as settlement cannot be disabled.",
@@ -789,9 +799,17 @@
       "settings": "Settings",
       "preview": "Preview",
       "activate": "Activate",
+      "activateSuccess": "Theme activated",
+      "activateFailed": "Could not activate theme",
+      "deleted": "Theme deleted.",
+      "deleteFailed": "Could not delete the theme. Please try again.",
+      "previewFailed": "Could not update the theme preview. Please try again.",
+      "previewCleared": "Theme preview closed.",
+      "deleteConfirmTitle": "Delete this theme?",
+      "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone.",
       "title": "Theme management",
       "description": "Manage theme upload, preview and activation.",
-      "serviceUnavailable": "Theme service unavailable: {error}"
+      "serviceUnavailable": "Theme service unavailable"
     },
     "fallbackUser": "Administrator",
     "userDetailPage": {
@@ -803,7 +821,7 @@
     "market": {
       "title": "Market",
       "description": "Browse and one-click install official plugins and themes. Rebuild the front end afterward to refresh theme/plugin pages.",
-      "serviceUnavailable": "Market service unavailable: {error}",
+      "serviceUnavailable": "Market service unavailable",
       "plugins": "Plugins",
       "themes": "Themes"
     },
@@ -825,7 +843,7 @@
     "updates": {
       "title": "Updates",
       "pageDescription": "Solve and apply kernel/plugin updates through the independent updater.",
-      "serviceUnavailable": "Update center unavailable: {error}",
+      "serviceUnavailable": "Update center unavailable",
       "currentDeployment": "Current deployment",
       "generation": "Generation",
       "digest": "Digest",
@@ -858,9 +876,20 @@
   },
   "locale": {
     "zh-CN": "简体中文",
+    "zh-TW": "繁體中文（台灣）",
+    "zh-HK": "繁體中文（香港）",
     "en-US": "English"
   },
   "action": {
+    "feedback": {
+      "failed": "Operation failed",
+      "succeeded": "Operation completed",
+      "upstreamSyncFailed": "Upstream sync failed",
+      "upstreamSyncSucceeded": "Upstream sync completed",
+      "upstreamCreateFailed": "Add upstream failed",
+      "upstreamDeleteFailed": "Delete upstream failed"
+    },
+    "save": "Save",
     "publicKeyRequired": "Please enter a public key",
     "publicKeySaved": "Signing public key saved.",
     "publicKeyCleared": "Signing public key cleared.",
@@ -930,8 +959,7 @@
     "catalogTokenSaveFailed": "Failed to save the catalog token",
     "distributionRefreshOffline": "Remote catalog is disabled; nothing to refresh.",
     "distributionRefreshOk": "Catalog refreshed, current sequence {sequence}.",
-    "distributionRefreshFailed": "Catalog refresh failed: {message}",
-    "save": "Save"
+    "distributionRefreshFailed": "Catalog refresh failed: {message}"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -951,6 +979,7 @@
     "unbindFailed": "Failed to unbind",
     "createFailed": "Failed to create the user",
     "statusUpdateFailed": "Failed to update the status",
+    "impersonateFailed": "Could not sign in as this user. Please try again.",
     "groupsUpdateFailed": "Failed to update permission groups",
     "balanceAdjustFailed": "Failed to adjust the balance",
     "serviceUpdateFailed": "Failed to update the service",
@@ -977,7 +1006,9 @@
       "code_purpose_invalid": "Unsupported verification purpose",
       "captcha_required": "Please complete the human verification",
       "captcha_failed": "Human verification failed, please retry",
-      "captcha_unavailable": "Human verification is unavailable"
+      "captcha_unavailable": "Human verification is unavailable",
+      "email_registration_disabled": "Email sign-up is closed",
+      "impersonation_credential_forbidden": "That credential cannot be used for impersonation"
     },
     "setup": {
       "already_completed": "This instance is already initialized. Please sign in.",
@@ -993,7 +1024,9 @@
       "conflict": "Operation conflict, please refresh and retry",
       "rate_limited": "Too many requests, please try again later",
       "idempotency_key_required": "Write operations must carry an Idempotency-Key",
-      "concurrent_request": "The same request is being processed, please wait"
+      "concurrent_request": "The same request is being processed, please wait",
+      "idempotency_conflict": "The same request is still being processed",
+      "unauthorized": "Unauthorized"
     },
     "internal": {
       "unexpected": "Something went wrong, please try again later",
@@ -1060,7 +1093,11 @@
       "card": {
         "empty_import": "No card codes to import",
         "not_ready": "Card service is temporarily unavailable, please try again later"
-      }
+      },
+      "cloud_server": {
+        "provider_required": "Choose a cloud server provider"
+      },
+      "insufficient_stock": "Not enough stock"
     },
     "wallet": {
       "amount_invalid": "Invalid amount",
@@ -1074,7 +1111,10 @@
         "params_invalid": "Invalid adjustment parameters"
       },
       "user_not_found": "User not found",
-      "not_ready": "Wallet service is temporarily unavailable, please try again later"
+      "not_ready": "Wallet service is temporarily unavailable, please try again later",
+      "account": {
+        "not_found": "Wallet account not found"
+      }
     },
     "payment": {
       "method_unavailable": "The selected payment method is unavailable",
@@ -1201,7 +1241,150 @@
       "payment_method_unsupported": "The selected payment method does not support this settlement currency",
       "referenced": "This currency is referenced by payments or payment methods and cannot be disabled"
     },
-    "circuit_open": "The upstream service keeps failing, so requests are temporarily blocked"
+    "circuit_open": "The upstream service keeps failing, so requests are temporarily blocked",
+    "agent": {
+      "approval": {
+        "capability_unavailable": "That capability is unavailable right now",
+        "conflict": "The approval state changed; refresh and try again",
+        "definition_changed": "The tool definition changed; request approval again",
+        "forbidden": "You cannot approve this request",
+        "human_required": "This action needs human confirmation",
+        "not_owner": "You can only handle your own approval requests"
+      },
+      "approval_not_found": "Approval request not found",
+      "children_limit": "Too many child tasks",
+      "credential_invalid": "Invalid credential; sign in again",
+      "daily_limit": "Daily quota used up; try again tomorrow",
+      "disabled": "The agent is disabled; contact an administrator",
+      "family_limit": "Too many tasks in this conversation",
+      "idempotency_conflict": "The same request is still being processed",
+      "impersonation_forbidden": "This action cannot run on behalf of another user",
+      "llm_unconfigured": "No model service is configured; contact an administrator",
+      "model": {
+        "base_url_rejected": "That model service address is not allowed"
+      },
+      "model_not_allowed": "That model is not on the allow list",
+      "original_token_required": "The original credential is required to continue",
+      "parent_invalid": "The parent task is invalid",
+      "parent_stopped": "The parent task has stopped",
+      "pricing_unknown": "Pricing for that model is missing; contact an administrator",
+      "run": {
+        "busy": "The task is still running",
+        "not_cancellable": "This task cannot be cancelled right now",
+        "not_resumable": "This task cannot be resumed"
+      },
+      "run_not_found": "Task not found",
+      "token_not_found": "Credential not found",
+      "token_required": "A credential is required",
+      "action_changed": "The action definition changed; start again",
+      "action_failed": "The action failed",
+      "action_forbidden": "You cannot run this action",
+      "action_output_large": "The action output is too large",
+      "action_timeout": "The action timed out",
+      "attachment_invalid": "The attachment is invalid",
+      "budget_exhausted": "The budget for this task is used up",
+      "budget_invalid": "The budget setting is invalid",
+      "conversation_not_found": "Conversation not found",
+      "invalid_usage": "The usage data is invalid",
+      "mcp_error": "The MCP service returned an error",
+      "mcp_forbidden": "You cannot access this MCP service",
+      "mcp_protocol": "MCP protocol error",
+      "mcp_remote": "The remote MCP service is unavailable",
+      "mcp_revision_changed": "The MCP service revision changed; try again",
+      "mcp_tool_missing": "That tool does not exist on the MCP service",
+      "mcp_unavailable": "The MCP service is unavailable",
+      "mcp_write_required": "That MCP tool needs write access",
+      "message_conflict": "The message state changed; refresh and try again",
+      "model_call_conflict": "The model call conflicted; try again later",
+      "model_result_unknown": "The model call result is unknown",
+      "network_forbidden": "That network address is not allowed",
+      "oauth_origin_insecure": "The OAuth callback URL must use HTTPS",
+      "oauth_unconfigured": "That OAuth service is not configured",
+      "operation_busy": "That operation is still running",
+      "operation_unknown": "Unknown operation",
+      "payload_large": "The request payload is too large",
+      "price_bound_broken": "Pricing bounds are broken; contact an administrator",
+      "remote_unavailable": "The remote service is unavailable",
+      "sandbox_unavailable": "The sandbox is unavailable",
+      "session_required": "A session is required to continue"
+    },
+    "backup": {
+      "maintenance": "The system is under maintenance; try again later"
+    },
+    "commerce": {
+      "unavailable": "The shop service is unavailable right now"
+    },
+    "custom": {
+      "unknown_model": "Unknown model"
+    },
+    "distribution": {
+      "catalogKey": {
+        "invalid": "The catalog public key is invalid"
+      },
+      "source": {
+        "invalid": "The distribution source is invalid"
+      }
+    },
+    "market": {
+      "installFailed": "Installation failed; try again later",
+      "serviceMissing": "The market service is missing",
+      "unavailable": "The market is unavailable right now"
+    },
+    "mcp": {
+      "sse_unsupported": "MCP over SSE is not supported yet"
+    },
+    "media": {
+      "empty": "The file is empty",
+      "forbidden": "You cannot access this attachment",
+      "no_content": "No file content was provided",
+      "not_found": "Attachment not found",
+      "reference_missing": "A referenced attachment does not exist",
+      "too_large": "The file is too large",
+      "unsupported_type": "Unsupported file type"
+    },
+    "product": {
+      "inactive": "The product is no longer available",
+      "not_found": "Product not found"
+    },
+    "secret": {
+      "storage": {
+        "disabled": "Encrypted secret storage is not configured; contact an administrator"
+      }
+    },
+    "service": {
+      "already_bound": "The service is already bound",
+      "not_found": "Service not found"
+    },
+    "sp_v1": {
+      "body_too_large": "The request body is too large"
+    },
+    "theme": {
+      "configuration_conflict": "Theme configuration conflicts; refresh and try again",
+      "configuration_invalid": "The theme configuration is invalid",
+      "configuration_missing": "Theme configuration is missing"
+    },
+    "upstream": {
+      "ambiguous_service": "The upstream service is ambiguous",
+      "not_found": "Upstream not found",
+      "service_not_found": "Upstream service not found"
+    },
+    "user": {
+      "admin_required": "This action requires administrator rights",
+      "disabled": "The account is disabled; contact an administrator",
+      "email_taken": "That email is already registered",
+      "group_not_found": "Permission group not found",
+      "last_admin": "At least one administrator must remain",
+      "not_found": "User not found",
+      "self_demote": "You cannot lower your own permissions"
+    },
+    "oauth": {
+      "human_consent_required": "Your explicit consent is required",
+      "invalid_client": "Invalid OAuth client",
+      "invalid_scope": "Invalid OAuth scope",
+      "invalid_target": "Invalid OAuth target"
+    },
+    "rate_limited": "Too many requests. Please try again shortly.",
+    "not_writable": "This action is not allowed in the current state. Please try again later."
   },
   "auditAction": {
     "auth": {
@@ -1337,6 +1520,32 @@
     "emailRequired": "Enter an email address",
     "passwordTooShort": "Password must be at least 8 characters, or leave it blank to auto-generate"
   },
+  "themeJson": {
+    "format": "Format",
+    "defaults": "Restore defaults",
+    "undo": "Discard unsaved changes",
+    "import": "Import JSON",
+    "export": "Export JSON",
+    "preview": "Draft preview",
+    "closePreview": "Close preview",
+    "save": "Save configuration",
+    "hint": "The configuration is validated against the theme schema. AI tools use the same MCP read, validate, and save operations.",
+    "editor": "Theme configuration JSON",
+    "unknownField": "Unknown field",
+    "invalid": "Invalid JSON",
+    "fileTooLarge": "JSON files must not exceed 512 KB",
+    "saved": "Configuration saved",
+    "unsaved": "{count} fields have changed",
+    "saving": "Saving…",
+    "publish": "Confirm save",
+    "review": "Review {count} changes",
+    "fields": "Configuration field reference",
+    "history": "Version history",
+    "historyHint": "The latest 20 saved versions are retained. Load one to inspect and compare it before saving.",
+    "loadVersion": "Load version",
+    "previewUpdating": "Updating draft preview…",
+    "previewHint": "This preview uses your unsaved draft and is available to this administrator for 10 minutes."
+  },
   "settingsForm": {
     "saved": "Settings saved.",
     "saving": "Saving…",
@@ -1428,7 +1637,19 @@
         "loginEmail": "Sign-in email",
         "emailVerified": "Email verified.",
         "emailUnverified": "Email not verified yet.",
-        "emailChangeHint": "Contact an administrator to change your sign-in email.",
+        "emailVerificationOff": "Email verification is currently disabled.",
+        "securityTitle": "Sign-in security",
+        "securityHint": "Your current password is required to change the email or password. Changing the password signs out other devices.",
+        "changeEmail": "Change email",
+        "changeEmailHint": "You will need to sign in again. A new email must be verified when verification is enabled.",
+        "newEmail": "New email",
+        "changePassword": "Change password",
+        "changePasswordHint": "Use a password with at least 8 characters.",
+        "currentPassword": "Current password",
+        "newPassword": "New password",
+        "save": "Save",
+        "saved": "Email updated. Please sign in again.",
+        "passwordSaved": "Password updated. Please sign in again.",
         "accountId": "Account ID",
         "accountIdHint": "Share this ID with support to help locate your account.",
         "status": "Account status",
@@ -1480,6 +1701,13 @@
         "removed": "Authorization removed",
         "removeTitle": "Remove tool authorization?",
         "removeDescription": "This deletes the personal credential for {name}. You must save a credential again to keep using this tool."
+      },
+      "saving": "Saving…",
+      "security": {
+        "passwordInvalid": "Enter your current password and a new password of at least 8 characters",
+        "passwordChangeFailed": "Could not change the password",
+        "emailInvalid": "Enter the new email address and your current password",
+        "emailChangeFailed": "Could not change the email address"
       }
     }
   },
@@ -1500,7 +1728,8 @@
     "notFound": "Plugin admin page not found.",
     "denied": "Access denied: requires {permission}.",
     "loading": "Loading plugin page…",
-    "loadFailed": "Plugin page failed to load: {message}"
+    "loadFailed": "Plugin page failed to load. Please refresh and try again.",
+    "renderFailed": "Plugin page failed to render. Please refresh and try again."
   },
   "plugin": {
     "uploadSelectZip": "Choose a plugin ZIP to upload",
@@ -1520,7 +1749,8 @@
   },
   "frontend": {
     "pageNotFound": "Page not found",
-    "backHome": "Back to home"
+    "backHome": "Back to home",
+    "renderFailed": "This content could not be displayed. Please refresh and try again."
   },
   "statusBadge": {
     "operational": "All systems operational",
@@ -1870,5 +2100,35 @@
     "missingImage": "Missing image",
     "invalidImage": "Invalid image format",
     "uploadFailed": "Image upload failed. Try again."
+  },
+  "checkout": {
+    "progress": "Checkout progress",
+    "steps": {
+      "review": "Review products",
+      "pay": "Order & payment",
+      "done": "Complete"
+    },
+    "next": "Continue to payment",
+    "back": "Review products",
+    "review": "Review your configuration",
+    "reviewHelp": "Check products and quantities before continuing.",
+    "pay": "Choose how to pay",
+    "payHelp": "Confirming payment creates your order. Please submit only once.",
+    "selected": "Selected products",
+    "quantity": "Quantity",
+    "success": "Purchase successful",
+    "successHelp": "Payment confirmed. Your service may still be awaiting approval or provisioning.",
+    "orders": "View orders",
+    "services": "View cloud services",
+    "waiting": "Waiting for payment",
+    "waitingHelp": "Your order exists. Complete payment and wait for the verified result.",
+    "failed": "Order not paid",
+    "failedHelp": "Check your order before trying again to avoid duplicate purchases.",
+    "unknown": "Unable to verify this order",
+    "unknownHelp": "Refresh or check your orders. Do not submit another payment.",
+    "refresh": "Refresh status",
+    "resume": "Continue payment",
+    "submitting": "Submitting…",
+    "order": "Order number"
   }
 }

@@ -353,74 +353,180 @@ export const settingsSchema = {
     },
     {
       id: 'footer',
-      labelKey: "settings.footer.group",
+      labelKey: 'settings.footer.group',
       fields: [
-        { type: 'text', name: 'column1Title', labelKey: "settings.footer.column1Title.label", default: zhCN["content.footer.column1Title"] },
         {
           type: 'list',
-          name: 'column1Links',
-          labelKey: "settings.footer.column1Links.label",
-          itemLabelField: 'label',
-          fields: [
-            { type: 'text', name: 'label', labelKey: "settings.footer.column1Links.label.label", required: true },
-            { type: 'text', name: 'href', labelKey: "settings.footer.column1Links.href.label", required: true },
+          name: 'groups',
+          labelKey: 'settings.footer.groups.label',
+          helpKey: 'settings.footer.groups.help',
+          itemLabelField: 'title',
+          migrateFrom: [
+            { title: 'column1Title', links: 'column1Links' },
+            { title: 'column2Title', links: 'column2Links' },
+            { title: 'column3Title', links: 'column3Links' },
+            { title: 'column4Title', links: 'column4Links' },
           ],
-          default: [{ label: zhCN["content.footer.column1Links.0.label"], href: zhCN["content.footer.column1Links.0.href"] }, { label: zhCN["content.footer.column1Links.1.label"], href: zhCN["content.footer.column1Links.1.href"] }, { label: zhCN["content.footer.column1Links.2.label"], href: zhCN["content.footer.column1Links.2.href"] }, { label: zhCN["content.footer.column1Links.3.label"], href: zhCN["content.footer.column1Links.3.href"] }],
+          fields: [
+            {
+              type: 'text',
+              name: 'title',
+              labelKey: 'settings.footer.groups.title.label',
+              required: true,
+            },
+            {
+              type: 'list',
+              name: 'links',
+              labelKey: 'settings.footer.groups.links.label',
+              itemLabelField: 'label',
+              fields: [
+                {
+                  type: 'text',
+                  name: 'label',
+                  labelKey: 'settings.footer.links.label.label',
+                  required: true,
+                },
+                {
+                  type: 'text',
+                  name: 'href',
+                  labelKey: 'settings.footer.links.href.label',
+                  required: true,
+                },
+              ],
+            },
+          ],
+          default: [
+            {
+              title: zhCN['content.footer.column1Title'],
+              links: [
+                {
+                  label: zhCN['content.footer.column1Links.0.label'],
+                  href: zhCN['content.footer.column1Links.0.href'],
+                },
+                {
+                  label: zhCN['content.footer.column1Links.1.label'],
+                  href: zhCN['content.footer.column1Links.1.href'],
+                },
+                {
+                  label: zhCN['content.footer.column1Links.2.label'],
+                  href: zhCN['content.footer.column1Links.2.href'],
+                },
+                {
+                  label: zhCN['content.footer.column1Links.3.label'],
+                  href: zhCN['content.footer.column1Links.3.href'],
+                },
+              ],
+            },
+            {
+              title: zhCN['content.footer.column2Title'],
+              links: [
+                {
+                  label: zhCN['content.footer.column2Links.0.label'],
+                  href: zhCN['content.footer.column2Links.0.href'],
+                },
+                {
+                  label: zhCN['content.footer.column2Links.1.label'],
+                  href: zhCN['content.footer.column2Links.1.href'],
+                },
+                {
+                  label: zhCN['content.footer.column2Links.2.label'],
+                  href: zhCN['content.footer.column2Links.2.href'],
+                },
+              ],
+            },
+            {
+              title: zhCN['content.footer.column3Title'],
+              links: [
+                {
+                  label: zhCN['content.footer.column3Links.0.label'],
+                  href: zhCN['content.footer.column3Links.0.href'],
+                },
+                {
+                  label: zhCN['content.footer.column3Links.1.label'],
+                  href: zhCN['content.footer.column3Links.1.href'],
+                },
+                {
+                  label: zhCN['content.footer.column3Links.2.label'],
+                  href: zhCN['content.footer.column3Links.2.href'],
+                },
+              ],
+            },
+            {
+              title: zhCN['content.footer.column4Title'],
+              links: [
+                {
+                  label: zhCN['content.footer.column4Links.0.label'],
+                  href: zhCN['content.footer.column4Links.0.href'],
+                },
+                {
+                  label: zhCN['content.footer.column4Links.1.label'],
+                  href: zhCN['content.footer.column4Links.1.href'],
+                },
+                {
+                  label: zhCN['content.footer.column4Links.2.label'],
+                  href: zhCN['content.footer.column4Links.2.href'],
+                },
+              ],
+            },
+          ],
         },
-        { type: 'text', name: 'column2Title', labelKey: "settings.footer.column2Title.label", default: zhCN["content.footer.column2Title"] },
         {
-          type: 'list',
-          name: 'column2Links',
-          labelKey: "settings.footer.column2Links.label",
-          itemLabelField: 'label',
-          fields: [
-            { type: 'text', name: 'label', labelKey: "settings.footer.column2Links.label.label", required: true },
-            { type: 'text', name: 'href', labelKey: "settings.footer.column2Links.href.label", required: true },
-          ],
-          default: [{ label: zhCN["content.footer.column2Links.0.label"], href: zhCN["content.footer.column2Links.0.href"] }, { label: zhCN["content.footer.column2Links.1.label"], href: zhCN["content.footer.column2Links.1.href"] }, { label: zhCN["content.footer.column2Links.2.label"], href: zhCN["content.footer.column2Links.2.href"] }],
+          type: 'text',
+          name: 'copyright',
+          labelKey: 'settings.footer.copyright.label',
+          default: zhCN['content.footer.copyright'],
         },
-        { type: 'text', name: 'column3Title', labelKey: "settings.footer.column3Title.label", default: zhCN["content.footer.column3Title"] },
-        {
-          type: 'list',
-          name: 'column3Links',
-          labelKey: "settings.footer.column3Links.label",
-          itemLabelField: 'label',
-          fields: [
-            { type: 'text', name: 'label', labelKey: "settings.footer.column3Links.label.label", required: true },
-            { type: 'text', name: 'href', labelKey: "settings.footer.column3Links.href.label", required: true },
-          ],
-          default: [{ label: zhCN["content.footer.column3Links.0.label"], href: zhCN["content.footer.column3Links.0.href"] }, { label: zhCN["content.footer.column3Links.1.label"], href: zhCN["content.footer.column3Links.1.href"] }, { label: zhCN["content.footer.column3Links.2.label"], href: zhCN["content.footer.column3Links.2.href"] }],
-        },
-        { type: 'text', name: 'column4Title', labelKey: "settings.footer.column4Title.label", default: zhCN["content.footer.column4Title"] },
-        {
-          type: 'list',
-          name: 'column4Links',
-          labelKey: "settings.footer.column4Links.label",
-          itemLabelField: 'label',
-          fields: [
-            { type: 'text', name: 'label', labelKey: "settings.footer.column4Links.label.label", required: true },
-            { type: 'text', name: 'href', labelKey: "settings.footer.column4Links.href.label", required: true },
-          ],
-          default: [{ label: zhCN["content.footer.column4Links.0.label"], href: zhCN["content.footer.column4Links.0.href"] }, { label: zhCN["content.footer.column4Links.1.label"], href: zhCN["content.footer.column4Links.1.href"] }, { label: zhCN["content.footer.column4Links.2.label"], href: zhCN["content.footer.column4Links.2.href"] }],
-        },
-        { type: 'text', name: 'copyright', labelKey: "settings.footer.copyright.label", default: zhCN["content.footer.copyright"] },
 
         {
           type: 'textarea',
           name: 'description',
-          labelKey: "settings.footer.description.label",
-          default: zhCN["content.footer.description"],
+          labelKey: 'settings.footer.description.label',
+          default: zhCN['content.footer.description'],
         },
         {
           type: 'list',
-          name: 'links',
-          labelKey: "settings.footer.links.label",
+          name: 'socialLinks',
+          labelKey: 'settings.footer.socialLinks.label',
+          helpKey: 'settings.footer.socialLinks.help',
           itemLabelField: 'label',
+          migrateFrom: 'links',
           fields: [
-            { type: 'text', name: 'label', labelKey: "settings.footer.links.label.label", required: true },
-            { type: 'text', name: 'href', labelKey: "settings.footer.links.href.label", required: true },
+            {
+              type: 'text',
+              name: 'label',
+              labelKey: 'settings.footer.links.label.label',
+              required: true,
+            },
+            {
+              type: 'text',
+              name: 'href',
+              labelKey: 'settings.footer.links.href.label',
+              required: true,
+            },
+            {
+              type: 'select',
+              name: 'icon',
+              labelKey: 'settings.footer.socialLinks.icon.label',
+              default: 'link',
+              options: [
+                { value: 'github', label: 'GitHub' },
+                { value: 'x', label: 'X' },
+                { value: 'telegram', label: 'Telegram' },
+                { value: 'discord', label: 'Discord' },
+                { value: 'wechat', label: 'WeChat' },
+                { value: 'qq', label: 'QQ' },
+                { value: 'bilibili', label: 'Bilibili' },
+                { value: 'youtube', label: 'YouTube' },
+                { value: 'facebook', label: 'Facebook' },
+                { value: 'instagram', label: 'Instagram' },
+                { value: 'mail', labelKey: 'settings.footer.icon.mail' },
+                { value: 'rss', label: 'RSS' },
+                { value: 'globe', labelKey: 'settings.footer.icon.globe' },
+                { value: 'link', labelKey: 'settings.footer.icon.link' },
+              ],
+            },
           ],
-          default: [{ label: zhCN["content.footer.links.0.label"], href: zhCN["content.footer.links.0.href"] }, { label: zhCN["content.footer.links.1.label"], href: zhCN["content.footer.links.1.href"] }, { label: zhCN["content.footer.links.2.label"], href: zhCN["content.footer.links.2.href"] }, { label: zhCN["content.footer.links.3.label"], href: zhCN["content.footer.links.3.href"] }],
+          default: [],
         },
       ],
     },

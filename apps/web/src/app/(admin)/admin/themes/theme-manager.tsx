@@ -7,6 +7,18 @@ import { useRouter } from 'next/navigation';
 import type { AdminTheme } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
+import {
   activateThemeAction,
   clearPreviewThemeAction,
   deleteThemeAction,
@@ -41,8 +53,13 @@ export function ThemeManager({
           <form
             action={async () => {
               startTransition(async () => {
-                await clearPreviewThemeAction();
-                router.refresh();
+                try {
+                  await clearPreviewThemeAction();
+                  toast.success(t('admin.themes.previewCleared'));
+                  router.refresh();
+                } catch {
+                  toast.error(t('admin.themes.previewFailed'));
+                }
               });
             }}
           >
@@ -104,8 +121,12 @@ export function ThemeManager({
                       action={async () => {
                         const form = new FormData();
                         form.set('id', theme.id);
-                        await previewThemeAction(form);
-                        router.push('/preview');
+                        try {
+                          await previewThemeAction(form);
+                          router.push('/preview');
+                        } catch {
+                          toast.error(t('admin.themes.previewFailed'));
+                        }
                       }}
                     >
                       <Button type="submit" variant="outline" size="sm" disabled={isMutating}>
@@ -120,8 +141,13 @@ export function ThemeManager({
                       startTransition(async () => {
                         const form = new FormData();
                         form.set('id', theme.id);
-                        await activateThemeAction(form);
-                        router.refresh();
+                        try {
+                          await activateThemeAction(form);
+                          toast.success(t('admin.themes.activateSuccess'));
+                          router.refresh();
+                        } catch {
+                          toast.error(t('admin.themes.activateFailed'));
+                        }
                       });
                     }}
                   >
@@ -131,20 +157,42 @@ export function ThemeManager({
                   </form>
                 ) : null}
                 {!theme.isDefault && !theme.active ? (
-                  <form
-                    action={async () => {
-                      startTransition(async () => {
-                        const form = new FormData();
-                        form.set('id', theme.id);
-                        await deleteThemeAction(form);
-                        router.refresh();
-                      });
-                    }}
-                  >
-                    <Button type="submit" variant="destructive" size="sm" disabled={isMutating}>
+                  <AlertDialog>
+                    <AlertDialogTrigger
+                      render={<Button variant="destructive" size="sm" disabled={isMutating} />}
+                    >
                       {t('common.delete')}
-                    </Button>
-                  </form>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('admin.themes.deleteConfirmTitle')}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t('admin.themes.deleteConfirmDescription', { name: theme.name })}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction
+                          variant="destructive"
+                          onClick={() => {
+                            const form = new FormData();
+                            form.set('id', theme.id);
+                            startTransition(async () => {
+                              try {
+                                await deleteThemeAction(form);
+                                toast.success(t('admin.themes.deleted'));
+                                router.refresh();
+                              } catch {
+                                toast.error(t('admin.themes.deleteFailed'));
+                              }
+                            });
+                          }}
+                        >
+                          {t('common.delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 ) : null}
               </div>
             </li>

@@ -3,6 +3,7 @@ import { activeThemeCandidate, importFrontendPackage, readThemeSettings } from '
 import type { ReactElement } from 'react';
 import { z } from 'zod';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
+import type { FrontendSettings } from '@stackpanel/sdk';
 import { notFound } from 'next/navigation';
 import { FrontendScopeRoot } from '@/components/frontend-scope';
 import { FrontendRenderBoundary } from '@/components/frontend-render-boundary';
@@ -38,21 +39,21 @@ export async function FrontendRoute({
   params = {},
   fallback = {},
   themeId,
-  actionError,
   searchParams = {},
   standalone = false,
+  settingsOverride,
 }: {
   standalone?: boolean;
+  settingsOverride?: FrontendSettings;
   path: string;
   params?: Record<string, string>;
   fallback?: Record<string, unknown>;
   themeId?: string;
-  actionError?: string;
   searchParams?: Record<string, string | string[] | undefined>;
 }): Promise<ReactElement> {
-  const resolved = await resolveFrontendRoute(path, params, fallback, themeId, searchParams);
+  const resolved = await resolveFrontendRoute(path, params, fallback, themeId, searchParams, settingsOverride);
   if (!resolved || resolved.fallback) notFound();
-  return renderResolution(resolved, actionError, standalone, themeId);
+  return renderResolution(resolved, standalone, themeId, settingsOverride);
 }
 
 /**
@@ -61,40 +62,30 @@ export async function FrontendRoute({
  */
 export async function FrontendFallback(): Promise<ReactElement> {
   const resolved = await resolveFallbackRoute('/');
-  if (resolved) return renderResolution(resolved, undefined);
+  if (resolved) return renderResolution(resolved);
   return <DefaultNotFound />;
 }
 
 /** Render a resolved page (and its layout shell) into an element tree. */
 async function renderResolution(
   resolved: PageResolution,
-  actionError: string | undefined,
   standalone = false,
   themeId?: string,
+  settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
   const locale = await getLocale();
   const content = createElement(resolved.component, {
     params: resolved.params,
-    settings: resolved.settings,
+    settings: settingsOverride ?? resolved.settings,
     data: resolved.data,
     actions: resolved.actions,
     // Same-origin BFF, never the server-only `API_BASE_URL` (see renderPublicLayout).
     assetsBaseUrl: resolved.assetsBaseUrl ?? KERNEL_BFF_PREFIX,
     locale,
   } as never) as unknown as ReactElement;
-  const page = actionError ? (
-    <>
-      <p
-        role="alert"
-        className="mx-auto mt-4 w-[min(100%-2rem,72rem)] rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-      >
-        {actionError}
-      </p>
-      {content}
-    </>
-  ) : (
-    content
-  );
+  // Action results are toasted once by `<ActionFeedbackToaster />`; rendering
+  // `?error=` inline here duplicated the same message on public pages.
+  const page = content;
   // Contract 05 §3.3: wrap the package's render root in a stable scope marker so
   // its `styles[]` selectors can be scoped to its own DOM. `display: contents`
   // means the wrapper generates no box, so the package's layout is unchanged.
@@ -114,7 +105,7 @@ async function renderResolution(
   if (!resolved.layout) return scoped;
   const shared = await getPublicThemeLayout();
   if (!standalone && resolved.layout === shared) return scoped;
-  return renderPublicLayout(resolved.layout, scoped, resolved.assetsBaseUrl, locale, themeId);
+  return renderPublicLayout(resolved.layout, scoped, resolved.assetsBaseUrl, locale, themeId, settingsOverride);
 }
 
 export const getPublicThemeLayout = cache(async () => {
@@ -136,6 +127,7 @@ async function renderPublicLayout(
   assetsBaseUrl?: string,
   locale?: string,
   themeId?: string,
+  settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
   const [navigation, token, platform, categories, brand, settings] = await Promise.all([
     getApiClient()
@@ -155,7 +147,9 @@ async function renderPublicLayout(
       .getPlatformBrand()
       .then((result) => result.brand)
       .catch(() => null),
-    themeId
+    settingsOverride
+      ? Promise.resolve(settingsOverride)
+      : themeId
       ? readThemeSettings(themeId)
       : activeThemeCandidate().then((candidate) =>
           candidate ? readThemeSettings(candidate.id) : {},

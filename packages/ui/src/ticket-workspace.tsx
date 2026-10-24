@@ -110,6 +110,53 @@ export interface TicketWorkspaceLabels {
   priorities: Record<string, string>;
 }
 
+/**
+ * Prevent a version-skewed runtime plugin from taking down its route while a
+ * compatible revision is being published. The plugin normally supplies every
+ * visible string; this deliberately renders empty copy instead of guessing a
+ * locale in the shared host package.
+ */
+const missingTicketWorkspaceLabels: TicketWorkspaceLabels = {
+  sectionAria: '',
+  listAria: '',
+  myTicketsAria: '',
+  title: '',
+  adminTitle: '',
+  newTicketAria: '',
+  searchAria: '',
+  searchPlaceholder: '',
+  emptySearch: '',
+  empty: '',
+  unknownUser: '',
+  pickPrompt: '',
+  backToListAria: '',
+  newTitle: '',
+  subjectLabel: '',
+  subjectPlaceholder: '',
+  bodyLabel: '',
+  bodyPlaceholder: '',
+  cancel: '',
+  submit: '',
+  sending: '',
+  replyPlaceholder: '',
+  replyAria: '',
+  send: '',
+  closed: '',
+  notFound: '',
+  statusLabel: '',
+  priorityLabel: '',
+  assigneeLabel: '',
+  assigneePlaceholder: '',
+  save: '',
+  conversationAria: '',
+  scrollLatestAria: '',
+  latest: '',
+  selfAuthor: '',
+  staffAuthor: '',
+  statuses: {},
+  priorities: {},
+};
+
 function date(value: string, locale: string | undefined, short = false) {
   return new Date(value).toLocaleString(
     locale,
@@ -148,7 +195,7 @@ interface TicketWorkspaceProps {
    */
   locale?: string;
   /** Localized copy. See {@link TicketWorkspaceLabels}. */
-  labels: TicketWorkspaceLabels;
+  labels?: TicketWorkspaceLabels;
 }
 
 /** Account support inbox; the plugin owns routes, data and server actions. */
@@ -162,7 +209,7 @@ export function TicketWorkspace({
   admin = false,
   basePath = '/account/tickets',
   locale,
-  labels,
+  labels = missingTicketWorkspaceLabels,
 }: TicketWorkspaceProps) {
   const [search, setSearch] = useState('');
   const replyForm = useRef<HTMLFormElement>(null);

@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a product or developer experience improvement.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the problem and desired outcome. A concrete workflow is more useful than a list of implementation ideas.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Who encounters the problem, and what prevents them from completing their work today?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed outcome
+      description: Describe the intended user or operator experience and how it would help.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Mention existing settings, plugins, workarounds, or related issues you checked.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add sketches, screenshots, examples, or compatibility constraints when they clarify the request.

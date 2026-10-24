@@ -16,6 +16,8 @@
     "i18n:scan": "node scripts/scan-i18n-literals.mjs",
     "i18n:check": "node scripts/scan-i18n-literals.mjs --check",
     "i18n:packages": "node scripts/check-package-catalogs.mjs",
+    "i18n:hant": "node scripts/i18n-hant.mjs",
+    "i18n:hant:check": "node scripts/i18n-hant.mjs --check",
     "i18n:baseline": "node scripts/scan-i18n-literals.mjs --update-baseline",
     "verify:s2": "node scripts/verify-s2.mjs",
     "smoke:cluster": "node scripts/smoke-cluster.mjs",
@@ -61,6 +63,7 @@
     "eslint": "^10.8.0",
     "globals": "^17.13.0",
     "license-checker": "^25.0.1",
+    "opencc-js": "^1.4.2",
     "pm2": "^7.0.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.2"
@@ -69,18 +72,19 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@icons-pack/react-simple-icons": "^13.15.1",
     "@stackpanel/net-guard": "workspace:*",
     "@stackpanel/sdk": "workspace:*",
     "@stackpanel/ui": "workspace:*",
     "emoji-picker-react": "^4.19.1",
+    "esbuild": "^0.28.2",
     "lucide-react": "^1.31.0",
     "next": "16.4.2",
+    "prettier": "^3.9.10",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "sonner": "^2.0.8",
-    "zod": "^4.6.7",
-    "esbuild": "^0.28.2",
-    "prettier": "^3.9.10"
+    "zod": "^4.6.7"
   },
   "license": "MIT"
 }

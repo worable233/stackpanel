@@ -161,7 +161,12 @@ function startClarityMotion(startRays: typeof startHeroRays) {
         const controls = Array.from(
           element.querySelectorAll<HTMLButtonElement>('[data-story-control]'),
         );
-        if (!slides.length || controls.length !== slides.length || metadata.length !== slides.length) continue;
+        if (
+          !slides.length ||
+          controls.length !== slides.length ||
+          metadata.length !== slides.length
+        )
+          continue;
         const effects = new Map<Element, Animation>();
         const select = (next: number) => {
           index = next;
@@ -288,33 +293,49 @@ function startClarityMotion(startRays: typeof startHeroRays) {
     (event) => {
       if (event.pointerType === 'touch') return;
       const card =
-        event.target instanceof Element ? event.target.closest('[data-spotlight]') : null;
+        event.target instanceof Element
+          ? event.target.closest(
+              '[data-spotlight], [data-slot="card"], :where(div, section, aside, article).border.bg-card',
+            )
+          : null;
       if (!card) return;
       const bounds = card.getBoundingClientRect();
       const point = `${event.clientX - bounds.left}px ${event.clientY - bounds.top}px`;
       const frames = [
         {
           opacity: 1,
-          backgroundImage: `radial-gradient(200px circle at ${point}, var(--clarity-border-highlight), var(--primary), var(--border) 100%)`,
+          backgroundImage: `radial-gradient(200px circle at ${point}, var(--clarity-border-highlight, var(--primary)), var(--primary), var(--border) 100%)`,
         },
         {
           opacity: 0.8,
-          backgroundImage: `radial-gradient(200px circle at ${point}, var(--clarity-hover-surface), transparent 100%)`,
+          backgroundImage: `radial-gradient(200px circle at ${point}, color-mix(in oklab, var(--primary) 7%, var(--card)), transparent 100%)`,
         },
       ];
       const animations = lights.get(card) ?? [];
-      Array.from(card.children)
-        .slice(0, 2)
-        .forEach((element, index) => {
-          const frame = frames[index];
-          if (!frame) return;
-          const animation =
-            animations[index] ?? element.animate([frame, frame], { duration: 1, fill: 'both' });
-          (animation.effect as KeyframeEffect).setKeyframes([frame, frame]);
-          animation.pause();
-          animation.currentTime = 0;
-          animations[index] = animation;
-        });
+      const layers = card.querySelectorAll(':scope > [data-spotlight-layer]');
+      // Installed themes can still contain the original unmarked Spotlight layers.
+      const legacyLayers = !layers.length && card.hasAttribute('data-spotlight');
+      const usePseudoElements = !layers.length && !legacyLayers;
+      const targets = layers.length
+        ? Array.from(layers).slice(0, 2)
+        : legacyLayers
+          ? Array.from(card.children).slice(0, 2)
+          : [card, card];
+      targets.forEach((element, index) => {
+        const frame = frames[index];
+        if (!frame) return;
+        const animation =
+          animations[index] ??
+          element.animate([frame, frame], {
+            duration: 1,
+            fill: 'both',
+            ...(usePseudoElements ? { pseudoElement: index === 0 ? '::before' : '::after' } : {}),
+          });
+        (animation.effect as KeyframeEffect).setKeyframes([frame, frame]);
+        animation.pause();
+        animation.currentTime = 0;
+        animations[index] = animation;
+      });
       lights.set(card, animations);
     },
     { passive: true },
@@ -323,7 +344,11 @@ function startClarityMotion(startRays: typeof startHeroRays) {
     'pointerout',
     (event) => {
       const card =
-        event.target instanceof Element ? event.target.closest('[data-spotlight]') : null;
+        event.target instanceof Element
+          ? event.target.closest(
+              '[data-spotlight], [data-slot="card"], :where(div, section, aside, article).border.bg-card',
+            )
+          : null;
       if (!card || (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)))
         return;
       lights.get(card)?.forEach((animation) => animation.cancel());
