@@ -12,7 +12,7 @@ import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatYuan, type AdminOverviewData } from '@/lib/admin-overview-types';
 import { formatMoney } from '@/i18n';
 import { OrdersTable, ProductsTable } from '@/components/admin-finance/sections';
-import { PageHeader, Spotlight } from '@stackpanel/ui';
+import { PageHeader } from '@stackpanel/ui';
 
 /** Dashboard composition adapted from satnaing/shadcn-admin (MIT). */
 export function BackendDashboard({ data }: { data: AdminOverviewData }) {
@@ -68,7 +68,7 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
           <TabsTrigger value="products">{t('admin.overview.tabProducts')}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="flex flex-col gap-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {metrics.map(({ title, value, icon: Icon, hint, href }) => (
               <Link
                 key={title}
@@ -76,20 +76,18 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
                 className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 aria-label={`${title}：${value}`}
               >
-                <Spotlight>
-                  <Card className="backend-dashboard__metric h-full gap-5 transition-colors hover:border-primary/40">
-                    <CardHeader className="flex flex-row items-center justify-between gap-2">
-                      <CardTitle className="text-sm font-medium">{title}</CardTitle>
-                      <span className="flex size-8 items-center justify-center rounded-lg border border-primary/15 bg-primary/5 text-primary">
-                        <Icon className="size-4" />
-                      </span>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-medium tracking-tight tabular-nums">{value}</p>
-                      <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
-                    </CardContent>
-                  </Card>
-                </Spotlight>
+                <Card className="backend-dashboard__metric h-full gap-1 py-1.5 transition-colors hover:border-primary/40">
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 px-4">
+                    <CardTitle className="text-sm font-medium">{title}</CardTitle>
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary/15 bg-primary/5 text-primary">
+                      <Icon className="size-3.5" />
+                    </span>
+                  </CardHeader>
+                  <CardContent className="px-4">
+                    <p className="text-2xl font-medium tracking-tight tabular-nums">{value}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+                  </CardContent>
+                </Card>
               </Link>
             ))}
           </div>

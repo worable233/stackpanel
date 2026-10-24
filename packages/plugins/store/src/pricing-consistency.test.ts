@@ -63,7 +63,14 @@ function createStores(seed: Seed) {
       stock: 10,
       status: 'ACTIVE',
       metadata: seed.renewPrice
-        ? { checkoutConfig: { cycles: [{ id: 'monthly', label: '月', price: seed.price, renewPrice: seed.renewPrice }], options: [] } }
+        ? {
+            checkoutConfig: {
+              cycles: [
+                { id: 'monthly', label: '月', price: seed.price, renewPrice: seed.renewPrice },
+              ],
+              options: [],
+            },
+          }
         : null,
       categoryId: null,
       fulfillmentType: 'instant',
@@ -181,7 +188,7 @@ function makeCtx(stores: ReturnType<typeof createStores>, seed: Seed): PluginCon
       publish: () => {},
       subscribe: () => () => {},
       intercept: () => () => {},
-      waterfall: <T,>(_topic: string, value: T): T => value,
+      waterfall: <T>(_topic: string, value: T): T => value,
     },
     extensions: stores.client,
     tx: (async (fn: (tx: unknown) => Promise<unknown>) =>
@@ -194,7 +201,9 @@ function makeCtx(stores: ReturnType<typeof createStores>, seed: Seed): PluginCon
     // 关键：权限组折扣在这里注入，模拟「用户属于一个 20% 折扣组」。
     auth: {
       listUserGroups: async () =>
-        seed.groupDiscount == null ? [] : [{ id: 'g1', name: '代理', discount: seed.groupDiscount }],
+        seed.groupDiscount == null
+          ? []
+          : [{ id: 'g1', name: '代理', discount: seed.groupDiscount }],
     },
     fx: {
       quote: async (from: string, _to: string, amount: number) => ({
@@ -312,15 +321,12 @@ describe('跨路径定价一致性（展示价 = 实付价）', () => {
     const seed: Seed = { price: 9900, discount: 10, groupDiscount: null };
     const stores = createStores(seed);
     bindContext(makeCtx(stores, seed));
-    await stores.client.create(
-      { kind: 'store/cart-item' } as never,
-      {
-        userId: USER_ID,
-        productId: PRODUCT_ID,
-        quantity: 2,
-        config: null,
-      },
-    );
+    await stores.client.create({ kind: 'store/cart-item' } as never, {
+      userId: USER_ID,
+      productId: PRODUCT_ID,
+      quantity: 2,
+      config: null,
+    });
 
     const cart = (await listCart({
       params: {},
@@ -328,7 +334,10 @@ describe('跨路径定价一致性（展示价 = 实付价）', () => {
       body: {},
       headers: {},
       user: { id: USER_ID, role: 'USER' },
-    } as never)) as { total: number; items: Array<{ product: { originalPrice: number; discount: number | null } }> };
+    } as never)) as {
+      total: number;
+      items: Array<{ product: { originalPrice: number; discount: number | null } }>;
+    };
 
     expect(cart.total).toBe(8910 * 2);
     expect(cart.items[0]!.product.originalPrice).toBe(9900);

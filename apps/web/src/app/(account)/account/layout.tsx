@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { AccountShell } from '@/components/account-shell';
 import type { BackendNavigationItem, BackendUser } from '@/components/backend-shell';
 import { apiAssetUrl, getApiClient, getAuthedApiClient } from '@/lib/api';
@@ -10,11 +11,14 @@ export const dynamic = 'force-dynamic';
 
 /** Account shell with a two-row top navigation: toolbar + horizontal menu. */
 export default async function AccountLayout({ children }: { children: React.ReactNode }) {
+  const requestPath = (await headers()).get('x-stackpanel-request-path');
+  const nextPath = requestPath?.startsWith('/account/') ? requestPath : '/account';
+  const loginPath = `/login?next=${encodeURIComponent(nextPath)}`;
   const session = await getSessionUser();
-  if (!session) redirect('/login?next=/account');
+  if (!session) redirect(loginPath);
 
   const account = await loadAccountShell();
-  if (!account) redirect('/login?next=/account');
+  if (!account) redirect(loginPath);
 
   const brand = await getApiClient()
     .getPlatformBrand()
@@ -61,5 +65,5 @@ async function loadAccountShell(): Promise<{
 
 /** Preserve plugin-owned functional groups; no business-specific fallback in the shell. */
 function sortPluginMenus(menus: PluginAccountMenu[]): BackendNavigationItem[] {
-  return menus.map((item) => ({ ...item, group: item.group ?? item.pluginId }));
+  return menus;
 }

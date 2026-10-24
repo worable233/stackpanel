@@ -29,7 +29,7 @@ export default async function AdminThemesPage() {
       />
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.themes.serviceUnavailable', { error })}
+          {t('admin.themes.serviceUnavailable')}
         </p>
       ) : (
         <ThemeManager themes={themes} previewThemeId={previewThemeId} />

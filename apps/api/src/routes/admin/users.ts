@@ -78,6 +78,8 @@ function service(request: FastifyRequest): UserAdminService {
     auth: request.server.auth,
     commerce: resolveCommerce(request.server.pluginRuntime),
     upstreamServiceSources: resolveUpstreamServiceSources(request.server.pluginRuntime),
+    notifications: request.server.notifications,
+    logger: request.log,
   });
 }
 
@@ -223,7 +225,7 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
       params.data.id,
       body.data.amount,
       body.data.note,
-      request.user?.id,
+      actorOf(request),
     );
   });
 
@@ -253,6 +255,7 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
       params.data.id,
       body.data,
       auditContext(request),
+      actorOf(request),
     );
     return reply.code(201).send(result);
   });
@@ -286,6 +289,7 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
         params.data.serviceId,
         body.data,
         auditContext(request),
+        actorOf(request),
       );
     },
   );
@@ -300,6 +304,7 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
         params.data.id,
         params.data.serviceId,
         auditContext(request),
+        actorOf(request),
       );
       return reply.code(204).send();
     },
@@ -326,6 +331,7 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
         .object({
           sourceId: z.string().min(1),
           providerServiceId: z.string().min(1),
+          sourceRef: z.string().min(1).optional(),
         })
         .safeParse(request.body);
       if (!params.success || !body.success) return reply.code(400).send({ error: '请求参数无效' });
@@ -333,6 +339,7 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
         params.data.id,
         body.data,
         auditContext(request),
+        actorOf(request),
       );
       return reply.code(201).send(result);
     },
@@ -348,6 +355,7 @@ export async function adminUserRoutes(app: FastifyInstance): Promise<void> {
         params.data.id,
         params.data.serviceId,
         auditContext(request),
+        actorOf(request),
       );
       return reply.code(204).send();
     },

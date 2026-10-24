@@ -28,7 +28,10 @@ export function applyDiscount(unit: number, discountPercent: number): number {
 }
 
 /** 两条折扣来源取更优（数值更大者）；都缺失时为 0。 */
-export function betterDiscount(productDiscount: number | null | undefined, groupDiscount: number): number {
+export function betterDiscount(
+  productDiscount: number | null | undefined,
+  groupDiscount: number,
+): number {
   const product = normalizePercent(productDiscount);
   const group = normalizePercent(groupDiscount);
   return Math.max(product, group);

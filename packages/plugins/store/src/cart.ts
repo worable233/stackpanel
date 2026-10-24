@@ -1,7 +1,7 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
 import { StoreError } from './errors';
-import { resolveCheckoutPrice } from './pricing';
-import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
+import { resolveCheckoutPrice, effectiveDiscount } from './pricing';
+import { applyDiscount, betterDiscount } from './discount';
 import {
   createCartItem,
   deleteCartItems,
@@ -16,8 +16,7 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
   const userId = req.user?.id;
   if (!userId) throw new StoreError(401, '未登录');
   const items = await listCartItemsByUser(userId);
-  // 与下单同源：购物车合计若不含折扣，用户在购物车看到的金额会高于实际扣款。
-  const groupDiscount = await effectiveGroupDiscount(userId);
+  const discount = await effectiveDiscount(userId);
   const rows: Array<{
     id: string;
     productId: string;
@@ -26,8 +25,11 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
     product: {
       id: string;
       name: string;
+      /** 实付单价（已应用折扣）。 */
       price: number;
+      /** 未打折单价；前端用它展示划线原价。 */
       originalPrice: number;
+      /** 本行实际生效的折扣百分比（取更优者）；无折扣为 null。 */
       discount: number | null;
       currency: string;
       stock: number;
@@ -36,15 +38,57 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
     };
     total: number;
     summary?: string;
+    unavailableReason?: string;
   }> = [];
   let total = 0;
   for (const item of items) {
     const product = await getProduct(item.productId);
-    if (!product) continue;
-    const config = item.config ? parseCheckoutSelection(item.config) : undefined;
-    const { unit: baseUnit, result } = await resolveCheckoutPrice(product, item.quantity, config);
-    const discount = betterDiscount(product.discount, groupDiscount);
-    const unit = applyDiscount(baseUnit, discount);
+    if (!product) {
+      rows.push({
+        id: item.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        product: {
+          id: item.productId,
+          name: '已删除商品',
+          price: 0,
+          originalPrice: 0,
+          discount: null,
+          currency: 'CNY',
+          stock: 0,
+          status: 'DELETED',
+          createdAt: new Date(0),
+        },
+        total: 0,
+        unavailableReason: '商品已删除',
+      });
+      continue;
+    }
+    let unit = 0;
+    let baseUnit = 0;
+    let lineDiscount: number | null = null;
+    let summary: string | undefined;
+    let unavailableReason =
+      product.status !== 'ACTIVE'
+        ? '商品已下架'
+        : product.stock < item.quantity
+          ? '库存不足'
+          : undefined;
+    if (!unavailableReason) {
+      try {
+        const config = item.config ? parseCheckoutSelection(item.config) : undefined;
+        const priced = await resolveCheckoutPrice(product, item.quantity, config);
+        // 折扣取更优者、封顶 99%，与下单路径共用 `discount.ts`。
+        baseUnit = priced.unit;
+        const effective = betterDiscount(product.discount, discount);
+        unit = applyDiscount(baseUnit, effective);
+        lineDiscount = effective > 0 ? effective : null;
+        summary = priced.result?.summary;
+      } catch (error) {
+        if (!(error instanceof StoreError)) throw error;
+        unavailableReason = error.message;
+      }
+    }
     const lineTotal = unit * item.quantity;
     total += lineTotal;
     rows.push({
@@ -56,15 +100,16 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
         id: product.id,
         name: product.name,
         price: unit,
-        originalPrice: baseUnit,
-        discount: discount > 0 ? discount : null,
+        originalPrice: baseUnit || product.price,
+        discount: lineDiscount,
         currency: product.currency,
         stock: product.stock,
         status: product.status,
         createdAt: product.createdAt,
       },
       total: lineTotal,
-      ...(result?.summary ? { summary: result.summary } : {}),
+      ...(summary ? { summary } : {}),
+      ...(unavailableReason ? { unavailableReason } : {}),
     });
   }
   return { items: rows, total };
@@ -81,7 +126,9 @@ export async function addToCart(req: HttpRequest, reply: HttpReply): Promise<unk
     throw new StoreError(409, '商品不可购买');
   }
   const config = input.config ? parseCheckoutSelection(input.config) : undefined;
-  const quantity = Math.min(input.quantity, product.stock);
+  if (input.quantity > product.stock) throw new StoreError(409, '库存不足');
+  const quantity = input.quantity;
+  await resolveCheckoutPrice(product, quantity, config);
   const item = await createCartItem({
     userId,
     productId: input.productId,
@@ -90,7 +137,7 @@ export async function addToCart(req: HttpRequest, reply: HttpReply): Promise<unk
   });
   return reply.code(201).send({
     item: { id: item.id, productId: item.productId, quantity: item.quantity },
-    nextPath: '/shop/cart',
+    nextPath: '/account/store/cart',
   });
 }
 
@@ -133,6 +180,8 @@ export async function removePurchasedCartItems(
   } else if (cart.productIds?.length) {
     const items = await listCartItemsByUser(userId);
     const wanted = new Set(cart.productIds);
-    await deleteCartItems(items.filter((item) => wanted.has(item.productId)).map((item) => item.id));
+    await deleteCartItems(
+      items.filter((item) => wanted.has(item.productId)).map((item) => item.id),
+    );
   }
 }

@@ -2,15 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { IdentityChallengeMessage, IdentityChallengeSender } from '@stackpanel/sdk';
 
-// Must be set before the env module is imported (see dynamic imports below):
-// the register flow reads this at service construction time.
-process.env.AUTH_EMAIL_VERIFICATION = 'required';
+// Captcha and send-rate policy still come from the environment; they must be
+// set before the env module is imported (see dynamic imports below).
 process.env.AUTH_CAPTCHA_MODE = 'off';
 process.env.AUTH_CODE_SEND_PER_HOUR = '0';
 process.env.AUTH_CODE_SEND_PER_HOUR_PER_IP = '0';
 
 const { buildApp } = await import('../../src/app.ts');
 const { getPrisma } = await import('../../src/plugins/prisma.ts');
+const { pluginSecrets } = await import('../../src/lib/crypto.ts');
 
 const dbAvailable = await (async () => {
   try {
@@ -47,10 +47,18 @@ describe.skipIf(!dbAvailable)('register email verification (real DB)', () => {
     await app.pluginRuntime.activate('login');
     // Register the delivery channel the kernel reads live on every issue.
     app.pluginRuntime.registerExtension('identity.challengeSender', sender, 'test-plugin');
+    // Registration policy belongs to the login plugin's encrypted settings, not
+    // to deployment env (ADR-0016 / login admin settings). Seed the saved config
+    // the same way the administrator settings page would.
+    await pluginSecrets(getPrisma(), 'login').set(
+      'login-config',
+      JSON.stringify({ registrationMethods: ['email'], emailVerificationRequired: true }),
+    );
   });
 
   afterAll(async () => {
     await getPrisma().user.deleteMany({ where: { email } });
+    await pluginSecrets(getPrisma(), 'login').remove('login-config');
     await app.close();
   });
 

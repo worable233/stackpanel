@@ -458,7 +458,7 @@ describe('referral rewards', () => {
     expect(world.credits).toHaveLength(0);
   });
 
-  it('推广人单码奖励覆盖全局默认', async () => {
+  it('历史单码奖励不会超过全局默认', async () => {
     const world = makeWorld();
     bindContext(world.ctx);
     seedCode(world.fake, { rewardAmount: 1234 });
@@ -472,7 +472,7 @@ describe('referral rewards', () => {
     });
 
     const inviterCredit = world.credits.find((row) => row.type === 'REFERRAL_REWARD');
-    expect(inviterCredit?.amount).toBe(1234);
+    expect(inviterCredit?.amount).toBe(500);
     expect(inviterCredit?.referenceType).toBe(REFERRAL_REFERENCE_TYPE);
   });
 

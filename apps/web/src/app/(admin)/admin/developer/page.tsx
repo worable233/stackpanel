@@ -50,7 +50,7 @@ export default async function AdminDeveloperPage({
 
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable', { error })}
+          {t('admin.developer.serviceUnavailable')}
         </p>
       ) : null}
 

@@ -22,4 +22,4 @@
 
 ## 构建外部插件
 
-开发 sibling 插件仓库时，可设置 `STACKPANEL_PLUGIN_SOURCES` 为其 `packages/plugins` 目录，再运行 `pnpm build:frontend`。外部同名插件源优先于内核内置副本，构建产物和 manifest 会写入当前运行时 `data`，生产构建不设置该变量即可使用内置插件。
+开发 sibling 插件仓库时，可设置 `STACKPANEL_PLUGIN_SOURCES` 为其 `packages/plugins` 目录，再运行 `pnpm build:frontend`。外部同名插件源优先于内核内置副本，构建产物和 manifest 会写入当前运行时 `data`，生产构建不设置该变量即可使用内置插件。当前内核仓库只保留运行时必需的内置插件；其他插件（包括 `referral`）的源码位于 `StackPanel-plugins`，通过市场包安装或外部插件源接入。

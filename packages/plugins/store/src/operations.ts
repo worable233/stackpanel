@@ -12,16 +12,17 @@ import type {
   CommerceServicePatch,
 } from '@stackpanel/sdk';
 import { CommerceError } from '@stackpanel/sdk';
+import { createHash } from 'node:crypto';
 import { extensions, runTransaction } from './context';
 import { orderModel, productModel, serviceInstanceModel, type StoreOrderData } from './data';
 import { applyServiceLifecycleAction } from './fulfillment';
 import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
+import { notifyUser } from './notifications';
 import type { OrderRecord, ProductRecord, ServiceInstanceRecord } from './repository';
 import {
   createServiceInstance,
   deleteServiceInstance,
   findOrderForUser,
-  findServiceByProviderService,
   getProduct,
   getService,
   listActiveProductsPage,
@@ -30,6 +31,7 @@ import {
   listServicesByUser,
   replaceServiceInstance,
   toOrder,
+  toProduct,
   toServiceInstanceData,
 } from './repository';
 
@@ -122,10 +124,7 @@ export const storeOperations: CommerceOperations = {
     // 合作方下单必须与站内下单算出同一个金额：否则同一个用户、同一件商品，
     // 经 SP v1 和经商城会得到两个价格（此前这条路径完全不打折）。
     const groupDiscount = await effectiveGroupDiscount(input.userId);
-    const unitPrice = applyDiscount(
-      product.price,
-      betterDiscount(product.discount, groupDiscount),
-    );
+    const unitPrice = applyDiscount(product.price, betterDiscount(product.discount, groupDiscount));
     const total = unitPrice * quantity;
     if (!Number.isSafeInteger(total) || total < 1 || total > MAX_MINOR_AMOUNT) {
       throw new CommerceError('amount_invalid', '订单金额无效');
@@ -143,9 +142,7 @@ export const storeOperations: CommerceOperations = {
       const created = await tx.extensions.create<StoreOrderData>(orderModel, {
         userId: input.userId,
         items: {
-          items: [
-            { productId: product.id, quantity, price: unitPrice, name: product.name },
-          ],
+          items: [{ productId: product.id, quantity, price: unitPrice, name: product.name }],
           // 标记本单为「合作方预付」（SP v1）——平台未实际收款，禁止退款入账。
           settlement: 'partner_prepaid',
         },
@@ -174,7 +171,11 @@ export const storeOperations: CommerceOperations = {
     return order ? toCommerceOrder(order) : null;
   },
 
-  async listOrders(userId: string, page: number, pageSize: number): Promise<CommerceList<CommerceOrder>> {
+  async listOrders(
+    userId: string,
+    page: number,
+    pageSize: number,
+  ): Promise<CommerceList<CommerceOrder>> {
     const current = Math.max(1, Math.trunc(page));
     const size = Math.min(100, Math.max(1, Math.trunc(pageSize)));
     const { items, total } = await listOrdersForUserPage(userId, current, size);
@@ -188,14 +189,16 @@ export const storeOperations: CommerceOperations = {
 
   async countServicesByUsers(userIds: string[]): Promise<Record<string, number>> {
     // The paged query returns an exact total without loading service payloads in bulk.
-    const counts = await Promise.all([...new Set(userIds)].slice(0, 100).map(async (userId) => {
-      const result = await extensions().list(serviceInstanceModel, {
-        where: { userId: { eq: userId }, state: { in: ['ACTIVE', 'SUSPENDED'] } },
-        page: 1,
-        pageSize: 1,
-      });
-      return [userId, result.total] as const;
-    }));
+    const counts = await Promise.all(
+      [...new Set(userIds)].slice(0, 100).map(async (userId) => {
+        const result = await extensions().list(serviceInstanceModel, {
+          where: { userId: { eq: userId }, state: { in: ['ACTIVE', 'SUSPENDED'] } },
+          page: 1,
+          pageSize: 1,
+        });
+        return [userId, result.total] as const;
+      }),
+    );
     return Object.fromEntries(counts);
   },
 
@@ -214,11 +217,42 @@ export const storeOperations: CommerceOperations = {
     await applyServiceLifecycleAction(service, action);
     const nextStatus =
       action === 'suspend' ? 'SUSPENDED' : action === 'resume' ? 'ACTIVE' : 'TERMINATED';
-    await replaceServiceInstance(service.id, toServiceData({
-      ...service,
-      status: nextStatus,
-      terminatedAt: action === 'terminate' ? new Date() : service.terminatedAt,
-    }));
+    await replaceServiceInstance(
+      service.id,
+      toServiceData({
+        ...service,
+        status: nextStatus,
+        terminatedAt: action === 'terminate' ? new Date() : service.terminatedAt,
+      }),
+    );
+    // 到期流程会发同类通知（expiry.ts），但人工/合作方 API 停机走这里；
+    // 用户不该因为「谁触发的」不同而收不到状态变化。dedupeKey 与到期流程共用
+    // `service:<id>:<state>` 口径，同一状态只保留一条。
+    await notifyUser({
+      userId: service.userId,
+      type:
+        action === 'suspend'
+          ? 'service.suspended'
+          : action === 'resume'
+            ? 'service.resumed'
+            : 'service.terminated',
+      title:
+        action === 'suspend'
+          ? '云服务已暂停'
+          : action === 'resume'
+            ? '云服务已恢复'
+            : '云服务已终止',
+      body:
+        action === 'suspend'
+          ? `「${service.productName}」已被暂停。`
+          : action === 'resume'
+            ? `「${service.productName}」已恢复可用。`
+            : `「${service.productName}」已被终止。`,
+      link: `/account/services/${service.id}`,
+      data: { serviceId: service.id, action, status: nextStatus },
+      status: action === 'resume' ? 'success' : action === 'terminate' ? 'error' : 'info',
+      dedupeKey: `store:service:${service.id}:${nextStatus.toLowerCase()}`,
+    });
     const updated = await getService(service.id);
     return updated ? toCommerceService(updated) : null;
   },
@@ -263,11 +297,14 @@ export const storeOperations: CommerceOperations = {
   async updateService(id: string, patch: CommerceServicePatch): Promise<CommerceService | null> {
     const service = await getService(id);
     if (!service) return null;
-    await replaceServiceInstance(id, toServiceData({
-      ...service,
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
-      ...(patch.expiresAt !== undefined ? { expiresAt: patch.expiresAt } : {}),
-    }));
+    await replaceServiceInstance(
+      id,
+      toServiceData({
+        ...service,
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.expiresAt !== undefined ? { expiresAt: patch.expiresAt } : {}),
+      }),
+    );
     const updated = await getService(id);
     return updated ? toCommerceService(updated) : null;
   },
@@ -280,42 +317,75 @@ export const storeOperations: CommerceOperations = {
   },
 
   async bindService(input: CommerceBindServiceInput): Promise<CommerceService> {
-    const existing = await findServiceByProviderService(input.providerId, input.providerServiceId);
+    const runtime = input.runtime as { upstreamId?: string; upstreamProductId?: string } | null;
+    const sourceRef = runtime?.upstreamId ?? null;
+    const existing = (await listServicesByProvider(input.providerId)).find(
+      (service) =>
+        service.providerServiceId === input.providerServiceId &&
+        (sourceRef === null ||
+          ((service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null) === null ||
+          ((service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null) === sourceRef),
+    );
     if (existing) {
       throw new CommerceError(
         'service_already_bound',
-        existing.userId === input.userId ? '该上游服务已绑定到本账号' : '该上游服务已绑定到其他账号',
+        existing.userId === input.userId
+          ? '该上游服务已绑定到本账号'
+          : '该上游服务已绑定到其他账号',
       );
     }
-    const service = await createServiceInstance({
-      userId: input.userId,
-      orderId: null,
-      productId: input.productId,
-      productName: input.productName,
-      fulfillmentType: input.fulfillmentType,
-      providerId: input.providerId,
-      providerServiceId: input.providerServiceId,
-      state: normalizeBoundStatus(input.status),
-      credentialsRef: null,
-      runtime: input.runtime ?? null,
-      amount: input.amount,
-      currency: input.currency,
-      provisionedAt: new Date().toISOString(),
-      expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null,
-    });
+    const products = (await extensions().listAll(productModel, {})).map((row) =>
+      toProduct(row as Parameters<typeof toProduct>[0]),
+    );
+    const matches = products.filter(
+      (product) =>
+        product.providerId === input.providerId &&
+        product.providerProductId === runtime?.upstreamProductId &&
+        ((product.metadata as { upstream?: { sourceRef?: string } } | null)?.upstream?.sourceRef ??
+          null) === sourceRef,
+    );
+    if (matches.length > 1)
+      throw new CommerceError(
+        'service_already_bound',
+        '上游商品匹配多个本地商品，请先消除重复映射',
+      );
+    const product = matches[0];
+    const identity = `bound-${createHash('sha256')
+      .update(JSON.stringify([input.providerId, sourceRef, input.providerServiceId]))
+      .digest('hex')}`;
+    const service = await createServiceInstance(
+      {
+        userId: input.userId,
+        orderId: null,
+        productId: product?.id ?? input.productId,
+        productName: input.productName,
+        fulfillmentType: product?.fulfillmentType ?? input.fulfillmentType,
+        providerId: input.providerId,
+        providerServiceId: input.providerServiceId,
+        state: normalizeBoundStatus(input.status),
+        credentialsRef: null,
+        runtime: input.runtime ?? null,
+        amount: input.amount,
+        currency: input.currency,
+        provisionedAt: ['ACTIVE', 'SUSPENDED'].includes(normalizeBoundStatus(input.status))
+          ? new Date().toISOString()
+          : null,
+        expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null,
+      },
+      identity,
+    );
+    if (service.userId !== input.userId)
+      throw new CommerceError('service_already_bound', '该上游服务已绑定到其他账号');
     return toCommerceService(service);
   },
 
   async listBoundServices(providerId: string): Promise<CommerceService[]> {
     const services = await listServicesByProvider(providerId);
-    return services
-      .filter((service) => service.providerServiceId !== null)
-      .slice(0, MAX_SERVICES)
-      .map(toCommerceService);
+    return services.filter((service) => service.providerServiceId !== null).map(toCommerceService);
   },
 };
 
-/** 把上游状态归一化为平台交付物状态；未知状态按 ACTIVE 处理。 */
+/** Unknown upstream states must not grant provisioned-resource access. */
 function normalizeBoundStatus(status: string): string {
   const allowed = new Set([
     'PENDING_PROVISION',
@@ -326,5 +396,6 @@ function normalizeBoundStatus(status: string): string {
     'FAILED',
   ]);
   const upper = status.toUpperCase();
-  return allowed.has(upper) ? upper : 'ACTIVE';
+  if (['ON', 'OFF', 'RUNNING', 'STOPPED', 'SHUTOFF', 'SHUTDOWN'].includes(upper)) return 'ACTIVE';
+  return allowed.has(upper) ? upper : 'PENDING_PROVISION';
 }

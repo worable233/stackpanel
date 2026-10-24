@@ -43,6 +43,9 @@ export interface IdentityChallengeMessage {
 export interface IdentityChallengeSender {
   readonly id: string;
   readonly name: string;
+  /** Whether this channel is currently ready to deliver messages. Older
+   * senders that omit this method are treated as available for compatibility. */
+  isConfigured?(): boolean;
   /** Deliver one code. Throw to signal a delivery failure the kernel surfaces. */
   send(message: IdentityChallengeMessage): Promise<void>;
 }

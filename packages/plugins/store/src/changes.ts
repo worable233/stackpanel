@@ -32,6 +32,7 @@ import {
   type StoreOrderData,
   type StoreServiceInstanceData,
 } from './data';
+import { notifyUser } from './notifications';
 import {
   changeQuoteSchema,
   changeServiceSchema,
@@ -414,6 +415,28 @@ export async function applyChangeOrder(orderId: string): Promise<void> {
       });
     }
     logger().info(`store: applied change for service ${service.id} (${changeType}=${applied})`);
+    const after = await getService(service.id);
+    if (after) {
+      // 变配是用户花了钱换来的结果：必须明确告知「已生效」以及变成什么。
+      // 幂等键含订单与行，避免同一订单重放的 finally 步骤刷出重复通知。
+      await notifyUser({
+        userId: record.spec.userId,
+        type: 'service.changed',
+        title: '服务配置已变更',
+        body: `你的服务「${after.productName}」已完成${
+          changeType === 'product' ? '更换商品' : '套餐变更'
+        }。`,
+        link: `/account/services/${after.id}`,
+        data: {
+          serviceId: after.id,
+          orderId,
+          changeType,
+          ...(targetProductId ? { productId: targetProductId } : {}),
+        },
+        status: 'success',
+        dedupeKey: `store:service:${after.id}:changed:${orderId}`,
+      });
+    }
   }
 }
 
@@ -517,6 +540,38 @@ export async function transferService(req: HttpRequest): Promise<unknown> {
       logger().warn(`store: transfer audit failed for ${service.id}: ${messageOf(error)}`);
     });
   logger().info(`store: transferred service ${service.id} to ${targetUserId}`);
+  // 转移是双方的事实：原机主需要知道「不再拥有」，新机主需要知道「多了一件」。
+  // 两条通知用不同幂等键（recipient + service），同一转移重放不会互相覆盖。
+  await notifyUser({
+    userId: targetUserId,
+    type: 'service.transferred',
+    title: '你收到一项转移的服务',
+    body: `「${service.productName}」已转移到你的账号名下。`,
+    link: `/account/services/${service.id}`,
+    data: {
+      serviceId: service.id,
+      productName: service.productName,
+      direction: 'in',
+      fromUserId: service.userId,
+    },
+    status: 'success',
+    dedupeKey: `store:service:${service.id}:transferred:${targetUserId}`,
+  });
+  await notifyUser({
+    userId: service.userId,
+    type: 'service.transferred',
+    title: '服务已转出',
+    body: `「${service.productName}」已从你的账号转移到其他用户。`,
+    link: '/account/services',
+    data: {
+      serviceId: service.id,
+      productName: service.productName,
+      direction: 'out',
+      toUserId: targetUserId,
+    },
+    status: 'info',
+    dedupeKey: `store:service:${service.id}:transferred-away:${service.userId}`,
+  });
   return { transferred: true, targetUserId };
 }
 

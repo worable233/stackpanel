@@ -121,11 +121,6 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   SESSION_COOKIE_NAME: z.string().default('sp_session'),
   SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(43200),
-  // Registration email verification + human verification policy (audit §5).
-  // `off` keeps the historical behaviour (register immediately, no code). When
-  // `required`, a verified email code is mandatory before an ACTIVE account is
-  // created and a missing delivery channel is a hard error, never a silent skip.
-  AUTH_EMAIL_VERIFICATION: z.enum(['off', 'required']).default('off'),
   // Captcha policy: `off` never asks; `optional` verifies a token when the
   // client sends one but admits requests without it; `required` rejects any
   // request lacking a valid token (and rejects when no provider is configured).

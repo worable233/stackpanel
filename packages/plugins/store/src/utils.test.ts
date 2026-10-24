@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { productUpdateSchema } from './utils';
+import { productUpdateSchema, parseCheckoutSelection } from './utils';
+
+describe('instance name', () => {
+  it('preserves a trimmed display name without altering provider selections', () => {
+    expect(
+      parseCheckoutSelection({
+        instanceName: '  生产库  ',
+        cycle: 'monthly',
+        selections: { os: 'provider-id' },
+      }),
+    ).toEqual({ instanceName: '生产库', cycle: 'monthly', selections: { os: 'provider-id' } });
+  });
+  it('rejects oversized names and control characters', () => {
+    expect(() => parseCheckoutSelection({ instanceName: 'x'.repeat(65) })).toThrow();
+    expect(() => parseCheckoutSelection({ instanceName: 'bad\nname' })).toThrow();
+  });
+});
 
 /**
  * 回归：zod 的 `.partial()` 不会中和 `.default()`。若直接用 `productSchema.partial()`，
@@ -20,7 +36,11 @@ describe('productUpdateSchema', () => {
   });
 
   it('keeps explicitly provided values', () => {
-    const parsed = productUpdateSchema.parse({ stock: 5, currency: 'USD', fulfillmentType: 'api_token' });
+    const parsed = productUpdateSchema.parse({
+      stock: 5,
+      currency: 'USD',
+      fulfillmentType: 'api_token',
+    });
     expect(parsed).toEqual({ stock: 5, currency: 'USD', fulfillmentType: 'api_token' });
   });
 

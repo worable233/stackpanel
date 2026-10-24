@@ -1,7 +1,5 @@
 import { SectionTitle } from '@stackpanel/ui';
-import Link from 'next/link';
 import type { ResellerDetailResponse, WebhookDeliveryView } from '@stackpanel/sdk';
-import { ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
@@ -139,21 +137,14 @@ export default async function AdminDeveloperResellerPage({
   return (
     <main className="w-full space-y-6">
       <PageHeader
-        eyebrow={
-          <Link
-            href="/admin/developer"
-            className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            {t('admin.developer.detail.backToList')}
-          </Link>
-        }
+        backHref="/admin/developer"
+        backLabel={t('admin.developer.detail.backToList')}
         title={data ? data.reseller.name : t('admin.developer.resellers.title')}
       />
 
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable', { error })}
+          {t('admin.developer.serviceUnavailable')}
         </p>
       ) : null}
 

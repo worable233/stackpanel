@@ -2,11 +2,14 @@ import type { AdminDashboardWidgetMeta, HttpReply, HttpRequest, NavItem } from '
 import { EXTENSION_POINTS, definePlugin, PluginError } from '@stackpanel/sdk';
 import { bindContext, context, resetContext } from './context';
 import { StoreError } from './errors';
+import { storeSettings, saveStoreSettings } from './settings';
+import { approveAdminDeliveryTask, reconcileProvisioning, reconcileAdminDeliveryTask, listAdminReconciliationCandidates, resumeAdminDeliveryPayment, recoverAdminDeliveryTask } from './fulfillment';
 import {
   settlementHandler,
   createOrder,
   checkoutCart,
   listMyOrders,
+  getMyOrder,
   cancelOrder,
   listAdminOrders,
 } from './orders';
@@ -51,7 +54,7 @@ import { storeOperations } from './operations';
 import { renewService } from './renewal';
 import { STORE_NOTIFICATION_TYPES } from './notifications';
 import { changeService, quoteServiceChange, transferService } from './changes';
-import { refundOrder } from './refund';
+import { refundOrder, createRefundRequest, listRefundRequests, reviewRefundRequest } from './refund';
 import { runExpirySweep, EXPIRY_SWEEP_INTERVAL_MS } from './expiry';
 import {
   getUpstreamProduct,
@@ -69,6 +72,7 @@ import {
   orderModel,
   productModel,
   serviceInstanceModel,
+  refundRequestModel,
 } from './data';
 
 const STORE_PRODUCT_READ = 'store.product.read';
@@ -125,6 +129,7 @@ export const storePlugin = definePlugin({
       STORE_PRODUCT_UPDATE,
     ],
     permissions: [
+      'platform.admin',
       { key: 'store.view', name: '浏览商店', description: '浏览商品与分类等商店前台内容。' },
       { key: 'store.buy', name: '购买商品', description: '下单购买商品并完成支付。' },
       {
@@ -377,9 +382,17 @@ export const storePlugin = definePlugin({
     orderModel,
     serviceInstanceModel,
     deliveryTaskModel,
+    refundRequestModel,
   ],
 
   routes: [
+    { method: 'GET', path: '/store/admin/settings', auth: 'admin', permission: 'platform.admin', handler: handle(storeSettings) },
+    { method: 'POST', path: '/store/admin/settings', auth: 'admin', permission: 'platform.admin', handler: handle(saveStoreSettings) },
+    { method: 'POST', path: '/store/admin/delivery-tasks/:id/approve', auth: 'admin', permission: 'store.admin', handler: handle(approveAdminDeliveryTask) },
+    { method: 'POST', path: '/orders/:id/refund-requests', auth: 'user', permission: 'store.buy', handler: handle(createRefundRequest) },
+    { method: 'GET', path: '/refund-requests', auth: 'user', permission: 'store.view', handler: handle((req) => listRefundRequests(req, false)) },
+    { method: 'GET', path: '/store/admin/refund-requests', auth: 'admin', permission: 'store.admin', handler: handle((req) => listRefundRequests(req, true)) },
+    { method: 'POST', path: '/store/admin/refund-requests/:id/review', auth: 'admin', permission: 'store.admin', handler: handle(reviewRefundRequest) },
     { method: 'GET', path: '/products', auth: 'public', handler: handle(listProducts) },
     { method: 'GET', path: '/products/:id', auth: 'public', handler: handle(getProduct) },
     // 账户商城：登录用户的可购买目录与详情（返回 PurchasableProduct）。
@@ -461,6 +474,13 @@ export const storePlugin = definePlugin({
       auth: 'user',
       permission: 'store.view',
       handler: handle(listMyOrders),
+    },
+    {
+      method: 'GET',
+      path: '/orders/:id',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle(getMyOrder),
     },
     {
       method: 'POST',
@@ -677,6 +697,28 @@ export const storePlugin = definePlugin({
     },
     // 管理端：履约任务与交付物
     {
+      method: 'POST', path: '/store/admin/delivery-tasks/:id/recover',
+      auth: 'admin', permission: 'store.admin', handler: handle(recoverAdminDeliveryTask),
+    },
+    {
+      method: 'POST', path: '/store/admin/delivery-tasks/:id/resume-payment',
+      auth: 'admin', permission: 'store.admin', handler: handle(resumeAdminDeliveryPayment),
+    },
+    {
+      method: 'GET',
+      path: '/store/admin/delivery-tasks/:id/candidates',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(listAdminReconciliationCandidates),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/delivery-tasks/:id/reconcile',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(reconcileAdminDeliveryTask),
+    },
+    {
       method: 'GET',
       path: '/store/admin/delivery-tasks',
       auth: 'admin',
@@ -747,6 +789,7 @@ export const storePlugin = definePlugin({
     ctx.effect(() => subscribeOrderPaid());
     ctx.jobs.handle('fulfillment-poll', async () => {
       await processDue();
+      await reconcileProvisioning();
     });
     ctx.jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
     // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。

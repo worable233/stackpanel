@@ -10,13 +10,7 @@ import { createTranslator, type Translator } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
-function DependencyBadge({
-  dependency,
-  t,
-}: {
-  dependency: PluginDependencyStatus;
-  t: Translator;
-}) {
+function DependencyBadge({ dependency, t }: { dependency: PluginDependencyStatus; t: Translator }) {
   const range = dependency.range ? `@${dependency.range}` : '';
   if (dependency.satisfied) {
     return (
@@ -75,18 +69,12 @@ export default async function AdminPluginDetailPage({
     return (
       <main className="w-full space-y-6">
         <PageHeader
-          eyebrow={
-            <Link
-              href="/admin/plugins"
-              className="mb-1 inline-flex text-sm text-muted-foreground hover:text-foreground"
-            >
-              {t('admin.plugins.detail.back')}
-            </Link>
-          }
+          backHref="/admin/plugins"
+          backLabel={t('admin.plugins.detail.back')}
           title={t('admin.plugins.detail.title')}
         />
         <p className="text-sm text-destructive">
-          {t('admin.plugins.detail.serviceUnavailable', { error })}
+          {t('admin.plugins.detail.serviceUnavailable')}
         </p>
       </main>
     );
@@ -96,14 +84,8 @@ export default async function AdminPluginDetailPage({
     return (
       <main className="w-full space-y-6">
         <PageHeader
-          eyebrow={
-            <Link
-              href="/admin/plugins"
-              className="mb-1 inline-flex text-sm text-muted-foreground hover:text-foreground"
-            >
-              {t('admin.plugins.detail.back')}
-            </Link>
-          }
+          backHref="/admin/plugins"
+          backLabel={t('admin.plugins.detail.back')}
           title={t('admin.plugins.detail.notFound')}
         />
       </main>
@@ -113,14 +95,8 @@ export default async function AdminPluginDetailPage({
   return (
     <main className="w-full max-w-3xl space-y-6">
       <PageHeader
-        eyebrow={
-          <Link
-            href="/admin/plugins"
-            className="mb-1 inline-flex text-sm text-muted-foreground hover:text-foreground"
-          >
-            {t('admin.plugins.detail.back')}
-          </Link>
-        }
+        backHref="/admin/plugins"
+        backLabel={t('admin.plugins.detail.back')}
         title={
           <span className="flex flex-wrap items-center gap-2">
             {plugin.name}
@@ -147,7 +123,10 @@ export default async function AdminPluginDetailPage({
         }
         actions={
           plugin.frontend.available ? (
-            <Button render={<Link href={`/admin/plugins/${plugin.id}/settings`} />} variant="outline">
+            <Button
+              render={<Link href={`/admin/plugins/${plugin.id}/settings`} />}
+              variant="outline"
+            >
               {t('admin.plugins.detail.settings')}
             </Button>
           ) : null

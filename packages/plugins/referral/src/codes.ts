@@ -28,7 +28,6 @@ export function generateCode(): string {
 
 export interface CreateCodeInput {
   label?: string;
-  rewardAmount?: number | null;
 }
 
 /** 读出一个用户自己的全部推广码（含已停用的，方便他们自己看历史）。 */
@@ -69,15 +68,13 @@ export async function createCode(
   }
 
   const label = (input.label ?? '').trim().slice(0, 40);
-  const rewardAmount = input.rewardAmount ?? null;
-
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const spec: ReferralCode = {
       ownerId,
       code: generateCode(),
       label,
       state: 'active',
-      rewardAmount,
+      rewardAmount: null,
       signupCount: 0,
     };
     try {
@@ -93,10 +90,9 @@ export async function createCode(
 export interface UpdateCodeInput {
   label?: string;
   state?: 'active' | 'disabled';
-  rewardAmount?: number | null;
 }
 
-/** 改备注 / 停用 / 改单码奖励；只能改自己的码。 */
+/** 改备注 / 停用；只能改自己的码。奖励由平台全局配置统一决定。 */
 export async function updateCode(
   ownerId: string,
   name: string,
@@ -111,7 +107,6 @@ export async function updateCode(
     ...existing.spec,
     ...(input.label === undefined ? {} : { label: input.label.trim().slice(0, 40) }),
     ...(input.state === undefined ? {} : { state: input.state }),
-    ...(input.rewardAmount === undefined ? {} : { rewardAmount: input.rewardAmount }),
   };
   return extensions.update<ReferralCode>(codeModel, name, spec, {
     expectedVersion: existing.version,

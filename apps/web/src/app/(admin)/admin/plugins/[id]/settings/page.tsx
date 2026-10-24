@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { PageHeader } from '@stackpanel/ui';
 import { SettingsForm } from '@/components/settings-form';
 import { getAuthedApiClient } from '@/lib/api';
@@ -35,14 +34,8 @@ export default async function AdminPluginSettingsPage({
   return (
     <main className="w-full space-y-6">
       <PageHeader
-        eyebrow={
-          <Link
-            href="/admin/plugins"
-            className="mb-1 inline-flex text-sm text-muted-foreground hover:text-foreground"
-          >
-            {t('admin.pluginSettings.back')}
-          </Link>
-        }
+        backHref="/admin/plugins"
+        backLabel={t('admin.pluginSettings.back')}
         title={t('admin.pluginSettings.title')}
       />
       <div>

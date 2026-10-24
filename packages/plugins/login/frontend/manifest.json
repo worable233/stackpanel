@@ -1,0 +1,124 @@
+{
+  "version": "0.2.0",
+  "revision": "9e36160852e0",
+  "entry": "frontend/dist/index.js",
+  "pages": [],
+  "layouts": [],
+  "finders": ["login.config"],
+  "adminRoutes": [
+    {
+      "path": "/settings",
+      "component": "admin/settings",
+      "permission": "platform.admin",
+      "systemSettings": {
+        "labelKey": "admin.systemSettings",
+        "order": 10
+      },
+      "data": [
+        {
+          "finder": "login.config",
+          "as": "config"
+        }
+      ]
+    }
+  ],
+  "adminActions": [],
+  "actions": [
+    {
+      "id": "login.configure",
+      "silent": true,
+      "method": "POST",
+      "path": "/login/admin/config",
+      "permission": "platform.admin",
+      "input": [
+        {
+          "name": "registrationMethods",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "emailVerificationRequired",
+          "type": "boolean",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "accountRoutes": [],
+  "accountWidgets": [],
+  "files": [
+    "frontend/dist/admin.js",
+    "frontend/dist/admin.js.map",
+    "frontend/dist/admin.runtime.js",
+    "frontend/dist/admin.runtime.js.map",
+    "frontend/dist/index.js",
+    "frontend/dist/index.js.map"
+  ],
+  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "messages": {
+    "zh-CN": {
+      "admin.systemSettings": "登录与注册",
+      "settings.title": "登录与注册",
+      "settings.description": "配置用户注册方式和邮箱验证策略。",
+      "settings.emailGroup": "邮箱注册",
+      "settings.emailGroupHint": "用户使用邮箱和密码创建账号。",
+      "settings.emailVerification": "注册时验证邮箱",
+      "settings.emailVerificationHint": "开启后，用户必须输入发送到邮箱的验证码才能完成注册。",
+      "settings.emailVerificationUnavailable": "当前没有可用的邮箱验证码发送插件，请先在“SMTP 邮件”设置中完成配置。",
+      "settings.phoneGroup": "手机号注册",
+      "settings.phoneGroupHint": "需要短信验证插件，当前尚未提供。",
+      "settings.save": "保存配置",
+      "settings.saving": "保存中…",
+      "settings.saved": "登录配置已保存",
+      "settings.saveFailed": "保存失败"
+    },
+    "zh-TW": {
+      "admin.systemSettings": "登入與註冊",
+      "settings.title": "登入與註冊",
+      "settings.description": "配置使用者註冊方式和郵箱驗證策略。",
+      "settings.emailGroup": "郵箱註冊",
+      "settings.emailGroupHint": "使用者使用郵箱和密碼建立賬號。",
+      "settings.emailVerification": "註冊時驗證郵箱",
+      "settings.emailVerificationHint": "開啟後，使用者必須輸入傳送到郵箱的驗證碼才能完成註冊。",
+      "settings.emailVerificationUnavailable": "當前沒有可用的郵箱驗證碼傳送外掛，請先在“SMTP 郵件”設定中完成配置。",
+      "settings.phoneGroup": "手機號註冊",
+      "settings.phoneGroupHint": "需要簡訊驗證外掛，當前尚未提供。",
+      "settings.save": "儲存配置",
+      "settings.saving": "儲存中…",
+      "settings.saved": "登入配置已儲存",
+      "settings.saveFailed": "儲存失敗"
+    },
+    "zh-HK": {
+      "admin.systemSettings": "登錄與註冊",
+      "settings.title": "登錄與註冊",
+      "settings.description": "配置用戶註冊方式和郵箱驗證策略。",
+      "settings.emailGroup": "郵箱註冊",
+      "settings.emailGroupHint": "用戶使用郵箱和密碼建立賬號。",
+      "settings.emailVerification": "註冊時驗證郵箱",
+      "settings.emailVerificationHint": "開啟後，用戶必須輸入傳送到郵箱的驗證碼才能完成註冊。",
+      "settings.emailVerificationUnavailable": "當前沒有可用的郵箱驗證碼傳送外掛，請先在“SMTP 郵件”設置中完成配置。",
+      "settings.phoneGroup": "手機號註冊",
+      "settings.phoneGroupHint": "需要簡訊驗證外掛，當前尚未提供。",
+      "settings.save": "儲存配置",
+      "settings.saving": "儲存中…",
+      "settings.saved": "登錄配置已儲存",
+      "settings.saveFailed": "儲存失敗"
+    },
+    "en-US": {
+      "admin.systemSettings": "Sign-in & registration",
+      "settings.title": "Sign-in & registration",
+      "settings.description": "Configure how users register and how email verification works.",
+      "settings.emailGroup": "Email registration",
+      "settings.emailGroupHint": "Users create an account with an email address and password.",
+      "settings.emailVerification": "Verify email on registration",
+      "settings.emailVerificationHint": "When enabled, users must enter the code sent to their inbox before registration completes.",
+      "settings.emailVerificationUnavailable": "No email verification code plugin is available. Configure one under “SMTP mail” first.",
+      "settings.phoneGroup": "Phone registration",
+      "settings.phoneGroupHint": "Requires an SMS verification plugin, which is not available yet.",
+      "settings.save": "Save settings",
+      "settings.saving": "Saving…",
+      "settings.saved": "Sign-in settings saved",
+      "settings.saveFailed": "Could not save"
+    }
+  }
+}
