@@ -84,11 +84,15 @@ docker build -f apps/updater/Dockerfile -t stackpanel-updater .
 | `UPDATER_INSTANCE_ID`            | 绑定实例 ID（同时作为 Compose project 名）；updater 只服务该实例   |
 | `UPDATER_COMPOSE_PROJECT`        | 绑定的 Compose project 目录（命令工作目录）                        |
 | `UPDATER_COMPOSE_FILES`          | compose 文件（逗号分隔），默认 `docker-compose.yml`                |
+| `UPDATER_ENV_FILE`               | `--env-file` 路径，compose 默认 `docker/.env`；缺了它密钥会被插值成空串 |
 | `UPDATER_IMAGE_REPOSITORY`       | 目标镜像仓库（不含 digest），如 `ghcr.io/worable233/stackpanel`    |
 | `UPDATER_IMAGE_ENV`              | 承载镜像引用的环境变量名，默认 `STACKPANEL_IMAGE`                  |
 | `UPDATER_SERVICE_API/WORKER/WEB` | 受管服务名，默认 `api` / `worker` / `web`                          |
+| `UPDATER_SERVICE_MIGRATE`        | 一次性迁移服务名，默认 `migrate`（`restart: "no"` + `entrypoint-migrate`） |
 | `UPDATER_DB_SERVICE/USER/NAME`   | 数据库服务名与凭据                                                 |
 | `UPDATER_READINESS_URL`          | 维护态 readiness 探针，默认 `http://api:3001/health`               |
+| `UPDATER_READY_TIMEOUT_MS`       | 等待探针转绿的总预算（毫秒），默认 `180000`                          |
+| `UPDATER_READY_POLL_INTERVAL_MS` | 探针轮询间隔（毫秒），默认 `2000`                                    |
 | `UPDATER_LOGIN_PROBE_URL`        | 登录/权限探针（可选）                                              |
 | `UPDATER_WEB_URL`                | Web 资源探针（可选）                                               |
 | `UPDATER_MIN_FREE_BYTES`         | 磁盘下限（可选；不足则在停服前失败，§5.4-1）                       |

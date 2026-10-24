@@ -12,6 +12,7 @@
 import path from 'node:path';
 import type { UpdateTask, UpdateTaskResult } from '@stackpanel/spec';
 import { UpdateEngine } from './engine.ts';
+import { ExecutorLockError } from './executor-lock.ts';
 import { FileUpdateJournal } from './journal.ts';
 import { ExecutorLock } from './executor-lock.ts';
 import { FileUpdateTaskChannel } from './task-channel.ts';
@@ -111,10 +112,24 @@ export interface UpdaterDeps {
   /** 日志（测试可注入）。 */
   log?: (message: string) => void;
   /**
+   * 本进程的执行权所有者标识（测试可注入）。
+   *
+   * 缺省 `hostname:pid` 在**单进程内无法模拟「另一个副本」**——两次
+   * `new Updater()` 会得到同一个 owner，锁被当成「同进程重复 acquire」而幂等通过。
+   * 注入不同 owner 才能在单测里覆盖多副本互斥。
+   */
+  owner?: string;
+  /**
    * 自升级执行器（可选）。启动时确认是否为已提交候选，每轮守卫空闲的 `switching`
    * 计划在候选超时未确认时回退（§5.2）。不注入则完全跳过自升级逻辑。
    */
   selfUpdate?: {
+    /**
+     * 启动时自确认：若本进程正是计划中的候选 updater 且协议兼容，把计划标记为
+     * `committed`。缺了这一步，计划永远停在 `switching`，守护者到点必然回退——
+     * 即「自升级永远无法成功」，且症状是「候选明明起来了，5 分钟后被换回去」。
+     */
+    confirmCandidate: () => Promise<unknown>;
     settleOnStart: () => Promise<unknown>;
     guardTick: () => Promise<unknown>;
     consumeRequest: () => Promise<unknown>;
@@ -140,7 +155,7 @@ export class Updater {
     this.journal = new FileUpdateJournal(path.join(config.stateDir, 'update-journal.jsonl'));
     this.lock = new ExecutorLock({
       filePath: path.join(config.stateDir, 'executor.lock'),
-      owner: `${process.env['HOSTNAME'] ?? 'updater'}:${process.pid}`,
+      owner: deps.owner ?? `${process.env['HOSTNAME'] ?? 'updater'}:${process.pid}`,
       ...(deps.now ? { now: deps.now } : {}),
     });
     this.engine = new UpdateEngine({
@@ -183,7 +198,16 @@ export class Updater {
     this.handedOver = true;
   }
 
-  /** 单轮：认领一个任务并执行；返回是否处理了任务。 */
+  /**
+   * 单轮：认领一个任务并执行；返回是否处理了任务。
+   *
+   * **执行权被他人持有时不算失败**：`engine.run()` 会 `lock.acquire()`，抢不到就抛
+   * `ExecutorLockError`。多副本部署下这是**正常状态**（另一个副本正在升级），
+   * 必须原地退让、下一轮再试，而不是让进程崩溃。
+   *
+   * 真机双执行器演练抓到：A 在 B 持锁时抛 `ExecutorLockError` 未捕获，
+   * 进程直接退出——一个「为了避免并行」的保护，反而把等待方打死了。
+   */
   async tick(): Promise<boolean> {
     if (this.handedOver) return false;
     await this.checkHandover();
@@ -191,11 +215,40 @@ export class Updater {
       await this.lock.release();
       return false;
     }
+
+    // **先拿执行权，再碰通道。**
+    //
+    // 顺序至关重要：`reclaimOrphans()` 会把 `claimed/` 里没有结果的任务移回
+    // `inbox/`。若在没有执行权时做，就会把**另一个副本正在执行**的任务抢回队列，
+    // 造成同一任务被两个进程同时跑（真机双执行器演练抓到：B 正在跑 task-conc-1，
+    // A 每轮都把它回收走，两边互相踩）。
+    //
+    // 抢不到说明别的副本在干活——这是多副本下的正常状态，退让即可。
+    try {
+      await this.lock.acquire();
+    } catch (error) {
+      if (error instanceof ExecutorLockError) return false;
+      throw error;
+    }
+
+    // 到这里为止执行权在本进程手里，`claimed/` 里残留的才是真正的孤儿
+    // （原进程已死）。回收后它们会回到 inbox，交给下面正常认领并**按检查点续跑**。
+    const reclaimed = await this.channel.reclaimOrphans(this.deps.config.instanceId);
+    for (const orphan of reclaimed) {
+      this.deps.log?.(`回收孤儿任务：${orphan.idempotencyKey}（将按检查点续跑）`);
+    }
+
     const task = await this.channel.claim(this.deps.config.instanceId);
-    if (!task) return false;
+    if (!task) {
+      // 本轮无任务：释放执行权，别占着锁让别的副本空等。
+      await this.lock.release();
+      return false;
+    }
     // 归档完整声明，供独立恢复入口在失败后重建重试任务（不依赖内存）。
     await this.channel.archiveTask(task);
     await this.publishStatus(task.idempotencyKey);
+    // `engine.run()` 内部也会 `acquire()`；同一 owner 重复获取是幂等的。
+    // 它会在结束时 `release()`，因此这里无需再释放。
     const result = await this.engine.run(task, true);
     const projection = await this.toTaskResult(task, result);
     await this.channel.complete(task, projection);
@@ -258,11 +311,27 @@ export class Updater {
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     while (!this.stopping) {
       const handled = await this.tick();
-      // 自升级守卫：空闲时检查候选是否超时未确认，超时则回退（§5.2）。
-      await this.deps.selfUpdate?.guardTick();
-      // 消费管理端提交的自升级请求（无在途计划/任务时）。
-      await this.deps.selfUpdate?.consumeRequest();
+      // 自升级守卫/请求消费**不得让进程崩溃**。真机抓到：一次自升级失败（读不到镜像
+      // 引用）抛出的错误没人接，进程非零退出、容器按 restart 策略反复重启，而每轮
+      // 重启又撞同一个错误——一个本应「下次再试/回退」的失败被放大成全实例不可用。
+      // 自升级是可选能力：失败只记录，不影响内核升级主循环。
+      await this.runSelfUpdateStep('guard', () => this.deps.selfUpdate?.guardTick());
+      await this.runSelfUpdateStep('consume', () => this.deps.selfUpdate?.consumeRequest());
       if (!handled) await sleep(this.deps.config.pollIntervalMs);
+    }
+  }
+
+  /** 执行一步自升级动作，吞掉异常并记录（绝不中断主循环）。 */
+  private async runSelfUpdateStep(
+    step: 'guard' | 'consume',
+    action: () => Promise<unknown> | undefined,
+  ): Promise<void> {
+    try {
+      await action();
+    } catch (error) {
+      this.deps.log?.(
+        `自升级 ${step} 失败（不影响升级主循环）：${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -288,8 +357,21 @@ async function main(): Promise<void> {
   const selfUpdate = selectSelfUpdateExecutor(config, adapter, log);
   const updater = new Updater({ config, adapter, log, ...(selfUpdate ? { selfUpdate } : {}) });
   await updater.recordSelfState();
+  // 启动自确认：本进程若正是计划中的候选 updater，先标记 committed，守护者才不会
+  // 在候选已正常运行时把它回退掉（此前从未调用，自升级恒在候选超时后回滚）。
+  // 不兼容时**不崩溃**：记日志后照常运行，由守护者按截止时间回退到上一镜像。
+  try {
+    await selfUpdate?.confirmCandidate();
+  } catch (error) {
+    log(`候选自确认失败，等待守护者回退：${error instanceof Error ? error.message : String(error)}`);
+  }
   // 启动对账：若本进程正是已提交候选，清理自升级计划（幂等）。
-  await selfUpdate?.settleOnStart();
+  // 同样不因自升级问题拒绝启动——否则执行器永久起不来，连内核升级也做不了。
+  try {
+    await selfUpdate?.settleOnStart();
+  } catch (error) {
+    log(`自升级启动对账失败（不影响内核升级）：${error instanceof Error ? error.message : String(error)}`);
+  }
 
   // 独立恢复入口（§5.2）：仅在显式配置令牌时监听，默认只回环。
   let recovery: RecoveryServerHandle | null = null;
@@ -307,7 +389,7 @@ async function main(): Promise<void> {
     log,
   });
   if (recoveryToken && recoveryPort > 0) {
-    recovery = createRecoveryServer({
+    recovery = await createRecoveryServer({
       port: recoveryPort,
       host: process.env['UPDATER_RECOVERY_HOST'] ?? '127.0.0.1',
       deps: {

@@ -28,8 +28,9 @@ async function start(options: Parameters<typeof createRecoveryServer>[0]): Promi
   handle: RecoveryServerHandle;
   base: string;
 }> {
-  const handle = createRecoveryServer(options);
-  await new Promise<void>((resolve) => handle.server.listen(0, '127.0.0.1', resolve));
+  // 不在这里 listen：监听必须由 createRecoveryServer 自己完成，否则生产里
+  // 「日志说在监听、端口其实没绑」的缺陷会被测试掩盖（真机演练抓到）。
+  const handle = await createRecoveryServer(options);
   const { port } = handle.server.address() as AddressInfo;
   return { handle, base: `http://127.0.0.1:${port}` };
 }
@@ -41,10 +42,10 @@ afterEach(async () => {
 });
 
 describe('recovery entry', () => {
-  it('refuses to start without an independent token', () => {
-    expect(() => createRecoveryServer({ port: 0, deps: deps({ token: 'short' }) })).toThrow(
-      /独立令牌/,
-    );
+  it('refuses to start without an independent token', async () => {
+    await expect(
+      createRecoveryServer({ port: 0, deps: deps({ token: 'short' }) }),
+    ).rejects.toThrow(/独立令牌/);
   });
 
   it('serves a fixed page and health without auth', async () => {
@@ -114,5 +115,14 @@ describe('recovery entry', () => {
       headers: { authorization: `Bearer ${TOKEN}` },
     });
     expect(res.status).toBe(405);
+  });
+});
+
+describe('recovery entry shutdown', () => {
+  it('close() is idempotent and safe before/after listening', async () => {
+    // 真机重启抓到：重复 close 抛 ERR_SERVER_NOT_RUNNING，进程以未捕获异常退出。
+    const handle = await createRecoveryServer({ port: 0, deps: deps() });
+    await handle.close();
+    await expect(handle.close()).resolves.toBeUndefined();
   });
 });

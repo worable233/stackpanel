@@ -62,6 +62,18 @@ docker compose version >/dev/null 2>&1 || fail "需要 docker compose v2（docke
 
 # ---- 1. 生成 docker/.env ----------------------------------------------------
 DOCKER_ENV="$ROOT_DIR/docker/.env"
+
+# Docker socket 的属组 GID。updater 以非 root 的 `node` 用户运行，必须靠
+# `group_add` 才能读写 /var/run/docker.sock；这个 GID 因宿主而异（Linux 常见
+# 999，Docker Desktop 常见 0 或其他），所以由安装脚本探测后写入 docker/.env。
+# 探测失败时保持 compose 的默认值，并明确告警——不要静默。
+detect_docker_gid() {
+  local gid=''
+  if command -v stat >/dev/null 2>&1 && [[ -S /var/run/docker.sock ]]; then
+    gid="$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null || true)"
+  fi
+  printf '%s' "$gid"
+}
 if [[ -f "$DOCKER_ENV" ]]; then
   info "检测到 docker/.env，保留现有配置。"
   # I-2 guard: the encrypted-settings store is silently disabled without this
@@ -96,6 +108,15 @@ else
     "$DOCKER_ENV"
   rm -f "$DOCKER_ENV.bak"
   info "docker/.env 已生成（含 PostgreSQL / MinIO 随机密钥）。"
+fi
+
+# updater 需要 docker 组才能操作 socket；每次部署都重新探测（GID 可能变）。
+DOCKER_GID_VALUE="$(detect_docker_gid)"
+if [[ -n "$DOCKER_GID_VALUE" ]]; then
+  set_env DOCKER_GID "$DOCKER_GID_VALUE"
+else
+  warn "无法探测 /var/run/docker.sock 的属组 GID；updater 可能无权操作 Docker。"
+  warn "若升级报 permission denied，请手工在 docker/.env 设置 DOCKER_GID=<stat -c %g /var/run/docker.sock>。"
 fi
 
 # ---- 1b. 初始化认领令牌（一次性） --------------------------------------------
@@ -160,6 +181,10 @@ if [[ "$CLUSTER" == "1" ]]; then
   # 会在解析期直接报错——本地构建路径也会中招。这里补齐本地构建所需的默认 tag；
   # 用 --image 时上面的 set_env 已写入真实引用，不会被覆盖。
   [[ -n "$(sed -n 's/^STACKPANEL_IMAGE=//p' "$DOCKER_ENV" | tail -n1)" ]] || set_env STACKPANEL_IMAGE "stackpanel-api:latest"
+  # updater 从容器内执行 `docker compose` 完成自升级；相对绑定路径会被解析成
+  # 容器内的 `/workspace`，宿主 daemon 会把它当成宿主绝对路径 → 新容器挂到空目录。
+  # 写入仓库绝对路径，让内外两处解析结果一致。
+  set_env STACKPANEL_HOST_DIR "$ROOT_DIR"
   [[ -n "$(sed -n 's/^STACKPANEL_WEB_IMAGE=//p' "$DOCKER_ENV" | tail -n1)" ]] || set_env STACKPANEL_WEB_IMAGE "stackpanel-web:latest"
   grep -qE '^CADDY_IMAGE=.+' "$DOCKER_ENV" || set_env CADDY_IMAGE "caddy:2-alpine"
 fi
