@@ -12,7 +12,11 @@ import {
   getMyOrder,
   cancelOrder,
   listAdminOrders,
+  recycleMyOrder,
+  restoreRecycledOrder,
+  purgeRecycledNow,
 } from './orders';
+import { ORDER_PURGE_INTERVAL_MS, purgeRecycledOrders } from './recycle';
 import {
   createProduct,
   createProductForSync,
@@ -489,6 +493,30 @@ export const storePlugin = definePlugin({
       permission: 'store.buy',
       handler: handle((req) => cancelOrder(context(), req)),
     },
+    // 未支付订单回收站（#12.1）：软删 / 管理员恢复 / 管理员当场清理。
+    // 删除权限用 store.view（用户看得到自己的订单列表就能整理它）；恢复与
+    // 清理是管理动作，走 store.admin。
+    {
+      method: 'DELETE',
+      path: '/orders/:id',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle(recycleMyOrder),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/orders/:id/restore',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(restoreRecycledOrder),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/orders/purge-recycled',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(purgeRecycledNow),
+    },
     {
       method: 'GET',
       path: '/store/admin/products',
@@ -797,6 +825,12 @@ export const storePlugin = definePlugin({
       await runExpirySweep();
     });
     ctx.jobs.schedule('expiry-sweep', { everyMs: EXPIRY_SWEEP_INTERVAL_MS });
+    // 回收站清理：超过保留期的未支付订单真删。与到期扫描同样走内核任务，
+    // 集群下只由一个 worker 执行。
+    ctx.jobs.handle('order-purge', async () => {
+      await purgeRecycledOrders();
+    });
+    ctx.jobs.schedule('order-purge', { everyMs: ORDER_PURGE_INTERVAL_MS });
     ctx.logger.info('store: activated');
   },
   onDeactivate: (ctx) => {

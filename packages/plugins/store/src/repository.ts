@@ -50,6 +50,8 @@ export interface OrderRecord {
   settlementCurrency: string;
   settlementTotal: number;
   fxRate: number | null;
+  /** 回收站时间；`null` 表示未进回收站。 */
+  deletedAt: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -124,11 +126,14 @@ export function toCartItem(instance: ExtensionInstance<StoreCartItemData>): Cart
 }
 
 export function toOrder(instance: ExtensionInstance<StoreOrderData>): OrderRecord {
-  const { state, ...rest } = instance.spec;
+  // `deletedAtMs` 是实现细节（索引用的数值镜像），不外暴露给接口调用方。
+  const { state, deletedAt, deletedAtMs: _deletedAtMs, ...rest } = instance.spec;
   return {
     id: instance.name,
     ...rest,
     status: state,
+    // 存量行没有这个键（列是后来加的），统一归一为 null。
+    deletedAt: deletedAt ?? null,
     createdAt: instance.createdAt,
     updatedAt: instance.updatedAt,
   };
@@ -411,8 +416,10 @@ export async function getOrder(id: string): Promise<OrderRecord | null> {
 }
 
 export async function findOrderForUser(id: string, userId: string): Promise<OrderRecord | null> {
+  // 回收站里的订单对用户不可见（详情/取消/再次删除都当 404），也不得被
+  // 交易路径当成“可用订单”改状态。
   const page = await extensions().list<StoreOrderData>(orderModel, {
-    where: { name: { eq: id }, userId: { eq: userId } },
+    where: { name: { eq: id }, userId: { eq: userId }, deletedAt: { eq: null } },
     page: 1,
     pageSize: 1,
   });
@@ -424,9 +431,13 @@ export async function listOrdersForUserPage(
   userId: string,
   page: number,
   pageSize: number,
+  options: { includeRecycled?: boolean } = {},
 ): Promise<{ items: OrderRecord[]; total: number }> {
   const result = await extensions().list<StoreOrderData>(orderModel, {
-    where: { userId: { eq: userId } },
+    where: {
+      userId: { eq: userId },
+      ...(options.includeRecycled ? {} : { deletedAt: { eq: null } }),
+    },
     orderBy: { field: 'createdAt', desc: true },
     page,
     pageSize,
@@ -437,24 +448,71 @@ export async function listOrdersForUserPage(
 export async function listAllOrdersPage(
   page: number,
   pageSize: number,
+  /**
+   * 回收站筛选。`all`（默认）保持历史行为（含已回收），因为财务报表、
+   * 币种审计这类调用必须看得到全部订单；后台列表按需传 `active` / `recycled`。
+   */
+  recycled: 'all' | 'active' | 'recycled' = 'all',
 ): Promise<{ items: OrderRecord[]; total: number }> {
   const result = await extensions().list<StoreOrderData>(orderModel, {
+    ...(recycled === 'active' ? { where: { deletedAt: { eq: null } } } : {}),
     orderBy: { field: 'createdAt', desc: true },
     page,
     pageSize,
   });
-  return { items: result.items.map(toOrder), total: result.total };
+  const items = result.items.map(toOrder);
+  if (recycled !== 'recycled') return { items, total: result.total };
+  // “只看回收站”无法用一个索引条件表达（`deletedAt != null` 不是引擎支持的
+  // where 形状），所以在页内过滤；分页总数保持原值，调用方不得把它当精确总数。
+  return { items: items.filter((order) => order.deletedAt !== null), total: result.total };
 }
 
-export interface OrderCreateInput extends Omit<StoreOrderData, 'state'> {
+/** 把订单移入/移出回收站（`null` = 移出）。返回是否命中该订单。 */
+export async function setOrderDeletedAt(id: string, deletedAt: string | null): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    orderModel,
+    { name: { eq: id } },
+    {
+      deletedAt: { set: deletedAt },
+      // 两列必须一起写：范围查询只看 `deletedAtMs`，展示只看 `deletedAt`。
+      deletedAtMs: { set: deletedAt === null ? null : Date.parse(deletedAt) },
+    },
+  );
+  return updated > 0;
+}
+
+/** 回收站中回收时间不晚于 `cutoff` 的订单（供定时清理扫描）。 */
+export async function listRecycledOrdersBefore(
+  cutoff: string,
+  limit: number,
+): Promise<OrderRecord[]> {
+  const cutoffMs = Date.parse(cutoff);
+  const page = await extensions().list<StoreOrderData>(orderModel, {
+    where: { deletedAtMs: { lte: cutoffMs } },
+    orderBy: { field: 'deletedAtMs', desc: false },
+    page: 1,
+    pageSize: limit,
+  });
+  return page.items.map(toOrder);
+}
+
+/** 物理删除一条订单（仅回收站清理使用）。 */
+export async function deleteOrderInstance(id: string): Promise<void> {
+  await extensions().delete(orderModel, id);
+}
+
+export interface OrderCreateInput
+  extends Omit<StoreOrderData, 'state' | 'deletedAt' | 'deletedAtMs'> {
   state?: string;
 }
 
 export async function createOrderInstance(data: OrderCreateInput): Promise<OrderRecord> {
   const created = await extensions().create<StoreOrderData>(orderModel, {
     state: 'PENDING',
+    deletedAt: null,
+    deletedAtMs: null,
     ...data,
-  });
+  } as StoreOrderData);
   return toOrder(created);
 }
 

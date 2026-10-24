@@ -93,10 +93,30 @@ export const orderModel = defineModel({
     settlementCurrency: z.string().default('CNY'),
     settlementTotal: z.number().int(),
     fxRate: z.number().int().nullable().default(null),
+    /**
+     * 回收站时间（用户主动移入回收站的时刻）。
+     *
+     * 订单不因用户「删掉」而消失：只在这里打一个时间戳，列表默认过滤掉它，
+     * 管理员可恢复，超过保留期后由 `order-purge` 任务真正删除。
+     * 支付中的订单不允许进回收站，否则一笔仍可完成的支付会从用户视野里消失。
+     */
+    deletedAt: z.string().nullable().default(null),
+    /**
+     * `deletedAt` 的 epoch 毫秒镜像，与 `expiresAt`/`expiresAtMs` 同一做法：
+     * 索引列只支持数值型范围查询，清理任务需要 `lte` 比较，所以冗余一份
+     * 数值回收时间；写入时由 repository 从 `deletedAt` 统一派生。
+     */
+    deletedAtMs: z.number().int().nullable().default(null),
   }),
   indexes: [
     { fields: ['userId'], types: { userId: 'string' } },
     { fields: ['state'], types: { state: 'string' } },
+    // 必需索引：扩展引擎只能按**已声明的索引列**过滤（其余字段会抛
+    // ExtensionUnknownField）。`deletedAt: { eq: null }` 用字符串列（IS NULL
+    // 可行），但清理任务的范围比较必须落在数值列 `deletedAtMs` 上。
+    // 存量行的两列都是 NULL，正好等于「不在回收站」。
+    { fields: ['deletedAt'], types: { deletedAt: 'string' } },
+    { fields: ['deletedAtMs'], types: { deletedAtMs: 'number' } },
   ],
 });
 
@@ -251,6 +271,10 @@ export interface StoreOrderData {
   settlementCurrency: string;
   settlementTotal: number;
   fxRate: number | null;
+  /** 回收站时间（ISO）；存量行没有这个键，读时按 null 处理。 */
+  deletedAt?: string | null;
+  /** `deletedAt` 的 epoch 毫秒镜像，范围查询用。 */
+  deletedAtMs?: number | null;
 }
 
 export interface StoreServiceInstanceData {
