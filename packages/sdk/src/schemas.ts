@@ -848,7 +848,17 @@ export const accountWidgetSchema = z.object({
 
 export const frontendManifestSchema = z.object({
   version: z.string(),
-  revision: z.string(),
+  /**
+   * Content-addressed digest of the revision's bytes (contract 04 §1.2).
+   *
+   * The **kernel** owns this value: `materializeRevision` hashes the manifest
+   * body plus every shipped file and rewrites the flat manifest with the
+   * result. A source-tree manifest must not carry a guess, because it would be
+   * a digest of gitignored build output — recomputed on every build, tracked
+   * anyway, and overwritten on first read. Empty means "not published yet";
+   * revision-addressed URLs are only served once the kernel has filled it in.
+   */
+  revision: z.string().default(''),
   entry: z.string(),
   pages: z.array(frontendPageSchema).default([]),
   layouts: z.array(z.string()).default([]),

@@ -383,7 +383,13 @@ export interface FrontendSettingsSchema {
 /** Compiled frontend package metadata stored as frontend/manifest.json. */
 export interface FrontendManifest {
   version: string;
-  /** Content-derived cache buster; changes on every frontend rebuild. */
+  /**
+   * Content-addressed cache buster. Written by the **kernel**, never authored by
+   * a package: `materializeRevision` hashes the manifest body plus every
+   * shipped file and rewrites the flat manifest with the digest. An empty
+   * string means the package has not been published as a revision yet, so
+   * versioned asset URLs are not available.
+   */
   revision: string;
   /** Entry file relative to the frontend package root. */
   entry: string;
