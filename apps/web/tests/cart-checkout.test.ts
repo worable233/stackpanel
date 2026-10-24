@@ -25,10 +25,30 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('next/link', () => ({ default: 'a' }));
 import { CartCheckout, type CartCheckoutProps } from '@/components/cart-checkout';
 
-function nodes(value: unknown): ReactElement<Record<string, any>>[] {
+/**
+ * Props this suite actually inspects.
+ *
+ * Listed explicitly instead of `Record<string, any>`: a typo in an assertion
+ * (`node.props.onClik`) must fail the typecheck rather than silently read
+ * `undefined` and make the test pass for the wrong reason.
+ */
+interface ElementProps {
+  children?: unknown;
+  name?: string;
+  value?: unknown;
+  type?: string;
+  role?: string;
+  action?: (data: FormData) => unknown;
+  onClick?: () => void;
+  onChange?: (event: unknown) => void;
+  onSubmit?: (event: { preventDefault: () => void }) => void;
+  disabled?: boolean;
+}
+
+function nodes(value: unknown): ReactElement<ElementProps>[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!value || typeof value !== 'object' || !('props' in value)) return [];
-  const element = value as ReactElement<Record<string, any>>;
+  const element = value as ReactElement<ElementProps>;
   return [element, ...nodes(element.props.children)];
 }
 function setup() {
@@ -58,7 +78,7 @@ function setup() {
   const payment = () => {
     render()
       .find((node) => node.type === 'button' && node.props.onClick)!
-      .props.onClick();
+      .props.onClick!();
     return render();
   };
   return { props, wallet, external, render, payment };
@@ -76,7 +96,7 @@ describe('checkout directly from cart', () => {
     expect(tree.find((node) => node.props.name === 'providerId')).toBeUndefined();
     const data = new FormData();
     data.append('cartItemIds', 'one');
-    await tree.find((node) => node.type === 'form')!.props.action(data);
+    await tree.find((node) => node.type === 'form')!.props.action!(data);
     expect(ui.wallet).toHaveBeenCalledWith(data);
     expect(ui.external).not.toHaveBeenCalled();
   });
@@ -84,11 +104,11 @@ describe('checkout directly from cart', () => {
     const ui = setup();
     ui.payment()
       .find((node) => node.type === 'select')!
-      .props.onChange({ target: { value: 'epay:alipay' } });
+      .props.onChange!({ target: { value: 'epay:alipay' } });
     const tree = ui.render();
     expect(tree.find((node) => node.props.name === 'providerId')?.props.value).toBe('epay');
     expect(tree.find((node) => node.props.name === 'paymentMethod')?.props.value).toBe('alipay');
-    await tree.find((node) => node.type === 'form')!.props.action(new FormData());
+    await tree.find((node) => node.type === 'form')!.props.action!(new FormData());
     expect(ui.external).toHaveBeenCalledOnce();
     expect(ui.wallet).not.toHaveBeenCalled();
   });
@@ -96,7 +116,7 @@ describe('checkout directly from cart', () => {
     const ui = setup();
     ui.render()
       .find((node) => node.props.type === 'checkbox')!
-      .props.onChange({ target: { checked: false } });
+      .props.onChange!({ target: { checked: false } });
     const tree = ui.render();
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(true);
     expect(tree.some((node) => node.type === 'form')).toBe(false);
@@ -106,11 +126,11 @@ describe('checkout directly from cart', () => {
     ui.wallet.mockRejectedValue(new Error('rejected'));
     ui.payment()
       .find((node) => node.type === 'form')!
-      .props.onSubmit({ preventDefault: vi.fn() });
+      .props.onSubmit!({ preventDefault: vi.fn() });
     let tree = ui.render();
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(true);
     // Failures stay on the payment step with a localised notice; the raw error is not rethrown.
-    await tree.find((node) => node.type === 'form')!.props.action(new FormData());
+    await tree.find((node) => node.type === 'form')!.props.action!(new FormData());
     tree = ui.render();
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(false);
     expect(tree.some((node) => node.props.role === 'alert')).toBe(true);
@@ -119,7 +139,7 @@ describe('checkout directly from cart', () => {
     const ui = setup();
     expect(ui.render().some((node) => node.type === 'select')).toBe(false);
     const payment = ui.payment();
-    payment.find((node) => node.type === 'button' && node.props.onClick)!.props.onClick();
+    payment.find((node) => node.type === 'button' && node.props.onClick)!.props.onClick!();
     expect(ui.render().some((node) => node.props.type === 'checkbox')).toBe(true);
     expect(ui.wallet).not.toHaveBeenCalled();
   });
