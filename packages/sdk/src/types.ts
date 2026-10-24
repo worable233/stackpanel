@@ -512,6 +512,45 @@ export interface NavListResponse {
   items: NavItem[];
 }
 
+/**
+ * 后台菜单编辑视图（对标 #12.3）：多出「这条来自哪里」的信息。
+ * `custom` 是运营自己加的链接，`overrideId` 为 null 表示完全沿用默认。
+ */
+export interface AdminNavItemView extends NavItem {
+  custom: boolean;
+  hidden: boolean;
+  overrideId: string | null;
+  defaultLabel: string | null;
+}
+
+export interface AdminNavResponse {
+  surface: 'public' | 'account' | 'admin';
+  items: AdminNavItemView[];
+}
+
+/** 保存排布时的单条输入；label 留空表示沿用默认文案。 */
+export interface AdminNavLayoutItemInput {
+  href: string;
+  label?: string | null | undefined;
+  hidden?: boolean | undefined;
+}
+
+export interface AdminNavCustomEntry {
+  id: string;
+  surface: string;
+  href: string;
+  label: string | null;
+  sortOrder: number | null;
+  hidden: boolean;
+  custom: boolean;
+  updatedAt: string;
+}
+
+export interface AdminNavCustomResponse {
+  entry: AdminNavCustomEntry;
+  items: AdminNavItemView[];
+}
+
 /** An installed theme. */
 export interface ThemeInfo {
   id: string;

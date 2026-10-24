@@ -963,7 +963,12 @@
     "apiTokenSigningFailed": "更新请求签名设置失败",
     "seoPathRequired": "请填写页面路径",
     "seoSaveFailed": "保存页面覆写失败",
-    "seoDeleteFailed": "删除页面覆写失败"
+    "seoDeleteFailed": "删除页面覆写失败",
+    "navLabelRequired": "请填写菜单名称",
+    "navHrefRequired": "请填写链接",
+    "navSaveFailed": "保存菜单失败",
+    "navAddFailed": "添加菜单项失败",
+    "navDeleteFailed": "删除菜单项失败"
   },
   "user": {
     "emailRequired": "请填写邮箱",
@@ -2179,5 +2184,25 @@
     "save": "保存",
     "saving": "保存中…",
     "cancel": "取消"
+  },
+  "adminNav": {
+    "title": "菜单设置",
+    "description": "调整后台菜单的顺序与文案、隐藏暂时不用的入口，也可以添加自定义链接。",
+    "presentationNote": "这里只改「怎么显示」。隐藏一个菜单项不会让对应页面无法访问 —— 权限仍由页面自己的守卫决定。",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "custom": "自定义",
+    "visible": "显示",
+    "delete": "删除",
+    "reset": "恢复默认",
+    "save": "保存排布",
+    "saving": "保存中…",
+    "saveHint": "顺序、文案、显隐改完记得保存。",
+    "addTitle": "添加自定义链接",
+    "name": "名称",
+    "href": "链接",
+    "add": "添加",
+    "hrefHint": "站内页面写路径（以 / 开头），站外写完整的 http(s) 地址。打错链接不会被自动发现，添加后建议点一下确认。",
+    "hrefPlaceholder": "/admin/orders 或 https://docs.example.com"
   }
 }

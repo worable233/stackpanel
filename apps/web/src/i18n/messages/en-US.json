@@ -963,7 +963,12 @@
     "apiTokenSigningFailed": "Could not update request signing",
     "seoPathRequired": "A page path is required",
     "seoSaveFailed": "Could not save the page override",
-    "seoDeleteFailed": "Could not delete the page override"
+    "seoDeleteFailed": "Could not delete the page override",
+    "navLabelRequired": "A menu name is required",
+    "navHrefRequired": "A link is required",
+    "navSaveFailed": "Could not save the menu",
+    "navAddFailed": "Could not add the menu entry",
+    "navDeleteFailed": "Could not delete the menu entry"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -2179,5 +2184,25 @@
     "save": "Save",
     "saving": "Saving…",
     "cancel": "Cancel"
+  },
+  "adminNav": {
+    "title": "Menu settings",
+    "description": "Reorder and relabel the admin menu, hide entries you do not use, or add custom links.",
+    "presentationNote": "This only changes how the menu is displayed. Hiding an entry does not make its page unreachable — access is still decided by that page's own guards.",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "custom": "Custom",
+    "visible": "Visible",
+    "delete": "Delete",
+    "reset": "Reset to default",
+    "save": "Save layout",
+    "saving": "Saving…",
+    "saveHint": "Save after reordering, renaming or hiding entries.",
+    "addTitle": "Add a custom link",
+    "name": "Name",
+    "href": "Link",
+    "add": "Add",
+    "hrefHint": "Use a path starting with / for in-site pages, or a full http(s) URL for external ones. A mistyped link is not detected automatically — click it once after adding.",
+    "hrefPlaceholder": "/admin/orders or https://docs.example.com"
   }
 }

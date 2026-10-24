@@ -45,6 +45,9 @@ import type {
   MarketThemesResponse,
   NavItem,
   NavListResponse,
+  AdminNavItemView,
+  AdminNavResponse,
+  AdminNavCustomResponse,
   OAuthAuthorizeResponse,
   OAuthProviderListResponse,
   PermissionCheckResponse,
@@ -591,6 +594,35 @@ export const navItemSchema = z.object({
 export const navListResponseSchema = z.object({
   items: z.array(navItemSchema),
 }) satisfies z.ZodType<NavListResponse>;
+
+export const adminNavItemViewSchema = z.object({
+  surface: z.enum(['public', 'account', 'admin']),
+  label: z.string(),
+  href: z.string(),
+  custom: z.boolean(),
+  hidden: z.boolean(),
+  overrideId: z.string().nullable(),
+  defaultLabel: z.string().nullable(),
+}) satisfies z.ZodType<AdminNavItemView>;
+
+export const adminNavResponseSchema = z.object({
+  surface: z.enum(['public', 'account', 'admin']),
+  items: z.array(adminNavItemViewSchema),
+}) satisfies z.ZodType<AdminNavResponse>;
+
+export const adminNavCustomResponseSchema = z.object({
+  entry: z.object({
+    id: z.string(),
+    surface: z.string(),
+    href: z.string(),
+    label: z.string().nullable(),
+    sortOrder: z.number().nullable(),
+    hidden: z.boolean(),
+    custom: z.boolean(),
+    updatedAt: z.string(),
+  }),
+  items: z.array(adminNavItemViewSchema),
+}) satisfies z.ZodType<AdminNavCustomResponse>;
 
 export const themeInfoSchema = z.object({
   id: z.string(),

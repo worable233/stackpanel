@@ -963,7 +963,12 @@
     "apiTokenSigningFailed": "更新請求籤名設定失敗",
     "seoPathRequired": "請填寫頁面路徑",
     "seoSaveFailed": "儲存頁面覆寫失敗",
-    "seoDeleteFailed": "刪除頁面覆寫失敗"
+    "seoDeleteFailed": "刪除頁面覆寫失敗",
+    "navLabelRequired": "請填寫選單名稱",
+    "navHrefRequired": "請填寫連結",
+    "navSaveFailed": "儲存選單失敗",
+    "navAddFailed": "新增選單項失敗",
+    "navDeleteFailed": "刪除選單項失敗"
   },
   "user": {
     "emailRequired": "請填寫郵箱",
@@ -2179,5 +2184,25 @@
     "save": "儲存",
     "saving": "儲存中…",
     "cancel": "取消"
+  },
+  "adminNav": {
+    "title": "選單設定",
+    "description": "調整後臺選單的順序與文案、隱藏暫時不用的入口，也可以新增自定義連結。",
+    "presentationNote": "這裡只改「怎麼顯示」。隱藏一個選單項不會讓對應頁面無法訪問 —— 許可權仍由頁面自己的守衛決定。",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "custom": "自定義",
+    "visible": "顯示",
+    "delete": "刪除",
+    "reset": "恢復預設",
+    "save": "儲存排布",
+    "saving": "儲存中…",
+    "saveHint": "順序、文案、顯隱改完記得儲存。",
+    "addTitle": "新增自定義連結",
+    "name": "名稱",
+    "href": "連結",
+    "add": "新增",
+    "hrefHint": "站內頁面寫路徑（以 / 開頭），站外寫完整的 http(s) 地址。打錯連結不會被自動發現，新增後建議點一下確認。",
+    "hrefPlaceholder": "/admin/orders 或 https://docs.example.com"
   }
 }
