@@ -204,10 +204,19 @@ jobs:
           # writes into data directories that already exist.
           mkdir -p apps/api/data
           for id in referral ticket invoice; do
+            # A plugin's frontend is a separate workspace project whose only build
+            # script is `build: tsup` — no `prepare` — so a fresh clone has no
+            # `frontend/dist`. Installing the package without it leaves
+            # `frontend/manifest.json` beside a missing entry, which the kernel
+            # correctly reports as *not ready* (`GET /ready` → 503, and the
+            # suites' own routes serve nothing). That is an incomplete install,
+            # not merely unbuilt frontend assets.
+            ( cd "$plugins/packages/plugins/$id/frontend" && pnpm run build )
             ( cd "$plugins/packages/plugins/$id" \
               && node ../../../scripts/install-into-kernel.mjs --kernel "$GITHUB_WORKSPACE" )
             # Do not let a silently-empty install turn the suites back into skips.
             test -f "apps/api/data/plugins/$id/manifest.json"
+            test -f "apps/api/data/plugins/$id/frontend/dist/index.js"
           done
 
       - name: Test
