@@ -6,6 +6,7 @@ import { env } from '../config/env.ts';
 import { looksLikeApiToken, resolveApiTokenWithOwner } from '../lib/api-tokens.ts';
 import { getSessionStore } from '../auth/session-store.ts';
 import { scopeSatisfied, type ScopeGovernance } from '../lib/capability-registry.ts';
+import { enforceApiTokenSignature } from '../lib/request-signing.ts';
 import type { FastifyInstance } from 'fastify';
 import { auditContext, writeAudit } from './audit.ts';
 import { getPrisma } from './prisma.ts';
@@ -157,6 +158,13 @@ async function apiTokenUser(
   if (resolved.audience === 'mcp' && (!request || (request.url.split('?')[0] !== '/mcp' && !validMcpDispatch(request)))) return null;
   const { owner, scopes } = resolved;
   if (owner.status !== 'ACTIVE') return null;
+  // 请求签名（对标 #12.6）：凭证登记了公钥就必须带签名，缺失/篡改/过期/重放
+  // 一律 401。放在这里而不是 `/api/v1` 的某个 preHandler 上，是因为 token 能
+  // 摸到的入口不止一条（能力路由、插件别名、MCP、agent）—— choke point 只能一个。
+  if (resolved.publicKey) {
+    if (!request) return null;
+    await enforceApiTokenSignature(request, resolved.tokenId, resolved.publicKey);
+  }
   const owned = owner.permissions;
   const effective = new Set(scopes.filter((scope) => owned.has(scope)));
   return {

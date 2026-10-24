@@ -158,6 +158,8 @@ export interface ResolvedApiTokenWithOwner {
   tokenId: string;
   userId: string;
   scopes: string[];
+  /** 登记了 Ed25519 公钥的凭证必须带请求签名；null = 只凭 Bearer。 */
+  publicKey: string | null;
   owner: ApiTokenOwner;
 }
 
@@ -192,6 +194,7 @@ export async function resolveApiTokenWithOwner(
       scopes: true,
       audience: true,
       ipAllowlist: true,
+      publicKey: true,
       status: true,
       expiresAt: true,
       lastUsedAt: true,
@@ -239,6 +242,7 @@ export async function resolveApiTokenWithOwner(
     tokenId: token.id,
     userId: token.userId,
     scopes: toStringArray(token.scopes),
+    publicKey: token.publicKey ?? null,
     owner: {
       id: token.user.id,
       email: token.user.email,
