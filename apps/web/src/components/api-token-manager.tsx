@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
+import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { ApiTokenScope, ApiTokenView } from '@stackpanel/sdk';
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { createApiTokenAction, revokeApiTokenAction } from '@/lib/api-token-actions';
+import { createApiTokenAction, revokeApiTokenAction, updateApiTokenAction } from '@/lib/api-token-actions';
 import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatDate as formatLocaleDate, type Translator } from '@/i18n/core';
 import { cn } from '@/lib/utils';
@@ -83,6 +83,11 @@ export function ApiTokenManager({
   const [issued, setIssued] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ApiTokenView | null>(null);
+  /** 创建时可选登记的 Ed25519 公钥；非空则该密钥的请求必须带签名。 */
+  const [publicKey, setPublicKey] = useState('');
+  const [signingTarget, setSigningTarget] = useState<ApiTokenView | null>(null);
+  const [signingKey, setSigningKey] = useState('');
+  const [signingError, setSigningError] = useState<string | null>(null);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ApiTokenScope[]>();
@@ -103,6 +108,7 @@ export function ApiTokenManager({
   const resetCreate = () => {
     setName('');
     setSelected(new Set());
+    setPublicKey('');
     setError(null);
   };
 
@@ -129,7 +135,11 @@ export function ApiTokenManager({
   const submitCreate = () => {
     setError(null);
     startTransition(async () => {
-      const result = await createApiTokenAction({ name, scopes: [...selected] });
+      const result = await createApiTokenAction({
+        name,
+        scopes: [...selected],
+        ...(publicKey.trim().length > 0 ? { publicKey: publicKey.trim() } : {}),
+      });
       if (result.error) {
         setError(result.error);
         return;
@@ -138,6 +148,36 @@ export function ApiTokenManager({
       resetCreate();
       setCopied(false);
       setIssued(result.token ?? null);
+      router.refresh();
+    });
+  };
+
+  const openSigning = (token: ApiTokenView) => {
+    setSigningTarget(token);
+    setSigningKey(token.publicKey ?? '');
+    setSigningError(null);
+  };
+
+  /**
+   * 空值 = 清除公钥（退回只凭 Bearer）。这是凭证所有者的显式决定，不做成
+   * 隐藏的「自动降级」。
+   */
+  const submitSigning = (override?: string) => {
+    if (!signingTarget) return;
+    const target = signingTarget.id;
+    // `override` 存在的理由：停用按钮要立刻以空值提交，不能依赖 setState 后的读取
+    // （React 批处理会让这里读到的仍是旧值 —— 那会把公钥又存回去）。
+    const value = (override ?? signingKey).trim();
+    setSigningError(null);
+    startTransition(async () => {
+      const result = await updateApiTokenAction(target, {
+        publicKey: value.length > 0 ? value : null,
+      });
+      if (result.error) {
+        setSigningError(result.error);
+        return;
+      }
+      setSigningTarget(null);
       router.refresh();
     });
   };
@@ -199,6 +239,12 @@ export function ApiTokenManager({
                   >
                     {token.status === 'ACTIVE' ? t('apiToken.statusActive') : t('apiToken.statusDisabled')}
                   </span>
+                  {token.signingEnabled ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      <ShieldCheck className="size-3" />
+                      {t('apiToken.signingBadge')}
+                    </span>
+                  ) : null}
                 </div>
                 <p className="mt-1 font-mono text-xs text-muted-foreground">{token.keyPrefix}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -210,6 +256,10 @@ export function ApiTokenManager({
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                <Button variant="ghost" size="sm" onClick={() => openSigning(token)}>
+                  <ShieldCheck className="size-4" />
+                  {t('apiToken.signing')}
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -252,6 +302,24 @@ export function ApiTokenManager({
                 placeholder={t('apiToken.namePlaceholder')}
                 onChange={(event) => setName(event.target.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="api-token-public-key">
+                {t('apiToken.publicKey')}
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  {t('apiToken.optional')}
+                </span>
+              </Label>
+              <textarea
+                id="api-token-public-key"
+                value={publicKey}
+                rows={3}
+                spellCheck={false}
+                placeholder={t('apiToken.publicKeyPlaceholder')}
+                onChange={(event) => setPublicKey(event.target.value)}
+                className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:border-ring"
+              />
+              <p className="text-xs text-muted-foreground">{t('apiToken.publicKeyHint')}</p>
             </div>
             <div className="space-y-2">
               <p className="text-sm font-medium">{t('apiToken.scopes')}</p>
@@ -332,6 +400,62 @@ export function ApiTokenManager({
           </p>
           <DialogFooter>
             <Button onClick={() => setIssued(null)}>{t('apiToken.saved')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Request signing (Ed25519) */}
+      <Dialog
+        open={signingTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSigningTarget(null);
+            setSigningError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('apiToken.signingTitle')}</DialogTitle>
+            <DialogDescription>{t('apiToken.signingDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="api-token-signing-key">{t('apiToken.publicKey')}</Label>
+            <textarea
+              id="api-token-signing-key"
+              value={signingKey}
+              rows={5}
+              spellCheck={false}
+              placeholder={t('apiToken.publicKeyPlaceholder')}
+              onChange={(event) => setSigningKey(event.target.value)}
+              className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:border-ring"
+            />
+            <p className="text-xs text-muted-foreground">{t('apiToken.signingHint')}</p>
+            {signingError ? <p className="text-sm text-destructive">{signingError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSigningTarget(null);
+                setSigningError(null);
+              }}
+              disabled={pending}
+            >
+              {t('apiToken.cancel')}
+            </Button>
+            {signingTarget?.signingEnabled ? (
+              <Button
+                variant="destructive"
+                onClick={() => submitSigning('')}
+                disabled={pending}
+              >
+                {t('apiToken.signingDisable')}
+              </Button>
+            ) : null}
+            <Button onClick={() => submitSigning()} disabled={pending}>
+              {pending ? t('apiToken.saving') : t('apiToken.save')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

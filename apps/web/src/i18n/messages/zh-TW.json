@@ -959,7 +959,8 @@
     "catalogTokenSaveFailed": "儲存目錄 token 失敗",
     "distributionRefreshOffline": "遠端目錄已關閉，無需重新整理。",
     "distributionRefreshOk": "目錄重新整理成功，當前序號 {sequence}。",
-    "distributionRefreshFailed": "目錄重新整理失敗：{message}"
+    "distributionRefreshFailed": "目錄重新整理失敗：{message}",
+    "apiTokenSigningFailed": "更新請求籤名設定失敗"
   },
   "user": {
     "emailRequired": "請填寫郵箱",
@@ -1501,7 +1502,19 @@
     "revokeTitle": "吊銷金鑰",
     "revokeDescription": "確定吊銷「{name}」？使用該金鑰的呼叫將立即失敗，且無法恢復。",
     "revoking": "吊銷中…",
-    "revokeConfirm": "確認吊銷"
+    "revokeConfirm": "確認吊銷",
+    "signing": "請求籤名",
+    "signingBadge": "簽名已啟用",
+    "signingTitle": "請求籤名（Ed25519）",
+    "signingDescription": "登記公鑰後，這枚金鑰的每個請求都必須帶簽名；缺失、被篡改、過期或被重放都會被拒絕。",
+    "signingHint": "貼上 Ed25519 公鑰（PEM）。清空並儲存即停用簽名，退回只憑金鑰本身鑑權。",
+    "signingDisable": "停用簽名",
+    "publicKey": "Ed25519 公鑰（PEM）",
+    "publicKeyPlaceholder": "-----BEGIN PUBLIC KEY-----",
+    "publicKeyHint": "可選。留空則只憑金鑰本身鑑權；填寫後該金鑰的每個請求都必須攜帶 X-SP-Signature 等簽名頭。",
+    "optional": "（可選）",
+    "save": "儲存",
+    "saving": "儲存中…"
   },
   "createUser": {
     "trigger": "新增使用者",

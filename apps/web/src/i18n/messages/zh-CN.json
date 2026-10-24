@@ -959,7 +959,8 @@
     "catalogTokenSaveFailed": "保存目录 token 失败",
     "distributionRefreshOffline": "远程目录已关闭，无需刷新。",
     "distributionRefreshOk": "目录刷新成功，当前序号 {sequence}。",
-    "distributionRefreshFailed": "目录刷新失败：{message}"
+    "distributionRefreshFailed": "目录刷新失败：{message}",
+    "apiTokenSigningFailed": "更新请求签名设置失败"
   },
   "user": {
     "emailRequired": "请填写邮箱",
@@ -1501,7 +1502,19 @@
     "revokeTitle": "吊销密钥",
     "revokeDescription": "确定吊销「{name}」？使用该密钥的调用将立即失败，且无法恢复。",
     "revoking": "吊销中…",
-    "revokeConfirm": "确认吊销"
+    "revokeConfirm": "确认吊销",
+    "signing": "请求签名",
+    "signingBadge": "签名已启用",
+    "signingTitle": "请求签名（Ed25519）",
+    "signingDescription": "登记公钥后，这枚密钥的每个请求都必须带签名；缺失、被篡改、过期或被重放都会被拒绝。",
+    "signingHint": "粘贴 Ed25519 公钥（PEM）。清空并保存即停用签名，退回只凭密钥本身鉴权。",
+    "signingDisable": "停用签名",
+    "publicKey": "Ed25519 公钥（PEM）",
+    "publicKeyPlaceholder": "-----BEGIN PUBLIC KEY-----",
+    "publicKeyHint": "可选。留空则只凭密钥本身鉴权；填写后该密钥的每个请求都必须携带 X-SP-Signature 等签名头。",
+    "optional": "（可选）",
+    "save": "保存",
+    "saving": "保存中…"
   },
   "createUser": {
     "trigger": "添加用户",

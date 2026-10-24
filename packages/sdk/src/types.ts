@@ -409,6 +409,9 @@ export interface ApiTokenView {
   scopes: string[];
   ipAllowlist: string[];
   status: string;
+  /** 登记后该凭证每个请求都必须带 Ed25519 请求签名（对标 #12.6）。 */
+  publicKey?: string | null | undefined;
+  signingEnabled?: boolean | undefined;
   expiresAt: string | null;
   lastUsedAt: string | null;
   lastUsedIp: string | null;
