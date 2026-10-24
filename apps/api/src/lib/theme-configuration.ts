@@ -84,7 +84,10 @@ export async function validateThemeConfiguration(
   patch: FrontendSettings,
 ) {
   const current = await readThemeConfiguration(db, id);
-  const migrated = migrateFrontendSettings(current.schema, patch)!;
+  // `migrateFrontendSettings` 对空输入返回 undefined；补丁为空时按空对象处理，
+  // 而不是用 `!` 断言「一定非空」。断言断言不了这一点，只会把 undefined 带进
+  // 下面的 Object.entries。
+  const migrated = migrateFrontendSettings(current.schema, patch) ?? {};
   const settings = mergeFrontendSettings(current.settings, migrated);
   // Unknown keys must fail rather than being silently discarded by Zod.
   for (const [group, values] of Object.entries(migrated)) {
