@@ -477,7 +477,7 @@ export function TicketWorkspace({
                   />
                 </label>
                 <label className="grid gap-1.5 text-sm">
-                  <span className="font-medium">{labels.categoryLabel ?? '分类'}</span>
+                  <span className="font-medium">{labels.categoryLabel ?? ''}</span>
                   <Input
                     name="category"
                     defaultValue={ticket.category ?? ''}
@@ -487,7 +487,7 @@ export function TicketWorkspace({
                   />
                 </label>
                 <label className="grid gap-1.5 text-sm">
-                  <span className="font-medium">{labels.departmentLabel ?? '部门 ID'}</span>
+                  <span className="font-medium">{labels.departmentLabel ?? ''}</span>
                   <Input
                     name="departmentId"
                     defaultValue={ticket.departmentId ?? ''}
@@ -576,7 +576,7 @@ export function TicketWorkspace({
                       {admin ? (
                         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <input type="checkbox" name="internal" value="true" />
-                          {labels.internalNoteLabel ?? '内部备注（用户不可见）'}
+                          {labels.internalNoteLabel ?? ''}
                         </label>
                       ) : null}
                       <div className="flex flex-1 justify-end">
