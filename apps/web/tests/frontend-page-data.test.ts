@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiClient, FinderProvider, FrontendPageDataRequirement } from '@stackpanel/sdk';
 import {
   executePageData,
+  MissingRouteParamError,
   resolveFetchPath,
   resolveRequirementInput,
 } from '@/lib/frontend-page-data';
@@ -206,7 +207,8 @@ describe('executePageData: finder requirements', () => {
 
 describe('resolveFetchPath / resolveRequirementInput', () => {
   it('refuses to send a literal placeholder when a route param is missing', () => {
-    expect(() => resolveFetchPath('/tickets/:id', {}, {})).toThrow(/不存在的路由参数/);
+    expect(() => resolveFetchPath('/tickets/:id', {}, {})).toThrow(MissingRouteParamError);
+    expect(() => resolveFetchPath('/tickets/:id', {}, {})).toThrow(/:id/);
   });
 
   it('prefers the first value of a repeated query key', () => {

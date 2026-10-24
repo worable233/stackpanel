@@ -86,13 +86,19 @@ export function resolveFetchPath(
   return { path: resolvedPath, query };
 }
 
-/** 声明里引用了路由参数，但当前路由没有这个参数。 */
+/**
+ * 声明里引用了路由参数，但当前路由没有这个参数。
+ *
+ * 这是插件 manifest 的配置错误，不是用户能修的事情，因此消息保持开发者可读的英文，
+ * 且永远不会渲染（`executePageData` 捕获后按「无数据」处理）。
+ */
 export class MissingRouteParamError extends Error {
   constructor(
     readonly param: string,
     readonly placeholder: string,
   ) {
-    super(`数据需求引用了不存在的路由参数 ${placeholder}`);
+    // i18n-exempt — developer-facing diagnostic; swallowed by executePageData.
+    super(`Page data requirement references unknown route param ${placeholder}`);
     this.name = 'MissingRouteParamError';
   }
 }
