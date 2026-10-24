@@ -959,7 +959,8 @@
     "catalogTokenSaveFailed": "Failed to save the catalog token",
     "distributionRefreshOffline": "Remote catalog is disabled; nothing to refresh.",
     "distributionRefreshOk": "Catalog refreshed, current sequence {sequence}.",
-    "distributionRefreshFailed": "Catalog refresh failed: {message}"
+    "distributionRefreshFailed": "Catalog refresh failed: {message}",
+    "apiTokenSigningFailed": "Could not update request signing"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -1501,7 +1502,19 @@
     "revokeTitle": "Revoke key",
     "revokeDescription": "Revoke “{name}”? Calls using this key will fail immediately and this cannot be undone.",
     "revoking": "Revoking…",
-    "revokeConfirm": "Confirm revoke"
+    "revokeConfirm": "Confirm revoke",
+    "signing": "Request signing",
+    "signingBadge": "Signing on",
+    "signingTitle": "Request signing (Ed25519)",
+    "signingDescription": "Once a public key is registered, every request made with this key must be signed. Missing, tampered, expired or replayed signatures are rejected.",
+    "signingHint": "Paste an Ed25519 public key (PEM). Clear it and save to turn signing off and fall back to the key alone.",
+    "signingDisable": "Disable signing",
+    "publicKey": "Ed25519 public key (PEM)",
+    "publicKeyPlaceholder": "-----BEGIN PUBLIC KEY-----",
+    "publicKeyHint": "Optional. Leave empty to authenticate with the key alone; once set, every request must carry X-SP-Signature and friends.",
+    "optional": "optional",
+    "save": "Save",
+    "saving": "Saving…"
   },
   "createUser": {
     "trigger": "Add user",

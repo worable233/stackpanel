@@ -935,6 +935,8 @@ export class ApiClient {
     name: string;
     scopes?: string[];
     ipAllowlist?: string[];
+    /** Ed25519 PEM；登记后该密钥的每个请求都必须带请求签名。 */
+    publicKey?: string | null;
     expiresAt?: string | null;
   }): Promise<ApiTokenCreateResponse> {
     return this.post('/me/api-tokens', input, apiTokenCreateResponseSchema);
@@ -948,6 +950,8 @@ export class ApiClient {
       scopes?: string[];
       ipAllowlist?: string[];
       status?: 'ACTIVE' | 'DISABLED';
+      /** `null` 清除公钥，退回只凭 Bearer。 */
+      publicKey?: string | null;
       expiresAt?: string | null;
     },
   ): Promise<ApiTokenUpdateResponse> {

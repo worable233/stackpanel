@@ -517,6 +517,8 @@ export const apiTokenViewSchema = z.object({
   scopes: z.array(z.string()),
   ipAllowlist: z.array(z.string()),
   status: z.string(),
+  publicKey: z.string().nullable().optional(),
+  signingEnabled: z.boolean().optional(),
   expiresAt: z.string().nullable(),
   lastUsedAt: z.string().nullable(),
   lastUsedIp: z.string().nullable(),
