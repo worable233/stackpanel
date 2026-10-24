@@ -52,6 +52,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # `referral`, `ticket` and `invoice` are not kernel built-ins: their
+      # authoritative source lives in the separate `stackpanel-plugins`
+      # repository, so a bare kernel checkout cannot activate them and the
+      # suites covering their kernel-facing behaviour skip instead of running.
+      # Check that repository out beside this one (same parent) so the install
+      # step below can build it against *this* kernel.
+      - name: Checkout plugin repository (referral / ticket / invoice sources)
+        uses: actions/checkout@v7
+        with:
+          repository: worable233/stackpanel-plugins
+          path: ../stackpanel-plugins
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
 
@@ -170,6 +182,38 @@ jobs:
       # evidence boundary is explicit on every CI run.
       - name: Acceptance report (offline rows only; gated rows stay gated)
         run: pnpm release:acceptance-report
+
+      # `describe.skipIf(!installed)` in the referral / ticket / invoice suites is
+      # honest about a missing install, but on CI it meant those plugins had *no*
+      # kernel-level coverage at all (HANDOFF §三·1). Install the real packages
+      # into `apps/api/data` before the tests so the suites execute their
+      # assertions instead of disappearing.
+      #
+      # Deliberately fatal: if the plugin repository stops building against this
+      # kernel, CI must fail here rather than quietly shrink back to a green but
+      # uncovered run.
+      - name: Install external plugin packages (referral / ticket / invoice)
+        run: |
+          set -euo pipefail
+          plugins="$RUNNER_WORKSPACE/stackpanel-plugins"
+          # The plugin workspace links kernel packages through `../StackPanel`
+          # (see its pnpm-workspace.yaml overrides), so the kernel checkout has
+          # to be reachable under that sibling name.
+          ln -sfn "$GITHUB_WORKSPACE" "$RUNNER_WORKSPACE/StackPanel"
+          # The plugins compile against the kernel packages' *built* entries; a
+          # bare checkout only has sources.
+          pnpm --filter @stackpanel/spec --filter @stackpanel/sdk \
+            --filter @stackpanel/ui --filter @stackpanel/net-guard build
+          ( cd "$plugins" && pnpm install --frozen-lockfile )
+          # A fresh checkout has no data directory at all, and the installer only
+          # writes into data directories that already exist.
+          mkdir -p apps/api/data
+          for id in referral ticket invoice; do
+            ( cd "$plugins/packages/plugins/$id" \
+              && node ../../../scripts/install-into-kernel.mjs --kernel "$GITHUB_WORKSPACE" )
+            # Do not let a silently-empty install turn the suites back into skips.
+            test -f "apps/api/data/plugins/$id/manifest.json"
+          done
 
       - name: Test
         run: pnpm test
