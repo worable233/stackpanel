@@ -12,23 +12,34 @@ import type {
 } from '@stackpanel/sdk';
 import { StoreError } from './errors';
 import { context } from './context';
+import {
+  anonymousGroupDiscount,
+  applyDiscount,
+  betterDiscount,
+  effectiveGroupDiscount,
+} from './discount';
 import { getProduct } from './repository';
 import { providerForProduct } from './fulfillment';
 import { parseCheckoutSelection } from './utils';
 
-/** Same discount policy as authoritative order creation. */
+/**
+ * 折扣口径的**唯一真值**在 `discount.ts`；这里只是历史命名下的转发。
+ *
+ * 保留这两个名字是因为调用点很多（cart/orders/pricing 自己的试算），改名字只会
+ * 制造无意义的 diff。但实现必须只有一份：两个文件各算一遍折扣，早晚会分叉成
+ * 「商品页一个价、下单另一个价」。
+ */
 export async function effectiveDiscount(userId: string): Promise<number> {
-  const groups = await context().auth.listUserGroups(userId);
-  return Math.max(0, ...groups.map((group) => group.discount ?? 0));
+  return effectiveGroupDiscount(userId);
 }
 
+/** @see betterDiscount / applyDiscount —— 取更优者（不叠加），并封顶 99%。 */
 export function discountedPrice(
   unit: number,
   productDiscount: number | null | undefined,
   groupDiscount: number,
 ): number {
-  const discount = Math.max(productDiscount ?? 0, groupDiscount);
-  return discount > 0 ? Math.round((unit * (100 - discount)) / 100) : unit;
+  return applyDiscount(unit, betterDiscount(productDiscount, groupDiscount));
 }
 
 /** 商品的结账计价上下文（product 快照）。 */
@@ -107,11 +118,12 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
     throw new StoreError(400, '请求参数无效');
   }
   const priced = await resolveCheckoutPrice(product, quantity, config);
-  const unit = discountedPrice(
-    priced.unit,
-    product.discount,
-    req.user ? await effectiveDiscount(req.user.id) : 0,
-  );
+  // 同一份折扣算一次，供单价与续费价共用：连算两次等于给「两条路径算出两个价」
+  // 留了入口（例如有人在中间改了 `effectiveDiscount` 的实现）。
+  const userId = req.user?.id;
+  const groupDiscount = userId ? await effectiveGroupDiscount(userId) : anonymousGroupDiscount();
+  const discount = betterDiscount(product.discount, groupDiscount);
+  const unit = applyDiscount(priced.unit, discount);
   const result = priced.result;
   const total = unit * quantity;
   // Settlement preview (plan §5): show the original amount *and* what the buyer
@@ -121,6 +133,9 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
   return {
     productId: id,
     price: unit,
+    // 未打折单价：前端用来展示划线原价与折扣标签（`price` 已是实付单价）。
+    basePrice: priced.unit,
+    discount: discount > 0 ? discount : null,
     currency: product.currency,
     quantity,
     total,
@@ -134,11 +149,8 @@ export async function calculateProductPrice(req: HttpRequest): Promise<unknown> 
       : {}),
     ...(result
       ? {
-          renewPrice: discountedPrice(
-            result.renewPrice ?? priced.unit,
-            product.discount,
-            req.user ? await effectiveDiscount(req.user.id) : 0,
-          ),
+          // 续费价同样要打折：否则「首期便宜、续费恢复原价」会静默发生。
+          renewPrice: applyDiscount(result.renewPrice ?? priced.unit, discount),
           breakdown: result.breakdown ?? [],
           summary: result.summary,
         }

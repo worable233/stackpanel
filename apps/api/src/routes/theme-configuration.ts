@@ -33,7 +33,9 @@ export async function themeConfigurationRoutes(app: FastifyInstance) {
     if (base === '/admin/themes')
       app.get(`${base}/:id/configuration/preview`, { preHandler: guards }, async (request) => {
         const { id } = paramsSchema.parse(request.params);
-        return { settings: await readThemeConfigurationDraft(getPrisma(), id, request.user!.id) };
+        const userId = request.user?.id;
+        if (!userId) throw new PluginError('auth.unauthenticated', 401, '未登录或会话已过期');
+        return { settings: await readThemeConfigurationDraft(getPrisma(), id, userId) };
       });
     app.post(`${base}/:id/configuration/validate`, { preHandler: guards }, async (request) => {
       const { id } = paramsSchema.parse(request.params);
@@ -45,7 +47,9 @@ export async function themeConfigurationRoutes(app: FastifyInstance) {
       app.post(`${base}/:id/configuration/preview`, { preHandler: guards }, async (request) => {
         const { id } = paramsSchema.parse(request.params);
         const body = z.object({ settings }).strict().parse(request.body);
-        await saveThemeConfigurationDraft(getPrisma(), id, request.user!.id, body.settings);
+        const userId = request.user?.id;
+        if (!userId) throw new PluginError('auth.unauthenticated', 401, '未登录或会话已过期');
+        await saveThemeConfigurationDraft(getPrisma(), id, userId, body.settings);
         return { ok: true };
       });
     app.patch(`${base}/:id/configuration`, { preHandler: guards }, async (request, reply) => {

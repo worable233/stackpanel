@@ -123,6 +123,35 @@ describe.skipIf(!dbAvailable)('plugin hot-load dispatcher (real DB)', () => {
     expect(Array.isArray(body.products)).toBe(true);
   });
 
+  it('auth: optional 放行匿名请求，并在带凭据时注入用户', async () => {
+    // 商品页试算价是 `auth: 'optional'`：匿名能看（只有商品折扣），登录后
+    // 按权限组折扣计价。两种请求都不能被 401 拦掉 —— 一旦退化成 `user`，
+    // 公开商品页会整体失效；退化成 `public`，登录用户的折扣又静默消失。
+    const anonymous = await app.inject({
+      method: 'POST',
+      url: '/store/products/nope/price',
+      payload: { quantity: 1 },
+    });
+    expect(anonymous.statusCode).toBe(404);
+
+    const authed = await app.inject({
+      method: 'POST',
+      url: '/store/products/nope/price',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { quantity: 1 },
+    });
+    expect(authed.statusCode).toBe(404);
+
+    // 无效凭据同样按匿名放行，而不是 401。
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/store/products/nope/price',
+      headers: { authorization: 'Bearer not-a-real-session' },
+      payload: { quantity: 1 },
+    });
+    expect(invalid.statusCode).toBe(404);
+  });
+
   it('hot-installs a plugin and its routes are live without a restart', async () => {
     const res = await upload(pluginZip('alpha', '1.0.0'), 'alpha.zip');
     expect(res.statusCode).toBe(201);

@@ -84,11 +84,15 @@ docker build -f apps/updater/Dockerfile -t stackpanel-updater .
 | `UPDATER_INSTANCE_ID`            | 绑定实例 ID（同时作为 Compose project 名）；updater 只服务该实例   |
 | `UPDATER_COMPOSE_PROJECT`        | 绑定的 Compose project 目录（命令工作目录）                        |
 | `UPDATER_COMPOSE_FILES`          | compose 文件（逗号分隔），默认 `docker-compose.yml`                |
+| `UPDATER_ENV_FILE`               | `--env-file` 路径，compose 默认 `docker/.env`；缺了它密钥会被插值成空串 |
 | `UPDATER_IMAGE_REPOSITORY`       | 目标镜像仓库（不含 digest），如 `ghcr.io/worable233/stackpanel`    |
 | `UPDATER_IMAGE_ENV`              | 承载镜像引用的环境变量名，默认 `STACKPANEL_IMAGE`                  |
 | `UPDATER_SERVICE_API/WORKER/WEB` | 受管服务名，默认 `api` / `worker` / `web`                          |
+| `UPDATER_SERVICE_MIGRATE`        | 一次性迁移服务名，默认 `migrate`（`restart: "no"` + `entrypoint-migrate`） |
 | `UPDATER_DB_SERVICE/USER/NAME`   | 数据库服务名与凭据                                                 |
 | `UPDATER_READINESS_URL`          | 维护态 readiness 探针，默认 `http://api:3001/health`               |
+| `UPDATER_READY_TIMEOUT_MS`       | 等待探针转绿的总预算（毫秒），默认 `180000`                          |
+| `UPDATER_READY_POLL_INTERVAL_MS` | 探针轮询间隔（毫秒），默认 `2000`                                    |
 | `UPDATER_LOGIN_PROBE_URL`        | 登录/权限探针（可选）                                              |
 | `UPDATER_WEB_URL`                | Web 资源探针（可选）                                               |
 | `UPDATER_MIN_FREE_BYTES`         | 磁盘下限（可选；不足则在停服前失败，§5.4-1）                       |
@@ -107,3 +111,21 @@ docker build -f apps/updater/Dockerfile -t stackpanel-updater .
   的端到端证据属 §13-7，需真实 Docker/PG 与发布版镜像，**仍未执行**。
 - **集群执行与跨主机对账**（§9、ADR-0017 §5）：单机 Compose 的恢复入口动作已接线到
   真实适配器；多副本/跨主机的节点执行器与对账仍属后续。
+
+## 已知运行前提：Prisma schema engine 必须内置
+
+`prisma migrate deploy` 运行时需要 `schema-engine-<platform>`。`prisma generate` 只下载
+**query engine**，不含它。若镜像里缺这个二进制，每次迁移都会在**升级时**从
+`binaries.prisma.sh` 现场下载，而该下载**没有超时**：
+
+- 弱网/受限网络下，updater 的 `migrating` 一步会一直挂着（真机演练挂了 30+ 分钟），
+  实例停在维护态，日志里没有任何原因说明；
+- 离线/内网部署则永远无法完成迁移。
+
+因此 `Dockerfile` 的 `prod-deps` 阶段会调用 `docker/fetch-schema-engine.mjs` 把它下载
+进镜像，并通过 `PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine` 钉住路径。
+该脚本会校验产物存在且大小合理，下载失败即**构建失败**——不会产出一个「看起来能跑、
+升级时才炸」的镜像。
+
+自定义镜像若要复用本仓库的迁移逻辑，必须同样内置该二进制（或用
+`PRISMA_SCHEMA_ENGINE_BINARY` 指向自己提供的路径）。

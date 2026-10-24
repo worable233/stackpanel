@@ -35,6 +35,45 @@ const CodeMirror = dynamic(() => import('@uiw/react-codemirror').then((mod) => m
 });
 const print = (value: unknown) => JSON.stringify(value, null, 2);
 
+/**
+ * Validate a JSON draft against the theme's settings schema.
+ *
+ * Extracted from the component body: React Compiler refuses to preserve a
+ * `useMemo` whose callback mixes `try/catch` with early returns, and fails with
+ * `react-hooks/preserve-manual-memoization`. A module-level pure function keeps
+ * the hook trivial and makes the validation independently testable, which the
+ * inline version was not.
+ */
+function validateDraft(
+  schema: FrontendSettingsSchema,
+  text: string,
+  t: (key: string) => string,
+): { settings?: FrontendSettings; error?: string } {
+  try {
+    const value: unknown = JSON.parse(text);
+    const parsed = buildZodFromSettingsSchema(schema).safeParse(value);
+    if (!parsed.success)
+      return {
+        error: parsed.error.issues
+          .map((issue) => `${issue.path.join('.') || '$'}: ${issue.message}`)
+          .join('\n'),
+      };
+    const raw = migrateFrontendSettings(schema, value as FrontendSettings);
+    if (raw) {
+      for (const [group, fields] of Object.entries(raw)) {
+        const definition = schema.groups.find((item) => item.id === group);
+        if (!definition) return { error: `${group}: ${t('themeJson.unknownField')}` };
+        for (const name of Object.keys(fields))
+          if (!definition.fields.some((field) => field.name === name))
+            return { error: `${group}.${name}: ${t('themeJson.unknownField')}` };
+      }
+    }
+    return { settings: parsed.data };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : t('themeJson.invalid') };
+  }
+}
+
 function describeFields(
   fields: FrontendSettingsField[],
   prefix: string,
@@ -78,29 +117,7 @@ export function ThemeJsonEditor({
     return () => observer.disconnect();
   }, []);
 
-  const validation = useMemo(() => {
-    try {
-      const value: unknown = JSON.parse(text);
-      const parsed = buildZodFromSettingsSchema(schema).safeParse(value);
-      if (!parsed.success)
-        return {
-          error: parsed.error.issues
-            .map((issue) => `${issue.path.join('.') || '$'}: ${issue.message}`)
-            .join('\n'),
-        };
-      const raw = migrateFrontendSettings(schema, value as FrontendSettings)!;
-      for (const [group, fields] of Object.entries(raw)) {
-        const definition = schema.groups.find((item) => item.id === group);
-        if (!definition) return { error: `${group}: ${t('themeJson.unknownField')}` };
-        for (const name of Object.keys(fields))
-          if (!definition.fields.some((field) => field.name === name))
-            return { error: `${group}.${name}: ${t('themeJson.unknownField')}` };
-      }
-      return { settings: parsed.data };
-    } catch (cause) {
-      return { error: cause instanceof Error ? cause.message : t('themeJson.invalid') };
-    }
-  }, [schema, t, text]);
+  const validation = useMemo(() => validateDraft(schema, text, t), [schema, t, text]);
   const changes = useMemo(() => {
     if (!validation.settings) return [];
     return schema.groups.flatMap((group) =>

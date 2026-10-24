@@ -128,7 +128,9 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
     }
     // W1（审计 F-3）：`order.refunded` 必须与退款状态同事务落库——发布在事务外时，
     // 提交成功但进程在 publish 前崩溃会永久丢失该事实。
-    tx.publish('order.refunded', { orderId: id, amount, userId: order.userId });
+    // `full` 让下游能区分「整单撤销」与「部分退款」：推广佣金只在整单撤销时
+    // 全额追回，部分退款扣回比例如会让佣金规则变成一团算术，且难以向用户解释。
+    tx.publish('order.refunded', { orderId: id, amount, userId: order.userId, full: isFull });
   });
 
   // 全额退款：撤销续费行顺延的到期时间（best-effort，失败不影响退款本身）。

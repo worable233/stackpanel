@@ -180,3 +180,43 @@ describe('SelfUpdateExecutor', () => {
     expect(await request.read()).not.toBeNull();
   });
 });
+
+describe('自升级候选自确认（真机缺陷）', () => {
+  /**
+   * 真机演练缺陷：`main()` 从未调用 `confirmCandidate()`，只有 `settleOnStart()`。
+   * 候选 updater 起来后计划永远停在 `switching`，守护者到点必然回退——自升级
+   * 永远不可能成功，症状是「候选明明跑起来了，几分钟后被换回旧镜像」。
+   */
+  it('candidate confirms on start so the guardian does not roll it back', async () => {
+    let now = new Date('2026-10-17T00:00:00Z');
+    const { executor, plan } = make({ now: () => now, timeoutMs: 60_000 });
+    await executor.requestUpdate(CANDIDATE);
+    // 候选进程启动：自确认。
+    expect((await executor.confirmCandidate()).status).toBe('committed');
+    expect((await plan.read())?.phase).toBe('committed');
+    // 过了原截止时间，守护者也不应回退。
+    now = new Date('2026-10-17T00:10:00Z');
+    expect((await executor.guardTick()).status).toBe('idle');
+  });
+
+  it('candidate that cannot confirm leaves the plan for the guardian to roll back', async () => {
+    let now = new Date('2026-10-17T00:00:00Z');
+    const { executor, plan } = make({ now: () => now, timeoutMs: 60_000 });
+    await executor.requestUpdate(CANDIDATE);
+    // 候选镜像与计划不符（例如被调度到别的镜像）：不自确认。
+    const other = new SelfUpdateExecutor({
+      adapter: {
+        currentUpdaterImage: async () => `sha256:${'9'.repeat(64)}`,
+        pullAndVerifyUpdater: async () => ({ credential: 'x' }),
+        switchUpdaterTo: async () => ({ credential: 'x' }),
+        restoreUpdater: async () => ({ credential: 'x' }),
+      },
+      plan,
+      hasActiveTask: async () => false,
+    });
+    expect((await other.confirmCandidate()).status).toBe('idle');
+    expect((await plan.read())?.phase).toBe('switching');
+    now = new Date('2026-10-17T00:02:00Z');
+    expect((await executor.guardTick()).status).toBe('rolled_back');
+  });
+});

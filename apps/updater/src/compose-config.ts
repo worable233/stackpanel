@@ -11,6 +11,15 @@ export interface ComposeServiceNames {
   api: string;
   worker: string;
   web: string;
+  /**
+   * 一次性迁移服务（`restart: "no"` + `entrypoint-migrate`，ADR-0025）。
+   *
+   * 必须用它而不是 `run api <cmd>`：api 服务的 entrypoint 是
+   * `entrypoint-api.sh`，它**忽略** `$@` 并 `exec node apps/api/dist/server.js`，
+   * 于是 `run api pnpm ... migrate:deploy` 实际启动的是第二个 API 进程，
+   * 迁移永不执行、命令一直挂到超时。
+   */
+  migrate: string;
 }
 
 export interface DatabaseConfig {
@@ -29,6 +38,17 @@ export interface ProbeConfig {
   loginProbeUrl?: string;
   /** 目标 Web 资源探针 URL；缺省跳过。 */
   webUrl?: string;
+  /**
+   * 等待探针转绿的总预算（毫秒）。**不是**单次请求超时。
+   *
+   * 为什么必需：切换后 `up -d` 只保证容器被创建，API 还要跑启动自检、连库、
+   * 注册插件，冷启动常见 10–60 秒（装了插件或跑迁移后更久）。用一次 5 秒探针
+   * 判生死，会把**正常升级**系统性误判为失败并自动回退——真机演练里就出现了
+   * 「回退后探针仍未通过，保持维护」，实例被留在维护态。
+   */
+  readyTimeoutMs?: number;
+  /** 轮询间隔（毫秒）；缺省 2000。 */
+  readyPollIntervalMs?: number;
   /** Worker 心跳检查命令（在 worker 容器内执行）；缺省用 compose ps 状态。 */
   workerHeartbeatCommand?: string[];
 }
@@ -40,6 +60,16 @@ export interface ComposeProjectConfig {
   projectDir: string;
   /** compose 文件路径（相对 projectDir 或绝对路径）。 */
   composeFiles: string[];
+  /**
+   * compose 变量文件（`--env-file`），相对 projectDir 或绝对路径。
+   *
+   * 为什么必需：`docker/.env` 里是 POSTGRES_PASSWORD / JWT_SECRET / MINIO_ROOT_PASSWORD
+   * 等**生成于安装时**的密钥。updater 在容器里执行 `docker compose`，
+   * 它的进程环境**不含**这些变量；不显式传 `--env-file` 时 compose 会把
+   * `${POSTGRES_PASSWORD}` 等插值成空串，于是 `up -d` 会用空密码重建
+   * postgres / api——一次「成功」的升级会把数据库锁死。
+   */
+  envFile?: string;
   services: ComposeServiceNames;
   /**
    * 承载内核镜像引用的环境变量名（如 `STACKPANEL_IMAGE`）。切换时把它指向目标
@@ -56,6 +86,24 @@ export interface ComposeProjectConfig {
   updaterService?: string;
   /** 承载 updater 镜像引用的环境变量名；缺省 `STACKPANEL_UPDATER_IMAGE`。 */
   updaterImageEnv?: string;
+  /**
+   * updater 镜像仓库（如 `ghcr.io/worable233/stackpanel-updater`）。
+   *
+   * 自升级的候选摘要必须与 **updater 自己的**仓库拼成 `repo@sha256:...`。此前复用了
+   * 内核的 `imageRepository`（`.../stackpanel`），拉取的是内核镜像，`docker image inspect`
+   * 自然找不到候选摘要 → 自升级在第一步就失败（恒报「候选镜像摘要不匹配」）。
+   * 缺省时从当前 updater 镜像引用（取 `repo` 部分）推导，避免多配一个变量。
+   */
+  updaterImageRepository?: string;
+  /**
+   * 仓库在**宿主**上的绝对路径。
+   *
+   * 自升级要切换 updater 自己：在 updater 容器里直接跑 `compose up -d updater` 会
+   * 在替换容器时把 CLI 一起杀掉（新容器停在 `Created`、旧容器 `Exited 137`）。因此
+   * 切换必须交给一个**脱离本容器的临时助手容器**执行；助手需要以宿主的绝对路径挂载
+   * 仓库，否则 compose 里的相对绑定路径会被解析到错误位置。缺省等于 `projectDir`。
+   */
+  hostProjectDir?: string;
   /** 快照/备份目录（updater 独立卷内）。缺省用 workDir/backups。 */
   backupDir?: string;
   /** 磁盘空间下限（字节）；不足则在停服前失败（§5.4-1）。 */
@@ -92,6 +140,18 @@ export function validateComposeConfig(config: ComposeProjectConfig): ComposeProj
     problems.push('database 配置不完整');
   }
   if (!config.probes.readinessUrl) problems.push('probes.readinessUrl 缺失');
+  if (config.probes.readyTimeoutMs !== undefined && !(config.probes.readyTimeoutMs > 0)) {
+    problems.push('probes.readyTimeoutMs 必须为正数（毫秒）');
+  }
+  if (
+    config.probes.readyPollIntervalMs !== undefined &&
+    !(config.probes.readyPollIntervalMs > 0)
+  ) {
+    problems.push('probes.readyPollIntervalMs 必须为正数（毫秒）');
+  }
+  if (config.envFile !== undefined && config.envFile.trim().length === 0) {
+    problems.push('envFile 为空字符串（要么不设，要么给路径）');
+  }
   if (problems.length > 0) {
     throw new Error(`部署配置无效：\n - ${problems.join('\n - ')}`);
   }
@@ -109,8 +169,12 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
     api: env['UPDATER_SERVICE_API'] ?? 'api',
     worker: env['UPDATER_SERVICE_WORKER'] ?? 'worker',
     web: env['UPDATER_SERVICE_WEB'] ?? 'web',
+    migrate: env['UPDATER_SERVICE_MIGRATE'] ?? 'migrate',
   };
-  const allowed = (env['UPDATER_ALLOWED_SERVICES'] ?? Object.values(services).join(','))
+  // 迁移服务不在白名单里：它是 `restart: "no"` 的一次性任务，由 migrate 步骤
+  // 单独 `run`，不该被 `up -d` 当成常驻服务拉起。
+  const allowed = (env['UPDATER_ALLOWED_SERVICES'] ??
+    [services.api, services.worker, services.web].join(','))
     .split(',')
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
@@ -122,10 +186,15 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
       .map((name) => name.trim())
       .filter((name) => name.length > 0),
     services,
+    ...(env['UPDATER_ENV_FILE'] ? { envFile: env['UPDATER_ENV_FILE'] } : {}),
     imageEnv: env['UPDATER_IMAGE_ENV'] ?? 'STACKPANEL_IMAGE',
     imageRepository: required('UPDATER_IMAGE_REPOSITORY'),
+    ...(env['UPDATER_HOST_PROJECT_DIR'] ? { hostProjectDir: env['UPDATER_HOST_PROJECT_DIR'] } : {}),
     updaterService: env['UPDATER_SELF_SERVICE'] ?? 'updater',
     updaterImageEnv: env['UPDATER_SELF_IMAGE_ENV'] ?? 'STACKPANEL_UPDATER_IMAGE',
+    ...(env['UPDATER_SELF_IMAGE_REPOSITORY']
+      ? { updaterImageRepository: env['UPDATER_SELF_IMAGE_REPOSITORY'] }
+      : {}),
     allowedServices: allowed,
     database: {
       service: env['UPDATER_DB_SERVICE'] ?? 'postgres',
@@ -136,6 +205,12 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
       readinessUrl: env['UPDATER_READINESS_URL'] ?? 'http://api:3001/health',
       ...(env['UPDATER_LOGIN_PROBE_URL'] ? { loginProbeUrl: env['UPDATER_LOGIN_PROBE_URL'] } : {}),
       ...(env['UPDATER_WEB_URL'] ? { webUrl: env['UPDATER_WEB_URL'] } : {}),
+      ...(env['UPDATER_READY_TIMEOUT_MS']
+        ? { readyTimeoutMs: Number(env['UPDATER_READY_TIMEOUT_MS']) }
+        : {}),
+      ...(env['UPDATER_READY_POLL_INTERVAL_MS']
+        ? { readyPollIntervalMs: Number(env['UPDATER_READY_POLL_INTERVAL_MS']) }
+        : {}),
     },
   };
   if (env['UPDATER_MIN_FREE_BYTES']) {

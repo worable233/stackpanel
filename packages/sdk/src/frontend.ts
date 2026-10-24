@@ -749,16 +749,19 @@ export function migrateFrontendSettings(
       const keys =
         typeof source === 'string' ? [source] : source.flatMap((row) => Object.values(row));
       if (values[field.name] === undefined && keys.some((key) => values[key] !== undefined)) {
-        values[field.name] =
-          typeof source === 'string'
-            ? values[source]!
-            : source.map((mapping, index) => {
-                const row = { ...field.default?.[index] };
-                for (const [target, key] of Object.entries(mapping)) {
-                  if (values[key] !== undefined) row[target] = values[key]!;
-                }
-                return row;
-              });
+        if (typeof source === 'string') {
+          const migrated = values[source];
+          if (migrated !== undefined) values[field.name] = migrated;
+        } else {
+          values[field.name] = source.map((mapping, index) => {
+            const row = { ...field.default?.[index] };
+            for (const [target, key] of Object.entries(mapping)) {
+              const value = values[key];
+              if (value !== undefined) row[target] = value;
+            }
+            return row;
+          });
+        }
       }
       for (const key of keys) if (key !== field.name) delete values[key];
     }

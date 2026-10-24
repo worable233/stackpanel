@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { extensions, runTransaction } from './context';
 import { orderModel, productModel, serviceInstanceModel, type StoreOrderData } from './data';
 import { applyServiceLifecycleAction } from './fulfillment';
+import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import { notifyUser } from './notifications';
 import type { OrderRecord, ProductRecord, ServiceInstanceRecord } from './repository';
 import {
@@ -120,7 +121,11 @@ export const storeOperations: CommerceOperations = {
     if (!product || product.status !== 'ACTIVE') {
       throw new CommerceError('product_unavailable', '商品不可用或库存不足');
     }
-    const total = product.price * quantity;
+    // 合作方下单必须与站内下单算出同一个金额：否则同一个用户、同一件商品，
+    // 经 SP v1 和经商城会得到两个价格（此前这条路径完全不打折）。
+    const groupDiscount = await effectiveGroupDiscount(input.userId);
+    const unitPrice = applyDiscount(product.price, betterDiscount(product.discount, groupDiscount));
+    const total = unitPrice * quantity;
     if (!Number.isSafeInteger(total) || total < 1 || total > MAX_MINOR_AMOUNT) {
       throw new CommerceError('amount_invalid', '订单金额无效');
     }
@@ -137,7 +142,7 @@ export const storeOperations: CommerceOperations = {
       const created = await tx.extensions.create<StoreOrderData>(orderModel, {
         userId: input.userId,
         items: {
-          items: [{ productId: product.id, quantity, price: product.price, name: product.name }],
+          items: [{ productId: product.id, quantity, price: unitPrice, name: product.name }],
           // 标记本单为「合作方预付」（SP v1）——平台未实际收款，禁止退款入账。
           settlement: 'partner_prepaid',
         },
@@ -314,7 +319,13 @@ export const storeOperations: CommerceOperations = {
   async bindService(input: CommerceBindServiceInput): Promise<CommerceService> {
     const runtime = input.runtime as { upstreamId?: string; upstreamProductId?: string } | null;
     const sourceRef = runtime?.upstreamId ?? null;
-    const existing = (await listServicesByProvider(input.providerId)).find(service => service.providerServiceId === input.providerServiceId && (sourceRef === null || ((service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null) === null || ((service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null) === sourceRef));
+    const existing = (await listServicesByProvider(input.providerId)).find(
+      (service) =>
+        service.providerServiceId === input.providerServiceId &&
+        (sourceRef === null ||
+          ((service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null) === null ||
+          ((service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null) === sourceRef),
+    );
     if (existing) {
       throw new CommerceError(
         'service_already_bound',
@@ -323,36 +334,54 @@ export const storeOperations: CommerceOperations = {
           : '该上游服务已绑定到其他账号',
       );
     }
-    const products = (await extensions().listAll(productModel, {})).map(row => toProduct(row as Parameters<typeof toProduct>[0]));
-    const matches = products.filter(product => product.providerId === input.providerId && product.providerProductId === runtime?.upstreamProductId && ((product.metadata as { upstream?: { sourceRef?: string } } | null)?.upstream?.sourceRef ?? null) === sourceRef);
-    if (matches.length > 1) throw new CommerceError('service_already_bound', '上游商品匹配多个本地商品，请先消除重复映射');
+    const products = (await extensions().listAll(productModel, {})).map((row) =>
+      toProduct(row as Parameters<typeof toProduct>[0]),
+    );
+    const matches = products.filter(
+      (product) =>
+        product.providerId === input.providerId &&
+        product.providerProductId === runtime?.upstreamProductId &&
+        ((product.metadata as { upstream?: { sourceRef?: string } } | null)?.upstream?.sourceRef ??
+          null) === sourceRef,
+    );
+    if (matches.length > 1)
+      throw new CommerceError(
+        'service_already_bound',
+        '上游商品匹配多个本地商品，请先消除重复映射',
+      );
     const product = matches[0];
-    const identity = `bound-${createHash('sha256').update(JSON.stringify([input.providerId, sourceRef, input.providerServiceId])).digest('hex')}`;
-    const service = await createServiceInstance({
-      userId: input.userId,
-      orderId: null,
-      productId: product?.id ?? input.productId,
-      productName: input.productName,
-      fulfillmentType: product?.fulfillmentType ?? input.fulfillmentType,
-      providerId: input.providerId,
-      providerServiceId: input.providerServiceId,
-      state: normalizeBoundStatus(input.status),
-      credentialsRef: null,
-      runtime: input.runtime ?? null,
-      amount: input.amount,
-      currency: input.currency,
-      provisionedAt: ['ACTIVE', 'SUSPENDED'].includes(normalizeBoundStatus(input.status)) ? new Date().toISOString() : null,
-      expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null,
-    }, identity);
-    if (service.userId !== input.userId) throw new CommerceError('service_already_bound', '该上游服务已绑定到其他账号');
+    const identity = `bound-${createHash('sha256')
+      .update(JSON.stringify([input.providerId, sourceRef, input.providerServiceId]))
+      .digest('hex')}`;
+    const service = await createServiceInstance(
+      {
+        userId: input.userId,
+        orderId: null,
+        productId: product?.id ?? input.productId,
+        productName: input.productName,
+        fulfillmentType: product?.fulfillmentType ?? input.fulfillmentType,
+        providerId: input.providerId,
+        providerServiceId: input.providerServiceId,
+        state: normalizeBoundStatus(input.status),
+        credentialsRef: null,
+        runtime: input.runtime ?? null,
+        amount: input.amount,
+        currency: input.currency,
+        provisionedAt: ['ACTIVE', 'SUSPENDED'].includes(normalizeBoundStatus(input.status))
+          ? new Date().toISOString()
+          : null,
+        expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null,
+      },
+      identity,
+    );
+    if (service.userId !== input.userId)
+      throw new CommerceError('service_already_bound', '该上游服务已绑定到其他账号');
     return toCommerceService(service);
   },
 
   async listBoundServices(providerId: string): Promise<CommerceService[]> {
     const services = await listServicesByProvider(providerId);
-    return services
-      .filter((service) => service.providerServiceId !== null)
-      .map(toCommerceService);
+    return services.filter((service) => service.providerServiceId !== null).map(toCommerceService);
   },
 };
 

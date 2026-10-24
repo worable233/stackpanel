@@ -54,7 +54,10 @@ function composeConfig(projectDir, backupDir) {
     projectName: 'sp-drill',
     projectDir,
     composeFiles: ['docker-compose.yml'],
-    services: { api: 'api', worker: 'worker', web: 'web' },
+    // `migrate` 是一次性迁移服务（#16 之后迁移走独立服务，不再借 api 容器）。
+    // 漏配会让适配器拼出 `run --rm --no-deps undefined`，演练里看不出异常，
+    // 因为假 runner 不校验服务名 —— 但失败注入也就永远匹配不上。
+    services: { api: 'api', worker: 'worker', web: 'web', migrate: 'migrate' },
     imageEnv: 'STACKPANEL_IMAGE',
     imageRepository: 'ghcr.io/worable233/stackpanel',
     allowedServices: ['api', 'worker', 'web'],
@@ -196,9 +199,12 @@ async function scenarioPreMigrationFailure(drill, root) {
   await mkdir(stateDir, { recursive: true });
   await mkdir(projectDir, { recursive: true });
   const { runner } = makeRunner({
-    // 精确失败在一次性迁移任务上（`compose run … migrate:deploy`），而非任意命令。
+    // 精确失败在一次性迁移任务上（`compose run --rm --no-deps migrate`），
+    // 而非任意命令。匹配的是**服务名**而不是旧命令串 `migrate:deploy` ——
+    // 后者在 #16 把迁移改成独立服务后就再也不会出现在命令行里，失败注入会
+    // 静默失效，场景 B 于是「成功了」，断言才暴露出来。
     failOn: (req) =>
-      req.args.includes('migrate:deploy')
+      req.file === 'docker' && req.args.includes('run') && req.args.includes('migrate')
         ? new drill.DeploymentAdapterError('迁移任务失败', 'migrating')
         : undefined,
   });
@@ -365,8 +371,20 @@ async function scenarioSelfUpdate(drill, root) {
   const statefulRunner = {
     run: async (request) => {
       if (request.file === 'docker' && request.args.includes('up')) {
+        // 镜像引用有两个来源，都要认：
+        //  1. `request.env` —— 直接 `compose up` 时由子进程环境注入；
+        //  2. `-e KEY=VALUE` 参数 —— 自升级切换现在走**助手容器**
+        //     （`docker run … --entrypoint docker <image> compose up -d updater`），
+        //     环境变量是命令行参数而不是宿主进程环境。
+        // 只认第一种的话，切换会「成功」但演练里看不到镜像变化，
+        // 候选自确认于是拿着旧引用比摘要、永远不匹配 —— 看起来像产品缺陷，
+        // 其实是假 runner 没跟上真实调用形态。
         const env = request.env ?? {};
-        const injected = env['STACKPANEL_UPDATER_IMAGE'];
+        const prefix = 'STACKPANEL_UPDATER_IMAGE=';
+        const inline = request.args
+          .map((arg, index) => (index > 0 && request.args[index - 1] === '-e' ? arg : ''))
+          .find((arg) => arg.startsWith(prefix));
+        const injected = env['STACKPANEL_UPDATER_IMAGE'] ?? inline?.slice(prefix.length);
         if (injected) liveUpdaterImage = injected;
       }
       if (

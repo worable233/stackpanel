@@ -44,11 +44,34 @@ afterAll(async () => {
   await closeRedis();
 });
 
-async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 5000): Promise<void> {
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 5000,
+): Promise<void> {
   const start = Date.now();
   for (;;) {
     if (await predicate()) return;
     if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out');
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+/**
+ * Wait until `probe` returns a non-null value, then return it.
+ *
+ * `waitFor` only tells you the condition became true; callers that then read
+ * the same row can still observe a stale value. Use this when the assertion is
+ * about the value itself.
+ */
+async function waitForValue<T>(
+  probe: () => Promise<T | null>,
+  timeoutMs = 5000,
+): Promise<T | null> {
+  const start = Date.now();
+  for (;;) {
+    const value = await probe();
+    if (value !== null) return value;
+    if (Date.now() - start > timeoutMs) return null;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }
@@ -102,7 +125,11 @@ async function drain(bus: OutboxEventBus, topic: string): Promise<void> {
  * `publish` persists asynchronously, so a test that relays or catches up
  * immediately after it races the insert. Wait for the row to exist first.
  */
-async function publishAndPersist(bus: OutboxEventBus, topic: string, payload: unknown): Promise<void> {
+async function publishAndPersist(
+  bus: OutboxEventBus,
+  topic: string,
+  payload: unknown,
+): Promise<void> {
   bus.publish(topic, payload);
   await waitFor(async () => {
     const row = await getPrisma().outboxEvent.findFirst({ where: { topic } });
@@ -133,7 +160,14 @@ describe.skipIf(!dbAvailable)('#4 故障 / 多节点验收', () => {
     await waitFor(() => seenB.length === 1);
 
     expect(seenB).toEqual([{ missedByB: true }]);
-    const cursor = await getPrisma().eventCursor.findUnique({ where: { consumer: consumerB } });
+    // 游标是在 `deliver()` **之后**异步推进的：`deliver` 同步调用监听器，
+    // 订阅者立刻就能看到 payload，而 `advanceReplicaCursor` 还要一次 DB 往返。
+    // 只等 `seenB.length === 1` 会在 CI 慢机器上赢下这场竞态，随后断言游标非空
+    // 就会假失败（本地快，通常看不出来）。所以先等游标落库，再断言。
+    const cursor = await waitForValue(async () => {
+      const row = await getPrisma().eventCursor.findUnique({ where: { consumer: consumerB } });
+      return row?.lastId ? row : null;
+    });
     expect(cursor?.lastId).not.toBeNull();
 
     // 幂等：再跑一轮不会重投。
@@ -323,7 +357,9 @@ describe.skipIf(!dbAvailable)('#4 故障 / 多节点验收', () => {
     const idB = `f7-b-${randomUUID()}`;
     const consumerA = replicaConsumer(idA);
     const consumerB = replicaConsumer(idB);
-    await getPrisma().eventCursor.deleteMany({ where: { consumer: { in: [consumerA, consumerB] } } });
+    await getPrisma().eventCursor.deleteMany({
+      where: { consumer: { in: [consumerA, consumerB] } },
+    });
 
     const a = replica(idA);
     const b = replica(idB);
@@ -347,49 +383,57 @@ describe.skipIf(!dbAvailable)('#4 故障 / 多节点验收', () => {
 
     await a.stop();
     await b.stop();
-    await getPrisma().eventCursor.deleteMany({ where: { consumer: { in: [consumerA, consumerB] } } });
+    await getPrisma().eventCursor.deleteMany({
+      where: { consumer: { in: [consumerA, consumerB] } },
+    });
   }, 30_000);
 
-  it.skipIf(!redisAvailable)('F8 真实 Redis：一个副本进程停掉后重启，广播丢失仍靠游标补齐', async () => {
-    const topic = `fault.f8.${randomUUID()}`;
-    const idA = `f8-a-${randomUUID()}`;
-    const idB = `f8-b-${randomUUID()}`;
-    const consumerB = replicaConsumer(idB);
-    await getPrisma().eventCursor.deleteMany({ where: { consumer: consumerB } });
-
-    const redis = await getRedis(REDIS_URL);
-    const a = replica(idA, { redis });
-    await a.start();
-    // B 先正常消费一行，留下自己的游标，这样重启后是**续位**而不是「首次启动窗口」。
-    const warmupTopic = `fault.f8.warmup.${randomUUID()}`;
-    const b = replica(idB, { redis });
-    const warmupSeen: unknown[] = [];
-    b.subscribe(warmupTopic, (payload) => warmupSeen.push(payload));
-    await b.start();
-    b.startConsumption();
-    await publishAndPersist(a, warmupTopic, { warmup: true });
-    await waitFor(() => warmupSeen.length === 1);
-    expect(await getPrisma().eventCursor.findUnique({ where: { consumer: consumerB } })).not.toBeNull();
-
-    try {
-      // B 停掉消费（模拟进程被 kill），A 正常发布并广播。
-      await b.stop();
-      await publishAndPersist(a, topic, { afterBKill: true });
-      await drain(a, topic);
-
-      // B 重启：广播早就错过了，只能靠持久游标补齐。
-      const restarted = replica(idB, { redis });
-      const seen: unknown[] = [];
-      restarted.subscribe(topic, (payload) => seen.push(payload));
-      await restarted.start();
-      restarted.startConsumption();
-      await waitFor(() => seen.length === 1);
-
-      expect(seen).toEqual([{ afterBKill: true }]);
-      await restarted.stop();
-    } finally {
-      await a.stop();
+  it.skipIf(!redisAvailable)(
+    'F8 真实 Redis：一个副本进程停掉后重启，广播丢失仍靠游标补齐',
+    async () => {
+      const topic = `fault.f8.${randomUUID()}`;
+      const idA = `f8-a-${randomUUID()}`;
+      const idB = `f8-b-${randomUUID()}`;
+      const consumerB = replicaConsumer(idB);
       await getPrisma().eventCursor.deleteMany({ where: { consumer: consumerB } });
-    }
-  }, 40_000);
+
+      const redis = await getRedis(REDIS_URL);
+      const a = replica(idA, { redis });
+      await a.start();
+      // B 先正常消费一行，留下自己的游标，这样重启后是**续位**而不是「首次启动窗口」。
+      const warmupTopic = `fault.f8.warmup.${randomUUID()}`;
+      const b = replica(idB, { redis });
+      const warmupSeen: unknown[] = [];
+      b.subscribe(warmupTopic, (payload) => warmupSeen.push(payload));
+      await b.start();
+      b.startConsumption();
+      await publishAndPersist(a, warmupTopic, { warmup: true });
+      await waitFor(() => warmupSeen.length === 1);
+      expect(
+        await getPrisma().eventCursor.findUnique({ where: { consumer: consumerB } }),
+      ).not.toBeNull();
+
+      try {
+        // B 停掉消费（模拟进程被 kill），A 正常发布并广播。
+        await b.stop();
+        await publishAndPersist(a, topic, { afterBKill: true });
+        await drain(a, topic);
+
+        // B 重启：广播早就错过了，只能靠持久游标补齐。
+        const restarted = replica(idB, { redis });
+        const seen: unknown[] = [];
+        restarted.subscribe(topic, (payload) => seen.push(payload));
+        await restarted.start();
+        restarted.startConsumption();
+        await waitFor(() => seen.length === 1);
+
+        expect(seen).toEqual([{ afterBKill: true }]);
+        await restarted.stop();
+      } finally {
+        await a.stop();
+        await getPrisma().eventCursor.deleteMany({ where: { consumer: consumerB } });
+      }
+    },
+    40_000,
+  );
 });

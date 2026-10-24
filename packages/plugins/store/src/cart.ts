@@ -1,6 +1,7 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
 import { StoreError } from './errors';
-import { resolveCheckoutPrice, effectiveDiscount, discountedPrice } from './pricing';
+import { resolveCheckoutPrice, effectiveDiscount } from './pricing';
+import { applyDiscount, betterDiscount } from './discount';
 import {
   createCartItem,
   deleteCartItems,
@@ -24,7 +25,12 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
     product: {
       id: string;
       name: string;
+      /** 实付单价（已应用折扣）。 */
       price: number;
+      /** 未打折单价；前端用它展示划线原价。 */
+      originalPrice: number;
+      /** 本行实际生效的折扣百分比（取更优者）；无折扣为 null。 */
+      discount: number | null;
       currency: string;
       stock: number;
       status: string;
@@ -46,6 +52,8 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
           id: item.productId,
           name: '已删除商品',
           price: 0,
+          originalPrice: 0,
+          discount: null,
           currency: 'CNY',
           stock: 0,
           status: 'DELETED',
@@ -57,6 +65,8 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
       continue;
     }
     let unit = 0;
+    let baseUnit = 0;
+    let lineDiscount: number | null = null;
     let summary: string | undefined;
     let unavailableReason =
       product.status !== 'ACTIVE'
@@ -68,7 +78,11 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
       try {
         const config = item.config ? parseCheckoutSelection(item.config) : undefined;
         const priced = await resolveCheckoutPrice(product, item.quantity, config);
-        unit = discountedPrice(priced.unit, product.discount, discount);
+        // 折扣取更优者、封顶 99%，与下单路径共用 `discount.ts`。
+        baseUnit = priced.unit;
+        const effective = betterDiscount(product.discount, discount);
+        unit = applyDiscount(baseUnit, effective);
+        lineDiscount = effective > 0 ? effective : null;
         summary = priced.result?.summary;
       } catch (error) {
         if (!(error instanceof StoreError)) throw error;
@@ -85,7 +99,9 @@ export async function listCart(req: HttpRequest): Promise<unknown> {
       product: {
         id: product.id,
         name: product.name,
-        price: product.price,
+        price: unit,
+        originalPrice: baseUnit || product.price,
+        discount: lineDiscount,
         currency: product.currency,
         stock: product.stock,
         status: product.status,
