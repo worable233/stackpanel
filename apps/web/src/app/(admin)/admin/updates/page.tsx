@@ -25,7 +25,7 @@ export default async function AdminUpdatesPage() {
       />
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.updates.serviceUnavailable', { error })}
+          {t('admin.updates.serviceUnavailable')}
         </p>
       ) : initial ? (
         <UpdateCenter initial={initial} />

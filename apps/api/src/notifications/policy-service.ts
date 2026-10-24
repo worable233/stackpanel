@@ -41,9 +41,11 @@ const OTHER_CATEGORY = { label: '其他', order: 90 };
 const CATEGORY_META: Record<string, { label: string; order: number }> = {
   system: { label: '系统', order: 10 },
   security: { label: '安全', order: 20 },
-  store: { label: '交易与订阅', order: 30 },
-  support: { label: '工单', order: 40 },
-  agent: { label: 'Agent', order: 50 },
+  wallet: { label: '钱包与账单', order: 30 },
+  store: { label: '交易与订阅', order: 40 },
+  support: { label: '工单', order: 50 },
+  agent: { label: 'Agent', order: 60 },
+  marketing: { label: '推广与营销', order: 70 },
   other: OTHER_CATEGORY,
 };
 
@@ -52,11 +54,16 @@ function categoryMeta(id: string): { label: string; order: number } {
 }
 
 /**
- * 内核内建目录：只覆盖**内核自身**发出的类型（system.* / agent.*）。业务插件
- * （store/ticket/login）通过 `notification.type` 扩展点声明各自的类型，避免内核
- * 反向依赖具体插件。
+ * 内核内建目录：覆盖**内核自身**发出的所有类型（系统 / 安全 / 钱包 / 内核侧
+ * 服务管理 / Agent），以及内核与插件都可能发出的共享类型。业务插件
+ * （store/ticket/login/referral…）通过 `notification.type` 扩展点声明各自的
+ * 类型，避免内核反向依赖具体插件。
  *
- * `defaultChannels` 缺省 = 全渠道。纯活动进度类（前端构建、Agent 内部）默认仅站内，
+ * 与 `notification.type` 声明合并时按 `type` 去重（插件同值覆盖内建）。
+ * 新增发出点却忘了在此登记，`apps/api/tests/unit/notification-type-coverage.test.ts`
+ * 会失败——这是「发出即声明」的守门。
+ *
+ * `defaultChannels` 缺省 = 全渠道。纯活动进度类（Agent 内部）默认仅站内，
  * 避免把每次进度更新都转成邮件（审计 §5）。
  */
 export const BUILTIN_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
@@ -75,12 +82,59 @@ export const BUILTIN_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] =
     order: 20,
   },
   {
-    type: 'system.frontend-apply',
+    type: 'system.update.*',
     category: 'system',
-    label: '前端构建进度',
+    label: '系统更新',
     audience: 'admin',
-    defaultChannels: [INAPP_CHANNEL_ID],
     order: 30,
+  },
+  {
+    type: 'security.password.reset',
+    category: 'security',
+    label: '密码被重置',
+    order: 10,
+  },
+  {
+    type: 'security.account.disabled',
+    category: 'security',
+    label: '账号被停用',
+    order: 20,
+  },
+  {
+    type: 'security.account.enabled',
+    category: 'security',
+    label: '账号已恢复',
+    order: 30,
+  },
+  {
+    type: 'wallet.topup.succeeded',
+    category: 'wallet',
+    label: '充值到账',
+    order: 20,
+  },
+  {
+    type: 'wallet.balance.adjusted',
+    category: 'wallet',
+    label: '余额被调整',
+    order: 30,
+  },
+  {
+    type: 'service.granted',
+    category: 'store',
+    label: '收到新服务',
+    order: 120,
+  },
+  {
+    type: 'service.updated',
+    category: 'store',
+    label: '服务信息被修改',
+    order: 130,
+  },
+  {
+    type: 'service.removed',
+    category: 'store',
+    label: '服务被移除',
+    order: 140,
   },
   {
     type: 'agent.*',
@@ -324,6 +378,15 @@ export class KernelNotificationPolicyService implements NotificationPolicyServic
     }
     if (exact.length === 0 && prefixes.length === 0) return null;
     return { exact, prefixes };
+  }
+
+  /** 类型是否命中目录（精确或 `.*` 前缀）——供发出点做「未声明」守卫。 */
+  declares(type: string): boolean {
+    for (const def of this.catalog()) {
+      if (def.type === type) return true;
+      if (def.type.endsWith('.*') && type.startsWith(def.type.slice(0, -1))) return true;
+    }
+    return false;
   }
 
   /* -------------------------------- 用户视图 ----------------------------- */

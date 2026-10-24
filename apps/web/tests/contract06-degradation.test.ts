@@ -16,14 +16,11 @@ import { removeFailedStyleLink } from '@/components/frontend-style-links';
  */
 
 describe('render failure degradation (contract 06 §1.3)', () => {
-  it('turns a thrown render error into a message instead of crashing', () => {
-    const state = FrontendRenderBoundary.getDerivedStateFromError(new Error('boom'));
-    expect(state).toEqual({ message: 'boom' });
-  });
-
-  it('falls back to a generic message when the error has none', () => {
-    const state = FrontendRenderBoundary.getDerivedStateFromError(new Error(''));
-    expect(state.message).toBe('render failed');
+  it('turns a thrown render error into a static failure state', () => {
+    const state = FrontendRenderBoundary.getDerivedStateFromError();
+    // The raw message is not part of the state: only a localised notice is rendered.
+    expect(state).toEqual({ failed: true });
+    expect(state).not.toHaveProperty('message');
   });
 
   it('reports the failure with the package label and never rethrows', () => {

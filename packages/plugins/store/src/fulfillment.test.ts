@@ -14,6 +14,12 @@ import {
   listMyServices,
   processDue,
   runMyServiceAction,
+  approveAdminDeliveryTask,
+  reconcileProvisioning,
+  reconcileAdminDeliveryTask,
+  listAdminDeliveryTasks,
+  resumeAdminDeliveryPayment,
+  recoverAdminDeliveryTask,
 } from './fulfillment';
 import { applyChangeOrder } from './changes';
 import { storeOperations } from './operations';
@@ -124,6 +130,7 @@ function createFakeExtensions() {
       opts?: { name?: string },
     ) {
       const name = opts?.name ?? `${model.kind}-${++seq}`;
+      if (table(model.kind).has(name)) throw new Error('extension.unique_violation');
       const row: Stored = {
         name,
         spec: { ...spec },
@@ -208,7 +215,10 @@ function makeCtx(
 ): PluginContext {
   const secrets = {
     isAvailable: () => true,
-    get: async () => null,
+    get: async (key: string) =>
+      key === 'store-provisioning-policy'
+        ? JSON.stringify({ provisioningMode: 'automatic' })
+        : null,
     set: async () => {},
     remove: async () => {},
   };
@@ -222,9 +232,7 @@ function makeCtx(
       waterfall: <T>(_topic: string, value: T, _terminal: (value: T) => T): T => value,
     },
     extensions: fake.client,
-    tx: (async () => {
-      throw new Error('no tx in this test');
-    }) as never,
+    tx: (async (fn: (tx: unknown) => Promise<unknown>) => fn({ extensions: fake.client })) as never,
     secrets,
     payments: {} as never,
     wallet: {} as never,
@@ -270,6 +278,309 @@ const TASK = 'store/delivery-task';
 const SERVICE = 'store/service-instance';
 
 describe('store fulfillment dispatcher', () => {
+  it('queues verified recovery for manual approval exactly once without provisioning', async () => {
+    const { fake, provision } = seedReview();
+    const task = fake.all(TASK)[0]!;
+    task.spec.payload = { metadata: null, providerProductId: '4661' };
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'upstream_service', providerId: 'zjmf', providerProductId: '4661', metadata: null }, 'product');
+    const { provider } = makeProvider();
+    provider.verifyCancelledProvision = vi.fn(async () => ({ sourceId: 'upstream', checkedAt: new Date().toISOString(), requests: [{ reference: 'original', invoiceId: '7001', serviceIds: ['42'] }] }));
+    bindContext(makeCtx(fake, provider));
+    const request = { params: { id: 'review' }, body: { confirmed: true }, user: { id: 'admin' } } as never;
+    await recoverAdminDeliveryTask(request);
+    expect(task.spec.state).toBe('AWAITING_APPROVAL');
+    expect(task.spec.attempts).toBe(3);
+    expect(task.spec.payload).toMatchObject({ recoveryGeneration: 1, resumePayment: false });
+    expect(fake.all(SERVICE)[0]!.spec.state).toBe('AWAITING_APPROVAL');
+    await expect(recoverAdminDeliveryTask(request)).rejects.toThrow();
+    expect(provision).not.toHaveBeenCalled();
+  });
+
+  it('keeps recovery blocked when provider financial verification fails', async () => {
+    const { fake, provision } = seedReview();
+    fake.all(TASK)[0]!.spec.payload = { metadata: null, providerProductId: '4661' };
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'upstream_service', providerId: 'zjmf', providerProductId: '4661', metadata: null }, 'product');
+    const { provider } = makeProvider();
+    provider.verifyCancelledProvision = async () => { throw new Error('missing original invoice'); };
+    bindContext(makeCtx(fake, provider));
+    await expect(recoverAdminDeliveryTask({ params: { id: 'review' }, body: { confirmed: true } } as never)).rejects.toThrow('missing original invoice');
+    expect(fake.all(TASK)[0]!.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(provision).not.toHaveBeenCalled();
+  });
+  it.each(['refunded', 'stale', 'missing-request', 'changed-task'])('rejects unsafe recovery after verification: %s', async scenario => {
+    const { fake } = seedReview();
+    const task = fake.all(TASK)[0]!;
+    task.spec.payload = { metadata: null, providerProductId: '4661' };
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'upstream_service', providerId: 'zjmf', providerProductId: '4661', metadata: null }, 'product');
+    const { provider, provision } = makeProvider();
+    provider.verifyCancelledProvision = async () => {
+      if (scenario === 'refunded') fake.all(ORDER)[0]!.spec.state = 'REFUNDED';
+      if (scenario === 'changed-task') task.version++;
+      return { sourceId: 'upstream', checkedAt: new Date(Date.now() - (scenario === 'stale' ? 120_000 : 0)).toISOString(), requests: scenario === 'missing-request' ? [] : [{ reference: 'original', invoiceId: '7001', serviceIds: ['42'] }] };
+    };
+    bindContext(makeCtx(fake, provider));
+    await expect(recoverAdminDeliveryTask({ params: { id: 'review' }, body: { confirmed: true } } as never)).rejects.toThrow();
+    expect(task.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(provision).not.toHaveBeenCalled();
+  });
+  it('fulfills every purchased unit once across repeated and concurrent payment events', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(ORDER, { userId: 'user', state: 'PAID', items: { items: [{ productId: 'product', quantity: 3 }] } }, 'multi');
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'upstream_service', providerId: 'zjmf', metadata: null }, 'product');
+    const { provider, provision } = makeProvider();
+    provision.mockImplementation(async (ctx: never) => ({ status: 'PENDING', providerServiceId: (ctx as { fulfillmentId: string }).fulfillmentId, runtime: { paid: true } }) as never);
+    bindContext(makeCtx(fake, provider));
+    await Promise.all([enqueueOrderFulfillment('multi'), enqueueOrderFulfillment('multi')]);
+    await enqueueOrderFulfillment('multi');
+    expect(fake.all(TASK)).toHaveLength(3);
+    expect(fake.all(SERVICE)).toHaveLength(3);
+    expect(provision).toHaveBeenCalledTimes(3);
+    expect(provision.mock.calls.every(args => (args as unknown as [{ quantity: number }])[0].quantity === 1)).toBe(true);
+    expect(new Set(fake.all(SERVICE).map(row => row.spec.providerServiceId)).size).toBe(3);
+  });
+
+  it('never expands an existing legacy batch into new upstream requests', async () => {
+    const { fake, provision } = seedReview();
+    fake.all(TASK)[0]!.spec.quantity = 2;
+    fake.all(ORDER)[0]!.spec.items = { items: [{ productId: 'product', quantity: 2 }] };
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'upstream_service', providerId: 'zjmf', metadata: null }, 'product');
+    await enqueueOrderFulfillment('paid');
+    expect(fake.all(TASK)).toHaveLength(1);
+    expect(provision).not.toHaveBeenCalled();
+  });
+
+  it('reads unresolved-payment service state without inventing payment or activation time', async () => {
+    const { fake, provision } = seedReview();
+    const row = fake.all(SERVICE)[0]!;
+    Object.assign(row.spec, { state: 'AWAITING_UPSTREAM_PAYMENT', providerServiceId: 'remote', runtime: { paid: false, paymentState: 'PAYMENT_UNKNOWN', invoiceId: 'bill' } });
+    const { provider } = makeProvider();
+    provider.getDetail = async () => ({ status: 'ACTIVE', fields: [], provisionedAt: '2026-10-21T08:12:34Z', expiresAt: '2026-11-21T08:12:34Z' });
+    bindContext(makeCtx(fake, provider));
+    await reconcileProvisioning();
+    expect(row.spec.state).toBe('ACTIVE');
+    expect(row.spec.provisionedAt).toBe('2026-10-21T08:12:34.000Z');
+    expect(row.spec.expiresAt).toBe('2026-11-21T08:12:34.000Z');
+    expect(row.spec.expiresAtMs).toBe(Date.parse('2026-11-21T08:12:34Z'));
+    expect(row.spec.runtime).toMatchObject({ paid: false, paymentState: 'PAYMENT_UNKNOWN' });
+    expect(fake.all(TASK)[0]!.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(provision).not.toHaveBeenCalled();
+  });
+
+  function seedReview() {
+    const fake = createFakeExtensions();
+    fake.seed(ORDER, { userId: 'user', state: 'PAID' }, 'paid');
+    fake.seed(TASK, { orderId: 'paid', productId: 'product', userId: 'user', productName: 'Cloud', fulfillmentType: 'cloud_server', providerId: 'zjmf', quantity: 1, state: 'REQUIRES_RECONCILIATION', attempts: 3, maxAttempts: 3, error: 'secret-provider-error', payload: {}, serviceId: null, nextAttemptAtMs: 0 }, 'review');
+    fake.seed(SERVICE, { userId: 'user', orderId: 'paid', productId: 'product', providerId: 'zjmf', providerServiceId: null, productName: 'Cloud', fulfillmentType: 'cloud_server', state: 'PROVISIONING', amount: 137, currency: 'CNY', runtime: { config: { cycle: 'monthly' } } }, 'instance-review');
+    const { provider, provision } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+    return { fake, provision };
+  }
+
+  it('shows uncertain results in the admin queue and user state without leaking errors', async () => {
+    seedReview();
+    const queue = await listAdminDeliveryTasks({ query: { status: 'attention' } } as never) as { tasks: unknown[]; total: number };
+    expect(queue.total).toBe(1);
+    expect(JSON.stringify(queue)).not.toContain('secret-provider-error');
+    const result = await getMyService({ params: { id: 'instance-review' }, user: { id: 'user' } } as never) as { service: { status: string } };
+    expect(result.service.status).toBe('REQUIRES_RECONCILIATION');
+  });
+
+  it('never lets a manual declaration replay a previously submitted request', async () => {
+    const { fake, provision } = seedReview();
+    const request = { params: { id: 'review' }, user: { id: 'admin' }, body: { outcome: 'not_created', confirmed: true, note: 'Verified all upstream orders' } };
+    await expect(reconcileAdminDeliveryTask({ ...request, body: { ...request.body, confirmed: false } } as never)).rejects.toThrow();
+    await expect(reconcileAdminDeliveryTask(request as never)).rejects.toThrow(/请求已执行过/);
+    await processDue();
+    expect(provision).not.toHaveBeenCalled();
+    expect(fake.all(TASK)[0]?.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(fake.all(SERVICE)[0]?.spec.state).toBe('PROVISIONING');
+  });
+
+  it('keeps an exception on the last attempt uncertain rather than allowing a refund/replay', async () => {
+    const { fake, provision } = seedReview();
+    fake.all(TASK)[0]!.spec.state = 'PENDING';
+    fake.all(TASK)[0]!.spec.attempts = 2;
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'cloud_server', providerId: 'zjmf', metadata: null }, 'product');
+    provision.mockRejectedValue(new Error('request timed out after upstream accepted'));
+    await processDue();
+    expect(fake.all(TASK)[0]?.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(fake.all(SERVICE)[0]?.spec.state).toBe('PROVISIONING');
+    await processDue();
+    expect(provision).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists an upstream identity before payment, and never reports unpaid orders as provisioned', async () => {
+    const { fake, provision } = seedReview();
+    fake.all(TASK)[0]!.spec.state = 'PENDING';
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'cloud_server', providerId: 'zjmf', metadata: null }, 'product');
+    provision.mockImplementation(async (input: import('@stackpanel/sdk').ProvisionContext) => {
+      await input.checkpoint?.({ status: 'PENDING', providerServiceId: 'remote', runtime: { invoiceId: 'bill', paid: false, paymentState: 'ORDER_CREATED' } });
+      expect(fake.all(SERVICE)[0]?.spec).toMatchObject({ providerServiceId: 'remote', state: 'AWAITING_UPSTREAM_PAYMENT' });
+      return { status: 'PENDING', providerServiceId: 'remote', runtime: { invoiceId: 'bill', paid: false, paymentState: 'PAYMENT_REQUIRED' } };
+    });
+    await processDue();
+    expect(fake.all(TASK)[0]?.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(fake.all(SERVICE)[0]?.spec.state).toBe('AWAITING_UPSTREAM_PAYMENT');
+    const queue = await listAdminDeliveryTasks({ query: { status: 'attention' } } as never) as { tasks: Array<{ canResumePayment: boolean }> };
+    expect(queue.tasks[0]?.canResumePayment).toBe(true);
+    const request = { params: { id: 'review' }, body: { confirmed: true } } as never;
+    await resumeAdminDeliveryPayment(request);
+    expect(fake.all(TASK)[0]?.spec).toMatchObject({ state: 'PENDING', payload: { resumePayment: true } });
+    await expect(resumeAdminDeliveryPayment(request)).rejects.toThrow();
+    expect(provision).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the recorded upstream identity if a later step throws, blocking a second order', async () => {
+    const { fake, provision } = seedReview();
+    fake.all(TASK)[0]!.spec.state = 'PENDING';
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'cloud_server', providerId: 'zjmf', metadata: null }, 'product');
+    provision.mockImplementation(async (input: import('@stackpanel/sdk').ProvisionContext) => {
+      await input.checkpoint?.({ status: 'PENDING', providerServiceId: 'remote', runtime: { invoiceId: 'bill', paid: false, paymentState: 'PAYMENT_IN_FLIGHT' } });
+      throw new Error('response lost');
+    });
+    await processDue();
+    await processDue();
+    expect(fake.all(SERVICE)[0]?.spec.providerServiceId).toBe('remote');
+    expect(fake.all(TASK)[0]?.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(provision).toHaveBeenCalledTimes(1);
+    await expect(resumeAdminDeliveryPayment({ params: { id: 'review' }, body: { confirmed: true } } as never)).rejects.toThrow(/禁止重试/);
+  });
+
+  it('blocks changed upstream mappings before calling the provider', async () => {
+    const { fake, provision } = seedReview();
+    fake.all(TASK)[0]!.spec.state = 'PENDING';
+    fake.all(TASK)[0]!.spec.payload = { providerProductId: 'original', metadata: { upstream: { sourceRef: 'original-source' } } };
+    fake.seed(PRODUCT, { name: 'Cloud', price: 100, currency: 'CNY', fulfillmentType: 'cloud_server', providerId: 'zjmf', providerProductId: 'replacement', metadata: { upstream: { sourceRef: 'replacement-source' } } }, 'product');
+    await processDue();
+    expect(provision).not.toHaveBeenCalled();
+    expect(fake.all(TASK)[0]?.spec.state).toBe('FAILED');
+  });
+
+  it('uses the paid line price instead of current catalog price for new service records', async () => {
+    const { fake, provision } = seedReview();
+    fake.seed(ORDER, { userId: 'user', state: 'PAID', items: { items: [{ productId: 'discounted', quantity: 1, price: 137 }] } }, 'discount-order');
+    fake.seed(PRODUCT, { name: 'Discounted', price: 5500, currency: 'CNY', fulfillmentType: 'cloud_server', providerId: 'zjmf', metadata: null }, 'discounted');
+    await enqueueOrderFulfillment('discount-order');
+    expect(provision).toHaveBeenCalledTimes(1);
+    const service = fake.all(SERVICE).find(row => row.spec.orderId === 'discount-order');
+    expect(service?.spec.amount).toBe(137);
+  });
+
+  it('links a verified imported instance atomically while keeping the original service URL', async () => {
+    const { fake, provision } = seedReview();
+    fake.seed(SERVICE, { ...fake.all(SERVICE)[0]!.spec, orderId: null, providerServiceId: 'remote', state: 'ACTIVE', amount: 5500, runtime: { ip: '203.0.113.1' } }, 'imported');
+    await reconcileAdminDeliveryTask({ params: { id: 'review' }, body: { outcome: 'existing', serviceId: 'imported', confirmed: true, note: 'Verified upstream instance identity' } } as never);
+    expect(fake.all(SERVICE)).toHaveLength(1);
+    expect(fake.all(SERVICE)[0]?.name).toBe('instance-review');
+    expect(fake.all(SERVICE)[0]?.spec).toMatchObject({ providerServiceId: 'remote', state: 'ACTIVE', amount: 137, orderId: 'paid' });
+    expect(fake.all(TASK)[0]?.spec).toMatchObject({ state: 'SUCCEEDED', serviceId: 'instance-review' });
+    await processDue();
+    expect(provision).not.toHaveBeenCalled();
+  });
+
+  it('rejects refunded orders, unrelated owners, products, and upstream sources', async () => {
+    for (const patch of [{ userId: 'other' }, { productId: 'other' }, { providerId: 'other' }, { orderId: 'other-order' }, { runtime: { upstreamId: 'other-source' } }]) {
+      const { fake, provision } = seedReview();
+      fake.all(TASK)[0]!.spec.payload = { metadata: { upstream: { sourceRef: 'source' } } };
+      fake.seed(SERVICE, { ...fake.all(SERVICE)[0]!.spec, orderId: null, providerServiceId: 'remote', state: 'ACTIVE', runtime: { upstreamId: 'source' }, ...patch }, 'imported');
+      await expect(reconcileAdminDeliveryTask({ params: { id: 'review' }, body: { outcome: 'existing', serviceId: 'imported', confirmed: true, note: 'Verification evidence' } } as never)).rejects.toThrow();
+      expect(provision).not.toHaveBeenCalled();
+      expect(fake.all(TASK)[0]?.spec.state).toBe('REQUIRES_RECONCILIATION');
+    }
+    const { fake } = seedReview();
+    fake.all(ORDER)[0]!.spec.state = 'REFUNDED';
+    await expect(reconcileAdminDeliveryTask({ params: { id: 'review' }, body: { outcome: 'not_created', confirmed: true, note: 'Verification evidence' } } as never)).rejects.toThrow();
+  });
+  it('deduplicates concurrent paid events and reconciles asynchronous provisioning without reordering', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      { userId: 'user', state: 'PAID', items: { items: [{ productId: 'product', quantity: 1 }] } },
+      'paid',
+    );
+    fake.seed(
+      PRODUCT,
+      {
+        name: 'Cloud',
+        price: 100,
+        currency: 'CNY',
+        fulfillmentType: 'cloud_server',
+        providerId: 'zjmf',
+        metadata: null,
+      },
+      'product',
+    );
+    const { provider, provision } = makeProvider();
+    provision.mockResolvedValue({ status: 'PENDING', providerServiceId: 'upstream-id' } as never);
+    provider.getDetail = async () => ({ status: 'ACTIVE', fields: [] });
+    bindContext(makeCtx(fake, provider));
+    await Promise.all([enqueueOrderFulfillment('paid'), enqueueOrderFulfillment('paid')]);
+    expect(fake.all(TASK)).toHaveLength(1);
+    expect(fake.all(SERVICE)).toHaveLength(1);
+    expect(fake.all(SERVICE)[0]?.spec.state).toBe('PROVISIONING');
+    expect(provision).toHaveBeenCalledTimes(1);
+    await reconcileProvisioning();
+    expect(fake.all(SERVICE)[0]?.spec.state).toBe('ACTIVE');
+    expect(provision).toHaveBeenCalledTimes(1);
+  });
+  it('holds manual orders, rejects duplicate approval, and provisions only after approval', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      { userId: 'user', state: 'PAID', items: { items: [{ productId: 'product', quantity: 1 }] } },
+      'paid',
+    );
+    fake.seed(
+      PRODUCT,
+      {
+        name: 'Cloud',
+        price: 100,
+        currency: 'CNY',
+        fulfillmentType: 'cloud_server',
+        providerId: 'zjmf',
+        metadata: null,
+      },
+      'product',
+    );
+    const { provider, provision } = makeProvider();
+    const ctx = makeCtx(fake, provider);
+    ctx.secrets.get = async () => JSON.stringify({ provisioningMode: 'manual' });
+    bindContext(ctx);
+    await enqueueOrderFulfillment('paid');
+    await processDue();
+    expect(provision).not.toHaveBeenCalled();
+    expect(fake.all(SERVICE)[0]?.spec.state).toBe('AWAITING_APPROVAL');
+    const task = fake.all(TASK)[0]!;
+    const req = { params: { id: task.name }, user: { id: 'admin' } } as never;
+    const results = await Promise.allSettled([
+      approveAdminDeliveryTask(req),
+      approveAdminDeliveryTask(req),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    provision.mockImplementation(async () => {
+      expect(fake.all(SERVICE)[0]?.spec.state).toBe('PROVISIONING');
+      return { status: 'ACTIVE', providerServiceId: 'approved-instance' };
+    });
+    await processDue();
+    expect(provision).toHaveBeenCalledTimes(1);
+    expect(fake.all(SERVICE)).toHaveLength(1);
+    expect(fake.all(SERVICE)[0]?.spec.state).toBe('ACTIVE');
+  });
+  it('does not enqueue unpaid or refunded orders', async () => {
+    const fake = createFakeExtensions();
+    const { provider, provision } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+    for (const state of ['PENDING', 'REFUNDED', 'CANCELLED']) {
+      fake.seed(
+        ORDER,
+        { userId: 'user', state, items: { items: [{ productId: 'product', quantity: 1 }] } },
+        state,
+      );
+      await enqueueOrderFulfillment(state);
+    }
+    expect(fake.all(TASK)).toHaveLength(0);
+    expect(provision).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     resetContext();
   });
@@ -336,7 +647,7 @@ describe('store fulfillment dispatcher', () => {
     });
   });
 
-  it('retries with backoff then fails after attempts exhaust', async () => {
+  it('does not replay an ambiguous upstream timeout', async () => {
     const fake = createFakeExtensions();
     fake.seed(
       ORDER,
@@ -377,20 +688,15 @@ describe('store fulfillment dispatcher', () => {
 
     // 第一次失败后进入退避重试：仍是 PENDING，并记录了错误与下次执行时间
     const task = fake.all(TASK)[0]!;
-    expect(task.spec.state).toBe('PENDING');
+    expect(task.spec.state).toBe('REQUIRES_RECONCILIATION');
     expect(task.spec.error).toBe('上游超时');
-    expect(task.spec.nextAttemptAtMs).toBeGreaterThan(0);
+    expect(task.spec.nextAttemptAtMs).toBe(0);
 
     // 耗尽重试次数（attempts 达到 maxAttempts）后置为 FAILED
-    const taskModel = { kind: TASK } as CustomModelDefinition;
-    await fake.client.update(taskModel, task.name, {
-      ...task.spec,
-      attempts: task.spec.maxAttempts as number,
-      nextAttemptAtMs: 0,
-    });
     await processDue();
-    expect(fake.all(TASK)[0]?.spec.state).toBe('FAILED');
+    expect(fake.all(TASK)[0]?.spec.state).toBe('REQUIRES_RECONCILIATION');
     expect(fake.all(TASK)[0]?.spec.error).toBe('上游超时');
+    expect(provision).toHaveBeenCalledTimes(1);
   });
 
   it('F-1: reclaims a stale task without writing the unindexed error field (real-kernel parity)', async () => {
@@ -422,8 +728,8 @@ describe('store fulfillment dispatcher', () => {
     await processDue();
 
     const task = fake.all(TASK).find((row) => row.name === 'task-stale')!;
-    expect(task.spec.state).toBe('FAILED');
-    expect(task.spec.error).toBe('运行超时，已回收');
+    expect(task.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(task.spec.error).toBe('开通请求超时，需核对上游结果');
   });
 
   it('F-2: does not clobber a concurrently-modified task (optimistic lock)', async () => {
@@ -481,6 +787,78 @@ describe('store fulfillment dispatcher', () => {
     expect(result.services).toHaveLength(1);
   });
 
+  it('lists persisted selected specifications without substituting product defaults or leaking metadata', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      PRODUCT,
+      {
+        name: 'Cloud',
+        metadata: {
+          secret: 'never-public',
+          checkoutConfig: {
+            cycles: [{ id: 'monthly', label: '月', price: 100 }],
+            options: [
+              {
+                id: 'cpu',
+                label: 'CPU',
+                type: 'select',
+                defaultChoice: 'small',
+                choices: [
+                  { id: 'small', label: '2核' },
+                  { id: 'large', label: '4核' },
+                ],
+              },
+              { id: 'ip', label: 'IP数量', type: 'quantity', unit: '个' },
+              {
+                id: 'os',
+                label: '操作系统',
+                type: 'select',
+                choices: [{ id: 'debian', label: 'Debian13' }],
+              },
+            ],
+          },
+        },
+      },
+      'cloud',
+    );
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productId: 'cloud',
+        productName: 'Cloud',
+        state: 'PROVISIONING',
+        runtime: { config: { selections: { cpu: 'large', ip: 2, os: 'removed' } } },
+      },
+      'svc-selected',
+    );
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productId: 'cloud',
+        productName: 'Cloud',
+        state: 'PROVISIONING',
+        runtime: null,
+      },
+      'svc-empty',
+    );
+    bindContext(makeCtx(fake, makeProvider().provider));
+    const result = (await listMyServices({ user: { id: 'user-1', role: 'USER' } } as never)) as {
+      services: Array<{ id: string; configuration: Array<{ label: string; value: string }> }>;
+    };
+    expect(result.services.find((service) => service.id === 'svc-selected')?.configuration).toEqual(
+      [
+        { label: 'CPU', value: '4核' },
+        { label: 'IP数量', value: '2个' },
+      ],
+    );
+    expect(result.services.find((service) => service.id === 'svc-empty')?.configuration).toEqual(
+      [],
+    );
+    expect(JSON.stringify(result)).not.toContain('never-public');
+  });
+
   it('binds an upstream service once and rejects a second bind globally', async () => {
     const fake = createFakeExtensions();
     const { provider } = makeProvider();
@@ -536,6 +914,48 @@ describe('store fulfillment dispatcher', () => {
     const bound = await storeOperations.listBoundServices('zjmf');
     expect(bound).toHaveLength(1);
     expect(bound[0]!.providerServiceId).toBe('svc-x');
+  });
+
+  it('imports account-scoped instances with exact product mapping without provisioning', async () => {
+    const fake = createFakeExtensions();
+    const { provider, provision } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+    fake.seed(
+      PRODUCT,
+      {
+        name: 'Mapped',
+        price: 100,
+        currency: 'CNY',
+        fulfillmentType: 'cloud_server',
+        providerId: 'zjmf',
+        providerProductId: '7',
+        metadata: { upstream: { sourceRef: 'account-a' } },
+      },
+      'local-product',
+    );
+    const input = {
+      userId: 'user-1',
+      productId: 'remote-placeholder',
+      productName: 'Existing',
+      fulfillmentType: 'upstream_service',
+      providerId: 'zjmf',
+      providerServiceId: '42',
+      status: 'ACTIVE',
+      amount: 100,
+      currency: 'CNY',
+      runtime: { upstreamId: 'account-a', upstreamProductId: '7' },
+    };
+    const imported = await storeOperations.bindService(input);
+    expect(imported.productId).toBe('local-product');
+    expect(imported.fulfillmentType).toBe('cloud_server');
+    await storeOperations.bindService({
+      ...input,
+      userId: 'user-2',
+      runtime: { upstreamId: 'account-b', upstreamProductId: '7' },
+    });
+    expect(fake.all(SERVICE)).toHaveLength(2);
+    expect(provision).not.toHaveBeenCalled();
+    expect(fake.all(TASK)).toHaveLength(0);
   });
 
   it('defaults a missing provider statusLabel to null in the service detail', async () => {

@@ -123,22 +123,20 @@ describe.skipIf(!dbAvailable)('server-side sessions (real DB)', () => {
     expect(after.statusCode).toBe(401);
   });
 
-  it('migrates a legacy JWT into a server-side session', async () => {
+  it('rejects a legacy JWT after the opaque-session migration', async () => {
     const legacy = await signSession({ sub: userId, jti: `${Date.now()}` });
     const res = await app.inject({
       method: 'GET',
       url: '/auth/me',
       headers: { authorization: `Bearer ${legacy}` },
     });
-    expect(res.statusCode).toBe(200);
-    expect((res.json() as { user: { email: string } }).user.email).toBe(email);
+    expect(res.statusCode).toBe(401);
 
-    // The same legacy token is adopted once and keeps working (and is revocable).
     const again = await app.inject({
       method: 'GET',
       url: '/auth/me',
       headers: { authorization: `Bearer ${legacy}` },
     });
-    expect(again.statusCode).toBe(200);
+    expect(again.statusCode).toBe(401);
   });
 });

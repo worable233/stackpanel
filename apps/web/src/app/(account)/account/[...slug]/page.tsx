@@ -15,7 +15,6 @@ export default async function PluginAccountRoute({
 }) {
   const { slug } = await params;
   const query = await searchParams;
-  const error = typeof query['error'] === 'string' ? query['error'] : undefined;
   const api = await getAuthedApiClient();
   let currentUser;
   try {
@@ -29,7 +28,7 @@ export default async function PluginAccountRoute({
     role: currentUser.user.role,
   };
   const path = `/${slug.join('/')}`;
-  const result = await resolvePluginAccountRoute(path, user);
+  const result = await resolvePluginAccountRoute(path, user, flattenSearchParams(query));
   return (
     <AccountPluginPage
       pluginId={result.status === 'ok' ? result.pluginId : 'unknown'}
@@ -37,7 +36,6 @@ export default async function PluginAccountRoute({
       user={user}
       result={result}
       searchParams={flattenSearchParams(query)}
-      actionError={readActionError(error)}
     />
   );
 }
@@ -54,6 +52,3 @@ function flattenSearchParams(
   return result;
 }
 
-function readActionError(value: string | undefined): string | undefined {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256 ? value : undefined;
-}

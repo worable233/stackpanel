@@ -47,6 +47,39 @@ async function listPackages(kind: 'plugin' | 'theme') {
   return (await market().list(kind)).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/** 市场安装的生命周期通知（与内核上传路径同构：成功/失败都给操作者一条）。 */
+async function notifyLifecycle(
+  req: HttpRequest,
+  kind: 'plugin' | 'theme',
+  targetId: string,
+  outcome: { ok: true; version: string; upgraded?: boolean } | { ok: false; error: string },
+): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) return;
+  const noun = kind === 'plugin' ? '插件' : '主题';
+  const label = `「${targetId}」`;
+  try {
+    await requireContext().notifications.create({
+      userId,
+      type: `system.${kind}.${outcome.ok ? (outcome.upgraded ? 'update' : 'install') : 'install'}`,
+      title: outcome.ok
+        ? `${noun}${label}${outcome.upgraded ? '升级完成' : '安装完成'}`
+        : `${noun}${label}安装失败`,
+      body: outcome.ok
+        ? `${label}${outcome.upgraded ? '已升级' : '已安装'} v${outcome.version}`
+        : outcome.error,
+      link: kind === 'plugin' ? '/admin/plugins' : '/admin/themes',
+      data: { kind: 'lifecycle', target: kind, action: 'install', id: targetId, ok: outcome.ok },
+      status: outcome.ok ? 'success' : 'error',
+    });
+  } catch (error) {
+    // 通知是附带的：失败只告警，不影响安装结果。
+    requireContext().logger.warn(
+      `market: lifecycle notification failed for ${kind} ${targetId}: ${String(error)}`,
+    );
+  }
+}
+
 /** 安装并写审计；失败转成可读的错误码（不吞掉原因）。 */
 async function install(req: HttpRequest, kind: 'plugin' | 'theme', id: string) {
   const context = requireContext();
@@ -64,14 +97,18 @@ async function install(req: HttpRequest, kind: 'plugin' | 'theme', id: string) {
         ...(result.keyId ? { keyId: result.keyId } : {}),
       },
     });
+    await notifyLifecycle(req, kind, id, {
+      ok: true,
+      version: result.version,
+      upgraded: result.upgraded,
+    });
     return result;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // PluginError 是预期内的拒绝（未配置源、验签失败等），同样要给操作者回执。
+    await notifyLifecycle(req, kind, id, { ok: false, error: message });
     if (error instanceof PluginError) throw error;
-    throw new PluginError(
-      'market.installFailed',
-      409,
-      error instanceof Error ? error.message : String(error),
-    );
+    throw new PluginError('market.installFailed', 409, message);
   }
 }
 

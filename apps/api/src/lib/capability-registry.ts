@@ -187,6 +187,10 @@ export function grantableScopesFor(
  * honest: only operations actually served under `/api/v1` belong here.
  */
 export const CAPABILITIES: readonly Capability[] = [
+  { id: 'theme.configuration.read', method: 'GET', path: '/api/v1/themes/:id/configuration', scope: 'platform.admin', summary: 'Read theme configuration, schema, defaults, version and last 20 snapshots', mutating: false },
+  { id: 'theme.configuration.validate', method: 'POST', path: '/api/v1/themes/:id/configuration/validate', scope: 'platform.admin', summary: 'Validate a partial theme settings JSON without saving; body: {settings}', mutating: false },
+  { id: 'theme.configuration.write', method: 'PATCH', path: '/api/v1/themes/:id/configuration', scope: 'platform.admin', summary: 'Update theme settings; body: {settings, expectedVersion}. Read configuration first. To roll back submit snapshot settings with current expectedVersion.', mutating: true, destructive: false },
+
   {
     id: 'platform.info.read',
     method: 'GET',
@@ -287,16 +291,16 @@ export const CAPABILITIES: readonly Capability[] = [
     id: 'user.wallet.adjust',
     method: 'POST',
     path: '/api/v1/users/:id/wallet',
-    scope: 'user:write',
-    summary: 'Adjust a user wallet balance',
+    scope: 'platform.admin',
+    summary: 'Adjust a user wallet balance (requires platform.admin)',
     mutating: true,
   },
   {
     id: 'user.service.gift',
     method: 'POST',
     path: '/api/v1/users/:id/services',
-    scope: 'user:write',
-    summary: 'Gift a service instance to a user',
+    scope: 'platform.admin',
+    summary: 'Gift a service instance to a user (requires platform.admin)',
     mutating: true,
   },
   // Kernel Agent (PLAN-agent-in-kernel P0). Every entry is `scope: null`
@@ -404,11 +408,19 @@ export function capabilitiesFor(
   pluginCapabilities: readonly Capability[] = [],
   refinedScopes: readonly string[] = [],
   governance: ScopeGovernance = KERNEL_RESOURCE_PERMISSIONS,
+  /**
+   * API tokens must explicitly carry a refined `resource:read|write` scope.
+   * Sessions are evaluated against their full coarse permission set instead.
+   */
+  requireExactRefinedScopes = false,
 ): Capability[] {
   const owned = permissions instanceof Set ? permissions : new Set(permissions);
   return [...CAPABILITIES, ...pluginCapabilities].filter((cap) => {
-    if (scopeSatisfied(cap.scope, owned, governance)) return true;
     if (cap.scope === null) return true;
+    if (requireExactRefinedScopes && scopeResource(cap.scope)) {
+      return refinedScopes.includes(cap.scope);
+    }
+    if (scopeSatisfied(cap.scope, owned, governance)) return true;
     return refinedScopes.includes(cap.scope);
   });
 }

@@ -63,11 +63,15 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
   }
 
   isDeliveryConfigured(): boolean {
-    return this.options.getSenders().length > 0;
+    return this.options.getSenders().some((sender) => sender.isConfigured?.() ?? true);
   }
 
+  /**
+   * @deprecated Registration policy belongs to the login plugin's stored
+   * configuration. Kept as a compatibility method and never reads env policy.
+   */
   requiresEmailVerification(): boolean {
-    return env.AUTH_EMAIL_VERIFICATION === 'required';
+    return false;
   }
 
   senderIds(): string[] {

@@ -31,6 +31,8 @@ export type ServiceStatus =
 
 /** 履约触发时提供给提供方的上下文（含商品快照与提供方密钥访问）。 */
 export interface ProvisionContext {
+  /** Stable per-unit fulfillment identity. Omitted by legacy callers. */
+  fulfillmentId?: string;
   orderId: string;
   userId: string;
   productId: string;
@@ -55,6 +57,12 @@ export interface ProvisionContext {
   expiresAt?: string | null;
   /** 提供方插件自身的加密密钥存储。 */
   secrets: PluginSecrets;
+  /** Persist the upstream identity before any payment or subsequent remote call. */
+  checkpoint?: (result: ProvisionResult) => Promise<void>;
+  /** Explicit admin recovery of a recorded unpaid invoice; never create another order. */
+  resumePayment?: boolean;
+  /** Recovery generation, created only after server-side cancellation verification. */
+  recoveryGeneration?: number;
 }
 
 /** 提供方履约结果。凭证由提供方插件自行加密存入其 secrets，并返回 credentialsRef 引用。 */
@@ -152,6 +160,9 @@ export interface ServiceActionResult {
 
 /** 提供方返回的服务详情。 */
 export interface ServiceDetail {
+  /** Authoritative upstream dates; missing dates must not be invented locally. */
+  provisionedAt?: string | null;
+  expiresAt?: string | null;
   title?: string;
   status?: ServiceStatus;
   statusLabel?: string;
@@ -231,6 +242,13 @@ export interface FulfillmentProvider {
 
   /** 把「已付款商品」转化为交付物（云服务器开通/发卡配卡/token 生成等）。 */
   provision(ctx: ProvisionContext): Promise<ProvisionResult>;
+
+  /** Read-only verification of every original request. No cancellation/payment permitted. */
+  verifyCancelledProvision?(ctx: ProvisionContext): Promise<{
+    checkedAt: string;
+    sourceId: string;
+    requests: Array<{ reference: string; invoiceId: string; serviceIds: string[] }>;
+  }>;
 
   /** 按顾客配置计算结算价格（可配置商品）。未实现则回退到商品静态价格。 */
   calculateCheckoutPrice?(ctx: CheckoutPriceContext): Promise<CheckoutPriceResult>;
@@ -495,6 +513,8 @@ export interface CheckoutOptionChoice {
 
 /** 顾客在结账时提交的选择：cycle=周期 id；selections=配置项 id → 选项 id（select）或数量（quantity）。 */
 export interface CheckoutSelection {
+  /** Optional customer-facing instance name, not a DNS hostname or login credential. */
+  instanceName?: string;
   cycle?: string;
   selections?: Record<string, string | number>;
   /** 人类可读的配置摘要（如「CPU:4核 · 内存:8G」），用于订单明细展示。 */

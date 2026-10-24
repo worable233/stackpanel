@@ -16,16 +16,19 @@ import type {
   CommerceOperations,
   CommerceOrder,
   CommerceService,
+  NotificationsService,
   UpstreamServiceItem,
   UpstreamServiceSource,
   WalletService,
 } from '@stackpanel/sdk';
 import { generatePassword } from './generate.ts';
 import { hashPassword } from './password.ts';
+import { formatMinorCurrency } from '@stackpanel/sdk';
 import { ADMIN_GROUP_ID, isLastAdmin, toPublicUser } from './user.ts';
 import type { AuditInput } from '../plugins/audit.ts';
 import { writeAudit } from '../plugins/audit.ts';
 import { activeMembershipWhere } from '../auth/membership.ts';
+import { notifyUserBestEffort, upsertUserBestEffort } from '../notifications/notify.ts';
 
 /** Request-derived audit fields, forwarded to every write. */
 export type UserAdminAudit = Pick<AuditInput, 'actorId' | 'ip' | 'userAgent'>;
@@ -65,6 +68,12 @@ export interface UserAdminDeps {
   commerce?: CommerceOperations | null | undefined;
   /** Registered upstream service sources (upstream plugins); empty when none. */
   upstreamServiceSources?: UpstreamServiceSource[] | undefined;
+  /**
+   * 站内通知出口（best-effort）。管理员代用户执行的高影响动作（重置密码、停用
+   * 账号、调整余额、赠送/变更服务）必须给当事人留回执，否则用户无从知晓。
+   */
+  notifications?: NotificationsService | undefined;
+  logger?: { warn: (message: string) => void } | undefined;
 }
 
 export interface ListUsersInput {
@@ -154,6 +163,29 @@ export class UserAdminService {
     return commerce;
   }
 
+  /** 站内通知出口；未注入时（精简运行时/单测）静默跳过。 */
+  private async notify(input: Parameters<typeof notifyUserBestEffort>[1]): Promise<void> {
+    if (!this.deps.notifications) return;
+    await notifyUserBestEffort(
+      {
+        notifications: this.deps.notifications,
+        ...(this.deps.logger ? { logger: this.deps.logger } : {}),
+      },
+      input,
+    );
+  }
+
+  private async notifyUpsert(input: Parameters<typeof upsertUserBestEffort>[1]): Promise<void> {
+    if (!this.deps.notifications) return;
+    await upsertUserBestEffort(
+      {
+        notifications: this.deps.notifications,
+        ...(this.deps.logger ? { logger: this.deps.logger } : {}),
+      },
+      input,
+    );
+  }
+
   /** Among `groupIds`, the ids of groups that confer platform administrator. */
   private async adminGroupIds(groupIds: readonly string[]): Promise<string[]> {
     const ids = [...new Set(groupIds)];
@@ -205,6 +237,17 @@ export class UserAdminService {
     }
     if (targetUserId && (await this.isPlatformAdminUser(targetUserId))) {
       throw new PluginError('user.admin_required', 403, '仅平台管理员可操作管理员账号');
+    }
+  }
+
+  /**
+   * Money and service fulfilment are platform-owned actions, not ordinary user
+   * administration. `platform.manage.users` may administer accounts, but must
+   * never be sufficient to create value or grant paid services.
+   */
+  private requirePlatformAdmin(actor: UserAdminActor): void {
+    if (!actor.permissions.has(PLATFORM_ADMIN)) {
+      throw new PluginError('user.admin_required', 403, '仅平台管理员可执行此操作');
     }
   }
 
@@ -446,6 +489,31 @@ export class UserAdminService {
       meta: { ...(groupIds ? { groupIds } : {}), ...(status ? { status } : {}) },
       ...audit,
     });
+    // 停用会立即踢掉全部会话：必须给当事人一条可追溯的回执，否则「突然被登出」
+    // 无从解释。恢复启用同样通知（让用户知道可以重新登录）。
+    if (status === 'DISABLED') {
+      await this.notifyUpsert({
+        userId: id,
+        dedupeKey: `security:account:${id}:disabled`,
+        type: 'security.account.disabled',
+        title: '账号已被停用',
+        body: '你的账号已被管理员停用，当前会话已全部失效。如有疑问请联系站点管理员。',
+        link: '/account',
+        data: { status },
+        status: 'error',
+      });
+    } else if (status === 'ACTIVE') {
+      await this.notifyUpsert({
+        userId: id,
+        dedupeKey: `security:account:${id}:enabled`,
+        type: 'security.account.enabled',
+        title: '账号已恢复',
+        body: '你的账号已恢复使用，可以重新登录。',
+        link: '/account',
+        data: { status },
+        status: 'success',
+      });
+    }
     return {
       user: {
         ...toPublicUser(user),
@@ -473,21 +541,51 @@ export class UserAdminService {
       resourceId: id,
       ...audit,
     });
+    // 重置密码会撤销全部会话：用户必须知道「不是自己被踢」，并且知道要找管理员。
+    await this.notifyUpsert({
+      userId: id,
+      dedupeKey: `security:password:${id}:reset`,
+      type: 'security.password.reset',
+      title: '密码已被重置',
+      body: '你的登录密码已被管理员重置，所有已登录会话已失效。请使用新密码重新登录，如有疑问请联系站点管理员。',
+      link: '/account',
+      data: { resetAt: new Date().toISOString() },
+      status: 'error',
+    });
     return {
       user: toPublicUser(user),
       ...(password ? {} : { generatedPassword }),
     };
   }
 
-  async adjustWallet(id: string, amount: number, note: string, actorId: string | undefined) {
+  async adjustWallet(
+    id: string,
+    amount: number,
+    note: string,
+    actor: UserAdminActor,
+  ) {
+    this.requirePlatformAdmin(actor);
     await this.deps.wallet.adjust({
       userId: id,
       amount,
       currency: 'CNY',
       note,
-      ...(actorId ? { actorId } : {}),
+      ...(actor.id ? { actorId: actor.id } : {}),
     });
     const account = await this.deps.wallet.getAccount(id);
+    // 余额被管理员改动对用户是「钱」的事实，必须留回执。dedupeKey 含时间戳，
+    // 因为同一用户可能被多次调整（每次都是独立的账务事实，不应互相覆盖）。
+    if (amount !== 0) {
+      await this.notify({
+        userId: id,
+        type: 'wallet.balance.adjusted',
+        title: amount > 0 ? '余额已增加' : '余额已扣减',
+        body: `管理员${amount > 0 ? '增加' : '扣减'}了你的钱包余额 ${formatMinorCurrency(Math.abs(amount), 'CNY', 'zh-CN')}${note ? `（备注：${note}）` : ''}。当前余额 ${formatMinorCurrency(account?.balance ?? 0, 'CNY', 'zh-CN')}。`,
+        link: '/account/balance',
+        data: { amount, currency: 'CNY', note, balance: account?.balance ?? 0 },
+        status: 'info',
+      });
+    }
     return { balance: account?.balance ?? 0, currency: account?.currency ?? 'CNY' };
   }
 
@@ -517,7 +615,13 @@ export class UserAdminService {
     return { services: services.map(toAdminService) };
   }
 
-  async giftService(id: string, input: GiftServiceInput, audit: UserAdminAudit) {
+  async giftService(
+    id: string,
+    input: GiftServiceInput,
+    audit: UserAdminAudit,
+    actor: UserAdminActor,
+  ) {
+    this.requirePlatformAdmin(actor);
     const { productId, quantity, expiresAt } = input;
     const commerce = this.requireCommerce();
     let created: CommerceService[];
@@ -552,6 +656,22 @@ export class UserAdminService {
       ...audit,
     });
     const services = await commerce.listServices(id);
+    // 赠送服务是「凭空多了一件商品」的事实，用户需要看到它出现在「我的服务」。
+    await this.notify({
+      userId: id,
+      type: 'service.granted',
+      title: '你收到一项新服务',
+      body: `管理员已为你开通「${created[0]?.productName ?? '服务'}」${quantity > 1 ? ` ×${quantity}` : ''}。`,
+      link: '/account/services',
+      data: {
+        productId,
+        productName: created[0]?.productName ?? null,
+        quantity,
+        serviceIds: created.map((row) => row.id),
+        ...(expiresAt ? { expiresAt } : {}),
+      },
+      status: 'success',
+    });
     return { services: services.map(toAdminService), created: created.map((row) => row.id) };
   }
 
@@ -560,7 +680,9 @@ export class UserAdminService {
     serviceId: string,
     input: UpdateServiceInput,
     audit: UserAdminAudit,
+    actor: UserAdminActor,
   ) {
+    this.requirePlatformAdmin(actor);
     const commerce = this.requireCommerce();
     const existing = await commerce.getService(id, serviceId);
     if (!existing) throw new PluginError('service.not_found', 404, '服务不存在');
@@ -582,10 +704,42 @@ export class UserAdminService {
       },
       ...audit,
     });
+    // 管理员手动改状态/到期时间都会改变用户的可用性，必须通知当事人。
+    // 状态与到期时间可能同时变，故用一条「服务已变更」通知概括，具体字段进 data。
+    const changed: string[] = [];
+    if (input.status !== undefined && input.status !== existing.status) {
+      changed.push(`状态改为 ${input.status}`);
+    }
+    if (input.expiresAt !== undefined) {
+      changed.push(input.expiresAt === null ? '到期时间已清除' : `到期时间改为 ${input.expiresAt}`);
+    }
+    if (changed.length > 0) {
+      await this.notifyUpsert({
+        userId: id,
+        dedupeKey: `store:service:${serviceId}:admin-update`,
+        type: 'service.updated',
+        title: '服务信息已更新',
+        body: `你的服务「${updated.productName}」${changed.join('，')}。`,
+        link: `/account/services/${serviceId}`,
+        data: {
+          serviceId,
+          productName: updated.productName,
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+        },
+        status: 'info',
+      });
+    }
     return { service: toAdminService(updated) };
   }
 
-  async deleteService(id: string, serviceId: string, audit: UserAdminAudit) {
+  async deleteService(
+    id: string,
+    serviceId: string,
+    audit: UserAdminAudit,
+    actor: UserAdminActor,
+  ) {
+    this.requirePlatformAdmin(actor);
     const commerce = this.requireCommerce();
     const existing = await commerce.getService(id, serviceId);
     if (!existing) throw new PluginError('service.not_found', 404, '服务不存在');
@@ -596,6 +750,15 @@ export class UserAdminService {
       resourceId: id,
       meta: { serviceId, productName: existing.productName },
       ...audit,
+    });
+    await this.notify({
+      userId: id,
+      type: 'service.removed',
+      title: '服务已被移除',
+      body: `管理员已移除你的服务「${existing.productName}」。如有疑问请联系站点管理员。`,
+      link: '/account/services',
+      data: { serviceId, productName: existing.productName },
+      status: 'error',
     });
   }
 
@@ -626,7 +789,7 @@ export class UserAdminService {
     for (const source of sources) {
       let items: UpstreamServiceItem[];
       try {
-        items = await source.list({ limit: 100 });
+        items = await source.list();
       } catch (error) {
         // Never disguise an upstream failure as an empty list: the admin needs
         // the actionable reason (credentials, network, disabled upstream).
@@ -649,10 +812,10 @@ export class UserAdminService {
       const bound = new Map(
         (boundByProvider.get(source.id) ?? [])
           .filter((service) => service.providerServiceId)
-          .map((service) => [service.providerServiceId as string, service]),
+          .map((service) => [JSON.stringify([(service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null, service.providerServiceId]), service]),
       );
       for (const item of items) {
-        services.push(this.toAdminUpstreamService(source.id, item, bound.get(item.id), id));
+        services.push(this.toAdminUpstreamService(source.id, item, bound.get(JSON.stringify([item.sourceRef ?? null, item.id])), id));
       }
     }
     return {
@@ -679,6 +842,8 @@ export class UserAdminService {
       amount: item.amount ?? null,
       currency: item.currency ?? null,
       sourceId,
+      sourceRef: item.sourceRef ?? null,
+      productId: item.productId ?? null,
       boundServiceId: mine && bound ? bound.id : null,
       boundUserId: bound && !mine ? bound.userId : null,
     };
@@ -693,14 +858,19 @@ export class UserAdminService {
    */
   async bindUpstreamService(
     id: string,
-    input: { sourceId: string; providerServiceId: string },
+    input: { sourceId: string; providerServiceId: string; sourceRef?: string | undefined },
     audit: UserAdminAudit,
+    actor: UserAdminActor,
   ) {
+    this.requirePlatformAdmin(actor);
     const source = this.upstreamSources().find((candidate) => candidate.id === input.sourceId);
+    if (!await this.deps.prisma.user.findUnique({ where: { id }, select: { id: true } })) throw new PluginError('user.not_found', 404, '用户不存在');
     if (!source) throw new PluginError('upstream.not_found', 404, '上游不存在或未启用');
     const commerce = this.requireCommerce();
-    const items = await source.list({ limit: 200 });
-    const item = items.find((candidate) => candidate.id === input.providerServiceId);
+    const items = await source.list();
+    const matches = items.filter((candidate) => candidate.id === input.providerServiceId && (!input.sourceRef || candidate.sourceRef === input.sourceRef));
+    if (matches.length > 1) throw new PluginError('upstream.ambiguous_service', 409, '多个上游账号存在相同实例编号，请指定上游账号');
+    const item = matches[0];
     if (!item) throw new PluginError('upstream.service_not_found', 404, '上游服务不存在');
 
     let created: CommerceService;
@@ -716,7 +886,7 @@ export class UserAdminService {
         amount: item.amount ?? 0,
         currency: item.currency ?? 'CNY',
         expiresAt: item.expiresAt ? new Date(item.expiresAt) : null,
-        runtime: { upstreamId: item.sourceRef ?? null, host: item.host ?? null },
+        runtime: { upstreamId: item.sourceRef ?? null, upstreamProductId: item.productId ?? null, host: item.host ?? null, origin: 'upstream-import' },
       });
     } catch (error) {
       if (isCommerceError(error) && error.failure === 'service_already_bound') {
@@ -741,7 +911,13 @@ export class UserAdminService {
   }
 
   /** 解除绑定：仅删除本地交付物，不影响上游已购服务本身。 */
-  async unbindUpstreamService(id: string, serviceId: string, audit: UserAdminAudit) {
+  async unbindUpstreamService(
+    id: string,
+    serviceId: string,
+    audit: UserAdminAudit,
+    actor: UserAdminActor,
+  ) {
+    this.requirePlatformAdmin(actor);
     const commerce = this.requireCommerce();
     const existing = await commerce.getService(id, serviceId);
     if (!existing) throw new PluginError('service.not_found', 404, '服务不存在');

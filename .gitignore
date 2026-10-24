@@ -78,6 +78,19 @@ output/
 .workbuddy/
 .agents/
 skills-lock.json
+
+# Official StackPanel development skills are repository artifacts. Other local
+# agent state remains ignored.
+!.agents/
+!.agents/skills/
+!.agents/skills/stackpanel-plugin-development/
+!.agents/skills/stackpanel-plugin-development/SKILL.md
+!.agents/skills/stackpanel-theme-development/
+!.agents/skills/stackpanel-theme-development/SKILL.md
+!.agents/skills/stackpanel-agent-surface/
+!.agents/skills/stackpanel-agent-surface/SKILL.md
+!.agents/skills/stackpanel-open-platform-integration/
+!.agents/skills/stackpanel-open-platform-integration/SKILL.md
 opencode.json
 
 # Scraped design-reference assets & throwaway spike scripts (local only)
@@ -103,3 +116,6 @@ apps/web/src/i18n/README.md
 /security/
 design/glass-cloud-object.svg
 design/glass-cloud-showcase.svg
+
+# Local MCP export snapshot (generated tooling output)
+mcp-export.json

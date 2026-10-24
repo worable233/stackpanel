@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { PluginActionDefinition } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
@@ -10,7 +11,12 @@ import { actionTargetsSchema } from './frontend-plugin-action-targets';
 import { safeInternalPath } from './safe-path';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
+import { DEFAULT_LOCALE } from '@/i18n/config';
 import { listPluginFrontendCandidates } from './slots';
+import { isNextRedirectError } from './next-navigation';
+import { expiredSessionLoginPath, isExpiredSessionError } from './session-recovery';
+import { actionSuccessUrl, formatActionSuccessMessage } from './frontend-plugin-action-feedback';
+import { readPackageMessages, packageMessage } from '@/i18n/package-messages';
 
 /** The only mutation bridge exposed to plugin frontend packages. */
 export async function executePluginAction(
@@ -30,14 +36,17 @@ export async function executePluginAction(
   if (action.permission) {
     try {
       if (!(await api.checkPermission(action.permission)).allowed) {
-        return actionFailure(returnPath, actionId, translate(locale, 'action.pluginForbidden'));
+        actionFailure(returnPath, actionId, translate(locale, 'action.pluginForbidden'));
       }
-    } catch {
+    } catch (error) {
+      if (isNextRedirectError(error)) throw error;
+      if (isExpiredSessionError(error)) return expiredSessionFailure(returnPath);
       return actionFailure(returnPath, actionId, translate(locale, 'action.pluginLoginRequired'));
     }
   }
 
   let destination: string | null = null;
+  let result: unknown;
   try {
     const targets = await api.get(
       `/plugins/${encodeURIComponent(pluginId)}/action-targets`,
@@ -55,7 +64,7 @@ export async function executePluginAction(
     }
     const body = coerceActionInput(action, formData);
     const path = resolveActionPath(action.path, body);
-    const result =
+    result =
       action.method === 'POST'
         ? await api.post(path, body, z.unknown())
         : action.method === 'PATCH'
@@ -63,6 +72,8 @@ export async function executePluginAction(
           : await api.del(path, z.unknown());
     destination = action.redirect ? redirectDestination(action, result) : null;
   } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    if (isExpiredSessionError(error)) return expiredSessionFailure(returnPath);
     console.error(`[action:${actionId}] failed`, error);
     const message = await apiErrorMessage(error, translate(locale, 'action.pluginActionFailed'));
     return actionFailure(returnPath, actionId, message);
@@ -71,6 +82,23 @@ export async function executePluginAction(
     .recordFrontendAudit('frontend.action.execute', pluginId, actionId, { method: action.method })
     .catch(() => undefined);
   revalidatePath(new URL(returnPath, 'http://stackpanel.local').pathname);
+  if (action.successFeedback) {
+    // `messageKey` resolves through the package's own catalog (ADR-0016 §5) so
+    // a localized package gets a localized receipt; the literal `message` stays
+    // the fallback for locales the package does not ship.
+    const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
+    const localized = packageMessage(messages, locale, action.successFeedback.messageKey, [
+      DEFAULT_LOCALE,
+    ]);
+    const message = localized ?? action.successFeedback.message;
+    if (message) {
+      actionSuccess(
+        returnPath,
+        actionId,
+        formatActionSuccessMessage({ ...action.successFeedback, message }, result),
+      );
+    }
+  }
   // Only redirect when the action declares an explicit destination. A bare
   // `redirect(returnPath)` on success would reject the server-action promise
   // (Next's reducer rejects on redirect), which plugin frontends that `await`
@@ -210,4 +238,16 @@ function actionFailure(returnPath: string, actionId: string, message: string): n
   url.searchParams.set('action', actionId);
   url.searchParams.set('error', message);
   redirect(`${url.pathname}${url.search}${url.hash}`);
+}
+
+/** Route an opted-in, manifest-declared success notice through the shared toaster. */
+function actionSuccess(returnPath: string, actionId: string, message: string): never {
+  redirect(actionSuccessUrl(returnPath, actionId, message));
+}
+
+/** Drop a stale opaque token before routing the operator through a fresh login. */
+async function expiredSessionFailure(returnPath: string): Promise<never> {
+  const store = await cookies();
+  store.delete(process.env.SESSION_COOKIE_NAME ?? 'sp_session');
+  redirect(expiredSessionLoginPath(returnPath));
 }

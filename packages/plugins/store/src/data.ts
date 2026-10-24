@@ -180,6 +180,30 @@ export const deliveryTaskModel = defineModel({
   ],
 });
 
+/** 用户退款申请。金额以订单结算币种的最小单位保存，状态迁移只能由服务端完成。 */
+export const refundRequestModel = defineModel({
+  kind: 'store/refund-request',
+  label: '退款申请',
+  schema: z.object({
+    orderId: z.string(),
+    userId: z.string(),
+    amount: z.number().int(),
+    currency: z.string(),
+    reason: z.string().nullable().default(null),
+    state: z.string().default('PENDING'),
+    reviewerId: z.string().nullable().default(null),
+    reviewReason: z.string().nullable().default(null),
+    failureReason: z.string().nullable().default(null),
+    destination: z.string().default('WALLET'),
+    idempotencyKey: z.string().nullable().default(null),
+  }),
+  indexes: [
+    { fields: ['orderId'], types: { orderId: 'string' } },
+    { fields: ['userId'], types: { userId: 'string' } },
+    { fields: ['state'], types: { state: 'string' } },
+  ],
+});
+
 /* ------------------------------ 载荷类型 ------------------------------ */
 
 export interface StoreProductData {

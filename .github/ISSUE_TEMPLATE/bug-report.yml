@@ -1,0 +1,58 @@
+name: Bug report
+description: Report behavior that differs from the documented or expected result.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve StackPanel. Please remove credentials, tokens, email addresses, and other private data from logs and screenshots.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: State the actual behavior and the behavior you expected.
+      placeholder: The order status remains pending after a successful payment callback, but I expected it to become paid.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure ...
+        2. Create ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Docker Compose default stack
+        - Docker Compose cluster stack
+        - Published image deployment
+        - Local development
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: StackPanel version or commit
+      placeholder: v0.2.0 or 1a2b3c4
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Relevant environment
+      description: Include OS, browser for UI bugs, and the plugins or theme involved. Do not include secrets.
+      placeholder: Ubuntu 24.04, Chrome 140, store and wallet plugins, default theme
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs, response, or screenshot
+      description: Include the smallest useful excerpt. Remove secrets and personal data before submitting.
+      render: text
