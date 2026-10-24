@@ -13,20 +13,33 @@ const Card = React.forwardRef<
     /** 是否启用 hover 效果 */
     interactive?: boolean;
   }
->(({ className, interactive = false, ...props }, ref) => (
+>(({ className, children, interactive = false, ...props }, ref) => (
   <div
     ref={ref}
     data-slot="card"
+    data-spotlight=""
     data-interactive={interactive || undefined}
     className={cn(
-      'flex flex-col gap-6 rounded-xl border border-border bg-card py-6 text-card-foreground shadow-sm',
+      'relative isolate flex flex-col gap-3 rounded-xl border border-border bg-card py-4 text-card-foreground shadow-sm [&>*:not([data-spotlight-layer])]:relative [&>*:not([data-spotlight-layer])]:z-[1]',
       interactive &&
         'cursor-pointer transition duration-300 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 motion-reduce:transition-none',
       !interactive && 'transition-shadow duration-200',
       className,
     )}
     {...props}
-  />
+  >
+    <div
+      aria-hidden="true"
+      data-spotlight-layer="border"
+      className="pointer-events-none absolute -inset-px z-10 rounded-[inherit] p-px opacity-0 [mask-image:linear-gradient(#000_0_0),linear-gradient(#000_0_0)] [mask-clip:content-box,border-box] [mask-composite:exclude]"
+    />
+    <div
+      aria-hidden="true"
+      data-spotlight-layer="surface"
+      className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] opacity-0"
+    />
+    {children}
+  </div>
 ));
 Card.displayName = 'Card';
 
@@ -35,7 +48,7 @@ const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
     <div
       ref={ref}
       className={cn(
-        'grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 [.border-b]:pb-6 has-[>[data-slot=card-action]]:grid-cols-[1fr_auto]',
+        'grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-4 [.border-b]:pb-4 has-[>[data-slot=card-action]]:grid-cols-[1fr_auto]',
         className,
       )}
       {...props}
@@ -73,7 +86,7 @@ const CardAction = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
 CardAction.displayName = 'CardAction';
 
 const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => <div ref={ref} className={cn('px-6', className)} {...props} />,
+  ({ className, ...props }, ref) => <div ref={ref} className={cn('px-4', className)} {...props} />,
 );
 CardContent.displayName = 'CardContent';
 
@@ -81,7 +94,7 @@ const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('flex items-center px-6 [.border-t]:pt-6', className)}
+      className={cn('flex items-center px-4 [.border-t]:pt-4', className)}
       {...props}
     />
   ),

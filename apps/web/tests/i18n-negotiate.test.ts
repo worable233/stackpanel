@@ -29,6 +29,19 @@ describe('negotiateLocale', () => {
     expect(negotiateLocale('en')).toBe('en-US');
   });
 
+  it('resolves Traditional Chinese variants to a Traditional catalog', () => {
+    expect(negotiateLocale('zh-TW')).toBe('zh-TW');
+    expect(negotiateLocale('zh-HK')).toBe('zh-HK');
+    expect(negotiateLocale('zh-Hant')).toBe('zh-TW');
+    expect(negotiateLocale('zh-Hant-HK')).toBe('zh-HK');
+    expect(negotiateLocale('zh-MO')).toBe('zh-HK');
+    expect(negotiateLocale('zh-Hans-CN')).toBe('zh-CN');
+  });
+
+  it('keeps bare zh on the Simplified default', () => {
+    expect(negotiateLocale('zh')).toBe('zh-CN');
+  });
+
   it('respects quality ordering when several shipped locales match', () => {
     expect(negotiateLocale('en;q=0.4, zh-CN;q=0.9')).toBe('zh-CN');
   });

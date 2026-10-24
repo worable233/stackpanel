@@ -17,6 +17,15 @@ function fixture(orders = 47) {
 }
 
 describe('admin user detail', () => {
+  it('keeps equal instance IDs from different upstream accounts distinct', async () => {
+    const { deps } = fixture();
+    deps.commerce!.listBoundServices = vi.fn().mockResolvedValue([{ id: 'local-a', userId: 'other', providerServiceId: '42', runtime: { upstreamId: 'a' } }]);
+    const service = new UserAdminService({ ...deps, upstreamServiceSources: [{ id: 'zjmf', name: 'ZJMF', list: vi.fn().mockResolvedValue([{ id: '42', name: 'A', sourceRef: 'a' }, { id: '42', name: 'B', sourceRef: 'b' }]) }] });
+    const result = await service.listUpstreamServices('user');
+    expect(result.services[0]?.boundUserId).toBe('other');
+    expect(result.services[1]?.boundUserId).toBeNull();
+    expect(result.services[1]?.sourceRef).toBe('b');
+  });
   it('returns every order through server-side pagination, including records older than twenty', async () => {
     const { service, listOrders } = fixture();
     const pages = await Promise.all([1, 2, 3].map((page) => service.getUserDetail('user', page, 20)));

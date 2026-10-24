@@ -166,7 +166,7 @@ export default async function AdminAuditPage({
 
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.audit.serviceUnavailable', { error })}
+          {t('admin.audit.serviceUnavailable')}
         </p>
       ) : null}
       {result ? (

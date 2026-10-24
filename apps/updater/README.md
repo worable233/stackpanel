@@ -111,3 +111,21 @@ docker build -f apps/updater/Dockerfile -t stackpanel-updater .
   的端到端证据属 §13-7，需真实 Docker/PG 与发布版镜像，**仍未执行**。
 - **集群执行与跨主机对账**（§9、ADR-0017 §5）：单机 Compose 的恢复入口动作已接线到
   真实适配器；多副本/跨主机的节点执行器与对账仍属后续。
+
+## 已知运行前提：Prisma schema engine 必须内置
+
+`prisma migrate deploy` 运行时需要 `schema-engine-<platform>`。`prisma generate` 只下载
+**query engine**，不含它。若镜像里缺这个二进制，每次迁移都会在**升级时**从
+`binaries.prisma.sh` 现场下载，而该下载**没有超时**：
+
+- 弱网/受限网络下，updater 的 `migrating` 一步会一直挂着（真机演练挂了 30+ 分钟），
+  实例停在维护态，日志里没有任何原因说明；
+- 离线/内网部署则永远无法完成迁移。
+
+因此 `Dockerfile` 的 `prod-deps` 阶段会调用 `docker/fetch-schema-engine.mjs` 把它下载
+进镜像，并通过 `PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine` 钉住路径。
+该脚本会校验产物存在且大小合理，下载失败即**构建失败**——不会产出一个「看起来能跑、
+升级时才炸」的镜像。
+
+自定义镜像若要复用本仓库的迁移逻辑，必须同样内置该二进制（或用
+`PRISMA_SCHEMA_ENGINE_BINARY` 指向自己提供的路径）。

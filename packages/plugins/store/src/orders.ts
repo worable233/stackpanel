@@ -35,7 +35,8 @@ import {
   parseCheckoutSelection,
   parsePagination,
 } from './utils';
-import { resolveCheckoutPrice } from './pricing';
+import { resolveCheckoutPrice, effectiveDiscount } from './pricing';
+import { applyDiscount, betterDiscount } from './discount';
 import { formatAmountPair, quoteSettlement, sameCurrency } from './currency';
 import { notifyUser } from './notifications';
 import { auditActor, recordStoreAudit, STORE_AUDIT_ACTIONS } from './audit';
@@ -54,16 +55,6 @@ interface ResolvedLine {
   quantity: number;
   config?: unknown;
   description?: string;
-}
-
-/** 用户所在权限组的最大代理折扣（%），无折扣返回 0。 */
-async function effectiveDiscount(userId: string): Promise<number> {
-  const groups = await context().auth.listUserGroups(userId);
-  let max = 0;
-  for (const group of groups) {
-    if (group.discount != null && group.discount > max) max = group.discount;
-  }
-  return max;
 }
 
 interface Reserved {
@@ -99,12 +90,11 @@ async function reserve(
     }
     orderCurrency = product.currency;
     const config = parseCheckoutSelection(line.config);
-    // 折扣计价：商品自身折扣与用户权限组折扣取更优（% off）。
-    const productDiscount = product.discount ?? 0;
-    const effective = Math.max(discount, productDiscount);
+    // 折扣计价：商品自身折扣与用户权限组折扣取更优（% off），与展示路径同源。
+    const effective = betterDiscount(product.discount, discount);
     let baseUnit = product.price;
     let configSummary: string | undefined;
-    if (config) {
+    {
       const { unit, result } = await resolveCheckoutPrice(
         { id: line.productId, ...product },
         line.quantity,
@@ -113,8 +103,7 @@ async function reserve(
       baseUnit = unit;
       configSummary = result?.summary;
     }
-    const discountedUnit =
-      effective > 0 ? Math.round((baseUnit * (100 - effective)) / 100) : baseUnit;
+    const discountedUnit = applyDiscount(baseUnit, effective);
     // Pricing policy seam: interceptors may rewrite the per-unit price before
     // the order total is computed.
     const unit = bus().waterfall<OrderPriceContext>(
@@ -278,7 +267,12 @@ async function placeOrder(
         itemCount: lines.length,
       },
     });
-    return { order, nextPath: '/account/orders' };
+    return {
+      order,
+      nextPath: cart?.cartItemIds
+        ? `/account/store/cart?orderId=${encodeURIComponent(order.id)}`
+        : '/account/orders',
+    };
   }
 
   const providerId = options.providerId;
@@ -300,12 +294,16 @@ async function placeOrder(
       providerId,
       paymentMethod,
       subject: '',
-      returnPath: '/account/orders',
+      returnPath: cart?.cartItemIds
+        ? `/account/store/cart?orderId=${encodeURIComponent(orderId)}`
+        : '/account/orders',
     });
     return { orderId, payment, subject: resolved.map((line) => line.name).join('、') };
   });
   const payment = await ctx.payments.initiate(reserved.payment.id, {
-    returnPath: '/account/orders',
+    returnPath: cart?.cartItemIds
+      ? `/account/store/cart?orderId=${encodeURIComponent(reserved.orderId)}`
+      : '/account/orders',
     subject: reserved.subject,
     ...(req.ip ? { clientIp: req.ip } : {}),
   });
@@ -427,6 +425,29 @@ export async function listMyOrders(req: HttpRequest): Promise<unknown> {
   };
 }
 
+/** Exact, owner-scoped order status for the cart payment return flow. */
+export async function getMyOrder(req: HttpRequest): Promise<unknown> {
+  const userId = req.user?.id;
+  if (!userId) throw new StoreError(401, '未登录');
+  const parsed = idSchema.safeParse(req.params);
+  if (!parsed.success) throw new StoreError(400, '订单 ID 无效');
+  const order = await findOrderForUser(parsed.data.id, userId);
+  if (!order) throw new StoreError(404, '订单不存在');
+  const payments = await context().payments.listByOrderIds([order.id]);
+  const payment = payments.find((item) => item.orderId === order.id);
+  return {
+    order: {
+      id: order.id,
+      status: order.status,
+      total: order.total,
+      currency: order.currency,
+      settlementTotal: order.settlementTotal,
+      settlementCurrency: order.settlementCurrency,
+      paymentUrl: order.status === 'PENDING' ? (payment?.paymentUrl ?? null) : null,
+    },
+  };
+}
+
 export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise<unknown> {
   const parsed = idSchema.safeParse(req.params);
   if (!parsed.success) throw new StoreError(400, '订单 ID 无效');
@@ -475,6 +496,17 @@ export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise
     resourceId: order.id,
     ...auditActor(req),
     meta: { cancelled },
+  });
+  // 取消成功才回执；幂等键含订单，重复点击不会累积。
+  await notifyUser({
+    userId,
+    type: 'order.cancelled',
+    title: '订单已取消',
+    body: `订单 ${order.id} 已取消，占用的库存已释放。`,
+    link: '/account/orders',
+    data: { orderId: order.id },
+    status: 'info',
+    dedupeKey: `store:order:${order.id}:cancelled`,
   });
   return { cancelled };
 }

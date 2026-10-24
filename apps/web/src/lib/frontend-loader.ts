@@ -102,7 +102,8 @@ const cache = new Map<string, string>();
 
 /** 合成一个 ESM shim（data: URL），逐名重导宿主命名空间。 */
 function shimUrl(ns: Record<string, unknown>, key: string): string {
-  const cached = cache.get(key);
+  const cacheKey = `${key}:${Object.keys(ns).sort().join(',')}`;
+  const cached = cache.get(cacheKey);
   if (cached) return cached;
   const names = Object.keys(ns).filter((name) => name !== 'default');
   const global = key.startsWith('absorbed:')
@@ -115,6 +116,6 @@ function shimUrl(ns: Record<string, unknown>, key: string): string {
   }
   src += 'export default ns.default;\n';
   const url = `data:text/javascript;base64,${Buffer.from(src, 'utf8').toString('base64')}`;
-  cache.set(key, url);
+  cache.set(cacheKey, url);
   return url;
 }

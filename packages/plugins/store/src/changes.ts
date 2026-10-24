@@ -16,6 +16,7 @@ import {
   providerServiceContext,
 } from './fulfillment';
 import { resolveCheckoutPrice } from './pricing';
+import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import { quoteSettlement } from './currency';
 import type { ProductRecord, ServiceInstanceRecord } from './repository';
 import {
@@ -31,6 +32,7 @@ import {
   type StoreOrderData,
   type StoreServiceInstanceData,
 } from './data';
+import { notifyUser } from './notifications';
 import {
   changeQuoteSchema,
   changeServiceSchema,
@@ -97,6 +99,7 @@ async function computeChangeDiff(
   service: ServiceInstanceRecord,
   product: ProductRecord,
   configRaw: string | undefined,
+  groupDiscount = 0,
 ): Promise<ChangeQuote> {
   const newSelection = parseCheckoutSelection(configRaw);
   const from = readServiceSelection(service);
@@ -126,7 +129,10 @@ async function computeChangeDiff(
     };
     try {
       const result = await provider.calculateChangePrice(ctx);
-      const diff = Math.round(result.price);
+      // 上游试算给出「未打折的差价」。折扣对价格是线性的，因此对差价打折
+      // 等价于「两个单价分别打折再相减」，结果与本地估算口径一致。
+      const quoteDiff = Math.round(result.price);
+      const diff = applyDiscount(quoteDiff, betterDiscount(product.discount, groupDiscount));
       return {
         from: 0,
         to: diff,
@@ -145,11 +151,17 @@ async function computeChangeDiff(
   if (!newSelection && !isProductChange) throw new StoreError(400, '缺少目标配置');
   // 旧价须按**服务当前商品**解析（换商品时目标商品的配置并不代表旧配置的价格）。
   const currentProduct = isProductChange ? await getProduct(service.productId) : product;
-  const oldUnit =
+  // 差价按折扣后的单价计算：与下单/续费同源，避免「升配补差价却按原价收」。
+  const oldBase =
     from && currentProduct
       ? (await resolveCheckoutPrice(currentProduct, 1, from)).unit
       : (currentProduct?.price ?? product.price);
-  const newUnit = (await resolveCheckoutPrice(product, 1, newSelection)).unit;
+  const newBase = (await resolveCheckoutPrice(product, 1, newSelection)).unit;
+  const oldUnit = applyDiscount(
+    oldBase,
+    betterDiscount(currentProduct?.discount, groupDiscount),
+  );
+  const newUnit = applyDiscount(newBase, betterDiscount(product.discount, groupDiscount));
   // 剩余比例按服务**实际计费周期**折算，而不是硬编码 1 个月；周期取自服务当前商品
   // 的 metadata 与开通时选择的 cycle。
   const cycleMonthsValue =
@@ -178,7 +190,7 @@ export async function quoteServiceChange(req: HttpRequest): Promise<unknown> {
   const parsed = changeQuoteSchema.safeParse(req.body ?? {});
   if (!parsed.success) throw new StoreError(400, '请求参数无效');
   const target = await resolveTargetProduct(service, parsed.data);
-  return computeChangeDiff(service, target, parsed.data.config);
+  return computeChangeDiff(service, target, parsed.data.config, await effectiveGroupDiscount(userId));
 }
 
 /** POST /services/:id/change —— 下变配订单（升配/降配/换商品）。 */
@@ -199,7 +211,12 @@ export async function changeService(ctx: PluginContext, req: HttpRequest): Promi
   if (product.status !== 'ACTIVE') throw new StoreError(409, '商品不可用');
   const changeType =
     input.targetProductId && input.targetProductId !== service.productId ? 'product' : 'package';
-  const quoteDiff = await computeChangeDiff(service, product, input.config);
+  const quoteDiff = await computeChangeDiff(
+    service,
+    product,
+    input.config,
+    await effectiveGroupDiscount(userId),
+  );
   const unit = quoteDiff.diff;
   if (!Number.isInteger(unit) || unit < 0) throw new StoreError(400, '订单金额无效');
 
@@ -398,6 +415,28 @@ export async function applyChangeOrder(orderId: string): Promise<void> {
       });
     }
     logger().info(`store: applied change for service ${service.id} (${changeType}=${applied})`);
+    const after = await getService(service.id);
+    if (after) {
+      // 变配是用户花了钱换来的结果：必须明确告知「已生效」以及变成什么。
+      // 幂等键含订单与行，避免同一订单重放的 finally 步骤刷出重复通知。
+      await notifyUser({
+        userId: record.spec.userId,
+        type: 'service.changed',
+        title: '服务配置已变更',
+        body: `你的服务「${after.productName}」已完成${
+          changeType === 'product' ? '更换商品' : '套餐变更'
+        }。`,
+        link: `/account/services/${after.id}`,
+        data: {
+          serviceId: after.id,
+          orderId,
+          changeType,
+          ...(targetProductId ? { productId: targetProductId } : {}),
+        },
+        status: 'success',
+        dedupeKey: `store:service:${after.id}:changed:${orderId}`,
+      });
+    }
   }
 }
 
@@ -501,6 +540,38 @@ export async function transferService(req: HttpRequest): Promise<unknown> {
       logger().warn(`store: transfer audit failed for ${service.id}: ${messageOf(error)}`);
     });
   logger().info(`store: transferred service ${service.id} to ${targetUserId}`);
+  // 转移是双方的事实：原机主需要知道「不再拥有」，新机主需要知道「多了一件」。
+  // 两条通知用不同幂等键（recipient + service），同一转移重放不会互相覆盖。
+  await notifyUser({
+    userId: targetUserId,
+    type: 'service.transferred',
+    title: '你收到一项转移的服务',
+    body: `「${service.productName}」已转移到你的账号名下。`,
+    link: `/account/services/${service.id}`,
+    data: {
+      serviceId: service.id,
+      productName: service.productName,
+      direction: 'in',
+      fromUserId: service.userId,
+    },
+    status: 'success',
+    dedupeKey: `store:service:${service.id}:transferred:${targetUserId}`,
+  });
+  await notifyUser({
+    userId: service.userId,
+    type: 'service.transferred',
+    title: '服务已转出',
+    body: `「${service.productName}」已从你的账号转移到其他用户。`,
+    link: '/account/services',
+    data: {
+      serviceId: service.id,
+      productName: service.productName,
+      direction: 'out',
+      toUserId: targetUserId,
+    },
+    status: 'info',
+    dedupeKey: `store:service:${service.id}:transferred-away:${service.userId}`,
+  });
   return { transferred: true, targetUserId };
 }
 

@@ -1,10 +1,12 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { strToU8, zipSync } from 'fflate';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.ts';
 import { assertNoConflictingFrontendPages, FrontendError } from '../../src/lib/frontend.ts';
+import { pluginPackageDir } from '../../src/lib/plugins.ts';
 import { getPrisma } from '../../src/plugins/prisma.ts';
 import { checkDbAvailable } from '../helpers.ts';
 import { createAdminUser } from '../auth-helpers.ts';
@@ -125,6 +127,42 @@ function pluginZip(): Buffer {
   });
 }
 
+/**
+ * A package in the shape the runtime-load era inherited: it declares admin routes
+ * and ships `dist/admin.js`, but has no browser-loadable `dist/admin.runtime.js`.
+ * `/plugins/frontends` must derive the missing variant instead of handing the web
+ * layer a URL that is guaranteed to 404.
+ */
+const LEGACY_ADMIN_ENTRY = [
+  'import { jsx } from "react/jsx-runtime";',
+  'import { useState as useState4 } from "react";',
+  'export function Overview() {',
+  '  const [n] = useState4(0);',
+  '  return jsx("div", { children: n });',
+  '}',
+].join('\n');
+
+function legacyAdminPluginZip(): Buffer {
+  return zip({
+    'manifest.json': JSON.stringify({
+      id: 'legacy-admin-plugin',
+      name: 'Legacy Admin Plugin',
+      version: '1.0.0',
+      apiVersion: '>=0.4.0',
+    }),
+    'dist/index.js': `const plugin = { manifest: { id: 'legacy-admin-plugin', name: 'Legacy Admin Plugin', version: '1.0.0' }, routes: [] }; export default plugin;`,
+    'frontend/manifest.json': JSON.stringify({
+      version: '1.0.0',
+      revision: '',
+      entry: 'frontend/dist/index.js',
+      adminRoutes: [{ path: '/overview', component: 'admin/overview' }],
+      files: ['frontend/dist/index.js', 'frontend/dist/admin.js'],
+    }),
+    'frontend/dist/index.js': 'export const frontend = {};',
+    'frontend/dist/admin.js': LEGACY_ADMIN_ENTRY,
+  });
+}
+
 function multipart(fileBuffer: Buffer, filename: string): { payload: Buffer; boundary: string } {
   const boundary = '----stackpanel-frontend-boundary';
   const head = Buffer.from(
@@ -152,8 +190,13 @@ describe.skipIf(!dbAvailable)('frontend package integration (real DB)', () => {
     const prisma = getPrisma();
     await prisma.theme.deleteMany({ where: { id: 'frontend-theme' } });
     await prisma.plugin.deleteMany({ where: { id: 'frontend-plugin' } });
+    await prisma.plugin.deleteMany({ where: { id: 'legacy-admin-plugin' } });
     await prisma.setting.deleteMany({
-      where: { key: { in: ['theme:frontend-theme', 'plugin:frontend-plugin'] } },
+      where: {
+        key: {
+          in: ['theme:frontend-theme', 'plugin:frontend-plugin', 'plugin:legacy-admin-plugin'],
+        },
+      },
     });
     const admin = await createAdminUser(app, email, password);
     adminToken = admin.token;
@@ -163,8 +206,13 @@ describe.skipIf(!dbAvailable)('frontend package integration (real DB)', () => {
     const prisma = getPrisma();
     await prisma.theme.deleteMany({ where: { id: 'frontend-theme' } });
     await prisma.plugin.deleteMany({ where: { id: 'frontend-plugin' } });
+    await prisma.plugin.deleteMany({ where: { id: 'legacy-admin-plugin' } });
     await prisma.setting.deleteMany({
-      where: { key: { in: ['theme:frontend-theme', 'plugin:frontend-plugin'] } },
+      where: {
+        key: {
+          in: ['theme:frontend-theme', 'plugin:frontend-plugin', 'plugin:legacy-admin-plugin'],
+        },
+      },
     });
     await prisma.user.deleteMany({ where: { email } });
     await app.close();
@@ -373,6 +421,56 @@ describe.skipIf(!dbAvailable)('frontend package integration (real DB)', () => {
       url: `/plugins/frontend-plugin/frontend/${revision}/../../manifest.json`,
     });
     expect([400, 404]).toContain(traversal.statusCode);
+  });
+
+  it('derives a missing admin.runtime.js for legacy packages (contract 02 §5)', async () => {
+    const { payload, boundary } = multipart(legacyAdminPluginZip(), 'legacy-admin-plugin.zip');
+    const install = await app.inject({
+      method: 'POST',
+      url: '/admin/plugins/upload',
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+    expect(install.statusCode).toBe(201);
+
+    // Before the descriptor is read the package only has the unbrowserable
+    // registry variant (`admin.js` with bare specifiers).
+    const packageDir = pluginPackageDir('legacy-admin-plugin');
+    expect(existsSync(path.join(packageDir, 'frontend/dist/admin.runtime.js'))).toBe(false);
+
+    const frontends = await app.inject({ method: 'GET', url: '/plugins/frontends' });
+    expect(frontends.statusCode).toBe(200);
+    const entry = (
+      frontends.json() as {
+        plugins: Array<{ id: string; revision?: string; manifest: { files: string[] } }>;
+      }
+    ).plugins.find((plugin) => plugin.id === 'legacy-admin-plugin');
+    expect(entry).toBeTruthy();
+    expect(entry?.manifest.files).toContain('frontend/dist/admin.runtime.js');
+    const revision = entry?.revision;
+    expect(revision).toMatch(/^[a-f0-9]{12}$/);
+
+    // The versioned URL handed to the browser must actually serve the derived
+    // bundle — this is exactly the request that used to 404.
+    const runtime = await app.inject({
+      method: 'GET',
+      url: `/plugins/legacy-admin-plugin/frontend/${revision}/dist/admin.runtime.js`,
+    });
+    expect(runtime.statusCode).toBe(200);
+    expect(runtime.headers['content-type']).toContain('text/javascript');
+    expect(runtime.body).toContain('/api/frontend-abi/react?names=useState');
+    expect(runtime.body).not.toContain('"react"');
+
+    // Idempotent: a second read publishes the same revision instead of churning.
+    const again = await app.inject({ method: 'GET', url: '/plugins/frontends' });
+    expect(
+      (again.json() as { plugins: Array<{ id: string; revision?: string }> }).plugins.find(
+        (plugin) => plugin.id === 'legacy-admin-plugin',
+      )?.revision,
+    ).toBe(revision);
   });
 
   it('exposes versioned theme frontend assets (contract 04)', async () => {

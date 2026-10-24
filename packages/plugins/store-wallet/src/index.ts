@@ -3,6 +3,7 @@ import { PluginError, WALLET_CURRENCY, definePlugin } from '@stackpanel/sdk';
 import { z } from 'zod';
 import { bindContext, context, resetContext } from './context';
 import { WalletPluginError } from './errors';
+import { notifyBalanceAdjusted } from './notifications';
 
 const CURRENCY = WALLET_CURRENCY;
 
@@ -119,6 +120,14 @@ const adjustWallet = async (req: HttpRequest): Promise<unknown> => {
     currency: CURRENCY,
     note: input.note,
     ...(req.user?.id ? { actorId: req.user.id } : {}),
+  });
+  const account = await context().wallet.getAccount(user.id);
+  await notifyBalanceAdjusted({
+    userId: user.id,
+    amount: input.amount,
+    currency: CURRENCY,
+    note: input.note,
+    balance: account?.balance ?? 0,
   });
   return { ok: true };
 };

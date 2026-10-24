@@ -25,13 +25,11 @@ import { useLocale, useTranslator } from '@/i18n/provider';
 export function AdminPluginPage({
   path,
   result,
-  actionError,
   embedded = false,
 }: {
   pluginId: string;
   path: string;
   result: PluginAdminRouteResult;
-  actionError?: string;
   embedded?: boolean;
 }): ReactElement {
   const t = useTranslator();
@@ -65,7 +63,6 @@ export function AdminPluginPage({
           actions: result.actions as unknown as Record<string, unknown>,
           params: result.params,
         }}
-        actionError={actionError}
       />
     );
   }
@@ -90,14 +87,6 @@ export function AdminPluginPage({
   } as AdminPageComponentProps;
   return (
     <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="block space-y-6">
-      {actionError ? (
-        <p
-          role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {actionError}
-        </p>
-      ) : null}
       {createElement(Component, props as never) as unknown as ReactElement}
     </FrontendScopeRoot>
   );

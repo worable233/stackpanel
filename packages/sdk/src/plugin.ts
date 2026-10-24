@@ -220,6 +220,25 @@ export interface PlatformEvents {
     total?: number;
     currency?: string;
   };
+  /**
+   * An order was refunded to the buyer's platform balance.
+   *
+   * `full` distinguishes "the whole order was reversed" from a partial refund.
+   * Consumers that grant value conditioned on the purchase (e.g. referral
+   * commission) should only reverse on a full refund: proportional clawback of
+   * a partial refund produces arithmetic that cannot be explained to the user.
+   */
+  'order.refunded': {
+    orderId: string;
+    /** Account the order belongs to; required to find downstream rewards. */
+    userId?: string;
+    /** Refunded amount in minor units (this refund, not the order total). */
+    amount?: number;
+    /** Settlement currency of the refund. */
+    currency?: string;
+    /** True when the order moved to `REFUNDED` (nothing left on it). */
+    full?: boolean;
+  };
   'ticket.created': { ticketId: string; userId: string };
   'ticket.message.added': { ticketId: string; authorId: string };
   'ticket.status.changed': { ticketId: string; status: string };
@@ -317,8 +336,16 @@ export interface EventBus {
 /** HTTP method set exposed to plugins. */
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD';
 
-/** Auth requirement the kernel applies to a plugin route. */
-export type RouteAuth = 'public' | 'user' | 'admin';
+/**
+ * Auth requirement the kernel applies to a plugin route.
+ *
+ * - `public`：不解析会话，`req.user` 永远缺失。
+ * - `optional`：**尽力**解析会话——带上有效凭据时 `req.user` 有值，匿名请求照常
+ *   通行且不返回 401。用于「匿名可看、登录后按身份计价」的公开读接口（例如商品页
+ *   试算价要应用权限组折扣），避免为了展示折扣而把公开页面变成必须登录。
+ * - `user` / `admin`：必须登录（`admin` 另外要求 `platform.admin`）。
+ */
+export type RouteAuth = 'public' | 'optional' | 'user' | 'admin';
 
 /** Framework-agnostic request view handed to plugin route handlers. */
 export interface HttpRequest {
@@ -418,7 +445,12 @@ export interface CorsPolicy {
 export interface PluginRouteBase {
   method: HttpMethod;
   path: string;
-  /** Auth requirement applied by the kernel. Default 'public'. */
+  /**
+   * Auth requirement applied by the kernel. Default 'public'.
+   *
+   * `optional` 会尽力解析会话：凭据有效则注入 `req.user`，无效或缺失都按匿名
+   * 放行（不返回 401）。
+   */
   auth?: RouteAuth;
   /** Permission required after auth; ADMIN always passes. */
   permission?: string;

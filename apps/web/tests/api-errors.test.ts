@@ -14,9 +14,9 @@ describe('apiErrorMessageFor', () => {
     expect(apiErrorMessageFor('en-US', error)).toBe('Network error, please try again later');
   });
 
-  it('falls back to the server message for an untranslated code', () => {
+  it('never leaks the server message for an untranslated code', () => {
     const error = new ApiError('Neutral server detail', { status: 400, code: 'plugin.unknown.code' });
-    expect(apiErrorMessageFor('en-US', error)).toBe('Neutral server detail');
+    expect(apiErrorMessageFor('en-US', error)).toBe('Operation failed, please try again later');
   });
 
   it('uses the localised default fallback when there is no message', () => {
@@ -24,8 +24,13 @@ describe('apiErrorMessageFor', () => {
     expect(apiErrorMessageFor('en-US', error)).toBe('Operation failed, please try again later');
   });
 
-  it('returns the provided fallback for plain errors', () => {
-    expect(apiErrorMessageFor('en-US', new Error('boom'))).toBe('boom');
+  it('does not render raw exception text', () => {
+    expect(apiErrorMessageFor('en-US', new Error('boom'))).toBe(
+      'Operation failed, please try again later',
+    );
+    expect(apiErrorMessageFor('en-US', new Error('fetch failed'), 'custom fallback')).toBe(
+      'custom fallback',
+    );
     expect(apiErrorMessageFor('en-US', 'nope', 'custom')).toBe('custom');
   });
 });

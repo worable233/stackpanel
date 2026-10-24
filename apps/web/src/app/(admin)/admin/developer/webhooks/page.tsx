@@ -112,7 +112,7 @@ export default async function AdminDeveloperWebhooksPage({
 
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable', { error })}
+          {t('admin.developer.serviceUnavailable')}
         </p>
       ) : null}
 

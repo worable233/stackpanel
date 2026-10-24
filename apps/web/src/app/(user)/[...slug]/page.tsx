@@ -20,7 +20,7 @@ export default async function UserThemeRoute({
   return (
     <>
       <JsonLd meta={meta} />
-      <FrontendRoute path={path} searchParams={query} actionError={readActionError(query.error)} />
+      <FrontendRoute path={path} searchParams={query} />
     </>
   );
 }
@@ -39,6 +39,3 @@ export async function generateMetadata({
   return toNextMetadata(meta, origin, path);
 }
 
-function readActionError(value: string | undefined): string | undefined {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256 ? value : undefined;
-}

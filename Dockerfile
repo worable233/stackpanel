@@ -31,6 +31,7 @@ FROM base AS deps
 COPY . .
 RUN pnpm install --frozen-lockfile
 
+
 # ---- build --------------------------------------------------------------
 FROM deps AS build
 # Next.js reads API_BASE_URL at build time (CSP style-src origin). It must be
@@ -66,6 +67,28 @@ FROM build AS prod-deps
 RUN find . -maxdepth 4 -name node_modules -type d -prune -exec rm -rf {} + \
  && pnpm install --prod --frozen-lockfile --ignore-scripts
 
+# Pre-download the Prisma **schema engine** into the image.
+#
+# Why: `prisma migrate deploy` needs `schema-engine-<platform>` at runtime, but
+# `prisma generate` only fetches the query engine. Without it, every migration
+# downloads from binaries.prisma.sh at *upgrade time*:
+#
+#   prisma:fetch-engine:download https://binaries.prisma.sh/all_commits/<hash>/...
+#     → hangs indefinitely on a blocked/slow network (no timeout)
+#
+# A real upgrade drill sat in `migrating` for 30+ minutes because of this: the
+# updater's migrate step just waited, the instance stayed in maintenance, and no
+# log line said why. Offline / air-gapped deployments could never migrate at all.
+# Doing it at build time makes runtime deterministic and keeps upgrades offline-safe.
+#
+# Downloaded *after* the production install (which wipes node_modules) into a
+# directory outside the pnpm store, then pinned via PRISMA_SCHEMA_ENGINE_BINARY
+# so the CLI never looks for a cache path we cannot control. The helper verifies
+# the artifact is a real (non-truncated) executable and fails the build otherwise.
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine
+RUN node docker/fetch-schema-engine.mjs /app/.prisma-engines/schema-engine \
+ && test -x /app/.prisma-engines/schema-engine
+
 # ---- runtime ------------------------------------------------------------
 FROM base AS runtime
 ENV NODE_ENV=production
@@ -84,6 +107,12 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends postgresql-client-16 \
  && rm -rf /var/lib/apt/lists/*
 COPY --chown=node:node --from=prod-deps /app /app
+# Point the Prisma CLI at the engine baked in by the prod-deps stage. This ENV
+# must be repeated here: `FROM base AS runtime` starts a fresh stage, so the
+# prod-deps ENV does not carry over. Without it the CLI ignores the baked engine
+# and downloads from binaries.prisma.sh on first migrate (hangs on restricted
+# networks — the exact failure this fixes).
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine
 COPY docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY docker/entrypoint-web.sh /usr/local/bin/entrypoint-web
 COPY docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker

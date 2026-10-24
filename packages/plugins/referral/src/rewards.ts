@@ -1,4 +1,5 @@
-import type { ExtensionInstance } from '@stackpanel/sdk';
+import type { ExtensionInstance, NotificationTypeDefinition } from '@stackpanel/sdk';
+import { formatMinorCurrency } from '@stackpanel/sdk';
 import { context } from './context';
 import { recordModel, type ReferralCode, type ReferralConfig, type ReferralRecord } from './data';
 
@@ -24,14 +25,61 @@ function isUniqueViolation(error: unknown): boolean {
   );
 }
 
-/** 推广人这条记录该拿多少：单码覆盖优先，否则用全局默认。 */
+/**
+ * 推广人这条记录该拿多少。
+ *
+ * New user-created codes never carry an override. The cap still protects
+ * historical rows created before that rule, so an old arbitrary code value can
+ * never exceed the administrator-owned platform reward.
+ */
 export function resolveInviterReward(code: ReferralCode | null, config: ReferralConfig): number {
   const override = code?.rewardAmount ?? null;
-  if (override !== null && Number.isSafeInteger(override) && override >= 0) return override;
+  if (override !== null && Number.isSafeInteger(override) && override >= 0) {
+    return Math.min(override, config.rewardAmount);
+  }
   return config.rewardAmount;
 }
 
 type RecordInstance = ExtensionInstance<ReferralRecord>;
+
+/** 声明本插件发出的通知类型（内核偏好目录据此生成配置项）。 */
+export const REFERRAL_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
+  {
+    type: 'referral.reward.paid',
+    category: 'marketing',
+    label: '推广奖励到账',
+    order: 10,
+  },
+];
+
+/** 奖励入账回执（best-effort）：失败只告警，绝不回滚已入账的钱。 */
+async function notifyPayout(
+  pluginCtx: ReturnType<typeof context>,
+  payout: { userId: string; amount: number; currency: string; referenceId: string; note: string },
+): Promise<void> {
+  try {
+    await pluginCtx.notifications.upsert({
+      userId: payout.userId,
+      dedupeKey: `referral:reward:${payout.referenceId}`,
+      type: 'referral.reward.paid',
+      title: '推广奖励已到账',
+      body: `${payout.note}：${formatMinorCurrency(payout.amount, payout.currency, 'zh-CN')} 已存入你的钱包。`,
+      link: '/account/balance',
+      data: {
+        amount: payout.amount,
+        currency: payout.currency,
+        referenceId: payout.referenceId,
+      },
+      status: 'success',
+    });
+  } catch (error) {
+    pluginCtx.logger.warn(
+      `referral: reward notification failed for ${payout.userId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
 
 /**
  * 把一个归因记录推进到目标状态，并在需要时入账。
@@ -67,11 +115,18 @@ async function settleRecord(
         });
       }
     });
+    // 奖励入账是「钱」的事实，必须回执。幂等键绑定 referenceId：钱包账本的唯一索引
+    // 已保证只入账一次，通知同样只应出现一次（重放命中 P2002 时不会走到这里）。
+    if (payout && payout.amount > 0) {
+      await notifyPayout(pluginCtx, payout);
+    }
     return 'paid';
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     // 钱之前已经发过（幂等命中）。这里只把记录状态补齐，绝不重复入账。
-    pluginCtx.logger.warn(`referral: 奖励已发放，跳过重复入账 ${payout?.referenceId ?? record.name}`);
+    pluginCtx.logger.warn(
+      `referral: 奖励已发放，跳过重复入账 ${payout?.referenceId ?? record.name}`,
+    );
     const latest = await pluginCtx.extensions.get<ReferralRecord>(recordModel, record.name);
     if (latest && latest.spec.inviterState !== nextSpec.inviterState) {
       await pluginCtx.extensions.update<ReferralRecord>(recordModel, record.name, nextSpec, {

@@ -45,6 +45,12 @@ interface Ticket {
   updatedAt: string;
   userEmail?: string | null;
   assigneeEmail?: string | null;
+  /** 分类 / 部门 / 关联业务对象（工单插件 #9 新增，均可缺省）。 */
+  category?: string | null;
+  departmentId?: string | null;
+  relatedType?: string | null;
+  relatedId?: string | null;
+  reminderCount?: number;
 }
 interface TicketDetail extends Ticket {
   assigneeId?: string | null;
@@ -104,11 +110,69 @@ export interface TicketWorkspaceLabels {
   latest: string;
   selfAuthor: string;
   staffAuthor: string;
+  /** Label for the admin-only "internal note" checkbox on the reply form. */
+  internalNote?: string;
+  /** 「已催单 N 次」文案，`{count}` 会被替换。 */
+  remindedTimes?: string;
+  /** 管理端「分类」字段标签。 */
+  categoryLabel?: string;
+  categoryPlaceholder?: string;
+  /** 管理端「部门」字段标签。 */
+  departmentLabel?: string;
+  /** 管理端回复框的「内部备注」勾选项文案。 */
+  internalNoteLabel?: string;
   /** Display names for ticket status codes. Unknown codes fall back to the code. */
   statuses: Record<string, string>;
   /** Display names for ticket priority codes. Unknown codes fall back to the code. */
   priorities: Record<string, string>;
 }
+
+/**
+ * Prevent a version-skewed runtime plugin from taking down its route while a
+ * compatible revision is being published. The plugin normally supplies every
+ * visible string; this deliberately renders empty copy instead of guessing a
+ * locale in the shared host package.
+ */
+const missingTicketWorkspaceLabels: TicketWorkspaceLabels = {
+  sectionAria: '',
+  listAria: '',
+  myTicketsAria: '',
+  title: '',
+  adminTitle: '',
+  newTicketAria: '',
+  searchAria: '',
+  searchPlaceholder: '',
+  emptySearch: '',
+  empty: '',
+  unknownUser: '',
+  pickPrompt: '',
+  backToListAria: '',
+  newTitle: '',
+  subjectLabel: '',
+  subjectPlaceholder: '',
+  bodyLabel: '',
+  bodyPlaceholder: '',
+  cancel: '',
+  submit: '',
+  sending: '',
+  replyPlaceholder: '',
+  replyAria: '',
+  send: '',
+  closed: '',
+  notFound: '',
+  statusLabel: '',
+  priorityLabel: '',
+  assigneeLabel: '',
+  assigneePlaceholder: '',
+  save: '',
+  conversationAria: '',
+  scrollLatestAria: '',
+  latest: '',
+  selfAuthor: '',
+  staffAuthor: '',
+  statuses: {},
+  priorities: {},
+};
 
 function date(value: string, locale: string | undefined, short = false) {
   return new Date(value).toLocaleString(
@@ -140,6 +204,13 @@ interface TicketWorkspaceProps {
   create?: (data: FormData) => Promise<void>;
   reply?: (data: FormData) => Promise<void>;
   update?: (data: FormData) => Promise<void>;
+  /**
+   * Extra per-ticket operations (催单 / 关闭 / 内部备注开关等)。
+   *
+   * 共享组件不认识业务动词：内核不承担插件的工单语义，只提供挂载点，
+   * 由插件把自己的 server action 注入进来（ADR-0016 §6）。
+   */
+  extraActions?: React.ReactNode;
   admin?: boolean;
   basePath?: string;
   /**
@@ -148,7 +219,7 @@ interface TicketWorkspaceProps {
    */
   locale?: string;
   /** Localized copy. See {@link TicketWorkspaceLabels}. */
-  labels: TicketWorkspaceLabels;
+  labels?: TicketWorkspaceLabels;
 }
 
 /** Account support inbox; the plugin owns routes, data and server actions. */
@@ -159,10 +230,11 @@ export function TicketWorkspace({
   create,
   reply,
   update,
+  extraActions,
   admin = false,
   basePath = '/account/tickets',
   locale,
-  labels,
+  labels = missingTicketWorkspaceLabels,
 }: TicketWorkspaceProps) {
   const [search, setSearch] = useState('');
   const replyForm = useRef<HTMLFormElement>(null);
@@ -345,8 +417,18 @@ export function TicketWorkspace({
                 <h2 className="truncate text-base font-semibold">{ticket.subject}</h2>
                 <p className="text-xs text-muted-foreground">
                   {admin ? (ticket.userEmail ?? labels.unknownUser) : `#${ticket.id.slice(-8)}`}
+                  {ticket.category ? ` · ${ticket.category}` : ''}
+                  {ticket.relatedType && ticket.relatedId
+                    ? ` · ${ticket.relatedType}:${ticket.relatedId}`
+                    : ''}
+                  {ticket.reminderCount && ticket.reminderCount > 0
+                    ? ` · ${labels.remindedTimes?.replace('{count}', String(ticket.reminderCount)) ?? ''}`
+                    : ''}
                 </p>
               </div>
+              {extraActions ? (
+                <div className="flex shrink-0 items-center gap-2">{extraActions}</div>
+              ) : null}
               <span className="shrink-0 text-xs text-muted-foreground">
                 {statusLabel(ticket.status)}
               </span>
@@ -391,6 +473,24 @@ export function TicketWorkspace({
                     name="assigneeId"
                     defaultValue={ticket.assigneeId ?? ''}
                     placeholder={labels.assigneePlaceholder}
+                    className="h-9"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-sm">
+                  <span className="font-medium">{labels.categoryLabel ?? ''}</span>
+                  <Input
+                    name="category"
+                    defaultValue={ticket.category ?? ''}
+                    placeholder={labels.categoryPlaceholder ?? ''}
+                    className="h-9"
+                    maxLength={64}
+                  />
+                </label>
+                <label className="grid gap-1.5 text-sm">
+                  <span className="font-medium">{labels.departmentLabel ?? ''}</span>
+                  <Input
+                    name="departmentId"
+                    defaultValue={ticket.departmentId ?? ''}
                     className="h-9"
                   />
                 </label>
@@ -472,8 +572,16 @@ export function TicketWorkspace({
                     className="max-h-40 min-h-20 resize-y"
                   />
                   <InputGroupAddon align="block-end">
-                    <div className="flex flex-1 justify-end">
-                      <Submit label={labels.send} sending={labels.sending} />
+                    <div className="flex flex-1 items-center gap-3">
+                      {admin ? (
+                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <input type="checkbox" name="internal" value="true" />
+                          {labels.internalNoteLabel ?? ''}
+                        </label>
+                      ) : null}
+                      <div className="flex flex-1 justify-end">
+                        <Submit label={labels.send} sending={labels.sending} />
+                      </div>
                     </div>
                   </InputGroupAddon>
                 </InputGroup>

@@ -20,13 +20,8 @@ import { createTranslator } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminSettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
+export default async function AdminSettingsPage() {
   const pluginSettings = await getPluginSettingsSections();
-  const { error: actionError } = await searchParams;
   const t = createTranslator(await getLocale());
   let platform: PlatformInfo = DEFAULT_PLATFORM_INFO;
   let signing: SigningStatus | null = null;
@@ -80,7 +75,7 @@ export default async function AdminSettingsPage({
       <Separator className="my-4 lg:my-6" />
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.settings.serviceUnavailable', { error })}
+          {t('admin.settings.serviceUnavailable')}
         </p>
       ) : (
         <SettingsManager
@@ -100,7 +95,6 @@ export default async function AdminSettingsPage({
                 path={section.path}
                 result={section.result}
                 embedded
-                actionError={actionError?.slice(0, 256)}
               />
             ),
           }))}

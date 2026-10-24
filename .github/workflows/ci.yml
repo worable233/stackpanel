@@ -123,6 +123,11 @@ jobs:
       - name: i18n package catalogs
         run: pnpm i18n:packages
 
+      # zh-TW / zh-HK are derived from the authored zh-CN catalog; a stale
+      # Traditional file means the two disagree on copy or keys.
+      - name: i18n Traditional Chinese catalogs
+        run: pnpm i18n:hant:check
+
       # G2: refuse OpenAPI changes that break the committed contract snapshot
       # (removed routes/methods, newly required auth/params/body, dropped
       # response codes). Pure function of the capability registry — no DB.

@@ -672,7 +672,7 @@ export function PermissionGroupManager({
 
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.rbac.serviceUnavailable', { error })}
+          {t('admin.rbac.serviceUnavailable')}
         </p>
       ) : (
         <Tabs className="gap-4" defaultValue="roles">

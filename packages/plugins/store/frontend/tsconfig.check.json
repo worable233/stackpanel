@@ -1,0 +1,17 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "react"],
+    "typeRoots": ["../../../../apps/web/node_modules/@types"],
+    "paths": {
+      "react": ["../../../../apps/web/node_modules/@types/react"],
+      "react/*": ["../../../../apps/web/node_modules/@types/react/*"]
+    }
+  },
+  "include": ["src/**/*.tsx", "src/**/*.ts", "messages/*.json"]
+}

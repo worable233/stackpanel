@@ -1,7 +1,20 @@
 import { settingsSchema } from './settings.js';
+import { resolveFooter } from './footer-config.js';
+import {
+  SiGithub,
+  SiX,
+  SiTelegram,
+  SiDiscord,
+  SiWechat,
+  SiQq,
+  SiBilibili,
+  SiYoutube,
+  SiFacebook,
+  SiInstagram,
+} from '@icons-pack/react-simple-icons';
 import { ArticlePage } from './article.js';
 import Link from 'next/link';
-import { ProductListPage, ProductDetailPage, StoreCartPage } from './storefront.js';
+import { ProductListPage } from './storefront.js';
 import type { ReactElement, ReactNode } from 'react';
 import {
   ArrowRight,
@@ -13,6 +26,10 @@ import {
   Activity,
   Network,
   Headphones,
+  Mail,
+  Rss,
+  Globe,
+  Link2,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -647,41 +664,23 @@ function Footer({
   brandName: string;
   tr: Translator;
 }) {
-  const groups = [
-    {
-      title: setting(settings, 'footer', 'column1Title', tr('content.footer.column1Title')),
-      links: settingLinks(settings, 'footer', 'column1Links', [
-        [tr('content.footer.column1Links.0.label'), '/#use-cases'],
-        [tr('content.footer.column1Links.1.label'), '/#use-cases'],
-        [tr('content.footer.column1Links.2.label'), '/#use-cases'],
-        [tr('content.footer.column1Links.3.label'), '/#use-cases'],
-      ]),
-    },
-    {
-      title: setting(settings, 'footer', 'column2Title', tr('content.footer.column2Title')),
-      links: settingLinks(settings, 'footer', 'column2Links', [
-        [tr('content.footer.column2Links.0.label'), '/shop'],
-        [tr('content.footer.column2Links.1.label'), '/shop'],
-        [tr('content.footer.column2Links.2.label'), '/shop'],
-      ]),
-    },
-    {
-      title: setting(settings, 'footer', 'column3Title', tr('content.footer.column3Title')),
-      links: settingLinks(settings, 'footer', 'column3Links', [
-        [tr('content.footer.column3Links.0.label'), '/#capabilities'],
-        [tr('content.footer.column3Links.1.label'), '/#use-cases'],
-        [tr('content.footer.column3Links.2.label'), '/#pricing'],
-      ]),
-    },
-    {
-      title: setting(settings, 'footer', 'column4Title', tr('content.footer.column4Title')),
-      links: settingLinks(settings, 'footer', 'column4Links', [
-        [tr('content.footer.column4Links.0.label'), '/shop'],
-        [tr('content.footer.column4Links.1.label'), '/login'],
-        [tr('content.footer.column4Links.2.label'), '/register'],
-      ]),
-    },
-  ];
+  const { groups, socialLinks } = resolveFooter(settings);
+  const socialIcons = {
+    github: SiGithub,
+    x: SiX,
+    telegram: SiTelegram,
+    discord: SiDiscord,
+    wechat: SiWechat,
+    qq: SiQq,
+    bilibili: SiBilibili,
+    youtube: SiYoutube,
+    facebook: SiFacebook,
+    instagram: SiInstagram,
+    mail: Mail,
+    rss: Rss,
+    globe: Globe,
+    link: Link2,
+  };
   return (
     <footer
       data-section="footer"
@@ -701,51 +700,54 @@ function Footer({
             <p className="max-w-xs text-center text-sm leading-relaxed text-muted-foreground md:text-base lg:text-left">
               {setting(settings, 'footer', 'description', tr('content.footer.description'))}
             </p>
-            <nav aria-label={tr('theme.footer.quickNavAria')} className="flex items-center gap-4">
-              {settingLinks(settings, 'footer', 'links', [
-                [tr('content.footer.links.0.label'), '/shop'],
-                [tr('content.footer.links.1.label'), '/account'],
-                [tr('content.footer.links.2.label'), '/#capabilities'],
-                [tr('content.footer.links.3.label'), '/#pricing'],
-              ]).map(([label, href], index) => {
-                const Icon = [Server, Layers3, ShieldCheck, Database][index % 4]!;
-                return (
-                  <Link
-                    key={`${label}-${index}`}
-                    href={href}
-                    aria-label={label}
-                    className="text-muted-foreground transition-colors hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
-                  >
-                    <Icon aria-hidden="true" className="size-6" />
-                  </Link>
-                );
-              })}
-            </nav>
+            {socialLinks.length ? (
+              <nav
+                aria-label={tr('theme.footer.quickNavAria')}
+                className="flex max-w-xs flex-wrap items-center justify-center gap-4 lg:justify-start"
+              >
+                {socialLinks.map(({ label, href, icon }, index) => {
+                  const Icon = socialIcons[icon as keyof typeof socialIcons] ?? Link2;
+                  return (
+                    <Link
+                      key={`${label}-${index}`}
+                      href={href}
+                      aria-label={label}
+                      title={label}
+                      className="text-muted-foreground transition-colors hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <Icon aria-hidden="true" className="size-6" />
+                    </Link>
+                  );
+                })}
+              </nav>
+            ) : null}
           </Reveal>
-          <nav
-            aria-label={tr('theme.footer.navAria')}
-            className="grid flex-1 grid-cols-2 gap-10 sm:grid-cols-4 sm:gap-8 lg:pt-2.5"
-          >
-            {groups.map((g) => (
-              <Reveal key={g.title} className="flex flex-col gap-4">
-                <h3 className="text-sm font-medium tracking-tight text-muted-foreground md:text-base">
-                  {g.title}
-                </h3>
-                <ul className="flex flex-col gap-2.5">
-                  {g.links.map(([label, href]) => (
-                    <li key={label}>
-                      <Link
-                        href={href}
-                        className="text-sm tracking-tight text-foreground transition-opacity duration-200 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-ring md:text-base"
-                      >
-                        {label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </Reveal>
-            ))}
-          </nav>
+          {groups.length ? (
+            <nav
+              aria-label={tr('theme.footer.navAria')}
+              className="grid min-w-0 flex-1 grid-cols-2 gap-10 sm:grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] sm:gap-8 lg:pt-2.5"
+            >
+              {groups.map((g, groupIndex) => (
+                <Reveal key={`${g.title}-${groupIndex}`} className="flex flex-col gap-4">
+                  <h3 className="text-sm font-medium break-words tracking-tight text-muted-foreground md:text-base">
+                    {g.title}
+                  </h3>
+                  <ul className="flex flex-col gap-2.5">
+                    {g.links.map(({ label, href }, linkIndex) => (
+                      <li key={`${label}-${linkIndex}`}>
+                        <Link
+                          href={href}
+                          className="text-sm break-words tracking-tight text-foreground transition-opacity duration-200 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-ring md:text-base"
+                        >
+                          {label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </Reveal>
+              ))}
+            </nav>
+          ) : null}
         </div>
         <Reveal className="mt-16 text-center text-sm text-muted-foreground">
           {setting(settings, 'footer', 'copyright', `© ${new Date().getFullYear()} ${brandName}`)}
@@ -903,23 +905,19 @@ function DefaultLayout({
   );
 }
 const frontend: FrontendPackage = defineFrontend({
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   settingsSchema,
   layouts: { default: DefaultLayout, theme: DefaultLayout },
   overrides: {
     '/blog/:slug': 'article',
     '/shop': 'shop',
-    '/shop/:id': 'product',
-    '/shop/cart': 'cart',
   },
   pages: [{ path: '/', component: 'home', layout: 'default' }],
   pageComponents: {
     home: HomePage,
     article: ArticlePage,
     shop: ProductListPage,
-    product: ProductDetailPage,
-    cart: StoreCartPage,
   },
 });
 export default frontend;

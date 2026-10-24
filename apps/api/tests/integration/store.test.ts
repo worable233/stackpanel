@@ -338,6 +338,78 @@ describe.skipIf(!dbAvailable)('store plugin wallet and settlement integration (r
     ).toBe(401);
   });
 
+  it('商品页试算价 = 实际扣款（权限组折扣走同一条规则）', async () => {
+    const prisma = getPrisma();
+    const suffix = newId('disc');
+    // 独立商品：本用例会真实扣库存，不能污染后续用例共用的 productId。
+    const discountedId = await seedProduct({
+      name: `折扣商品 ${suffix}`,
+      price: 9900,
+      stock: 5,
+    });
+    // 真实权限组：25% 折扣，授予当前用户。
+    const group = await prisma.permissionGroup.create({
+      data: { name: `折扣组 ${suffix}`, discount: 25 },
+    });
+    await prisma.userGroup.create({ data: { userId, groupId: group.id } });
+    // 商品自身折扣 10% —— 与组折扣取更优（25%），不叠加。
+    await prisma.$executeRawUnsafe(
+      `UPDATE "${PRODUCT_TABLE}"
+          SET "spec" = jsonb_set("spec", '{discount}', '10'::jsonb)
+        WHERE "id" = $1`,
+      discountedId,
+    );
+
+    try {
+      // 1) 商品页试算（登录态）→ 9900 * 75% = 7425
+      const preview = await app.inject({
+        method: 'POST',
+        url: `/store/products/${discountedId}/price`,
+        headers: { authorization: `Bearer ${userToken}` },
+        payload: { quantity: 1 },
+      });
+      expect(preview.statusCode).toBe(200);
+      const quote = preview.json() as { price: number; basePrice: number; discount: number };
+      expect(quote.price).toBe(7425);
+      expect(quote.basePrice).toBe(9900);
+      expect(quote.discount).toBe(25);
+
+      // 2) 匿名试算只能拿到商品折扣 10% → 8910（权限组折扣不该泄漏给匿名）。
+      const anon = await app.inject({
+        method: 'POST',
+        url: `/store/products/${discountedId}/price`,
+        payload: { quantity: 1 },
+      });
+      expect(anon.statusCode).toBe(200);
+      expect((anon.json() as { price: number }).price).toBe(8910);
+
+      // 3) 真实下单：钱包实扣必须等于试算价，而不是原价。
+      await app.wallet.adjust({
+        userId,
+        amount: 7425,
+        currency: 'CNY',
+        note: 'discount consistency drill',
+      });
+      const order = await app.inject({
+        method: 'POST',
+        url: '/orders',
+        headers: { authorization: `Bearer ${userToken}` },
+        payload: { productId: discountedId, quantity: 1, paymentMode: 'wallet' },
+      });
+      expect(order.statusCode).toBe(200);
+      const body = order.json() as { order: { total: number } };
+      expect(body.order.total).toBe(quote.price);
+      const wallet = await prisma.walletAccount.findUniqueOrThrow({
+        where: { userId_currency: { userId, currency: 'CNY' } },
+      });
+      expect(wallet.balance).toBe(0);
+    } finally {
+      await prisma.userGroup.deleteMany({ where: { groupId: group.id } });
+      await prisma.permissionGroup.deleteMany({ where: { id: group.id } });
+      await deleteStoreProduct(discountedId);
+    }
+  });
+
   it('adds items to the cart and lists them for the owner', async () => {
     const add = await app.inject({
       method: 'POST',

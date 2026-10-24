@@ -18,6 +18,7 @@ import {
   type StoreServiceInstanceData,
 } from './data';
 import { monthsForCycle, readCycles, renewOrderSchema } from './utils';
+import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import { notifyUser } from './notifications';
 import { quoteSettlement } from './currency';
 
@@ -80,7 +81,11 @@ export async function renewService(ctx: PluginContext, req: HttpRequest): Promis
   if (!product) throw new StoreError(404, '商品不存在');
 
   const months = resolveMonths(product, input.cycle, input.months);
-  const unit = cycleRenewPrice(product, input.cycle);
+  // 续费与首购走同一套折扣规则（discount.ts）：否则用户首期享受折扣、续费却
+  // 恢复原价，且商品页展示的 `renewPrice` 已扣折扣 —— 展示与实际收费不一致。
+  const groupDiscount = await effectiveGroupDiscount(userId);
+  const discount = betterDiscount(product.discount, groupDiscount);
+  const unit = applyDiscount(cycleRenewPrice(product, input.cycle), discount);
   if (!Number.isInteger(unit) || unit < 0) throw new StoreError(400, '订单金额无效');
 
   const line = {

@@ -18,6 +18,7 @@ import {
   Card,
   CardHeader,
   CardTitle,
+  StatusBadge,
   CardDescription,
   CardContent,
   Field,
@@ -28,8 +29,9 @@ import {
   PageHeader,
   Select,
 } from '@stackpanel/ui';
-import { ArrowLeft, Package, Pencil, Plus, RefreshCw, Save, Search } from 'lucide-react';
+import { Package, Pencil, Plus, RefreshCw, Save, Search } from 'lucide-react';
 import { t } from './i18n.js';
+import { approvalErrorMessage } from './approval-feedback.js';
 
 interface ProductRow {
   id: string;
@@ -79,11 +81,22 @@ interface UpstreamItem {
   id: string;
   name: string;
   price: number | null;
+  stock?: number;
   currency?: string;
+  sourceRef?: string;
   description?: string | null;
   icon?: string | null;
   specs?: Record<string, unknown>;
-  sourceRef?: string;
+}
+
+function upstreamSpecsSummary(specs: Record<string, unknown> | undefined): string | null {
+  if (!specs) return null;
+  const entries = Object.entries(specs).filter(([, value]) => value !== null && value !== '');
+  if (entries.length === 0) return null;
+  return entries
+    .slice(0, 6)
+    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .join(' · ');
 }
 
 /** Format minor units through the kernel catalog (no `/100`, no CNY branch). */
@@ -546,6 +559,7 @@ function ProductForm({
   });
   const [providerId, setProviderId] = useState(editing?.providerId ?? '');
   const [providerProductId, setProviderProductId] = useState(editing?.providerProductId ?? '');
+  const [upstreamSourceRef, setUpstreamSourceRef] = useState<string | null>(null);
   const [checkoutConfigJson, setCheckoutConfigJson] = useState(() => {
     const config = editing?.metadata?.checkoutConfig;
     return config ? JSON.stringify(config, null, 2) : '';
@@ -556,8 +570,11 @@ function ProductForm({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UpstreamItem[]>([]);
   const [searching, setSearching] = useState(false);
+  const [loadingUpstreamConfig, setLoadingUpstreamConfig] = useState(false);
 
   const currentType = types.find((candidate) => candidate.id === typeId) ?? null;
+  const isCloudServer = typeId === 'cloud_server';
+  const isUpstreamManaged = Boolean(providerId && providerProductId);
 
   const runSearch = useCallback(async () => {
     if (!searchSource) return;
@@ -579,41 +596,45 @@ function ProductForm({
   }, [searchSource, searchQuery, tr]);
 
   async function pickUpstream(item: UpstreamItem) {
-    setProviderId(searchSource);
-    setProviderProductId(item.id);
-    if (item.name) setName(item.name);
-    if (item.description) setDescription(item.description);
-    if (item.icon) setIcon(item.icon);
-    if (item.price != null) setCost(minorToInput(item.price, item.currency ?? currency));
-    if (item.specs) {
-      setConfigData((prev) => {
-        const next = { ...prev };
-        for (const [key, value] of Object.entries(item.specs ?? {})) {
-          setPath(next, `specs.${key}`, value);
-        }
-        return next;
-      });
-    }
-    // 一键填充上游结账配置（周期 + 配置项）。
+    setLoadingUpstreamConfig(true);
     try {
       const response = await fetch(
-        `/api/store/upstream-products/${encodeURIComponent(searchSource)}/${encodeURIComponent(item.id)}/config`,
+        `/api/store/upstream-products/${encodeURIComponent(searchSource)}/${encodeURIComponent(item.id)}/config${item.sourceRef ? `?sourceRef=${encodeURIComponent(item.sourceRef)}` : ''}`,
         { cache: 'no-store' },
       );
-      if (response.ok) {
-        const json = (await response.json()) as { checkoutConfig?: unknown };
-        if (json.checkoutConfig) {
-          setCheckoutConfigJson(JSON.stringify(json.checkoutConfig, null, 2));
-        }
+      const json = (await response.json()) as { checkoutConfig?: unknown; error?: string };
+      if (!response.ok) throw new Error(json.error || tr('editor.upstreamConfigFailed'));
+      setProviderId(searchSource);
+      setProviderProductId(item.id);
+      setUpstreamSourceRef(item.sourceRef ?? null);
+      if (item.name) setName(item.name);
+      if (item.description) setDescription(item.description);
+      if (item.icon) setIcon(item.icon);
+      if (item.price != null) setCost(minorToInput(item.price, item.currency ?? currency));
+      if (item.stock !== undefined) setStock(String(item.stock));
+      if (item.specs) {
+        setConfigData((prev) => {
+          const next = { ...prev };
+          for (const [key, value] of Object.entries(item.specs ?? {})) {
+            setPath(next, `specs.${key}`, value);
+          }
+          return next;
+        });
       }
-    } catch {
-      // 配置拉取失败不阻断关联；管理员可手动填写。
+      setCheckoutConfigJson(json.checkoutConfig ? JSON.stringify(json.checkoutConfig, null, 2) : '');
+      setError(null);
+    } catch (cause) {
+      console.error('[store] upstream config failed', cause);
+      setError(tr('editor.upstreamConfigFailed'));
+    } finally {
+      setLoadingUpstreamConfig(false);
     }
   }
 
   function clearUpstream() {
     setProviderId('');
     setProviderProductId('');
+    setUpstreamSourceRef(null);
     setSearchResults([]);
   }
 
@@ -652,7 +673,7 @@ function ProductForm({
       return parsed;
     };
     // Validate cost/original price against this currency's precision, not `/100`.
-    const amounts = [cost, originalPrice];
+    const amounts = isUpstreamManaged ? [originalPrice] : [cost, originalPrice];
     if (
       amounts.some(
         (value) => value.trim() && (optionalAmount(value) === null || optionalAmount(value)! < 0),
@@ -661,7 +682,10 @@ function ProductForm({
       setError(tr('editor.amountInvalid', { currency, digits: minorUnit }));
       return;
     }
-    if (!Number.isInteger(Number(stock)) || Number(stock) < 0 || Number(stock) > 1000000) {
+    if (
+      !isUpstreamManaged &&
+      (!Number.isInteger(Number(stock)) || Number(stock) < 0 || Number(stock) > 1000000)
+    ) {
       setError(tr('editor.stockInvalid'));
       return;
     }
@@ -679,13 +703,13 @@ function ProductForm({
       description: description.trim(),
       price: parsedPrice,
       currency,
-      stock: Number(stock),
-      cost: optionalAmount(cost ?? ''),
+      ...(!isUpstreamManaged ? { stock: Number(stock), cost: optionalAmount(cost ?? '') } : {}),
       originalPrice: optionalAmount(originalPrice ?? ''),
       discount: discount.trim() ? Number(discount) : null,
       ...(typeId ? { fulfillmentType: typeId } : {}),
       providerId: providerId || null,
       providerProductId: providerProductId || null,
+      upstreamSourceRef: upstreamSourceRef || undefined,
       metadata,
     };
     startTransition(async () => {
@@ -711,7 +735,8 @@ function ProductForm({
           await saveProductCategories(result.product.id, selectedCategoryIds, tr);
         onDone();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : tr('editor.saveFailedRetry'));
+        console.error('[store] product save failed', cause);
+        setError(tr('editor.saveFailedRetry'));
       }
     });
   }
@@ -726,259 +751,32 @@ function ProductForm({
       className="flex flex-col gap-6"
       aria-busy={isPending}
     >
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            nativeButton={false}
-            render={<Link href="/admin/plugin/store/products" />}
-            aria-label={tr('editor.back')}
-          >
-            <ArrowLeft />
-          </Button>
-          <PageHeader title={editing ? tr('editor.titleEdit') : tr('editor.titleNew')} />
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" type="button" onClick={onDone} disabled={isPending}>
-            {tr('common.cancel')}
-          </Button>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? (
-              <RefreshCw data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <Save data-icon="inline-start" />
-            )}
-            {isPending ? tr('editor.saving') : tr('editor.save')}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        backHref="/admin/plugin/store/products"
+        backLabel={tr('editor.back')}
+        title={editing ? tr('editor.titleEdit') : tr('editor.titleNew')}
+        actions={
+          <>
+            <Button variant="outline" type="button" onClick={onDone} disabled={isPending}>
+              {tr('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? (
+                <RefreshCw data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <Save data-icon="inline-start" />
+              )}
+              {isPending ? tr('editor.saving') : tr('editor.save')}
+            </Button>
+          </>
+        }
+      />
       {error ? <FieldError>{error}</FieldError> : null}
       <fieldset
         disabled={isPending}
         className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]"
       >
         <div className="flex min-w-0 flex-col gap-6">
-          <Card id="basic">
-            <CardHeader>
-              <SectionTitle as="h3">{tr('editor.basicTitle')}</SectionTitle>
-              <CardDescription>{tr('editor.basicDescription')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup>
-                <Field>
-                  <Label htmlFor="product-name">{tr('editor.nameLabel')}</Label>
-                  <Input
-                    id="product-name"
-                    required
-                    maxLength={191}
-                    placeholder={tr('editor.namePlaceholder')}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <Label htmlFor="product-description">{tr('editor.descriptionLabel')}</Label>
-                  <Input
-                    id="product-description"
-                    maxLength={191}
-                    placeholder={tr('editor.descriptionPlaceholder')}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <Label htmlFor="product-icon">{tr('editor.iconLabel')}</Label>
-                  <Input id="product-icon" value={icon} onChange={(e) => setIcon(e.target.value)} />
-                </Field>
-              </FieldGroup>
-            </CardContent>
-          </Card>
-          <Card id="pricing">
-            <CardHeader>
-              <SectionTitle as="h3">{tr('editor.pricingTitle')}</SectionTitle>
-              <CardDescription>{tr('editor.pricingDescription')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup className="grid sm:grid-cols-2">
-                <Field>
-                  <Label htmlFor="product-price">{tr('editor.priceLabel')}</Label>
-                  <Input
-                    id="product-price"
-                    required
-                    type="number"
-                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
-                    min={minorUnitFor(currency) === 0 ? '1' : '0.01'}
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <Label htmlFor="product-currency">{tr('editor.currencyLabel')}</Label>
-                  <Select
-                    id="product-currency"
-                    value={currency}
-                    disabled={Boolean(editing)}
-                    onChange={(e) => {
-                      if (editing) return; // currency is immutable once created
-                      setCurrency(e.target.value);
-                    }}
-                  >
-                    {currencies.map((option) => (
-                      <option key={option.code} value={option.code}>
-                        {tr('editor.currencyOption', {
-                          code: option.code,
-                          name: option.name,
-                          symbol: option.symbol,
-                          digits: option.minorUnit,
-                        })}
-                      </option>
-                    ))}
-                  </Select>
-                  <p className="text-xs text-muted-foreground">{tr('editor.currencyHint')}</p>
-                </Field>
-                <Field>
-                  <Label htmlFor="product-stock">{tr('editor.stockLabel')}</Label>
-                  <Input
-                    id="product-stock"
-                    type="number"
-                    min="0"
-                    value={stock}
-                    onChange={(e) => setStock(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <Label htmlFor="product-cost">{tr('editor.costLabel')}</Label>
-                  <Input
-                    id="product-cost"
-                    type="number"
-                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
-                    min="0"
-                    value={cost}
-                    onChange={(e) => setCost(e.target.value)}
-                  />
-                  {editing
-                    ? (() => {
-                        const source = upstreamSourcePrice(editing);
-                        if (source == null) return null;
-                        return (
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>
-                              {tr('editor.upstreamPrice', {
-                                price: money(source, editing.currency, locale),
-                              })}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setCost(minorToInput(source, editing.currency))}
-                            >
-                              {tr('editor.useUpstreamPrice')}
-                            </Button>
-                          </div>
-                        );
-                      })()
-                    : null}
-                </Field>
-                <Field>
-                  <Label htmlFor="product-original-price">{tr('editor.originalPriceLabel')}</Label>
-                  <Input
-                    id="product-original-price"
-                    type="number"
-                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
-                    min="0"
-                    value={originalPrice}
-                    onChange={(e) => setOriginalPrice(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <Label htmlFor="product-discount">{tr('editor.discountLabel')}</Label>
-                  <Input
-                    id="product-discount"
-                    type="number"
-                    min="0"
-                    max="99"
-                    value={discount}
-                    onChange={(e) => setDiscount(e.target.value)}
-                  />
-                </Field>
-              </FieldGroup>
-            </CardContent>
-          </Card>
-          <Card id="configuration">
-            <CardHeader>
-              <SectionTitle as="h3">{tr('editor.configTitle')}</SectionTitle>
-              <CardDescription>{tr('editor.configDescription')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="product-type">{tr('editor.typeLabel')}</Label>
-                {types.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">{tr('editor.noTypePlugins')}</p>
-                ) : (
-                  <Select
-                    id="product-type"
-                    value={typeId}
-                    onChange={(e) => {
-                      const nextType = e.target.value;
-                      setTypeId(nextType);
-                      setConfigData((current) => ({
-                        ...current,
-                        ...initialConfigData(
-                          types.find((type) => type.id === nextType)?.configFields ?? [],
-                          current,
-                        ),
-                      }));
-                    }}
-                  >
-                    <option value="">{tr('editor.typePlaceholder')}</option>
-                    {types.map((type) => (
-                      <option key={type.id} value={type.id}>
-                        {type.label}
-                      </option>
-                    ))}
-                    {!types.some((type) => type.id === typeId) && builtinTypeLabel(typeId, tr) ? (
-                      <option key={typeId} value={typeId}>
-                        {builtinTypeLabel(typeId, tr)}
-                      </option>
-                    ) : null}
-                  </Select>
-                )}
-                {currentType && currentType.configFields.length > 0 ? (
-                  <div className="rounded-lg border bg-muted/30 p-4">
-                    <ConfigFields
-                      fields={currentType.configFields}
-                      scope={configData}
-                      onChange={setConfigData}
-                      tr={tr}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
-          <Card id="checkout">
-            <CardHeader>
-              <SectionTitle as="h3">{tr('editor.checkoutTitle')}</SectionTitle>
-              <CardDescription>{tr('editor.checkoutDescription')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Field>
-                <Label htmlFor="product-checkout-config">{tr('editor.checkoutLabel')}</Label>
-                <textarea
-                  id="product-checkout-config"
-                  value={checkoutConfigJson}
-                  onChange={(e) => setCheckoutConfigJson(e.target.value)}
-                  rows={6}
-                  spellCheck={false}
-                  placeholder={tr('editor.checkoutPlaceholder')}
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                />
-                <p className="text-xs text-muted-foreground">{tr('editor.checkoutHelp')}</p>
-              </Field>
-            </CardContent>
-          </Card>
           {sources.length > 0 ? (
             <Card id="upstream">
               <CardHeader>
@@ -1049,8 +847,20 @@ function ProductForm({
                             key={item.id}
                             className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
                           >
-                            <div className="min-w-0">
+                            <div className="min-w-0 space-y-1">
                               <p className="truncate font-medium">{item.name}</p>
+                              {item.description ? (
+                                <p className="line-clamp-2 text-xs text-muted-foreground">
+                                  {item.description}
+                                </p>
+                              ) : null}
+                              {upstreamSpecsSummary(item.specs) ? (
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {tr('editor.specsInline', {
+                                    details: upstreamSpecsSummary(item.specs) ?? '',
+                                  })}
+                                </p>
+                              ) : null}
                               <p className="text-xs text-muted-foreground">
                                 {item.id}
                                 {item.price != null
@@ -1058,13 +868,17 @@ function ProductForm({
                                       price: money(item.price, item.currency ?? currency, locale),
                                     })
                                   : ''}
+                                {item.stock !== undefined
+                                  ? tr('editor.stockInline', { stock: item.stock })
+                                  : ''}
                               </p>
                             </div>
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => pickUpstream(item)}
+                              disabled={loadingUpstreamConfig}
+                              onClick={() => void pickUpstream(item)}
                             >
                               {tr('editor.selectItem')}
                             </Button>
@@ -1082,6 +896,247 @@ function ProductForm({
               </CardContent>
             </Card>
           ) : null}
+          <Card id="basic">
+            <CardHeader>
+              <SectionTitle as="h3">{tr('editor.basicTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.basicDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FieldGroup>
+                <Field>
+                  <Label htmlFor="product-name">{tr('editor.nameLabel')}</Label>
+                  <Input
+                    id="product-name"
+                    required
+                    maxLength={191}
+                    placeholder={tr('editor.namePlaceholder')}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <Label htmlFor="product-description">{tr('editor.descriptionLabel')}</Label>
+                  <Input
+                    id="product-description"
+                    maxLength={191}
+                    placeholder={tr('editor.descriptionPlaceholder')}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <Label htmlFor="product-icon">{tr('editor.iconLabel')}</Label>
+                  <Input id="product-icon" value={icon} onChange={(e) => setIcon(e.target.value)} />
+                </Field>
+              </FieldGroup>
+            </CardContent>
+          </Card>
+          <Card id="pricing">
+            <CardHeader>
+              <SectionTitle as="h3">{tr('editor.pricingTitle')}</SectionTitle>
+              <CardDescription>
+                {isUpstreamManaged
+                  ? tr('editor.pricingUpstreamDescription')
+                  : tr('editor.pricingDescription')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FieldGroup className="grid sm:grid-cols-2">
+                <Field>
+                  <Label htmlFor="product-price">{tr('editor.priceLabel')}</Label>
+                  <Input
+                    id="product-price"
+                    required
+                    type="number"
+                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
+                    min={minorUnitFor(currency) === 0 ? '1' : '0.01'}
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <Label htmlFor="product-currency">{tr('editor.currencyLabel')}</Label>
+                  <Select
+                    id="product-currency"
+                    value={currency}
+                    disabled={Boolean(editing)}
+                    onChange={(e) => {
+                      if (editing) return; // currency is immutable once created
+                      setCurrency(e.target.value);
+                    }}
+                  >
+                    {currencies.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {tr('editor.currencyOption', {
+                          code: option.code,
+                          name: option.name,
+                          symbol: option.symbol,
+                          digits: option.minorUnit,
+                        })}
+                      </option>
+                    ))}
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{tr('editor.currencyHint')}</p>
+                </Field>
+                {isUpstreamManaged ? (
+                  <div className="sm:col-span-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+                    {tr('editor.upstreamInventoryManaged', {
+                      cost: cost ? money(amountToMinor(cost, currency) ?? 0, currency, locale) : '—',
+                      stock: stock || '—',
+                    })}
+                  </div>
+                ) : (
+                  <>
+                    <Field>
+                      <Label htmlFor="product-stock">{tr('editor.stockLabel')}</Label>
+                      <Input
+                        id="product-stock"
+                        type="number"
+                        min="0"
+                        value={stock}
+                        onChange={(e) => setStock(e.target.value)}
+                      />
+                    </Field>
+                    <Field>
+                      <Label htmlFor="product-cost">{tr('editor.costLabel')}</Label>
+                      <Input
+                        id="product-cost"
+                        type="number"
+                        step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
+                        min="0"
+                        value={cost}
+                        onChange={(e) => setCost(e.target.value)}
+                      />
+                      {editing
+                        ? (() => {
+                            const source = upstreamSourcePrice(editing);
+                            if (source == null) return null;
+                            return (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>
+                                  {tr('editor.upstreamPrice', {
+                                    price: money(source, editing.currency, locale),
+                                  })}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setCost(minorToInput(source, editing.currency))}
+                                >
+                                  {tr('editor.useUpstreamPrice')}
+                                </Button>
+                              </div>
+                            );
+                          })()
+                        : null}
+                    </Field>
+                  </>
+                )}
+                <Field>
+                  <Label htmlFor="product-original-price">{tr('editor.originalPriceLabel')}</Label>
+                  <Input
+                    id="product-original-price"
+                    type="number"
+                    step={minorUnitFor(currency) === 0 ? '1' : '0.01'}
+                    min="0"
+                    value={originalPrice}
+                    onChange={(e) => setOriginalPrice(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <Label htmlFor="product-discount">{tr('editor.discountLabel')}</Label>
+                  <Input
+                    id="product-discount"
+                    type="number"
+                    min="0"
+                    max="99"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                  />
+                </Field>
+              </FieldGroup>
+            </CardContent>
+          </Card>
+          <Card id="configuration">
+            <CardHeader>
+              <SectionTitle as="h3">{tr('editor.configTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.configDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="product-type">{tr('editor.typeLabel')}</Label>
+                {types.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{tr('editor.noTypePlugins')}</p>
+                ) : (
+                  <Select
+                    id="product-type"
+                    value={typeId}
+                    onChange={(e) => {
+                      const nextType = e.target.value;
+                      setTypeId(nextType);
+                      setConfigData((current) => ({
+                        ...current,
+                        ...initialConfigData(
+                          types.find((type) => type.id === nextType)?.configFields ?? [],
+                          current,
+                        ),
+                      }));
+                    }}
+                  >
+                    <option value="">{tr('editor.typePlaceholder')}</option>
+                    {types.map((type) => (
+                      <option key={type.id} value={type.id}>
+                        {type.label}
+                      </option>
+                    ))}
+                    {!types.some((type) => type.id === typeId) && builtinTypeLabel(typeId, tr) ? (
+                      <option key={typeId} value={typeId}>
+                        {builtinTypeLabel(typeId, tr)}
+                      </option>
+                    ) : null}
+                  </Select>
+                )}
+                {currentType && currentType.configFields.length > 0 && !providerId ? (
+                  <div className="rounded-lg border bg-muted/30 p-4">
+                    <ConfigFields
+                      fields={currentType.configFields}
+                      scope={configData}
+                      onChange={setConfigData}
+                      tr={tr}
+                    />
+                  </div>
+                ) : null}
+                {isCloudServer && !providerId ? (
+                  <p className="text-sm text-muted-foreground">{tr('editor.cloudProviderRequired')}</p>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+          <Card id="checkout">
+            <CardHeader>
+              <SectionTitle as="h3">{tr('editor.checkoutTitle')}</SectionTitle>
+              <CardDescription>{tr('editor.checkoutDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Field>
+                <Label htmlFor="product-checkout-config">{tr('editor.checkoutLabel')}</Label>
+                <textarea
+                  id="product-checkout-config"
+                  value={checkoutConfigJson}
+                  onChange={(e) => setCheckoutConfigJson(e.target.value)}
+                  readOnly={Boolean(providerId)}
+                  rows={6}
+                  spellCheck={false}
+                  placeholder={tr('editor.checkoutPlaceholder')}
+                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {providerId ? tr('editor.upstreamConfigManaged') : tr('editor.checkoutHelp')}
+                </p>
+              </Field>
+            </CardContent>
+          </Card>
         </div>
         <aside className="flex min-w-0 flex-col gap-6 xl:sticky xl:top-24">
           <Card id="summary">
@@ -1418,7 +1473,270 @@ function StoreAdminOverviewPage(props: AdminPageComponentProps) {
   );
 }
 
+function StoreSettingsPage(props: AdminPageComponentProps) {
+  const tr = t(props.locale);
+  const initial = props.data.settings as { provisioningMode: string } | undefined;
+  const [mode, setMode] = useState(initial?.provisioningMode ?? 'manual');
+  const [busy, start] = useTransition();
+  const [error, setError] = useState('');
+  const router = useRouter();
+  return <main className="flex flex-col gap-6">
+    <PageHeader title={tr('settings.store.title')} description={tr('settings.store.help')} />
+    <FieldGroup><Field><Label htmlFor="provisioning-mode">{tr('settings.store.mode')}</Label>
+      <Select id="provisioning-mode" value={mode} disabled={busy || !initial} onChange={e => setMode(e.target.value)}>
+        <option value="manual">{tr('settings.store.manual')}</option>
+        <option value="automatic">{tr('settings.store.automatic')}</option>
+      </Select></Field></FieldGroup>
+    {error ? <p role="alert">{error}</p> : null}
+    <Button disabled={busy || !initial} onClick={() => start(async () => {
+      setError('');
+      try {
+        const response = await fetch('/api/plugins/store/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provisioningMode: mode }) });
+        if (!response.ok) throw new Error();
+        router.refresh();
+      } catch { setError(tr('settings.store.failed')); }
+    })}>{tr('settings.store.save')}</Button>
+  </main>;
+}
+
+function StoreApprovalsPage(props: AdminPageComponentProps) {
+  const tr = t(props.locale);
+  const data = props.data.approvals as { total: number; page: number; pageSize: number; tasks: Array<{ id: string; orderId: string; userId: string; productName: string; quantity: number; status: string; reason: string | null; attempts: number; upstreamServiceId: string | null; invoiceId: string | null; paymentState: string | null; canResumePayment: boolean }> } | undefined;
+  const [candidates, setCandidates] = useState<Record<string, Array<{ id: string; productName: string; providerServiceId: string }>>>({});
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [busy, start] = useTransition();
+  const showFeedback = (kind: 'error' | 'success', message: string) => {
+    if (!message) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('error');
+    url.searchParams.delete('success');
+    url.searchParams.set(kind, message);
+    router.replace(`${url.pathname}${url.search}`, { scroll: false });
+  };
+  const setError = (message: string) => showFeedback('error', message);
+  const router = useRouter();
+  return <main className="flex flex-col gap-6"><PageHeader title={tr('settings.store.approvals')} />
+    {!data ? <p role="alert">{tr('settings.store.failed')}</p> : null}
+    {data?.tasks.length === 0 ? <p>{tr('settings.store.empty')}</p> : null}
+    {data?.tasks.map(task => <Card key={task.id}><CardHeader>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CardTitle>{task.productName} × {task.quantity}</CardTitle>
+        <StatusBadge tone={task.status === 'AWAITING_APPROVAL' ? 'neutral' : 'warn'}>{tr(`review.status.${task.status}`)}</StatusBadge>
+      </div>
+      <CardDescription>{task.status === 'AWAITING_APPROVAL' ? tr('review.approveHint') : task.paymentState ? tr(`review.payment.${task.paymentState}`) : tr('review.checkHint')}</CardDescription>
+    </CardHeader><CardContent className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+      {task.canResumePayment ? <Button disabled={busy} onClick={() => {
+        if (!window.confirm(tr('review.resumeConfirm'))) return;
+        start(async () => {
+          try {
+            const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/resume-payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) });
+            if (!response.ok) throw new Error();
+            router.refresh();
+          } catch { setError(tr('review.failed')); }
+        });
+      }}>{tr('review.resumePayment')}</Button> : null}
+      {task.status === 'AWAITING_APPROVAL' ? <Button disabled={busy} onClick={() => start(async () => {
+        setError('');
+        try {
+          const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/approve`, { method: 'POST' });
+          if (!response.ok) throw new Error();
+          router.refresh();
+        } catch { setError(tr('settings.store.failed')); }
+      })}>{tr('settings.store.approve')}</Button> : <>
+        {task.status === 'REQUIRES_RECONCILIATION' ? <Button variant="outline" disabled={busy} onClick={() => {
+          if (!window.confirm(tr('review.recoverConfirm'))) return;
+          start(async () => {
+            setError('');
+            try {
+              const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/recover`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) });
+              if (!response.ok) {
+                const failure: unknown = await response.json().catch(() => null);
+                throw new Error(approvalErrorMessage(failure, tr('review.failed')));
+              }
+              showFeedback('success', tr('review.recovered'));
+              router.refresh();
+            } catch (failure) { console.error('[store] approval action failed', failure); setError(tr('review.failed')); }
+          });
+        }}>{tr('review.recover')}</Button> : null}
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link href="/admin/plugin/zjmf-upstream/instances" />}
+        >
+          {tr('review.viewUpstream')}
+        </Button>
+        <Button variant="ghost" disabled={busy} aria-expanded={expanded === task.id} onClick={() => {
+          if (expanded === task.id) { setExpanded(null); return; }
+          start(async () => {
+            setError('');
+            try {
+              const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/candidates`);
+              if (!response.ok) throw new Error();
+              const result = await response.json() as { services: Array<{ id: string; productName: string; providerServiceId: string }> };
+              setCandidates(current => ({ ...current, [task.id]: result.services }));
+              setExpanded(task.id);
+            } catch { setError(tr('review.failed')); }
+          });
+        }}>{tr('review.linkExisting')}</Button>
+      </>}
+      </div>
+      {expanded === task.id && task.status !== 'AWAITING_APPROVAL' ? candidates[task.id]?.length || task.attempts === 0 ? <form className="max-w-xl" onSubmit={event => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const values = new FormData(form);
+          const selected = String(values.get('serviceId') ?? '').trim();
+          const serviceId = selected === '__not_created' ? '' : selected;
+          start(async () => {
+            setError('');
+            try {
+              const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/reconcile`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ outcome: serviceId ? 'existing' : 'not_created', ...(serviceId ? { serviceId } : {}), confirmed: values.get('confirmed') === 'on', note: values.get('note') }),
+              });
+              if (!response.ok) throw new Error(tr('review.failed'));
+              router.refresh();
+            } catch { setError(tr('review.failed')); }
+          });
+        }}><FieldGroup>
+          <Field><Label htmlFor={`service-${task.id}`}>{tr('review.service')}</Label>
+            <Select id={`service-${task.id}`} name="serviceId" disabled={busy} defaultValue="" required>
+              <option value="" disabled>{tr('review.choose')}</option>
+              {task.attempts === 0 ? <option value="__not_created">{tr('review.notCreated')}</option> : null}
+              {candidates[task.id]?.map(service => <option key={service.id} value={service.id}>{service.productName} · {service.providerServiceId}</option>)}
+            </Select>
+          </Field>
+          <Field><Label htmlFor={`note-${task.id}`}>{tr('review.note')}</Label><Input id={`note-${task.id}`} name="note" required minLength={5} maxLength={500} disabled={busy} /></Field>
+          <Field><Label><input type="checkbox" name="confirmed" required disabled={busy} />{tr('review.confirm')}</Label></Field>
+          <Button type="submit" disabled={busy}>{tr('review.resolve')}</Button>
+        </FieldGroup></form> : <div className="flex flex-col items-start gap-2 text-sm">
+          <p className="text-muted-foreground">{tr('review.noCandidates')}</p>
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href={`/admin/users/${encodeURIComponent(task.userId)}`} />}
+          >
+            {tr('review.import')}
+          </Button>
+        </div> : null}
+      <details className="text-sm text-muted-foreground">
+        <summary className="w-fit cursor-pointer">{tr('review.details')}</summary>
+        <dl className="mt-3 grid gap-2 break-all sm:grid-cols-[auto_1fr]">
+          <dt>{tr('review.order')}</dt><dd>{task.orderId}</dd>
+          <dt>{tr('review.user')}</dt><dd><Link href={`/admin/users/${encodeURIComponent(task.userId)}`}>{task.userId}</Link></dd>
+          {task.upstreamServiceId ? <><dt>{tr('review.remote')}</dt><dd>{task.upstreamServiceId}</dd></> : null}
+          {task.invoiceId ? <><dt>{tr('review.invoice')}</dt><dd>{task.invoiceId}</dd></> : null}
+        </dl>
+      </details>
+    </CardContent></Card>)}
+    {data ? <nav className="flex items-center gap-4" aria-label={tr('review.pagination')}>
+      {data.page > 1 ? <Link href={`?page=${data.page - 1}`}>{tr('review.previous')}</Link> : null}
+      <span>{data.page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}</span>
+      {data.page * data.pageSize < data.total ? <Link href={`?page=${data.page + 1}`}>{tr('review.next')}</Link> : null}
+    </nav> : null}
+  </main>;
+}
+
+export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
+  const tr = t(props.locale);
+  const rows =
+    (
+      props.data.refunds as
+        | {
+            requests: Array<{
+              id: string;
+              orderId: string;
+              userId: string;
+              amount: number;
+              currency: string;
+              state: string;
+              reason: string | null;
+              failureReason: string | null;
+            }>;
+          }
+        | undefined
+    )?.requests ?? [];
+  const [busy, start] = useTransition();
+  const router = useRouter();
+  // Refund states are machine values; never render them verbatim.
+  const stateLabel = (state: string) => {
+    const key = `refund.state.${state}`;
+    const label = tr(key);
+    return label === key ? state : label;
+  };
+  const review = (id: string, decision: 'approve' | 'reject') =>
+    start(async () => {
+      await fetch(`/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      });
+      router.refresh();
+    });
+  return (
+    <main className="flex flex-col gap-6">
+      <PageHeader title={tr('refund.title')} description={tr('refund.description')} />
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{tr('refund.empty')}</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th className="p-3">{tr('refund.colOrder')}</th>
+                <th className="p-3">{tr('refund.colUser')}</th>
+                <th className="p-3">{tr('refund.colAmount')}</th>
+                <th className="p-3">{tr('refund.colState')}</th>
+                <th className="p-3">{tr('refund.colActions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} className="border-b last:border-0">
+                  <td className="p-3 font-mono text-xs">{row.orderId}</td>
+                  <td className="p-3">{row.userId}</td>
+                  <td className="p-3 tabular-nums">
+                    {money(row.amount, row.currency, props.locale)}
+                  </td>
+                  <td className="p-3">
+                    {row.failureReason
+                      ? tr('refund.failureReason', {
+                          state: stateLabel(row.state),
+                          reason: row.failureReason,
+                        })
+                      : stateLabel(row.state)}
+                  </td>
+                  <td className="p-3">
+                    {row.state === 'PENDING' ? (
+                      <div className="flex gap-2">
+                        <Button size="sm" disabled={busy} onClick={() => review(row.id, 'approve')}>
+                          {tr('refund.approve')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => review(row.id, 'reject')}
+                        >
+                          {tr('refund.reject')}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </main>
+  );
+}
+
 export const adminPages = {
+  'admin/settings': StoreSettingsPage,
+  'admin/approvals': StoreApprovalsPage,
+  'admin/refunds': StoreAdminRefundsPage,
   'admin/summary': StoreAdminOverviewPage,
   'admin/overview': StoreAdminProductsPage,
   'admin/product-editor': StoreAdminProductEditorPage,
