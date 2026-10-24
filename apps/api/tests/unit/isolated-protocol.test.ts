@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPluginError } from '@stackpanel/sdk';
+import { isPluginError, isWalletError, sdkErrorClassName, WalletError } from '@stackpanel/sdk';
 import {
   decodeWire,
   encodeWire,
@@ -108,6 +108,24 @@ describe('isolated RPC wire protocol', () => {
       const revived = reviveWireError({ message: 'partial', status: 500 });
       expect(isPluginError(revived)).toBe(false);
       expect((revived as Error & { status?: number }).status).toBe(500);
+    });
+
+    it('restores the SDK error class brand across the boundary', () => {
+      // Regression: the brand lives on the SDK class prototype and is
+      // non-enumerable, so JSON dropped it. An isolated plugin's
+      // `catch (e) { if (isWalletError(e)) … }` then took the generic branch —
+      // referral treated an `insufficient_balance` debit as a hard failure
+      // instead of clawing back 0, so a refund silently never settled.
+      const wire = wireError(new WalletError(409, 'insufficient_balance'));
+      expect(wire.sdkError).toBe('WalletError');
+      const revived = reviveWireError(wire);
+      expect(sdkErrorClassName(revived)).toBe('WalletError');
+      expect(isWalletError(revived)).toBe(true);
+    });
+
+    it('keeps a plain error unbranded on the wire', () => {
+      expect(wireError(new Error('boom')).sdkError).toBeUndefined();
+      expect(sdkErrorClassName(new Error('boom'))).toBeUndefined();
     });
   });
 });

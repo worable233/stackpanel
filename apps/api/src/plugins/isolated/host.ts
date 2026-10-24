@@ -66,7 +66,7 @@ type Result = {
   id: string;
   value?: unknown;
   response?: { status?: number; payload?: unknown };
-  error?: { message: string; code?: string; status?: number; details?: unknown };
+  error?: { message: string; code?: string; status?: number; details?: unknown; sdkError?: string };
 };
 type Capability = {
   protocol: 1;
@@ -663,6 +663,7 @@ async function handleCapability(
       'wallet',
       'fx',
       'cache',
+      'currency',
     ].includes(serviceMatch[1] ?? '')
   ) {
     const service = ctx[
@@ -678,6 +679,7 @@ async function handleCapability(
         | 'wallet'
         | 'fx'
         | 'cache'
+        | 'currency'
     ] as unknown as Record<string, unknown>;
     const method = service[serviceMatch[2] ?? ''];
     if (typeof method !== 'function') throw new Error(`未知插件服务方法：${message.capability}`);

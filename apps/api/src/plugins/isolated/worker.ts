@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { z } from 'zod';
+import { formatMinorCurrency, toMinorUnits } from '@stackpanel/sdk';
 import type { CustomModelDefinition } from '@stackpanel/sdk';
 import {
   decodeWire,
@@ -13,6 +14,7 @@ import {
   RPC_PROTOCOL,
   RPC_TIMEOUT_MS,
   wireError,
+  reviveWireError,
   RAW_CHUNK_BYTES,
   RAW_MAX_QUEUE_BYTES,
   RAW_WINDOW_BYTES,
@@ -578,6 +580,18 @@ const context = {
     'listLedger',
   ]),
   fx: serviceProxy('fx', ['quote', 'getRate', 'listRates']),
+  // Currency catalog. `list`/`listEnabled`/`get`/`requireEnabled` are async and
+  // proxy over IPC; `toMinor`/`format` are synchronous in the kernel contract
+  // (`CurrencyService`), so they run locally from SDK pure functions — a
+  // round trip would force them to become async and break every plugin that
+  // calls them inline. Missing this service made isolated plugins fail on
+  // `ctx.currency.requireEnabled(...)` (referral's admin config route).
+  currency: {
+    ...serviceProxy('currency', ['list', 'listEnabled', 'get', 'requireEnabled']),
+    toMinor: (value: number | string, code: string) => toMinorUnits(value, code),
+    format: (amountMinor: number, code: string, locale: string) =>
+      formatMinorCurrency(amountMinor, code, locale),
+  },
   extensions,
   registerExtension,
   provide: provideService,
@@ -1092,8 +1106,11 @@ process.on('message', async (raw: unknown) => {
     pending.delete(requestId);
     clearTimeout(waiter.timer);
     if (message.error) {
-      const error = Object.assign(new Error(message.error.message), message.error);
-      waiter.reject(error);
+      // Shared revival: restores `code`/`status`/`details` and the SDK
+      // error-class brand. A plain `Object.assign` copied the fields but lost
+      // the brand, so `isWalletError(e)` inside the plugin returned false and
+      // error-specific branches (e.g. insufficient-balance) never ran.
+      waiter.reject(reviveWireError(message.error));
     } else waiter.resolve(message.value);
     return;
   }
@@ -1403,17 +1420,15 @@ process.on('message', async (raw: unknown) => {
         : {}),
     });
   } catch (error) {
-    const candidate = error as { code?: unknown; status?: unknown };
+    // Route `wireError` (not a hand-rolled literal) so `details` and the SDK
+    // error-class brand survive the boundary. Dropping the brand broke
+    // `isWalletError`/`isPluginError` narrowing on the host.
     sendHost({
       protocol: 1,
       pluginId,
       type: 'result',
       id: requestId,
-      error: {
-        message: String(error instanceof Error ? error.message : error),
-        ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
-        ...(typeof candidate.status === 'number' ? { status: candidate.status } : {}),
-      },
+      error: wireError(error),
     });
   }
 });

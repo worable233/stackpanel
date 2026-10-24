@@ -1,4 +1,4 @@
-import { PluginError } from '@stackpanel/sdk';
+import { PluginError, brandSdkErrorValue, sdkErrorClassName } from '@stackpanel/sdk';
 
 export const RPC_PROTOCOL = 1 as const;
 export const RPC_TIMEOUT_MS = 10_000;
@@ -23,7 +23,8 @@ export function encodeWire(value: unknown, seen = new WeakSet<object>()): unknow
   if (value instanceof Error) {
     const error = value as Error & { code?: unknown; status?: unknown; details?: unknown };
     return {
-      __spType: 'error', message: error.message,
+      __spType: 'error',
+      message: error.message,
       ...(typeof error.name === 'string' ? { name: error.name } : {}),
       ...(typeof error.code === 'string' ? { code: error.code } : {}),
       ...(typeof error.status === 'number' ? { status: error.status } : {}),
@@ -37,15 +38,22 @@ export function encodeWire(value: unknown, seen = new WeakSet<object>()): unknow
   // chunk sliced out of a larger buffer) is not a `Buffer`. Without this branch
   // it would serialize as `{ "0": 1, "1": 2, ... }` and blow up the message size.
   if (value instanceof Uint8Array) {
-    return { __spType: 'buffer', value: Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('base64') };
+    return {
+      __spType: 'buffer',
+      value: Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('base64'),
+    };
   }
   if (!value || typeof value !== 'object') return value;
   if (seen.has(value)) throw new TypeError('circular RPC value');
   seen.add(value);
   try {
     if (Array.isArray(value)) return value.map((item) => encodeWire(item, seen));
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, encodeWire(item, seen)]));
-  } finally { seen.delete(value); }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, encodeWire(item, seen)]),
+    );
+  } finally {
+    seen.delete(value);
+  }
 }
 
 export function decodeWire(value: unknown): unknown {
@@ -54,9 +62,14 @@ export function decodeWire(value: unknown): unknown {
     const item = value as Record<string, unknown>;
     if (item.__spType === 'date' && typeof item.value === 'string') return new Date(item.value);
     if (item.__spType === 'bigint' && typeof item.value === 'string') return BigInt(item.value);
-    if (item.__spType === 'buffer' && typeof item.value === 'string') return Buffer.from(item.value, 'base64');
+    if (item.__spType === 'buffer' && typeof item.value === 'string')
+      return Buffer.from(item.value, 'base64');
     if (item.__spType === 'error' && typeof item.message === 'string') {
-      const error = new Error(item.message) as Error & { code?: unknown; status?: unknown; details?: unknown };
+      const error = new Error(item.message) as Error & {
+        code?: unknown;
+        status?: unknown;
+        details?: unknown;
+      };
       if (typeof item.name === 'string') error.name = item.name;
       if (typeof item.code === 'string') error.code = item.code;
       if (typeof item.status === 'number') error.status = item.status;
@@ -68,13 +81,32 @@ export function decodeWire(value: unknown): unknown {
   return value.map(decodeWire);
 }
 
-export function wireError(error: unknown): { message: string; code?: string; status?: number; details?: unknown } {
-  const candidate = error as { message?: unknown; code?: unknown; status?: unknown; details?: unknown };
+export function wireError(error: unknown): {
+  message: string;
+  code?: string;
+  status?: number;
+  details?: unknown;
+  sdkError?: string;
+} {
+  const candidate = error as {
+    message?: unknown;
+    code?: unknown;
+    status?: unknown;
+    details?: unknown;
+  };
+  // The SDK error-class brand (`WalletError` et al.) lives on the prototype and
+  // is non-enumerable, so it is lost the moment the error is serialized. Send
+  // the class name explicitly: `isWalletError`/`isSdkErrorClass` on the host
+  // depend on it, and without it a plugin's `catch (e) { if (isWalletError(e)) }`
+  // silently takes the generic branch (e.g. referral treats an
+  // `insufficient_balance` debit as a hard failure instead of recording 0).
+  const sdkError = sdkErrorClassName(error);
   return {
     message: String(candidate?.message ?? error),
     ...(typeof candidate?.code === 'string' ? { code: candidate.code } : {}),
     ...(typeof candidate?.status === 'number' ? { status: candidate.status } : {}),
     ...(candidate?.details !== undefined ? { details: encodeWire(candidate.details) } : {}),
+    ...(sdkError !== undefined ? { sdkError } : {}),
   };
 }
 
@@ -104,6 +136,11 @@ export interface WireError {
   code?: string;
   status?: number;
   details?: unknown;
+  /**
+   * SDK error class name (`WalletError`, `CurrencyError`, …) the worker threw.
+   * Restored on the host so `isWalletError`-style narrowing keeps working.
+   */
+  sdkError?: string;
 }
 
 /**
@@ -121,6 +158,13 @@ export interface WireError {
  */
 export function reviveWireError(input: WireError): Error {
   const details = input.details !== undefined ? decodeWire(input.details) : undefined;
+  // `sdkError` restores the SDK class brand that JSON cannot carry. Without it,
+  // a plugin's `catch (e) { if (isWalletError(e)) … }` silently falls through to
+  // the generic branch after crossing the worker boundary.
+  const restoreBrand = (error: Error): Error => {
+    if (input.sdkError !== undefined) brandSdkErrorValue(error, input.sdkError);
+    return error;
+  };
   if (input.code === undefined || input.status === undefined) {
     const error = new Error(input.message) as Error & {
       code?: string;
@@ -130,7 +174,7 @@ export function reviveWireError(input: WireError): Error {
     if (input.code !== undefined) error.code = input.code;
     if (input.status !== undefined) error.status = input.status;
     if (details !== undefined) error.details = details;
-    return error;
+    return restoreBrand(error);
   }
   const error = new PluginError(input.code, input.status, input.message);
   // `PluginError` sets `message` to the code; keep the worker's human-readable
@@ -139,5 +183,5 @@ export function reviveWireError(input: WireError): Error {
   const branded = error as PluginError & { statusCode?: number; details?: unknown };
   branded.statusCode = input.status;
   if (details !== undefined) branded.details = details;
-  return error;
+  return restoreBrand(error);
 }

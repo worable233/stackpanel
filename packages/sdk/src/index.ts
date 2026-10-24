@@ -5,6 +5,8 @@ export {
   KernelError,
   PluginError,
   isPluginError,
+  brandSdkErrorValue,
+  sdkErrorClassName,
   type BrandedPluginError,
 } from './errors.js';
 export type { FieldError, ProblemDetails } from './errors.js';
