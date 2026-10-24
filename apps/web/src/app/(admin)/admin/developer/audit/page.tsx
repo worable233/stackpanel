@@ -95,7 +95,7 @@ export default async function AdminDeveloperAuditPage({
 
       {error ? (
         <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable', { error })}
+          {t('admin.developer.serviceUnavailable')}
         </p>
       ) : null}
 

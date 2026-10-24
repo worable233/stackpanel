@@ -151,8 +151,8 @@ describe('KernelNotificationsService', () => {
   it('upserting a live notification advances the same row in place', async () => {
     const created = await service.upsert({
       userId: 'user-1',
-      dedupeKey: 'frontend-apply',
-      type: 'system.frontend-apply',
+      dedupeKey: 'plugin-install',
+      type: 'system.plugin.install',
       title: '安装中：插件「A」',
       body: '第 1/4 步',
       status: 'active',
@@ -164,8 +164,8 @@ describe('KernelNotificationsService', () => {
 
     const updated = await service.upsert({
       userId: 'user-1',
-      dedupeKey: 'frontend-apply',
-      type: 'system.frontend-apply',
+      dedupeKey: 'plugin-install',
+      type: 'system.plugin.install',
       title: '插件「A」安装完成',
       status: 'success',
       progress: 100,

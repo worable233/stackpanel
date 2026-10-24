@@ -47,8 +47,9 @@ export function mcpCapabilitiesFor(request: FastifyRequest): McpCapability[] {
   return capabilitiesFor(
     user.permissions,
     request.server.pluginRuntime.listCapabilities(),
-    [],
+    user.effectiveScopes,
     request.server.pluginRuntime.scopeGovernance(),
+    user.viaApiToken ?? false,
   );
 }
 

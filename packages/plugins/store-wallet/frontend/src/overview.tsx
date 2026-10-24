@@ -130,7 +130,7 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
       <PageHeader
         title={tr('overview.title')}
         actions={
-          <Button render={<Link href="/account/balance" />}>
+          <Button nativeButton={false} render={<Link href="/account/balance" />}>
             <Plus data-icon="inline-start" />
             {tr('overview.topUp')}
           </Button>
@@ -214,7 +214,12 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
               <p className="text-xs leading-6 text-muted-foreground">
                 {tr('overview.statsNote')}
               </p>
-              <Button variant="outline" size="sm" render={<Link href="/account/orders" />}>
+              <Button
+                variant="outline"
+                size="sm"
+                nativeButton={false}
+                render={<Link href="/account/orders" />}
+              >
                 {tr('overview.viewOrders')}
                 <ArrowUpRight data-icon="inline-end" />
               </Button>

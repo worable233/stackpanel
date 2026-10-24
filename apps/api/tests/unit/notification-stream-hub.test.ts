@@ -6,7 +6,7 @@ import { NotificationStreamHub } from '../../src/notifications/stream-hub.ts';
 function view(id: string, overrides: Partial<NotificationView> = {}): NotificationView {
   return {
     id,
-    type: 'system.frontend-apply',
+    type: 'system.plugin.install',
     title: '安装中',
     body: null,
     link: null,

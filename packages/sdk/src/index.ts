@@ -103,6 +103,7 @@ export {
   defineFrontend,
   matchFrontendPagePath,
   mergeFrontendSettings,
+  migrateFrontendSettings,
   resolveFrontendPageSource,
   resolveThemeOverride,
   selectFrontendPageDefinition,
@@ -453,7 +454,12 @@ export type {
   AgentStepKind,
   AgentStepView,
 } from './agent.js';
-export { createPackageTranslator, formatPackageMessage, PACKAGE_FALLBACK_LOCALE } from './i18n.js';
+export {
+  createPackageTranslator,
+  formatPackageMessage,
+  packageLocaleChain,
+  PACKAGE_FALLBACK_LOCALE,
+} from './i18n.js';
 export type {
   PackageCatalog,
   PackageCatalogs,

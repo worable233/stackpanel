@@ -102,6 +102,21 @@ describe('KernelNotificationPolicyService', () => {
     // An undeclared type never appears in the catalog, so it cannot be turned off.
     const view = await service.listForUser('user-1');
     expect(view.types.some((t) => t.type === 'register.verification_code')).toBe(false);
+    expect(service.declares('register.verification_code')).toBe(false);
+  });
+
+  it('reports declarations for exact types and `.*` prefixes', () => {
+    const { service } = makeService(
+      [
+        { type: 'order.paid', category: 'store', label: '支付成功' },
+        { type: 'system.plugin.*', category: 'system', label: '插件', audience: 'admin' },
+      ],
+      db,
+    );
+    expect(service.declares('order.paid')).toBe(true);
+    expect(service.declares('system.plugin.install')).toBe(true);
+    expect(service.declares('system.pluginfoo')).toBe(false);
+    expect(service.declares('order.refunded')).toBe(false);
   });
 
   it('lists declared types with a channel per entry and defaults to all channels', async () => {
@@ -252,15 +267,32 @@ describe('account notification catalog boundaries', () => {
     const { service } = makeService(definitions);
     for (const userId of ['ordinary-user', 'administrator']) {
       const view = await service.listForUser(userId);
-      expect(view.types.map((row) => row.type)).toEqual(['business.*', 'order.paid', 'agent.*']);
-      expect(view.categories.map((row) => row.id)).toEqual(['store', 'agent']);
+      expect(view.types.map((row) => row.type)).toEqual([
+        'security.password.reset',
+        'security.account.disabled',
+        'security.account.enabled',
+        'wallet.topup.succeeded',
+        'wallet.balance.adjusted',
+        'business.*',
+        'order.paid',
+        'service.granted',
+        'service.updated',
+        'service.removed',
+        'agent.*',
+      ]);
+      expect(view.categories.map((row) => row.id)).toEqual([
+        'security',
+        'wallet',
+        'store',
+        'agent',
+      ]);
     }
     const policy = await service.listPolicy();
     expect(policy.types.map((row) => row.type)).toEqual(
       expect.arrayContaining([
         'system.plugin.*',
         'system.theme.*',
-        'system.frontend-apply',
+        'system.update.*',
         'operations.failure',
         'business.internal',
         'order.paid',

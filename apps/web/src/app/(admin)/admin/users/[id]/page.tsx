@@ -1,5 +1,3 @@
-import Link from 'next/link';
-import { ArrowLeft, UserRoundCog } from 'lucide-react';
 import type { AdminUserDetailResponse, PermissionGroupListResponse } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
@@ -22,7 +20,9 @@ export default async function AdminUserDetailPage({
   const { id } = await params;
   const query = await searchParams;
   const orderPage = Math.floor(Math.min(1000000, Math.max(1, Number(query.orderPage) || 1)));
-  const orderPageSize = [10, 20, 50, 100].includes(Number(query.orderPageSize)) ? Number(query.orderPageSize) : 20;
+  const orderPageSize = [10, 20, 50, 100].includes(Number(query.orderPageSize))
+    ? Number(query.orderPageSize)
+    : 20;
   const t = createTranslator(await getLocale());
   const client = await getAuthedApiClient();
 
@@ -42,13 +42,12 @@ export default async function AdminUserDetailPage({
   if (error || !detail) {
     return (
       <main className="space-y-4">
-        <Button render={<Link href="/admin/users" />} variant="ghost" size="sm" className="w-fit">
-          <ArrowLeft className="size-4" />
-          {t('admin.userDetailPage.backToUsers')}
-        </Button>
-        <p className="text-sm text-destructive">
-          {error ?? t('admin.userDetailPage.notFound')}
-        </p>
+        <PageHeader
+          backHref="/admin/users"
+          backLabel={t('admin.userDetailPage.backToUsers')}
+          title={t('admin.userDetailPage.notFound')}
+        />
+        <p className="text-sm text-destructive">{error ?? t('admin.userDetailPage.notFound')}</p>
       </main>
     );
   }
@@ -56,21 +55,9 @@ export default async function AdminUserDetailPage({
   return (
     <main className="space-y-5">
       <PageHeader
-        eyebrow={
-          <Link
-            href="/admin/users"
-            className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            {t('admin.userDetailPage.backToUsers')}
-          </Link>
-        }
-        title={
-          <span className="flex min-w-0 items-start gap-2">
-            <UserRoundCog className="mt-1 size-6 shrink-0 text-primary" />
-            <span className="min-w-0 break-all">{detail.user.email}</span>
-          </span>
-        }
+        backHref="/admin/users"
+        backLabel={t('admin.userDetailPage.backToUsers')}
+        title={detail.user.email}
         actions={
           <form action={impersonateUserAction.bind(null, id)}>
             <Button type="submit">{t('admin.userDetailPage.impersonate')}</Button>
@@ -78,11 +65,7 @@ export default async function AdminUserDetailPage({
         }
       />
 
-      <AdminUserDetail
-        userId={id}
-        initial={detail}
-        groups={groups?.groups ?? []}
-      />
+      <AdminUserDetail userId={id} initial={detail} groups={groups?.groups ?? []} />
     </main>
   );
 }

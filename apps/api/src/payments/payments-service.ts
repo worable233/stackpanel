@@ -18,6 +18,7 @@ import type {
   PaymentSettlement,
   PaymentSettlementHandler,
   PaymentService as PaymentServiceContract,
+  NotificationsService,
   PluginLogger,
   ResolvedPaymentSettlement,
   SalesChannelView,
@@ -27,6 +28,7 @@ import {
   CurrencyError,
   PaymentError,
   assertCurrency,
+  formatMinorCurrency,
   isPaymentError,
   normalizeCurrencyCode,
 } from '@stackpanel/sdk';
@@ -72,6 +74,11 @@ export interface PaymentServiceOptions {
   wallet: WalletService;
   getProviders: () => PaymentProvider[];
   getSettlementHandlers: () => PaymentSettlementHandler[];
+  /**
+   * 站内通知出口（best-effort）。充值到账属于「钱」的事实，必须让用户看到回执；
+   * 缺席时（精简运行时/单测）静默跳过，不影响结算。
+   */
+  notifications?: NotificationsService;
   logger?: Pick<PluginLogger, 'info' | 'warn' | 'error'>;
 }
 
@@ -418,6 +425,7 @@ export class PaymentsService implements PaymentServiceContract {
         return true;
       });
       if (applied) nudgeOutbox(this.options.events);
+      if (applied) await this.notifyTopUp(payment);
       return { applied, purpose: 'TOP_UP' };
     }
 
@@ -733,6 +741,7 @@ export class PaymentsService implements PaymentServiceContract {
       });
       if (!applied) return { confirmed: false, reason: 'NOT_PENDING' };
       nudgeOutbox(this.options.events);
+      await this.notifyTopUp(payment);
       return { confirmed: true };
     }
 
@@ -781,6 +790,35 @@ export class PaymentsService implements PaymentServiceContract {
       });
     }
     return { confirmed: true };
+  }
+
+  /**
+   * 充值到账回执（best-effort）。幂等键绑定 payment id：网关重复回调、管理员重复
+   * 确认都只保留一条，且金额以结算记录为准（不信任调用方传入）。
+   */
+  private async notifyTopUp(payment: PaymentRow): Promise<void> {
+    const notifications = this.options.notifications;
+    if (!notifications) return;
+    try {
+      await notifications.upsert({
+        userId: payment.userId,
+        dedupeKey: `wallet:topup:${payment.id}`,
+        type: 'wallet.topup.succeeded',
+        title: '充值到账',
+        body: `你的钱包已到账 ${formatMinorCurrency(payment.amount, payment.currency, 'zh-CN')}。`,
+        link: '/account/balance',
+        data: {
+          paymentId: payment.id,
+          amount: payment.amount,
+          currency: payment.currency,
+        },
+        status: 'success',
+      });
+    } catch (error) {
+      this.options.logger?.warn(
+        `payments: top-up notification failed for ${payment.id}: ${String(error)}`,
+      );
+    }
   }
 
   async cancelManual(paymentId: string): Promise<AdminPaymentCancelResult> {

@@ -2,12 +2,13 @@ import type { Prisma, PrismaClient } from '@stackpanel/db';
 import {
   buildZodFromSettingsSchema,
   mergeFrontendSettings,
+  migrateFrontendSettings,
+  frontendSettingsValueSchema,
   settingsDefaultsFromSchema,
 } from '@stackpanel/sdk';
 import type {
   FrontendSettings,
   FrontendSettingsSchema,
-  FrontendSettingsValue,
 } from '@stackpanel/sdk';
 
 export type FrontendKind = 'theme' | 'plugin';
@@ -31,7 +32,10 @@ export function resolveFrontendSettings(
   schema: FrontendSettingsSchema,
   stored: FrontendSettings | undefined,
 ): FrontendSettings {
-  const merged = mergeFrontendSettings(settingsDefaultsFromSchema(schema), stored);
+  const merged = mergeFrontendSettings(
+    settingsDefaultsFromSchema(schema),
+    migrateFrontendSettings(schema, stored),
+  );
   return buildZodFromSettingsSchema(schema).parse(merged);
 }
 
@@ -44,7 +48,10 @@ export async function saveFrontendSettings(
   patch: FrontendSettings,
   updatedBy: string | null,
 ): Promise<FrontendSettings> {
-  const merged = mergeFrontendSettings(current ?? settingsDefaultsFromSchema(schema), patch);
+  const merged = mergeFrontendSettings(
+    current ?? settingsDefaultsFromSchema(schema),
+    migrateFrontendSettings(schema, patch),
+  );
   const validated = buildZodFromSettingsSchema(schema).parse(merged);
   await prisma.setting.upsert({
     where: { key },
@@ -58,36 +65,8 @@ export async function saveFrontendSettings(
 }
 
 function normalizeSettings(value: unknown): FrontendSettings | undefined {
-  if (!isRecord(value)) return undefined;
-  const result: FrontendSettings = {};
-  for (const [group, values] of Object.entries(value)) {
-    if (!isRecord(values)) continue;
-    const normalized: Record<string, FrontendSettingsValue> = {};
-    for (const [name, fieldValue] of Object.entries(values)) {
-      if (isScalar(fieldValue)) {
-        normalized[name] = fieldValue;
-      } else if (Array.isArray(fieldValue)) {
-        const rows = fieldValue.filter(isScalarRecord);
-        if (rows.length === fieldValue.length) normalized[name] = rows;
-      }
-    }
-    result[group] = normalized;
-  }
-  return result;
-}
-
-function isScalar(value: unknown): value is string | number | boolean {
-  return (
-    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-  );
-}
-
-function isScalarRecord(value: unknown): value is Record<string, string | number | boolean> {
-  return isRecord(value) && Object.values(value).every(isScalar);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  const parsed = frontendSettingsValueSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 /** Convert a settings validation failure into a friendly Chinese message. */

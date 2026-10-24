@@ -1,6 +1,6 @@
 import type { ExtensionInstance } from '@stackpanel/sdk';
 import { isExtensionVersionConflict } from '@stackpanel/sdk';
-import { extensions } from './context.js';
+import { extensions, runTransaction } from './context.js';
 import {
   cartItemModel,
   categoryModel,
@@ -245,11 +245,13 @@ export async function listActiveProductsPage(
   page: number,
   pageSize: number,
   categoryId?: string,
+  query?: string,
 ): Promise<{ items: ProductRecord[]; total: number }> {
   const result = await extensions().list<StoreProductData>(productModel, {
     where: {
       status: { eq: 'ACTIVE' },
       ...(categoryId ? { categoryId: { eq: categoryId } } : {}),
+      ...(query ? { name: { contains: query } } : {}),
     },
     orderBy: { field: 'createdAt', desc: true },
     page,
@@ -545,7 +547,13 @@ export async function createServiceInstance(
     expiresAt?: string | null;
     terminatedAt?: string | null;
   },
+  name?: string,
 ): Promise<ServiceInstanceRecord> {
+  if (name) {
+    const existing = await getService(name);
+    if (existing) return existing;
+  }
+  try {
   const created = await extensions().create<StoreServiceInstanceData>(serviceInstanceModel, {
     expiresAt: null,
     expiryStage: null,
@@ -555,8 +563,13 @@ export async function createServiceInstance(
     ...data,
     // 派生过期毫秒列：以 expiresAt 为唯一真源，避免两处漂移。
     expiresAtMs: toEpochMs(data.expiresAt ?? null),
-  });
+  }, name ? { name } : undefined);
   return toService(created);
+  } catch (error) {
+    const existing = name ? await getService(name) : null;
+    if (existing) return existing;
+    throw error;
+  }
 }
 
 export async function replaceServiceInstance(
@@ -734,9 +747,16 @@ export async function getTask(id: string): Promise<DeliveryTaskRecord | null> {
   return instance ? toTask(instance) : null;
 }
 
-export async function createTaskInstance(data: StoreDeliveryTaskData): Promise<DeliveryTaskRecord> {
-  const created = await extensions().create<StoreDeliveryTaskData>(deliveryTaskModel, data);
-  return toTask(created);
+export async function createTaskInstance(data: StoreDeliveryTaskData, unitIndex = 0): Promise<DeliveryTaskRecord> {
+  // Storage primary key, not a read-before-write check, arbitrates concurrent callbacks.
+  const name = `delivery-${data.orderId}-${data.productId}${unitIndex ? `-unit-${unitIndex + 1}` : ''}`;
+  try {
+    return toTask(await extensions().create<StoreDeliveryTaskData>(deliveryTaskModel, data, { name }));
+  } catch (error) {
+    const existing = await getTask(name);
+    if (existing && existing.orderId === data.orderId && existing.productId === data.productId) return existing;
+    throw error;
+  }
 }
 
 export async function replaceTask(id: string, data: StoreDeliveryTaskData): Promise<void> {
@@ -767,12 +787,19 @@ export async function listTasksByOrder(orderId: string): Promise<DeliveryTaskRec
  * 任务处于 RUNNING 时该字段表示「认领者必须在此前完成」，超时即可被回收重试。
  */
 export async function claimTask(id: string, leaseUntilMs: number): Promise<boolean> {
-  const { updated } = await extensions().updateWhere(
+  const task = await getTask(id);
+  if (!task) return false;
+  return runTransaction(async tx => {
+  const paid = await tx.extensions.updateWhere(orderModel,
+    { name: { eq: task.orderId }, state: { eq: 'PAID' } }, { state: { set: 'PAID' } });
+  if (paid.updated !== 1) return false;
+  const { updated } = await tx.extensions.updateWhere(
     deliveryTaskModel,
     { name: { eq: id }, state: { eq: 'PENDING' } },
     { state: { set: 'RUNNING' }, attempts: { inc: 1 }, nextAttemptAtMs: { set: leaseUntilMs } },
   );
   return updated > 0;
+  });
 }
 
 /** 列出超过租约仍停留在 RUNNING 的任务（认领者已死，需要回收）。 */
@@ -805,7 +832,7 @@ export async function reclaimTask(
   const task = toTask(instance);
   const next: StoreDeliveryTaskData = retryable
     ? { ...toTaskData(task), state: 'PENDING', nextAttemptAtMs: nowMs }
-    : { ...toTaskData(task), state: 'FAILED', error: '运行超时，已回收' };
+    : { ...toTaskData(task), state: 'REQUIRES_RECONCILIATION', error: '开通请求超时，需核对上游结果', nextAttemptAtMs: 0 };
   try {
     await extensions().update<StoreDeliveryTaskData>(deliveryTaskModel, id, next, {
       expectedVersion: instance.version,
@@ -822,8 +849,9 @@ export async function listTasksPage(
   pageSize: number,
   filter: { status?: string; orderId?: string },
 ): Promise<{ items: DeliveryTaskRecord[]; total: number }> {
-  const where: Record<string, { eq: unknown }> = {};
-  if (filter.status) where['state'] = { eq: filter.status };
+  const where: Record<string, { eq: unknown } | { in: string[] }> = {};
+  if (filter.status === 'attention') where['state'] = { in: ['AWAITING_APPROVAL', 'REQUIRES_RECONCILIATION', 'FAILED'] };
+  else if (filter.status) where['state'] = { eq: filter.status };
   if (filter.orderId) where['orderId'] = { eq: filter.orderId };
   const result = await extensions().list<StoreDeliveryTaskData>(deliveryTaskModel, {
     where,
@@ -846,6 +874,13 @@ export async function retryFailedTask(id: string, nowMs: number): Promise<boolea
     },
   );
   return updated > 0;
+}
+
+export async function approveDeliveryTask(id: string): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(deliveryTaskModel,
+    { name: { eq: id }, state: { eq: 'AWAITING_APPROVAL' } },
+    { state: { set: 'PENDING' }, nextAttemptAtMs: { set: 0 } });
+  return updated === 1;
 }
 
 export { isoOrNull };

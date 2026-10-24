@@ -53,7 +53,13 @@ function pluginIds(): string[] {
     const src = path.join(pluginsDir, id, 'src');
     return (
       statSync(path.join(pluginsDir, id)).isDirectory() &&
-      statSync(src, { throwIfNoEntry: false })?.isDirectory() === true
+      statSync(src, { throwIfNoEntry: false })?.isDirectory() === true &&
+      // A directory without a package manifest is not a plugin package (e.g. a
+      // plugin mid-migration to an external repo). Reading its package.json
+      // below would throw ENOENT and mask the real boundary signal this suite
+      // exists to report.
+      statSync(path.join(pluginsDir, id, 'package.json'), { throwIfNoEntry: false }) !==
+        undefined
     );
   });
 }

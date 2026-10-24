@@ -87,10 +87,14 @@ export function buildCsp(nonce: string, isDev: boolean): string {
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
-  const csp = buildCsp(nonce, process.env.NODE_ENV === 'development');
+  const csp = buildCsp(nonce, process.env.NODE_ENV === 'development').replace(
+    "frame-ancestors 'none'",
+    request.nextUrl.pathname === '/preview' ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
+  );
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
+  requestHeaders.set('x-stackpanel-request-path', request.nextUrl.pathname + request.nextUrl.search);
   requestHeaders.set('Content-Security-Policy', csp);
 
   const { pathname } = request.nextUrl;
@@ -102,6 +106,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const shouldSetAffiliate = affid !== null && !request.cookies.get(AFFILIATE_COOKIE)?.value;
 
   const withAffiliate = <T extends NextResponse>(response: T): T => {
+    response.headers.set('X-Frame-Options', pathname === '/preview' ? 'SAMEORIGIN' : 'DENY');
     if (shouldSetAffiliate && affid) {
       response.cookies.set(AFFILIATE_COOKIE, affid, {
         httpOnly: true,

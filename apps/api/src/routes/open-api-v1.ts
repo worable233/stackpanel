@@ -162,6 +162,7 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
         request.server.pluginRuntime.listCapabilities(),
         user.effectiveScopes,
         request.server.pluginRuntime.scopeGovernance(),
+        user.viaApiToken ?? false,
       ),
     };
   });
@@ -204,6 +205,8 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
       auth: request.server.auth,
       commerce: resolveCommerce(request.server.pluginRuntime),
       upstreamServiceSources: resolveUpstreamServiceSources(request.server.pluginRuntime),
+      notifications: request.server.notifications,
+      logger: request.log,
     });
 
   /** The acting principal; `platform.admin` gates escalation (audit H-1). */
@@ -271,7 +274,7 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/api/v1/users/:id/wallet',
-    { preHandler: scoped('user:write') },
+    { preHandler: guarded('platform.admin') },
     async (request, reply) => {
       const params = idParamSchema.safeParse(request.params);
       const body = walletAdjustSchema.safeParse(request.body);
@@ -283,7 +286,7 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
           params.data.id,
           body.data.amount,
           body.data.note,
-          request.user?.id,
+          actorOf(request),
         ),
       );
     },
@@ -291,7 +294,7 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/api/v1/users/:id/services',
-    { preHandler: scoped('user:write') },
+    { preHandler: guarded('platform.admin') },
     async (request, reply) => {
       const params = idParamSchema.safeParse(request.params);
       const body = giftServiceSchema.safeParse(request.body);
@@ -299,7 +302,12 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
         throw new PluginError('validation.invalid', 422, '请求参数无效');
       }
       return runIdempotent(request, reply, async () =>
-        userAdmin(request).giftService(params.data.id, body.data, auditContext(request)),
+        userAdmin(request).giftService(
+          params.data.id,
+          body.data,
+          auditContext(request),
+          actorOf(request),
+        ),
       );
     },
   );

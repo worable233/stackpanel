@@ -1,5 +1,6 @@
 'use client';
 
+import { isValidElement } from 'react';
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva, type VariantProps } from 'class-variance-authority';
 
@@ -46,15 +47,46 @@ function Button({
   className,
   variant = 'default',
   size = 'default',
+  nativeButton,
+  render,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      nativeButton={resolveNativeButton(render, nativeButton)}
+      render={render}
       {...props}
     />
   );
+}
+
+/**
+ * Base UI defaults `nativeButton` to `true`, which is only right when the
+ * element actually rendered is a real `<button>`. The documented link pattern
+ * (`<Button render={<Link href="…" />} />`) therefore used to be rendered with
+ * `type="button"`/`role="button"` semantics stripped off the anchor, and Base UI
+ * logged "expected a native <button>" in development.
+ *
+ * Derive the value from the element the caller asked us to render; an explicit
+ * `nativeButton` always wins so callers can override (for example when a custom
+ * component renders a `<button>` and has no `href`).
+ *
+ * - `render` omitted, or a render *function*: leave the Base UI default alone.
+ * - string tag: native only for `"button"`.
+ * - component with an `href` (`next/link`, router links, …): not a button.
+ * - any other component: unknown at runtime, keep the default.
+ */
+function resolveNativeButton(
+  render: ButtonPrimitive.Props['render'],
+  nativeButton: boolean | undefined,
+): boolean | undefined {
+  if (nativeButton !== undefined) return nativeButton;
+  if (!isValidElement(render)) return undefined;
+  if (typeof render.type === 'string') return render.type === 'button';
+  const { href } = render.props as { href?: unknown };
+  return href === undefined || href === null ? undefined : false;
 }
 
 export { Button, buttonVariants };

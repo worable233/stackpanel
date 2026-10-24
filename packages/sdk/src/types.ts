@@ -33,6 +33,8 @@ export interface User {
 
 /** Public auth policy for the frontend (register form). */
 export interface AuthConfigResponse {
+  registrationMethods: Array<'email' | 'phone'>;
+  emailVerificationSupported: boolean;
   emailVerificationRequired: boolean;
   captcha: {
     mode: 'off' | 'optional' | 'required';
@@ -40,6 +42,10 @@ export interface AuthConfigResponse {
     providerIds: string[];
     clientConfig: Record<string, unknown> | null;
   };
+}
+
+export interface AccountMutationResponse {
+  ok: true;
 }
 
 /** Result of POST /register/send-code. */
@@ -333,6 +339,8 @@ export interface UpstreamProductResponse {
 
 /** One upstream already-purchased service shown in the admin bind dialog. */
 export interface AdminUpstreamServiceItem {
+  sourceRef?: string | null | undefined;
+  productId?: string | null | undefined;
   id: string;
   name: string;
   productName: string | null;

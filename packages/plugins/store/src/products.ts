@@ -1,6 +1,6 @@
 import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
 import { EXTENSION_POINTS, isExtensionNotFound } from '@stackpanel/sdk';
-import type { UpstreamProductSource } from '@stackpanel/sdk';
+import type { FulfillmentProvider, UpstreamProductSource } from '@stackpanel/sdk';
 import { context } from './context';
 import { StoreError } from './errors';
 import { productTypeById } from './product-types';
@@ -100,17 +100,54 @@ export async function listPurchasableProducts(req: HttpRequest): Promise<unknown
   const { page, pageSize } = parsePagination(req.query);
   const categoryId =
     typeof req.query['categoryId'] === 'string' ? req.query['categoryId'] : undefined;
-  const { items, total } = await listActiveProductsPage(page, pageSize, categoryId);
+  const query =
+    typeof req.query['q'] === 'string' ? req.query['q'].trim().slice(0, 120) : undefined;
+  const { items, total } = await listActiveProductsPage(
+    page,
+    pageSize,
+    categoryId,
+    query || undefined,
+  );
   const canBuy = await canBuyProducts(req);
-  return { products: items.map((item) => toPurchasableProduct(item, canBuy)), total, page, pageSize };
+  return {
+    products: items.map((item) => toPurchasableProduct(item, canBuy)),
+    total,
+    page,
+    pageSize,
+  };
 }
 
 /** 账户商城商品详情：单件可购买视图。 */
 export async function getPurchasableProduct(req: HttpRequest): Promise<unknown> {
   const id = req.params['id'];
   if (!id) throw new StoreError(400, '缺少 ID');
-  const product = await getProductRecord(id);
+  let product = await getProductRecord(id);
   if (!product || product.status !== 'ACTIVE') throw new StoreError(404, '商品不存在');
+  // The catalog scheduler may run hours apart. Recheck a bound product when
+  // opening checkout, rather than treating an old zero snapshot as sold out.
+  if (product.providerId && product.providerProductId) {
+    const source = context()
+      .getExtensions<UpstreamProductSource>(EXTENSION_POINTS.upstreamProductSource)
+      .find((candidate) => candidate.id === product!.providerId);
+    const metadata = product.metadata as Record<string, unknown> | null;
+    const binding = metadata?.upstream as { sourceRef?: string } | undefined;
+    if (source && binding?.sourceRef) {
+      try {
+        const live = await source.get(product.providerProductId, { sourceRef: binding.sourceRef });
+        if (
+          live?.stock !== undefined &&
+          Number.isInteger(live.stock) &&
+          live.stock >= 0 &&
+          live.stock <= 1_000_000
+        ) {
+          if (live.stock !== product.stock) await setProductStock(id, live.stock);
+          product = { ...product, stock: live.stock };
+        }
+      } catch {
+        // Keep the conservative stored stock on upstream failure; never invent availability.
+      }
+    }
+  }
   const canBuy = await canBuyProducts(req);
   return { product: toPurchasableProduct(product, canBuy) };
 }
@@ -154,6 +191,9 @@ export async function createProductForSync(
   // Upstream sync must never write a currency outside the catalog: an unknown
   // code is a hard error, not a silently accepted product (plan §4.2).
   const currency = await resolveProductCurrency(input.currency);
+  const fulfillmentType = input.fulfillmentType ?? 'instant';
+  const providerId = input.providerId ?? null;
+  assertCloudServerProvider(fulfillmentType, providerId);
   const product = await createProductInstance({
     name: input.name,
     description: input.description ?? null,
@@ -166,8 +206,8 @@ export async function createProductForSync(
     status: input.status ?? 'ACTIVE',
     metadata: input.metadata ?? null,
     categoryId: null,
-    fulfillmentType: input.fulfillmentType ?? 'instant',
-    providerId: input.providerId ?? null,
+    fulfillmentType,
+    providerId,
     providerProductId: input.providerProductId ?? null,
   });
   return toSummary(product);
@@ -180,7 +220,8 @@ export async function updateProductForSync(
 ): Promise<StoreProductSummary | null> {
   const existing = await getProductRecord(productId);
   if (!existing) return null;
-  const nextCurrency = patch.currency !== undefined ? await resolveProductCurrency(patch.currency) : undefined;
+  const nextCurrency =
+    patch.currency !== undefined ? await resolveProductCurrency(patch.currency) : undefined;
   const next = {
     ...toProductData(existing),
     ...(patch.name !== undefined ? { name: patch.name } : {}),
@@ -197,6 +238,7 @@ export async function updateProductForSync(
       ? { providerProductId: patch.providerProductId }
       : {}),
   };
+  assertCloudServerProvider(next.fulfillmentType, next.providerId);
   const updated = await replaceProduct(productId, next);
   return toSummary(updated);
 }
@@ -224,6 +266,7 @@ export async function createProduct(req: HttpRequest, reply: HttpReply): Promise
   const currency = await resolveProductCurrency(parsed.data.currency);
   validateCheckoutConfig(parsed.data.metadata ?? null);
   validateTypeConfig(parsed.data.fulfillmentType, parsed.data.metadata);
+  assertCloudServerProvider(parsed.data.fulfillmentType, parsed.data.providerId ?? null);
   const product = await createProductInstance({
     name: parsed.data.name,
     description: parsed.data.description ?? null,
@@ -240,7 +283,12 @@ export async function createProduct(req: HttpRequest, reply: HttpReply): Promise
     providerId: parsed.data.providerId ?? null,
     providerProductId: parsed.data.providerProductId ?? null,
   });
-  await syncUpstreamAssociation(product.id, parsed.data.providerId, parsed.data.providerProductId);
+  await syncUpstreamAssociation(
+    product.id,
+    parsed.data.providerId,
+    parsed.data.providerProductId,
+    parsed.data.upstreamSourceRef,
+  );
   return reply.code(201).send({ product: toSummary(product) });
 }
 
@@ -282,17 +330,39 @@ export async function updateProduct(req: HttpRequest): Promise<unknown> {
       ? { providerProductId: patch.providerProductId ?? null }
       : {}),
   };
+  assertCloudServerProvider(next.fulfillmentType, next.providerId);
   try {
     const product = await replaceProduct(id, next);
     await syncUpstreamAssociation(
       product.id,
       patch.providerId ?? product.providerId ?? null,
       patch.providerProductId ?? product.providerProductId ?? null,
+      patch.upstreamSourceRef ?? upstreamSourceRef(product.metadata),
     );
     return { product: toSummary(product) };
   } catch (error) {
     if (isExtensionNotFound(error)) throw new StoreError(404, '商品不存在');
     throw error;
+  }
+}
+
+/** Cloud servers cannot use the former local demo fulfillment fallback. */
+export function assertCloudServerProvider(
+  fulfillmentType: string,
+  providerId: string | null,
+): void {
+  if (fulfillmentType !== 'cloud_server') return;
+  if (!providerId) {
+    throw new StoreError(400, '云服务器商品必须绑定真实履约提供方');
+  }
+  const provider = context()
+    .getExtensions<FulfillmentProvider>(EXTENSION_POINTS.fulfillmentProvider)
+    .find((candidate) => candidate.id === providerId);
+  if (!provider) {
+    throw new StoreError(400, '所选云服务器履约提供方未启用');
+  }
+  if (!provider.fulfillmentTypes.includes('cloud_server')) {
+    throw new StoreError(400, '所选履约提供方不支持云服务器商品');
   }
 }
 
@@ -307,6 +377,7 @@ async function syncUpstreamAssociation(
   productId: string,
   providerId: string | null | undefined,
   providerProductId: string | null | undefined,
+  sourceRef?: string | null,
 ): Promise<void> {
   const sources = context().getExtensions<UpstreamProductSource>(
     EXTENSION_POINTS.upstreamProductSource,
@@ -317,7 +388,9 @@ async function syncUpstreamAssociation(
   if (providerId && providerProductId) {
     const source = sources.find((candidate) => candidate.id === providerId);
     if (!source) return;
-    const item = await source.get(providerProductId).catch(() => null);
+    const item = await source
+      .get(providerProductId, sourceRef ? { sourceRef } : undefined)
+      .catch(() => null);
     // 上游暂时取不到该商品时不改动已有绑定，避免网络抖动误清关联。
     if (!item) return;
     await mergeUpstreamBinding(current, {
@@ -325,8 +398,9 @@ async function syncUpstreamAssociation(
       sourceRef: item.sourceRef ?? null,
       productId: item.id,
       sourcePrice: item.price ?? null,
-      // 首次绑定且尚无成本时以源价作为成本；此后保留人工值（同步只提示差异）。
-      cost: current.cost === null && item.price != null ? item.price : null,
+      // 上游价格是货源成本的权威值，不保留会逐步过期的人工副本。
+      cost: item.price ?? null,
+      stock: normalizeUpstreamStock(item.stock),
     });
     await source.associate?.({ productId, item }).catch(() => undefined);
     return;
@@ -339,10 +413,28 @@ async function syncUpstreamAssociation(
   }
 }
 
+/** Read the already verified upstream instance id when editing an existing binding. */
+function upstreamSourceRef(metadata: unknown): string | undefined {
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata))
+    return undefined;
+  const upstream = (metadata as Record<string, unknown>).upstream;
+  if (upstream === null || typeof upstream !== 'object' || Array.isArray(upstream))
+    return undefined;
+  const sourceRef = (upstream as Record<string, unknown>).sourceRef;
+  return typeof sourceRef === 'string' && sourceRef ? sourceRef : undefined;
+}
+
+/** Ignore malformed optional stock from a third-party upstream source. */
+function normalizeUpstreamStock(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 1_000_000
+    ? value
+    : null;
+}
+
 /** 合并/移除商品 metadata 中的 `upstream` 标记（保留其余 metadata 键）。 */
 async function mergeUpstreamBinding(
   record: ProductRecord,
-  binding: (Record<string, unknown> & { cost: number | null }) | null,
+  binding: (Record<string, unknown> & { cost: number | null; stock: number | null }) | null,
 ): Promise<void> {
   const base =
     record.metadata !== null &&
@@ -351,12 +443,13 @@ async function mergeUpstreamBinding(
       ? { ...(record.metadata as Record<string, unknown>) }
       : {};
   if (binding) {
-    const { cost, ...upstream } = binding;
+    const { cost, stock, ...upstream } = binding;
     base.upstream = upstream;
     await replaceProduct(record.id, {
       ...toProductData(record),
       metadata: base,
       ...(cost !== null ? { cost } : {}),
+      ...(stock !== null ? { stock } : {}),
     });
     return;
   }

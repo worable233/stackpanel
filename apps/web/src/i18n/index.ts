@@ -3,9 +3,11 @@ export {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
+  LOCALE_ALIASES,
   CATALOGS,
   isLocale,
   normalizeLocale,
+  resolveLocale,
 } from './config';
 export type { Locale } from './config';
 

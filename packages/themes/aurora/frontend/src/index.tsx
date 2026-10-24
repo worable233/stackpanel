@@ -1085,7 +1085,7 @@ function AuroraNotFoundPage({ locale }: FrontendPageProps): ReactElement {
 }
 
 export const frontend: FrontendPackage = {
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   settingsSchema,
   layouts: { theme: AuroraLayout },

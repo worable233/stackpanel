@@ -3,6 +3,7 @@ import type { FrontendSettings } from '@stackpanel/sdk';
 import type {
   FinderProvider,
   FrontendActionExecutors,
+  FrontendManifest,
   FrontendPageDataRequirement,
 } from '@stackpanel/sdk';
 import { matchFrontendPagePath } from '@stackpanel/sdk';
@@ -141,10 +142,22 @@ export async function resolvePluginAdminRoute(
       returnPath ?? `/admin/plugin/${pluginId}${path}`,
     ),
     params,
-    ...(runtimeFrontendLoadingEnabled()
+    // Only point the runtime container at an artifact the package actually ships
+    // (contract 04 §2). A package built before runtime loading has only
+    // `dist/admin.js`, which the browser cannot resolve (bare host-ABI
+    // specifiers). The kernel back-fills `admin.runtime.js` for such packages;
+    // if it could not (e.g. a genuinely unresolvable third-party import), fall
+    // through to the platform "not found" UI instead of emitting a URL that is
+    // guaranteed to 404.
+    ...(runtimeFrontendLoadingEnabled() && shipsRuntimeAdminEntry(candidate.manifest)
       ? { runtimeAdminModuleUrl: runtimeAdminModuleUrl('plugins', pluginId, candidate.revision) }
       : {}),
   };
+}
+
+/** Whether the package declares the browser-loadable admin entry in `files[]`. */
+function shipsRuntimeAdminEntry(manifest: FrontendManifest): boolean {
+  return (manifest.files ?? []).includes('frontend/dist/admin.runtime.js');
 }
 
 function pluginAdminHref(pluginId: string, routePath: string): string {

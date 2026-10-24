@@ -85,6 +85,7 @@ const marketFinders: Record<string, FinderProvider> = {
 const marketActions: PluginActionDefinition[] = [
   {
     id: 'market.install-plugin',
+    successFeedback: { messageKey: 'feedback.installed' },
     method: 'POST',
     path: '/market/admin/plugins/:id/install',
     permission: 'market.admin',
@@ -92,6 +93,7 @@ const marketActions: PluginActionDefinition[] = [
   },
   {
     id: 'market.install-theme',
+    successFeedback: { messageKey: 'feedback.installed' },
     method: 'POST',
     path: '/market/admin/themes/:id/install',
     permission: 'market.admin',
@@ -100,7 +102,7 @@ const marketActions: PluginActionDefinition[] = [
 ];
 
 export const frontend: FrontendPackage = {
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   finders: marketFinders,
   ui: {

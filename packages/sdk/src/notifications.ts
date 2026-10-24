@@ -314,6 +314,15 @@ export interface NotificationPolicyService {
    * (e.g. `agent.`), mirroring the catalog's `agent.*`.
    */
   inAppExclusions(userId: string): Promise<{ exact: string[]; prefixes: string[] } | null>;
+  /**
+   * Whether `type` matches any catalog entry (exact or `.*` prefix).
+   *
+   * This is the **declaration guard**: a notification whose type nobody declared
+   * is always delivered and cannot be configured, which is almost always a bug
+   * (a typo, or a plugin that forgot to register its `notification.type`). The
+   * service uses it in development to warn at the emit site.
+   */
+  declares?(type: string): boolean;
 }
 
 /** Partial admin policy update; unset fields are left unchanged. */

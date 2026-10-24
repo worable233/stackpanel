@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -21,6 +21,10 @@ function declaredBuiltinIds(): string[] {
   return readdirSync(pluginsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
+    // A directory without a package manifest is not a plugin package (e.g. a
+    // plugin mid-migration to an external repo). Discovery in `lib/plugins.ts`
+    // skips it too, so reading it here would only throw ENOENT.
+    .filter((name) => existsSync(path.join(pluginsDir, name, 'package.json')))
     .filter((name) => {
       const pkg = JSON.parse(readFileSync(path.join(pluginsDir, name, 'package.json'), 'utf8')) as {
         stackpanel?: { builtin?: boolean };

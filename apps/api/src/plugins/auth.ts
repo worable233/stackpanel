@@ -3,9 +3,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PluginError } from '@stackpanel/sdk';
 import { env } from '../config/env.ts';
-import { resolveCookieSecure } from '../lib/cookie-security.ts';
 import { looksLikeApiToken, resolveApiTokenWithOwner } from '../lib/api-tokens.ts';
-import { verifySession } from '../lib/jwt.ts';
 import { getSessionStore } from '../auth/session-store.ts';
 import { scopeSatisfied, type ScopeGovernance } from '../lib/capability-registry.ts';
 import type { FastifyInstance } from 'fastify';
@@ -175,39 +173,14 @@ async function apiTokenUser(
   };
 }
 
-/** A JWT from the pre-S3 stateless era (three base64url segments). */
-function looksLikeJwt(token: string): boolean {
-  return token.split('.').length === 3;
-}
-
-/** Deterministic store key used to adopt a legacy JWT as a server session. */
-function legacySessionId(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
-
-function setSessionCookie(reply: FastifyReply, token: string): void {
-  reply.setCookie(env.SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    // Second guard on top of the env default (security audit M-1).
-    secure: resolveCookieSecure(env.API_COOKIE_SECURE),
-    path: '/',
-    maxAge: env.SESSION_TTL_SECONDS,
-  });
-}
-
 /**
- * Resolve the authenticated user from a platform API token, a server-side
- * session, or a legacy JWT (compatibility window).
- *
- * When `reply` is supplied, a legacy JWT presented via cookie is smoothly
- * migrated: a server-side session is created and the cookie is re-issued with
- * the opaque token. Without a reply the legacy JWT is adopted under a
- * deterministic session id so repeated requests reuse one session.
+ * Resolve the authenticated user from a platform API token or a server-side
+ * opaque session. The unused reply parameter remains temporarily compatible
+ * with existing pre-handler call sites.
  */
 export async function extractSession(
   request: FastifyRequest,
-  reply?: FastifyReply,
+  _reply?: FastifyReply,
 ): Promise<AuthUser | null> {
   const bearer = bearerToken(request);
   const cookie = request.cookies?.[env.SESSION_COOKIE_NAME];
@@ -265,27 +238,10 @@ export async function extractSession(
     return user;
   }
 
-  // 2. Legacy stateless JWT: migrate it into the session store.
-  if (!looksLikeJwt(token)) return null;
-  try {
-    const claims = await verifySession(token);
-    const user = await buildUser(claims.sub);
-    if (!user) return null;
-    const store = getSessionStore();
-    const fromCookie = !bearer && typeof cookie === 'string';
-    if (fromCookie && reply) {
-      const fresh = await store.create(user.id);
-      setSessionCookie(reply, fresh);
-      request.sessionToken = fresh;
-    } else {
-      const id = legacySessionId(token);
-      await store.adopt(id, user.id);
-      request.sessionToken = id;
-    }
-    return user;
-  } catch {
-    return null;
-  }
+  // Stateless JWT sessions cannot be revoked individually or by user. Do not
+  // re-adopt them after the opaque-session migration: accepting one here would
+  // resurrect a credential deliberately invalidated by revokeAllSessions.
+  return null;
 }
 
 /**

@@ -5,12 +5,13 @@ import type {
   ExtensionInstance,
   ExtensionTransaction,
   PluginContext,
+  HttpRequest,
 } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
 import { storeOperations } from './operations';
-import { settlementHandler } from './orders';
+import { settlementHandler, checkoutCart } from './orders';
 import { subscribeOrderPaid } from './fulfillment';
-import { orderModel, productModel } from './data';
+import { orderModel, productModel, cartItemModel } from './data';
 
 /**
  * T3（FIX-4 W1）：业务写与事件落库同事务。
@@ -249,6 +250,18 @@ function seedProduct(stores: ReturnType<typeof createStores>) {
 
 describe('FIX-4 W1 · store 事件与业务写同事务', () => {
   beforeEach(() => resetContext());
+
+  it('wallet cart checkout returns the exact paid order to the completion step', async () => {
+    const stores = createStores(); seedProduct(stores);
+    const product = stores.tables.get('store/product')!.get('prod-1')!;
+    product.spec.providerId = null; product.spec.fulfillmentType = 'instant';
+    const ctx = makeCtx(stores, () => {}); bindContext(ctx);
+    await ctx.extensions.create(cartItemModel, { userId: 'user-1', productId: 'prod-1', quantity: 1, config: null }, { name: 'cart-1' });
+    const response = await checkoutCart(ctx, { user: { id: 'user-1', role: 'USER' }, body: { cartItemIds: ['cart-1'], paymentMode: 'wallet' }, headers: {}, params: {}, query: {} } as HttpRequest) as { order: { id: string; status: string }; nextPath: string };
+    expect(response.order.status).toBe('PAID');
+    expect(response.nextPath).toBe(`/account/store/cart?orderId=${encodeURIComponent(response.order.id)}`);
+    expect(stores.tables.get('store/cart-item')?.has('cart-1') ?? false).toBe(false);
+  });
 
   it('T3 createOrder：order.paid 在事务内发布，随订单提交', async () => {
     const stores = createStores();

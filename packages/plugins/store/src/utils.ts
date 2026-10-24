@@ -115,7 +115,9 @@ export const checkoutConfigZod = z.object({
               id: z.string().min(1).max(64),
               label: z.string().min(1).max(64),
               price: z.number().int().min(0).max(MAX_MINOR_AMOUNT).optional(),
-              prices: z.record(z.string(), z.number().int().min(0).max(MAX_MINOR_AMOUNT)).optional(),
+              prices: z
+                .record(z.string(), z.number().int().min(0).max(MAX_MINOR_AMOUNT))
+                .optional(),
               requires: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
               recurring: z.boolean().optional(),
               qtyMin: z.number().int().min(0).optional(),
@@ -157,6 +159,14 @@ function normalizeSelection(value: unknown): CheckoutSelection | undefined {
     throw new StoreError(400, '商品配置无效');
   }
   const record = value as Record<string, unknown>;
+  if (
+    record.instanceName !== undefined &&
+    (typeof record.instanceName !== 'string' ||
+      record.instanceName.trim().length > 64 ||
+      /[\u0000-\u001f\u007f]/.test(record.instanceName))
+  ) {
+    throw new StoreError(400, '商品配置无效');
+  }
   const selections: Record<string, string | number> = {};
   if (record.selections !== undefined) {
     if (record.selections === null || typeof record.selections !== 'object') {
@@ -168,6 +178,9 @@ function normalizeSelection(value: unknown): CheckoutSelection | undefined {
     }
   }
   return {
+    ...(typeof record.instanceName === 'string' && record.instanceName.trim()
+      ? { instanceName: record.instanceName.trim() }
+      : {}),
     ...(typeof record.cycle === 'string' && record.cycle ? { cycle: record.cycle } : {}),
     ...(Object.keys(selections).length ? { selections } : {}),
     ...(typeof record.summary === 'string' ? { summary: record.summary } : {}),
@@ -197,6 +210,9 @@ export const productSchema = z.object({
   fulfillmentType: z.string().min(1).max(64).default('instant'),
   providerId: z.string().min(1).max(64).nullish(),
   providerProductId: z.string().min(1).max(191).nullish(),
+  // Transient selector value from the admin form. The store persists the verified
+  // instance id only in metadata.upstream via the registered source.
+  upstreamSourceRef: z.string().min(1).max(191).nullish(),
 });
 
 // 注意：zod 的 .partial() 不会中和 .default()，直接 partial 会让局部更新

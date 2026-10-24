@@ -264,44 +264,42 @@ function ProductCard({ product, tr }: { product: StoreProduct; tr: Translator })
     <Reveal className="h-full">
       <Spotlight>
         <article className="flex h-full flex-col bg-foreground/[0.025] backdrop-blur-xl">
-          <div className="flex min-h-20 items-center justify-between gap-3 border-b border-foreground/10 bg-foreground/[0.025] px-5 py-5">
-            <h2 className="min-w-0 break-words text-base font-semibold tracking-tight">
-              <Link href={`/shop/${product.id}`} className="transition-colors hover:text-primary">
+          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-4 pb-2 pt-4">
+            <h2 className="min-w-0 break-words text-sm font-semibold leading-5 tracking-tight">
+              <Link href={`/account/store/${encodeURIComponent(product.id)}`} className="transition-colors hover:text-primary">
                 {product.name}
               </Link>
             </h2>
-            <span className="shrink-0 border-l border-foreground/10 pl-3 text-xs tabular-nums text-muted-foreground">
+            <span className="shrink-0 text-xs leading-5 tabular-nums text-muted-foreground">
               {available ? tr('store.stock', { count: product.stock }) : tr('store.soldOut')}
             </span>
           </div>
-          <div className="flex flex-1 flex-col gap-6 p-5">
+          <div className="flex flex-1 flex-col gap-3 px-4 pb-3">
             {product.description ? (
-              <p className="text-xs leading-6 text-muted-foreground">{product.description}</p>
+              <p className="text-xs leading-5 text-muted-foreground">{product.description}</p>
             ) : null}
             {rows.length ? (
-              <dl className="flex flex-col gap-5 text-sm">
+              <dl className="flex flex-col gap-2 text-xs">
                 {rows.map(([label, value]) => (
                   <div
                     key={label}
-                    className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3"
+                    className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2"
                   >
                     <dt className="flex items-center gap-2 text-muted-foreground">
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary/15 bg-primary/10 text-primary">
+                      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
                         {specIcon(label)}
                       </span>
                       <span className="break-words text-xs">{label}</span>
                     </dt>
-                    <dd className="min-w-0 break-words pt-1 text-xs font-medium leading-6">
+                    <dd className="min-w-0 break-words text-xs font-medium leading-5">
                       {String(value)}
                     </dd>
                   </div>
                 ))}
               </dl>
-            ) : (
-              <p className="text-xs leading-6 text-muted-foreground">{tr('store.specsHint')}</p>
-            )}
-            <div className="mt-auto flex flex-wrap items-baseline gap-2 border-t border-foreground/10 pt-5">
-              <span className="text-3xl text-primary">
+            ) : null}
+            <div className="mt-auto flex flex-wrap items-baseline gap-1.5 pt-1">
+              <span className="text-xl leading-7 text-foreground [&>span]:font-sans [&>span]:font-semibold">
                 <PriceTag amount={product.price} currency={product.currency} />
               </span>
               {cycleLabel ? (
@@ -311,15 +309,15 @@ function ProductCard({ product, tr }: { product: StoreProduct; tr: Translator })
           </div>
           {available ? (
             <Link
-              href={`/shop/${product.id}`}
-              className="flex h-12 items-center justify-center gap-2 border-t border-primary/20 bg-primary/10 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+              href={`/account/store/${encodeURIComponent(product.id)}`}
+              className="flex h-9 items-center justify-between gap-2 border-t border-foreground/10 px-4 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/5 hover:text-primary"
             >
               {tr('store.chooseConfig')} <ArrowRight className="size-4" />
             </Link>
           ) : (
             <span
               aria-disabled="true"
-              className="flex h-12 items-center justify-center border-t border-foreground/10 bg-muted/30 text-sm text-muted-foreground"
+              className="flex h-9 items-center border-t border-foreground/10 px-4 text-xs text-muted-foreground"
             >
               {tr('store.soldOutShort')}
             </span>
@@ -382,21 +380,21 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
     </nav>
   );
   return (
-    <main className="relative mx-auto w-full max-w-[1680px] flex-1 px-5 pb-24 pt-28 sm:px-8 lg:px-10">
-      <Reveal className="flex flex-wrap items-center justify-between gap-5 border-b border-foreground/10 pb-7">
+    <main className="relative mx-auto w-full max-w-7xl flex-1 px-4 pb-16 pt-28 sm:px-6 lg:px-8">
+      <Reveal className="flex flex-wrap items-center justify-between gap-3 border-b border-foreground/10 pb-5">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
             {activeCategory?.name ?? tr('store.chooseProducts')}
           </h1>
         </div>
         <Link
-          href="/shop/cart"
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-foreground/10 bg-foreground/5 px-5 text-sm transition-colors hover:border-primary/40 hover:bg-primary/10"
+          href="/account/store/cart"
+          className="inline-flex h-9 items-center gap-2 rounded-full border border-foreground/10 bg-foreground/5 px-3 text-xs transition-colors hover:border-primary/40 hover:bg-primary/10"
         >
           <ShoppingCart className="size-4" /> {tr('store.cart')} <ArrowRight className="size-4" />
         </Link>
       </Reveal>
-      <div className="mt-7 grid items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="mt-5 grid items-start gap-4 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-6">
         <aside className="min-w-0 lg:sticky lg:top-24">
           <Reveal>
             <div>
@@ -442,7 +440,7 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
                 {categoryNav}
               </div>
               <details className="group/mobile rounded-lg border border-foreground/10 bg-foreground/[0.015] lg:hidden">
-                <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm [&::-webkit-details-marker]:hidden">
+                <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-xs [&::-webkit-details-marker]:hidden">
                   {tr('store.productCategories')}{' '}
                   <ChevronDown className="size-4 transition-transform group-open/mobile:rotate-180" />
                 </summary>
@@ -452,7 +450,7 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
           </Reveal>
         </aside>
         <section className="min-w-0" aria-label={tr('store.productsAria')}>
-          <Reveal className="mb-5">
+          <Reveal className="mb-3">
             {activeId ? (
               <CategoryBreadcrumb categories={categories} activeId={activeId} tr={tr} />
             ) : null}
@@ -472,7 +470,7 @@ export function ProductListPage(props: FrontendPageProps): ReactElement {
           </Reveal>
           {entries.length ? (
             <>
-              <div className="grid items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid items-stretch gap-3 min-[540px]:grid-cols-2 xl:grid-cols-3">
                 {entries.map((product) => (
                   <ProductCard key={product.id} product={product} tr={tr} />
                 ))}
@@ -755,7 +753,7 @@ function CheckoutConfigForm({
   const sel = selection?.selections ?? {};
   const cycle = selection?.cycle ?? config.cycles[0]?.id ?? '';
   return (
-    <Form action={`/shop/${product.id}`} className="mt-6 space-y-4 border-t pt-5">
+    <Form action={`/account/store/${encodeURIComponent(product.id)}`} className="mt-6 space-y-4 border-t pt-5">
       <div className="grid gap-1.5">
         <label htmlFor="checkout-cycle" className="text-sm font-medium">
           {tr('store.billingCycle')}
@@ -895,7 +893,7 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
           {tr('store.backToCatalog')}
         </Link>
         <Link
-          href="/shop/cart"
+          href="/account/store/cart"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <Icon name="cart" />
@@ -1026,7 +1024,7 @@ export const ProductDetailPage: FrontendPageComponent = (props) => {
                   </form>
                 ) : (
                   <Link
-                    href={`/login?next=${encodeURIComponent(`/shop/${product.id}`)}`}
+                    href={`/login?next=${encodeURIComponent(`/account/store/${encodeURIComponent(product.id)}`)}`}
                     className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background px-4 text-sm font-semibold transition-colors hover:bg-muted"
                   >
                     <Icon name="cart" />
@@ -1129,7 +1127,7 @@ export function StoreCartPage(props: FrontendPageProps): ReactElement {
             available: item.product.status === 'ACTIVE',
             productLink: (
               <Link
-                href={`/shop/${item.productId}`}
+                href={`/account/store/${encodeURIComponent(item.productId)}`}
                 className="transition-colors hover:text-primary"
               >
                 {item.product.name}
