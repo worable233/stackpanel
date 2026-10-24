@@ -29,6 +29,8 @@ import {
   RPC_TIMEOUT_MS,
   RAW_CHUNK_BYTES,
   wireError,
+  reviveWireError,
+  parseTransactionCapability,
 } from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
 import { dispatchCacheCapability } from '../../cache/index.ts';
@@ -64,7 +66,7 @@ type Result = {
   id: string;
   value?: unknown;
   response?: { status?: number; payload?: unknown };
-  error?: { message: string; code?: string; status?: number };
+  error?: { message: string; code?: string; status?: number; details?: unknown };
 };
 type Capability = {
   protocol: 1;
@@ -326,13 +328,7 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
       clearTimeout(request.timer);
       state.pending.delete(message.id);
       if (message.error) {
-        const error = new Error(message.error.message) as Error & {
-          code?: string;
-          status?: number;
-        };
-        if (message.error.code !== undefined) error.code = message.error.code;
-        if (message.error.status !== undefined) error.status = message.error.status;
-        request.reject(error);
+        request.reject(reviveWireError(message.error));
       } else request.resolve(message);
     });
     child.once('exit', () => {
@@ -406,13 +402,11 @@ async function handleCapability(
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
-  // Method names are camelCase (`settleHold`), so the second group must accept
-  // uppercase letters.
-  const transactionMatch = /^tx\.([a-z]+)\.([a-zA-Z]+)$/.exec(message.capability);
+  const transactionMatch = parseTransactionCapability(message.capability);
   if (transactionMatch) {
     const transaction = state.transactions.get(String(args.txId));
     if (!transaction) throw new Error('事务不存在或已结束');
-    const operation = `${transactionMatch[1]}.${transactionMatch[2]}`;
+    const operation = `${transactionMatch.group}.${transactionMatch.operation}`;
     if (operation === 'wallet.debit') {
       value = await transaction.tx.wallet.debit(
         String(args.userId),
