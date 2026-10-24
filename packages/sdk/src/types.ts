@@ -418,6 +418,44 @@ export interface ApiTokenView {
   createdAt: string;
 }
 
+/** 一条逐页 SEO 覆写（对标 #12.4）。字段为空表示「不干预」，沿用 provider 的值。 */
+export interface SeoPageView {
+  id: string;
+  path: string;
+  title: string | null;
+  description: string | null;
+  ogImage: string | null;
+  canonical: string | null;
+  noindex: boolean;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SeoPageListResponse {
+  pages: SeoPageView[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface SeoPageUpsertInput {
+  path: string;
+  title?: string | null;
+  description?: string | null;
+  ogImage?: string | null;
+  canonical?: string | null;
+  noindex?: boolean;
+}
+
+/**
+ * 页面元数据的四层来源（由粗到细）：平台默认 → 主题/插件静态声明 →
+ * 插件 `seo.provider` 实体 → 后台逐页覆写。本表只承载最后一层。
+ */
+export interface SeoPageUpsertResponse {
+  page: SeoPageView;
+}
+
 /** Response of GET /me/api-tokens. */
 export interface ApiTokenListResponse {
   tokens: ApiTokenView[];

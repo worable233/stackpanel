@@ -960,7 +960,10 @@
     "distributionRefreshOffline": "Remote catalog is disabled; nothing to refresh.",
     "distributionRefreshOk": "Catalog refreshed, current sequence {sequence}.",
     "distributionRefreshFailed": "Catalog refresh failed: {message}",
-    "apiTokenSigningFailed": "Could not update request signing"
+    "apiTokenSigningFailed": "Could not update request signing",
+    "seoPathRequired": "A page path is required",
+    "seoSaveFailed": "Could not save the page override",
+    "seoDeleteFailed": "Could not delete the page override"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -2143,5 +2146,38 @@
     "resume": "Continue payment",
     "submitting": "Submitting…",
     "order": "Order number"
+  },
+  "adminSeo": {
+    "title": "SEO settings",
+    "description": "Override the title, description, share image and canonical of individual pages. Content still comes from plugins; only the fields you fill in are overridden. Pages marked noindex are dropped from the sitemap.",
+    "new": "New override",
+    "newTitle": "New page override",
+    "editTitle": "Edit page override",
+    "formHint": "Fill in only the fields you want to override; empty fields keep the plugin-provided value.",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteTitle": "Delete this override?",
+    "deleteDescription": "The override for {path} will be removed and the page falls back to the plugin-provided metadata.",
+    "path": "Page path",
+    "pathHint": "Starts with /, no query string or anchor; a trailing slash is normalized away.",
+    "titleField": "Title",
+    "descriptionField": "Description",
+    "ogImage": "Share image",
+    "canonical": "Canonical",
+    "noindex": "No index",
+    "noindexOn": "noindex",
+    "noindexOff": "indexable",
+    "noindexHint": "The page will be dropped from the sitemap and marked noindex.",
+    "search": "Search",
+    "searchPlaceholder": "Search by path or title",
+    "empty": "No page overrides yet.",
+    "loadFailed": "Could not load overrides.",
+    "updated": "Updated",
+    "pagination": "Page {page} of {total}",
+    "prev": "Previous",
+    "next": "Next",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel"
   }
 }

@@ -23,6 +23,9 @@ import type {
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
   ApiTokenView,
+  SeoPageListResponse,
+  SeoPageUpsertResponse,
+  SeoPageView,
   AdminCurrencyDefinitionListResponse,
   AdminCurrencyDefinitionView,
   AdminFxRateListResponse,
@@ -542,6 +545,31 @@ export const apiTokenCreateResponseSchema = z.object({
 export const apiTokenUpdateResponseSchema = z.object({
   apiToken: apiTokenViewSchema,
 }) satisfies z.ZodType<ApiTokenUpdateResponse>;
+
+/** 一条逐页 SEO 覆写（对标 #12.4）；空字段表示「不干预」，沿用 provider 的值。 */
+export const seoPageViewSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  ogImage: z.string().nullable(),
+  canonical: z.string().nullable(),
+  noindex: z.boolean(),
+  updatedBy: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+}) satisfies z.ZodType<SeoPageView>;
+
+export const seoPageListResponseSchema = z.object({
+  pages: z.array(seoPageViewSchema),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
+}) satisfies z.ZodType<SeoPageListResponse>;
+
+export const seoPageUpsertResponseSchema = z.object({
+  page: seoPageViewSchema,
+}) satisfies z.ZodType<SeoPageUpsertResponse>;
 
 export const okResponseSchema = z.object({ ok: z.boolean() });
 

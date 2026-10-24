@@ -6,13 +6,17 @@ import {
   SEO_SITEMAP_URL_LIMIT,
   dedupeSeoUrlEntries,
   isSeoProvider,
+  mergeSeoMeta,
   normalizeSeoPath,
+  type SeoEntityMeta,
   type SeoFeedEntry,
   type SeoProvider,
   type SeoRobots,
   type SeoSitemapEntry,
 } from '@stackpanel/sdk';
 import { getPlatformInfo } from '../lib/platform-info.ts';
+import { getSeoPageByPath, noindexedPaths, toSeoEntityMeta } from '../lib/seo-pages.ts';
+import { getPrisma } from '../plugins/prisma.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 
 /**
@@ -133,7 +137,13 @@ export async function seoRoutes(app: FastifyInstance): Promise<void> {
     const deduped = dedupeSeoUrlEntries(collected).sort((a, b) =>
       normalizeSeoPath(a.url).localeCompare(normalizeSeoPath(b.url)),
     );
-    const { items, total } = paginate(deduped, pagination);
+    // sitemap 一致性（#12.4）：被判 noindex 的页面不得出现在 sitemap 里。
+    const hidden = await noindexedPaths(
+      getPrisma(),
+      deduped.map((entry) => normalizeSeoPath(entry.url)),
+    ).catch(() => new Set<string>());
+    const visible = deduped.filter((entry) => !hidden.has(normalizeSeoPath(entry.url)));
+    const { items, total } = paginate(visible, pagination);
     return { entries: items, total, page: pagination.page, pageSize: pagination.pageSize };
   });
 
@@ -154,13 +164,31 @@ export async function seoRoutes(app: FastifyInstance): Promise<void> {
     const query = request.query as Record<string, unknown>;
     const path = typeof query['path'] === 'string' ? query['path'] : '';
     if (!path) return reply.code(400).send({ error: '缺少 path 参数' });
+    const normalized = normalizeSeoPath(path);
     const params = parseParams(query['params']);
+
+    // 实体级元数据（插件提供）；页面覆写是压在它之上的字段级覆盖。
+    let base: SeoEntityMeta | null = null;
+    let source: string | null = null;
     for (const provider of providers()) {
       if (!provider.resolveMeta) continue;
-      const meta = await provider.resolveMeta({ path: normalizeSeoPath(path), params });
-      if (meta) return { meta, source: provider.id };
+      const meta = await provider.resolveMeta({ path: normalized, params });
+      if (meta) {
+        base = meta;
+        source = provider.id;
+        break;
+      }
     }
-    return { meta: null, source: null };
+
+    // 后台覆写（#12.4）：只覆盖运营填了的字段，provider 的其它字段（如 jsonLd）保留。
+    const override = await getSeoPageByPath(getPrisma(), normalized).catch(() => null);
+    if (override) {
+      const overrideMeta = toSeoEntityMeta(override);
+      if (Object.keys(overrideMeta).length > 0) {
+        return { meta: mergeSeoMeta(base ?? {}, overrideMeta), source: 'kernel' };
+      }
+    }
+    return { meta: base, source };
   });
 
   app.get('/seo/robots', async (_request, reply) => {

@@ -872,3 +872,26 @@ model AgentMessageAttachment {
   @@id([messageId, attachmentId])
   @@map("agent_message_attachments")
 }
+
+/// 逐页 SEO 覆写（对标 #12.4）。
+///
+/// 内容归属仍在插件（`seo.provider` 给实体级元数据），这张表只存运营要改的
+/// 那几个字段，并在渲染时**逐字段**压在 provider 之上 —— 改标题不该连带抹掉
+/// 商品的 JSON-LD。`noindex` 同时约束 sitemap：被标记的页面不得出现在 sitemap。
+model SeoPage {
+  id          String   @id @default(cuid())
+  /// 规范化路径：以 `/` 开头、无尾斜杠、不含 query/hash，唯一。
+  path        String   @unique
+  title       String?
+  description String?
+  ogImage     String?
+  canonical   String?
+  noindex     Boolean  @default(false)
+  /// 最后修改人（用户 id）；系统导入时为空。
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([noindex])
+  @@map("seo_pages")
+}
