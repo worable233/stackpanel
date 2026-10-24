@@ -2,13 +2,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type * as SdkPaths from '@stackpanel/sdk/paths';
+import type * as MarketModule from '../../src/lib/market.ts';
 
 const state = vi.hoisted(() => ({ dataDir: '', record: null as null | {
   id: string; name: string; version: string; active: boolean;
 }, failWrite: false }));
 vi.mock('../../src/config/env.ts', () => ({ env: { PACKAGE_SIGNATURE_REQUIRED: false } }));
 vi.mock('@stackpanel/sdk/paths', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@stackpanel/sdk/paths')>(),
+  ...(await importOriginal<typeof SdkPaths>()),
   resolveStackPanelDataDir: () => state.dataDir,
 }));
 vi.mock('../../src/plugins/prisma.ts', () => ({
@@ -28,7 +30,7 @@ vi.mock('../../src/plugins/prisma.ts', () => ({
 }));
 
 let root: string;
-let market: typeof import('../../src/lib/market.ts');
+let market: typeof MarketModule;
 const source = { id: 'test-theme', name: 'Test Theme', version: '2.0.0', sourceDir: '' };
 
 beforeAll(async () => {
