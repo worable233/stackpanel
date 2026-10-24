@@ -542,6 +542,8 @@ export interface AdminPlugin {
   state: string;
   enabled: boolean;
   source: 'builtin' | 'dynamic';
+  /** Whether an operator may uninstall this plugin (kernel policy, not provenance). */
+  removable: boolean;
   hotReload: boolean;
   frontend: FrontendSummary;
   requires: PluginDependency[];

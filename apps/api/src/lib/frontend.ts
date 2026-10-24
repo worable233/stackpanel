@@ -205,6 +205,20 @@ export function validateFrontendFiles(files: Map<string, Uint8Array>): FrontendM
     if (finderNames.has(finder)) throw new FrontendError(422, `重复的前台 Finder：${finder}`);
     finderNames.add(finder);
   }
+  // A declarative `fetch` runs on the host using the caller's kernel API client,
+  // so its path must stay an API path: absolute, no traversal, no scheme/host.
+  // (The schema already enforces "starts with /".) Requirement-level schema
+  // validation (exactly one of finder/fetch) happens in the shared SDK schema.
+  for (const requirement of [
+    ...manifest.pages.flatMap((page) => page.data ?? []),
+    ...manifest.adminRoutes.flatMap((route) => route.data ?? []),
+    ...manifest.accountRoutes.flatMap((route) => route.data ?? []),
+  ]) {
+    if (!requirement.fetch) continue;
+    if (requirement.fetch.path.includes('..') || requirement.fetch.path.includes('\\')) {
+      throw new FrontendError(422, `非法的数据请求路径：${requirement.fetch.path}`);
+    }
+  }
   const adminRoutePaths = new Set<string>();
   for (const route of manifest.adminRoutes) {
     if (!route.path.startsWith('/')) {

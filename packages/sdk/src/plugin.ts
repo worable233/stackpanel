@@ -69,8 +69,17 @@ export interface PluginManifest {
    * Whether this plugin ships with the kernel distribution. Kernel-derived from
    * the package's `stackpanel.builtin` metadata; plugins never declare it in
    * runtime code (ADR-0008 D9).
+   *
+   * Provenance only: it does **not** decide execution mode, web-process
+   * admission, or whether an operator may uninstall the package. Those are
+   * `execution`, `frontendExecutions` and `removable` respectively.
    */
   builtin?: boolean;
+  /**
+   * Whether an operator may uninstall this plugin. Kernel-derived policy, not
+   * declared by the package.
+   */
+  removable?: boolean;
   /**
    * Operations this plugin exposes on the open `/api/v1` surface. Each entry
    * mirrors one of the plugin's own routes: the kernel derives an authenticated
@@ -84,7 +93,9 @@ export interface PluginManifest {
   /**
    * Platform-admission level for server-side execution in the WEB process
    * (contract 03 §3.1). Default `declarative`; `server` is an explicit grant.
-   * Built-ins are always admitted regardless of this field.
+   * A package may never declare `server` itself — the kernel derives it from
+   * provenance plus the operator allowlist. See `removable` for the third
+   * independent decision, uninstall policy.
    */
   frontendExecutions?: 'declarative' | 'server';
   /**

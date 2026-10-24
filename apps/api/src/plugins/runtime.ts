@@ -402,10 +402,18 @@ export class PluginRuntime {
     locales: string[];
     /** Kernel-derived built-in flag (same source as the backend execution decision). */
     builtin: boolean;
-    /** Execution mode applied by `loadPluginDefinition`. */
+    /**
+     * Execution mode the runtime actually applied.
+     *
+     * Read from the loaded definition rather than recomputed: recomputing here
+     * is what previously let a production built-in report `isolated` while it
+     * was in fact running in-process.
+     */
     execution: 'trusted' | 'isolated';
     /** Explicit platform grant for web-process server execution (contract 03 §3.1). */
     frontendExecutions: 'declarative' | 'server';
+    /** Whether an operator may uninstall the package. */
+    removable: boolean;
   }> {
     return [...this.plugins.values()].map((p) => ({
       id: p.definition.manifest.id,
@@ -422,12 +430,17 @@ export class PluginRuntime {
       roleTemplates: p.definition.manifest.roleTemplates ?? [],
       locales: p.definition.manifest.locales ?? [],
       builtin: p.definition.manifest.builtin === true,
-      // Mirror `loadPluginDefinition` (plugins.ts): built-ins are always
-      // trusted; a non-built-in defaults to isolated in production.
       execution:
         p.definition.manifest.execution ??
-        (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted'),
+        (p.definition.manifest.builtin === true
+          ? 'trusted'
+          : process.env.NODE_ENV === 'production'
+            ? 'isolated'
+            : 'trusted'),
       frontendExecutions: p.definition.manifest.frontendExecutions ?? 'declarative',
+      // Fallback keeps pre-field installs on the old behaviour (`builtin` ⇒
+      // not removable) instead of making every shipped package deletable.
+      removable: p.definition.manifest.removable ?? p.definition.manifest.builtin !== true,
     }));
   }
 

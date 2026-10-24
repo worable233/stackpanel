@@ -139,6 +139,7 @@ export type {
   FrontendActionExecutor,
   FrontendActionExecutors,
   FrontendPageComponent,
+  FrontendDataFetch,
   FrontendPageDataRequirement,
   FrontendPageDefinition,
   FrontendPageManifestEntry,

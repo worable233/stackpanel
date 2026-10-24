@@ -4,7 +4,6 @@ import type {
   FrontendLayoutComponent,
   FrontendActionExecutors,
   FrontendPageComponent,
-  FrontendPageDataRequirement,
   FrontendPageDefinition,
   FrontendPackage,
   FrontendSettings,
@@ -17,6 +16,7 @@ import {
   selectFrontendPageDefinition,
 } from '@stackpanel/sdk';
 import { apiAssetUrl, getAuthedApiClient } from './api';
+import { executePageData } from './frontend-page-data';
 import { getSessionUser } from './auth';
 import {
   activeThemeCandidate,
@@ -105,7 +105,7 @@ export async function resolveFrontendRoute(
         component,
         layout: definition.layout ? (themePkg?.layouts?.[definition.layout] ?? null) : null,
         settings,
-        data: await executePageData(
+        data: await resolvePageData(
           definition,
           finders,
           routeParams,
@@ -164,7 +164,7 @@ export async function resolveFrontendRoute(
           themePkg?.layouts?.['theme'] ??
           (definition.layout ? (pkg.layouts?.[definition.layout] ?? null) : null),
         settings,
-        data: await executePageData(
+        data: await resolvePageData(
           definition,
           finders,
           routeParams,
@@ -327,7 +327,14 @@ function collectFinders(
   return result;
 }
 
-async function executePageData(
+/**
+ * 页面数据求值：委托给共享求值器（`frontend-page-data.ts`），这里只补两件本
+ * 调用点特有的事——`fallback` 合并，以及 finder 调用的审计。
+ *
+ * 共享求值器同时支持声明式 `fetch` 需求（宿主自己发请求，不执行插件代码），
+ * 因此未获服务端执行准入的第三方包也能拿到首屏数据。
+ */
+async function resolvePageData(
   definition: FrontendPageDefinition,
   finders: FinderRegistry,
   params: Record<string, string>,
@@ -335,82 +342,39 @@ async function executePageData(
   fallback: Record<string, unknown>,
   searchParams: Record<string, string | string[] | undefined>,
 ): Promise<Record<string, unknown>> {
-  const data = { ...fallback };
-  if (!definition.data || definition.data.length === 0) return data;
+  if (!definition.data || definition.data.length === 0) return { ...fallback };
   const [api, session] = await Promise.all([getAuthedApiClient(), getSessionUser()]);
-  const resolved = await Promise.all(
-    definition.data.map(async (requirement) => {
-      if (requirement.permission) {
-        if (!session) return null;
-        try {
-          const check = await api.checkPermission(requirement.permission);
-          if (!check.allowed) return null;
-        } catch {
-          return null;
-        }
-      }
-      const finder = finders[requirement.finder];
-      if (!finder) return null;
-      try {
-        const value = await finder.provider.handler(
-          resolveInput(requirement, params, searchParams),
-          {
-            params,
-            settings,
-            api,
-            session,
-          },
-        );
-        if (finder.pluginId) {
-          void api
-            .recordFrontendAudit('frontend.finder.call', finder.pluginId, requirement.finder, {
-              status: 'ok',
-            })
-            .catch(() => undefined);
-        }
-        return [requirement.as, value] as const;
-      } catch {
-        if (finder.pluginId) {
-          void api
-            .recordFrontendAudit('frontend.finder.call', finder.pluginId, requirement.finder, {
-              status: 'error',
-            })
-            .catch(() => undefined);
-        }
-        return null;
-      }
-    }),
+  // `session` 是 `AccountUser`，比 finder 要求的 `FinderSession` 更宽；只取 role。
+  const finderProviders: Record<string, FinderProvider> = Object.fromEntries(
+    Object.entries(finders).map(([name, entry]) => [name, entry.provider]),
   );
-  for (const entry of resolved) {
-    if (entry) data[entry[0]] = entry[1];
-  }
-  return data;
+  return {
+    ...fallback,
+    ...(await executePageData(definition.data, {
+      finders: finderProviders,
+      params,
+      searchParams,
+      settings,
+      session: session ? { role: session.role } : null,
+      api,
+      isAllowed: async (permission) => {
+        if (!session) return false;
+        try {
+          return (await api.checkPermission(permission)).allowed;
+        } catch {
+          return false;
+        }
+      },
+      onFinderSettled: (finderId, ok) => {
+        const pluginId = finders[finderId]?.pluginId;
+        if (!pluginId) return;
+        void api
+          .recordFrontendAudit('frontend.finder.call', pluginId, finderId, {
+            status: ok ? 'ok' : 'error',
+          })
+          .catch(() => undefined);
+      },
+    })),
+  };
 }
 
-function resolveInput(
-  requirement: FrontendPageDataRequirement,
-  params: Record<string, string>,
-  searchParams: Record<string, string | string[] | undefined>,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(requirement.input ?? {})) {
-    if (key === '$query') {
-      // 把整份 query string 传给 finder（可配置商品计价预览等动态场景）。
-      result['$query'] = searchParams;
-      continue;
-    }
-    if (typeof value === 'string' && value.startsWith(':')) {
-      result[key] = params[value.slice(1)] ?? value;
-      continue;
-    }
-    // A matching URL query parameter overrides the manifest default, so pages
-    // like a catalog can read `?page=2` for server-side pagination.
-    const query = searchParams[key];
-    if (query !== undefined) {
-      result[key] = Array.isArray(query) ? (query[0] ?? value) : query;
-      continue;
-    }
-    result[key] = value;
-  }
-  return result;
-}

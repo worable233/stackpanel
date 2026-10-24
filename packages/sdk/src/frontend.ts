@@ -96,13 +96,57 @@ export interface FrontendPageDefinition {
 /** Serializable declaration included in frontend/manifest.json. */
 export type FrontendPageManifestEntry = FrontendPageDefinition;
 
-/** A finder call that supplies page data before rendering. */
+/**
+ * A page-data requirement evaluated by the host before rendering.
+ *
+ * Two forms exist, and the difference is a trust boundary, not a style choice:
+ *
+ * - `{ finder }` names a **function** in the package. Evaluating it means running
+ *   plugin code inside the web process, with the caller's kernel API client. That
+ *   is a privilege the kernel must grant per package (ADR-0024), so a non-builtin
+ *   plugin's finders only run when an operator admits it. Prefer {@link fetch}
+ *   unless the shape really cannot be expressed as one HTTP call.
+ * - `{ fetch }` names an **HTTP request**. The host performs it itself; the plugin
+ *   contributes no executable code, so the requirement needs no admission at all.
+ *   This is how a third-party package can still render a populated first screen
+ *   without being trusted to run anything.
+ *
+ * The declared permission is checked before either form runs, so a requirement
+ * never becomes a way to bypass authorization.
+ */
 export interface FrontendPageDataRequirement {
-  finder: string;
+  /** Named finder (executes package code — requires admission). */
+  finder?: string;
+  /**
+   * Declarative HTTP request (executed by the host — no package code runs).
+   * `path` may interpolate `:param` from the route and `$query` for the whole
+   * query string, exactly like `input` does for finders.
+   */
+  fetch?: FrontendDataFetch;
+  /** Key this requirement's value is exposed under in `props.data`. */
   as: string;
   input?: Record<string, unknown>;
-  /** Optional permission required before this Finder runs. */
+  /** Optional permission required before this requirement runs. */
   permission?: string;
+}
+
+/**
+ * A declarative data request. Deliberately limited to reads: mutations go
+ * through `actions` (which are declarative for the same reason), so a data
+ * requirement can never change state as a side effect of rendering.
+ */
+export interface FrontendDataFetch {
+  /** Only `GET` — see above. */
+  method?: 'GET';
+  /** Absolute kernel API path, e.g. `/tickets?page=1&pageSize=50`. */
+  path: string;
+  /**
+   * Optional dot path into the response, e.g. `tickets`. Lets a list route
+   * expose the array itself (`props.data.tickets` is `Ticket[]`) instead of the
+   * `{ tickets, total }` envelope the API returns for pagination. Kept as a
+   * plain path rather than a query language so the host stays a dumb pipe.
+   */
+  select?: string;
 }
 
 /** Minimal session info available to Finder handlers. */

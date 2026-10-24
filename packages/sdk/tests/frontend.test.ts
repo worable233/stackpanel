@@ -9,6 +9,7 @@ import {
   selectFrontendPageDefinition,
   settingsDefaultsFromSchema,
 } from '../src/frontend.js';
+import { frontendPageDataRequirementSchema } from '../src/schemas.js';
 import type { FrontendPageDefinition, FrontendSettingsSchema } from '../src/frontend.js';
 
 const schema: FrontendSettingsSchema = {
@@ -211,5 +212,39 @@ describe('theme page overrides', () => {
   it('returns undefined when no override matches', () => {
     expect(resolveThemeOverride({ '/shop': 'shop' }, '/account')).toBeUndefined();
     expect(resolveThemeOverride(undefined, '/shop')).toBeUndefined();
+  });
+});
+
+describe('page data requirement schema', () => {
+  const parse = (value: unknown) => frontendPageDataRequirementSchema.safeParse(value);
+
+  it('accepts a declarative fetch requirement', () => {
+    const result = parse({ as: 'summary', fetch: { path: '/tickets?page=1' } });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a named finder requirement', () => {
+    const result = parse({ as: 'summary', finder: 'ticket.mySummary' });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a requirement that declares neither form', () => {
+    expect(parse({ as: 'summary' }).success).toBe(false);
+  });
+
+  it('rejects a requirement that declares both forms', () => {
+    expect(parse({ as: 'summary', finder: 'a', fetch: { path: '/a' } }).success).toBe(false);
+  });
+
+  it('rejects a relative fetch path', () => {
+    expect(parse({ as: 'summary', fetch: { path: 'tickets' } }).success).toBe(false);
+  });
+
+  it('rejects a non-GET method (data requirements are reads)', () => {
+    expect(parse({ as: 'summary', fetch: { path: '/a', method: 'POST' } }).success).toBe(false);
+  });
+
+  it('rejects unknown properties instead of silently ignoring them', () => {
+    expect(parse({ as: 'summary', fetch: { path: '/a', body: {} } }).success).toBe(false);
   });
 });

@@ -712,12 +712,33 @@ export const frontendSettingsSchema = z.object({
   groups: z.array(frontendSettingsGroupSchema),
 });
 
-export const frontendPageDataRequirementSchema = z.object({
-  finder: z.string().min(1),
-  as: z.string().min(1),
-  input: z.record(z.string(), z.unknown()).optional(),
-  permission: z.string().optional(),
-});
+/**
+ * A page-data requirement is either a declarative `fetch` (host performs the
+ * request; no package code runs) or a named `finder` (runs package code and
+ * therefore needs server-execution admission). Exactly one must be declared —
+ * accepting both would leave "which one wins?" ambiguous, and accepting neither
+ * is a silently dead requirement.
+ */
+export const frontendPageDataRequirementSchema = z
+  .object({
+    finder: z.string().min(1).optional(),
+    fetch: z
+      .object({
+        method: z.literal('GET').optional(),
+        path: z.string().startsWith('/').min(1),
+        select: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+    as: z.string().min(1),
+    input: z.record(z.string(), z.unknown()).optional(),
+    permission: z.string().optional(),
+  })
+  .strict()
+  .refine((value) => (value.finder === undefined) !== (value.fetch === undefined), {
+    message: '数据需求必须且只能声明 finder 或 fetch 之一',
+    path: ['fetch'],
+  });
 
 export const frontendPageSchema = z.object({
   path: z.string().min(1),
@@ -973,6 +994,11 @@ export const adminPluginSchema = z.object({
   state: z.string(),
   enabled: z.boolean(),
   source: z.enum(['builtin', 'dynamic']),
+  /**
+   * Whether an operator may uninstall this plugin. Independent of `source`:
+   * provenance ("ships with the kernel") is not uninstall policy.
+   */
+  removable: z.boolean(),
   hotReload: z.boolean(),
   frontend: frontendSummarySchema,
   requires: z.array(pluginDependencySchema),
