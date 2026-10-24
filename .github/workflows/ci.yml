@@ -12,7 +12,10 @@ jobs:
   ci:
     name: Install · License · Check · Build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The external-plugin install (clone + pnpm install + build) added ~2 min to a
+    # run that already peaked at ~15 min; keep a real margin so a slow runner does
+    # not fail as a timeout and read like a code failure.
+    timeout-minutes: 30
 
     # PostgreSQL + Redis are part of the runtime baseline (ADR-0017/0019).
     # Tests recreate a `stackpanel_test` database on this server; Redis is
