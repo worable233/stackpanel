@@ -36,6 +36,7 @@ import {
   parsePagination,
 } from './utils';
 import { resolveCheckoutPrice, effectiveDiscount } from './pricing';
+import { applyDiscount, betterDiscount } from './discount';
 import { formatAmountPair, quoteSettlement, sameCurrency } from './currency';
 import { notifyUser } from './notifications';
 import { auditActor, recordStoreAudit, STORE_AUDIT_ACTIONS } from './audit';
@@ -89,9 +90,8 @@ async function reserve(
     }
     orderCurrency = product.currency;
     const config = parseCheckoutSelection(line.config);
-    // 折扣计价：商品自身折扣与用户权限组折扣取更优（% off）。
-    const productDiscount = product.discount ?? 0;
-    const effective = Math.max(discount, productDiscount);
+    // 折扣计价：商品自身折扣与用户权限组折扣取更优（% off），与展示路径同源。
+    const effective = betterDiscount(product.discount, discount);
     let baseUnit = product.price;
     let configSummary: string | undefined;
     {
@@ -103,8 +103,7 @@ async function reserve(
       baseUnit = unit;
       configSummary = result?.summary;
     }
-    const discountedUnit =
-      effective > 0 ? Math.round((baseUnit * (100 - effective)) / 100) : baseUnit;
+    const discountedUnit = applyDiscount(baseUnit, effective);
     // Pricing policy seam: interceptors may rewrite the per-unit price before
     // the order total is computed.
     const unit = bus().waterfall<OrderPriceContext>(
@@ -268,7 +267,12 @@ async function placeOrder(
         itemCount: lines.length,
       },
     });
-    return { order, nextPath: cart?.cartItemIds ? `/account/store/cart?orderId=${encodeURIComponent(order.id)}` : '/account/orders' };
+    return {
+      order,
+      nextPath: cart?.cartItemIds
+        ? `/account/store/cart?orderId=${encodeURIComponent(order.id)}`
+        : '/account/orders',
+    };
   }
 
   const providerId = options.providerId;
@@ -290,12 +294,16 @@ async function placeOrder(
       providerId,
       paymentMethod,
       subject: '',
-      returnPath: cart?.cartItemIds ? `/account/store/cart?orderId=${encodeURIComponent(orderId)}` : '/account/orders',
+      returnPath: cart?.cartItemIds
+        ? `/account/store/cart?orderId=${encodeURIComponent(orderId)}`
+        : '/account/orders',
     });
     return { orderId, payment, subject: resolved.map((line) => line.name).join('、') };
   });
   const payment = await ctx.payments.initiate(reserved.payment.id, {
-    returnPath: cart?.cartItemIds ? `/account/store/cart?orderId=${encodeURIComponent(reserved.orderId)}` : '/account/orders',
+    returnPath: cart?.cartItemIds
+      ? `/account/store/cart?orderId=${encodeURIComponent(reserved.orderId)}`
+      : '/account/orders',
     subject: reserved.subject,
     ...(req.ip ? { clientIp: req.ip } : {}),
   });
@@ -426,10 +434,18 @@ export async function getMyOrder(req: HttpRequest): Promise<unknown> {
   const order = await findOrderForUser(parsed.data.id, userId);
   if (!order) throw new StoreError(404, '订单不存在');
   const payments = await context().payments.listByOrderIds([order.id]);
-  const payment = payments.find(item => item.orderId === order.id);
-  return { order: { id: order.id, status: order.status, total: order.total, currency: order.currency,
-    settlementTotal: order.settlementTotal, settlementCurrency: order.settlementCurrency,
-    paymentUrl: order.status === 'PENDING' ? payment?.paymentUrl ?? null : null } };
+  const payment = payments.find((item) => item.orderId === order.id);
+  return {
+    order: {
+      id: order.id,
+      status: order.status,
+      total: order.total,
+      currency: order.currency,
+      settlementTotal: order.settlementTotal,
+      settlementCurrency: order.settlementCurrency,
+      paymentUrl: order.status === 'PENDING' ? (payment?.paymentUrl ?? null) : null,
+    },
+  };
 }
 
 export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise<unknown> {

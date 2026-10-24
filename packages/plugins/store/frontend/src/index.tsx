@@ -131,6 +131,9 @@ interface PricePreview {
   originalTotal?: number | undefined;
   productId: string;
   price: number;
+  /** 未打折单价（`price` 已扣折扣）；服务端按 discount.ts 计算。 */
+  basePrice?: number | undefined;
+  discount?: number | null | undefined;
   currency: string;
   quantity: number;
   total: number;
@@ -277,6 +280,9 @@ const cartSchema = z.object({
         id: z.string(),
         name: z.string(),
         price: z.number(),
+        // 未打折单价与生效折扣：服务端按 `discount.ts` 算，前端只展示。
+        originalPrice: z.number().optional(),
+        discount: z.number().nullable().optional(),
         currency: z.string(),
         stock: z.number(),
         status: z.string(),
@@ -295,6 +301,9 @@ const pricePreviewSchema = z.object({
   originalTotal: z.number().optional(),
   productId: z.string(),
   price: z.number(),
+  // 未打折单价（`price` 已扣折扣）。服务端算，前端只负责展示划线价。
+  basePrice: z.number().optional(),
+  discount: z.number().nullable().optional(),
   currency: z.string(),
   quantity: z.number(),
   total: z.number(),
@@ -1550,7 +1559,9 @@ const ProductDetailPage = (
               {currentSelection?.instanceName ? (
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">{tr('configure.instanceName')}</dt>
-                  <dd className="min-w-0 break-words text-right">{currentSelection.instanceName}</dd>
+                  <dd className="min-w-0 break-words text-right">
+                    {currentSelection.instanceName}
+                  </dd>
                 </div>
               ) : null}
               <div className="flex justify-between gap-4">
@@ -1578,11 +1589,29 @@ const ProductDetailPage = (
                   ? money(pricePreview.total, pricePreview.currency, props.locale)
                   : '—'}
               </p>
-              {pricePreview && product.discount != null && product.discount > 0 ? (
-                <span className="text-xs text-muted-foreground">
-                  {tr('product.discount', { percent: product.discount })}
-                </span>
-              ) : null}
+              {(() => {
+                // 折扣来源可能是商品折扣，也可能是权限组折扣（取更优者）。
+                // 只读 `product.discount` 会让「按权限组打折」的用户看不到自己
+                // 拿到了多少折扣 —— 试算返回的 `discount` 才是实际生效的那个。
+                const percent = pricePreview?.discount ?? product.discount;
+                const base = pricePreview?.basePrice;
+                const showStrike =
+                  base != null && pricePreview != null && base > pricePreview.price;
+                return (
+                  <>
+                    {showStrike ? (
+                      <span className="text-base text-muted-foreground/60 line-through">
+                        {money(base, pricePreview.currency, props.locale)}
+                      </span>
+                    ) : null}
+                    {percent != null && percent > 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        {tr('product.discount', { percent })}
+                      </span>
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
             {pricePreview?.originalTotal !== undefined ? (
               <dl className="hidden text-xs text-muted-foreground lg:block">
@@ -1615,7 +1644,9 @@ const ProductDetailPage = (
             ) : null}
           </div>
           {checkoutConfig && !pricePreview ? (
-            <p className="mt-2 hidden text-xs text-muted-foreground lg:block">{tr('product.configPriceHint')}</p>
+            <p className="mt-2 hidden text-xs text-muted-foreground lg:block">
+              {tr('product.configPriceHint')}
+            </p>
           ) : null}
           {pricePreview &&
           (pricePreview.breakdown?.length ||
@@ -2148,7 +2179,9 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
                 {refund && ['PAID', 'PARTIALLY_REFUNDED'].includes(order.status) ? (
                   <form action={refund}>
                     <input type="hidden" name="id" value={order.id} />
-                    <button type="submit" className="text-muted-foreground hover:text-destructive">{tr('orders.requestRefund')}</button>
+                    <button type="submit" className="text-muted-foreground hover:text-destructive">
+                      {tr('orders.requestRefund')}
+                    </button>
                   </form>
                 ) : null}
               </span>
@@ -3430,7 +3463,9 @@ const storeFinders: Record<string, FinderProvider> = {
       ctx.api.get(
         `/store/admin/delivery-tasks?status=attention&page=${Math.max(1, Number((input as { page?: string })?.page) || 1)}`,
         z.object({
-          total: z.number(), page: z.number(), pageSize: z.number(),
+          total: z.number(),
+          page: z.number(),
+          pageSize: z.number(),
           tasks: z.array(
             z.object({
               id: z.string(),
@@ -3438,16 +3473,37 @@ const storeFinders: Record<string, FinderProvider> = {
               productName: z.string(),
               quantity: z.number(),
               status: z.string(),
-              userId: z.string(), reason: z.string().nullable(),
+              userId: z.string(),
+              reason: z.string().nullable(),
               attempts: z.number(),
-              upstreamServiceId: z.string().nullable(), invoiceId: z.string().nullable(), paymentState: z.string().nullable(), canResumePayment: z.boolean(),
+              upstreamServiceId: z.string().nullable(),
+              invoiceId: z.string().nullable(),
+              paymentState: z.string().nullable(),
+              canResumePayment: z.boolean(),
             }),
           ),
         }),
       ),
   },
   'store.refundRequests': {
-    handler: async (_input, ctx) => ctx.api.get('/store/admin/refund-requests', z.object({ requests: z.array(z.object({ id: z.string(), orderId: z.string(), userId: z.string(), amount: z.number(), currency: z.string(), state: z.string(), reason: z.string().nullable(), failureReason: z.string().nullable() })) })),
+    handler: async (_input, ctx) =>
+      ctx.api.get(
+        '/store/admin/refund-requests',
+        z.object({
+          requests: z.array(
+            z.object({
+              id: z.string(),
+              orderId: z.string(),
+              userId: z.string(),
+              amount: z.number(),
+              currency: z.string(),
+              state: z.string(),
+              reason: z.string().nullable(),
+              failureReason: z.string().nullable(),
+            }),
+          ),
+        }),
+      ),
   },
   'store.products': {
     handler: async (input, ctx) =>
