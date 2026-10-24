@@ -22,6 +22,7 @@ const KERNEL_NAV: Record<'public' | 'account' | 'admin', NavItem[]> = {
     { surface: 'admin', label: '插件管理', href: '/admin/plugins' },
     { surface: 'admin', label: '权限模板', href: '/admin/rbac' },
     { surface: 'admin', label: '审计日志', href: '/admin/audit' },
+    { surface: 'admin', label: 'SEO 设置', href: '/admin/seo' },
     { surface: 'admin', label: '主题管理', href: '/admin/themes' },
     { surface: 'admin', label: '通知中心', href: '/admin/notifications' },
   ],

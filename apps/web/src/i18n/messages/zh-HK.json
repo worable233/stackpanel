@@ -960,7 +960,10 @@
     "distributionRefreshOffline": "遠端目錄已關閉，無需重新整理。",
     "distributionRefreshOk": "目錄重新整理成功，當前序號 {sequence}。",
     "distributionRefreshFailed": "目錄重新整理失敗：{message}",
-    "apiTokenSigningFailed": "更新請求籤名設置失敗"
+    "apiTokenSigningFailed": "更新請求籤名設置失敗",
+    "seoPathRequired": "請填寫頁面路徑",
+    "seoSaveFailed": "儲存頁面覆寫失敗",
+    "seoDeleteFailed": "刪除頁面覆寫失敗"
   },
   "user": {
     "emailRequired": "請填寫郵箱",
@@ -2143,5 +2146,38 @@
     "resume": "繼續付款",
     "submitting": "正在提交…",
     "order": "訂單編號"
+  },
+  "adminSeo": {
+    "title": "SEO 設置",
+    "description": "逐頁覆寫標題、描述、分享圖與 canonical。內容仍由外掛提供，這裡只改運營要改的欄位；標記 noindex 的頁面不會出現在 sitemap。",
+    "new": "新建覆寫",
+    "newTitle": "新建頁面覆寫",
+    "editTitle": "編輯頁面覆寫",
+    "formHint": "只填寫需要覆蓋的欄位，留空表示沿用外掛提供的值。",
+    "edit": "編輯",
+    "delete": "刪除",
+    "deleteTitle": "刪除這條覆寫？",
+    "deleteDescription": "將刪除 {path} 的覆寫，頁面會回到外掛提供的後設資料。",
+    "path": "頁面路徑",
+    "pathHint": "以 / 開頭，不帶查詢串或錨點；尾斜槓會被自動收斂。",
+    "titleField": "標題",
+    "descriptionField": "描述",
+    "ogImage": "分享圖",
+    "canonical": "canonical",
+    "noindex": "不索引（noindex）",
+    "noindexOn": "不索引",
+    "noindexOff": "可索引",
+    "noindexHint": "標記後該頁面不會出現在 sitemap，並輸出 noindex 指令。",
+    "search": "搜尋",
+    "searchPlaceholder": "按路徑或標題搜尋",
+    "empty": "還沒有任何頁面覆寫。",
+    "loadFailed": "讀取覆寫列表失敗。",
+    "updated": "更新時間",
+    "pagination": "第 {page} / {total} 頁",
+    "prev": "上一頁",
+    "next": "下一頁",
+    "save": "儲存",
+    "saving": "儲存中…",
+    "cancel": "取消"
   }
 }

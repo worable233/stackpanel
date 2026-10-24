@@ -14,6 +14,8 @@ import {
   adminFxRateViewSchema,
   apiTokenCreateResponseSchema,
   apiTokenListResponseSchema,
+  seoPageListResponseSchema,
+  seoPageUpsertResponseSchema,
   apiTokenScopesResponseSchema,
   apiTokenUpdateResponseSchema,
   auditLogResponseSchema,
@@ -132,6 +134,9 @@ import type {
   BootstrapOperationView,
   ApiTokenCreateResponse,
   ApiTokenListResponse,
+  SeoPageListResponse,
+  SeoPageUpsertInput,
+  SeoPageUpsertResponse,
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
   AuthConfigResponse,
@@ -960,6 +965,27 @@ export class ApiClient {
       input,
       apiTokenUpdateResponseSchema,
     );
+  }
+
+  /** 逐页 SEO 覆写列表（后台）。 */
+  listSeoPages(
+    options: { query?: string; page?: number; pageSize?: number } = {},
+  ): Promise<SeoPageListResponse> {
+    const params = new URLSearchParams();
+    if (options.query) params.set('query', options.query);
+    params.set('page', String(options.page ?? 1));
+    params.set('pageSize', String(options.pageSize ?? 50));
+    return this.get(`/admin/seo/pages?${params.toString()}`, seoPageListResponseSchema);
+  }
+
+  /** 保存一条逐页 SEO 覆写（按路径 upsert）。 */
+  upsertSeoPage(input: SeoPageUpsertInput): Promise<SeoPageUpsertResponse> {
+    return this.put('/admin/seo/pages', input, seoPageUpsertResponseSchema);
+  }
+
+  /** 删除一条逐页 SEO 覆写，页面回落到 provider 的元数据。 */
+  deleteSeoPage(id: string): Promise<{ ok: boolean }> {
+    return this.del(`/admin/seo/pages/${encodeURIComponent(id)}`, okResponseSchema);
   }
 
   /** Revoke one of the current user's API tokens. */

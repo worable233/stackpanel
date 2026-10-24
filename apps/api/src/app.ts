@@ -40,6 +40,7 @@ import { adminSalesRoutes } from './routes/admin/sales.ts';
 import { adminPermissionGroupRoutes } from './routes/admin/permission-groups.ts';
 import { adminPermissionsRoutes } from './routes/admin/permissions.ts';
 import { adminSigningRoutes } from './routes/admin/signing.ts';
+import { adminSeoRoutes } from './routes/admin/seo.ts';
 import { adminDistributionRoutes } from './routes/admin/distribution.ts';
 import { adminUpdateRoutes } from './routes/admin/updates.ts';
 import { adminUiRoutes } from './routes/admin/ui.ts';
@@ -440,6 +441,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminSecretsRoutes);
   void app.register(adminAgentModelRoutes);
   void app.register(adminSigningRoutes);
+  // 逐页 SEO 后台编辑（对标 #12.4）：覆写压在插件 provider 元数据之上。
+  void app.register(adminSeoRoutes);
   void app.register(adminDistributionRoutes);
   void app.register(adminPluginRoutes);
   void app.register(adminUiRoutes);

@@ -960,7 +960,10 @@
     "distributionRefreshOffline": "远程目录已关闭，无需刷新。",
     "distributionRefreshOk": "目录刷新成功，当前序号 {sequence}。",
     "distributionRefreshFailed": "目录刷新失败：{message}",
-    "apiTokenSigningFailed": "更新请求签名设置失败"
+    "apiTokenSigningFailed": "更新请求签名设置失败",
+    "seoPathRequired": "请填写页面路径",
+    "seoSaveFailed": "保存页面覆写失败",
+    "seoDeleteFailed": "删除页面覆写失败"
   },
   "user": {
     "emailRequired": "请填写邮箱",
@@ -2143,5 +2146,38 @@
     "resume": "继续付款",
     "submitting": "正在提交…",
     "order": "订单编号"
+  },
+  "adminSeo": {
+    "title": "SEO 设置",
+    "description": "逐页覆写标题、描述、分享图与 canonical。内容仍由插件提供，这里只改运营要改的字段；标记 noindex 的页面不会出现在 sitemap。",
+    "new": "新建覆写",
+    "newTitle": "新建页面覆写",
+    "editTitle": "编辑页面覆写",
+    "formHint": "只填写需要覆盖的字段，留空表示沿用插件提供的值。",
+    "edit": "编辑",
+    "delete": "删除",
+    "deleteTitle": "删除这条覆写？",
+    "deleteDescription": "将删除 {path} 的覆写，页面会回到插件提供的元数据。",
+    "path": "页面路径",
+    "pathHint": "以 / 开头，不带查询串或锚点；尾斜杠会被自动收敛。",
+    "titleField": "标题",
+    "descriptionField": "描述",
+    "ogImage": "分享图",
+    "canonical": "canonical",
+    "noindex": "不索引（noindex）",
+    "noindexOn": "不索引",
+    "noindexOff": "可索引",
+    "noindexHint": "标记后该页面不会出现在 sitemap，并输出 noindex 指令。",
+    "search": "搜索",
+    "searchPlaceholder": "按路径或标题搜索",
+    "empty": "还没有任何页面覆写。",
+    "loadFailed": "读取覆写列表失败。",
+    "updated": "更新时间",
+    "pagination": "第 {page} / {total} 页",
+    "prev": "上一页",
+    "next": "下一页",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消"
   }
 }
