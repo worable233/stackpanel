@@ -456,6 +456,9 @@ model ApiToken {
   keyHash     String    @unique // sha256(明文)
   scopes      Json      @default("[]") // 授权范围 string[]；空 = 仅身份、无任何权限
   ipAllowlist Json      @default("[]") // CIDR/单 IP；空 = 不限制
+  /// 对标 #12.6：登记后该凭证的每个请求都必须带 Ed25519 请求签名；
+  /// null = 只凭 Bearer（存量凭证行为不变）。
+  publicKey   String?
   status      String    @default("ACTIVE") // ACTIVE|DISABLED
   expiresAt   DateTime?
   lastUsedAt  DateTime?
