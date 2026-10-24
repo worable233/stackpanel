@@ -171,6 +171,54 @@ jobs:
       - name: Acceptance report (offline rows only; gated rows stay gated)
         run: pnpm release:acceptance-report
 
+      # `referral`, `ticket` and `invoice` are not kernel built-ins: their
+      # authoritative source lives in the separate `stackpanel-plugins`
+      # repository, so a bare kernel checkout cannot activate them and
+      # `describe.skipIf(!installed)` turned their suites into skips — CI was
+      # green while covering none of those plugins (HANDOFF §三·1).
+      #
+      # Fetch that repository as a sibling of this checkout (a step-level
+      # `git clone` rather than `actions/checkout`, which refuses paths outside
+      # the workspace), build it against *this* kernel and install the real
+      # packages into `apps/api/data` before the tests run.
+      #
+      # Deliberately fatal: if the plugin repository stops building against this
+      # kernel, CI must fail here rather than quietly shrink back to a green but
+      # uncovered run.
+      - name: Install external plugin packages (referral / ticket / invoice)
+        run: |
+          set -euo pipefail
+          plugins="$RUNNER_WORKSPACE/stackpanel-plugins"
+          rm -rf "$plugins"
+          git clone --depth 1 https://github.com/worable233/stackpanel-plugins.git "$plugins"
+          # The plugin workspace links kernel packages through `../StackPanel`
+          # (see its pnpm-workspace.yaml overrides), so the kernel checkout has
+          # to be reachable under that sibling name.
+          ln -sfn "$GITHUB_WORKSPACE" "$RUNNER_WORKSPACE/StackPanel"
+          # The plugins compile against the kernel packages' *built* entries; a
+          # bare checkout only has sources.
+          pnpm --filter @stackpanel/spec --filter @stackpanel/sdk \
+            --filter @stackpanel/ui --filter @stackpanel/net-guard build
+          ( cd "$plugins" && pnpm install --frozen-lockfile )
+          # A fresh checkout has no data directory at all, and the installer only
+          # writes into data directories that already exist.
+          mkdir -p apps/api/data
+          for id in referral ticket invoice; do
+            # A plugin's frontend is a separate workspace project whose only build
+            # script is `build: tsup` — no `prepare` — so a fresh clone has no
+            # `frontend/dist`. Installing the package without it leaves
+            # `frontend/manifest.json` beside a missing entry, which the kernel
+            # correctly reports as *not ready* (`GET /ready` → 503, and the
+            # suites' own routes serve nothing). That is an incomplete install,
+            # not merely unbuilt frontend assets.
+            ( cd "$plugins/packages/plugins/$id/frontend" && pnpm run build )
+            ( cd "$plugins/packages/plugins/$id" \
+              && node ../../../scripts/install-into-kernel.mjs --kernel "$GITHUB_WORKSPACE" )
+            # Do not let a silently-empty install turn the suites back into skips.
+            test -f "apps/api/data/plugins/$id/manifest.json"
+            test -f "apps/api/data/plugins/$id/frontend/dist/index.js"
+          done
+
       - name: Test
         run: pnpm test
 
