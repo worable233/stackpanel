@@ -13,14 +13,12 @@ export async function AccountPluginPage({
   user,
   result,
   searchParams,
-  actionError,
 }: {
   pluginId: string;
   path: string;
   user: AccountUser;
   result: PluginAccountRouteResult;
   searchParams?: Record<string, string>;
-  actionError?: string;
 }): Promise<ReactElement> {
   const locale = await getLocale();
   const t = createTranslator(locale);
@@ -33,14 +31,7 @@ export async function AccountPluginPage({
   const Component = result.component;
   return (
     <FrontendScopeRoot scope={`plugins:${pluginId}`} className="block space-y-6">
-      {actionError ? (
-        <p
-          role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {actionError}
-        </p>
-      ) : null}
+      {/* Action feedback is toasted globally; an inline copy would duplicate it. */}
       {createElement(Component, {
         pluginId,
         path,

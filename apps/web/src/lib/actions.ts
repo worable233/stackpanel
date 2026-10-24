@@ -17,6 +17,54 @@ export interface LoginState {
   codeExpiresInSeconds?: number;
 }
 
+export interface AccountMutationState { error?: string; ok?: boolean }
+
+export async function changePasswordAction(
+  _prev: AccountMutationState,
+  formData: FormData,
+): Promise<AccountMutationState> {
+  const locale = await getLocale();
+  const currentPassword = formData.get('currentPassword');
+  const newPassword = formData.get('newPassword');
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 8) {
+    return { error: translate(locale, 'account.settings.security.passwordInvalid') };
+  }
+  try {
+    await (await getAuthedApiClient()).changePassword(currentPassword, newPassword);
+  } catch (error) {
+    return {
+      error: await apiErrorMessage(
+        error,
+        translate(locale, 'account.settings.security.passwordChangeFailed'),
+      ),
+    };
+  }
+  redirect('/login');
+}
+
+export async function changeEmailAction(
+  _prev: AccountMutationState,
+  formData: FormData,
+): Promise<AccountMutationState> {
+  const locale = await getLocale();
+  const currentPassword = formData.get('currentPassword');
+  const email = formData.get('email');
+  if (typeof currentPassword !== 'string' || typeof email !== 'string' || !email.includes('@')) {
+    return { error: translate(locale, 'account.settings.security.emailInvalid') };
+  }
+  try {
+    await (await getAuthedApiClient()).changeEmail(currentPassword, email);
+  } catch (error) {
+    return {
+      error: await apiErrorMessage(
+        error,
+        translate(locale, 'account.settings.security.emailChangeFailed'),
+      ),
+    };
+  }
+  redirect('/login');
+}
+
 function safeNextPath(value: FormDataEntryValue | null): string | null {
   return safeInternalPath(value);
 }

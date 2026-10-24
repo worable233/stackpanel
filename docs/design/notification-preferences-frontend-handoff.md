@@ -21,16 +21,16 @@
 
 ## 2. 后端已落地的文件（前端只需读契约）
 
-| 文件 | 作用 |
-| --- | --- |
-| `apps/api/src/routes/notifications.ts` | 用户级接口：`GET/PATCH /notifications/preferences`、`POST /notifications/preferences/reset` |
-| `apps/api/src/routes/admin/notifications.ts` | 管理员接口：`GET/PUT /admin/notifications/policy`（`requireRole('ADMIN')` + 审计 `notifications.policy.update`） |
-| `apps/api/src/notifications/policy-service.ts` | 内核两级裁决引擎 `KernelNotificationPolicyService`（目录 + 管理员策略 + 用户覆盖） |
-| `apps/api/src/notifications/dispatcher.ts` | 外部渠道投递前的偏好闸门（含**认领后二次判定**，关闭后停止重发） |
-| `apps/api/src/notifications/notifications-service.ts` | 站内收件箱读取过滤（列表/未读数按用户关闭项排除） |
-| `apps/api/src/notifications/stream-hub.ts` | SSE 实时流排除过滤 |
-| `packages/sdk/src/notifications.ts` | **全部契约类型** + `INAPP_CHANNEL_ID` |
-| `packages/sdk/src/plugin.ts` | 插件侧：`EXTENSION_POINTS.notificationType`、`ctx.notificationPolicy` |
+| 文件                                                  | 作用                                                                                                             |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `apps/api/src/routes/notifications.ts`                | 用户级接口：`GET/PATCH /notifications/preferences`、`POST /notifications/preferences/reset`                      |
+| `apps/api/src/routes/admin/notifications.ts`          | 管理员接口：`GET/PUT /admin/notifications/policy`（`requireRole('ADMIN')` + 审计 `notifications.policy.update`） |
+| `apps/api/src/notifications/policy-service.ts`        | 内核两级裁决引擎 `KernelNotificationPolicyService`（目录 + 管理员策略 + 用户覆盖）                               |
+| `apps/api/src/notifications/dispatcher.ts`            | 外部渠道投递前的偏好闸门（含**认领后二次判定**，关闭后停止重发）                                                 |
+| `apps/api/src/notifications/notifications-service.ts` | 站内收件箱读取过滤（列表/未读数按用户关闭项排除）                                                                |
+| `apps/api/src/notifications/stream-hub.ts`            | SSE 实时流排除过滤                                                                                               |
+| `packages/sdk/src/notifications.ts`                   | **全部契约类型** + `INAPP_CHANNEL_ID`                                                                            |
+| `packages/sdk/src/plugin.ts`                          | 插件侧：`EXTENSION_POINTS.notificationType`、`ctx.notificationPolicy`                                            |
 
 **契约唯一真相 = `packages/sdk/src/notifications.ts`。** 前端做响应解析时照抄这些类型，不要自己发明字段。
 
@@ -44,7 +44,7 @@
 - **渠道（channel）**：
   - `inapp`（常量 `INAPP_CHANNEL_ID`）：**合成渠道**，代表「是否进站内收件箱」（铃铛/列表/SSE）。不是插件渠道。
   - 其它渠道 id 由 `notification.channel` 插件注册（如 `smtp` 邮件）。
-- **目录（catalog）**：可配置类型的清单。由**内核内建**（`system.*` / `agent.*`）与**插件声明**（`notification.type` 扩展点）合并而成。
+- **目录（catalog）**：可配置类型的清单。由**内核内建**（`BUILTIN_NOTIFICATION_TYPES`，覆盖内核自身发出的类型：`system.*` / `security.*` / `wallet.*` / 内核侧 `service.*` / `agent.*`）与**插件声明**（`notification.type` 扩展点）合并而成。
   - 声明新增 `audience?: 'user' | 'admin'`（缺省为 user）：管理通知只进入管理员策略目录，不出现在账户偏好中。管理通配目录的子类型继承管理范围。账户读取、保存、重置与历史覆盖的生效裁决均遵守此边界。
   - 目录条目支持**精确类型**或 **`.*` 前缀通配**（如 `system.plugin.*` 匹配 `system.plugin.enable`），解析时**最具体者胜**。
 - **一级：管理员策略**（存于 `Setting` 键 `notifications.policy`）：每个目录键可有 `enabled` / `defaultChannels` / `locked`。
@@ -86,40 +86,41 @@
 
 ```ts
 interface NotificationPreferencesView {
-  channels: NotificationChannelInfo[];    // 渠道清单（含 inapp）
+  channels: NotificationChannelInfo[]; // 渠道清单（含 inapp）
   categories: NotificationCategoryInfo[]; // 分组（有序，含中文 label）
-  types: NotificationTypePreference[];    // 目录类型 + 该用户解析后的每渠道状态
+  types: NotificationTypePreference[]; // 目录类型 + 该用户解析后的每渠道状态
 }
 
 interface NotificationChannelInfo {
-  id: string;          // 'inapp' 或插件渠道 id
-  name: string;        // 中文名，如 '站内通知' / '邮件'
-  inApp: boolean;      // true 仅 inapp
+  id: string; // 'inapp' 或插件渠道 id
+  name: string; // 中文名，如 '站内通知' / '邮件'
+  inApp: boolean; // true 仅 inapp
 }
 
 interface NotificationCategoryInfo {
-  id: string;          // 'system' | 'security' | 'store' | 'support' | 'agent' | 'other'
-  label: string;       // 中文名，如 '交易与订阅'
+  id: string; // 'system' | 'security' | 'store' | 'support' | 'agent' | 'other'
+  label: string; // 中文名，如 '交易与订阅'
 }
 
 interface NotificationTypePreference {
-  type: string;                 // 可能是通配条目，如 'system.plugin.*'
+  type: string; // 可能是通配条目，如 'system.plugin.*'
   category: string;
   label: string;
   description: string | null;
-  configurable: boolean;        // 该类型**任一**渠道是否可被用户修改
+  configurable: boolean; // 该类型**任一**渠道是否可被用户修改
   channels: NotificationChannelPreference[];
 }
 
 interface NotificationChannelPreference {
   channelId: string;
-  enabled: boolean;        // 生效态（管理员策略 × 用户覆盖）
+  enabled: boolean; // 生效态（管理员策略 × 用户覆盖）
   defaultEnabled: boolean; // 未覆盖时的基准值 = 开关的「重置」目标
-  configurable: boolean;   // 该渠道是否允许用户改（否则 UI 只读）
+  configurable: boolean; // 该渠道是否允许用户改（否则 UI 只读）
 }
 ```
 
 **渲染建议**：按 `categories` 排序 → `types[].category` 分组 → 每个类型一行，`channels[]` 渲染开关。
+
 - 开关初始值用 `enabled`；
 - `configurable === false` 的开关禁用/只读；
 - 「恢复默认」把开关拨回 `defaultEnabled`（即清掉该渠道覆盖，见 4.3）。
@@ -129,7 +130,14 @@ interface NotificationChannelPreference {
 `PATCH /notifications/preferences`，body：
 
 ```ts
-{ items: { type: string; channelId: string; enabled: boolean }[] }  // 最多 500 项
+{
+  items: {
+    type: string;
+    channelId: string;
+    enabled: boolean;
+  }
+  [];
+} // 最多 500 项
 ```
 
 - 返回更新后的 `NotificationPreferencesView`（可直接用于刷新 UI）。
@@ -162,10 +170,10 @@ interface NotificationTypePolicy {
   type: string;
   category: string;
   label: string;
-  enabled: boolean;             // 全局开关（false = 全渠道关闭）
-  defaultChannels: string[];    // 默认渠道（已解析，可能由目录默认补全为全部渠道）
-  locked: boolean;              // true = 用户不可覆盖
-  userConfigurable: boolean;    // 目录声明及适用范围；管理通知为 false
+  enabled: boolean; // 全局开关（false = 全渠道关闭）
+  defaultChannels: string[]; // 默认渠道（已解析，可能由目录默认补全为全部渠道）
+  locked: boolean; // true = 用户不可覆盖
+  userConfigurable: boolean; // 目录声明及适用范围；管理通知为 false
 }
 ```
 
@@ -175,11 +183,14 @@ interface NotificationTypePolicy {
 
 ```ts
 interface NotificationPolicyPatch {
-  types?: Record<string /* type 或通配键 */, {
-    enabled?: boolean;
-    defaultChannels?: string[];
-    locked?: boolean;
-  }>;
+  types?: Record<
+    string /* type 或通配键 */,
+    {
+      enabled?: boolean;
+      defaultChannels?: string[];
+      locked?: boolean;
+    }
+  >;
 }
 ```
 
@@ -197,6 +208,7 @@ interface NotificationPolicyPatch {
 ## 5. 前端落点建议（与现有代码对齐）
 
 现有 Web 侧已有：
+
 - 账户页：`apps/web/src/app/(account)/account/notifications/page.tsx`（当前是收件箱，可新增/并联「偏好」入口）
 - 管理员页：`apps/web/src/app/(admin)/admin/notifications/page.tsx`（当前是收件箱，可新增「策略」子页）
 - BFF 客户端：`apps/web/src/lib/notifications.ts`（`getBffNotificationClient()` 返回带 session 的 `ApiClient`）
@@ -218,16 +230,26 @@ interface NotificationPolicyPatch {
 
 ## 6. 内建/插件已声明的类型（供 UI 预览）
 
-内核内建（`policy-service.ts` 的 `BUILTIN_NOTIFICATION_TYPES`）：
+内核内建（`policy-service.ts` 的 `BUILTIN_NOTIFICATION_TYPES`，覆盖内核自身发出的类型）：
+
 - `system.plugin.*`（插件生命周期）
 - `system.theme.*`（主题生命周期）
-- `system.frontend-apply`（前端构建进度，默认仅站内）
+- `system.update.*`（在线更新任务）
+- `security.password.reset` / `security.account.disabled` / `security.account.enabled`（账号安全）
+- `wallet.topup.succeeded` / `wallet.balance.adjusted`（钱包）
+- `service.granted` / `service.updated` / `service.removed`（管理端代用户改服务）
 - `agent.*`（Agent 动态，默认仅站内）
 
 插件声明（`notification.type` 扩展点）：
-- store：`order.pending` / `order.paid` / `order.refunded`、`service.provisioning` / `service.provisioned` / `service.provision.failed` / `service.renewed` / `service.expiring` / `service.suspended` / `service.terminated`、`admin.service.provision.failed`
+
+- store：`order.pending` / `order.paid` / `order.cancelled` / `order.refunded`、`service.provisioning` / `service.provisioned` / `service.provision.failed` / `service.renewed` / `service.expiring` / `service.suspended` / `service.resumed` / `service.terminated` / `service.changed` / `service.transferred`、`admin.service.provision.failed`
 - login：`security.login`、`security.new-device`
 - ticket：`ticket.created`、`ticket.replied`、`ticket.status.changed`
+- referral：`referral.reward.paid`
+- invoice：`invoice.issued`、`invoice.status.changed`
+- llm-gateway：`gateway.quota.exhausted`
+
+分类新增：`wallet`（钱包与账单）、`marketing`（推广与营销）。
 
 （以运行时 `GET` 返回为准；插件可增删。）
 
@@ -241,7 +263,10 @@ interface NotificationPolicyPatch {
 - **重置用 reset 接口**，别用「把所有开关 PATCH 回默认」代替（后者会写一堆等价覆盖）。
 - **`defaultChannels` 为空数组** = 无默认渠道（不是「全部」）；`null` 才表示全部。目录里缺省才是全部渠道。
 - **管理员 `enabled:false` 时**，该类型对用户即「全局关闭」，用户侧开关只读关闭，历史个人覆盖不能重新启用。
-- **管理通知隔离**：插件/主题生命周期、前端构建、管理员登录、管理员开通失败以及新工单待处理均声明为管理范围；个人账户设置不返回这些项目。
+- **管理通知隔离**：插件/主题生命周期、系统更新、管理员登录、管理员开通失败以及新工单待处理均声明为管理范围；个人账户设置不返回这些项目。
+- **外部渠道取决于已安装插件**：渠道列表来自 `notification.channel` 扩展点。当前实例只装了 `inapp`（合成渠道），因此偏好页只会出现「站内」一列；需要邮件时先安装并配置 `smtp` 插件，渠道才会出现在目录里（未配置的 smtp `wants()` 返回 false，不会真的发信）。
+- **管理范围类型由管理员策略统一关闭**：`audience: 'admin'` 的类型不出现在个人账户偏好中，只能由管理员在 `/admin/notifications/policy` 全局关闭——这是「运维通知是共享责任面」的有意设计，不是遗漏。
+- **类型覆盖守门**：`apps/api/tests/unit/notification-type-coverage.test.ts` 会扫描发出点源码并断言每个类型都已声明。新增通知却忘了注册 `notification.type`（或类型名拼错）时该测试会失败；开发环境运行时另有一处一次性告警兜底。
 - 策略有 5s 缓存：管理员改完立刻生效（写后失效），但**别的副本**最多 5s 才看到。
 
 ---
@@ -262,11 +287,13 @@ interface NotificationPolicyPatch {
 
 ## 9. 后端已验证（供前端放心对接）
 
-- 单元：`apps/api/tests/unit/notification-policy.test.ts`（11 例）
+- 单元：`apps/api/tests/unit/notification-policy.test.ts`（19 例）
 - 集成：`apps/api/tests/integration/notification-policy.test.ts`（4 例，真实 DB，含唯一索引 + 级联删除）
 - 分发器：`apps/api/tests/unit/notification-dispatcher.test.ts`、`apps/api/tests/integration/notification-dispatcher*.test.ts`
 - 站内：`apps/api/tests/notifications.test.ts`、stream-hub、lifecycle（21 例）
-- 插件：store 52、SDK 87
+- 覆盖守门：`apps/api/tests/unit/notification-type-coverage.test.ts` —— 扫描内核与内置插件源码里所有 `type: '...'` 发出点，断言每个都命中目录声明（防止「发了但不可配置」）
+- best-effort 出口：`apps/api/tests/unit/notification-notify.test.ts`
+- 插件：store 76、referral 8、SDK 87
 
 ## 10. 前端实施
 
@@ -283,7 +310,6 @@ interface NotificationPolicyPatch {
 ---
 
 _后端逻辑层实现完成于本轮；如需契约变更，改 `packages/sdk/src/notifications.ts` 并同步 `policy-service.ts` / 两个 route 文件。_
-
 
 ## 11. 实施验证
 

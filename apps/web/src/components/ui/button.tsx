@@ -1,3 +1,4 @@
+import { isValidElement } from 'react';
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva, type VariantProps } from 'class-variance-authority';
 
@@ -54,12 +55,30 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       // Base UI defaults `nativeButton` to true. When `render` swaps in a
       // non-<button> (the documented link pattern), native button semantics
-      // must be dropped. Callers can still override explicitly.
-      nativeButton={nativeButton ?? (render ? false : undefined)}
+      // must be dropped. Keep this in sync with `@stackpanel/ui`'s Button —
+      // both copies exist because shadcn components are vendored per app.
+      nativeButton={resolveNativeButton(render, nativeButton)}
       render={render}
       {...props}
     />
   );
+}
+
+/**
+ * Mirrors `resolveNativeButton` in `packages/ui/src/button.tsx`. An explicit
+ * `nativeButton` always wins; otherwise infer from the element passed to
+ * `render`: string tags are native only for `"button"`, and components that
+ * carry an `href` (`next/link`, router links) are links, not buttons.
+ */
+function resolveNativeButton(
+  render: ButtonPrimitive.Props['render'],
+  nativeButton: boolean | undefined,
+): boolean | undefined {
+  if (nativeButton !== undefined) return nativeButton;
+  if (!isValidElement(render)) return undefined;
+  if (typeof render.type === 'string') return render.type === 'button';
+  const { href } = render.props as { href?: unknown };
+  return href === undefined || href === null ? undefined : false;
 }
 
 export { Button, buttonVariants };

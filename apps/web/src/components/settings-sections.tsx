@@ -49,8 +49,8 @@ export function SettingsSections({
     window.history.replaceState(null, '', `#${id}`);
   }
   return (
-    <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-12">
-      <aside className="shrink-0 lg:w-1/5">
+    <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-6">
+      <aside className="shrink-0 lg:w-40 lg:pt-1">
         <div className="md:hidden">
           <Select value={selected?.id} onValueChange={(value) => value && select(value)}>
             <SelectTrigger className="h-12 w-full" aria-label={label}>
@@ -69,18 +69,21 @@ export function SettingsSections({
         </div>
         <nav
           aria-label={label}
-          className="scrollbar-none hidden gap-1 overflow-x-auto p-1 md:flex lg:flex-col"
+          className="scrollbar-none hidden gap-1 overflow-x-auto md:flex lg:flex-col lg:overflow-visible"
         >
+          <p className="mb-2 hidden px-2.5 text-xs font-medium text-muted-foreground lg:block">
+            {label}
+          </p>
           {sections.map(({ id, title, Icon }) => (
             <Button
               key={id}
-              variant="ghost"
+              variant={selected?.id === id ? 'secondary' : 'ghost'}
               onClick={() => select(id)}
               aria-pressed={selected?.id === id}
               aria-controls={selected?.id === id ? `settings-panel-${id}` : undefined}
               className={cn(
-                'justify-start gap-3 whitespace-nowrap',
-                selected?.id === id ? 'bg-muted hover:bg-accent' : 'hover:underline',
+                'justify-start gap-3 whitespace-nowrap lg:w-full',
+                selected?.id === id ? 'hover:bg-accent' : 'hover:bg-transparent',
               )}
             >
               <Icon />

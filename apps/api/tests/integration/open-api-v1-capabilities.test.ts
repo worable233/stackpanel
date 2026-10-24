@@ -186,6 +186,8 @@ describe.skipIf(!dbAvailable)('open API v1 plugin capabilities (real DB)', () =>
     );
     expect(byId.get('user.list')).toBe('user:read');
     expect(byId.get('user.create')).toBe('user:write');
+    expect(byId.get('user.wallet.adjust')).toBe('platform.admin');
+    expect(byId.get('user.service.gift')).toBe('platform.admin');
   });
 
   it('lists and reads users through the shared kernel service with user:read', async () => {
@@ -275,6 +277,20 @@ describe.skipIf(!dbAvailable)('open API v1 plugin capabilities (real DB)', () =>
     });
     const token = await createToken(manager.token, ['user:write']);
 
+    // A coarse-only token cannot advertise refined user operations it would
+    // later be denied by requireOpenScope. This also drives the MCP tool list.
+    const coarseToken = await createToken(manager.token, ['platform.manage.users']);
+    const coarseCapabilities = await app.inject({
+      method: 'GET',
+      url: '/api/v1/capabilities',
+      headers: { authorization: `Bearer ${coarseToken.token}` },
+    });
+    expect(coarseCapabilities.statusCode).toBe(200);
+    const coarseIds = (coarseCapabilities.json() as { capabilities: Array<{ id: string }> })
+      .capabilities.map((capability) => capability.id);
+    expect(coarseIds).not.toContain('user.create');
+    expect(coarseIds).not.toContain('user.wallet.adjust');
+
     // Granting an administrator group is refused.
     const escalate = await app.inject({
       method: 'POST',
@@ -306,11 +322,21 @@ describe.skipIf(!dbAvailable)('open API v1 plugin capabilities (real DB)', () =>
     });
     expect(allowed.statusCode).toBe(201);
 
+    // Value-creating operations are deliberately outside delegated user
+    // management, both in discovery and at the HTTP authorization boundary.
+    const wallet = await app.inject({
+      method: 'POST',
+      url: `/api/v1/users/${manager.userId}/wallet`,
+      headers: { authorization: `Bearer ${token.token}`, 'idempotency-key': randomUUID() },
+      payload: { amount: 100, note: 'must-not-run' },
+    });
+    expect(wallet.statusCode).toBe(403);
+
     await prisma.permissionGroup.delete({ where: { id: group.id } });
   });
 
   it('rejects a write without an Idempotency-Key', async () => {
-    const writeToken = await createToken(adminToken, ['user:write']);
+    const writeToken = await createToken(adminToken, ['platform.admin']);
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/users/${randomUUID()}/wallet`,
@@ -319,5 +345,31 @@ describe.skipIf(!dbAvailable)('open API v1 plugin capabilities (real DB)', () =>
     });
     expect(res.statusCode).toBe(400);
     expect((res.json() as { code: string }).code).toBe('request.idempotency_key_required');
+  });
+
+  it('does not allow an impersonated session to mint a durable API credential', async () => {
+    const impersonated = await app.inject({
+      method: 'POST',
+      url: `/admin/users/${adminId}/impersonate`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(impersonated.statusCode).toBe(200);
+    const token = (impersonated.json() as { token: string }).token;
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/me/api-tokens',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'must-not-persist', scopes: ['platform.admin'], ipAllowlist: [] },
+    });
+    expect(created.statusCode).toBe(403);
+    expect((created.json() as { code: string }).code).toBe('auth.impersonation_credential_forbidden');
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/me/api-tokens',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(listed.statusCode).toBe(403);
   });
 });

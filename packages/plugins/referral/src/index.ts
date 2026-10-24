@@ -1,5 +1,5 @@
 import type { ExtensionInstance, HttpReply, HttpRequest, JobContext } from '@stackpanel/sdk';
-import { PluginError, WALLET_CURRENCY, definePlugin } from '@stackpanel/sdk';
+import { PluginError, WALLET_CURRENCY, definePlugin, EXTENSION_POINTS } from '@stackpanel/sdk';
 import { z } from 'zod';
 import { attributeRegistration } from './attribution';
 import { createCode, listCodes, updateCode } from './codes';
@@ -14,7 +14,12 @@ import {
   type ReferralRecord,
 } from './data';
 import { ReferralPluginError } from './errors';
-import { awardInviter, qualifyByOrder } from './rewards';
+import {
+  awardInviter,
+  qualifyByOrder,
+  REFERRAL_NOTIFICATION_TYPES,
+  resolveInviterReward,
+} from './rewards';
 
 /** 冻结到期扫描的周期：一小时一次足够，冻结以天计。 */
 const UNFREEZE_SWEEP_INTERVAL_MS = 3_600_000;
@@ -25,15 +30,13 @@ const ADMIN_PAGE_SIZE = 200;
 
 const createCodeSchema = z.object({
   label: z.string().max(40).optional(),
-  rewardAmount: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
-});
+}).strict();
 
 const updateCodeSchema = z.object({
   id: z.string().max(191),
   label: z.string().max(40).optional(),
   state: z.enum(['active', 'disabled']).optional(),
-  rewardAmount: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
-});
+}).strict();
 
 const configInputSchema = z.object({
   enabled: z.boolean(),
@@ -73,7 +76,7 @@ function handle(handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown
 
 /** 前端展示用的码视图：不暴露内部实例字段。 */
 function toCodeView(code: ExtensionInstance<ReferralCode>, config: ReferralConfig) {
-  const reward = code.spec.rewardAmount ?? config.rewardAmount;
+  const reward = resolveInviterReward(code.spec, config);
   return {
     id: code.name,
     code: code.spec.code,
@@ -145,7 +148,6 @@ const postCode = async (req: HttpRequest): Promise<unknown> => {
   const config = await loadConfig();
   const created = await createCode(ownerId, {
     ...(parsed.data.label === undefined ? {} : { label: parsed.data.label }),
-    ...(parsed.data.rewardAmount === undefined ? {} : { rewardAmount: parsed.data.rewardAmount }),
   });
   return { code: toCodeView(created, config) };
 };
@@ -159,7 +161,6 @@ const patchCode = async (req: HttpRequest): Promise<unknown> => {
   const updated = await updateCode(ownerId, id, {
     ...(parsed.data.label === undefined ? {} : { label: parsed.data.label }),
     ...(parsed.data.state === undefined ? {} : { state: parsed.data.state }),
-    ...(parsed.data.rewardAmount === undefined ? {} : { rewardAmount: parsed.data.rewardAmount }),
   });
   return { code: toCodeView(updated, config) };
 };
@@ -416,6 +417,10 @@ export const referralPlugin = definePlugin({
   ],
   onActivate: (ctx) => {
     bindContext(ctx);
+    // 声明本插件发出的通知类型，供内核偏好目录展示（未声明 = 永远投递、不可关闭）。
+    for (const definition of REFERRAL_NOTIFICATION_TYPES) {
+      ctx.registerExtension(EXTENSION_POINTS.notificationType, definition);
+    }
     startUnfreezeSchedule(ctx.jobs);
     ctx.logger.info('referral: activated');
   },

@@ -20,9 +20,9 @@ const postsSchema = z.object({
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
   const safeNext = safeInternalPath(next);
   const session = await getSessionUser();
   if (session) {
@@ -56,6 +56,7 @@ export default async function LoginPage({
   return (
     <LoginForm
       nextPath={nextPath}
+      oauthError={error === 'oauth'}
       providers={providers}
       platformName={platform.name}
       logoSrc={brand?.logo ? apiAssetUrl(brand.logo) : null}

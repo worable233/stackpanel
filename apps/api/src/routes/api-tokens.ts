@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { PluginError } from '@stackpanel/sdk';
 import { apiTokenPrefix, generateApiToken, toStringArray } from '../lib/api-tokens.ts';
 import { canGrantScope, grantableScopesFor, type ScopeGovernance } from '../lib/capability-registry.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
@@ -16,6 +17,22 @@ import { getPrisma } from '../plugins/prisma.ts';
  */
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
+
+/**
+ * Impersonation is a short-lived support session, never authority to inspect
+ * or mint durable credentials for the impersonated account.
+ */
+async function requireCredentialOwner(request: FastifyRequest): Promise<void> {
+  if (currentUser(request).impersonatorId) {
+    throw new PluginError(
+      'auth.impersonation_credential_forbidden',
+      403,
+      '冒用会话不能访问或管理 API 凭证',
+    );
+  }
+}
+
+const credentialOwner = [requireAuth, requireCredentialOwner];
 
 const ipEntry = z
   .string()
@@ -114,7 +131,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
   /** Scopes the caller is allowed to grant, with display names. */
   app.get(
     '/me/api-tokens/scopes',
-    { preHandler: requireAuth },
+    { preHandler: credentialOwner },
     async (request) => {
       const keys = await grantableScopes(request);
       const rows = keys.length
@@ -129,7 +146,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get('/me/api-tokens', { preHandler: requireAuth }, async (request) => {
+  app.get('/me/api-tokens', { preHandler: credentialOwner }, async (request) => {
     const rows = await db.apiToken.findMany({
       where: { userId: currentUser(request).id },
       orderBy: { createdAt: 'desc' },
@@ -139,7 +156,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/me/api-tokens',
-    { preHandler: requireAuth, ...rateLimitConfig('credentialWrite') },
+    { preHandler: credentialOwner, ...rateLimitConfig('credentialWrite') },
     async (request, reply) => {
       const body = createSchema.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: '参数无效' });
@@ -174,7 +191,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/me/api-tokens/:id',
-    { preHandler: requireAuth, ...rateLimitConfig('credentialWrite') },
+    { preHandler: credentialOwner, ...rateLimitConfig('credentialWrite') },
     async (request, reply) => {
       const params = idParamSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: '参数无效' });
@@ -214,7 +231,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/me/api-tokens/:id',
-    { preHandler: requireAuth, ...rateLimitConfig('credentialWrite') },
+    { preHandler: credentialOwner, ...rateLimitConfig('credentialWrite') },
     async (request, reply) => {
       const params = idParamSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: '参数无效' });
@@ -235,7 +252,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
   );
 
   /** Per-token usage audit: the caller's own key. */
-  app.get('/me/api-tokens/:id/usage', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/me/api-tokens/:id/usage', { preHandler: credentialOwner }, async (request, reply) => {
     const params = idParamSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: '参数无效' });
     const existing = await db.apiToken.findUnique({ where: { id: params.data.id } });

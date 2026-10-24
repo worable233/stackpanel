@@ -56,9 +56,7 @@ export function SettingsForm({ schema, initial, save }: SettingsFormProps) {
         />
       ))}
       {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-      {state.ok ? (
-        <p className="text-sm text-muted-foreground">{t('settingsForm.saved')}</p>
-      ) : null}
+      {state.ok ? <p className="text-sm text-muted-foreground">{t('settingsForm.saved')}</p> : null}
       <Button type="submit" disabled={pending}>
         {pending ? t('settingsForm.saving') : t('settingsForm.submit')}
       </Button>
@@ -124,9 +122,7 @@ function ListField({
   onChange: (value: FrontendSettingsValue) => void;
 }) {
   const t = useTranslator();
-  const rows: FrontendSettingsListItem[] = Array.isArray(value)
-    ? value
-    : (field.default ?? []);
+  const rows: FrontendSettingsListItem[] = Array.isArray(value) ? value : (field.default ?? []);
 
   const emptyRow = (): FrontendSettingsListItem => {
     const row: FrontendSettingsListItem = {};
@@ -136,7 +132,7 @@ function ListField({
     return row;
   };
 
-  const updateRow = (index: number, name: string, next: FrontendSettingsScalar) => {
+  const updateRow = (index: number, name: string, next: FrontendSettingsValue) => {
     onChange(rows.map((row, i) => (i === index ? { ...row, [name]: next } : row)));
   };
 
@@ -146,10 +142,7 @@ function ListField({
       {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
       <div className="space-y-3">
         {rows.map((row, index) => (
-          <div
-            key={index}
-            className="rounded-lg border bg-background/50 p-4"
-          >
+          <div key={index} className="rounded-lg border bg-background/50 p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">
                 {(field.itemLabelField ? String(row[field.itemLabelField] ?? '') : '') ||
@@ -166,7 +159,7 @@ function ListField({
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {field.fields.map((sub) => (
-                <ScalarField
+                <SettingsField
                   key={sub.name}
                   field={sub}
                   value={row[sub.name]}
@@ -177,7 +170,12 @@ function ListField({
           </div>
         ))}
       </div>
-      <Button type="button" variant="outline" size="sm" onClick={() => onChange([...rows, emptyRow()])}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => onChange([...rows, emptyRow()])}
+      >
         + {t('settingsForm.addItem')}
       </Button>
     </div>
@@ -288,7 +286,8 @@ function ScalarField({
   );
 }
 
-function defaultFor(field: FrontendSettingsScalarField): FrontendSettingsScalar {
+function defaultFor(field: FrontendSettingsField): FrontendSettingsValue {
+  if (field.type === 'list') return structuredClone(field.default ?? []);
   if (field.type === 'number') return field.default ?? 0;
   if (field.type === 'boolean') return field.default ?? false;
   if (field.type === 'select' || field.type === 'radio') {

@@ -219,11 +219,6 @@
   box-shadow: var(--backend-panel-shadow);
 }
 
-.backend-dashboard [data-spotlight] [data-slot='card'] {
-  border: 0;
-  box-shadow: none;
-}
-
 .backend-dashboard .backend-dashboard__metric {
   background-image: radial-gradient(
     ellipse at 100% 0%,

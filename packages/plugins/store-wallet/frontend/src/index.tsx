@@ -16,7 +16,7 @@ import { formatMinorCurrency } from '@stackpanel/sdk';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
-import { ArrowLeft, Clock, Plus, Wallet } from 'lucide-react';
+import { Clock, Plus, Wallet } from 'lucide-react';
 import { overviewSchema, WalletOverviewPage } from './overview';
 import { messages, t } from './i18n.js';
 
@@ -148,17 +148,11 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
   const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
   return (
     <main className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={tr('balance.back')}
-          render={<Link href="/account/billing" />}
-        >
-          <ArrowLeft />
-        </Button>
-        <PageHeader title={tr('balance.title')} />
-      </div>
+      <PageHeader
+        backHref="/account/billing"
+        backLabel={tr('balance.back')}
+        title={tr('balance.title')}
+      />
       <Card className="max-w-5xl">
         <CardContent>
           {wallet ? (
@@ -183,7 +177,11 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
                 submit: tr('recharge.submit'),
               }}
               cancelLink={
-                <Button variant="ghost" render={<Link href="/account/billing" />}>
+                <Button
+                  variant="ghost"
+                  nativeButton={false}
+                  render={<Link href="/account/billing" />}
+                >
                   {tr('balance.cancel')}
                 </Button>
               }
@@ -202,7 +200,11 @@ function WalletAccountRecordsPage(props: AccountPageComponentProps): ReactElemen
   const wallet = props.data.wallet as z.infer<typeof walletSchema> | undefined;
   return (
     <main className="flex flex-col gap-6">
-      <PageHeader title={tr('records.title')} />
+      <PageHeader
+        backHref="/account/billing"
+        backLabel={tr('balance.back')}
+        title={tr('records.title')}
+      />
       {wallet ? (
         <>
           <Ledger
@@ -244,6 +246,11 @@ function Ledger({
   tr: ReturnType<typeof t>;
   locale?: string;
 }): ReactElement {
+  const statusLabel = (status: string) => {
+    const key = `records.status.${status}`;
+    const label = tr(key);
+    return label === key ? status : label;
+  };
   return (
     <section id={titleKey === 'records.ledger' ? 'ledger' : undefined} className="scroll-mt-24">
       <SectionTitle icon={<Clock />} className="mb-3">
@@ -260,7 +267,7 @@ function Ledger({
                 <p className="truncate">
                   {'type' in row
                     ? (row.note ?? row.type)
-                    : `${row.providerId ?? tr('records.provider')} · ${row.status}`}
+                    : `${row.providerId ?? tr('records.provider')} · ${statusLabel(row.status)}`}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {formatDate(row.createdAt, locale)}
@@ -315,7 +322,7 @@ const walletFinders: Record<string, FinderProvider> = {
 };
 
 export const frontend: FrontendPackage = {
-  locales: ['zh-CN', 'en-US'],
+  locales: ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'],
   messages,
   finders: walletFinders,
   pages: [],
@@ -324,6 +331,8 @@ export const frontend: FrontendPackage = {
     actions: [
       {
         id: 'wallet.create-topup',
+        // Redirects to the payment page; a toast would be lost on navigation.
+        silent: true,
         method: 'POST',
         path: '/wallet/topups',
         permission: 'store.wallet',
@@ -336,6 +345,7 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'wallet.cancel-topup',
+        successFeedback: { messageKey: 'records.cancelled' },
         method: 'POST',
         path: '/wallet/topups/:id/cancel',
         permission: 'store.wallet',

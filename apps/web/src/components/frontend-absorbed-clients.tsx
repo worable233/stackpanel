@@ -20,7 +20,97 @@
  * serialize.
  */
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
+
+/**
+ * Host-owned client behaviour for SSR plugin forms. Runtime-loaded frontend
+ * packages cannot create a client reference themselves, so this component
+ * observes a native form and submits it after a configuration change.
+ */
+export function AutoSubmitForm({ formId, delay = 250 }: { formId: string; delay?: number }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const form = document.getElementById(formId);
+    if (!(form instanceof HTMLFormElement)) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const status = document.querySelector<HTMLElement>(`[data-quote-status="${formId}"]`);
+    const initial = new URLSearchParams(
+      new FormData(form) as unknown as URLSearchParams,
+    ).toString();
+    const setPending = (pending: boolean) => {
+      form.setAttribute('aria-busy', String(pending));
+      document
+        .querySelectorAll<HTMLButtonElement>(`button[data-quote-purchase="${formId}"]`)
+        .forEach((button) => {
+          button.disabled = pending || button.dataset.unavailable === 'true';
+        });
+      if (status) status.hidden = !pending;
+    };
+    setPending(false);
+    const navigate = () => {
+      if (!form.reportValidity()) return;
+      const url = new URL(form.action, window.location.href);
+      url.search = new URLSearchParams(new FormData(form) as unknown as URLSearchParams).toString();
+      if (url.origin === window.location.origin) router.replace(url.pathname + url.search, { scroll: false });
+    };
+    const onSubmit = (event: SubmitEvent) => {
+      const submitter = event.submitter;
+      if (
+        (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
+        submitter.hasAttribute('formaction')
+      ) {
+        if (timer) clearTimeout(timer);
+        const changed =
+          new URLSearchParams(new FormData(form) as unknown as URLSearchParams).toString() !== initial;
+        if (!changed && form.getAttribute('aria-busy') !== 'true') return;
+      }
+      event.preventDefault();
+      if (!form.reportValidity()) {
+        setPending(false);
+        return;
+      }
+      setPending(true);
+      navigate();
+    };
+    const submit = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+      if (target.form !== form || target.disabled) return;
+      if (
+        new URLSearchParams(new FormData(form) as unknown as URLSearchParams).toString() === initial
+      ) {
+        if (timer) clearTimeout(timer);
+        setPending(false);
+        return;
+      }
+      setPending(true);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        navigate();
+      }, delay);
+    };
+    document.addEventListener('input', submit);
+    document.addEventListener('change', submit);
+    form.addEventListener('submit', onSubmit);
+    const restore = () => {
+      const changed =
+        new URLSearchParams(new FormData(form) as unknown as URLSearchParams).toString() !==
+        initial;
+      setPending(changed);
+      if (changed) navigate();
+    };
+    window.addEventListener('pageshow', restore);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('input', submit);
+      document.removeEventListener('change', submit);
+      form.removeEventListener('submit', onSubmit);
+      window.removeEventListener('pageshow', restore);
+    };
+  }, [delay, formId, router, searchParams]);
+  return null;
+}
 
 function RouteProgressState() {
   const pathname = usePathname();

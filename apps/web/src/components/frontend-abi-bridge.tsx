@@ -20,6 +20,7 @@ import * as navigation from 'next/navigation';
 import * as ui from '@stackpanel/ui';
 import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
+import * as sonner from 'sonner';
 
 interface ClientAbiGlobal {
   __STACKPANEL_CLIENT_ABI__?: unknown;
@@ -46,6 +47,9 @@ export function publishHostClientAbi(): void {
     // host's SDK namespace too.
     '@stackpanel/sdk': sdk,
     'lucide-react': lucide,
+    // Imported by runtime admin bundles. Publishing the host instance keeps
+    // plugin `toast()` calls wired to the single host `<Toaster />`.
+    sonner,
   };
 }
 

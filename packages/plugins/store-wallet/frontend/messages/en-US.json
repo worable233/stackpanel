@@ -14,6 +14,11 @@
   "records.unavailable": "Fund records are unavailable right now. Refresh and try again.",
   "records.empty": "No records yet",
   "records.provider": "Payment channel",
+  "records.status.PENDING": "Awaiting payment",
+  "records.status.SUCCEEDED": "Succeeded",
+  "records.status.FAILED": "Failed",
+  "records.status.REVIEW": "Under review",
+  "records.status.CANCELLED": "Cancelled",
   "records.continuePayment": "Continue payment",
   "records.cancel": "Cancel",
   "overview.title": "Billing overview",
@@ -73,5 +78,6 @@
   "recharge.paymentMethod": "Payment method",
   "recharge.noMethods": "No payment methods available",
   "recharge.submitting": "Submitting…",
-  "recharge.submit": "Confirm top-up"
+  "recharge.submit": "Confirm top-up",
+  "records.cancelled": "Top-up cancelled."
 }

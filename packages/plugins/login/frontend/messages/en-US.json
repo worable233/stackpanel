@@ -1,0 +1,16 @@
+{
+  "admin.systemSettings": "Sign-in & registration",
+  "settings.title": "Sign-in & registration",
+  "settings.description": "Configure how users register and how email verification works.",
+  "settings.emailGroup": "Email registration",
+  "settings.emailGroupHint": "Users create an account with an email address and password.",
+  "settings.emailVerification": "Verify email on registration",
+  "settings.emailVerificationHint": "When enabled, users must enter the code sent to their inbox before registration completes.",
+  "settings.emailVerificationUnavailable": "No email verification code plugin is available. Configure one under “SMTP mail” first.",
+  "settings.phoneGroup": "Phone registration",
+  "settings.phoneGroupHint": "Requires an SMS verification plugin, which is not available yet.",
+  "settings.save": "Save settings",
+  "settings.saving": "Saving…",
+  "settings.saved": "Sign-in settings saved",
+  "settings.saveFailed": "Could not save"
+}

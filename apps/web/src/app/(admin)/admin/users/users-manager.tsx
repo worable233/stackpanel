@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { MoreHorizontal, Search } from 'lucide-react';
+import { toast } from 'sonner';
 import type { AdminUser, PermissionGroupInfo } from '@stackpanel/sdk';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -45,6 +46,7 @@ import {
 } from '@/components/ui/table';
 import { CreateUserForm } from '@/components/create-user-form';
 import { impersonateUserAction, updateUserStatusAction } from '@/lib/user-actions';
+import { isNextRedirectError } from '@/lib/next-navigation';
 import { useLocale, useTranslator } from '@/i18n/provider';
 import { formatDate, formatMoney } from '@/i18n/core';
 
@@ -171,14 +173,25 @@ export function UsersManager({
   function toggleStatus(user: AdminUser) {
     const next = user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
     startTransition(async () => {
-      await updateUserStatusAction(user.id, next);
+      const result = await updateUserStatusAction(user.id, next);
+      if (result?.error) {
+        toast.error(result.error);
+        return;
+      }
+      if (result?.message) toast.success(result.message);
       router.refresh();
     });
   }
 
   function impersonate(user: AdminUser) {
     startTransition(async () => {
-      await impersonateUserAction(user.id);
+      try {
+        await impersonateUserAction(user.id);
+      } catch (cause) {
+        // `redirect()` is control flow, not a failure.
+        if (isNextRedirectError(cause)) throw cause;
+        toast.error(t('user.impersonateFailed'));
+      }
     });
   }
 

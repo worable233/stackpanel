@@ -12,18 +12,11 @@ export default async function HomePage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const query = await searchParams;
-  const error = query.error;
   const meta = await resolvePageSeo('/', JSON.stringify({}));
   return (
     <>
       <JsonLd meta={meta} />
-      <FrontendRoute
-        path="/"
-        searchParams={query}
-        actionError={
-          typeof error === 'string' && error.length > 0 && error.length <= 256 ? error : undefined
-        }
-      />
+      <FrontendRoute path="/" searchParams={query} />
     </>
   );
 }

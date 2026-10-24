@@ -24,6 +24,8 @@ export interface UpstreamProductItem {
   name: string;
   /** 上游价格（分单位），同步为成本 product.cost。 */
   price: number | null;
+  /** 上游可售库存；未提供时由商品创建者或上游的默认库存策略决定。 */
+  stock?: number | undefined;
   currency?: string | undefined;
   description?: string | null | undefined;
   /** 图标（emoji 或 URL），预填到 product.metadata.icon。 */
@@ -40,6 +42,8 @@ export interface UpstreamProductItem {
  * **绑定**到某个平台账号，使其在平台侧显示为该账号已购（不重新开通）。
  */
 export interface UpstreamServiceItem {
+  /** Upstream catalog product identifier, not the purchased instance identifier. */
+  productId?: string | null;
   /** 上游服务 id（绑定后写入本地交付物的 `providerServiceId`）。 */
   id: string;
   /** 展示名（主机名 / 域名，回退到商品名）。 */
@@ -82,12 +86,12 @@ export interface UpstreamProductSource {
   /** 搜索上游商品（供商品表单的「关联上游商品」选择器）。 */
   search(query: string, options?: { limit?: number }): Promise<UpstreamProductItem[]>;
   /** 取单个上游商品（编辑商品时回显当前关联）。 */
-  get(id: string): Promise<UpstreamProductItem | null>;
+  get(id: string, options?: { sourceRef?: string }): Promise<UpstreamProductItem | null>;
   /**
    * 取某上游商品的结账配置（周期 + 配置项），供商品表单一键填充。
    * 返回 null 表示该商品不可配置（或该上游不支持读取配置）。可选实现。
    */
-  getConfig?(id: string): Promise<CheckoutConfigSchema | null>;
+  getConfig?(id: string, options?: { sourceRef?: string }): Promise<CheckoutConfigSchema | null>;
   /**
    * 商品建立/解除关联时由 store 回调（可选）。外部上游（如魔方）用它做关联
    * 侧的副作用（校验、预取配置等）。注意：商品 ↔ 上游实例的绑定本身存在

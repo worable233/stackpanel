@@ -171,6 +171,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     ],
     getSettlementHandlers: () =>
       getRuntime().getExtensions<PaymentSettlementHandler>(EXTENSION_POINTS.paymentSettlement),
+    notifications: notificationsService,
     logger,
   });
 

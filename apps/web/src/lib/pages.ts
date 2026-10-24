@@ -70,6 +70,7 @@ export async function resolveFrontendRoute(
   fallback: Record<string, unknown> = {},
   themeId?: string,
   searchParams: Record<string, string | string[] | undefined> = {},
+  settingsOverride?: FrontendSettings,
 ): Promise<PageResolution | null> {
   const [theme, pluginCandidates] = await Promise.all([
     themeId ? themeFrontendCandidate(themeId) : activeThemeCandidate(),
@@ -99,7 +100,7 @@ export async function resolveFrontendRoute(
     const component = definition ? themePkg?.pageComponents?.[definition.component] : null;
     if (component && definition) {
       const routeParams = pageParams(definition.path, path, params);
-      const settings = await readThemeSettings(theme.id);
+      const settings = settingsOverride ?? await readThemeSettings(theme.id);
       return {
         component,
         layout: definition.layout ? (themePkg?.layouts?.[definition.layout] ?? null) : null,
