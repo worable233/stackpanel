@@ -12,15 +12,23 @@ import type { JobContext } from '@stackpanel/sdk';
 import { redisConnectionOptions } from './redis-connection.ts';
 import { getJobRuntime, KERNEL_JOBS } from './kernel-jobs.ts';
 import { BullMqJobBackend, KERNEL_QUEUE_NAME } from './bullmq-backend.ts';
+import type { JobLease } from './lease.ts';
 import { MemoryJobBackend } from './memory-backend.ts';
 
 export { createKernelJobContext, getJobRuntime, KERNEL_JOBS, qualify } from './kernel-jobs.ts';
 export type { JobBackend, JobRuntime, RegisteredSchedule } from './types.ts';
+export { DbJobLease, leaseTtlMs, resolveLeaseHolder } from './lease.ts';
+export type { JobLease } from './lease.ts';
 export { KERNEL_QUEUE_NAME } from './bullmq-backend.ts';
 
 export interface InitJobsOptions {
   /** Configured Redis URL; null in development means the in-process fallback. */
   redisUrl: string | null;
+  /**
+   * 进程内后端的跨副本租约。BullMQ 下不需要（队列本身按 jobId 抢占）。
+   * 缺省时进程内后端退化为「每个副本各跑一份」。
+   */
+  lease?: JobLease;
   logger: { info: (m: string) => void; warn: (m: string) => void };
 }
 
@@ -49,9 +57,16 @@ export async function initJobs(options: InitJobsOptions): Promise<void> {
     // `ok|unreachable|disabled` check map has no room for it), so do not
     // remove this log line without adding that signal elsewhere first.
     options.logger.warn(
-      '[jobs] 未配置 Redis：任务使用进程内实现，cron 计划任务将被忽略、且仅单副本正确。生产环境请配置 REDIS_URL。',
+      options.lease
+        ? '[jobs] 未配置 Redis：任务使用进程内实现，cron 计划任务将被忽略；重复执行由数据库租约抑制。生产环境仍建议配置 REDIS_URL。'
+        : '[jobs] 未配置 Redis：任务使用进程内实现，cron 计划任务将被忽略、且仅单副本正确（无租约）。生产环境请配置 REDIS_URL。',
     );
-    await runtime.useBackend(new MemoryJobBackend({ logger: options.logger }));
+    await runtime.useBackend(
+      new MemoryJobBackend({
+        logger: options.logger,
+        ...(options.lease ? { guard: options.lease } : {}),
+      }),
+    );
   }
   await runtime.start();
 }
