@@ -55,8 +55,7 @@ function ConfigForm({
     const next: Record<string, string> = {};
     if (draft.kind === 's3') {
       if (!draft.s3Bucket.trim()) next.s3Bucket = tr('error.bucketRequired');
-      if (draft.s3Endpoint && !httpUrl(draft.s3Endpoint))
-        next.s3Endpoint = tr('error.httpUrl');
+      if (draft.s3Endpoint && !httpUrl(draft.s3Endpoint)) next.s3Endpoint = tr('error.httpUrl');
       if ((draft.accessKeyId || draft.secretAccessKey) && !config.secretsAvailable)
         next.accessKeyId = tr('error.encryptionMissing');
       if (!config.hasCredentials && (!draft.accessKeyId || !draft.secretAccessKey))
@@ -131,11 +130,12 @@ function ConfigForm({
         body: '{}',
         signal: AbortSignal.timeout(30000),
       });
-      const result = (await response.json()) as { ok?: boolean; error?: string };
+      const result = (await response.json()) as { ok?: boolean };
       const ok = response.ok && result.ok === true;
+      // 服务端只回 `ok`，不传 provider 原文；文案一律按 key 查（ADR-0016）。
       setTest({
         ok,
-        message: ok ? tr('test.ok') : (result.error || tr('test.failed')),
+        message: ok ? tr('test.ok') : tr('test.failed'),
       });
     } catch {
       setTest({ ok: false, message: tr('test.requestFailed') });
@@ -185,9 +185,7 @@ function ConfigForm({
                   })}
                 </FieldDescription>
               </Field>
-              {draft.kind === 'env' && (
-                <FieldDescription>{tr('backend.envHint')}</FieldDescription>
-              )}
+              {draft.kind === 'env' && <FieldDescription>{tr('backend.envHint')}</FieldDescription>}
             </FieldGroup>
             {draft.kind === 'local' && (
               <FieldGroup>
@@ -219,14 +217,7 @@ function ConfigForm({
                     tr('s3.endpointHint'),
                     'https://s3.example.com',
                   )}
-                  {text(
-                    's3Region',
-                    tr('s3.region'),
-                    tr('s3.regionHint'),
-                    'us-east-1',
-                    false,
-                    64,
-                  )}
+                  {text('s3Region', tr('s3.region'), tr('s3.regionHint'), 'us-east-1', false, 64)}
                   {text(
                     's3Bucket',
                     tr('s3.bucket'),
