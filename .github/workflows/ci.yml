@@ -48,6 +48,8 @@ jobs:
       DATABASE_URL: postgresql://stackpanel:stackpanel@127.0.0.1:5432/stackpanel
       TEST_DATABASE_URL: postgresql://stackpanel:stackpanel@127.0.0.1:5432/stackpanel_test
       REDIS_URL: redis://127.0.0.1:6379
+      # 集群语义实测（`jobs-redis-cluster.test.ts`）用独立 db，测试会 `obliterate` 整个队列。
+      TEST_REDIS_URL: redis://127.0.0.1:6379/9
       JWT_SECRET: ci_jwt_secret_at_least_32_characters_0123456789
       SETTINGS_ENCRYPTION_KEY: ci_settings_key_at_least_32_characters_0123456789
 
