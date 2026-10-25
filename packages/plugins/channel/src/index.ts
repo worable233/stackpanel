@@ -1,4 +1,4 @@
-import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
+import type { HttpReply, HttpRequest, JobContext } from '@stackpanel/sdk';
 import { definePlugin, PluginError } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
 import { ChannelError } from './errors';
@@ -68,6 +68,17 @@ async function notifyPartnerOfOrder(event: OrderPaidEvent): Promise<void> {
     total: event.total ?? 0,
     currency: event.currency ?? 'CNY',
   });
+}
+
+/**
+ * 本插件注册的内核任务。抽成函数以便 `jobs-contract.test.ts` 直接断言名字与频率。
+ */
+export function registerChannelJobs(jobs: JobContext): void {
+  // at-least-once 回调派发：集群下单次执行。
+  jobs.handle(WEBHOOK_JOBS.deliver, async () => {
+    await processDueWebhooks();
+  });
+  void jobs.schedule(WEBHOOK_JOBS.deliver, { everyMs: WEBHOOK_POLL_MS });
 }
 
 export const channelPlugin = definePlugin({
@@ -209,11 +220,7 @@ export const channelPlugin = definePlugin({
       }),
     );
 
-    // at-least-once 回调派发：集群下单次执行。
-    ctx.jobs.handle(WEBHOOK_JOBS.deliver, async () => {
-      await processDueWebhooks();
-    });
-    ctx.jobs.schedule(WEBHOOK_JOBS.deliver, { everyMs: WEBHOOK_POLL_MS });
+    registerChannelJobs(ctx.jobs);
 
     ctx.logger.info('channel: activated');
   },
