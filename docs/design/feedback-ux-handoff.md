@@ -283,19 +283,36 @@ notice/referral/smtp/ticket/zjmf-upstream）；插件仓库现已内置与内核
 
 前端能做的都已经做完。下面这些要改契约或碰正在被其他分支写入的代码，单独开题：
 
-- **`ServiceActionResult.message` 没有 `messageKey`**（`packages/sdk/src/fulfillment.ts`）。
-  provider 自述文案（zjmf `provider.ts` 的「已同步续费至 X」「配置变更已提交上游」等）
-  因此只能以中文下发。要给这个结构补 `messageKey + params`，让 store 前端自己拼文案；
-  在此之前，这些字段当下没有直接上屏的路径（store 前端不渲染它），不构成现网泄漏。
+- **`ServiceActionResult.message` 不补 `messageKey`（2026-10-26 结论）**。
+  原本的想法是「让 store 前端自己拼文案」，但这条路走不通：控制台是 store 的通用界面，
+  `messageKey` 得在那个包的 catalog 里能解析，而 key 是 provider（zjmf 等外部插件）自己造的，
+  store 不可能预知 —— 结果只会多出一层「未识别的 key 原样上屏」。
+  何况现在**没有任何交付通道**：action 成功后执行器只 `revalidatePath`，provider 返回的
+  `message / fields / url`（新密码、VNC 地址）到不了界面。
+
+  已做的：SDK 里把三个字段标注为「无消费方 / 不要承载用户文案」（`message` 标 deprecated），
+  并在 `store.service-action` 声明处去掉「结果在控制台内联显示」的误导性注释，
+  改为 `successFeedback.messageKey`（回执只说「已提交」，实际变化由详情刷新体现）。
+
+  真要展示一次性结果（重置后的新密码、一次性控制台地址），得三件事一起做，
+  不是给结构体加个 key 能了事的：
+  1. **交付通道**：在服务实例上保留「最近一次动作回执」（JSON + TTL，或独立表），
+     控制台渲染时读取；绝不能塞进 URL query（密码会进历史/日志）。
+  2. **类型约定**：回执只允许结构化字段（`{ kind: 'password' | 'console-url', value }`），
+     provider 不写文案，`kind → catalog key` 的映射表归渲染方（store）。
+  3. **敏感字段处理**：一次性密码类回执必须一次读取即失效，且不落审计详情。
+
 - **`PluginActionSuccessFeedback.message` 作为 fallback 仍然存在**。
   机制正确（`messageKey` 优先），但插件里还有只写 `message` 的旧声明；新增 action 请一律用
   `messageKey + params`。
-- **`apps/api` 的既有测试噪声**（见下一条）：那个目录同时被另一分支改着，本次没碰。
 
 ### P5 — 既有噪声（与本次无关，别误判）
 
-- `apps/api/tests/unit/user-detail.test.ts`、`agent-conversations.test.ts`：TS7022
-- `apps/api/tests/integration/audit-idempotency.test.ts`：未使用变量 `userSession`
+- ~~`apps/api/tests/unit/user-detail.test.ts`、`agent-conversations.test.ts`：TS7022~~
+  ~~`audit-idempotency.test.ts`：未使用变量 `userSession`~~ —— 2026-10-26 复核：这些
+  报错源于本地 Prisma Client 过期（`NavEntry` 等模型缺失导致 `any` 连带推断失败），
+  跑一次 `pnpm --filter @stackpanel/db build`（内含 `prisma generate`）后
+  `apps/api` 的 `tsc -p tsconfig.json` 零错误。CI 走 `pretypecheck` 一直会生成，不受影响。
 - `agent-reliability.test.ts` 需要独立的 `stackpanel_agent_audit_*` 库
 - `ticket/kernel-tests` 导入不存在的 `../../src/app.ts`
 - `alipay` 插件已提交（`7f547ec`），但**尚未装进 `data/plugins`**，与反馈工作无关
