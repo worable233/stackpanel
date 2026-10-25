@@ -751,14 +751,41 @@ export async function claimExpiryStage(
  * 回退到期阶段为「未进入」：仅当当前阶段匹配 `from` 时置 NULL，返回是否命中。
  * 用于「认领阶段 → 副作用失败」时把阶段释放回可重试状态（如提醒写入失败）。
  */
-export async function resetExpiryStage(id: string, from: string): Promise<boolean> {
+export async function resetExpiryStage(
+  id: string,
+  from: string,
+  to: string | null = null,
+): Promise<boolean> {
   const { updated } = await extensions().updateWhere(
     serviceInstanceModel,
     { name: { eq: id }, expiryStage: { eq: from } },
     // `set: null` 编译为 SQL NULL（与 claimExpiryStage 的 `eq: null` 对称）。
-    { expiryStage: { set: null } },
+    { expiryStage: { set: to } },
   );
   return updated > 0;
+}
+
+/**
+ * 列出到期提醒链的下一档候选：阶段仍是 `fromStage`、且到期时间已进入触发窗口。
+ *
+ * 逐档查询（而不是把所有阶段一次捞出来再在内存里判断）有两个好处：每档都能单独
+ * 限批，不会因为一档积压把后面几档饿死；锁语义也简单 —— `fromStage` 就是
+ * `claimExpiryStage` 的 CAS 前置条件。
+ */
+export async function listReminderCandidates(
+  fromStage: string | null,
+  dueBeforeMs: number,
+  take: number,
+): Promise<ServiceInstanceRecord[]> {
+  const rows = await extensions().listAll<StoreServiceInstanceData>(serviceInstanceModel, {
+    where: {
+      state: { eq: 'ACTIVE' },
+      expiresAtMs: { lte: dueBeforeMs },
+      expiryStage: { eq: fromStage },
+    },
+    orderBy: { field: 'expiresAtMs', desc: false },
+  });
+  return rows.slice(0, take).map(toService);
 }
 
 /** 列出「已到期／临近到期」的活跃服务（按 expiresAtMs 升序，上限 take）。 */
@@ -770,24 +797,6 @@ export async function listExpiringServices(
     where: {
       state: { in: ['ACTIVE', 'SUSPENDED'] },
       expiresAtMs: { lte: nowMs },
-    },
-    orderBy: { field: 'expiresAtMs', desc: false },
-  });
-  return rows.slice(0, take).map(toService);
-}
-
-/** 列出「即将到期（尚未到期）」的服务，供到期提醒（窗口内、未提醒过）。 */
-export async function listDueExpiryReminders(
-  fromMs: number,
-  toMs: number,
-  take: number,
-): Promise<ServiceInstanceRecord[]> {
-  const rows = await extensions().listAll<StoreServiceInstanceData>(serviceInstanceModel, {
-    where: {
-      state: { eq: 'ACTIVE' },
-      expiresAtMs: { gte: fromMs, lte: toMs },
-      // 只提醒尚未进入任何阶段（expiryStage IS NULL）的服务，避免已提醒记录占满批次。
-      expiryStage: { eq: null },
     },
     orderBy: { field: 'expiresAtMs', desc: false },
   });
