@@ -177,4 +177,6 @@ export const KERNEL_JOBS = {
   autoUpdate: 'distribution.auto-update',
   /** 会员权益到期清理（限时权限组成员关系）。 */
   membershipSweep: 'membership.sweep-expired',
+  /** 存储可用性巡检 → 连续失败后告警管理员（对标 #12.5 `ossExceptionNotice`）。 */
+  storageWatch: 'storage.watch',
 } as const;

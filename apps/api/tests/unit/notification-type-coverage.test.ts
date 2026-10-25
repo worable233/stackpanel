@@ -34,6 +34,7 @@ const KERNEL_EMITTERS = [
   'apps/api/src/routes/admin/updates.ts',
   'apps/api/src/notifications/lifecycle-notifications.ts',
   'apps/api/src/notifications/agent-notifications.ts',
+  'apps/api/src/notifications/storage-watch.ts',
   'apps/api/src/routes/agent.ts',
   'apps/api/src/agent/background.ts',
 ];
