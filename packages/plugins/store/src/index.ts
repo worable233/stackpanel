@@ -1,4 +1,10 @@
-import type { AdminDashboardWidgetMeta, HttpReply, HttpRequest, NavItem } from '@stackpanel/sdk';
+import type {
+  AdminDashboardWidgetMeta,
+  HttpReply,
+  HttpRequest,
+  JobContext,
+  NavItem,
+} from '@stackpanel/sdk';
 import { EXTENSION_POINTS, definePlugin, PluginError } from '@stackpanel/sdk';
 import { bindContext, context, resetContext } from './context';
 import { StoreError } from './errors';
@@ -119,6 +125,34 @@ const listChannelMethods = async (req: HttpRequest): Promise<unknown> => {
     }));
   return { channel: { code: channel.code, name: channel.name }, methods };
 };
+
+/**
+ * 本插件注册的内核任务。
+ *
+ * 抽成独立函数是为了让 `jobs-contract.test.ts` 能直接调用它断言名字与频率 ——
+ * `REF-定时任务与幂等契约.md` §3 的清单同样不能靠「文档写着」来维持。
+ */
+export function registerStoreJobs(jobs: JobContext): void {
+  // 履约体系：付款后异步交付 + 队列轮询。集群下只由一个 worker 执行，
+  // 不再每副本各起一个定时器。
+  jobs.handle('fulfillment-poll', async () => {
+    await processDue();
+    await reconcileProvisioning();
+  });
+  void jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
+
+  // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。
+  jobs.handle('expiry-sweep', async () => {
+    await runExpirySweep();
+  });
+  void jobs.schedule('expiry-sweep', { everyMs: EXPIRY_SWEEP_INTERVAL_MS });
+
+  // 回收站清理：超过保留期的未支付订单真删。
+  jobs.handle('order-purge', async () => {
+    await purgeRecycledOrders();
+  });
+  void jobs.schedule('order-purge', { everyMs: ORDER_PURGE_INTERVAL_MS });
+}
 
 export const storePlugin = definePlugin({
   manifest: {
@@ -812,25 +846,8 @@ export const storePlugin = definePlugin({
         ctx.logger.warn(`store: currency migration skipped: ${String(error)}`);
       });
     });
-    // 履约体系：付款后异步交付 + 队列轮询。轮询改为内核任务（ctx.jobs），
-    // 集群下只由一个 worker 执行，不再每副本各起一个定时器。
     ctx.effect(() => subscribeOrderPaid());
-    ctx.jobs.handle('fulfillment-poll', async () => {
-      await processDue();
-      await reconcileProvisioning();
-    });
-    ctx.jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
-    // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。
-    ctx.jobs.handle('expiry-sweep', async () => {
-      await runExpirySweep();
-    });
-    ctx.jobs.schedule('expiry-sweep', { everyMs: EXPIRY_SWEEP_INTERVAL_MS });
-    // 回收站清理：超过保留期的未支付订单真删。与到期扫描同样走内核任务，
-    // 集群下只由一个 worker 执行。
-    ctx.jobs.handle('order-purge', async () => {
-      await purgeRecycledOrders();
-    });
-    ctx.jobs.schedule('order-purge', { everyMs: ORDER_PURGE_INTERVAL_MS });
+    registerStoreJobs(ctx.jobs);
     ctx.logger.info('store: activated');
   },
   onDeactivate: (ctx) => {

@@ -1,6 +1,7 @@
 import { EXTENSION_POINTS, definePlugin, PluginError } from '@stackpanel/sdk';
 import type {
   FulfillmentProvider,
+  JobContext,
   HttpReply,
   HttpRequest,
   NotificationTypeDefinition,
@@ -149,6 +150,21 @@ const productType: ProductTypeProvider = {
 
 const noQuery = z.object({}).passthrough();
 
+/**
+ * 本插件注册的内核任务。抽成函数以便 `jobs-contract.test.ts` 直接断言名字与频率。
+ */
+export function registerMembershipJobs(jobs: JobContext): void {
+  // 到期清扫：撤销过期授予、清理内核成员关系、发到期通知。
+  // 权益失效本身由内核读路径保证，所以这个任务的频率只影响清理与通知的及时性。
+  jobs.handle('membership-sweep', async () => {
+    const count = await sweepExpired();
+    if (count > 0) logger().info(`store-product-membership: 撤销 ${count} 条到期会员权益`);
+  });
+  void jobs.schedule('membership-sweep', { everyMs: SWEEP_INTERVAL_MS }).catch((error: unknown) => {
+    logger().warn(`store-product-membership: 排期到期清扫失败：${String(error)}`);
+  });
+}
+
 export const storeProductMembershipPlugin = definePlugin({
   manifest: {
     id: 'store-product-membership',
@@ -233,17 +249,7 @@ export const storeProductMembershipPlugin = definePlugin({
     for (const def of MEMBERSHIP_NOTIFICATION_TYPES) {
       ctx.registerExtension(EXTENSION_POINTS.notificationType, def);
     }
-    // 到期清扫：撤销过期授予、清理内核成员关系、发到期通知。
-    // 权益失效本身由内核读路径保证，所以这个任务的频率只影响清理与通知的及时性。
-    ctx.jobs.handle('membership-sweep', async () => {
-      const count = await sweepExpired();
-      if (count > 0) logger().info(`store-product-membership: 撤销 ${count} 条到期会员权益`);
-    });
-    void ctx.jobs
-      .schedule('membership-sweep', { everyMs: SWEEP_INTERVAL_MS })
-      .catch((error: unknown) => {
-        logger().warn(`store-product-membership: 排期到期清扫失败：${String(error)}`);
-      });
+    registerMembershipJobs(ctx.jobs);
     ctx.logger.info('store-product-membership: activated');
   },
   onDeactivate: (ctx) => {
