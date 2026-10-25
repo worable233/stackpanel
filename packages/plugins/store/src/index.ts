@@ -66,6 +66,7 @@ import { STORE_NOTIFICATION_TYPES } from './notifications';
 import { changeService, quoteServiceChange, transferService } from './changes';
 import { refundOrder, createRefundRequest, listRefundRequests, reviewRefundRequest } from './refund';
 import { runExpirySweep, EXPIRY_SWEEP_INTERVAL_MS } from './expiry';
+import { runUnpaidOrderReminder, UNPAID_REMIND_INTERVAL_MS } from './unpaid-reminder';
 import {
   getUpstreamProduct,
   getUpstreamProductConfig,
@@ -142,6 +143,10 @@ export function registerStoreJobs(jobs: JobContext): void {
   void jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
 
   // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。
+  jobs.handle('unpaid-order-reminder', async () => {
+    await runUnpaidOrderReminder();
+  });
+  void jobs.schedule('unpaid-order-reminder', { everyMs: UNPAID_REMIND_INTERVAL_MS });
   jobs.handle('expiry-sweep', async () => {
     await runExpirySweep();
   });

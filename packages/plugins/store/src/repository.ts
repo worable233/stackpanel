@@ -126,8 +126,15 @@ export function toCartItem(instance: ExtensionInstance<StoreCartItemData>): Cart
 }
 
 export function toOrder(instance: ExtensionInstance<StoreOrderData>): OrderRecord {
-  // `deletedAtMs` 是实现细节（索引用的数值镜像），不外暴露给接口调用方。
-  const { state, deletedAt, deletedAtMs: _deletedAtMs, ...rest } = instance.spec;
+  // `deletedAtMs` / 催付两列都是实现细节（索引镜像与内部标记），不外暴露给接口调用方。
+  const {
+    state,
+    deletedAt,
+    deletedAtMs: _deletedAtMs,
+    unpaidRemindAtMs: _unpaidRemindAtMs,
+    unpaidRemindedAt: _unpaidRemindedAt,
+    ...rest
+  } = instance.spec;
   return {
     id: instance.name,
     ...rest,
@@ -511,9 +518,57 @@ export async function createOrderInstance(data: OrderCreateInput): Promise<Order
     state: 'PENDING',
     deletedAt: null,
     deletedAtMs: null,
+    // 下单即排定催付时间：之后无论任务何时跑，都是由「到期时间戳」决定要不要发。
+    unpaidRemindAtMs: Date.now() + UNPAID_REMIND_AFTER_MS,
+    unpaidRemindedAt: null,
     ...data,
   } as StoreOrderData);
   return toOrder(created);
+}
+
+/** 未付款催付：下单后多久提醒（毫秒）。 */
+export const UNPAID_REMIND_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 列出待催付订单：仍是 `PENDING`、从未催付、且已过计划催付时间。
+ *
+ * 三个条件都落在索引列上（`state` / `unpaidRemindedAt` / `unpaidRemindAtMs`），
+ * 所以不会退化成全表扫描；`unpaidRemindedAt: { eq: null }` 编译为 `IS NULL`，
+ * 已催过的行不会反复占批次。
+ */
+export async function listOrdersToRemind(
+  cutoffMs: number,
+  take: number,
+): Promise<OrderRecord[]> {
+  const rows = await extensions().listAll<StoreOrderData>(orderModel, {
+    where: {
+      state: { eq: 'PENDING' },
+      unpaidRemindedAt: { eq: null },
+      unpaidRemindAtMs: { lte: cutoffMs },
+    },
+    orderBy: { field: 'unpaidRemindAtMs', desc: false },
+  });
+  return rows.slice(0, take).map(toOrder);
+}
+
+/** 认领催付：只有「尚未催付」的行会被改，返回是否抢到（重复执行不会重复发）。 */
+export async function claimUnpaidReminder(id: string, at: Date): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    orderModel,
+    { name: { eq: id }, unpaidRemindedAt: { eq: null } },
+    { unpaidRemindedAt: { set: at.toISOString() } },
+  );
+  return updated > 0;
+}
+
+/** 通知发送失败时释放认领，让下一轮可以重试（否则用户永久收不到）。 */
+export async function releaseUnpaidReminder(id: string): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    orderModel,
+    { name: { eq: id } },
+    { unpaidRemindedAt: { set: null } },
+  );
+  return updated > 0;
 }
 
 /** 原子状态迁移：仅当当前状态匹配时变更。 */

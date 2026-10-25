@@ -107,10 +107,25 @@ export const orderModel = defineModel({
      * 数值回收时间；写入时由 repository 从 `deletedAt` 统一派生。
      */
     deletedAtMs: z.number().int().nullable().default(null),
+    /**
+     * 未付款催付的**计划发送时间**（epoch ms）：下单时写入「现在 + 24h」。
+     *
+     * 用「到期时间戳」而不是「每天扫一遍创建时间」，是为了让催付也具备补发能力：
+     * 任务停了两天，恢复后第一条满足 `<= now` 的记录照样会发。索引列必须是数值型，
+     * 范围比较（`lte`）落在这一列上。
+     */
+    unpaidRemindAtMs: z.number().int().nullable().default(null),
+    /**
+     * 已催付时间（ISO 字符串）。非空即「已催过」，是催付的幂等标记 ——
+     * 字符串列可以用 `eq: null` 表达「从未催付」，与 `deletedAt` 同一做法。
+     */
+    unpaidRemindedAt: z.string().nullable().default(null),
   }),
   indexes: [
     { fields: ['userId'], types: { userId: 'string' } },
     { fields: ['state'], types: { state: 'string' } },
+    { fields: ['unpaidRemindAtMs'], types: { unpaidRemindAtMs: 'number' } },
+    { fields: ['unpaidRemindedAt'], types: { unpaidRemindedAt: 'string' } },
     // 必需索引：扩展引擎只能按**已声明的索引列**过滤（其余字段会抛
     // ExtensionUnknownField）。`deletedAt: { eq: null }` 用字符串列（IS NULL
     // 可行），但清理任务的范围比较必须落在数值列 `deletedAtMs` 上。
@@ -275,6 +290,10 @@ export interface StoreOrderData {
   deletedAt?: string | null;
   /** `deletedAt` 的 epoch 毫秒镜像，范围查询用。 */
   deletedAtMs?: number | null;
+  /** 未付款催付的计划发送时间（epoch ms）；存量行没有这个键，读时按 null 处理。 */
+  unpaidRemindAtMs?: number | null;
+  /** 已催付时间（ISO）；非空即「已催过」，是可重复执行的幂等标记。 */
+  unpaidRemindedAt?: string | null;
 }
 
 export interface StoreServiceInstanceData {
