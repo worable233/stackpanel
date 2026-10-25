@@ -57,6 +57,7 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   },
   { type: 'service.renewed', category: 'store', label: '服务续费成功', order: 80 },
   { type: 'service.expiring', category: 'store', label: '服务即将到期', order: 90 },
+  { type: 'service.overdue', category: 'store', label: '服务已到期', order: 95 },
   { type: 'service.suspended', category: 'store', label: '服务已停用', order: 100 },
   { type: 'service.resumed', category: 'store', label: '服务已恢复', order: 105 },
   { type: 'service.terminated', category: 'store', label: '服务已终止', order: 110 },

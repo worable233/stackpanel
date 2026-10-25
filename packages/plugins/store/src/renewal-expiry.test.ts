@@ -1389,3 +1389,123 @@ describe('expiry sweep', () => {
     expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('suspending');
   });
 });
+
+describe('expiry reminder chain (对标 #12.5)', () => {
+  beforeEach(() => {
+    resetContext();
+    notifications.length = 0;
+    notificationsFail = false;
+  });
+
+  /** 到期时间相对 `now` 的偏移，其余字段按最小可用服务填。 */
+  function seedService(
+    fake: ReturnType<typeof createFakeExtensions>,
+    now: Date,
+    expiresInMs: number,
+    expiryStage: string | null,
+    name = 'svc-chain',
+  ): void {
+    const expiry = new Date(now.getTime() + expiresInMs);
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: null,
+        productId: 'p',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: null,
+        providerServiceId: null,
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: null,
+        amount: 100,
+        currency: 'CNY',
+        expiresAt: expiry.toISOString(),
+        expiresAtMs: expiry.getTime(),
+        expiryStage,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      name,
+    );
+  }
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('到期前一天发第二档提醒（对方也是 2 次到期前提醒）', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    seedService(fake, now, 1 * DAY, 'reminded');
+    bindContext(makeCtx(fake));
+
+    await runExpirySweep(now);
+
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('reminded-final');
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]!.type).toBe('service.expiring');
+  });
+
+  it('逾期第 1/2 天各发一次逾期提醒，类型区别于到期前', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    seedService(fake, now, -1 * DAY, 'reminded-final');
+    bindContext(makeCtx(fake));
+
+    await runExpirySweep(now);
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('overdue-1');
+    expect(notifications.map((n) => n.type)).toEqual(['service.overdue']);
+
+    notifications.length = 0;
+    const later = new Date(now.getTime() + 1 * DAY);
+    await runExpirySweep(later);
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('overdue-2');
+    expect(notifications.map((n) => n.type)).toEqual(['service.overdue']);
+  });
+
+  it('停机补发：一次 sweep 就能把落下的几档全部补齐', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    // 已到期 2 天，但阶段还是 null（说明过去两天 cron 没跑）。
+    seedService(fake, now, -2 * DAY, null);
+    bindContext(makeCtx(fake));
+
+    await runExpirySweep(now);
+
+    // 漏发的提醒比迟发的提醒更糟：四档一次性补发，终态 overdue-2。
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('overdue-2');
+    expect(notifications).toHaveLength(4);
+  });
+
+  it('某一档通知失败：只退回上一档，不重发前面的提醒', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    seedService(fake, now, 1 * DAY, 'reminded');
+    bindContext(makeCtx(fake));
+    notificationsFail = true;
+
+    await runExpirySweep(now);
+
+    // 回到 'reminded' 而不是 null —— 置空会把第一档提醒重复发给用户。
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('reminded');
+    expect(notifications).toHaveLength(0);
+
+    // 恢复后下一轮补上，且只补这一档。
+    notificationsFail = false;
+    await runExpirySweep(now);
+    expect(fake.all(SERVICE)[0]!.spec.expiryStage).toBe('reminded-final');
+    expect(notifications).toHaveLength(1);
+  });
+
+  it('逾期阶段仍能进入暂停（不能因为阶段名变了就卡住）', async () => {
+    const fake = createFakeExtensions();
+    const now = new Date('2026-01-15T00:00:00Z');
+    // 已过宽限期（3 天），阶段停在 overdue-2 —— 旧实现只认 'reminded'/null，会永久卡住。
+    seedService(fake, now, -4 * DAY, 'overdue-2');
+    bindContext(makeCtx(fake));
+
+    await runExpirySweep(now);
+
+    expect(fake.all(SERVICE)[0]!.spec.state).toBe('SUSPENDED');
+  });
+});
