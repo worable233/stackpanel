@@ -58,7 +58,9 @@ export function AccountSettings({
       id: 'profile',
       title: t('account.settings.sections.profile'),
       Icon: UserRound,
-      content: <ProfileSettings user={user} emailVerificationRequired={emailVerificationRequired} />,
+      content: (
+        <ProfileSettings user={user} emailVerificationRequired={emailVerificationRequired} />
+      ),
     },
     {
       id: 'appearance',
@@ -100,7 +102,13 @@ function Heading({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ProfileSettings({ user, emailVerificationRequired }: { user: User; emailVerificationRequired: boolean }) {
+function ProfileSettings({
+  user,
+  emailVerificationRequired,
+}: {
+  user: User;
+  emailVerificationRequired: boolean;
+}) {
   const t = useTranslator();
   const locale = useLocale();
   const date = (value: string | null) =>
@@ -123,14 +131,18 @@ function ProfileSettings({ user, emailVerificationRequired }: { user: User; emai
           </FieldDescription>
         </Field>
         <Field>
-          <FieldLabel htmlFor="settings-user-id">{t('account.settings.profile.accountId')}</FieldLabel>
+          <FieldLabel htmlFor="settings-user-id">
+            {t('account.settings.profile.accountId')}
+          </FieldLabel>
           <Input id="settings-user-id" value={user.id} readOnly />
           <FieldDescription>{t('account.settings.profile.accountIdHint')}</FieldDescription>
         </Field>
       </FieldGroup>
       <div className="flex flex-col gap-4 border-t pt-5">
         <SectionTitle>{t('account.settings.profile.securityTitle')}</SectionTitle>
-        <p className="text-sm text-muted-foreground">{t('account.settings.profile.securityHint')}</p>
+        <p className="text-sm text-muted-foreground">
+          {t('account.settings.profile.securityHint')}
+        </p>
         <div className="flex flex-wrap gap-2">
           <ChangeEmailForm currentEmail={user.email} />
           <ChangePasswordForm />
@@ -164,17 +176,51 @@ function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   const t = useTranslator();
   const [state, action, pending] = useActionState(changeEmailAction, {});
   const [open, setOpen] = useState(false);
+  // 回执走系统通知（toast）；对话框里不再内联一行「已保存」。
+  useEffect(() => {
+    if (!state.ok) return;
+    toast.success(t('account.settings.profile.saved'));
+    setOpen(false);
+  }, [state]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button type="button" variant="outline" onClick={() => setOpen(true)}>{t('account.settings.profile.changeEmail')}</Button>
+      <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+        {t('account.settings.profile.changeEmail')}
+      </Button>
       <DialogContent>
-        <DialogHeader><DialogTitle>{t('account.settings.profile.changeEmail')}</DialogTitle><DialogDescription>{t('account.settings.profile.changeEmailHint')}</DialogDescription></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{t('account.settings.profile.changeEmail')}</DialogTitle>
+          <DialogDescription>{t('account.settings.profile.changeEmailHint')}</DialogDescription>
+        </DialogHeader>
         <form action={action} className="flex flex-col gap-4">
-          <Field><FieldLabel htmlFor="change-email">{t('account.settings.profile.newEmail')}</FieldLabel><Input id="change-email" name="email" type="email" defaultValue={currentEmail} required /></Field>
-          <Field><FieldLabel htmlFor="change-email-password">{t('account.settings.profile.currentPassword')}</FieldLabel><Input id="change-email-password" name="currentPassword" type="password" autoComplete="current-password" required /></Field>
+          <Field>
+            <FieldLabel htmlFor="change-email">{t('account.settings.profile.newEmail')}</FieldLabel>
+            <Input
+              id="change-email"
+              name="email"
+              type="email"
+              defaultValue={currentEmail}
+              required
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="change-email-password">
+              {t('account.settings.profile.currentPassword')}
+            </FieldLabel>
+            <Input
+              id="change-email-password"
+              name="currentPassword"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </Field>
           {state.error && <FieldError>{state.error}</FieldError>}
-          {state.ok && <p className="text-sm text-muted-foreground">{t('account.settings.profile.saved')}</p>}
-          <DialogFooter><Button type="submit" disabled={pending}>{pending ? t('account.settings.saving') : t('account.settings.profile.save')}</Button></DialogFooter>
+          <DialogFooter>
+            <Button type="submit" disabled={pending}>
+              {pending ? t('account.settings.saving') : t('account.settings.profile.save')}
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -185,17 +231,53 @@ function ChangePasswordForm() {
   const t = useTranslator();
   const [state, action, pending] = useActionState(changePasswordAction, {});
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!state.ok) return;
+    toast.success(t('account.settings.profile.passwordSaved'));
+    setOpen(false);
+  }, [state]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button type="button" variant="outline" onClick={() => setOpen(true)}>{t('account.settings.profile.changePassword')}</Button>
+      <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+        {t('account.settings.profile.changePassword')}
+      </Button>
       <DialogContent>
-        <DialogHeader><DialogTitle>{t('account.settings.profile.changePassword')}</DialogTitle><DialogDescription>{t('account.settings.profile.changePasswordHint')}</DialogDescription></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{t('account.settings.profile.changePassword')}</DialogTitle>
+          <DialogDescription>{t('account.settings.profile.changePasswordHint')}</DialogDescription>
+        </DialogHeader>
         <form action={action} className="flex flex-col gap-4">
-          <Field><FieldLabel htmlFor="current-password">{t('account.settings.profile.currentPassword')}</FieldLabel><Input id="current-password" name="currentPassword" type="password" autoComplete="current-password" required /></Field>
-          <Field><FieldLabel htmlFor="new-password">{t('account.settings.profile.newPassword')}</FieldLabel><Input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={8} required /></Field>
+          <Field>
+            <FieldLabel htmlFor="current-password">
+              {t('account.settings.profile.currentPassword')}
+            </FieldLabel>
+            <Input
+              id="current-password"
+              name="currentPassword"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="new-password">
+              {t('account.settings.profile.newPassword')}
+            </FieldLabel>
+            <Input
+              id="new-password"
+              name="newPassword"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+          </Field>
           {state.error && <FieldError>{state.error}</FieldError>}
-          {state.ok && <p className="text-sm text-muted-foreground">{t('account.settings.profile.passwordSaved')}</p>}
-          <DialogFooter><Button type="submit" disabled={pending}>{pending ? t('account.settings.saving') : t('account.settings.profile.save')}</Button></DialogFooter>
+          <DialogFooter>
+            <Button type="submit" disabled={pending}>
+              {pending ? t('account.settings.saving') : t('account.settings.profile.save')}
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -255,11 +337,6 @@ function AppearanceSettings() {
           {error && <FieldError>{error}</FieldError>}
         </Field>
       </FieldGroup>
-      <p role="status" className="text-sm text-muted-foreground">
-        {pending
-          ? t('account.settings.appearance.switching')
-          : t('account.settings.appearance.autosave')}
-      </p>
     </section>
   );
 }

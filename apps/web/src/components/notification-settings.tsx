@@ -51,7 +51,7 @@ function useNotificationSettings<T extends View>(url: string, schema: z.ZodType<
   const t = useTranslator();
   const [view, setView] = useState<T>();
   const [error, setError] = useState('');
-  const [status, setStatus] = useState<'loading' | 'saving' | 'saved' | 'idle'>('loading');
+  const [status, setStatus] = useState<'loading' | 'saving' | 'idle'>('loading');
   const controller = useRef<AbortController | null>(null);
   const busy = useRef(false);
 
@@ -127,7 +127,7 @@ function useNotificationSettings<T extends View>(url: string, schema: z.ZodType<
       const result = await request(target, method, body);
       if (signal?.aborted) return false;
       setView(result);
-      setStatus('saved');
+      setStatus('idle');
       window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
       return true;
     } catch (cause) {
@@ -175,19 +175,7 @@ function SettingsPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <SectionTitle>{title}</SectionTitle>
-        <div className="flex flex-wrap items-center gap-3">
-          {' '}
-          {state.view && state.view.types.length > 0 && (
-            <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
-              {state.status === 'saving'
-                ? t('notificationSettings.saving')
-                : state.status === 'saved'
-                  ? t('notificationSettings.saved')
-                  : t('notificationSettings.autosave')}
-            </p>
-          )}
-          {actions}
-        </div>
+        <div className="flex flex-wrap items-center gap-3">{actions}</div>
       </div>
       {state.error && (
         <Alert variant="destructive">

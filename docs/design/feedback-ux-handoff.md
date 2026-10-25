@@ -259,8 +259,11 @@ notice/referral/smtp/ticket/zjmf-upstream），但插件仓库没有字面量扫
   （继续支付/核验送审）。以后不可逆操作直接 `import { ConfirmDialog } from '@stackpanel/ui'`。
 - `@stackpanel/ui` 还没有统一的 `InlineError` / `InlineSuccess` / `PageError` 组件，
   各处仍手写 `<p className="text-sm text-destructive">`。方案 §6.2-2 提过，未做。
-- 内联成功提示（`role="status"`）仍有约 8 处（`storage` 保存、`account-settings`
-  改密码、`notification-settings` 保存等），与 toast 并存。属于「可接受但不统一」。
+- 内联成功提示（`role="status"`）**已清理**（2026-10-26）：`account-settings`
+  语言切换的「自动保存/切换中」、改邮箱/改密码的「已保存」、`notification-settings`
+  的「自动保存/已保存」、storage 的「✓ 已保存」与连接测试结果 —— 现在只留系统通知
+  （toast；sonner 是宿主 ABI 槽）+ 控件自身状态（开关/下拉即回执）。
+  剩下的 `role="status"` 都是加载中占位（单元格骨架、上传中、列表加载），不是回执。
 
 ### P5 — 既有噪声（与本次无关，别误判）
 

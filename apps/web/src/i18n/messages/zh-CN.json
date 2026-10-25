@@ -1696,9 +1696,7 @@
         "themeHint": "立即应用，保存在当前浏览器中。",
         "language": "显示语言",
         "languageHint": "切换本站支持的界面语言，保存在当前浏览器中。",
-        "languageSaveFailed": "语言设置未保存，请重试。",
-        "switching": "正在切换语言…",
-        "autosave": "更改自动保存，无需再次提交。"
+        "languageSaveFailed": "语言设置未保存，请重试。"
       },
       "access": {
         "apiKeys": "API 密钥",
@@ -2078,9 +2076,6 @@
     "catalogLocked": "此通知不允许用户修改接收方式。",
     "empty": "暂无可配置通知",
     "loading": "正在加载通知设置",
-    "saving": "正在保存…",
-    "saved": "已保存",
-    "autosave": "更改自动保存。",
     "retry": "重试",
     "failed": "保存失败，请重试。",
     "unavailable": "暂时无法加载通知设置，请稍后重试。",

@@ -1696,9 +1696,7 @@
         "themeHint": "立即應用，儲存在當前瀏覽器中。",
         "language": "顯示語言",
         "languageHint": "切換本站支援的介面語言，儲存在當前瀏覽器中。",
-        "languageSaveFailed": "語言設定未儲存，請重試。",
-        "switching": "正在切換語言…",
-        "autosave": "更改自動儲存，無需再次提交。"
+        "languageSaveFailed": "語言設定未儲存，請重試。"
       },
       "access": {
         "apiKeys": "API 金鑰",
@@ -2078,9 +2076,6 @@
     "catalogLocked": "此通知不允許使用者修改接收方式。",
     "empty": "暫無可配置通知",
     "loading": "正在載入通知設定",
-    "saving": "正在儲存…",
-    "saved": "已儲存",
-    "autosave": "更改自動儲存。",
     "retry": "重試",
     "failed": "儲存失敗，請重試。",
     "unavailable": "暫時無法載入通知設定，請稍後重試。",

@@ -1696,9 +1696,7 @@
         "themeHint": "Applied immediately and stored in this browser.",
         "language": "Display language",
         "languageHint": "Switch the interface language for this site; stored in this browser.",
-        "languageSaveFailed": "The language setting was not saved. Please try again.",
-        "switching": "Switching language…",
-        "autosave": "Changes save automatically; no submit needed."
+        "languageSaveFailed": "The language setting was not saved. Please try again."
       },
       "access": {
         "apiKeys": "API keys",
@@ -2078,9 +2076,6 @@
     "catalogLocked": "Users cannot customize delivery for this notification.",
     "empty": "No configurable notifications",
     "loading": "Loading notification settings",
-    "saving": "Saving…",
-    "saved": "Saved",
-    "autosave": "Changes are saved automatically.",
     "retry": "Retry",
     "failed": "Could not save. Please try again.",
     "unavailable": "Notification settings are temporarily unavailable. Please try again.",

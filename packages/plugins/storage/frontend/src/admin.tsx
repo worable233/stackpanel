@@ -13,8 +13,9 @@ import {
   FieldDescription,
   FieldError,
 } from '@stackpanel/ui';
-import { useActionState, useState, type ReactElement } from 'react';
-import { Check, LoaderCircle, PlugZap } from 'lucide-react';
+import { useActionState, useEffect, useState, type ReactElement } from 'react';
+import { LoaderCircle, PlugZap } from 'lucide-react';
+import { toast } from 'sonner';
 import type { AdminConfigData } from './schemas';
 import { messages, t } from './i18n.js';
 
@@ -48,47 +49,52 @@ function ConfigForm({
   const [draft, setDraft] = useState({ ...config, accessKeyId: '', secretAccessKey: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState(false);
-  const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [edited, setEdited] = useState(false);
-  const [state, save, saving] = useActionState(async (_previous: string, formData: FormData) => {
-    if (!action) return '';
-    const next: Record<string, string> = {};
-    if (draft.kind === 's3') {
-      if (!draft.s3Bucket.trim()) next.s3Bucket = tr('error.bucketRequired');
-      if (draft.s3Endpoint && !httpUrl(draft.s3Endpoint)) next.s3Endpoint = tr('error.httpUrl');
-      if ((draft.accessKeyId || draft.secretAccessKey) && !config.secretsAvailable)
-        next.accessKeyId = tr('error.encryptionMissing');
-      if (!config.hasCredentials && (!draft.accessKeyId || !draft.secretAccessKey))
-        next.secretAccessKey = tr('error.credentialsRequired');
-    }
-    if (draft.kind === 'http') {
-      for (const key of ['httpUploadUrl', 'httpPublicBaseUrl'] as const) {
-        if (!httpUrl(draft[key])) next[key] = tr('error.httpUrl');
+  const [state, save, saving] = useActionState(
+    async (_previous: { message: string } | null, formData: FormData) => {
+      if (!action) return null;
+      const next: Record<string, string> = {};
+      if (draft.kind === 's3') {
+        if (!draft.s3Bucket.trim()) next.s3Bucket = tr('error.bucketRequired');
+        if (draft.s3Endpoint && !httpUrl(draft.s3Endpoint)) next.s3Endpoint = tr('error.httpUrl');
+        if ((draft.accessKeyId || draft.secretAccessKey) && !config.secretsAvailable)
+          next.accessKeyId = tr('error.encryptionMissing');
+        if (!config.hasCredentials && (!draft.accessKeyId || !draft.secretAccessKey))
+          next.secretAccessKey = tr('error.credentialsRequired');
       }
-      if (draft.httpDeleteUrlTemplate && !httpUrl(draft.httpDeleteUrlTemplate))
-        next.httpDeleteUrlTemplate = tr('error.httpUrlTemplate');
-    }
-    if (
-      draft.publicBaseUrl &&
-      !draft.publicBaseUrl.startsWith('/') &&
-      !httpUrl(draft.publicBaseUrl)
-    )
-      next.publicBaseUrl = tr('error.publicBaseUrl');
-    setErrors(next);
-    if (Object.keys(next).length) return '';
-    // Failure redirects are handled by Next and the host. Never catch a redirect as a normal error.
-    await action(formData);
-    setDraft((value) => ({ ...value, accessKeyId: '', secretAccessKey: '' }));
-    setEdited(false);
-    setTest(null);
-    return tr('status.saved');
-  }, '');
+      if (draft.kind === 'http') {
+        for (const key of ['httpUploadUrl', 'httpPublicBaseUrl'] as const) {
+          if (!httpUrl(draft[key])) next[key] = tr('error.httpUrl');
+        }
+        if (draft.httpDeleteUrlTemplate && !httpUrl(draft.httpDeleteUrlTemplate))
+          next.httpDeleteUrlTemplate = tr('error.httpUrlTemplate');
+      }
+      if (
+        draft.publicBaseUrl &&
+        !draft.publicBaseUrl.startsWith('/') &&
+        !httpUrl(draft.publicBaseUrl)
+      )
+        next.publicBaseUrl = tr('error.publicBaseUrl');
+      setErrors(next);
+      if (Object.keys(next).length) return null;
+      // Failure redirects are handled by Next and the host. Never catch a redirect as a normal error.
+      await action(formData);
+      setDraft((value) => ({ ...value, accessKeyId: '', secretAccessKey: '' }));
+      setEdited(false);
+      return { message: tr('status.saved') };
+    },
+    null,
+  );
+
+  // 保存回执只走宿主 `<Toaster />`（sonner 是宿主 ABI 槽），页面不再内联一份状态文案。
+  useEffect(() => {
+    if (state) toast.success(state.message);
+  }, [state]);
 
   function update<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
     setDraft((previous) => ({ ...previous, [key]: value }));
     setErrors((previous) => ({ ...previous, [key]: '' }));
     setEdited(true);
-    setTest(null);
   }
   function text(
     name: keyof typeof draft,
@@ -122,7 +128,6 @@ function ConfigForm({
   }
   async function testConnection() {
     setTesting(true);
-    setTest(null);
     try {
       const response = await fetch('/api/plugins/storage/admin/test', {
         method: 'POST',
@@ -132,13 +137,11 @@ function ConfigForm({
       });
       const result = (await response.json()) as { ok?: boolean };
       const ok = response.ok && result.ok === true;
-      // 服务端只回 `ok`，不传 provider 原文；文案一律按 key 查（ADR-0016）。
-      setTest({
-        ok,
-        message: ok ? tr('test.ok') : tr('test.failed'),
-      });
+      // 系统通知是唯一反馈通道；服务端只回 `ok`，不传 provider 原文。
+      if (ok) toast.success(tr('test.ok'));
+      else toast.error(tr('test.failed'));
     } catch {
-      setTest({ ok: false, message: tr('test.requestFailed') });
+      toast.error(tr('test.requestFailed'));
     } finally {
       setTesting(false);
     }
@@ -351,12 +354,6 @@ function ConfigForm({
             {saving && <LoaderCircle className="animate-spin" data-icon="inline-start" />}
             {saving ? tr('save.saving') : tr('save.submit')}
           </Button>
-          {!edited && state && (
-            <span role="status" className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <Check className="size-4" />
-              {state}
-            </span>
-          )}
           {!action && <FieldError>{tr('save.noPermission')}</FieldError>}
         </div>
       </form>
@@ -381,14 +378,6 @@ function ConfigForm({
             {testing ? tr('test.testing') : tr('test.submit')}
           </Button>
         </div>
-        {test &&
-          (test.ok ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              {test.message}
-            </p>
-          ) : (
-            <FieldError>{test.message}</FieldError>
-          ))}
       </div>
     </section>
   );
