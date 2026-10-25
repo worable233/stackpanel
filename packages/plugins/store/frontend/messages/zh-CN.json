@@ -418,5 +418,8 @@
   "feedback.refundRequested": "退款申请已提交，等待审核。",
   "feedback.serviceTransferred": "服务已转移。",
   "feedback.refundProcessed": "退款已处理。",
-  "feedback.productSaved": "商品已保存。"
+  "feedback.productSaved": "商品已保存。",
+  "feedback.serviceActionSubmitted": "运维操作已提交，稍后刷新实例查看结果。",
+  "feedback.resourceCreated": "资源创建已提交，稍后刷新列表查看结果。",
+  "feedback.resourceActionSubmitted": "操作已提交，稍后刷新资源列表查看结果。"
 }

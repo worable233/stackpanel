@@ -3919,8 +3919,9 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-action',
-        // Service actions report their result inline in the console.
-        silent: true,
+        // 运维操作（重装/重置密码/开关机）的最终结果只有上游知道，界面不转述上游文案，
+        // 统一给一条本地化回执；实际变化由实例详情刷新体现。
+        successFeedback: { messageKey: 'feedback.serviceActionSubmitted' },
         method: 'POST',
         path: '/services/:id/actions',
         permission: 'store.view',
@@ -3950,8 +3951,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-resource-create',
-        // Resource mutations refresh their own panel inline.
-        silent: true,
+        // 资源创建同样是异步的：新行出现前先给一条回执。
+        successFeedback: { messageKey: 'feedback.resourceCreated' },
         method: 'POST',
         path: '/services/:id/resources/:kind',
         permission: 'store.buy',
@@ -3964,8 +3965,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-resource-action',
-        // Resource mutations refresh their own panel inline.
-        silent: true,
+        // 行级操作（解绑 IP、删除快照…）可能没有立即可见的变化，同样需要回执。
+        successFeedback: { messageKey: 'feedback.resourceActionSubmitted' },
         method: 'POST',
         path: '/services/:id/resources/:kind/:resourceId/actions/:actionId',
         permission: 'store.buy',

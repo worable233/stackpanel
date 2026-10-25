@@ -418,5 +418,8 @@
   "feedback.refundRequested": "退款申請已提交，等待稽核。",
   "feedback.serviceTransferred": "服務已轉移。",
   "feedback.refundProcessed": "退款已處理。",
-  "feedback.productSaved": "商品已儲存。"
+  "feedback.productSaved": "商品已儲存。",
+  "feedback.serviceActionSubmitted": "運維操作已提交，稍後重新整理例項檢視結果。",
+  "feedback.resourceCreated": "資源建立已提交，稍後重新整理列表檢視結果。",
+  "feedback.resourceActionSubmitted": "操作已提交，稍後重新整理資源列表檢視結果。"
 }

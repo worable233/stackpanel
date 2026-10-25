@@ -407,7 +407,9 @@
     },
     {
       "id": "store.service-action",
-      "silent": true,
+      "successFeedback": {
+        "messageKey": "feedback.serviceActionSubmitted"
+      },
       "method": "POST",
       "path": "/services/:id/actions",
       "permission": "store.view",
@@ -473,7 +475,9 @@
     },
     {
       "id": "store.service-resource-create",
-      "silent": true,
+      "successFeedback": {
+        "messageKey": "feedback.resourceCreated"
+      },
       "method": "POST",
       "path": "/services/:id/resources/:kind",
       "permission": "store.buy",
@@ -499,7 +503,9 @@
     },
     {
       "id": "store.service-resource-action",
-      "silent": true,
+      "successFeedback": {
+        "messageKey": "feedback.resourceActionSubmitted"
+      },
       "method": "POST",
       "path": "/services/:id/resources/:kind/:resourceId/actions/:actionId",
       "permission": "store.buy",
@@ -1371,7 +1377,10 @@
       "feedback.refundRequested": "退款申请已提交，等待审核。",
       "feedback.serviceTransferred": "服务已转移。",
       "feedback.refundProcessed": "退款已处理。",
-      "feedback.productSaved": "商品已保存。"
+      "feedback.productSaved": "商品已保存。",
+      "feedback.serviceActionSubmitted": "运维操作已提交，稍后刷新实例查看结果。",
+      "feedback.resourceCreated": "资源创建已提交，稍后刷新列表查看结果。",
+      "feedback.resourceActionSubmitted": "操作已提交，稍后刷新资源列表查看结果。"
     },
     "zh-TW": {
       "review.recover": "核驗原賬單並重新送審",
@@ -1793,7 +1802,10 @@
       "feedback.refundRequested": "退款申請已提交，等待稽核。",
       "feedback.serviceTransferred": "服務已轉移。",
       "feedback.refundProcessed": "退款已處理。",
-      "feedback.productSaved": "商品已儲存。"
+      "feedback.productSaved": "商品已儲存。",
+      "feedback.serviceActionSubmitted": "運維操作已提交，稍後重新整理例項檢視結果。",
+      "feedback.resourceCreated": "資源建立已提交，稍後重新整理列表檢視結果。",
+      "feedback.resourceActionSubmitted": "操作已提交，稍後重新整理資源列表檢視結果。"
     },
     "zh-HK": {
       "review.recover": "核驗原賬單並重新送審",
@@ -2215,7 +2227,10 @@
       "feedback.refundRequested": "退款申請已提交，等待稽核。",
       "feedback.serviceTransferred": "服務已轉移。",
       "feedback.refundProcessed": "退款已處理。",
-      "feedback.productSaved": "商品已儲存。"
+      "feedback.productSaved": "商品已儲存。",
+      "feedback.serviceActionSubmitted": "運維操作已提交，稍後重新整理例項檢視結果。",
+      "feedback.resourceCreated": "資源建立已提交，稍後重新整理列表檢視結果。",
+      "feedback.resourceActionSubmitted": "操作已提交，稍後重新整理資源列表檢視結果。"
     },
     "en-US": {
       "review.recover": "Verify invoices and request approval",
@@ -2637,7 +2652,10 @@
       "feedback.refundRequested": "Refund request submitted for review.",
       "feedback.serviceTransferred": "Service transferred.",
       "feedback.refundProcessed": "Refund processed.",
-      "feedback.productSaved": "Product saved."
+      "feedback.productSaved": "Product saved.",
+      "feedback.serviceActionSubmitted": "Operation submitted. Refresh the service in a moment to see the result.",
+      "feedback.resourceCreated": "Resource creation submitted. Refresh the list in a moment to see the result.",
+      "feedback.resourceActionSubmitted": "Action submitted. Refresh the resource list in a moment to see the result."
     }
   }
 }
