@@ -10,6 +10,8 @@ const DOCUMENTED: Array<[string, number]> = [
   ['fulfillment-poll', 5_000],
   ['expiry-sweep', 60 * 60_000],
   ['order-purge', 6 * 60 * 60_000],
+  // 每小时一次：按「计划催付时间」扫描，比每日一次更容易补发（#12.5）。
+  ['unpaid-order-reminder', 60 * 60_000],
 ];
 
 function fakeJobContext() {
