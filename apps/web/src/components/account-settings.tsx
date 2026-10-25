@@ -16,6 +16,7 @@ import { localeOptions } from '@/i18n/core';
 import { setLocaleAction } from '@/i18n/actions';
 import { agentFetch } from '@/components/agent-workspace';
 import { changeEmailAction, changePasswordAction } from '@/lib/actions';
+import type { AccountMutationState } from '@/lib/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldDescription, FieldGroup, FieldError } from '@/components/ui/field';
@@ -174,14 +175,19 @@ function ProfileSettings({
 
 function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   const t = useTranslator();
-  const [state, action, pending] = useActionState(changeEmailAction, {});
   const [open, setOpen] = useState(false);
-  // 回执走系统通知（toast）；对话框里不再内联一行「已保存」。
-  useEffect(() => {
-    if (!state.ok) return;
-    toast.success(t('account.settings.profile.saved'));
-    setOpen(false);
-  }, [state]);
+  // 回执走系统通知（toast），失败仍在对话框里内联；不在 effect 里 setState。
+  const [state, action, pending] = useActionState<AccountMutationState, FormData>(
+    async (previous, formData) => {
+      const result = await changeEmailAction(previous, formData);
+      if (result.ok) {
+        toast.success(t('account.settings.profile.saved'));
+        setOpen(false);
+      }
+      return result;
+    },
+    {},
+  );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <Button type="button" variant="outline" onClick={() => setOpen(true)}>
@@ -229,13 +235,18 @@ function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
 
 function ChangePasswordForm() {
   const t = useTranslator();
-  const [state, action, pending] = useActionState(changePasswordAction, {});
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!state.ok) return;
-    toast.success(t('account.settings.profile.passwordSaved'));
-    setOpen(false);
-  }, [state]);
+  const [state, action, pending] = useActionState<AccountMutationState, FormData>(
+    async (previous, formData) => {
+      const result = await changePasswordAction(previous, formData);
+      if (result.ok) {
+        toast.success(t('account.settings.profile.passwordSaved'));
+        setOpen(false);
+      }
+      return result;
+    },
+    {},
+  );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <Button type="button" variant="outline" onClick={() => setOpen(true)}>
