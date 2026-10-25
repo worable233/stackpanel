@@ -3,13 +3,19 @@ export type { StatusBadgeProps, StatusTone } from './status-badge.js';
 export { PageHeader } from './page-header.js';
 export type { PageHeaderProps } from './page-header.js';
 export { Button, buttonVariants } from './button.js';
+export { ConfirmDialog } from './confirm-dialog.js';
+export type { ConfirmDialogProps } from './confirm-dialog.js';
 export { Input } from './input.js';
 export { TicketWorkspace } from './ticket-workspace.js';
 export type { TicketWorkspaceLabels } from './ticket-workspace.js';
 export { Label } from './label.js';
 export { Select } from './select.js';
 export { Slider } from './slider.js';
-export { ConfigurationSlider, ConfigurationQuantity, ConfigurationImages } from './configuration-slider.js';
+export {
+  ConfigurationSlider,
+  ConfigurationQuantity,
+  ConfigurationImages,
+} from './configuration-slider.js';
 export { LocaleSwitcher } from './locale-switcher.js';
 export type { LocaleSwitcherProps, LocaleSwitcherItem } from './locale-switcher.js';
 export {

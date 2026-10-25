@@ -16,6 +16,7 @@ import {
   FeatureOverview,
   Button,
   Card,
+  ConfirmDialog,
   CardHeader,
   CardTitle,
   StatusBadge,
@@ -95,7 +96,10 @@ function upstreamSpecsSummary(specs: Record<string, unknown> | undefined): strin
   if (entries.length === 0) return null;
   return entries
     .slice(0, 6)
-    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .map(
+      ([key, value]) =>
+        `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`,
+    )
     .join(' · ');
 }
 
@@ -621,7 +625,9 @@ function ProductForm({
           return next;
         });
       }
-      setCheckoutConfigJson(json.checkoutConfig ? JSON.stringify(json.checkoutConfig, null, 2) : '');
+      setCheckoutConfigJson(
+        json.checkoutConfig ? JSON.stringify(json.checkoutConfig, null, 2) : '',
+      );
       setError(null);
     } catch (cause) {
       console.error('[store] upstream config failed', cause);
@@ -981,7 +987,9 @@ function ProductForm({
                 {isUpstreamManaged ? (
                   <div className="sm:col-span-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
                     {tr('editor.upstreamInventoryManaged', {
-                      cost: cost ? money(amountToMinor(cost, currency) ?? 0, currency, locale) : '—',
+                      cost: cost
+                        ? money(amountToMinor(cost, currency) ?? 0, currency, locale)
+                        : '—',
                       stock: stock || '—',
                     })}
                   </div>
@@ -1108,7 +1116,9 @@ function ProductForm({
                   </div>
                 ) : null}
                 {isCloudServer && !providerId ? (
-                  <p className="text-sm text-muted-foreground">{tr('editor.cloudProviderRequired')}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {tr('editor.cloudProviderRequired')}
+                  </p>
                 ) : null}
               </div>
             </CardContent>
@@ -1480,29 +1490,75 @@ function StoreSettingsPage(props: AdminPageComponentProps) {
   const [busy, start] = useTransition();
   const [error, setError] = useState('');
   const router = useRouter();
-  return <main className="flex flex-col gap-6">
-    <PageHeader title={tr('settings.store.title')} description={tr('settings.store.help')} />
-    <FieldGroup><Field><Label htmlFor="provisioning-mode">{tr('settings.store.mode')}</Label>
-      <Select id="provisioning-mode" value={mode} disabled={busy || !initial} onChange={e => setMode(e.target.value)}>
-        <option value="manual">{tr('settings.store.manual')}</option>
-        <option value="automatic">{tr('settings.store.automatic')}</option>
-      </Select></Field></FieldGroup>
-    {error ? <p role="alert">{error}</p> : null}
-    <Button disabled={busy || !initial} onClick={() => start(async () => {
-      setError('');
-      try {
-        const response = await fetch('/api/plugins/store/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provisioningMode: mode }) });
-        if (!response.ok) throw new Error();
-        router.refresh();
-      } catch { setError(tr('settings.store.failed')); }
-    })}>{tr('settings.store.save')}</Button>
-  </main>;
+  return (
+    <main className="flex flex-col gap-6">
+      <PageHeader title={tr('settings.store.title')} description={tr('settings.store.help')} />
+      <FieldGroup>
+        <Field>
+          <Label htmlFor="provisioning-mode">{tr('settings.store.mode')}</Label>
+          <Select
+            id="provisioning-mode"
+            value={mode}
+            disabled={busy || !initial}
+            onChange={(e) => setMode(e.target.value)}
+          >
+            <option value="manual">{tr('settings.store.manual')}</option>
+            <option value="automatic">{tr('settings.store.automatic')}</option>
+          </Select>
+        </Field>
+      </FieldGroup>
+      {error ? <p role="alert">{error}</p> : null}
+      <Button
+        disabled={busy || !initial}
+        onClick={() =>
+          start(async () => {
+            setError('');
+            try {
+              const response = await fetch('/api/plugins/store/admin/settings', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ provisioningMode: mode }),
+              });
+              if (!response.ok) throw new Error();
+              router.refresh();
+            } catch {
+              setError(tr('settings.store.failed'));
+            }
+          })
+        }
+      >
+        {tr('settings.store.save')}
+      </Button>
+    </main>
+  );
 }
 
 function StoreApprovalsPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
-  const data = props.data.approvals as { total: number; page: number; pageSize: number; tasks: Array<{ id: string; orderId: string; userId: string; productName: string; quantity: number; status: string; reason: string | null; attempts: number; upstreamServiceId: string | null; invoiceId: string | null; paymentState: string | null; canResumePayment: boolean }> } | undefined;
-  const [candidates, setCandidates] = useState<Record<string, Array<{ id: string; productName: string; providerServiceId: string }>>>({});
+  const data = props.data.approvals as
+    | {
+        total: number;
+        page: number;
+        pageSize: number;
+        tasks: Array<{
+          id: string;
+          orderId: string;
+          userId: string;
+          productName: string;
+          quantity: number;
+          status: string;
+          reason: string | null;
+          attempts: number;
+          upstreamServiceId: string | null;
+          invoiceId: string | null;
+          paymentState: string | null;
+          canResumePayment: boolean;
+        }>;
+      }
+    | undefined;
+  const [candidates, setCandidates] = useState<
+    Record<string, Array<{ id: string; productName: string; providerServiceId: string }>>
+  >({});
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, start] = useTransition();
   const showFeedback = (kind: 'error' | 'success', message: string) => {
@@ -1515,126 +1571,299 @@ function StoreApprovalsPage(props: AdminPageComponentProps) {
   };
   const setError = (message: string) => showFeedback('error', message);
   const router = useRouter();
-  return <main className="flex flex-col gap-6"><PageHeader title={tr('settings.store.approvals')} />
-    {!data ? <p role="alert">{tr('settings.store.failed')}</p> : null}
-    {data?.tasks.length === 0 ? <p>{tr('settings.store.empty')}</p> : null}
-    {data?.tasks.map(task => <Card key={task.id}><CardHeader>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle>{task.productName} × {task.quantity}</CardTitle>
-        <StatusBadge tone={task.status === 'AWAITING_APPROVAL' ? 'neutral' : 'warn'}>{tr(`review.status.${task.status}`)}</StatusBadge>
-      </div>
-      <CardDescription>{task.status === 'AWAITING_APPROVAL' ? tr('review.approveHint') : task.paymentState ? tr(`review.payment.${task.paymentState}`) : tr('review.checkHint')}</CardDescription>
-    </CardHeader><CardContent className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-      {task.canResumePayment ? <Button disabled={busy} onClick={() => {
-        if (!window.confirm(tr('review.resumeConfirm'))) return;
-        start(async () => {
-          try {
-            const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/resume-payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) });
-            if (!response.ok) throw new Error();
-            router.refresh();
-          } catch { setError(tr('review.failed')); }
-        });
-      }}>{tr('review.resumePayment')}</Button> : null}
-      {task.status === 'AWAITING_APPROVAL' ? <Button disabled={busy} onClick={() => start(async () => {
-        setError('');
-        try {
-          const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/approve`, { method: 'POST' });
-          if (!response.ok) throw new Error();
-          router.refresh();
-        } catch { setError(tr('settings.store.failed')); }
-      })}>{tr('settings.store.approve')}</Button> : <>
-        {task.status === 'REQUIRES_RECONCILIATION' ? <Button variant="outline" disabled={busy} onClick={() => {
-          if (!window.confirm(tr('review.recoverConfirm'))) return;
-          start(async () => {
-            setError('');
-            try {
-              const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/recover`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) });
-              if (!response.ok) {
-                const failure: unknown = await response.json().catch(() => null);
-                throw new Error(approvalErrorMessage(failure, tr('review.failed')));
-              }
-              showFeedback('success', tr('review.recovered'));
-              router.refresh();
-            } catch (failure) { console.error('[store] approval action failed', failure); setError(tr('review.failed')); }
-          });
-        }}>{tr('review.recover')}</Button> : null}
-        <Button
-          variant="outline"
-          nativeButton={false}
-          render={<Link href="/admin/plugin/zjmf-upstream/instances" />}
-        >
-          {tr('review.viewUpstream')}
-        </Button>
-        <Button variant="ghost" disabled={busy} aria-expanded={expanded === task.id} onClick={() => {
-          if (expanded === task.id) { setExpanded(null); return; }
-          start(async () => {
-            setError('');
-            try {
-              const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/candidates`);
-              if (!response.ok) throw new Error();
-              const result = await response.json() as { services: Array<{ id: string; productName: string; providerServiceId: string }> };
-              setCandidates(current => ({ ...current, [task.id]: result.services }));
-              setExpanded(task.id);
-            } catch { setError(tr('review.failed')); }
-          });
-        }}>{tr('review.linkExisting')}</Button>
-      </>}
-      </div>
-      {expanded === task.id && task.status !== 'AWAITING_APPROVAL' ? candidates[task.id]?.length || task.attempts === 0 ? <form className="max-w-xl" onSubmit={event => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          const values = new FormData(form);
-          const selected = String(values.get('serviceId') ?? '').trim();
-          const serviceId = selected === '__not_created' ? '' : selected;
-          start(async () => {
-            setError('');
-            try {
-              const response = await fetch(`/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/reconcile`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ outcome: serviceId ? 'existing' : 'not_created', ...(serviceId ? { serviceId } : {}), confirmed: values.get('confirmed') === 'on', note: values.get('note') }),
-              });
-              if (!response.ok) throw new Error(tr('review.failed'));
-              router.refresh();
-            } catch { setError(tr('review.failed')); }
-          });
-        }}><FieldGroup>
-          <Field><Label htmlFor={`service-${task.id}`}>{tr('review.service')}</Label>
-            <Select id={`service-${task.id}`} name="serviceId" disabled={busy} defaultValue="" required>
-              <option value="" disabled>{tr('review.choose')}</option>
-              {task.attempts === 0 ? <option value="__not_created">{tr('review.notCreated')}</option> : null}
-              {candidates[task.id]?.map(service => <option key={service.id} value={service.id}>{service.productName} · {service.providerServiceId}</option>)}
-            </Select>
-          </Field>
-          <Field><Label htmlFor={`note-${task.id}`}>{tr('review.note')}</Label><Input id={`note-${task.id}`} name="note" required minLength={5} maxLength={500} disabled={busy} /></Field>
-          <Field><Label><input type="checkbox" name="confirmed" required disabled={busy} />{tr('review.confirm')}</Label></Field>
-          <Button type="submit" disabled={busy}>{tr('review.resolve')}</Button>
-        </FieldGroup></form> : <div className="flex flex-col items-start gap-2 text-sm">
-          <p className="text-muted-foreground">{tr('review.noCandidates')}</p>
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={<Link href={`/admin/users/${encodeURIComponent(task.userId)}`} />}
-          >
-            {tr('review.import')}
-          </Button>
-        </div> : null}
-      <details className="text-sm text-muted-foreground">
-        <summary className="w-fit cursor-pointer">{tr('review.details')}</summary>
-        <dl className="mt-3 grid gap-2 break-all sm:grid-cols-[auto_1fr]">
-          <dt>{tr('review.order')}</dt><dd>{task.orderId}</dd>
-          <dt>{tr('review.user')}</dt><dd><Link href={`/admin/users/${encodeURIComponent(task.userId)}`}>{task.userId}</Link></dd>
-          {task.upstreamServiceId ? <><dt>{tr('review.remote')}</dt><dd>{task.upstreamServiceId}</dd></> : null}
-          {task.invoiceId ? <><dt>{tr('review.invoice')}</dt><dd>{task.invoiceId}</dd></> : null}
-        </dl>
-      </details>
-    </CardContent></Card>)}
-    {data ? <nav className="flex items-center gap-4" aria-label={tr('review.pagination')}>
-      {data.page > 1 ? <Link href={`?page=${data.page - 1}`}>{tr('review.previous')}</Link> : null}
-      <span>{data.page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}</span>
-      {data.page * data.pageSize < data.total ? <Link href={`?page=${data.page + 1}`}>{tr('review.next')}</Link> : null}
-    </nav> : null}
-  </main>;
+  /** 待确认的继续支付/核验送审；原生 window.confirm 无法本地化按钮也不可测试。 */
+  const [confirm, setConfirm] = useState<{ taskId: string; kind: 'resume' | 'recover' } | null>(
+    null,
+  );
+  const runConfirmed = () => {
+    const target = confirm;
+    if (!target) return;
+    setConfirm(null);
+    start(async () => {
+      setError('');
+      try {
+        const path = target.kind === 'resume' ? 'resume-payment' : 'recover';
+        const response = await fetch(
+          `/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(target.taskId)}/${path}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmed: true }),
+          },
+        );
+        if (!response.ok) {
+          const failure: unknown = await response.json().catch(() => null);
+          throw new Error(approvalErrorMessage(failure, tr('review.failed')));
+        }
+        if (target.kind === 'recover') showFeedback('success', tr('review.recovered'));
+        router.refresh();
+      } catch (failure) {
+        console.error('[store] approval action failed', failure);
+        setError(tr('review.failed'));
+      }
+    });
+  };
+  return (
+    <main className="flex flex-col gap-6">
+      <PageHeader title={tr('settings.store.approvals')} />
+      {!data ? <p role="alert">{tr('settings.store.failed')}</p> : null}
+      {data?.tasks.length === 0 ? <p>{tr('settings.store.empty')}</p> : null}
+      {data?.tasks.map((task) => (
+        <Card key={task.id}>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle>
+                {task.productName} × {task.quantity}
+              </CardTitle>
+              <StatusBadge tone={task.status === 'AWAITING_APPROVAL' ? 'neutral' : 'warn'}>
+                {tr(`review.status.${task.status}`)}
+              </StatusBadge>
+            </div>
+            <CardDescription>
+              {task.status === 'AWAITING_APPROVAL'
+                ? tr('review.approveHint')
+                : task.paymentState
+                  ? tr(`review.payment.${task.paymentState}`)
+                  : tr('review.checkHint')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {task.canResumePayment ? (
+                <Button
+                  disabled={busy}
+                  onClick={() => setConfirm({ taskId: task.id, kind: 'resume' })}
+                >
+                  {tr('review.resumePayment')}
+                </Button>
+              ) : null}
+              {task.status === 'AWAITING_APPROVAL' ? (
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    start(async () => {
+                      setError('');
+                      try {
+                        const response = await fetch(
+                          `/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/approve`,
+                          { method: 'POST' },
+                        );
+                        if (!response.ok) throw new Error();
+                        router.refresh();
+                      } catch {
+                        setError(tr('settings.store.failed'));
+                      }
+                    })
+                  }
+                >
+                  {tr('settings.store.approve')}
+                </Button>
+              ) : (
+                <>
+                  {task.status === 'REQUIRES_RECONCILIATION' ? (
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setConfirm({ taskId: task.id, kind: 'recover' })}
+                    >
+                      {tr('review.recover')}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    nativeButton={false}
+                    render={<Link href="/admin/plugin/zjmf-upstream/instances" />}
+                  >
+                    {tr('review.viewUpstream')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    aria-expanded={expanded === task.id}
+                    onClick={() => {
+                      if (expanded === task.id) {
+                        setExpanded(null);
+                        return;
+                      }
+                      start(async () => {
+                        setError('');
+                        try {
+                          const response = await fetch(
+                            `/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/candidates`,
+                          );
+                          if (!response.ok) throw new Error();
+                          const result = (await response.json()) as {
+                            services: Array<{
+                              id: string;
+                              productName: string;
+                              providerServiceId: string;
+                            }>;
+                          };
+                          setCandidates((current) => ({ ...current, [task.id]: result.services }));
+                          setExpanded(task.id);
+                        } catch {
+                          setError(tr('review.failed'));
+                        }
+                      });
+                    }}
+                  >
+                    {tr('review.linkExisting')}
+                  </Button>
+                </>
+              )}
+            </div>
+            {expanded === task.id && task.status !== 'AWAITING_APPROVAL' ? (
+              candidates[task.id]?.length || task.attempts === 0 ? (
+                <form
+                  className="max-w-xl"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const values = new FormData(form);
+                    const selected = String(values.get('serviceId') ?? '').trim();
+                    const serviceId = selected === '__not_created' ? '' : selected;
+                    start(async () => {
+                      setError('');
+                      try {
+                        const response = await fetch(
+                          `/api/plugins/store/admin/delivery-tasks/${encodeURIComponent(task.id)}/reconcile`,
+                          {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              outcome: serviceId ? 'existing' : 'not_created',
+                              ...(serviceId ? { serviceId } : {}),
+                              confirmed: values.get('confirmed') === 'on',
+                              note: values.get('note'),
+                            }),
+                          },
+                        );
+                        if (!response.ok) throw new Error(tr('review.failed'));
+                        router.refresh();
+                      } catch {
+                        setError(tr('review.failed'));
+                      }
+                    });
+                  }}
+                >
+                  <FieldGroup>
+                    <Field>
+                      <Label htmlFor={`service-${task.id}`}>{tr('review.service')}</Label>
+                      <Select
+                        id={`service-${task.id}`}
+                        name="serviceId"
+                        disabled={busy}
+                        defaultValue=""
+                        required
+                      >
+                        <option value="" disabled>
+                          {tr('review.choose')}
+                        </option>
+                        {task.attempts === 0 ? (
+                          <option value="__not_created">{tr('review.notCreated')}</option>
+                        ) : null}
+                        {candidates[task.id]?.map((service) => (
+                          <option key={service.id} value={service.id}>
+                            {service.productName} · {service.providerServiceId}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field>
+                      <Label htmlFor={`note-${task.id}`}>{tr('review.note')}</Label>
+                      <Input
+                        id={`note-${task.id}`}
+                        name="note"
+                        required
+                        minLength={5}
+                        maxLength={500}
+                        disabled={busy}
+                      />
+                    </Field>
+                    <Field>
+                      <Label>
+                        <input type="checkbox" name="confirmed" required disabled={busy} />
+                        {tr('review.confirm')}
+                      </Label>
+                    </Field>
+                    <Button type="submit" disabled={busy}>
+                      {tr('review.resolve')}
+                    </Button>
+                  </FieldGroup>
+                </form>
+              ) : (
+                <div className="flex flex-col items-start gap-2 text-sm">
+                  <p className="text-muted-foreground">{tr('review.noCandidates')}</p>
+                  <Button
+                    variant="outline"
+                    nativeButton={false}
+                    render={<Link href={`/admin/users/${encodeURIComponent(task.userId)}`} />}
+                  >
+                    {tr('review.import')}
+                  </Button>
+                </div>
+              )
+            ) : null}
+            <details className="text-sm text-muted-foreground">
+              <summary className="w-fit cursor-pointer">{tr('review.details')}</summary>
+              <dl className="mt-3 grid gap-2 break-all sm:grid-cols-[auto_1fr]">
+                <dt>{tr('review.order')}</dt>
+                <dd>{task.orderId}</dd>
+                <dt>{tr('review.user')}</dt>
+                <dd>
+                  <Link href={`/admin/users/${encodeURIComponent(task.userId)}`}>
+                    {task.userId}
+                  </Link>
+                </dd>
+                {task.upstreamServiceId ? (
+                  <>
+                    <dt>{tr('review.remote')}</dt>
+                    <dd>{task.upstreamServiceId}</dd>
+                  </>
+                ) : null}
+                {task.invoiceId ? (
+                  <>
+                    <dt>{tr('review.invoice')}</dt>
+                    <dd>{task.invoiceId}</dd>
+                  </>
+                ) : null}
+              </dl>
+            </details>
+          </CardContent>
+        </Card>
+      ))}
+      {data ? (
+        <nav className="flex items-center gap-4" aria-label={tr('review.pagination')}>
+          {data.page > 1 ? (
+            <Link href={`?page=${data.page - 1}`}>{tr('review.previous')}</Link>
+          ) : null}
+          <span>
+            {data.page} / {Math.max(1, Math.ceil(data.total / data.pageSize))}
+          </span>
+          {data.page * data.pageSize < data.total ? (
+            <Link href={`?page=${data.page + 1}`}>{tr('review.next')}</Link>
+          ) : null}
+        </nav>
+      ) : null}
+      <ConfirmDialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setConfirm(null);
+        }}
+        title={confirm?.kind === 'recover' ? tr('review.recover') : tr('review.resumePayment')}
+        description={
+          confirm?.kind === 'recover' ? tr('review.recoverConfirm') : tr('review.resumeConfirm')
+        }
+        cancelLabel={tr('common.cancel')}
+        confirmLabel={
+          confirm?.kind === 'recover' ? tr('review.recover') : tr('review.resumePayment')
+        }
+        pending={busy}
+        destructive={confirm?.kind === 'recover'}
+        onConfirm={runConfirmed}
+      />
+    </main>
+  );
 }
 
 export function StoreAdminRefundsPage(props: AdminPageComponentProps) {

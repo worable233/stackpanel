@@ -158,28 +158,35 @@ cd apps/web
 
 ## 6. 差距盘点
 
-> **2026-10-26 追补状态**：P1、P3 已完成（下面原文保留，作为问题背景与验收口径）。
-> P2、P4 仍开放。
+> **2026-10-26 追补状态**：P1、P2、P3 已完成，P4 的 `window.confirm` 部分已完成；
+> 下面原文保留，作为问题背景与验收口径。
 >
 > 已完成的内容：
 >
-> | 项                  | 落点                                                                                                                                                                                         |
-> | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-> | 修守门正则洞        | `apps/web/tests/feedback-no-raw-message.test.ts`：改成「错误味标识符 + `.message`」匹配（`loadError` / `saveError` / `fetchError` 全部命中），并自带 8 条必须命中 / 2 条必须放过的匹配器自测 |
-> | 插件仓库守门        | `StackPanel-plugins/scripts/check-feedback.mjs`（零依赖，纯文本 + manifest 检查，规则与内核同源）+ `.github/workflows/feedback.yml` + `pnpm feedback:check`                                  |
-> | 清残留 `*.message`  | cms 11 处、llm-gateway 3 处、smtp 2 处 → 统一走 `failure(cause, localizedMessage)`：原文进 `console.error`，界面只显示 `tr(...)` 文案                                                        |
-> | smtp 回执被刷新吞掉 | `window.location.reload()` → `router.refresh()`（`<Toaster />` 在根布局，刷新不再销毁 toast）                                                                                                |
-> | ticket 5 个 action  | `create` → `silent: true`（有 `redirect` 回执）；`reply` / `close` / `remind` / `update` → `successFeedback`，并补 `feedback.*` 四语文案                                                     |
-> | P3 新功能回退       | `seo-page-manager` / `admin-nav-manager` / `api-token-manager` 全部改走宿主 `toast`：成功有回执、失败 toast，内联 `text-destructive` 提示已删；补 8 个 `action.*` 文案（含 zh-TW/zh-HK）     |
+> | 项                  | 落点                                                                                                                                                                                                   |
+> | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+> | 修守门正则洞        | `apps/web/tests/feedback-no-raw-message.test.ts`：改成「错误味标识符 + `.message`」匹配（`loadError` / `saveError` / `fetchError` 全部命中），并自带 8 条必须命中 / 2 条必须放过的匹配器自测           |
+> | 插件仓库守门        | `StackPanel-plugins/scripts/check-feedback.mjs`（零依赖，纯文本 + manifest 检查，规则与内核同源）+ `.github/workflows/feedback.yml` + `pnpm feedback:check`                                            |
+> | 清残留 `*.message`  | cms 11 处、llm-gateway 3 处、smtp 2 处 → 统一走 `failure(cause, localizedMessage)`：原文进 `console.error`，界面只显示 `tr(...)` 文案                                                                  |
+> | smtp 回执被刷新吞掉 | `window.location.reload()` → `router.refresh()`（`<Toaster />` 在根布局，刷新不再销毁 toast）                                                                                                          |
+> | ticket 5 个 action  | `create` → `silent: true`（有 `redirect` 回执）；`reply` / `close` / `remind` / `update` → `successFeedback`，并补 `feedback.*` 四语文案                                                               |
+> | P3 新功能回退       | `seo-page-manager` / `admin-nav-manager` / `api-token-manager` 全部改走宿主 `toast`：成功有回执、失败 toast，内联 `text-destructive` 提示已删；补 8 个 `action.*` 文案（含 zh-TW/zh-HK）               |
+> | P2 插件字面量门禁   | `StackPanel-plugins/scripts/scan-i18n-literals.mjs`（内核同规则副本，扫描根改为插件包）+ CI 装 `typescript`；清掉 llm-gateway / zjmf-upstream 两处硬编码中文，`pnpm i18n:check` 现包含 `i18n:literals` |
+> | P4 确认框           | `@stackpanel/ui` 新增 `ConfirmDialog`（AlertDialog 语义）；`admin-user-detail` 与 `store` 审批页的 3 处 `window.confirm` 全部替换                                                                      |
 >
 > 验收：`node scripts/check-feedback.mjs` → `ok 12 个前端包`；内核 `vitest run` 43 文件 / 304 例全绿；
-> `scan-i18n-literals --check` baseline 0；`check-package-catalogs` 无问题。
+> `scan-i18n-literals --check` baseline 0；`check-package-catalogs` 无问题；
+> `apps/web` 的 `tsc --noEmit` 也全绿（前提是 `packages/sdk` 与 `packages/ui` 先 build —— 旧 dist 会报 15 条假错）。
 
 ### P1 — 插件仓库缺守门测试 ✅ 已建
 
 `feedback-*.test.ts` 与 `error-code-coverage.test.ts` **只扫内核仓库**的
 `packages/plugins/*/frontend/src`，扫不到 `/Users/worable/Documents/StackPanel-plugins`。
 所以外部插件里还留着审计点名的问题：
+
+> 下表每一行都已在 2026-10-26 修复（保留作背景）：`*.message` 走 `failure()`、
+> `window.confirm` 换 `ConfirmDialog`、ticket 补回执、storage 只回 `ok`、
+> smtp / login 的 `reload()` 改 `router.refresh()`。
 
 | 文件                                                                   | 残留                                                                                                               | 说明                                                                                                       |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -244,12 +251,13 @@ notice/referral/smtp/ticket/zjmf-upstream），但插件仓库没有字面量扫
 这三处应该在第一版就按契约接 toast。属于「新代码没遵守已有契约」，值得补一条
 **code review checklist** 或 CI 里对 `setError` 出现次数做 ratchet。
 
-### P4 — 仍未统一的小项
+### P4 — 仍未统一的小项（`window.confirm` 部分已清）
 
-- `window.confirm` 还剩 3 处（见上表）；`@stackpanel/ui` **没有** `AlertDialog`
-  导出，只有 `apps/web/src/components/ui/alert-dialog.tsx`。插件要用只能自己写，
-  建议把 AlertDialog（或一个 `ConfirmDialog`）提到 `@stackpanel/ui`。
-- `@stackpanel/ui` 没有统一的 `InlineError` / `InlineSuccess` / `PageError` 组件，
+- ~~`window.confirm` 还剩 3 处~~ **已清**：`@stackpanel/ui` 新增 `ConfirmDialog`
+  （`AlertDialog` 语义，`pending` 期间拒关闭，`destructive` 变体，文案全部由调用方传入
+  已本地化字符串）。已用于 `admin-user-detail`（服务解绑/删除）与 `store` 审批页
+  （继续支付/核验送审）。以后不可逆操作直接 `import { ConfirmDialog } from '@stackpanel/ui'`。
+- `@stackpanel/ui` 还没有统一的 `InlineError` / `InlineSuccess` / `PageError` 组件，
   各处仍手写 `<p className="text-sm text-destructive">`。方案 §6.2-2 提过，未做。
 - 内联成功提示（`role="status"`）仍有约 8 处（`storage` 保存、`account-settings`
   改密码、`notification-settings` 保存等），与 toast 并存。属于「可接受但不统一」。

@@ -1,12 +1,14 @@
 'use client';
 import type { AdminPageComponentProps } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
+import { useRouter } from 'next/navigation';
 import { useState, type ReactElement } from 'react';
 import { toast } from 'sonner';
 import { t } from './i18n.js';
 
 export function LoginSettings(props: AdminPageComponentProps): ReactElement {
   const tr = t(props.locale);
+  const router = useRouter();
   const config = props.data.config as
     | {
         registrationMethods?: string[];
@@ -33,7 +35,9 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
       });
       if (!res.ok) throw new Error((await res.json()).error ?? tr('settings.saveFailed'));
       toast.success(tr('settings.saved'));
-      window.location.reload();
+      // 整页 reload 会把刚弹出的 toast 一起销毁（与 smtp 同一类 bug）；
+      // `router.refresh()` 只重取 RSC 数据，宿主 `<Toaster />` 不动。
+      router.refresh();
     } catch (e) {
       console.error('[login] save failed', e);
       toast.error(tr('settings.saveFailed'));
@@ -47,11 +51,7 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
       <p className="text-sm text-muted-foreground">{tr('settings.description')}</p>
       <section className="space-y-5 border-b pb-6">
         <label className="flex items-start gap-3 text-sm">
-          <input
-            type="checkbox"
-            checked={email}
-            onChange={(e) => setEmail(e.target.checked)}
-          />
+          <input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} />
           <span>
             <strong className="font-medium">{tr('settings.emailGroup')}</strong>
             <span className="mt-1 block text-muted-foreground">
