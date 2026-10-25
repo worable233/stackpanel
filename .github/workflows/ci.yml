@@ -174,7 +174,8 @@ jobs:
       - name: Acceptance report (offline rows only; gated rows stay gated)
         run: pnpm release:acceptance-report
 
-      # `referral`, `ticket` and `invoice` are not kernel built-ins: their
+      # `referral`, `ticket`, `invoice`, `alipay` and `wechatpay` are not kernel
+      # built-ins: their
       # authoritative source lives in the separate `stackpanel-plugins`
       # repository, so a bare kernel checkout cannot activate them and
       # `describe.skipIf(!installed)` turned their suites into skips — CI was
@@ -188,7 +189,7 @@ jobs:
       # Deliberately fatal: if the plugin repository stops building against this
       # kernel, CI must fail here rather than quietly shrink back to a green but
       # uncovered run.
-      - name: Install external plugin packages (referral / ticket / invoice)
+      - name: Install external plugin packages (referral / ticket / invoice / alipay / wechatpay)
         run: |
           set -euo pipefail
           plugins="$RUNNER_WORKSPACE/stackpanel-plugins"
@@ -206,7 +207,10 @@ jobs:
           # A fresh checkout has no data directory at all, and the installer only
           # writes into data directories that already exist.
           mkdir -p apps/api/data
-          for id in referral ticket invoice; do
+          # The two payment drivers (#12.2) are installed for the same reason:
+          # a plugin that cannot be installed is not "done", and their frontends
+          # must build against this kernel's host ABI.
+          for id in referral ticket invoice alipay wechatpay; do
             # A plugin's frontend is a separate workspace project whose only build
             # script is `build: tsup` — no `prepare` — so a fresh clone has no
             # `frontend/dist`. Installing the package without it leaves
