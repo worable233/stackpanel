@@ -64,6 +64,9 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   { type: 'service.changed', category: 'store', label: '服务配置已变更', order: 115 },
   { type: 'service.transferred', category: 'store', label: '服务已转移', order: 117 },
   { type: 'order.cancelled', category: 'store', label: '订单已取消', order: 35 },
+  // 未付款订单催付（对标 #12.5）：与「订单待支付」（下单即发）分开，
+  // 用户可以只关掉催付而保留下单回执。
+  { type: 'order.unpaid', category: 'store', label: '订单待支付提醒', order: 36 },
 ];
 
 /** 写入一条 store 业务通知。失败只告警，不抛出。 */

@@ -47,6 +47,7 @@ const PLUGIN_EMITTERS = [
   'packages/plugins/store/src/expiry.ts',
   'packages/plugins/store/src/refund.ts',
   'packages/plugins/store/src/renewal.ts',
+  'packages/plugins/store/src/unpaid-reminder.ts',
   'packages/plugins/store-wallet/src/notifications.ts',
   'packages/plugins/market/src/index.ts',
 ];
