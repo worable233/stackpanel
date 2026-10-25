@@ -1,0 +1,27 @@
+{
+  "$schema": "https://stackpanel.dev/schemas/theme.schema.json",
+  "id": "atlas",
+  "name": "Atlas",
+  "description": "A monochrome, editorial cloud storefront built on shadcn/ui and Base UI: white space, tight grotesque type, pill controls, rounded cards and restrained motion.",
+  "version": "1.0.0",
+  "author": "StackPanel",
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
+  "layout": {
+    "user": {
+      "shell": "default"
+    },
+    "admin": {
+      "shell": "sidebar"
+    }
+  },
+  "supportsDarkMode": true,
+  "assets": {
+    "logo": "assets/logo.svg",
+    "favicon": "assets/favicon.svg"
+  }
+}

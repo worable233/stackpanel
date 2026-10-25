@@ -1,0 +1,14 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "react": ["../../../../apps/web/node_modules/@types/react"],
+      "react/jsx-runtime": ["../../../../apps/web/node_modules/@types/react/jsx-runtime"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "messages/*.json"]
+}
