@@ -487,6 +487,114 @@ function assertRelocatable(root, label) {
 }
 
 /**
+ * 把随内核发布的内置插件与默认主题拷进产物，并返回它们需要的运行时裸导入包。
+ *
+ * 内核启动时会把 `packages/plugins/<id>`（按 `package.json` 的
+ * `stackpanel.builtin === true` 判定）与 `packages/themes/default` 拷到数据目录，
+ * 作为「随内核发布的本地来源」。产物缺这两棵目录时：
+ * - 首页 404（默认主题没被播种）；
+ * - 市场里一个内置插件都没有。
+ *
+ * 只拷运行时需要的东西：`dist/`、`frontend/`、`assets/`、`package.json`、
+ * `theme.css`/`theme.json`。**不**拷 `src/`、`node_modules`、`dist-pack`：
+ * 源码与开发依赖在目标机上没有用处，而 node_modules 由依赖闭包统一提供
+ * ——两份副本会各自带一个 zod 实例，`instanceof` 与 schema 复用都会失效。
+ *
+ * 插件与主题的前端产物保留裸导入（`@stackpanel/sdk`、`zod`），它们的加载器
+ * 是 `data/plugins|themes/...` 下的真实 ESM 导入，所以这些包必须出现在产物的
+ * `node_modules` 里；这里把它们作为闭包的入口返回。
+ */
+function copyBuiltinPackages(staging) {
+  const pluginsRoot = path.join(REPO_ROOT, 'packages/plugins');
+  const themesRoot = path.join(REPO_ROOT, 'packages/themes');
+  const runtimePackages = new Set();
+  const copiedPlugins = [];
+  let themes = 0;
+
+  const RUNTIME_DIRS = new Set(['dist', 'frontend', 'assets']);
+  const RUNTIME_FILES = new Set([
+    'package.json',
+    'theme.css',
+    'theme.json',
+    'README.md',
+    'LICENSE',
+  ]);
+
+  /** 只拷贝运行期需要的条目；返回是否复制了任何内容。 */
+  const copyRuntimeTree = (source, target) => {
+    if (!existsSync(source)) return false;
+    let copied = false;
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+      const from = path.join(source, entry.name);
+      const to = path.join(target, entry.name);
+      if (entry.isDirectory()) {
+        if (!RUNTIME_DIRS.has(entry.name)) continue;
+        cpSync(from, to, { recursive: true, dereference: true });
+        copied = true;
+        continue;
+      }
+      if (!RUNTIME_FILES.has(entry.name)) continue;
+      ensureDir(target);
+      cpSync(from, to);
+      copied = true;
+    }
+    return copied;
+  };
+
+  if (existsSync(pluginsRoot)) {
+    for (const id of readdirSync(pluginsRoot).sort()) {
+      if (id.startsWith('.')) continue;
+      const source = path.join(pluginsRoot, id);
+      const pkg = readPkgOrNull(path.join(source, 'package.json'));
+      if (!pkg || pkg.stackpanel?.builtin !== true) continue;
+      if (!existsSync(path.join(source, 'dist/index.js'))) {
+        throw new Error(
+          `内置插件 ${id} 缺少构建产物 dist/index.js：请先构建 @stackpanel/plugins-${id}`,
+        );
+      }
+      const target = path.join(staging, 'packages/plugins', id);
+      ensureDir(target);
+      copyRuntimeTree(source, target);
+      // 插件的运行时裸导入：自己声明的依赖 + workspace 内部的 @stackpanel/*。
+      for (const dep of Object.keys(pkg.dependencies ?? {})) runtimePackages.add(dep);
+      copiedPlugins.push(id);
+    }
+  }
+
+  if (existsSync(themesRoot)) {
+    for (const id of readdirSync(themesRoot).sort()) {
+      if (id.startsWith('.')) continue;
+      const source = path.join(themesRoot, id);
+      if (!existsSync(path.join(source, 'theme.json'))) continue;
+      const target = path.join(staging, 'packages/themes', id);
+      ensureDir(target);
+      copyRuntimeTree(source, target);
+      // 主题前端同样保留裸导入。
+      const pkg = readPkgOrNull(path.join(source, 'frontend/package.json'));
+      for (const dep of Object.keys(pkg?.dependencies ?? {})) runtimePackages.add(dep);
+      themes += 1;
+    }
+  }
+
+  if (copiedPlugins.length === 0) {
+    // 空市场在目标机上表现为「内核装好了但什么都没有」，属于必须提前失败的构建缺陷。
+    throw new Error(
+      '产物中没有任何内置插件：请确认 packages/plugins/*/package.json 已声明 stackpanel.builtin',
+    );
+  }
+
+  return { plugins: copiedPlugins, themes, runtimePackages: [...runtimePackages].sort() };
+}
+
+function readPkgOrNull(file) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 原生依赖必须与目标平台一致。
  *
  * `collectClosure` 只能按包名过滤平台的 optionalDependencies，但 pnpm 的
@@ -599,11 +707,23 @@ async function buildKernel(spec, args, platformInfo) {
     recursive: true,
   });
 
+  // 3b) 随内核发布的内置插件与主题。
+  //
+  // 内核在启动时把 `packages/plugins/<id>`（dist + frontend + assets）与
+  // `packages/themes/default` 拷进数据目录作为可安装来源。产物里没有这两棵
+  // 目录时，安装器「成功」、进程也起来了，但首页 404、市场空空如也，
+  // 而这在构建机上完全看不出来（构建机有完整源码树）。
+  // 只带运行时需要的部分：不要 `src/`、`node_modules`（由下面的依赖闭包提供）、
+  // 也不要 `dist-pack` 之类的中间产物。
+  const builtinSource = copyBuiltinPackages(staging);
+
   // 4) 不可打包依赖闭包，合并进 standalone 的 node_modules。
   const missing = [];
   const closure = collectClosure(
     // Single source of truth, shared with apps/api/tsup.config.ts.
-    [...EXTERNAL_PACKAGES, '@prisma/adapter-pg'],
+    // 内置插件与主题的前端产物保持裸导入（`@stackpanel/sdk`、`zod`），
+    // 它们由插件加载器在运行时解析，所以这些包必须真的在产物里。
+    [...EXTERNAL_PACKAGES, '@prisma/adapter-pg', ...builtinSource.runtimePackages],
     [path.join(REPO_ROOT, 'apps/api'), path.join(REPO_ROOT, 'packages/db'), REPO_ROOT],
     (name, from) => {
       if (name.startsWith('@types/') || /^@img\/sharp-/.test(name)) return;
