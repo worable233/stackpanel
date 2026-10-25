@@ -24,7 +24,7 @@
 > **2026-10-26 追补：已补齐。** 插件仓库新增 `scripts/check-feedback.mjs` +
 > `.github/workflows/feedback.yml`（零依赖，CI 不需要 `pnpm install`），并清掉了
 > 全部 15 处 `*.message` 泄漏、ticket 的 5 个无回执 action，以及内核侧 3 处新功能回退。
-> 遗留项见 §6 末尾的「仍未做」。
+> §6 的问题清单已基本清空，只剩末尾列出的接口级遗留项。
 
 ---
 
@@ -93,7 +93,7 @@
 | `feedback-sonner-abi.test.ts`       | sonner ABI **五个接线点**缺一即红                                                                                                             | 同上             |
 | `feedback-success-feedback.test.ts` | 每个 `POST/PATCH/DELETE` action 必须 **恰好** 有 `successFeedback` xor `silent`                                                               | 同上             |
 | `error-code-coverage.test.ts`       | 每个抛出的 `code` 在 4 个 locale 都有翻译                                                                                                     | 同上             |
-| `feedback-inline-error.test.ts`     | 前端不得手写 `<p role="alert\|status">`，内联提示必须走 `InlineError` / `InlineNotice`（例外：`components/ui/*` 与 `packages/ui/src` 原语） | 同上             |
+| `feedback-inline-error.test.ts`     | 前端不得手写 `<p role="alert\|status">`，内联提示必须走 `InlineError` / `InlineNotice`（例外：`components/ui/*` 与 `packages/ui/src` 原语）   | 同上             |
 
 ---
 
@@ -174,7 +174,8 @@ cd apps/web
 > | P3 新功能回退       | `seo-page-manager` / `admin-nav-manager` / `api-token-manager` 全部改走宿主 `toast`：成功有回执、失败 toast，内联 `text-destructive` 提示已删；补 8 个 `action.*` 文案（含 zh-TW/zh-HK）               |
 > | P2 插件字面量门禁   | `StackPanel-plugins/scripts/scan-i18n-literals.mjs`（内核同规则副本，扫描根改为插件包）+ CI 装 `typescript`；清掉 llm-gateway / zjmf-upstream 两处硬编码中文，`pnpm i18n:check` 现包含 `i18n:literals` |
 > | P4 确认框           | `@stackpanel/ui` 新增 `ConfirmDialog`（AlertDialog 语义）；`admin-user-detail` 与 `store` 审批页的 3 处 `window.confirm` 全部替换                                                                      |
-> | P4 内联提示         | `@stackpanel/ui` 新增 `InlineError`（`role="alert"`）/ `InlineNotice`（`role="status"`）；内核 + 插件仓 **19 个文件**的手写 `<p role=…>` 全部替换，两边各一条守门规则                                                                        |
+> | P4 内联提示         | `@stackpanel/ui` 新增 `InlineError`（`role="alert"`）/ `InlineNotice`（`role="status"`）；内核 + 插件仓 **19 个文件**的手写 `<p role=…>` 全部替换，两边各一条守门规则                                  |
+> | 上游错误只回 code   | 插件仓 `92cdd68`：zjmf-upstream 的 `inventory` 不再返回服务端拼好的中文（`{sourceName, message}` → `{sourceName, code, detail}`），前端按 code 查本包 catalog，unknown code 兜底回显 code              |
 >
 > 验收：`node scripts/check-feedback.mjs` → `ok 12 个前端包`（三条规则：原文泄漏 / 回执 xor / 内联 role）；
 > 内核 `vitest run` 44 文件 / 305 例全绿；
@@ -235,11 +236,13 @@ setError(saveError instanceof Error ? saveError.message : …)   → MISSED
 > 内核 CI 会 clone 插件仓库安装插件（`.github/workflows/ci.yml:196`），
 > 但那是**建包 + 装包**，不跑插件前端的静态检查。
 
-### P2 — 插件 i18n 已补但未经门禁验证（仍未做）
+### P2 — 插件 i18n 门禁 ✅ 已补（2026-10-26）
 
 10 个外部插件的 `messages/` 目录都已建（catalog/cms/epay/invoice/llm-gateway/
-notice/referral/smtp/ticket/zjmf-upstream），但插件仓库没有字面量扫描，
-所以「TSX 里还有没有硬编码中文」**没有自动保证**。
+notice/referral/smtp/ticket/zjmf-upstream）；插件仓库现已内置与内核同规则的
+`scripts/scan-i18n-literals.mjs`（扫描根 `packages/plugins/<id>/frontend/src`），
+并在 CI 里装 `typescript` 后跑 `--check`，`pnpm i18n:check` 也已包含 `i18n:literals`。
+「TSX 里还有没有硬编码中文」现在是零容忍的自动断言。
 
 ### P3 — 新功能往回退 ✅ 已补
 
@@ -262,13 +265,32 @@ notice/referral/smtp/ticket/zjmf-upstream），但插件仓库没有字面量扫
   （继续支付/核验送审）。以后不可逆操作直接 `import { ConfirmDialog } from '@stackpanel/ui'`。
 - `@stackpanel/ui` 的内联提示已统一（2026-10-26）：`InlineError` + `InlineNotice`，
   内核与插件仓前端里手写的 `<p role="alert|status">` **归零**，并由
+- `@stackpanel/ui` 的内联提示已统一（2026-10-26）：`InlineError` + `InlineNotice`，
+  内核与插件仓前端里手写的 `<p role="alert|status">` **归零**，并由
   `feedback-inline-error.test.ts` / `check-feedback.mjs` 双重守门。
   新增内联提示时不要再手写 `role`，直接 `import { InlineError, InlineNotice } from '@stackpanel/ui'`。
+  守门按**整份文件**匹配（多行 JSX 的 `role` 也拦），覆盖 `p|div|span|section|li`，
+  只豁免 UI 原语目录与带 `aria-label` 的 `role="status"` 区域（骨架屏/加载容器）。
+  据此补齐的最后两处：`agent-settings` 的 `<div role="alert">`、referral 的多行
+  `<p role="status">`。
 - 内联成功提示（`role="status"`）**已清理**（2026-10-26）：`account-settings`
   语言切换的「自动保存/切换中」、改邮箱/改密码的「已保存」、`notification-settings`
   的「自动保存/已保存」、storage 的「✓ 已保存」与连接测试结果 —— 现在只留系统通知
   （toast；sonner 是宿主 ABI 槽）+ 控件自身状态（开关/下拉即回执）。
   剩下的 `role="status"` 都是加载中占位（单元格骨架、上传中、列表加载），不是回执。
+
+### P5 — 剩余接口级事项（前端侧已清空）
+
+前端能做的都已经做完。下面这些要改契约或碰正在被其他分支写入的代码，单独开题：
+
+- **`ServiceActionResult.message` 没有 `messageKey`**（`packages/sdk/src/fulfillment.ts`）。
+  provider 自述文案（zjmf `provider.ts` 的「已同步续费至 X」「配置变更已提交上游」等）
+  因此只能以中文下发。要给这个结构补 `messageKey + params`，让 store 前端自己拼文案；
+  在此之前，这些字段当下没有直接上屏的路径（store 前端不渲染它），不构成现网泄漏。
+- **`PluginActionSuccessFeedback.message` 作为 fallback 仍然存在**。
+  机制正确（`messageKey` 优先），但插件里还有只写 `message` 的旧声明；新增 action 请一律用
+  `messageKey + params`。
+- **`apps/api` 的既有测试噪声**（见下一条）：那个目录同时被另一分支改着，本次没碰。
 
 ### P5 — 既有噪声（与本次无关，别误判）
 
