@@ -4,7 +4,7 @@ import { useActionState, useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bot, Palette, ShieldCheck, UserRound, Plug, ArrowUpRight, Bell } from 'lucide-react';
-import { SectionTitle } from '@stackpanel/ui';
+import { InlineNotice, SectionTitle } from '@stackpanel/ui';
 import type { User } from '@stackpanel/sdk';
 import { toast } from 'sonner';
 import { SettingsSections, SettingsSelect } from '@/components/settings-sections';
@@ -436,9 +436,7 @@ function PersonalAgentSettings() {
           </Button>
         </div>
       ) : !servers ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t('account.settings.agent.loading')}
-        </p>
+        <InlineNotice>{t('account.settings.agent.loading')}</InlineNotice>
       ) : servers.length ? (
         <div className="flex flex-col gap-6">
           {servers.map((server) => (

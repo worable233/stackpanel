@@ -1,4 +1,4 @@
-import { PageHeader } from '@stackpanel/ui';
+import { InlineError, PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { getLocale } from '@/i18n/locale';
@@ -40,9 +40,7 @@ export default async function AdminSeoPage({
       <PageHeader title={t('adminSeo.title')} />
       <p className="mb-4 text-sm text-muted-foreground">{t('adminSeo.description')}</p>
       {error || !data ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error ?? t('adminSeo.loadFailed')}
-        </p>
+        <InlineError>{error ?? t('adminSeo.loadFailed')}</InlineError>
       ) : (
         <SeoPageManager
           pages={data.pages}

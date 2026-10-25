@@ -1,4 +1,4 @@
-import { PageHeader } from '@stackpanel/ui';
+import { InlineError, PageHeader } from '@stackpanel/ui';
 import { AdminNavManager } from '@/components/admin-nav-manager';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
@@ -32,9 +32,7 @@ export default async function AdminNavPage() {
       <PageHeader title={t('adminNav.title')} />
       <p className="mb-4 text-sm text-muted-foreground">{t('adminNav.description')}</p>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <InlineError>{error}</InlineError>
       ) : (
         <AdminNavManager surface="admin" items={items} />
       )}

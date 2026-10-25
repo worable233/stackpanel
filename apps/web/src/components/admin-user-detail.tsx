@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { SectionTitle } from '@stackpanel/ui';
+import { InlineError, SectionTitle } from '@stackpanel/ui';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Select,
@@ -582,9 +582,7 @@ function ServicesSection({
                 </p>
               ) : bindError ? (
                 <div className="flex flex-col items-start gap-3">
-                  <p role="alert" className="text-sm text-destructive">
-                    {bindError}
-                  </p>
+                  <InlineError>{bindError}</InlineError>
                   <Button variant="outline" size="sm" onClick={() => openBind(true)}>
                     {t('common.retry')}
                   </Button>

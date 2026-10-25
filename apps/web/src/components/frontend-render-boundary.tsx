@@ -1,6 +1,7 @@
 'use client';
 
 import { Component, type ReactElement, type ReactNode } from 'react';
+import { InlineError } from '@stackpanel/ui';
 import { useTranslator } from '@/i18n/provider';
 
 /**
@@ -40,9 +41,7 @@ export class FrontendRenderBoundary extends Component<
 function FrontendRenderError(): ReactElement {
   const t = useTranslator();
   return (
-    <p role="alert" className="text-sm text-destructive">
-      {t('frontend.renderFailed')}
-    </p>
+    <InlineError>{t('frontend.renderFailed')}</InlineError>
   );
 }
 

@@ -89,10 +89,11 @@
 
 | 文件                                | 断言                                                                                                                                          | 当前             |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `feedback-no-raw-message.test.ts`   | `toast.*` / `setError(...)` 里不得出现错误味标识符的 `.message`（含 `loadError` 这类驼峰绑定；`result.message` 仍允许），匹配器另有 10 条自测 | 4 文件 11 例全绿 |
+| `feedback-no-raw-message.test.ts`   | `toast.*` / `setError(...)` 里不得出现错误味标识符的 `.message`（含 `loadError` 这类驼峰绑定；`result.message` 仍允许），匹配器另有 10 条自测 | 5 文件 21 例全绿 |
 | `feedback-sonner-abi.test.ts`       | sonner ABI **五个接线点**缺一即红                                                                                                             | 同上             |
 | `feedback-success-feedback.test.ts` | 每个 `POST/PATCH/DELETE` action 必须 **恰好** 有 `successFeedback` xor `silent`                                                               | 同上             |
 | `error-code-coverage.test.ts`       | 每个抛出的 `code` 在 4 个 locale 都有翻译                                                                                                     | 同上             |
+| `feedback-inline-error.test.ts`     | 前端不得手写 `<p role="alert\|status">`，内联提示必须走 `InlineError` / `InlineNotice`（例外：`components/ui/*` 与 `packages/ui/src` 原语） | 同上             |
 
 ---
 
@@ -158,7 +159,7 @@ cd apps/web
 
 ## 6. 差距盘点
 
-> **2026-10-26 追补状态**：P1、P2、P3 已完成，P4 的 `window.confirm` 部分已完成；
+> **2026-10-26 追补状态**：P1、P2、P3、P4 **全部完成**；
 > 下面原文保留，作为问题背景与验收口径。
 >
 > 已完成的内容：
@@ -173,8 +174,10 @@ cd apps/web
 > | P3 新功能回退       | `seo-page-manager` / `admin-nav-manager` / `api-token-manager` 全部改走宿主 `toast`：成功有回执、失败 toast，内联 `text-destructive` 提示已删；补 8 个 `action.*` 文案（含 zh-TW/zh-HK）               |
 > | P2 插件字面量门禁   | `StackPanel-plugins/scripts/scan-i18n-literals.mjs`（内核同规则副本，扫描根改为插件包）+ CI 装 `typescript`；清掉 llm-gateway / zjmf-upstream 两处硬编码中文，`pnpm i18n:check` 现包含 `i18n:literals` |
 > | P4 确认框           | `@stackpanel/ui` 新增 `ConfirmDialog`（AlertDialog 语义）；`admin-user-detail` 与 `store` 审批页的 3 处 `window.confirm` 全部替换                                                                      |
+> | P4 内联提示         | `@stackpanel/ui` 新增 `InlineError`（`role="alert"`）/ `InlineNotice`（`role="status"`）；内核 + 插件仓 **19 个文件**的手写 `<p role=…>` 全部替换，两边各一条守门规则                                                                        |
 >
-> 验收：`node scripts/check-feedback.mjs` → `ok 12 个前端包`；内核 `vitest run` 43 文件 / 304 例全绿；
+> 验收：`node scripts/check-feedback.mjs` → `ok 12 个前端包`（三条规则：原文泄漏 / 回执 xor / 内联 role）；
+> 内核 `vitest run` 44 文件 / 305 例全绿；
 > `scan-i18n-literals --check` baseline 0；`check-package-catalogs` 无问题；
 > `apps/web` 的 `tsc --noEmit` 也全绿（前提是 `packages/sdk` 与 `packages/ui` 先 build —— 旧 dist 会报 15 条假错）。
 
@@ -251,14 +254,16 @@ notice/referral/smtp/ticket/zjmf-upstream），但插件仓库没有字面量扫
 这三处应该在第一版就按契约接 toast。属于「新代码没遵守已有契约」，值得补一条
 **code review checklist** 或 CI 里对 `setError` 出现次数做 ratchet。
 
-### P4 — 仍未统一的小项（`window.confirm` 部分已清）
+### P4 — ✅ 已完成（确认框、内联提示、旧内联回执）
 
 - ~~`window.confirm` 还剩 3 处~~ **已清**：`@stackpanel/ui` 新增 `ConfirmDialog`
   （`AlertDialog` 语义，`pending` 期间拒关闭，`destructive` 变体，文案全部由调用方传入
   已本地化字符串）。已用于 `admin-user-detail`（服务解绑/删除）与 `store` 审批页
   （继续支付/核验送审）。以后不可逆操作直接 `import { ConfirmDialog } from '@stackpanel/ui'`。
-- `@stackpanel/ui` 还没有统一的 `InlineError` / `InlineSuccess` / `PageError` 组件，
-  各处仍手写 `<p className="text-sm text-destructive">`。方案 §6.2-2 提过，未做。
+- `@stackpanel/ui` 的内联提示已统一（2026-10-26）：`InlineError` + `InlineNotice`，
+  内核与插件仓前端里手写的 `<p role="alert|status">` **归零**，并由
+  `feedback-inline-error.test.ts` / `check-feedback.mjs` 双重守门。
+  新增内联提示时不要再手写 `role`，直接 `import { InlineError, InlineNotice } from '@stackpanel/ui'`。
 - 内联成功提示（`role="status"`）**已清理**（2026-10-26）：`account-settings`
   语言切换的「自动保存/切换中」、改邮箱/改密码的「已保存」、`notification-settings`
   的「自动保存/已保存」、storage 的「✓ 已保存」与连接测试结果 —— 现在只留系统通知

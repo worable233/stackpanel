@@ -5,6 +5,7 @@ export type { PageHeaderProps } from './page-header.js';
 export { Button, buttonVariants } from './button.js';
 export { ConfirmDialog } from './confirm-dialog.js';
 export type { ConfirmDialogProps } from './confirm-dialog.js';
+export { InlineError, InlineNotice } from './inline-error.js';
 export { Input } from './input.js';
 export { TicketWorkspace } from './ticket-workspace.js';
 export type { TicketWorkspaceLabels } from './ticket-workspace.js';

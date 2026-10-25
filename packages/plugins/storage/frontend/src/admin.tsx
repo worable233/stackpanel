@@ -12,6 +12,7 @@ import {
   FieldGroup,
   FieldDescription,
   FieldError,
+  InlineNotice,
 } from '@stackpanel/ui';
 import { useActionState, useEffect, useState, type ReactElement } from 'react';
 import { LoaderCircle, PlugZap } from 'lucide-react';
@@ -397,9 +398,7 @@ function StorageAdminPage(props: AdminPageComponentProps): ReactElement {
           tr={tr}
         />
       ) : (
-        <p role="alert" className="text-sm text-muted-foreground">
-          {tr('page.unavailable')}
-        </p>
+        <InlineNotice>{tr('page.unavailable')}</InlineNotice>
       )}
     </div>
   );

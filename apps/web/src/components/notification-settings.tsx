@@ -11,7 +11,7 @@ import type {
 } from '@stackpanel/sdk';
 import type { z } from 'zod';
 import { toast } from 'sonner';
-import { SectionTitle } from '@stackpanel/ui';
+import { InlineError, SectionTitle } from '@stackpanel/ui';
 import { useTranslator } from '@/i18n/provider';
 import {
   notificationPolicySchema,
@@ -299,9 +299,7 @@ export function NotificationPreferencesSettings() {
             </AlertDialogAction>
           </AlertDialogFooter>
           {state.error && (
-            <p role="alert" className="text-sm text-destructive">
-              {state.error}
-            </p>
+            <InlineError>{state.error}</InlineError>
           )}
         </AlertDialogContent>
       </AlertDialog>

@@ -7,6 +7,7 @@ import {
   type ComponentType,
   type ReactElement,
 } from 'react';
+import { InlineError } from '@stackpanel/ui';
 import type { AdminPageComponentProps } from '@stackpanel/sdk';
 import { FrontendAbiBridge } from './frontend-abi-bridge';
 import { FrontendScopeRoot } from './frontend-scope';
@@ -57,9 +58,7 @@ export function RuntimeAdminPage({
       <>
         {bridge}
         <main className="mx-auto w-full max-w-3xl">
-          <p role="alert" className="text-sm text-destructive">
-            {t('pluginPage.loadFailed')}
-          </p>
+          <InlineError>{t('pluginPage.loadFailed')}</InlineError>
         </main>
       </>
     );
@@ -119,9 +118,7 @@ export class RuntimeErrorBoundary extends Component<
 function RuntimeRenderError(): ReactElement {
   const t = useTranslator();
   return (
-    <p role="alert" className="text-sm text-destructive">
-      {t('pluginPage.renderFailed')}
-    </p>
+    <InlineError>{t('pluginPage.renderFailed')}</InlineError>
   );
 }
 

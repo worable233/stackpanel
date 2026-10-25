@@ -23,6 +23,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { InlineNotice } from '@stackpanel/ui';
 import { useTranslator } from '@/i18n/provider';
 import {
   previewThemeSettingsAction,
@@ -326,10 +327,10 @@ export function ThemeJsonEditor({
           </AlertDescription>
         </Alert>
       ) : (
-        <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+        <InlineNotice className="flex items-center gap-2 text-xs">
           <Check className="size-3.5" />
           {dirty ? t('themeJson.unsaved', { count: changes.length }) : t('themeJson.saved')}
-        </p>
+        </InlineNotice>
       )}
       <div className={preview ? 'grid min-w-0 gap-4 xl:grid-cols-2' : 'min-w-0'}>
         <div className="min-w-0 overflow-hidden rounded-lg border">

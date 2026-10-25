@@ -29,6 +29,7 @@ import {
   Label,
   PageHeader,
   Select,
+  InlineError,
 } from '@stackpanel/ui';
 import { Package, Pencil, Plus, RefreshCw, Save, Search } from 'lucide-react';
 import { t } from './i18n.js';
@@ -1507,7 +1508,7 @@ function StoreSettingsPage(props: AdminPageComponentProps) {
           </Select>
         </Field>
       </FieldGroup>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       <Button
         disabled={busy || !initial}
         onClick={() =>
@@ -1606,7 +1607,7 @@ function StoreApprovalsPage(props: AdminPageComponentProps) {
   return (
     <main className="flex flex-col gap-6">
       <PageHeader title={tr('settings.store.approvals')} />
-      {!data ? <p role="alert">{tr('settings.store.failed')}</p> : null}
+      {!data ? <InlineError>{tr('settings.store.failed')}</InlineError> : null}
       {data?.tasks.length === 0 ? <p>{tr('settings.store.empty')}</p> : null}
       {data?.tasks.map((task) => (
         <Card key={task.id}>

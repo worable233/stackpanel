@@ -12,7 +12,7 @@ import {
   Loader2,
   Package,
 } from 'lucide-react';
-import { Button, Field, FieldGroup, Select } from '@stackpanel/ui';
+import { Button, Field, FieldGroup, InlineError, Select } from '@stackpanel/ui';
 import { formatMinorCurrency, type FrontendActionExecutor } from '@stackpanel/sdk';
 import { resolveLocale } from '@/i18n/config';
 import { createTranslator } from '@/i18n/core';
@@ -267,9 +267,7 @@ export function CartCheckout(props: CartCheckoutProps) {
                     </Field>
                   </FieldGroup>
                 ) : (
-                  <p role="alert" className="text-sm text-destructive">
-                    {props.labels.unavailable}
-                  </p>
+                  <InlineError>{props.labels.unavailable}</InlineError>
                 )}
                 <ul className="divide-y border-t">
                   {lines.map((line) => (
@@ -346,9 +344,7 @@ export function CartCheckout(props: CartCheckoutProps) {
                     )}
                   </Button>
                   {submitError ? (
-                    <p role="alert" className="text-sm text-destructive">
-                      {submitError}
-                    </p>
+                    <InlineError>{submitError}</InlineError>
                   ) : null}
                 </form>
                 <Button type="button" variant="ghost" disabled={pending} onClick={() => setStep(1)}>

@@ -30,6 +30,8 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
+  InlineError,
+  InlineNotice,
 } from '@stackpanel/ui';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
@@ -1532,19 +1534,12 @@ const ProductDetailPage = (
               {tr('checkout.calculatePrice')}
             </Button>
           </noscript>
-          <p
-            hidden
-            data-quote-status="product-selection"
-            role="status"
-            className="text-xs text-muted-foreground"
-          >
+          <InlineNotice hidden data-quote-status="product-selection" className="text-xs">
             {tr('configure.updating')}
-          </p>
+          </InlineNotice>
           {!pricePreview ? (
             <div className="hidden flex-col gap-2 lg:flex">
-              <p role="alert" className="text-sm text-destructive">
-                {tr('checkout.priceUnavailable')}
-              </p>
+              <InlineError>{tr('checkout.priceUnavailable')}</InlineError>
               <Button type="submit" form="product-selection" variant="outline">
                 {tr('checkout.calculatePrice')}
               </Button>
@@ -1754,9 +1749,7 @@ function StoreCartPage(props: AccountPageComponentProps): ReactElement {
           result={result}
         />
       ) : !cart ? (
-        <p role="alert" className="text-sm text-destructive">
-          {tr('cart.loadFailed')}
-        </p>
+        <InlineError>{tr('cart.loadFailed')}</InlineError>
       ) : !items.length ? (
         <Empty text={tr('cart.empty')} />
       ) : (
@@ -2049,9 +2042,7 @@ function StoreAccountCatalogPage(props: AccountPageComponentProps): ReactElement
             ) : null}
           </div>
           {!result ? (
-            <p role="alert" className="text-sm text-destructive">
-              {tr('catalog.loadFailed')}
-            </p>
+            <InlineError>{tr('catalog.loadFailed')}</InlineError>
           ) : !result.products.length ? (
             <Empty text={query.q ? tr('catalog.noResults') : tr('catalog.emptyCategory')} />
           ) : (
