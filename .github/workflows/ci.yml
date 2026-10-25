@@ -226,6 +226,12 @@ jobs:
             test -f "apps/api/data/plugins/$id/frontend/dist/index.js"
           done
 
+          # 支付驱动的协议/接线测试是纯密码学的（自签密钥对，不碰 DB、不出网），
+          # 但它们住在插件仓库 —— 不在这里跑，69 个用例就只是「在作者机器上绿过」。
+          for id in alipay wechatpay; do
+            ( cd "$plugins/packages/plugins/$id" && pnpm test )
+          done
+
       - name: Test
         run: pnpm test
 
