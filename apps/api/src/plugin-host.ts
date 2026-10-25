@@ -17,7 +17,12 @@ import type { NotificationChannel, NotificationTypeDefinition } from '@stackpane
 import type { PrismaClient } from '@stackpanel/db';
 import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
-import { loadPluginDefinition, scanPlugins, seedBuiltinPlugins } from './lib/plugins.ts';
+import {
+  ensurePluginModuleResolution,
+  loadPluginDefinition,
+  scanPlugins,
+  seedBuiltinPlugins,
+} from './lib/plugins.ts';
 import { packageManager } from './packages/manager.ts';
 import { MarketService } from './market/service.ts';
 import { getCatalogRefresh } from './distribution/runtime.ts';
@@ -257,6 +262,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     media,
     coherence,
     async registerPlugins(): Promise<void> {
+      await ensurePluginModuleResolution((message) => console.info(message));
       await seedBuiltinPlugins();
       // 回收上次崩溃遗留的未引用暂存/备份产物（§7.6/§7.8）；活动目录不受影响。
       await packageManager.gcAll().catch(() => undefined);

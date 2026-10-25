@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PluginDefinition, PluginDependency, PluginExtensionConsumer } from '@stackpanel/sdk';
@@ -176,6 +176,54 @@ export interface PluginFileWrite {
 
 function pluginsDir(): string {
   return path.join(resolveStackPanelDataDir(), 'plugins');
+}
+
+/**
+ * 让「数据目录里的插件」能解析到内核自带的依赖。
+ *
+ * 插件包被装在 `<data>/plugins/<id>/`，而它 import 的 `@stackpanel/sdk`、`zod`
+ * 等裸包位于版本目录的 `node_modules`（`<root>/current/node_modules`）。
+ * Node 的 ESM 解析只会从插件目录**向上**找 `node_modules`，数据目录通常在
+ * 版本目录之外（`/var/lib/stackpanel` vs `/opt/stackpanel`），这条路径永远
+ * 到不了内核依赖——结果是每个内置插件都被判为 `Skipping invalid plugin`，
+ * 市场与主题首页全空，而进程本身看起来完全正常。
+ *
+ * 做法是在数据目录放一个**符号链接** `node_modules -> <root>/current/node_modules`：
+ * - 不复制依赖（否则会出现第二份 zod 实例、`instanceof` 失效）；
+ * - 升级切换 `current` 后链接自动指向新版本，不需要重写；
+ * - 只在目标不存在时创建，开发布局下数据目录本来就有真实 node_modules 时不介入。
+ *
+ * 失败只记日志：插件加载会因为找不到依赖而各自报错，这里再抛异常只会让
+ * 整个进程起不来，反而更难定位。
+ */
+export async function ensurePluginModuleResolution(
+  log: (message: string) => void = () => {},
+): Promise<void> {
+  const dataDir = resolveStackPanelDataDir();
+  const link = path.join(dataDir, 'node_modules');
+  if (existsSync(link)) return;
+  // 内核进程的工作目录是同版本目录下的 `apps/api`（见 ecosystem.config.cjs），
+  // 因此 `<cwd>/../../node_modules` 就是该版本目录的 node_modules；再兜底
+  // `<data>/../current/node_modules`（数据目录与安装根相邻的默认布局）。
+  const cwd = process.cwd();
+  const candidates = [
+    path.resolve(cwd, '..', '..', 'node_modules'),
+    path.resolve(cwd, 'node_modules'),
+    path.join(path.dirname(dataDir), 'current', 'node_modules'),
+  ];
+  const target = candidates.find((candidate) => existsSync(candidate));
+  if (!target) return;
+  try {
+    await mkdir(dataDir, { recursive: true });
+    await symlink(target, link, 'dir');
+    log(`[plugins] 已建立模块解析桥接：${link} -> ${target}`);
+  } catch (error) {
+    log(
+      `[plugins] 无法建立模块解析桥接（${link} -> ${target}）：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 export function pluginPackageDir(id: string): string {
