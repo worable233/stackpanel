@@ -44,7 +44,10 @@ export async function initJobs(options: InitJobsOptions): Promise<void> {
     // Losing Redis is not fatal to boot, but it silently downgrades scheduled
     // work (payment/outbox/state sweeps) to a per-process timer and **drops**
     // cron declarations entirely — so make the degradation loud, not a footnote
-    // (audit E-10). `/ready` also reports the backend via `backendKind()`.
+    // (audit E-10). The warning below is currently the *only* place operators
+    // can see it: `/ready` does not report the job backend (its flat
+    // `ok|unreachable|disabled` check map has no room for it), so do not
+    // remove this log line without adding that signal elsewhere first.
     options.logger.warn(
       '[jobs] 未配置 Redis：任务使用进程内实现，cron 计划任务将被忽略、且仅单副本正确。生产环境请配置 REDIS_URL。',
     );
