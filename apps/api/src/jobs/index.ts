@@ -90,6 +90,8 @@ export interface KernelSweepDeps {
   autoUpdate?: () => Promise<void>;
   /** 清理已过期的限时权限组成员关系（会员权益）。缺省不注册。 */
   membershipSweep?: () => Promise<void>;
+  /** 存储可用性巡检（连续失败才告警）。缺省不注册：无存储探测实现时零出网。 */
+  storageWatch?: () => Promise<void>;
   logger: { warn: (m: string) => void };
 }
 
@@ -106,6 +108,11 @@ const OUTBOX_CLEANUP_EVERY = Math.max(1, Math.round((60 * 60_000) / OUTBOX_RELAY
 const CATALOG_REFRESH_MS = 6 * 60 * 60_000;
 /** 会员权益到期清理：每小时。过期判定在读路径，频率只影响清理及时性。 */
 const MEMBERSHIP_SWEEP_MS = 60 * 60_000;
+/**
+ * 存储巡检：5 分钟（与对方 `ossExceptionNotice` 同频）。告警阈值是「连续 3 次失败」，
+ * 所以真正的告警延迟约 15 分钟 —— 用抖动换取不误报。
+ */
+const STORAGE_WATCH_MS = 5 * 60_000;
 
 /**
  * Register the kernel's recurring jobs. Missing handlers are simply absent on a
@@ -167,6 +174,14 @@ export async function registerKernelSweeps(
       await deps.autoUpdate?.();
     });
     await jobs.schedule(KERNEL_JOBS.autoUpdate, { everyMs: CATALOG_REFRESH_MS }, undefined);
+  }
+  // 存储可用性巡检：探测失败**不**抛错（否则任务进死信并反复重试），
+  // 由 `createStorageWatch` 内部按「连续失败」决定是否告警管理员。
+  if (deps.storageWatch) {
+    jobs.handle(KERNEL_JOBS.storageWatch, async () => {
+      await deps.storageWatch?.();
+    });
+    await jobs.schedule(KERNEL_JOBS.storageWatch, { everyMs: STORAGE_WATCH_MS }, undefined);
   }
   // 会员权益到期清理：删除已过期的限时成员关系。授权正确性由读路径保证
   // （过期成员不授予任何权限），这里只做数据清理，晚跑一小时也不会放行过期会员。

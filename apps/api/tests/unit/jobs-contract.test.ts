@@ -44,6 +44,7 @@ function deps(overrides: Partial<Parameters<typeof registerKernelSweeps>[1]> = {
     catalogRefresh: vi.fn(async () => undefined),
     autoUpdate: vi.fn(async () => undefined),
     membershipSweep: vi.fn(async () => undefined),
+    storageWatch: vi.fn(async () => undefined),
     logger: { warn: vi.fn() },
     ...overrides,
   };
@@ -59,6 +60,8 @@ const DOCUMENTED: Array<[string, number]> = [
   [KERNEL_JOBS.catalogRefresh, 6 * 60 * 60_000],
   [KERNEL_JOBS.autoUpdate, 6 * 60 * 60_000],
   [KERNEL_JOBS.membershipSweep, 60 * 60_000],
+  // 与对方 `ossExceptionNotice` 同频；告警阈值是「连续 3 次失败」，不靠频率防抖。
+  [KERNEL_JOBS.storageWatch, 5 * 60_000],
 ];
 
 describe('#12.5 kernel job inventory matches the documented contract', () => {
@@ -99,7 +102,12 @@ describe('#12.5 kernel job inventory matches the documented contract', () => {
       ].sort(),
     );
     // 目录源被关闭的实例不注册处理器：不是「注册了但空跑」，是没有这一项。
-    for (const name of [KERNEL_JOBS.catalogRefresh, KERNEL_JOBS.autoUpdate, KERNEL_JOBS.membershipSweep]) {
+    for (const name of [
+      KERNEL_JOBS.catalogRefresh,
+      KERNEL_JOBS.autoUpdate,
+      KERNEL_JOBS.membershipSweep,
+      KERNEL_JOBS.storageWatch,
+    ]) {
       expect(handlers.has(name), `handler for ${name}`).toBe(false);
     }
   });
