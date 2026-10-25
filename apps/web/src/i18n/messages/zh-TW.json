@@ -968,7 +968,15 @@
     "navHrefRequired": "請填寫連結",
     "navSaveFailed": "儲存選單失敗",
     "navAddFailed": "新增選單項失敗",
-    "navDeleteFailed": "刪除選單項失敗"
+    "navDeleteFailed": "刪除選單項失敗",
+    "navSaved": "選單已儲存",
+    "navItemAdded": "選單項已新增",
+    "navItemDeleted": "選單項已刪除",
+    "seoPageSaved": "頁面覆寫已儲存",
+    "seoPageDeleted": "頁面覆寫已刪除",
+    "apiTokenSigningSaved": "請求籤名公鑰已儲存",
+    "apiTokenSigningCleared": "已停用請求籤名",
+    "apiTokenRevoked": "API 金鑰已撤銷"
   },
   "user": {
     "emailRequired": "請填寫郵箱",

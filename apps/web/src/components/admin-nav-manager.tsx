@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { toast } from 'sonner';
 import type { AdminNavItemView } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,7 +53,6 @@ export function AdminNavManager({ surface, items }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(() => toRows(items));
   const [dirty, setDirty] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [label, setLabel] = useState('');
   const [href, setHref] = useState('');
@@ -74,7 +74,6 @@ export function AdminNavManager({ surface, items }: Props) {
   };
 
   const save = () => {
-    setError(null);
     startTransition(async () => {
       const result = await saveNavLayoutAction(
         surface,
@@ -86,37 +85,38 @@ export function AdminNavManager({ surface, items }: Props) {
         })),
       );
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
       setDirty(false);
+      toast.success(t('action.navSaved'));
       router.refresh();
     });
   };
 
   const add = () => {
-    setError(null);
     startTransition(async () => {
       const result = await addNavItemAction(surface, { label, href });
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
       setLabel('');
       setHref('');
+      toast.success(t('action.navItemAdded'));
       router.refresh();
     });
   };
 
   const remove = (row: Row) => {
     if (!row.overrideId) return;
-    setError(null);
     startTransition(async () => {
       const result = await deleteNavItemAction(row.overrideId as string);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
+      toast.success(t('action.navItemDeleted'));
       router.refresh();
     });
   };
@@ -181,12 +181,7 @@ export function AdminNavManager({ surface, items }: Props) {
                 {t('adminNav.visible')}
               </label>
               {row.overrideId ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => remove(row)}
-                >
+                <Button variant="ghost" size="sm" disabled={pending} onClick={() => remove(row)}>
                   {row.custom ? <Trash2 className="size-4" /> : <RotateCcw className="size-4" />}
                   {row.custom ? t('adminNav.delete') : t('adminNav.reset')}
                 </Button>
@@ -234,12 +229,6 @@ export function AdminNavManager({ surface, items }: Props) {
         </div>
         <p className="text-xs text-muted-foreground">{t('adminNav.hrefHint')}</p>
       </div>
-
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }

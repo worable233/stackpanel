@@ -3,6 +3,7 @@
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { toast } from 'sonner';
 import type { SeoPageView } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,7 +69,6 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
   const [editing, setEditing] = useState<SeoPageView | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SeoPageView | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -76,27 +76,25 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
   const openCreate = () => {
     setEditing(null);
     setDraft(emptyDraft);
-    setError(null);
     setOpen(true);
   };
 
   const openEdit = (row: SeoPageView) => {
     setEditing(row);
     setDraft(toDraft(row));
-    setError(null);
     setOpen(true);
   };
 
   const submit = () => {
-    setError(null);
     const payload = { ...draft };
     startTransition(async () => {
       const result = await saveSeoPageAction(payload);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
       setOpen(false);
+      toast.success(t('action.seoPageSaved'));
       router.refresh();
     });
   };
@@ -107,10 +105,11 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
     startTransition(async () => {
       const result = await deleteSeoPageAction(target.id);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
       setDeleteTarget(null);
+      toast.success(t('action.seoPageDeleted'));
       router.refresh();
     });
   };
@@ -201,7 +200,9 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
             variant="outline"
             size="sm"
             disabled={page <= 1}
-            onClick={() => router.push(`/admin/seo?page=${page - 1}&query=${encodeURIComponent(query)}`)}
+            onClick={() =>
+              router.push(`/admin/seo?page=${page - 1}&query=${encodeURIComponent(query)}`)
+            }
           >
             {t('adminSeo.prev')}
           </Button>
@@ -209,7 +210,9 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
             variant="outline"
             size="sm"
             disabled={page >= totalPages}
-            onClick={() => router.push(`/admin/seo?page=${page + 1}&query=${encodeURIComponent(query)}`)}
+            onClick={() =>
+              router.push(`/admin/seo?page=${page + 1}&query=${encodeURIComponent(query)}`)
+            }
           >
             {t('adminSeo.next')}
           </Button>
@@ -288,7 +291,6 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
                 </span>
               </span>
             </label>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={pending}>
@@ -314,7 +316,6 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
               {t('adminSeo.deleteDescription', { path: deleteTarget?.path ?? '' })}
             </DialogDescription>
           </DialogHeader>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={pending}>
               {t('adminSeo.cancel')}

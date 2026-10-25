@@ -968,7 +968,15 @@
     "navHrefRequired": "请填写链接",
     "navSaveFailed": "保存菜单失败",
     "navAddFailed": "添加菜单项失败",
-    "navDeleteFailed": "删除菜单项失败"
+    "navDeleteFailed": "删除菜单项失败",
+    "navSaved": "菜单已保存",
+    "navItemAdded": "菜单项已添加",
+    "navItemDeleted": "菜单项已删除",
+    "seoPageSaved": "页面覆写已保存",
+    "seoPageDeleted": "页面覆写已删除",
+    "apiTokenSigningSaved": "请求签名公钥已保存",
+    "apiTokenSigningCleared": "已停用请求签名",
+    "apiTokenRevoked": "API 密钥已撤销"
   },
   "user": {
     "emailRequired": "请填写邮箱",

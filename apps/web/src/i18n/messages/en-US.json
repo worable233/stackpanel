@@ -968,7 +968,15 @@
     "navHrefRequired": "A link is required",
     "navSaveFailed": "Could not save the menu",
     "navAddFailed": "Could not add the menu entry",
-    "navDeleteFailed": "Could not delete the menu entry"
+    "navDeleteFailed": "Could not delete the menu entry",
+    "navSaved": "Menu saved",
+    "navItemAdded": "Menu entry added",
+    "navItemDeleted": "Menu entry deleted",
+    "seoPageSaved": "Page override saved",
+    "seoPageDeleted": "Page override deleted",
+    "apiTokenSigningSaved": "Signing key saved",
+    "apiTokenSigningCleared": "Request signing disabled",
+    "apiTokenRevoked": "API token revoked"
   },
   "user": {
     "emailRequired": "Please enter an email",

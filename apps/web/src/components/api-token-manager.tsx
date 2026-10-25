@@ -3,6 +3,7 @@
 import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { toast } from 'sonner';
 import type { ApiTokenScope, ApiTokenView } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +16,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { createApiTokenAction, revokeApiTokenAction, updateApiTokenAction } from '@/lib/api-token-actions';
+import {
+  createApiTokenAction,
+  revokeApiTokenAction,
+  updateApiTokenAction,
+} from '@/lib/api-token-actions';
 import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatDate as formatLocaleDate, type Translator } from '@/i18n/core';
 import { cn } from '@/lib/utils';
@@ -78,7 +83,6 @@ export function ApiTokenManager({
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
   /** Plaintext returned once after creation. */
   const [issued, setIssued] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -87,7 +91,6 @@ export function ApiTokenManager({
   const [publicKey, setPublicKey] = useState('');
   const [signingTarget, setSigningTarget] = useState<ApiTokenView | null>(null);
   const [signingKey, setSigningKey] = useState('');
-  const [signingError, setSigningError] = useState<string | null>(null);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ApiTokenScope[]>();
@@ -109,7 +112,6 @@ export function ApiTokenManager({
     setName('');
     setSelected(new Set());
     setPublicKey('');
-    setError(null);
   };
 
   const toggleScope = (key: string) => {
@@ -133,7 +135,6 @@ export function ApiTokenManager({
   };
 
   const submitCreate = () => {
-    setError(null);
     startTransition(async () => {
       const result = await createApiTokenAction({
         name,
@@ -141,7 +142,7 @@ export function ApiTokenManager({
         ...(publicKey.trim().length > 0 ? { publicKey: publicKey.trim() } : {}),
       });
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
       setCreateOpen(false);
@@ -155,7 +156,6 @@ export function ApiTokenManager({
   const openSigning = (token: ApiTokenView) => {
     setSigningTarget(token);
     setSigningKey(token.publicKey ?? '');
-    setSigningError(null);
   };
 
   /**
@@ -168,16 +168,18 @@ export function ApiTokenManager({
     // `override` 存在的理由：停用按钮要立刻以空值提交，不能依赖 setState 后的读取
     // （React 批处理会让这里读到的仍是旧值 —— 那会把公钥又存回去）。
     const value = (override ?? signingKey).trim();
-    setSigningError(null);
     startTransition(async () => {
       const result = await updateApiTokenAction(target, {
         publicKey: value.length > 0 ? value : null,
       });
       if (result.error) {
-        setSigningError(result.error);
+        toast.error(result.error);
         return;
       }
       setSigningTarget(null);
+      toast.success(
+        t(value.length > 0 ? 'action.apiTokenSigningSaved' : 'action.apiTokenSigningCleared'),
+      );
       router.refresh();
     });
   };
@@ -188,10 +190,11 @@ export function ApiTokenManager({
     startTransition(async () => {
       const result = await revokeApiTokenAction(id);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
       setRevokeTarget(null);
+      toast.success(t('action.apiTokenRevoked'));
       router.refresh();
     });
   };
@@ -237,7 +240,9 @@ export function ApiTokenManager({
                         : 'bg-muted text-muted-foreground',
                     )}
                   >
-                    {token.status === 'ACTIVE' ? t('apiToken.statusActive') : t('apiToken.statusDisabled')}
+                    {token.status === 'ACTIVE'
+                      ? t('apiToken.statusActive')
+                      : t('apiToken.statusDisabled')}
                   </span>
                   {token.signingEnabled ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -274,10 +279,6 @@ export function ApiTokenManager({
           ))}
         </ul>
       )}
-
-      {error && !createOpen && !revokeTarget ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : null}
 
       {/* Create dialog */}
       <Dialog
@@ -368,7 +369,6 @@ export function ApiTokenManager({
                 })}
               </div>
             </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={pending}>
@@ -395,9 +395,7 @@ export function ApiTokenManager({
               {copied ? t('apiToken.copied') : t('apiToken.copy')}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {t('apiToken.usageHint', { prefix })}
-          </p>
+          <p className="text-xs text-muted-foreground">{t('apiToken.usageHint', { prefix })}</p>
           <DialogFooter>
             <Button onClick={() => setIssued(null)}>{t('apiToken.saved')}</Button>
           </DialogFooter>
@@ -410,7 +408,6 @@ export function ApiTokenManager({
         onOpenChange={(open) => {
           if (!open) {
             setSigningTarget(null);
-            setSigningError(null);
           }
         }}
       >
@@ -431,25 +428,19 @@ export function ApiTokenManager({
               className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:border-ring"
             />
             <p className="text-xs text-muted-foreground">{t('apiToken.signingHint')}</p>
-            {signingError ? <p className="text-sm text-destructive">{signingError}</p> : null}
           </div>
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => {
                 setSigningTarget(null);
-                setSigningError(null);
               }}
               disabled={pending}
             >
               {t('apiToken.cancel')}
             </Button>
             {signingTarget?.signingEnabled ? (
-              <Button
-                variant="destructive"
-                onClick={() => submitSigning('')}
-                disabled={pending}
-              >
+              <Button variant="destructive" onClick={() => submitSigning('')} disabled={pending}>
                 {t('apiToken.signingDisable')}
               </Button>
             ) : null}
@@ -469,7 +460,6 @@ export function ApiTokenManager({
               {t('apiToken.revokeDescription', { name: revokeTarget?.name ?? '' })}
             </DialogDescription>
           </DialogHeader>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setRevokeTarget(null)} disabled={pending}>
               {t('apiToken.cancel')}
