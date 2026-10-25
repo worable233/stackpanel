@@ -17,7 +17,8 @@ import { env } from './config/env.ts';
 import { useRedisState } from './state/index.ts';
 import { useRedisCache } from './cache/index.ts';
 import { configureOutboxEventBus } from './plugins/events.ts';
-import { initJobs } from './jobs/index.ts';
+import { DbJobLease, initJobs } from './jobs/index.ts';
+import type { LeaseDb } from './jobs/lease.ts';
 import { getPrisma } from './plugins/prisma.ts';
 import { resolveStorageDriver, type StorageExtensionRuntime } from './storage/provider-router.ts';
 
@@ -127,6 +128,8 @@ export async function initInfra(): Promise<void> {
   // start consuming. Kernel sweeps were registered synchronously in buildApp().
   await initJobs({
     redisUrl: getInfraConfig().redisUrl ?? null,
+    // 进程内后端靠数据库租约保证「一个 tick 只有一个副本执行」；BullMQ 下不用。
+    lease: new DbJobLease(getPrisma() as unknown as LeaseDb),
     logger: {
       warn: (message) => console.warn(message),
       info: (message) => console.info(message),

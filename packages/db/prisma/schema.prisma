@@ -914,3 +914,19 @@ model NavEntry {
   @@index([surface])
   @@map("nav_entries")
 }
+
+/// 任务调度的跨副本租约（对标 #12.5）：无 Redis 时用数据库做单实例保证。
+///
+/// 进程内后端的每个副本都会按时触发定时器，执行前抢一次租约、抢到才跑；
+/// 租约靠 `expiresAtMs` 自然过期，持有者被 kill 后由下一个副本接手。
+/// 有 Redis 时走 BullMQ 抢占，这张表不参与。
+model KernelJobLease {
+  /// 任务全名（`<owner>.<name>`）。
+  name String @id
+  /// 持有者标识，仅用于排查「上一轮是谁在跑」。
+  holder String
+  /// 租约到期时间（epoch ms）。
+  expiresAtMs BigInt
+  // 表名用 snake_case，与其余表一致。
+  @@map("kernel_job_leases")
+}
