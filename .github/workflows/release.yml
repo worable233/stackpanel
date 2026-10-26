@@ -226,7 +226,7 @@ jobs:
       # 清单里的 `artifacts[].url` 正是指向这些文件。
       - name: 发布内核清单与产物资产
         if: startsWith(github.ref, 'refs/tags/v') && hashFiles('kernel-out/kernel-manifest.json') != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           files: |
@@ -240,7 +240,7 @@ jobs:
       # 以相同 tag 发布，会被 GitHub 合并到同一 Release。
       - name: 生成 GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
