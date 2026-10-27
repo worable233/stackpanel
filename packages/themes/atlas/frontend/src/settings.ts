@@ -154,16 +154,14 @@ export const settingsSchema = {
   ],
 } satisfies NonNullable<FrontendPackage['settingsSchema']>;
 
-export function setting(
-  settings: FrontendSettings | undefined,
-  group: string,
-  name: string,
-  fallback?: string,
-): string | undefined {
-  const value = settings?.[group]?.[name];
-  if (typeof value === 'string' && value.trim()) return value;
-  return fallback;
-}
+/** `group.name` → zh-CN 种子值，用来识别「未被运营者改过」的默认值。 */
+const SEED: Record<string, string> = Object.fromEntries(
+  settingsSchema.groups.flatMap((group) =>
+    group.fields
+      .filter((field) => typeof field.default === 'string')
+      .map((field) => [`${group.id}.${field.name}`, field.default as string]),
+  ),
+);
 
 /** Only relative or http(s) links are rendered; anything else falls back. */
 export function safeHref(value: string | undefined, fallback: string): string {
@@ -172,4 +170,20 @@ export function safeHref(value: string | undefined, fallback: string): string {
   if (href.startsWith('https://') || href.startsWith('http://')) return href;
   if (href.startsWith('/') && !href.startsWith('//')) return href;
   return fallback;
+}
+
+export function setting(
+  settings: FrontendSettings | undefined,
+  group: string,
+  name: string,
+  fallback?: string,
+): string | undefined {
+  const value = settings?.[group]?.[name];
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  // 运营者显式填过的值优先；但字段默认值只是 zh-CN 种子（settingsSchema 的
+  // `default` 来自中文 catalog，因为设置面板需要一个可见的初值）。若原样返回
+  // 种子，切到其它语言时这段文案会永远是简体中文——看起来就像「没适配」。
+  // 因此「与种子完全相同」视为未自定义，改走当前语言的 `fallback`。
+  if (value === SEED[`${group}.${name}`]) return fallback;
+  return value;
 }

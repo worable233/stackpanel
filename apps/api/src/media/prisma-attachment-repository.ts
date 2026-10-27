@@ -18,7 +18,15 @@ import {
   type AttachmentVariant,
   type AttachmentVisibility,
   type CreateAttachmentInput,
+  type AttachmentLibraryQuery,
+  type AttachmentLibraryStats,
 } from './attachments.ts';
+import {
+  KNOWN_MEDIA_MIMES,
+  MEDIA_KIND_MIMES,
+  kindOfMime,
+  type MediaKind,
+} from './mime.ts';
 
 interface AttachmentRow {
   id: string;
@@ -132,11 +140,140 @@ export class PrismaAttachmentRepository implements AttachmentRepository {
     }
   }
 
+  async listForAdmin(query: AttachmentLibraryQuery): Promise<{
+    items: AttachmentRecord[];
+    total: number;
+  }> {
+    const page = Math.max(1, Math.trunc(query.page) || 1);
+    const pageSize = Math.min(Math.max(1, Math.trunc(query.pageSize) || 24), 100);
+    const offset = (page - 1) * pageSize;
+    const visibility = query.visibility ?? null;
+    const ownerId = query.ownerId ?? null;
+    const search = query.q && query.q.length > 0 ? `%${query.q}%` : null;
+    const kind = query.kind ?? null;
+    const kindMimes =
+      kind !== null && kind !== 'other' ? [...(MEDIA_KIND_MIMES[kind] ?? [])] : [];
+    const knownMimes = [...KNOWN_MEDIA_MIMES];
+    try {
+      const rows = await this.prisma.$queryRaw<AttachmentRow[]>`
+        SELECT * FROM "attachments" a
+        WHERE (${visibility}::text IS NULL OR a."visibility" = ${visibility})
+          AND (${ownerId}::text IS NULL OR a."ownerId" = ${ownerId})
+          AND (${search}::text IS NULL OR a."filename" ILIKE ${search})
+          AND (
+            ${kind}::text IS NULL
+            OR (${kind}::text = 'other' AND NOT (a."mime" = ANY(${knownMimes}::text[])))
+            OR (${kind}::text <> 'other' AND a."mime" = ANY(${kindMimes}::text[]))
+          )
+        ORDER BY a."createdAt" DESC, a."id" DESC
+        LIMIT ${pageSize} OFFSET ${offset}
+      `;
+      const counted = await this.prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(*)::bigint AS count FROM "attachments" a
+        WHERE (${visibility}::text IS NULL OR a."visibility" = ${visibility})
+          AND (${ownerId}::text IS NULL OR a."ownerId" = ${ownerId})
+          AND (${search}::text IS NULL OR a."filename" ILIKE ${search})
+          AND (
+            ${kind}::text IS NULL
+            OR (${kind}::text = 'other' AND NOT (a."mime" = ANY(${knownMimes}::text[])))
+            OR (${kind}::text <> 'other' AND a."mime" = ANY(${kindMimes}::text[]))
+          )
+      `;
+      return {
+        items: rows.map(mapRow),
+        total: Number(counted[0]?.count ?? 0),
+      };
+    } catch (err) {
+      if (isMissingTable(err)) return { items: [], total: 0 };
+      throw err;
+    }
+  }
+
+  async stats(): Promise<AttachmentLibraryStats> {
+    const empty: AttachmentLibraryStats = {
+      total: 0,
+      bytes: 0,
+      byVisibility: { public: 0, private: 0 },
+      byKind: { image: 0, document: 0, archive: 0, video: 0, audio: 0, text: 0, other: 0 },
+      variants: { pending: 0, ready: 0, failed: 0 },
+    };
+    try {
+      const [totals] = await this.prisma.$queryRaw<
+        { total: bigint; bytes: bigint; public: bigint; private: bigint }[]
+      >`
+        SELECT COUNT(*)::bigint AS total,
+               COALESCE(SUM("size"), 0)::bigint AS bytes,
+               COUNT(*) FILTER (WHERE "visibility" = 'public')::bigint AS "public",
+               COUNT(*) FILTER (WHERE "visibility" <> 'public')::bigint AS "private"
+        FROM "attachments"
+      `;
+      const perMime = await this.prisma.$queryRaw<{ mime: string; count: bigint }[]>`
+        SELECT "mime", COUNT(*)::bigint AS count FROM "attachments" GROUP BY "mime"
+      `;
+      const [variantCounts] = await this.prisma.$queryRaw<
+        { pending: bigint; ready: bigint; failed: bigint }[]
+      >`
+        SELECT COALESCE(COUNT(*) FILTER (WHERE v->>'status' = 'pending'), 0)::bigint AS pending,
+               COALESCE(COUNT(*) FILTER (WHERE v->>'status' = 'ready'), 0)::bigint AS ready,
+               COALESCE(COUNT(*) FILTER (WHERE v->>'status' = 'failed'), 0)::bigint AS failed
+        FROM "attachments" a, LATERAL jsonb_array_elements(a."variants") v
+      `;
+      const byKind = { ...empty.byKind };
+      for (const row of perMime) {
+        byKind[kindOfMime(row.mime)] += Number(row.count);
+      }
+      return {
+        total: Number(totals?.total ?? 0),
+        bytes: Number(totals?.bytes ?? 0),
+        byVisibility: {
+          public: Number(totals?.public ?? 0),
+          private: Number(totals?.private ?? 0),
+        },
+        byKind: byKind as Record<MediaKind, number>,
+        variants: {
+          pending: Number(variantCounts?.pending ?? 0),
+          ready: Number(variantCounts?.ready ?? 0),
+          failed: Number(variantCounts?.failed ?? 0),
+        },
+      };
+    } catch (err) {
+      if (isMissingTable(err)) return empty;
+      throw err;
+    }
+  }
+
+  async resetFailedVariants(attachmentId?: string): Promise<string[]> {
+    try {
+      const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+        UPDATE "attachments" a
+        SET "variants" = COALESCE((
+              SELECT jsonb_agg(
+                CASE WHEN elem->>'status' = 'failed'
+                  THEN jsonb_set(
+                         jsonb_set(jsonb_set(elem, '{status}', '"pending"'), '{attempts}', '0'),
+                         '{error}', 'null')
+                  ELSE elem END
+                ORDER BY ord)
+              FROM jsonb_array_elements(a."variants") WITH ORDINALITY AS t(elem, ord)
+            ), '[]'::jsonb),
+            "updatedAt" = CURRENT_TIMESTAMP
+        WHERE (${attachmentId ?? null}::text IS NULL OR a."id" = ${attachmentId ?? null})
+          AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(a."variants") v WHERE v->>'status' = 'failed'
+          )
+        RETURNING a."id"
+      `;
+      return rows.map((row) => row.id);
+    } catch (err) {
+      if (isMissingTable(err)) return [];
+      throw err;
+    }
+  }
+
   async update(
     id: string,
     patch: { filename?: string | undefined; visibility?: AttachmentVisibility | undefined },
-  ): Promise<AttachmentRecord | null> {
-    const rows = await this.prisma.$queryRaw<AttachmentRow[]>`
+  ): Promise<AttachmentRecord | null> {    const rows = await this.prisma.$queryRaw<AttachmentRow[]>`
       UPDATE "attachments"
       SET "filename" = COALESCE(${patch.filename ?? null}, "filename"),
           "visibility" = COALESCE(${patch.visibility ?? null}, "visibility"),

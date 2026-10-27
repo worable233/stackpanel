@@ -47,7 +47,16 @@
     "overview": "概覽",
     "quickLinks": "快捷入口",
     "workspaceAdmin": "管理員工作區",
-    "workspaceAccount": "賬戶工作區"
+    "workspaceAccount": "賬戶工作區",
+    "toggleNav": "收起或展開側欄",
+    "openNav": "開啟導航",
+    "closeNav": "關閉導航",
+    "breadcrumb": "麵包屑導航",
+    "help": "幫助文件",
+    "navLabel": "後臺導航",
+    "backend": "管理後臺",
+    "collapseNav": "收起側欄",
+    "expandNav": "展開側欄"
   },
   "nav": {
     "dashboard": "工作臺",
@@ -314,7 +323,8 @@
         "confirmUnbind": "確定解綁該服務？僅解除本賬號的繫結，不影響上游已購服務。",
         "confirmDelete": "確定刪除該用戶的這個服務？刪除後不可恢復。",
         "upstreamEmpty": "上游暫無已購服務，請先確認上游賬號中有可繫結的服務。",
-        "noUpstreamPlugin": "暫無可用的上游外掛，請先啟用提供服務繫結能力的外掛。"
+        "noUpstreamPlugin": "暫無可用的上游外掛，請先啟用提供服務繫結能力的外掛。",
+        "confirmHint": "此操作不可撤銷。"
       },
       "orders": {
         "title": "訂單",
@@ -782,6 +792,34 @@
         "catalogTokenSubmit": "儲存 token",
         "catalogKeyIdLabel": "公鑰 keyId",
         "catalogKeyIdHint": "必須與目錄簽名文件裡的 keyId 一致（默認源為 catalog-2026）；只給公鑰不給 keyId 會驗籤失敗。"
+      },
+      "payment": {
+        "title": "支付方式",
+        "description": "配置各銷售渠道可用的收款方式。手動收款（銀行轉賬/收款碼）沒有支付閘道器，此處填寫的收款資訊就是買家付款時看到的全部內容。",
+        "add": "新增支付方式",
+        "create": "建立",
+        "save": "儲存",
+        "empty": "還沒有配置任何支付方式",
+        "emptyHint": "新增一條收款方式後，買家結賬時才能看到它。未配置收款資訊的手動收款方式不會出現在結賬頁。",
+        "noChannel": "還沒有銷售渠道，請先建立渠道再配置支付方式。",
+        "channel": "銷售渠道",
+        "provider": "支付提供方",
+        "providerHint": "填寫已安裝外掛的標識，例如 manual（手動收款）或 epay。儲存時由服務端校驗。",
+        "name": "名稱",
+        "namePlaceholder": "銀行轉賬 / 收款碼支付",
+        "currencies": "支援幣種",
+        "currenciesHint": "逗號分隔的幣種程序碼；留空表示支援全部已啟用幣種。",
+        "enabled": "啟用",
+        "disabled": "已停用",
+        "allCurrencies": "全部已啟用幣種",
+        "collectionTitle": "收款資訊",
+        "collectionHint": "買家在訂單頁看到的內容。手動收款必須至少填寫賬號或收款碼，否則買家無法付款。",
+        "missingConfig": "尚未填寫收款資訊，買家選擇該方式後將無法付款。",
+        "confirmDelete": "確認刪除",
+        "providerMissing": "收款提供方外掛未啟用，該支付方式當前不可用。",
+        "gatewayConfigNote": "該支付方式的收款憑據由外掛自身配置，無需在此填寫。",
+        "qrHint": "站內路徑或以 data: 開頭的圖片會在訂單頁直接顯示；外部圖片地址受安全策略限制，只會顯示為可點選連結。",
+        "confirmDeleteHint": "刪除後，該支付方式將不能再用於新訂單，已產生的訂單不受影響。"
       }
     },
     "themes": {
@@ -833,7 +871,8 @@
     "pluginSettings": {
       "back": "返回外掛管理",
       "title": "外掛設置",
-      "noSettings": "該外掛沒有前端設置。"
+      "noSettings": "該外掛沒有前端設置。",
+      "titleNamed": "{name}設置"
     },
     "notifications": {
       "title": "通知中心",
@@ -959,7 +998,16 @@
     "catalogTokenSaveFailed": "儲存目錄 token 失敗",
     "distributionRefreshOffline": "遠端目錄已關閉，無需重新整理。",
     "distributionRefreshOk": "目錄重新整理成功，當前序號 {sequence}。",
-    "distributionRefreshFailed": "目錄重新整理失敗：{message}"
+    "distributionRefreshFailed": "目錄重新整理失敗：{message}",
+    "paymentMethodChannelRequired": "請選擇銷售渠道",
+    "paymentMethodProviderRequired": "請填寫支付提供方",
+    "paymentMethodNameRequired": "請填寫名稱",
+    "paymentMethodMissing": "缺少支付方式 ID",
+    "paymentMethodCreated": "支付方式已建立",
+    "paymentMethodCreateFailed": "建立支付方式失敗",
+    "paymentMethodUpdated": "支付方式已更新",
+    "paymentMethodUpdateFailed": "更新支付方式失敗",
+    "paymentMethodDeleteFailed": "刪除支付方式失敗"
   },
   "user": {
     "emailRequired": "請填寫郵箱",
@@ -2129,6 +2177,9 @@
     "refresh": "重新整理狀態",
     "resume": "繼續付款",
     "submitting": "正在提交…",
-    "order": "訂單編號"
+    "order": "訂單編號",
+    "payInstructions": "付款方式說明",
+    "payQrImage": "收款碼圖片",
+    "payQrOpen": "開啟收款碼圖片"
   }
 }

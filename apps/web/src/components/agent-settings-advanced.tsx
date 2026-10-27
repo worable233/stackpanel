@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { SectionTitle } from '@stackpanel/ui';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import { agentFetch } from './agent-workspace';
 import { agentErrorText } from '@/lib/agent-errors';
 import { Button } from '@/components/ui/button';

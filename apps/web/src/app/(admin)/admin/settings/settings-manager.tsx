@@ -1,6 +1,7 @@
 'use client';
 import { NotificationPolicySettings } from '@/components/notification-settings';
 import { CurrencySettings } from '@/components/currency-settings';
+import { PaymentMethodSettings } from '@/components/payment-method-settings';
 import { DistributionSourceSettings } from '@/components/distribution-source-settings';
 import { AgentSettings } from '@/components/agent-settings';
 import { SectionTitle } from '@stackpanel/ui';
@@ -12,6 +13,8 @@ import { useRouter } from 'next/navigation';
 import type {
   AdminCurrencyDefinitionView,
   AdminFxRateView,
+  AdminSalesChannel,
+  AdminSalesChannelListResponse,
   DistributionSourceConfig,
   PlatformInfo,
   SettlementCurrencyResponse,
@@ -30,6 +33,7 @@ import {
   Plug,
   Bell,
   Coins,
+  CreditCard,
   Download,
 } from 'lucide-react';
 import {
@@ -54,6 +58,8 @@ export function SettingsManager({
   currencyRates = [],
   distribution,
   distributionDefaults,
+  salesChannels = [],
+  paymentProviders = [],
   pluginSections = [],
 }: {
   platform: PlatformInfo;
@@ -63,6 +69,8 @@ export function SettingsManager({
   currencyRates?: AdminFxRateView[];
   distribution?: DistributionSourceConfig | null;
   distributionDefaults?: { repository: string | null; mirror: string | null } | undefined;
+  salesChannels?: AdminSalesChannel[];
+  paymentProviders?: NonNullable<AdminSalesChannelListResponse['providers']>;
   pluginSections?: { id: string; title: string; content: ReactNode }[];
 }) {
   const t = useTranslator();
@@ -108,6 +116,12 @@ export function SettingsManager({
         ]
       : []),
     {
+      id: 'payment',
+      title: t('admin.settings.payment.title'),
+      Icon: CreditCard,
+      content: <PaymentMethodSettings channels={salesChannels} providers={paymentProviders} />,
+    },
+    {
       id: 'agent',
       title: 'Agent',
       Icon: Bot,
@@ -142,7 +156,7 @@ function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="flex flex-col gap-1 pb-2">
         <SectionTitle>{t('admin.settings.platform.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{t('admin.settings.platform.description')}</p>
       </div>
@@ -210,7 +224,7 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="flex flex-col gap-1 pb-2">
         <SectionTitle>{t('admin.settings.brand.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{t('admin.settings.brand.description')}</p>
       </div>
@@ -300,7 +314,7 @@ function SigningSettings({ signing }: { signing: SigningStatus | null }) {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="flex flex-col gap-1 pb-2">
         <SectionTitle>{t('admin.settings.signing.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">
           {envManaged
@@ -353,12 +367,12 @@ function AdvancedSettings() {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="flex flex-col gap-1 pb-2">
         <SectionTitle>{t('admin.settings.advanced.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{t('admin.settings.advanced.description')}</p>
       </div>
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
-        <div className="flex flex-col gap-1 border-b pb-4">
+        <div className="flex flex-col gap-1 pb-2">
           <h3 className="text-sm font-medium">
             {t('admin.settings.advanced.developerConsoleTitle')}
           </h3>

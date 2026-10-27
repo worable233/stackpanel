@@ -324,13 +324,29 @@ export async function updateProduct(req: HttpRequest): Promise<unknown> {
     ...(patch.discount !== undefined ? { discount: patch.discount ?? null } : {}),
     ...(patch.metadata !== undefined ? { metadata: patch.metadata ?? null } : {}),
     ...(patch.categoryId !== undefined ? { categoryId: patch.categoryId ?? null } : {}),
+    ...(patch.status !== undefined ? { status: patch.status } : {}),
     ...(patch.fulfillmentType !== undefined ? { fulfillmentType: patch.fulfillmentType } : {}),
     ...(patch.providerId !== undefined ? { providerId: patch.providerId ?? null } : {}),
     ...(patch.providerProductId !== undefined
       ? { providerProductId: patch.providerProductId ?? null }
       : {}),
   };
-  assertCloudServerProvider(next.fulfillmentType, next.providerId);
+  /*
+   * Only validate the provider binding when this patch actually touches it.
+   *
+   * The check exists to stop an *unbindable* cloud-server product from being
+   * saved. Running it on every PATCH made unrelated edits (rename, discount,
+   * price) fail with “所选云服务器履约提供方未启用” on any product whose upstream
+   * plugin had since been removed — the operator could not even lower the
+   * price, let alone fix the binding, because the binding was already broken.
+   *
+   * Binding changes are still validated: a patch that sets `providerId` or
+   * moves the product into `cloud_server` is checked against the live provider
+   * list.
+   */
+  const touchesBinding =
+    patch.fulfillmentType !== undefined || patch.providerId !== undefined;
+  if (touchesBinding) assertCloudServerProvider(next.fulfillmentType, next.providerId);
   try {
     const product = await replaceProduct(id, next);
     await syncUpstreamAssociation(

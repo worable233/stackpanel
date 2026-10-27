@@ -3,6 +3,17 @@
 import { useState, useTransition } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { SectionTitle } from '@stackpanel/ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Select,
@@ -526,17 +537,6 @@ function ServicesSection({
 
   function remove(serviceId: string) {
     const bound = boundServiceIds(services).has(serviceId);
-    if (
-      !window.confirm(
-        t(
-          bound
-            ? 'admin.userDetail.services.confirmUnbind'
-            : 'admin.userDetail.services.confirmDelete',
-        ),
-      )
-    ) {
-      return;
-    }
     run(() =>
       bound
         ? unbindUpstreamServiceAction(userId, serviceId)
@@ -756,14 +756,40 @@ function ServicesSection({
                           <Button size="sm" variant="outline" onClick={() => startEdit(service)}>
                             {t('common.edit')}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => void remove(service.id)}
-                            disabled={isPending}
-                          >
-                            {bound ? t('admin.userDetail.services.unbind') : t('common.delete')}
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger
+                              render={
+                                <Button size="sm" variant="destructive" disabled={isPending}>
+                                  {bound
+                                    ? t('admin.userDetail.services.unbind')
+                                    : t('common.delete')}
+                                </Button>
+                              }
+                            />
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  {bound
+                                    ? t('admin.userDetail.services.confirmUnbind')
+                                    : t('admin.userDetail.services.confirmDelete')}
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {t('admin.userDetail.services.confirmHint')}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => void remove(service.id)}
+                                  disabled={isPending}
+                                >
+                                  {bound
+                                    ? t('admin.userDetail.services.unbind')
+                                    : t('common.delete')}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       )}
                     </td>

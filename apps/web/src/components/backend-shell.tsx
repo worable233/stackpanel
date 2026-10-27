@@ -1,24 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowLeft,
   ArrowRightLeft,
-  ChevronDown,
+  BrainCircuit,
+  ChevronRight,
+  Folder,
   Gauge,
+  Globe2,
+  HelpCircle,
   KeyRound,
   LogOut,
-  Monitor,
-  Moon,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelsTopLeft,
+  Server,
   Settings,
   Sun,
   User,
+  Users,
+  Wallet,
+  Blocks,
+  Monitor,
+  Moon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import {
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarProvider,
+} from '@/components/ui/sidebar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,13 +49,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { BackendToolbarButton } from '@/components/backend-toolbar-button';
-import { BackendSearch } from '@/components/backend-search';
 import { useTheme } from '@/components/theme-provider';
 import { NotificationBell } from '@/components/notification-bell';
 import { NotificationToaster } from '@/components/notification-toaster';
 import { BackendRouteProgress } from '@/components/backend-route-progress';
 import { AgentSidebar } from '@/components/agent-sidebar';
 import { LocaleSwitcher } from '@/components/locale-switcher';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import * as AnimateSidebar from '@animate-ui/react/primitives/sidebar';
 import { localeOptions } from '@/i18n/core';
 import { navMessageKey } from '@/i18n/nav';
 import { useLocale, useTranslator } from '@/i18n/provider';
@@ -61,6 +83,20 @@ const GROUP_MESSAGE_KEYS: Record<string, string> = {
   developer: 'adminShell.groupDeveloper',
   account: 'adminShell.groupAccount',
 };
+
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  users: Users,
+  site: Globe2,
+  system: Settings,
+  developer: Blocks,
+  account: User,
+  plugins: Blocks,
+  services: Server,
+  models: BrainCircuit,
+  billing: Wallet,
+};
+
+
 
 export interface BackendUser {
   email: string;
@@ -188,102 +224,143 @@ function UserDropdown({
   );
 }
 
-function NavButton({
-  item,
-  label,
-  activeHref,
-}: {
-  item: BackendNavigationItem;
-  label: string;
-  activeHref: string | null;
-  icons: Record<string, LucideIcon>;
-  defaultIcon?: LucideIcon;
-}) {
-  const active = item.href === activeHref;
-
-  return (
-    <Button
-      render={<Link href={item.href} aria-current={active ? 'page' : undefined} />}
-      variant="ghost"
-      className={cn(
-        'relative h-9 gap-1.5 rounded-xl bg-transparent px-3 text-sm font-medium shadow-none hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent transition-colors duration-200 motion-reduce:transition-none',
-        active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-      )}
-    >
-      <span className="truncate">{label}</span>
-    </Button>
-  );
-}
-
-function NavDropdown({
-  groupLabel,
+function SidebarNav({
   items,
-  label,
+  groups,
   activeHref,
+  label,
   icons,
   defaultIcon,
+  collapsed,
+  onNavigate,
+  ariaLabel,
 }: {
-  group: string;
-  groupLabel: string;
   items: BackendNavigationItem[];
-  label: (item: BackendNavigationItem) => string;
+  groups: { key: string; label: string; items: BackendNavigationItem[]; defaultOpen: boolean; icon: LucideIcon }[];
   activeHref: string | null;
+  label: (item: BackendNavigationItem) => string;
   icons: Record<string, LucideIcon>;
-  groupIcons?: Record<string, LucideIcon>;
   defaultIcon?: LucideIcon;
+  collapsed: boolean;
+  onNavigate?: () => void;
+  ariaLabel: string;
 }) {
-  const anyActive = items.some((item) => item.href === activeHref);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button
-            type="button"
-            className={cn(
-              'relative inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-transparent px-3 text-sm font-medium shadow-none hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent transition-colors duration-200 motion-reduce:transition-none',
-              anyActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-            )}
+  const itemIcon = (item: BackendNavigationItem): LucideIcon =>
+    isBackendOverview(item) ? Gauge : (icons[item.href] ?? defaultIcon ?? User);
+
+  const renderLink = (item: BackendNavigationItem, sub = false) => {
+    const Icon = itemIcon(item);
+    const active = item.href === activeHref;
+    const text = label(item);
+    if (sub) {
+      return (
+        <SidebarMenuSubItem key={item.href}>
+          <SidebarMenuSubButton
+            render={<Link href={item.href} onClick={onNavigate} aria-current={active ? 'page' : undefined} />}
+            isActive={active}
+            className="h-9 text-sm"
           >
-            <span className="truncate">{groupLabel}</span>
-            <ChevronDown className="size-3.5 opacity-60" />
-          </button>
-        }
-      />
-      <DropdownMenuContent align="start" className="min-w-40">
-        <DropdownMenuGroup>
-          {items.map((item) => {
-            const ItemIcon = isBackendOverview(item)
-              ? Gauge
-              : (icons[item.href] ?? defaultIcon ?? User);
+            <span>{text}</span>
+          </SidebarMenuSubButton>
+        </SidebarMenuSubItem>
+      );
+    }
+    return (
+      <SidebarMenuItem key={item.href}>
+        <SidebarMenuButton
+          render={<Link href={item.href} onClick={onNavigate} aria-current={active ? 'page' : undefined} />}
+          isActive={active}
+          tooltip={text}
+          className="h-9 gap-2.5 rounded-lg px-3 text-sm"
+        >
+          <Icon className="size-4" aria-hidden="true" />
+          <span>{text}</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  };
+
+  if (collapsed) {
+    const all = [...items, ...groups.flatMap((group) => group.items)];
+    return (
+      <nav aria-label={ariaLabel} className="px-2">
+        <SidebarMenu className="items-center gap-1">
+          {all.map((item) => {
+            const Icon = itemIcon(item);
             const active = item.href === activeHref;
+            const text = label(item);
             return (
-              <DropdownMenuItem
-                key={item.href}
-                render={
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      'flex items-center gap-2',
-                      active && 'bg-secondary text-secondary-foreground',
-                    )}
-                    aria-current={active ? 'page' : undefined}
-                  />
-                }
-              >
-                <ItemIcon className="size-4" />
-                <span>{label(item)}</span>
-              </DropdownMenuItem>
+              <SidebarMenuItem key={item.href}>
+                <SidebarMenuButton
+                  render={
+                    <Link href={item.href} onClick={onNavigate} aria-current={active ? 'page' : undefined} />
+                  }
+                  isActive={active}
+                  tooltip={text}
+                  className="size-9 justify-center rounded-lg px-0"
+                >
+                  <Icon className="size-4" aria-hidden="true" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             );
           })}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </SidebarMenu>
+      </nav>
+    );
+  }
+
+  return (
+    <nav aria-label={ariaLabel}>
+      <SidebarMenu className="gap-2 px-2">
+        {items.map((item) => renderLink(item))}
+      </SidebarMenu>
+      {groups.map((group) => {
+        const open = openGroups[group.key] ?? group.defaultOpen;
+        const GroupIcon = group.icon;
+        return (
+          <div key={group.key} className="mt-2">
+            <SidebarMenu className="px-2">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={() => setOpenGroups((current) => ({ ...current, [group.key]: !open }))}
+                  aria-expanded={open}
+                  tooltip={group.label}
+                  className="h-9 gap-2.5 rounded-lg px-3 text-sm"
+                >
+                  <GroupIcon className="size-4" aria-hidden="true" />
+                  <span>{group.label}</span>
+                  <ChevronRight
+                    className={cn(
+                      'ml-auto size-4 text-sidebar-foreground/40 transition-transform duration-200',
+                      open && 'rotate-90',
+                    )}
+                    aria-hidden="true"
+                  />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+            <div
+              className={cn(
+                'grid transition-[grid-template-rows] duration-200 ease-out',
+                open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+              )}
+              aria-hidden={!open}
+            >
+              <div className="overflow-hidden">
+                <SidebarMenuSub className="mt-0.5">
+                  {group.items.map((item) => renderLink(item, true))}
+                </SidebarMenuSub>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </nav>
   );
 }
 
-/** Horizontal backend header, with a second navigation row on smaller screens.
- *  This is the client-side generic base; import AdminShell/AccountShell from server layouts. */
 export function BackendShell({
   user,
   items,
@@ -298,6 +375,8 @@ export function BackendShell({
   children,
 }: BackendShellProps) {
   const [agentOpen, setAgentOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const directItems = items.filter((item) => !item.group);
   const groups = groupBackendNavigation(items);
 
@@ -311,102 +390,195 @@ export function BackendShell({
     const key = navMessageKey(item.href);
     return key ? t(key) : item.label;
   };
+  const groupLabel = (group: string): string =>
+    groupLabels?.[group] ??
+    (GROUP_MESSAGE_KEYS[group] ? t(GROUP_MESSAGE_KEYS[group]) : group);
+  const namedGroups = Array.from(groups.entries()).map(([group, groupItems]) => ({
+    key: group,
+    label: groupLabel(group),
+    items: groupItems,
+    defaultOpen: false,
+    icon: groupIcons?.[group] ?? GROUP_ICONS[group] ?? Folder,
+  }));
+  const rootLabel =
+    rootHref === '/admin' ? t('adminShell.backend') : t('nav.accountOverview');
+  const activeGroup = activeItem?.group ? groupLabel(activeItem.group) : null;
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
 
   return (
-    <div className="backend-shell relative isolate flex min-h-dvh flex-col bg-background text-foreground">
+    <SidebarProvider
+      open={!collapsed}
+      onOpenChange={(open) => setCollapsed(!open)}
+      className="contents"
+    >
+    <div className="backend-shell relative isolate flex h-dvh flex-col overflow-hidden bg-muted/40 text-foreground">
       <BackendRouteProgress />
       <NotificationToaster />
-      <div className="backend-shell__glow pointer-events-none absolute inset-x-0 top-0 z-0 h-96" />
-      <div className="backend-shell__header sticky top-0 z-30 overflow-hidden border-b border-border/40 bg-background/80 shadow-[0_1px_12px_color-mix(in_oklab,var(--foreground)_4%,transparent)] backdrop-blur-2xl">
-        <header
+
+      <header className="backend-shell__header sticky top-0 z-50 flex h-14 shrink-0 items-center gap-1.5 px-3 sm:px-4">
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground md:hidden"
+          aria-label={t('adminShell.openNav')}
+        >
+          <Menu className="size-4" aria-hidden="true" />
+        </button>
+
+        <Link
+          href={rootHref}
+          className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg"
+          aria-label={t('nav.homeAriaLabel')}
+        >
+          {brandLogoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={brandLogoUrl} alt="" className="size-8 object-contain" />
+          ) : (
+            <PanelsTopLeft className="size-4" />
+          )}
+        </Link>
+
+        <nav
+          aria-label={t('adminShell.breadcrumb')}
+          className="ml-1 flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
+        >
+          <Link href={rootHref} className="hidden shrink-0 transition-colors hover:text-foreground sm:inline">
+            {rootLabel}
+          </Link>
+          {activeGroup ? (
+            <>
+              <span className="hidden text-muted-foreground/40 sm:inline" aria-hidden="true">
+                /
+              </span>
+              <span className="hidden shrink-0 sm:inline">{activeGroup}</span>
+            </>
+          ) : null}
+          <span className="hidden text-muted-foreground/40 sm:inline" aria-hidden="true">
+            /
+          </span>
+          <span className="truncate font-medium text-foreground">
+            {activeItem ? label(activeItem) : rootLabel}
+          </span>
+        </nav>
+
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+          <AgentSidebar
+            open={agentOpen}
+            onOpenChange={setAgentOpen}
+            contextLabel={
+              rootHref === '/admin'
+                ? t('adminShell.workspaceAdmin')
+                : t('adminShell.workspaceAccount')
+            }
+          />
+          <div className="hidden sm:block">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <BackendToolbarButton
+                    render={<Link href="/guide" aria-label={t('adminShell.help')} />}
+                    nativeButton={false}
+                  >
+                    <HelpCircle aria-hidden="true" />
+                  </BackendToolbarButton>
+                }
+              />
+              <TooltipContent>{t('adminShell.help')}</TooltipContent>
+            </Tooltip>
+          </div>
+          <NotificationBell inboxHref={`${rootHref}/notifications`} />
+          <LocaleSwitcher
+            locale={locale}
+            items={localeOptions()}
+            ariaLabel={t('localeSwitcher.ariaLabel')}
+            iconOnly
+          />
+          <UserDropdown user={user} backLink={backLink} rootHref={rootHref} />
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <aside
           className={cn(
-            'relative mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-5 px-5 sm:px-8 lg:px-12 lg:h-[72px]',
+            'hidden h-full shrink-0 flex-col overflow-hidden bg-transparent transition-[width] duration-300 motion-reduce:transition-none md:flex',
+            collapsed ? 'w-16' : 'w-[240px]',
           )}
         >
-          <Link
-            href={rootHref}
-            className="my-3 flex size-9 items-center justify-center overflow-hidden"
-            aria-label={t('nav.homeAriaLabel')}
-          >
-            {brandLogoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={brandLogoUrl} alt="" className="size-9 object-contain" />
-            ) : (
-              <PanelsTopLeft className="size-4" />
-            )}
-          </Link>
-          <nav
-            aria-label={t('nav.homeAriaLabel')}
-            className="col-span-3 row-start-2 min-w-0 border-t border-border/50 pt-1 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:border-t-0 lg:border-l lg:border-border/50 lg:pl-4"
-          >
-            <div className="scrollbar-none flex h-12 min-w-0 items-center gap-2 overflow-x-auto lg:h-auto">
-              {directItems.map((item) => (
-                <NavButton
-                  key={item.href}
-                  item={item}
-                  label={label(item)}
-                  activeHref={activeHref}
-                  icons={navigationIcons}
-                  defaultIcon={defaultIcon}
-                />
-              ))}
-              {Array.from(groups.entries()).map(([group, groupItems]) => (
-                <NavDropdown
-                  key={group}
-                  group={group}
-                  groupLabel={
-                    groupLabels?.[group] ??
-                    (GROUP_MESSAGE_KEYS[group] ? t(GROUP_MESSAGE_KEYS[group]) : group)
-                  }
-                  items={groupItems}
-                  label={label}
-                  activeHref={activeHref}
-                  icons={navigationIcons}
-                  groupIcons={groupIcons}
-                  defaultIcon={defaultIcon}
-                />
-              ))}
-            </div>
-          </nav>
-          <div className="col-start-2 col-span-2 row-start-1 flex w-full min-w-0 items-center gap-1 sm:gap-2 lg:col-start-3 lg:col-span-1 lg:w-auto lg:shrink-0">
-            <BackendSearch
-              items={items.map((item) => ({
-                href: item.href,
-                label: label(item),
-                groupLabel: item.group
-                  ? (groupLabels?.[item.group] ??
-                    (GROUP_MESSAGE_KEYS[item.group]
-                      ? t(GROUP_MESSAGE_KEYS[item.group])
-                      : item.group))
-                  : undefined,
-              }))}
+          <AnimateSidebar.Highlight animateOnHover className="flex-1 overflow-y-auto py-2">
+            <SidebarNav
+              items={directItems}
+              groups={namedGroups}
+              activeHref={activeHref}
+              label={label}
+              icons={navigationIcons}
+              defaultIcon={defaultIcon}
+              collapsed={collapsed}
+              ariaLabel={t('adminShell.navLabel')}
             />
-            <AgentSidebar
-              open={agentOpen}
-              onOpenChange={setAgentOpen}
-              contextLabel={
-                rootHref === '/admin'
-                  ? t('adminShell.workspaceAdmin')
-                  : t('adminShell.workspaceAccount')
-              }
-            />
-            <NotificationBell inboxHref={`${rootHref}/notifications`} />
-            <LocaleSwitcher
-              locale={locale}
-              items={localeOptions()}
-              ariaLabel={t('localeSwitcher.ariaLabel')}
-              iconOnly
-            />
-            <UserDropdown user={user} backLink={backLink} rootHref={rootHref} />
+          </AnimateSidebar.Highlight>
+          <div className="flex shrink-0 items-center justify-end p-3">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed((value) => !value)}
+                    aria-label={collapsed ? t('adminShell.expandNav') : t('adminShell.collapseNav')}
+                    className="flex size-8 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {collapsed ? (
+                      <PanelLeftOpen className="size-4" aria-hidden="true" />
+                    ) : (
+                      <PanelLeftClose className="size-4" aria-hidden="true" />
+                    )}
+                  </button>
+                }
+              />
+              <TooltipContent>
+                {collapsed ? t('adminShell.expandNav') : t('adminShell.collapseNav')}
+              </TooltipContent>
+            </Tooltip>
           </div>
-        </header>
+        </aside>
+
+
+        <main className="min-h-0 min-w-0 flex-1 p-2 pl-0 md:p-3 md:pl-0">
+          <div className="h-full overflow-y-auto rounded-[22px] bg-background px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+            <div
+              key={pathname}
+              className={cn(
+                'mx-auto w-full animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out motion-reduce:animate-none',
+                contentMaxWidth,
+              )}
+            >
+              {children}
+            </div>
+          </div>
+        </main>
       </div>
 
-      <main className="relative z-[1] flex-1 overflow-x-clip">
-        <div className={cn('mx-auto w-full px-4 py-8 sm:px-6 lg:px-8 lg:py-10', contentMaxWidth)}>
-          <div className="min-w-0">{children}</div>
-        </div>
-      </main>
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent side="left" className="w-[280px] bg-muted p-0">
+          <SheetTitle className="sr-only">{t('adminShell.navLabel')}</SheetTitle>
+          <div className="flex-1 overflow-y-auto py-3">
+            <SidebarNav
+              items={directItems}
+              groups={namedGroups}
+              activeHref={activeHref}
+              label={label}
+              icons={navigationIcons}
+              defaultIcon={defaultIcon}
+              collapsed={false}
+              onNavigate={() => setMobileNavOpen(false)}
+              ariaLabel={t('adminShell.navLabel')}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
+    </SidebarProvider>
   );
 }

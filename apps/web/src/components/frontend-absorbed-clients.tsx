@@ -216,3 +216,63 @@ export function RouteProgress() {
     </Suspense>
   );
 }
+
+/**
+ * Host-absorbed stand-in for the referral plugin's `./route-progress.js`.
+ *
+ * The plugin ships a client module with the same *filename* as the default
+ * theme's but a different export (`CopyLinkButton`). Because runtime packages
+ * are plain Node ESM on the server, the plugin's own `'use client'` module cannot
+ * be imported there — so the host must provide the client behaviour, exactly as
+ * it does for the theme. Kept behaviourally identical to the plugin's original:
+ * copy `origin/?affid=<code>` to the clipboard, with a `execCommand` fallback and
+ * a short "copied" acknowledgement.
+ */
+export function CopyLinkButton({
+  code,
+  copyLabel,
+  copiedLabel,
+}: {
+  code: string;
+  copyLabel: string;
+  copiedLabel: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    const link = `${window.location.origin}/?affid=${encodeURIComponent(code)}`;
+    const done = () => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    };
+    const fallback = () => {
+      try {
+        const area = document.createElement('textarea');
+        area.value = link;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        document.body.removeChild(area);
+        done();
+      } catch {
+        /* clipboard unavailable — leave the label unchanged */
+      }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(link).then(done).catch(fallback);
+      return;
+    }
+    fallback();
+  }, [code]);
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs font-medium transition-colors hover:bg-muted"
+    >
+      {copied ? copiedLabel : copyLabel}
+    </button>
+  );
+}

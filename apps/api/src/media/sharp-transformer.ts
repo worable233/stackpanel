@@ -25,6 +25,49 @@ export type SharpLoader = () => Promise<SharpFactory>;
 
 const loadSharpFromNode: SharpLoader = () => import('sharp').then((mod) => mod.default);
 
+/**
+ * One-shot latch so a missing/broken encoder is reported exactly once instead
+ * of once per image.
+ */
+let encoderWarningEmitted = false;
+
+function warnEncoderUnavailable(message: string): void {
+  if (encoderWarningEmitted) return;
+  encoderWarningEmitted = true;
+  console.warn(
+    `media: 图片变体编码器不可用，变体将全部失败（原因：${message}）。` +
+      ' 这通常意味着 sharp 无法加载（原生二进制缺失或运行时解析错误），' +
+      ' 原图上传不受影响。',
+  );
+}
+
+/** Reset the one-shot warning latch (tests only). */
+export function resetEncoderWarning(): void {
+  encoderWarningEmitted = false;
+}
+
+/**
+ * Probe whether the native encoder can actually be loaded in this process.
+ *
+ * Upload-time failures are deliberately swallowed (best-effort contract), which
+ * means an unusable encoder is invisible unless someone asks. The media-library
+ * admin surface calls this so the operator sees a banner instead of a wall of
+ * silently failed thumbnails.
+ */
+export async function probeSharpEncoder(
+  loadSharp: SharpLoader = loadSharpFromNode,
+): Promise<{ available: boolean; error?: string }> {
+  try {
+    const sharp = await loadSharp();
+    if (typeof sharp !== 'function') {
+      return { available: false, error: 'sharp 模块未导出可调用的工厂函数' };
+    }
+    return { available: true };
+  } catch (error) {
+    return { available: false, error: (error as Error).message };
+  }
+}
+
 /** Build the transformer; `loadSharp` is injectable purely for tests. */
 export function createSharpTransformer(
   loadSharp: SharpLoader = loadSharpFromNode,
@@ -37,8 +80,16 @@ export function createSharpTransformer(
       _mime: string,
       spec: VariantSpec,
     ): Promise<Uint8Array | null> {
+      let sharp: SharpFactory;
       try {
-        const sharp = await loadSharp();
+        sharp = await loadSharp();
+      } catch (error) {
+        // Loading failed in a way that will not fix itself per-image; report it
+        // once and keep serving originals.
+        warnEncoderUnavailable((error as Error).message);
+        return null;
+      }
+      try {
         const pipeline = sharp(Buffer.from(input), {
           limitInputPixels: MAX_INPUT_PIXELS,
           failOn: 'error',

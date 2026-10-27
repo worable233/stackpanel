@@ -1,11 +1,12 @@
 'use client';
 
-import { SectionTitle } from '@stackpanel/ui';
+import { SectionTitle, Select } from '@stackpanel/ui';
 import { useActionState, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DistributionSourceConfig } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useTranslator } from '@/i18n/provider';
 import {
@@ -50,7 +51,7 @@ export function DistributionSourceSettings({
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="flex flex-col gap-1">
         <SectionTitle>{t('admin.settings.distribution.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">
           {t('admin.settings.distribution.description')}
@@ -77,12 +78,10 @@ export function DistributionSourceSettings({
         className="flex flex-col gap-6"
       >
         <div className="flex items-center gap-2">
-          <input
+          <Checkbox
             id="remoteEnabled"
             name="remoteEnabled"
-            type="checkbox"
             defaultChecked={remoteEnabled}
-            className="size-4 rounded border-input accent-primary"
           />
           <Label htmlFor="remoteEnabled">{t('admin.settings.distribution.remoteEnabled')}</Label>
         </div>
@@ -106,7 +105,7 @@ export function DistributionSourceSettings({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label htmlFor="channel">{t('admin.settings.distribution.channel')}</Label>
-            <select
+            <Select
               id="channel"
               name="channel"
               defaultValue={source.channel}
@@ -114,7 +113,7 @@ export function DistributionSourceSettings({
             >
               <option value="stable">{t('admin.settings.distribution.channelStable')}</option>
               <option value="beta">{t('admin.settings.distribution.channelBeta')}</option>
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="ref">{t('admin.settings.distribution.ref')}</Label>
@@ -183,7 +182,7 @@ export function DistributionSourceSettings({
             router.refresh();
           });
         }}
-        className="flex flex-col gap-4 border-t pt-6"
+        className="flex flex-col gap-4 pt-2"
       >
         <div className="flex flex-col gap-1">
           <h3 className="text-sm font-medium">
@@ -242,7 +241,7 @@ export function DistributionSourceSettings({
             router.refresh();
           });
         }}
-        className="flex flex-col gap-4 border-t pt-6"
+        className="flex flex-col gap-4 pt-2"
       >
         <div className="flex flex-col gap-1">
           <h3 className="text-sm font-medium">

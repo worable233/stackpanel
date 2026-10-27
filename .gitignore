@@ -119,3 +119,4 @@ design/glass-cloud-showcase.svg
 
 # Local MCP export snapshot (generated tooling output)
 mcp-export.json
+.local/agent-work/

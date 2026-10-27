@@ -1,25 +1,22 @@
 import { formatMinorCurrency } from '@stackpanel/sdk';
 import type { FrontendLayoutProps, FrontendPackage, FrontendPageProps } from '@stackpanel/sdk';
 import {
+  Badge,
   Button,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
   Input,
-  TabsList,
-  TabsPanel,
-  TabsRoot,
-  TabsTab,
 } from '@stackpanel/ui';
 import {
   ArrowRight,
   ArrowUpRight,
   Boxes,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleDot,
   Database,
   Globe2,
   Mail,
@@ -29,16 +26,18 @@ import {
   ShieldCheck,
   ShoppingBag,
   Sparkles,
-  Timer,
-  Workflow,
 } from 'lucide-react';
 import type { ReactElement, ReactNode } from 'react';
+import { AtlasArticlePage } from './article-page.js';
+import { AtlasDataPage } from './data-page.js';
+import { AtlasHomePage } from './home-page.js';
 import { messages, t } from './i18n.js';
-import { MOTION_CSS } from './motion-styles.js';
 import { safeHref, setting, settingsSchema } from './settings.js';
 
 const INTL_FALLBACK_LOCALE = 'en';
 const PAGE_SIZE = 12;
+/** Endonyms for the footer language picker; labels live in the package catalog. */
+const LOCALE_VALUES = ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'] as const;
 
 interface ShopProduct {
   id: string;
@@ -148,48 +147,6 @@ function money(amount: number, currency: string, locale?: string): string {
 }
 
 /** Persisted product metadata keys used for ordering, not UI copy. */
-const SPEC_ORDER = [
-  'CPU', // i18n-exempt — persisted metadata key.
-  'vCPU',
-  '内存', // i18n-exempt — persisted metadata key.
-  'Memory',
-  '带宽', // i18n-exempt — persisted metadata key.
-  'Bandwidth',
-  '磁盘', // i18n-exempt — persisted metadata key.
-  'Disk',
-  'SSD',
-  '架构', // i18n-exempt — persisted metadata key.
-  'Architecture',
-  '区域', // i18n-exempt — persisted metadata key.
-  'Region',
-];
-
-function specRows(metadata: Record<string, unknown> | null | undefined): Array<[string, string]> {
-  if (!metadata) return [];
-  const asText = (value: unknown): string => {
-    if (value === null || value === undefined) return '—';
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
-    }
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  };
-  return Object.entries(metadata)
-    .filter(([, value]) => value !== null && value !== undefined && typeof value !== 'object')
-    .sort(([a], [b]) => {
-      const ai = SPEC_ORDER.indexOf(a);
-      const bi = SPEC_ORDER.indexOf(b);
-      if (ai === -1 && bi === -1) return a.localeCompare(b);
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
-    })
-    .map(([key, value]) => [key, asText(value)]);
-}
-
 function flattenCategories(nodes: readonly ShopCategoryNode[]): ShopCategoryNode[] {
   return nodes.flatMap((node) => [node, ...flattenCategories(node.children ?? [])]);
 }
@@ -220,6 +177,33 @@ function SectionLabel({ children }: { children: ReactNode }): ReactElement {
     <span className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function PageIntro({
+  kicker,
+  title,
+  lead,
+  actions,
+}: {
+  kicker: string;
+  title: string;
+  lead?: string;
+  actions?: ReactNode;
+}): ReactElement {
+  return (
+    <header>
+      <SectionLabel>{kicker}</SectionLabel>
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
+        <h1 className="max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl">
+          {title}
+        </h1>
+        {actions}
+      </div>
+      {lead ? (
+        <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">{lead}</p>
+      ) : null}
+    </header>
   );
 }
 
@@ -263,6 +247,7 @@ function AtlasLayout({
   assetsBaseUrl,
   locale,
   settings,
+  plugins,
 }: FrontendLayoutProps): ReactElement {
   const tr = t(locale);
   const logoUrl = brand?.logoUrl ?? (assetsBaseUrl ? `${assetsBaseUrl}/logo.svg` : undefined);
@@ -271,6 +256,7 @@ function AtlasLayout({
     { label: tr('nav.catalog'), href: '/shop' },
     { label: tr('nav.guide'), href: '/guide' },
     { label: tr('nav.about'), href: '/about' },
+    ...(plugins?.includes('llm-gateway') ? [{ label: tr('nav.data'), href: '/data' }] : []),
   ];
   const platformNav = navigation.filter(
     (item) => !atlasNav.some((entry) => entry.href === item.href),
@@ -320,14 +306,14 @@ function AtlasLayout({
           </a>
 
           <nav
-            className="ml-6 hidden items-center gap-1 md:flex"
+            className="ml-4 hidden items-center gap-1 md:flex"
             aria-label={tr('layout.mainNavAria')}
           >
             {nav.map((item) => (
               <a
                 key={item.href}
                 href={item.href}
-                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                className="inline-flex h-10 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 {item.label}
               </a>
@@ -336,43 +322,37 @@ function AtlasLayout({
 
           <div className="ml-auto flex items-center gap-2">
             <Button
-              render={<a href={isAuthenticated ? '/account' : '/login'} />}
-              nativeButton={false}
-              variant="ghost"
-              className="rounded-lg"
-            >
-              {isAuthenticated ? tr('layout.console') : tr('layout.login')}
-            </Button>
-            <Button
               render={<a href="/shop/cart" aria-label={tr('layout.cart')} />}
               nativeButton={false}
-              variant="outline"
+              variant="secondary"
               size="icon"
-              className="rounded-lg"
+              className="rounded-lg bg-muted"
             >
               <ShoppingBag className="size-4" aria-hidden="true" />
             </Button>
             <Button
-              render={<a href="/shop" />}
+              render={<a href={isAuthenticated ? '/account' : '/login'} />}
               nativeButton={false}
               className="hidden h-10 rounded-lg px-5 sm:inline-flex"
             >
-              {tr('layout.start')}
+              {isAuthenticated ? tr('layout.console') : tr('layout.start')}
               <ArrowUpRight className="size-4" aria-hidden="true" />
             </Button>
           </div>
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto px-4 py-3 md:hidden">
-          {nav.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="shrink-0 rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
-            >
-              {item.label}
-            </a>
-          ))}
+          <nav className="flex items-center gap-1" aria-label={tr('layout.mainNavAria')}>
+            {nav.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="inline-flex h-10 shrink-0 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
         </div>
       </header>
 
@@ -429,10 +409,37 @@ function AtlasLayout({
           <div className="mt-12 flex flex-col gap-3 pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <p>{tr('layout.footerRights', { year: String(new Date().getFullYear()) })}</p>
             <div className="flex flex-wrap items-center gap-4">
-              <span className="inline-flex items-center gap-1.5">
-                <Globe2 className="size-3.5" aria-hidden="true" />
-                {tr('layout.footerRegion')}
-              </span>
+              <details className="group/lang relative">
+                <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 marker:hidden hover:text-foreground [&::-webkit-details-marker]:hidden">
+                  <Globe2 className="size-3.5" aria-hidden="true" />
+                  {tr('layout.language')}
+                  <ChevronDown
+                    className="size-3 transition-transform group-open/lang:rotate-180"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <form
+                  action="/locale"
+                  method="get"
+                  className="absolute bottom-full left-0 mb-2 min-w-40 rounded-xl border border-border bg-popover p-1 text-xs shadow-lg"
+                >
+                  {LOCALE_VALUES.map((value) => (
+                    <button
+                      key={value}
+                      type="submit"
+                      name="locale"
+                      value={value}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-muted"
+                      aria-current={value === locale ? 'true' : undefined}
+                    >
+                      {tr(`layout.language.${value}`)}
+                      {value === locale ? (
+                        <Check className="size-3.5 text-primary" aria-hidden="true" />
+                      ) : null}
+                    </button>
+                  ))}
+                </form>
+              </details>
               <a href="/about" className="hover:text-foreground">
                 {tr('layout.terms')}
               </a>
@@ -494,254 +501,6 @@ function GitHubMark({ className }: { className?: string }): ReactElement {
   );
 }
 
-const SUPPORTED_LOGOS = [
-  'OpenAI',
-  'Anthropic',
-  'Google',
-  'AWS',
-  'Azure',
-  'Cloudflare',
-  'Alibaba',
-  'DeepSeek',
-  'vLLM',
-  'Ollama',
-];
-
-function LogoWall({ tr }: { tr: ReturnType<typeof t> }): ReactElement {
-  return (
-    <section className="bg-background">
-      <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
-        <p className="text-center text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-          {tr('home.logos.label')}
-        </p>
-        <div className="atl-ticker-mask mt-6 overflow-hidden">
-          <div className="atl-ticker">
-            {[0, 1].map((copy) => (
-              <div
-                key={copy}
-                className="flex shrink-0 items-center gap-10 pr-10 sm:gap-14 sm:pr-14"
-                aria-hidden={copy === 1}
-              >
-                {SUPPORTED_LOGOS.map((logo) => (
-                  <span
-                    key={logo}
-                    className="shrink-0 text-lg font-medium tracking-tight whitespace-nowrap text-muted-foreground/70"
-                  >
-                    {logo}
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function HomePage(props: FrontendPageProps): ReactElement {
-  const tr = t(props.locale);
-  const primaryHref = safeHref(setting(props.settings, 'hero', 'primaryHref', '/shop'), '/shop');
-  const secondaryHref = safeHref(
-    setting(props.settings, 'hero', 'secondaryHref', '/about'),
-    '/about',
-  );
-  const closingPrimaryHref = safeHref(
-    setting(props.settings, 'closing', 'primaryHref', '/shop'),
-    '/shop',
-  );
-  const closingSecondaryHref = safeHref(
-    setting(props.settings, 'closing', 'secondaryHref', '/guide'),
-    '/guide',
-  );
-  return (
-    <main className="flex-1">
-      <style dangerouslySetInnerHTML={{ __html: MOTION_CSS }} />
-
-      <section className="relative overflow-hidden">
-        <div className="mx-auto w-full max-w-6xl px-4 pb-14 pt-20 sm:px-6 lg:pb-20 lg:pt-24">
-          <div className="mx-auto flex max-w-3xl flex-col items-center text-center">
-            <TabsRoot defaultValue="compute" className="flex w-full flex-col items-center">
-              <h1 className="text-2xl leading-[1.25] font-medium tracking-tight [text-wrap:pretty] sm:text-5xl sm:leading-[1.06] lg:text-6xl">
-                <span className="block animate-in fade-in slide-in-from-bottom-4 fill-mode-both duration-700 motion-reduce:animate-none">
-                  {setting(props.settings, 'hero', 'title1', tr('home.hero.title1'))}
-                </span>
-                <span className="mt-1 block animate-in fade-in slide-in-from-bottom-4 fill-mode-both text-muted-foreground duration-700 delay-150 motion-reduce:animate-none">
-                  {setting(props.settings, 'hero', 'title2', tr('home.hero.title2'))}
-                </span>
-              </h1>
-
-              <p className="mt-6 max-w-2xl animate-in fade-in duration-700 delay-200 fill-mode-both text-base leading-7 text-muted-foreground motion-reduce:animate-none sm:text-lg sm:leading-8">
-                {setting(props.settings, 'hero', 'subtitle', tr('home.hero.subtitle'))}
-              </p>
-
-              {(['compute', 'storage', 'ai'] as const).map((value) => (
-                <TabsPanel
-                  key={value}
-                  value={value}
-                  className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground"
-                >
-                  {tr(`home.tabs.${value}.text`)}
-                </TabsPanel>
-              ))}
-
-              {/* 标签页控件放在说明文字之后：先说场景，再给切换入口。 */}
-              <TabsList className="mt-8 relative inline-flex items-center gap-1 rounded-full bg-muted p-1">
-                <TabsTab
-                  value="compute"
-                  className="relative z-10 rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors data-[active]:bg-background data-[active]:text-foreground"
-                >
-                  {tr('home.tabs.compute')}
-                </TabsTab>
-                <TabsTab
-                  value="storage"
-                  className="relative z-10 rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors data-[active]:bg-background data-[active]:text-foreground"
-                >
-                  {tr('home.tabs.storage')}
-                </TabsTab>
-                <TabsTab
-                  value="ai"
-                  className="relative z-10 rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors data-[active]:bg-background data-[active]:text-foreground"
-                >
-                  {tr('home.tabs.ai')}
-                </TabsTab>
-              </TabsList>
-            </TabsRoot>
-
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              <Button
-                render={<a href={primaryHref} />}
-                nativeButton={false}
-                className="h-10 rounded-lg px-5"
-              >
-                {setting(props.settings, 'hero', 'primaryLabel', tr('home.hero.primary'))}
-                <ArrowUpRight className="size-4" aria-hidden="true" />
-              </Button>
-              <Button
-                render={<a href={secondaryHref} />}
-                nativeButton={false}
-                variant="secondary"
-                className="h-10 rounded-lg px-5"
-              >
-                {setting(props.settings, 'hero', 'secondaryLabel', tr('home.hero.secondary'))}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <LogoWall tr={tr} />
-
-      <section className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6">
-        <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16">
-          <div className="lg:sticky lg:top-28 lg:self-start">
-            <SectionLabel>{tr('home.principles.kicker')}</SectionLabel>
-            <h2 className="mt-3 text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              {tr('home.principles.title')}
-            </h2>
-            <p className="mt-4 max-w-sm text-sm leading-6 text-muted-foreground">
-              {tr('home.principles.text')}
-            </p>
-          </div>
-          <div className="flex flex-col gap-4">
-            {[1, 2, 3].map((index) => (
-              <article
-                key={index}
-                className="atl-scroll-fade atl-spot group rounded-[20px] border-4 border-border bg-background p-6 transition-colors hover:bg-muted/40 sm:p-8"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex size-8 items-center justify-center rounded-full bg-muted text-[11px] font-medium tabular-nums text-muted-foreground">
-                    {tr(`home.principles.${index}.index`)}
-                  </span>
-                </div>
-                <h3 className="mt-5 text-lg font-medium tracking-tight">
-                  {tr(`home.principles.${index}.title`)}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {tr(`home.principles.${index}.text`)}
-                </p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6">
-        <div className="rounded-[24px] bg-muted p-1">
-          <div className="rounded-[20px] bg-background px-6 py-12 sm:px-10 sm:py-14">
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div>
-                <SectionLabel>{tr('home.stats.kicker')}</SectionLabel>
-                <h2 className="mt-4 max-w-lg text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-                  {tr('home.stats.title')}
-                </h2>
-              </div>
-              <p className="max-w-xs text-sm leading-6 text-muted-foreground">
-                {tr('home.stats.text')}
-              </p>
-            </div>
-            <div className="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                { value: 99.99, decimals: 2, suffix: '%', label: tr('home.stats.1.label') },
-                { value: 8, decimals: 0, suffix: '', label: tr('home.stats.2.label') },
-                {
-                  value: 5,
-                  decimals: 0,
-                  suffix: tr('home.stats.3.suffix'),
-                  label: tr('home.stats.3.label'),
-                },
-                { value: 24, decimals: 0, suffix: '/7', label: tr('home.stats.4.label') },
-              ].map((stat) => (
-                <div key={stat.label} className="border-t-4 border-border pt-5">
-                  <p className="text-4xl font-medium tracking-tight tabular-nums">
-                    {stat.value.toFixed(stat.decimals)}
-                    <span className="text-2xl text-muted-foreground">{stat.suffix}</span>
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">{stat.label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto w-full max-w-6xl px-4 pb-24 sm:px-6">
-        <div className="grid gap-10 rounded-[24px] border-4 border-border bg-background p-8 lg:grid-cols-[1fr_0.8fr] lg:items-end lg:p-10">
-          <div>
-            <SectionLabel>{tr('home.cta.kicker')}</SectionLabel>
-            <h2 className="mt-3 max-w-2xl text-3xl font-medium tracking-tight text-balance sm:text-5xl">
-              {setting(props.settings, 'closing', 'title', tr('home.cta.title'))}
-            </h2>
-          </div>
-          <div>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {setting(props.settings, 'closing', 'text', tr('home.cta.text'))}
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button
-                render={<a href={closingPrimaryHref} />}
-                nativeButton={false}
-                className="h-10 rounded-lg px-5"
-              >
-                {setting(props.settings, 'closing', 'primaryLabel', tr('home.cta.primary'))}
-                <ArrowUpRight className="size-4" aria-hidden="true" />
-              </Button>
-              <Button
-                render={<a href={closingSecondaryHref} />}
-                nativeButton={false}
-                variant="secondary"
-                className="h-10 rounded-lg px-5"
-              >
-                {setting(props.settings, 'closing', 'secondaryLabel', tr('home.cta.secondary'))}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-  );
-}
-
 function ProductCard({
   product,
   locale,
@@ -755,39 +514,31 @@ function ProductCard({
     <div className="atl-scroll-fade h-full">
       <article
         className={cn(
-          'group relative flex h-full flex-col gap-0 overflow-hidden rounded-[22px] border-4 border-border bg-card p-0 transition-all duration-300',
-          'hover:-translate-y-1 hover:border-foreground/15',
+          'group relative flex h-full flex-col gap-0 overflow-hidden rounded-[22px] bg-muted/55 p-0 transition-all duration-300',
+          'hover:-translate-y-1',
         )}
       >
         <CardHeader className="flex flex-row items-start justify-between gap-3 p-5 pb-0">
           <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-foreground">
             <ServiceIcon name={product.name} />
           </span>
-          <span
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium',
-              available ? 'text-muted-foreground' : 'bg-destructive/5 text-destructive',
-            )}
-          >
-            <span
-              className={cn('size-1.5 rounded-full', available ? 'bg-success' : 'bg-destructive')}
-              aria-hidden="true"
-            />
+          <Badge variant={available ? 'secondary' : 'destructive'} className="gap-1.5 px-2 py-1">
+            <Boxes className="size-3" aria-hidden="true" />
             {available
               ? tr('home.catalog.stock', { count: String(product.stock) })
               : tr('home.catalog.outOfStock')}
-          </span>
+          </Badge>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col p-5 pt-4">
           <CardTitle className="text-base font-medium tracking-tight">
-            <a href={`/shop/${product.id}`} className="after:absolute after:inset-0">
+            <a href="/register" className="after:absolute after:inset-0">
               {product.name}
             </a>
           </CardTitle>
           <CardDescription className="mt-2 line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground">
             {product.description ?? tr('product.fallbackDescription')}
           </CardDescription>
-          <div className="mt-auto flex items-end justify-between gap-3 border-t-4 border-border pt-4">
+          <div className="mt-auto flex items-end justify-between gap-3  pt-4">
             <div>
               <p className="text-[11px] text-muted-foreground">{tr('home.catalog.from')}</p>
               <p className="mt-0.5 text-xl font-medium tracking-tight tabular-nums">
@@ -810,23 +561,21 @@ function AboutPage(props: FrontendPageProps): ReactElement {
     <main className="flex-1">
       <section className="bg-background">
         <div className="atl-scroll-in mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 lg:py-28">
-          <SectionLabel>{tr('about.kicker')}</SectionLabel>
-          <h1 className="mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-6xl">
-            {tr('about.title')}
-          </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-            {tr('about.lead')}
-          </p>
+          <PageIntro
+            kicker={tr('about.kicker')}
+            title={tr('about.title')}
+            lead={tr('about.lead')}
+          />
         </div>
       </section>
 
       <section className="mx-auto grid w-full max-w-6xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:py-24">
         <div>
-          <div className="rounded-[20px] border-4 border-border bg-background p-8">
+          <div className="rounded-[20px] bg-muted/60 p-8">
             <p className="text-2xl leading-9 font-medium tracking-tight text-balance">
               “{tr('about.quote')}”
             </p>
-            <div className="mt-8 flex items-center gap-3 border-t-4 border-border pt-6 text-sm text-muted-foreground">
+            <div className="mt-8 flex items-center gap-3  pt-6 text-sm text-muted-foreground">
               <BrandMark />
               <div>
                 <p className="font-medium text-foreground">{tr('brand.name')}</p>
@@ -837,7 +586,7 @@ function AboutPage(props: FrontendPageProps): ReactElement {
         </div>
         <div className="space-y-10">
           {[1, 2, 3].map((index) => (
-            <div key={index} className="atl-scroll-fade border-t-4 border-border pt-6">
+            <div key={index} className="atl-scroll-fade  pt-6">
               <p className="text-xs font-medium text-muted-foreground">0{index}</p>
               <h2 className="mt-3 text-xl font-medium tracking-tight">
                 {tr(`about.p${index}.title`)}
@@ -884,20 +633,14 @@ function GuidePage(props: FrontendPageProps): ReactElement {
   return (
     <main className="flex-1">
       <section className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 lg:py-24">
-        <SectionLabel>{tr('guide.kicker')}</SectionLabel>
-        <h1 className="mt-6 max-w-3xl text-4xl font-medium tracking-tight text-balance sm:text-5xl">
-          {tr('guide.title')}
-        </h1>
-        <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-          {tr('guide.lead')}
-        </p>
+        <PageIntro kicker={tr('guide.kicker')} title={tr('guide.title')} lead={tr('guide.lead')} />
 
         <div className="mt-12 grid gap-4 md:grid-cols-3">
           {GUIDE_POSTS.map((post) => (
             <div key={post.slug} className="atl-scroll-fade h-full">
               <a
                 href={`/guide/${post.slug}`}
-                className="group flex h-full flex-col rounded-[22px] border-4 border-border bg-card p-6 transition-all hover:-translate-y-1 hover:border-foreground/15"
+                className="group flex h-full flex-col rounded-[22px] bg-muted/55 p-6 transition-all hover:-translate-y-1"
               >
                 <span className="text-xs text-muted-foreground">
                   {tr(`${post.key}.date`)} ·{' '}
@@ -961,19 +704,22 @@ function GuidePostPage(props: FrontendPageProps): ReactElement {
           <ChevronLeft className="size-4" aria-hidden="true" />
           {tr('guide.back')}
         </a>
-        <p className="mt-8 text-xs text-muted-foreground">
+        <div className="mt-8">
+          <SectionLabel>{tr('guide.kicker')}</SectionLabel>
+        </div>
+        <p className="mt-4 text-xs text-muted-foreground">
           {tr(`${post.key}.date`)} · {tr('guide.readTime', { minutes: tr(`${post.key}.minutes`) })}
         </p>
         <h1 className="mt-4 text-4xl font-medium tracking-tight text-balance sm:text-5xl">
           {tr(`${post.key}.title`)}
         </h1>
         <p className="mt-5 text-lg leading-8 text-muted-foreground">{tr(`${post.key}.excerpt`)}</p>
-        <div className="mt-10 space-y-5 border-t-4 border-border pt-8 text-[15px] leading-8 text-foreground/85">
+        <div className="mt-10 space-y-5  pt-8 text-[15px] leading-8 text-foreground/85">
           {body.map((paragraph) => (
             <p key={paragraph}>{paragraph}</p>
           ))}
         </div>
-        <div className="mt-12 rounded-[20px] border-4 border-border bg-background p-6">
+        <div className="mt-12 rounded-[20px] bg-muted/60 p-6">
           <p className="text-sm font-medium">{tr('guide.cta')}</p>
           <Button render={<a href="/about" />} nativeButton={false} className="mt-4 rounded-lg">
             {tr('guide.contactEngineer')}
@@ -993,362 +739,150 @@ function ShopPage(props: FrontendPageProps): ReactElement {
     ...readCategories(props.data.catalogCategories),
     ...readCategories(props.data.storeCategories),
   ];
-  const flat = flattenCategories(categories).filter((category) => !category.parentId);
-  const total = catalog?.total ?? products.length;
+  const flat = flattenCategories(categories);
+  const query = catalog?.query ?? '';
+  const defaultCategory = flat[0]?.id ?? null;
+  const activeCategory = catalog?.category?.id ?? (query ? null : defaultCategory);
+  const activeNode = flat.find((category) => category.id === activeCategory);
+  const activeName =
+    catalog?.category?.name ?? activeNode?.name ?? (query ? tr('shop.all') : tr('shop.title'));
+  const visibleProducts = activeCategory
+    ? products.filter((product) => product.categoryId === activeCategory)
+    : products;
+  const total =
+    (activeCategory ? activeNode?.productCount : catalog?.total) ?? visibleProducts.length;
   const page = catalog?.page ?? 1;
   const pages = Math.max(1, Math.ceil(total / (catalog?.pageSize ?? PAGE_SIZE)));
-  const query = catalog?.query ?? '';
-  const activeCategory = catalog?.category?.id ?? null;
 
   return (
     <main className="flex-1">
-      <section className="bg-background">
-        <div className="atl-scroll-in mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
-          <SectionLabel>{tr('shop.kicker')}</SectionLabel>
-          <div className="mt-5 flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <h1 className="text-4xl font-medium tracking-tight sm:text-5xl">
-                {tr('shop.title')}
-              </h1>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
-                {tr('shop.lead')}
-              </p>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {tr('shop.count', { count: String(total) })}
-            </p>
-          </div>
+      <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
+        <PageIntro
+          kicker={tr('shop.kicker')}
+          title={activeName}
+          lead={tr('shop.count', { count: String(total) })}
+          actions={
+            <Button
+              render={<a href="/shop/cart" />}
+              nativeButton={false}
+              variant="secondary"
+              className="h-10 rounded-lg bg-muted px-4 text-foreground hover:bg-muted/80"
+            >
+              <ShoppingBag className="size-4" aria-hidden="true" />
+              {tr('layout.cart')}
+            </Button>
+          }
+        />
 
-          <form action="/shop" className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <div className="flex h-12 flex-1 items-center gap-2 rounded-xl bg-muted p-1">
-              <div className="flex h-full flex-1 items-center gap-2 rounded-lg bg-background px-4">
-                <Search className="size-4 text-muted-foreground" aria-hidden="true" />
+        <div className="mt-8 grid gap-6 lg:grid-cols-[220px_1fr]">
+          <aside className="flex flex-col gap-4">
+            <form action="/shop">
+              <div className="flex h-10 items-center gap-2 rounded-[10px] border border-border/80 bg-background px-3 transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/15">
+                <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <Input
                   name="q"
                   defaultValue={query}
                   aria-label={tr('shop.searchPlaceholder')}
                   placeholder={tr('shop.searchPlaceholder')}
-                  className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                  className="h-10 border-0! bg-transparent px-0 text-sm shadow-none focus-visible:border-transparent! focus-visible:ring-0!"
                 />
               </div>
-            </div>
-            {activeCategory ? (
-              <input type="hidden" name="categoryId" value={activeCategory} />
+              {activeCategory ? (
+                <input type="hidden" name="categoryId" value={activeCategory} />
+              ) : null}
+            </form>
+
+            <nav
+              className="flex flex-col gap-0.5 rounded-2xl bg-muted/50 p-2"
+              aria-label={tr('shop.filterAria')}
+            >
+              {flat.map((category) => (
+                <a
+                  key={category.id}
+                  href={shopHref(1, category.id, query || null)}
+                  className={cn(
+                    'flex h-9 items-center justify-between gap-2 rounded-lg px-3 text-sm transition-colors',
+                    activeCategory === category.id
+                      ? 'bg-background font-medium text-foreground'
+                      : 'text-muted-foreground hover:bg-background/70 hover:text-foreground',
+                  )}
+                >
+                  <span className="truncate">{category.name}</span>
+                  {category.productCount > 0 ? (
+                    <span className="text-xs text-muted-foreground">{category.productCount}</span>
+                  ) : null}
+                </a>
+              ))}
+            </nav>
+          </aside>
+
+          <section className="min-w-0">
+            {query ? (
+              <p className="mb-4 text-sm text-muted-foreground">
+                {tr('shop.resultsFor', { query })}
+              </p>
             ) : null}
-            <Button type="submit" className="h-10 rounded-lg px-6">
-              {tr('shop.searchSubmit')}
-            </Button>
-          </form>
 
-          <div
-            className="mt-5 flex flex-wrap items-center gap-2"
-            aria-label={tr('shop.filterAria')}
-          >
-            <a
-              href="/shop"
-              className={cn(
-                'rounded-full px-3.5 py-1.5 text-sm transition-colors',
-                !activeCategory
-                  ? 'bg-foreground text-background'
-                  : 'bg-muted text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {tr('shop.all')}
-            </a>
-            {flat.map((category) => (
-              <a
-                key={category.id}
-                href={shopHref(1, category.id, query || null)}
-                className={cn(
-                  'rounded-full px-3.5 py-1.5 text-sm transition-colors',
-                  activeCategory === category.id
-                    ? 'bg-foreground text-background'
-                    : 'bg-muted text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {category.name}
-              </a>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
-        {query ? (
-          <p className="mb-6 text-sm text-muted-foreground">{tr('shop.resultsFor', { query })}</p>
-        ) : null}
-
-        {products.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((product) => (
-              <ProductCard key={product.id} product={product} locale={props.locale} />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-start rounded-[20px] border-4 border-border bg-background p-10">
-            <Search className="size-6 text-muted-foreground" aria-hidden="true" />
-            <p className="mt-4 text-sm text-muted-foreground">{tr('shop.empty')}</p>
-            <Button
-              render={<a href="/shop" />}
-              nativeButton={false}
-              variant="outline"
-              className="mt-5 rounded-lg"
-            >
-              {tr('shop.clear')}
-            </Button>
-          </div>
-        )}
-
-        {pages > 1 ? (
-          <nav
-            className="mt-10 flex items-center justify-between pt-2"
-            aria-label={tr('shop.paginationAria')}
-          >
-            <p className="text-sm text-muted-foreground">
-              {page} / {pages}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                render={<a href={shopHref(Math.max(1, page - 1), activeCategory, query || null)} />}
-                nativeButton={false}
-                variant="outline"
-                size="icon"
-                className="rounded-full"
-                aria-label={tr('shop.prev')}
-              >
-                <ChevronLeft className="size-4" aria-hidden="true" />
-              </Button>
-              <Button
-                render={
-                  <a href={shopHref(Math.min(pages, page + 1), activeCategory, query || null)} />
-                }
-                nativeButton={false}
-                variant="outline"
-                size="icon"
-                className="rounded-full"
-                aria-label={tr('shop.next')}
-              >
-                <ChevronRight className="size-4" aria-hidden="true" />
-              </Button>
-            </div>
-          </nav>
-        ) : null}
-      </section>
-    </main>
-  );
-}
-
-function ShopProductPage(props: FrontendPageProps): ReactElement {
-  const tr = t(props.locale);
-  const product = props.data.product as ShopProduct | undefined;
-  const methods = props.data.methods as ShopPaymentMethods | undefined;
-  const addToCart = props.actions['store.add-to-cart'];
-  const walletPurchase = props.actions['store.create-order-wallet'];
-  const externalPurchase = props.actions['store.create-order-external'];
-  const retryHref = `/shop/${product?.id ?? ''}`;
-  const specs = specRows(product?.metadata);
-
-  if (!product) {
-    return (
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-24 sm:px-6">
-        <p className="text-xs font-medium tracking-[0.16em] text-muted-foreground uppercase">404</p>
-        <h1 className="mt-4 text-3xl font-medium tracking-tight">{tr('product.notFound')}</h1>
-        <Button
-          render={<a href="/shop" />}
-          nativeButton={false}
-          variant="outline"
-          className="mt-8 w-fit rounded-full"
-        >
-          {tr('product.back')}
-        </Button>
-      </main>
-    );
-  }
-
-  const available = product.stock > 0;
-
-  return (
-    <main className="flex-1">
-      <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-16">
-        <a
-          href="/shop"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft className="size-4" aria-hidden="true" />
-          {tr('product.back')}
-        </a>
-
-        <div className="mt-8 grid gap-10 lg:grid-cols-[1.35fr_0.8fr] lg:items-start">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-muted">
-                <ServiceIcon name={product.name} className="size-6" />
-              </span>
-              <div>
-                <p className="text-xs text-muted-foreground">{tr('product.kicker')}</p>
-                <p className="text-xs text-muted-foreground">
-                  {tr('product.sku')} · {product.id.slice(0, 8)}
-                </p>
-              </div>
-            </div>
-
-            <h1 className="mt-6 text-4xl font-medium tracking-tight text-balance sm:text-5xl">
-              {product.name}
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-              {product.description ?? tr('product.description')}
-            </p>
-
-            {specs.length > 0 ? (
-              <div className="mt-8 grid gap-1 overflow-hidden rounded-[20px] bg-muted p-1 sm:grid-cols-2">
-                {specs.map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between gap-4 bg-background px-5 py-4"
-                  >
-                    <span className="text-sm text-muted-foreground">{key}</span>
-                    <span className="text-right text-sm font-medium">{value}</span>
-                  </div>
+            {visibleProducts.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {visibleProducts.map((product) => (
+                  <ProductCard key={product.id} product={product} locale={props.locale} />
                 ))}
               </div>
             ) : (
-              <div className="mt-8 rounded-xl bg-muted px-5 py-4 text-sm text-muted-foreground">
-                {tr('product.noSpecs')}
+              <div className="flex flex-col items-start rounded-[20px] bg-muted/60 p-10">
+                <Search className="size-6 text-muted-foreground" aria-hidden="true" />
+                <p className="mt-4 text-sm text-muted-foreground">{tr('shop.empty')}</p>
+                <Button
+                  render={<a href="/shop" />}
+                  nativeButton={false}
+                  variant="secondary"
+                  className="mt-5 rounded-lg bg-background"
+                >
+                  {tr('shop.clear')}
+                </Button>
               </div>
             )}
 
-            <div className="mt-8 grid gap-4 sm:grid-cols-3">
-              {[
-                { icon: ShieldCheck, key: 1 },
-                { icon: Timer, key: 2 },
-                { icon: Workflow, key: 3 },
-              ].map((item) => (
-                <div key={item.key} className="rounded-xl bg-muted p-4">
-                  <item.icon className="size-4 text-muted-foreground" aria-hidden="true" />
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    {tr(`product.feature${item.key}.label`)}
-                  </p>
-                  <p className="mt-1 text-sm font-medium">
-                    {tr(`product.feature${item.key}.value`)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <aside className="rounded-[22px] border-4 border-border bg-card p-6 lg:sticky lg:top-24">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs text-muted-foreground">{tr('product.price')}</p>
-                <p className="mt-1 text-3xl font-medium tracking-tight tabular-nums">
-                  {money(product.price, product.currency, props.locale)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">{tr('product.unit')}</p>
-              </div>
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px]',
-                  available ? 'text-muted-foreground' : 'text-destructive',
-                )}
+            {pages > 1 ? (
+              <nav
+                className="mt-8 flex items-center justify-between pt-2"
+                aria-label={tr('shop.paginationAria')}
               >
-                <span
-                  className={cn(
-                    'size-1.5 rounded-full',
-                    available ? 'bg-success' : 'bg-destructive',
-                  )}
-                  aria-hidden="true"
-                />
-                {available ? tr('product.available') : tr('product.outOfStock')}
-              </span>
-            </div>
-
-            <div className="mt-6 space-y-4 border-t-4 border-border pt-6">
-              {available ? (
-                <>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{tr('product.stock')}</span>
-                    <span className="font-medium tabular-nums">{product.stock}</span>
-                  </div>
-
-                  {addToCart ? (
-                    <form action={addToCart} className="space-y-3">
-                      <input type="hidden" name="productId" value={product.id} />
-                      <label className="flex items-center justify-between gap-3 text-sm">
-                        <span className="shrink-0 text-muted-foreground">
-                          {tr('product.quantity')}
-                        </span>
-                        <Input
-                          type="number"
-                          name="quantity"
-                          min={1}
-                          max={Math.min(product.stock, 99)}
-                          defaultValue={1}
-                          className="h-9 w-24 text-right"
-                        />
-                      </label>
-                      <Button type="submit" className="h-10 w-full rounded-lg">
-                        <ShoppingBag className="size-4" aria-hidden="true" />
-                        {tr('product.addToCart')}
-                      </Button>
-                    </form>
-                  ) : (
-                    <Button
-                      render={<a href={`/login?next=${encodeURIComponent(retryHref)}`} />}
-                      nativeButton={false}
-                      className="h-10 w-full rounded-lg"
-                    >
-                      <ShoppingBag className="size-4" aria-hidden="true" />
-                      {tr('product.loginToAdd')}
-                    </Button>
-                  )}
-
-                  {walletPurchase ? (
-                    <form action={walletPurchase}>
-                      <input type="hidden" name="productId" value={product.id} />
-                      <input type="hidden" name="quantity" value="1" />
-                      <Button type="submit" variant="outline" className="h-10 w-full rounded-lg">
-                        <ShieldCheck className="size-4" aria-hidden="true" />
-                        {tr('product.payWithBalance')}
-                      </Button>
-                    </form>
-                  ) : null}
-
-                  {externalPurchase
-                    ? methods?.providers?.flatMap((provider) =>
-                        provider.methods.map((method) => (
-                          <form key={`${provider.id}-${method.id}`} action={externalPurchase}>
-                            <input type="hidden" name="productId" value={product.id} />
-                            <input type="hidden" name="quantity" value="1" />
-                            <input type="hidden" name="providerId" value={provider.id} />
-                            <input type="hidden" name="paymentMethod" value={method.id} />
-                            <Button
-                              type="submit"
-                              variant="ghost"
-                              className="h-10 w-full rounded-full text-muted-foreground"
-                            >
-                              {tr('product.payWith', { method: method.label })}
-                            </Button>
-                          </form>
-                        )),
-                      )
-                    : null}
-                </>
-              ) : (
-                <p className="flex items-center gap-2 text-sm text-destructive">
-                  <CircleDot className="size-4" aria-hidden="true" />
-                  {tr('product.outOfStock')}
+                <p className="text-sm text-muted-foreground">
+                  {page} / {pages}
                 </p>
-              )}
-            </div>
-
-            <a
-              href="/shop/cart"
-              className="mt-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-            >
-              {tr('product.viewCart')}
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </a>
-          </aside>
+                <div className="flex items-center gap-2">
+                  <Button
+                    render={
+                      <a href={shopHref(Math.max(1, page - 1), activeCategory, query || null)} />
+                    }
+                    nativeButton={false}
+                    variant="secondary"
+                    size="icon"
+                    className="rounded-full bg-muted"
+                    aria-label={tr('shop.prev')}
+                  >
+                    <ChevronLeft className="size-4" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    render={
+                      <a
+                        href={shopHref(Math.min(pages, page + 1), activeCategory, query || null)}
+                      />
+                    }
+                    nativeButton={false}
+                    variant="secondary"
+                    size="icon"
+                    className="rounded-full bg-muted"
+                    aria-label={tr('shop.next')}
+                  >
+                    <ChevronRight className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </nav>
+            ) : null}
+          </section>
         </div>
       </div>
     </main>
@@ -1368,26 +902,21 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
   return (
     <main className="flex-1">
       <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 lg:py-20">
-        <SectionLabel>CART</SectionLabel>
-        <h1 className="mt-4 text-4xl font-medium tracking-tight">{tr('cart.title')}</h1>
-        <p className="mt-3 text-sm text-muted-foreground">{tr('cart.lead')}</p>
+        <PageIntro kicker={tr('cart.kicker')} title={tr('cart.title')} lead={tr('cart.lead')} />
 
         {items.length > 0 ? (
           <div className="mt-10 grid gap-8 lg:grid-cols-[1.5fr_0.75fr] lg:items-start">
-            <section className="overflow-hidden rounded-[22px] border-4 border-border bg-card">
-              <div className="hidden grid-cols-[1fr_130px_120px] gap-4 bg-muted px-5 py-3 text-xs text-muted-foreground sm:grid">
+            <section className="rounded-[22px] bg-muted/55 p-2">
+              <div className="hidden grid-cols-[1fr_130px_120px] gap-4 px-3 py-3 text-xs text-muted-foreground sm:grid">
                 <span>{tr('cart.summary')}</span>
                 <span>{tr('cart.quantity')}</span>
                 <span className="text-right">{tr('cart.total')}</span>
               </div>
               {items.map((item) => (
-                <div key={item.id} className="border-b-4 border-border px-5 py-5 last:border-b-0">
+                <div key={item.id} className="rounded-xl bg-background px-4 py-4">
                   <div className="grid gap-4 sm:grid-cols-[1fr_130px_120px] sm:items-center">
                     <div className="min-w-0">
-                      <a
-                        href={`/shop/${item.product.id}`}
-                        className="text-sm font-medium hover:underline"
-                      >
+                      <a href="/register" className="text-sm font-medium hover:underline">
                         {item.product.name}
                       </a>
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -1439,15 +968,15 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
               ))}
             </section>
 
-            <aside className="rounded-[22px] border-4 border-border bg-card p-6 lg:sticky lg:top-24">
-              <div className="flex items-center justify-between border-b-4 border-border pb-4">
+            <aside className="rounded-[22px] bg-muted/55 p-6 lg:sticky lg:top-24">
+              <div className="flex items-center justify-between rounded-xl bg-background px-4 py-4">
                 <span className="text-sm text-muted-foreground">{tr('cart.total')}</span>
                 <span className="text-2xl font-medium tabular-nums">
                   {money(cart?.total ?? 0, items[0]?.product.currency ?? 'CNY', props.locale)}
                 </span>
               </div>
 
-              <div className="mt-5 space-y-3">
+              <div className="mt-3 space-y-3">
                 {checkoutWallet ? (
                   <form action={checkoutWallet}>
                     <ul className="mb-3 space-y-1.5">
@@ -1478,7 +1007,7 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
                         <form
                           key={`${provider.id}-${method.id}`}
                           action={checkoutExternal}
-                          className="space-y-2 border-t-4 border-border pt-3"
+                          className="space-y-2  pt-3"
                         >
                           <ul className="space-y-1.5">
                             {items.map((item) => (
@@ -1516,7 +1045,7 @@ function ShopCartPage(props: FrontendPageProps): ReactElement {
             </aside>
           </div>
         ) : (
-          <div className="mt-10 flex flex-col items-start rounded-[20px] border-4 border-border bg-background p-10">
+          <div className="mt-10 flex flex-col items-start rounded-[20px] bg-muted/60 p-10">
             <ShoppingBag className="size-6 text-muted-foreground" aria-hidden="true" />
             <p className="mt-4 text-sm text-muted-foreground">{tr('cart.empty')}</p>
             <Button render={<a href="/shop" />} nativeButton={false} className="mt-5 rounded-lg">
@@ -1562,12 +1091,18 @@ const frontend: FrontendPackage = {
   messages,
   settingsSchema,
   layouts: { theme: AtlasLayout },
+  overrides: {
+    '/blog/:slug': 'article',
+  },
   pages: [
     {
       path: '/',
       component: 'home',
       layout: 'theme',
-      data: [],
+      data: [
+        { finder: 'store.categories', as: 'storeCategories' },
+        { finder: 'store.products', as: 'products', input: { page: 1, pageSize: 12 } },
+      ],
     },
     {
       path: '/shop',
@@ -1585,16 +1120,6 @@ const frontend: FrontendPackage = {
       ],
     },
     {
-      path: '/shop/:id',
-      component: 'product',
-      layout: 'theme',
-      data: [
-        { finder: 'store.product', as: 'product', input: { id: ':id' } },
-        { finder: 'store.paymentMethods', as: 'methods' },
-        { finder: 'store.viewer', as: 'viewer' },
-      ],
-    },
-    {
       path: '/shop/cart',
       component: 'cart',
       layout: 'theme',
@@ -1603,18 +1128,25 @@ const frontend: FrontendPackage = {
         { finder: 'store.paymentMethods', as: 'methods' },
       ],
     },
+    {
+      path: '/data',
+      component: 'modelData',
+      layout: 'theme',
+      data: [{ finder: 'llmGateway.prices', as: 'modelPrices' }],
+    },
     { path: '/about', component: 'about', layout: 'theme' },
     { path: '/guide', component: 'guide', layout: 'theme' },
     { path: '/guide/:slug', component: 'guidePost', layout: 'theme' },
     { path: '*', component: 'notFound', layout: 'theme' },
   ],
   pageComponents: {
-    home: HomePage,
+    home: AtlasHomePage,
+    article: AtlasArticlePage,
+    modelData: AtlasDataPage,
     about: AboutPage,
     guide: GuidePage,
     guidePost: GuidePostPage,
     shop: ShopPage,
-    product: ShopProductPage,
     cart: ShopCartPage,
     notFound: AtlasNotFoundPage,
   },

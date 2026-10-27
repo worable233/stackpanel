@@ -24,6 +24,7 @@ import {
   type DeveloperActionResult,
 } from '@/lib/developer-actions';
 import { useTranslator } from '@/i18n/provider';
+import { Select } from '@stackpanel/ui';
 
 function StatusMessage({ state }: { state: DeveloperActionResult | null }) {
   if (!state) return null;
@@ -347,7 +348,7 @@ function EditResellerDialog({
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-reseller-status">{t('admin.developer.write.status')}</Label>
-            <select
+            <Select
               id="edit-reseller-status"
               value={status}
               onChange={(e) => setStatus(e.target.value === 'DISABLED' ? 'DISABLED' : 'ACTIVE')}
@@ -355,7 +356,7 @@ function EditResellerDialog({
             >
               <option value="ACTIVE">{t('admin.developer.resellers.statusActive')}</option>
               <option value="DISABLED">{t('admin.developer.resellers.statusDisabled')}</option>
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-reseller-webhook-url">{t('admin.developer.write.webhookUrl')}</Label>

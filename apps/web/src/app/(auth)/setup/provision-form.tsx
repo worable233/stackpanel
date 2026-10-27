@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui/field';
 import { useTranslator } from '@/i18n/provider';
 import { submitBootstrapAction } from '@/lib/actions';
+import { Select } from '@stackpanel/ui';
 
 /**
  * Infrastructure bootstrap form (BOOTSTRAP-R1/R8).
@@ -210,7 +211,7 @@ export function ProvisionForm({
 
               <Field>
                 <Label htmlFor="provision-driver">{t('auth.setup.provision.storage')}</Label>
-                <select
+                <Select
                   id="provision-driver"
                   className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
                   value={driver}
@@ -219,7 +220,7 @@ export function ProvisionForm({
                 >
                   <option value="s3">{t('auth.setup.provision.driverS3')}</option>
                   <option value="local">{t('auth.setup.provision.driverLocal')}</option>
-                </select>
+                </Select>
               </Field>
 
               {driver === 's3' && (

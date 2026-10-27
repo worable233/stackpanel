@@ -39,6 +39,39 @@ import { resolveCheckoutPrice, effectiveDiscount } from './pricing';
 import { applyDiscount, betterDiscount } from './discount';
 import { formatAmountPair, quoteSettlement, sameCurrency } from './currency';
 import { notifyUser } from './notifications';
+import { sellabilityBlocker } from './fulfillment-diagnostics';
+
+/**
+ * Refuse to sell a product that cannot be delivered.
+ *
+ * `assertCloudServerProvider` guards product *writes*, but data drifts: an
+ * operator disables or uninstalls the upstream plugin and the catalog row stays
+ * ACTIVE. Taking the money first and discovering the gap during fulfillment
+ * produces a PAID order stuck in REQUIRES_RECONCILIATION — the customer has
+ * paid, no service exists, and an admin has to unwind it by hand. Check at
+ * reserve time, before payment, so the failure costs the customer nothing.
+ *
+ * Delegates to the same diagnosis the admin panel shows, so the error a buyer
+ * hits and the warning an operator sees can never disagree.
+ */
+export function assertSellableProduct(product: {
+  status?: string;
+  fulfillmentType: string;
+  providerId?: string | null;
+}): void {
+  const blocker = sellabilityBlocker({
+    status: product.status ?? 'ACTIVE',
+    fulfillmentType: product.fulfillmentType,
+    providerId: product.providerId ?? null,
+  });
+  if (!blocker) return;
+  // Keep the historical message for the cloud-server/no-provider cases: it is
+  // asserted by tests and already surfaced in operator docs.
+  if (blocker.code === 'NO_PROVIDER') {
+    throw new StoreError(400, '云服务器商品必须绑定真实履约提供方');
+  }
+  throw new StoreError(400, blocker.message);
+}
 import { auditActor, recordStoreAudit, STORE_AUDIT_ACTIONS } from './audit';
 
 interface OrderLine {
@@ -83,6 +116,10 @@ async function reserve(
     if (!product || product.status !== 'ACTIVE' || product.stock < line.quantity) {
       throw new StoreError(409, '商品不可用或库存不足');
     }
+    /*
+     * Refuse to sell a product that cannot be delivered before taking payment.
+     */
+    assertSellableProduct({ ...product, status: product.status });
     // Enforce a single currency per order: summing amounts of different
     // currencies into one total would be financially incorrect.
     if (orderCurrency !== null && !sameCurrency(product.currency, orderCurrency)) {
@@ -435,6 +472,20 @@ export async function getMyOrder(req: HttpRequest): Promise<unknown> {
   if (!order) throw new StoreError(404, '订单不存在');
   const payments = await context().payments.listByOrderIds([order.id]);
   const payment = payments.find((item) => item.orderId === order.id);
+  /*
+   * A PENDING order must always tell the buyer what to do next.
+   *
+   * Online gateways give a `paymentUrl` to continue at. Manual methods (bank
+   * transfer / QR code) have no URL at all — the instructions *are* the payment
+   * step, so an order page showing only “待支付” leaves the customer with no
+   * account number, no QR, and no idea whether to wait. Include the recovered
+   * instructions so the UI can render them instead of an empty state.
+   */
+  const pending = order.status === 'PENDING';
+  const instructions =
+    pending && payment && !payment.paymentUrl
+      ? await context().payments.manualInstructions(payment.id)
+      : null;
   return {
     order: {
       id: order.id,
@@ -443,7 +494,8 @@ export async function getMyOrder(req: HttpRequest): Promise<unknown> {
       currency: order.currency,
       settlementTotal: order.settlementTotal,
       settlementCurrency: order.settlementCurrency,
-      paymentUrl: order.status === 'PENDING' ? (payment?.paymentUrl ?? null) : null,
+      paymentUrl: pending ? (payment?.paymentUrl ?? null) : null,
+      ...(instructions ? { paymentInstructions: instructions } : {}),
     },
   };
 }

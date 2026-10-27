@@ -1,9 +1,10 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
   buildUpdatePlan,
   listTaskResults,
   loadKernelCandidates,
+  readCatalogSnapshot,
   readTaskResult,
   readUpdaterStatus,
   readUpdatePolicy,
@@ -20,6 +21,7 @@ import {
   type PlanOutcome,
   type UpdatePolicy,
 } from '../../updates/index.ts';
+import { getCatalogRefresh } from '../../distribution/runtime.ts';
 import { auditContext, writeAudit } from '../../plugins/audit.ts';
 import { getPrisma } from '../../plugins/prisma.ts';
 import { env } from '../../config/env.ts';
@@ -47,6 +49,13 @@ const policySchema = z.object({
 const installSchema = z.object({
   /** 显式确认包含需人工授权的变更（权限增加 / 不可逆迁移）。 */
   acknowledge: z.boolean().default(false),
+  /**
+   * 显式确认「目录快照已过期仍要投递」。
+   *
+   * 过期目录仍可展示与求解（便于人工决策），但 PLAN §3.3 / ADR-0023 决策 2 要求
+   * 「过期目录禁止发起新自动安装」——所以默认拒绝，只有管理员显式勾选才放行一次。
+   */
+  allowExpired: z.boolean().default(false),
   /** 可选固定幂等键。 */
   idempotencyKey: z.string().min(1).max(128).optional(),
 });
@@ -99,22 +108,95 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  /** 读取 updater 状态投影 + 当前策略 + 是否配置了目录。 */
+  /**
+   * 读取 updater 状态投影 + 当前策略 + 目录状态。
+   *
+   * **完全只读、零出网**：目录信息取自刷新协调器的内存快照。旧实现在这里调用
+   * `updateCatalogContext()` → `ensureCurrent()`，进程重启后的第一次进页面就会卡在
+   * GitHub 请求上（与 `refresh-service` 的「渲染路径不出网」契约矛盾）。
+   * 真正的联网动作是 `POST /admin/updates/check`。
+   */
   app.get(
     '/admin/updates/status',
     { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
     async () => {
-      const [status, policy, context] = await Promise.all([
-        readUpdaterStatus(),
-        readUpdatePolicy(prisma()),
-        updateCatalogContext(),
-      ]);
+      const [status, policy] = await Promise.all([readUpdaterStatus(), readUpdatePolicy(prisma())]);
+      const catalog = readCatalogSnapshot();
       return {
         status,
         policy,
-        catalogConfigured: context !== null,
-        catalogExpired: context?.expired ?? null,
+        catalogState: catalog.state,
+        catalogConfigured: catalog.state !== 'unconfigured',
+        catalogExpired: catalog.expired,
+        catalogFailure: catalog.failure,
+        catalogRepository: catalog.repository,
+        catalogChannel: catalog.channel,
+        catalogSequence: catalog.sequence,
+        catalogGeneratedAt: catalog.generatedAt,
+        lastCheckedAt: catalog.lastCheckedAt,
+        cooldownMs: catalog.cooldownMs,
+        carrier: env.DISTRIBUTION_UPDATE_CARRIER,
         instanceId: updateInstanceId(),
+      };
+    },
+  );
+
+  /**
+   * 检查更新：强制刷新一次签名目录（显式动作）。
+   *
+   * - **单飞**：并发点击共享同一个在途请求（刷新协调器保证），不会 N 个管理员 = N 次 GitHub。
+   * - **冷却**：失败退避期内、或刚成功后的最短间隔内，直接回 `throttled` + `retryAtMs`，
+   *   不发任何请求——否则「检查更新」会退化成无限的 GitHub 触发器。
+   * - **失败不降级**：验签失败/回放拒绝/限流一律原样上报 `catalog.failure`，
+   *   不返回部分目录，也不把旧快照当新结果。
+   */
+  app.post(
+    '/admin/updates/check',
+    { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
+    async (request) => {
+      const service = getCatalogRefresh();
+      if (!service) {
+        return {
+          checked: false,
+          throttled: false,
+          retryAtMs: 0,
+          catalog: readCatalogSnapshot(),
+          plan: null,
+        };
+      }
+      const cooldownMs = service.cooldownRemainingMs();
+      if (cooldownMs > 0) {
+        return {
+          checked: false,
+          throttled: true,
+          retryAtMs: cooldownMs,
+          catalog: readCatalogSnapshot(),
+          plan: null,
+        };
+      }
+      const result = await service.refresh();
+      await writeAudit({
+        action: 'updates.catalog.check',
+        resource: 'distribution',
+        ...auditContext(request),
+        meta: {
+          ok: result.resolved !== null,
+          sequence: result.resolved?.sequence ?? null,
+          failure: result.failure?.kind ?? null,
+        },
+      });
+      // 拿到可用快照就顺手求解一次：管理员点「检查更新」想看到的正是「有没有得升」。
+      let solved: Record<string, unknown> | null = null;
+      if (result.resolved) {
+        const entry = await solvePlan();
+        if (entry) solved = planResponse(entry.outcome, entry.expired);
+      }
+      return {
+        checked: true,
+        throttled: false,
+        retryAtMs: 0,
+        catalog: readCatalogSnapshot(),
+        plan: solved,
       };
     },
   );
@@ -124,11 +206,9 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
     '/admin/updates/plan',
     { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
     async (_request, reply) => {
-      const outcome = await plan();
-      if (!outcome) {
-        return reply.code(409).send({ error: '未配置远程目录，无法求解远程更新计划' });
-      }
-      return planResponse(outcome);
+      const entry = await solvePlan();
+      if (!entry) return catalogUnavailable(reply);
+      return planResponse(entry.outcome, entry.expired);
     },
   );
 
@@ -140,26 +220,36 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       const parsed = installSchema.safeParse(request.body ?? {});
       if (!parsed.success)
         return reply.code(400).send({ error: '请求无效', issues: parsed.error.issues });
-      const outcome = await plan(parsed.data.idempotencyKey);
-      if (!outcome) {
-        return reply.code(409).send({ error: '未配置远程目录，无法提交远程更新任务' });
+      const entry = await solvePlan(parsed.data.idempotencyKey);
+      if (!entry) return catalogUnavailable(reply);
+      if (!entry.outcome.ok) return planResponse(entry.outcome, entry.expired);
+      // 过期目录可以看、可以算，但**默认不得**据此投递新任务（PLAN §3.3）。
+      if (entry.expired && !parsed.data.allowExpired) {
+        return reply.code(409).send({
+          ok: false,
+          code: 'catalog_expired',
+          catalogExpired: true,
+          error: '目录快照已过期：请先「检查更新」，或显式勾选「仍按过期目录投递」',
+        });
       }
-      if (!outcome.ok) return planResponse(outcome);
-      if (requiresAuthorization(outcome.plan) && !parsed.data.acknowledge) {
+      if (requiresAuthorization(entry.outcome.plan) && !parsed.data.acknowledge) {
         return reply.code(409).send({
           error: '计划包含权限增加或不可逆迁移，需显式确认后提交',
+          code: 'authorization_required',
           requiresAcknowledge: true,
         });
       }
-      await submitUpdateTask(updateChannelRoot(), outcome.task);
+      await submitUpdateTask(updateChannelRoot(), entry.outcome.task);
       await writeAudit({
         action: 'updates.task.submit',
         resource: 'update-task',
-        resourceId: outcome.task.idempotencyKey,
+        resourceId: entry.outcome.task.idempotencyKey,
         meta: {
-          planDigest: outcome.task.planDigest,
-          targetDigest: outcome.task.targetDigest,
-          packages: outcome.plan.packages.length,
+          planDigest: entry.outcome.task.planDigest,
+          targetDigest: entry.outcome.task.targetDigest,
+          packages: entry.outcome.plan.packages.length,
+          acknowledged: parsed.data.acknowledge,
+          catalogExpired: entry.expired,
         },
         ...auditContext(request),
       });
@@ -173,14 +263,14 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
             userId: actorId,
             type: 'system.update.submit',
             title: '更新任务已提交',
-            body: `已投递 ${outcome.plan.packages.length} 个包的升级任务，完成后可在更新中心查看结果。`,
+            body: `已投递 ${entry.outcome.plan.packages.length} 个包的升级任务，完成后可在更新中心查看结果。`,
             link: '/admin/updates',
             data: {
               kind: 'update',
               action: 'submit',
-              idempotencyKey: outcome.task.idempotencyKey,
-              planDigest: outcome.task.planDigest,
-              packages: outcome.plan.packages.length,
+              idempotencyKey: entry.outcome.task.idempotencyKey,
+              planDigest: entry.outcome.task.planDigest,
+              packages: entry.outcome.plan.packages.length,
             },
             status: 'info',
           },
@@ -188,8 +278,9 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       }
       return reply.code(202).send({
         submitted: true,
-        idempotencyKey: outcome.task.idempotencyKey,
-        planDigest: outcome.task.planDigest,
+        idempotencyKey: entry.outcome.task.idempotencyKey,
+        planDigest: entry.outcome.task.planDigest,
+        catalogExpired: entry.expired,
       });
     },
   );
@@ -274,13 +365,13 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  async function plan(idempotencyKey?: string): Promise<PlanOutcome | null> {
+  async function solvePlan(idempotencyKey?: string): Promise<PlanEntry | null> {
     const context = await updateCatalogContext();
     if (!context) return null;
     const policy = await readUpdatePolicy(prisma());
     const status = await readUpdaterStatus();
     const kernelCandidates = await loadKernelCandidates(context);
-    return buildUpdatePlan({
+    const outcome = await buildUpdatePlan({
       prisma: prisma(),
       catalog: context.catalog,
       policy,
@@ -290,16 +381,43 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       carrier: env.DISTRIBUTION_UPDATE_CARRIER,
       ...(idempotencyKey ? { idempotencyKey } : {}),
     });
+    return { outcome, expired: context.expired };
   }
 }
 
+/** 求解结果 + 目录新鲜度（过期目录可求解、可展示，但不默认允许投递）。 */
+interface PlanEntry {
+  outcome: PlanOutcome;
+  expired: boolean;
+}
+
+/**
+ * 目录不可用时的显式错误。
+ *
+ * 旧实现把「未配置 / 首次拉取失败 / 验签失败 / 回放拒绝」四种情况都回同一句
+ * 「未配置远程目录」，管理员完全不知道该去改配置还是该重试。
+ */
+function catalogUnavailable(reply: FastifyReply): FastifyReply {
+  const catalog = readCatalogSnapshot();
+  const unconfigured = catalog.state === 'unconfigured';
+  return reply.code(409).send({
+    ok: false,
+    code: unconfigured ? 'catalog_unconfigured' : 'catalog_unavailable',
+    error: unconfigured
+      ? '未配置远程目录（离线模式）：请在「设置 · 应用市场与分发源」启用目录仓'
+      : `远程目录暂不可用${catalog.failure ? `（${catalog.failure.message}）` : ''}`,
+    catalog,
+  });
+}
+
 /** 把求解结果映射为响应（阻止原因或计划摘要）。 */
-function planResponse(outcome: PlanOutcome): Record<string, unknown> {
+function planResponse(outcome: PlanOutcome, catalogExpired: boolean): Record<string, unknown> {
   if (!outcome.ok) {
-    return { ok: false, blocks: outcome.blocks };
+    return { ok: false, blocks: outcome.blocks, catalogExpired };
   }
   return {
     ok: true,
+    catalogExpired,
     planDigest: outcome.task.planDigest,
     plan: outcome.plan,
     includesKernel: outcome.includesKernel,

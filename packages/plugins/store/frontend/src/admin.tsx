@@ -1,5 +1,4 @@
 'use client';
-import { SectionTitle } from '@stackpanel/ui';
 
 import { useCallback, useState, useTransition } from 'react';
 import Link from 'next/link';
@@ -21,6 +20,7 @@ import {
   StatusBadge,
   CardDescription,
   CardContent,
+  Checkbox,
   Field,
   FieldGroup,
   FieldError,
@@ -32,6 +32,20 @@ import {
 import { Package, Pencil, Plus, RefreshCw, Save, Search } from 'lucide-react';
 import { t } from './i18n.js';
 import { approvalErrorMessage } from './approval-feedback.js';
+
+/** 履约诊断条目（对应 store 插件 `/store/admin/fulfillment-issues`）。 */
+interface FulfillmentIssue {
+  productId: string;
+  name: string;
+  code: string;
+  message: string;
+  blocking: boolean;
+}
+
+interface FulfillmentDiagnostics {
+  issues: FulfillmentIssue[];
+  providers: Array<{ id: string; name: string; fulfillmentTypes: string[] }>;
+}
 
 interface ProductRow {
   id: string;
@@ -48,6 +62,34 @@ interface ProductRow {
   providerId: string | null;
   providerProductId: string | null;
   metadata: Record<string, unknown> | null;
+}
+
+/**
+ * 折扣口径换算：运营者看到的「折」与数据库里的「% off」。
+ *
+ * 「9.8 折」= 支付原价的 98% = 「优惠 2%」。中文电商界面上「折」是唯一不会
+ * 误读的说法：把「% off」直接展示给运营者，没人分得清 98 是「优惠 98%」还是
+ * 「打 98 折」，本仓库已经因此把一个 ¥72/月的商品错卖成 ¥1.44。
+ *
+ * 内部继续存 % off，因为 `betterDiscount` / `applyDiscount` / 权限组折扣
+ * 全是这一个口径，改成「折」会让两条折扣来源无法比较（取更优者）。
+ */
+
+/** % off → “折” 文本（两位小数，去掉末尾 0）。2 → "9.8"。 */
+function percentOffToZhe(percentOff: number): string {
+  const zhe = (100 - percentOff) / 10;
+  return String(Math.round(zhe * 100) / 100);
+}
+
+/** “折” 文本 → % off 整数；空串 = 无折扣（null），非法输入返回 null。 */
+function zheToPercentOff(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const zhe = Number(trimmed);
+  // 0.1 折（1% 价）到 9.9 折（99% 价），“10 折”等于不打折 → 用空值表达。
+  if (!Number.isFinite(zhe) || zhe < 0.1 || zhe >= 10) return null;
+  const percentOff = Math.round((10 - zhe) * 10);
+  return percentOff <= 0 ? null : percentOff;
 }
 
 /** 读取商品 metadata.upstream.sourcePrice（上游源价，分）。 */
@@ -207,7 +249,7 @@ function ConfigFieldControl({
         }}
         placeholder={field.placeholder}
         spellCheck={false}
-        className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="plugin-input"
         rows={field.type === 'json' ? 5 : 3}
       />
     );
@@ -227,15 +269,14 @@ function ConfigFieldControl({
   if (field.type === 'multiselect') {
     const selected = Array.isArray(value) ? (value as unknown[]).map((v) => String(v)) : [];
     return (
-      <div className="flex flex-wrap gap-1.5 rounded-lg border p-2">
+      <div className="plugin-segmented flex flex-wrap gap-1.5">
         {(field.options ?? []).map((option) => {
           const checked = selected.includes(option.value);
           return (
             <label
               key={option.value}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
-                checked ? 'border-primary bg-primary/10 text-primary' : 'bg-muted/40'
-              }`}
+              data-checked={checked}
+              className="plugin-chip"
             >
               <input
                 type="checkbox"
@@ -259,11 +300,9 @@ function ConfigFieldControl({
   if (field.type === 'boolean') {
     return (
       <Label className="gap-2 font-normal">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={value === true || value === 'true'}
-          onChange={(e) => onChange(e.target.checked)}
-          className="size-4 accent-primary"
+          onCheckedChange={(checked) => onChange(checked === true)}
         />
         {field.label}
       </Label>
@@ -335,7 +374,7 @@ function ConfigFields({
       {buckets.map((bucket) => {
         if (bucket.group !== null) {
           return (
-            <fieldset key={`group-${bucket.group}`} className="rounded-lg border bg-muted/30 p-4">
+            <fieldset key={`group-${bucket.group}`} className="plugin-panel plugin-panel-muted">
               <legend className="px-1 text-sm font-medium">{bucket.group}</legend>
               <FieldList fields={bucket.fields} scope={scope} onChange={onChange} tr={tr} />
             </fieldset>
@@ -382,7 +421,7 @@ function FieldList({
 
         if (field.type === 'group') {
           return (
-            <fieldset key={field.name} className={`rounded-lg border bg-muted/30 p-4 ${span}`}>
+            <fieldset key={field.name} className={`plugin-panel plugin-panel-muted ${span}`}>
               <legend className="px-1 text-sm font-medium">{field.label}</legend>
               <ConfigFields fields={field.fields ?? []} scope={scope} onChange={onChange} tr={tr} />
             </fieldset>
@@ -396,7 +435,7 @@ function FieldList({
           return (
             <div
               key={field.name}
-              className={`flex flex-col gap-3 rounded-lg border bg-muted/30 p-4 ${span}`}
+              className={`plugin-panel plugin-panel-muted flex flex-col gap-3 ${span}`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">{field.label}</span>
@@ -414,7 +453,7 @@ function FieldList({
                 <p className="text-xs text-muted-foreground">{tr('editor.noItems')}</p>
               ) : null}
               {items.map((item, index) => (
-                <div key={index} className="rounded-lg border bg-background p-3">
+                <div key={index} className="plugin-panel">
                   <div className="mb-2 flex justify-end">
                     <Button
                       type="button"
@@ -543,8 +582,11 @@ function ProductForm({
   const [originalPrice, setOriginalPrice] = useState(
     editing?.originalPrice != null ? minorToInput(editing.originalPrice, editing.currency) : '',
   );
+  // 折扣以「折」输入（9.8 折 = 原价 × 0.98），但落库仍是 % off（2），
+  // 因为权限组折扣、betterDiscount/applyDiscount 全链路都是 % off 口径。
+  // 只在这一层做换算，价格计算链一行都不用改。
   const [discount, setDiscount] = useState(
-    editing?.discount != null ? String(editing.discount) : '',
+    editing?.discount != null ? percentOffToZhe(editing.discount) : '',
   );
   const [icon, setIcon] = useState(
     typeof editing?.metadata?.icon === 'string' ? editing.metadata.icon : '',
@@ -575,6 +617,27 @@ function ProductForm({
   const currentType = types.find((candidate) => candidate.id === typeId) ?? null;
   const isCloudServer = typeId === 'cloud_server';
   const isUpstreamManaged = Boolean(providerId && providerProductId);
+
+  /*
+   * 实时把「折」换算成实际收取比例与示例价。
+   *
+   * 折扣属于价格类字段，错了就是直接收错钱，所以不能只靠一句标签文案。
+   * 输入后当场把「售价 = 原价 × 0.98」和「优惠 2%」写出来，运营者不用心算。
+   */
+  const discountHint = (() => {
+    const percentOff = zheToPercentOff(discount);
+    if (percentOff === null) return null;
+    const zhe = (100 - percentOff) / 10;
+    const base =
+      amountToMinor(originalPrice, currency) ?? amountToMinor(price, currency) ?? null;
+    return tr('editor.discountHint', {
+      zhe: String(zhe),
+      percent: String(percentOff),
+      ...(base != null
+        ? { price: money(Math.round((base * (100 - percentOff)) / 100), currency, locale) }
+        : {}),
+    });
+  })();
 
   const runSearch = useCallback(async () => {
     if (!searchSource) return;
@@ -689,10 +752,8 @@ function ProductForm({
       setError(tr('editor.stockInvalid'));
       return;
     }
-    if (
-      discount.trim() &&
-      (!Number.isInteger(Number(discount)) || Number(discount) < 0 || Number(discount) > 99)
-    ) {
+    const zhe = zheToPercentOff(discount);
+    if (discount.trim() && zhe === null) {
       setError(tr('editor.discountInvalid'));
       return;
     }
@@ -705,7 +766,7 @@ function ProductForm({
       currency,
       ...(!isUpstreamManaged ? { stock: Number(stock), cost: optionalAmount(cost ?? '') } : {}),
       originalPrice: optionalAmount(originalPrice ?? ''),
-      discount: discount.trim() ? Number(discount) : null,
+      discount: zhe,
       ...(typeId ? { fulfillmentType: typeId } : {}),
       providerId: providerId || null,
       providerProductId: providerProductId || null,
@@ -780,12 +841,12 @@ function ProductForm({
           {sources.length > 0 ? (
             <Card id="upstream">
               <CardHeader>
-                <SectionTitle as="h3">{tr('editor.upstreamTitle')}</SectionTitle>
+                <CardTitle className="text-base">{tr('editor.upstreamTitle')}</CardTitle>
                 <CardDescription>{tr('editor.upstreamDescription')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {providerId && providerProductId ? (
-                  <div className="flex items-center justify-between rounded-lg border bg-primary/5 px-4 py-3 text-sm">
+                  <div className="plugin-callout flex items-center justify-between text-sm">
                     <span>
                       {tr('editor.linked')}
                       {sources.find((source) => source.id === providerId)?.name ?? providerId}
@@ -797,7 +858,7 @@ function ProductForm({
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4">
+                  <div className="plugin-panel plugin-panel-muted flex flex-col gap-3">
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="flex min-w-40 flex-1 flex-col gap-1.5">
                         <Label>{tr('editor.upstream')}</Label>
@@ -841,7 +902,7 @@ function ProductForm({
                       </Button>
                     </div>
                     {searchResults.length > 0 ? (
-                      <ul className="divide-y rounded-lg border bg-background">
+                      <ul className="plugin-panel plugin-panel-flush plugin-divide">
                         {searchResults.map((item) => (
                           <li
                             key={item.id}
@@ -898,7 +959,7 @@ function ProductForm({
           ) : null}
           <Card id="basic">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.basicTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.basicTitle')}</CardTitle>
               <CardDescription>{tr('editor.basicDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -933,7 +994,7 @@ function ProductForm({
           </Card>
           <Card id="pricing">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.pricingTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.pricingTitle')}</CardTitle>
               <CardDescription>
                 {isUpstreamManaged
                   ? tr('editor.pricingUpstreamDescription')
@@ -979,7 +1040,7 @@ function ProductForm({
                   <p className="text-xs text-muted-foreground">{tr('editor.currencyHint')}</p>
                 </Field>
                 {isUpstreamManaged ? (
-                  <div className="sm:col-span-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+                  <div className="plugin-panel plugin-panel-muted sm:col-span-2 text-sm text-muted-foreground">
                     {tr('editor.upstreamInventoryManaged', {
                       cost: cost ? money(amountToMinor(cost, currency) ?? 0, currency, locale) : '—',
                       stock: stock || '—',
@@ -1049,18 +1110,24 @@ function ProductForm({
                   <Input
                     id="product-discount"
                     type="number"
-                    min="0"
-                    max="99"
+                    min="0.1"
+                    max="9.9"
+                    step="0.1"
+                    inputMode="decimal"
+                    placeholder="9.8"
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                   />
+                  {discountHint ? (
+                    <p className="text-xs text-muted-foreground">{discountHint}</p>
+                  ) : null}
                 </Field>
               </FieldGroup>
             </CardContent>
           </Card>
           <Card id="configuration">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.configTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.configTitle')}</CardTitle>
               <CardDescription>{tr('editor.configDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1098,7 +1165,7 @@ function ProductForm({
                   </Select>
                 )}
                 {currentType && currentType.configFields.length > 0 && !providerId ? (
-                  <div className="rounded-lg border bg-muted/30 p-4">
+                  <div className="plugin-panel plugin-panel-muted">
                     <ConfigFields
                       fields={currentType.configFields}
                       scope={configData}
@@ -1115,7 +1182,7 @@ function ProductForm({
           </Card>
           <Card id="checkout">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.checkoutTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.checkoutTitle')}</CardTitle>
               <CardDescription>{tr('editor.checkoutDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1129,7 +1196,7 @@ function ProductForm({
                   rows={6}
                   spellCheck={false}
                   placeholder={tr('editor.checkoutPlaceholder')}
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="plugin-input plugin-input-mono"
                 />
                 <p className="text-xs text-muted-foreground">
                   {providerId ? tr('editor.upstreamConfigManaged') : tr('editor.checkoutHelp')}
@@ -1141,7 +1208,7 @@ function ProductForm({
         <aside className="flex min-w-0 flex-col gap-6 xl:sticky xl:top-24">
           <Card id="summary">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.summaryTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.summaryTitle')}</CardTitle>
               <CardDescription>{tr('editor.summaryDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1179,7 +1246,7 @@ function ProductForm({
           </Card>
           <Card id="categories">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.categoriesTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.categoriesTitle')}</CardTitle>
               <CardDescription>{tr('editor.categoriesDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1191,11 +1258,8 @@ function ProductForm({
                       return (
                         <label
                           key={option.value}
-                          className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                            checked
-                              ? 'border-primary bg-primary/10 text-primary'
-                              : 'bg-muted/40 hover:bg-muted'
-                          }`}
+                          data-checked={checked}
+                          className="plugin-chip"
                         >
                           <input
                             type="checkbox"
@@ -1292,6 +1356,50 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
   const products = (props.data.products as ProductRow[] | undefined) ?? [];
   const types = (props.data.productTypes as ProductTypeInfo[] | undefined) ?? [];
+  const diagnostics = props.data.fulfillmentDiagnostics as FulfillmentDiagnostics | undefined;
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const blocked = new Map(
+    (diagnostics?.issues ?? [])
+      .filter((issue) => issue.blocking)
+      .map((issue) => [issue.productId, issue]),
+  );
+
+  /**
+   * 上架/下架。
+   *
+   * 商品此前只能在创建时决定 status，之后无法更改：上游履约插件被停用后，
+   * 运营者没有任何手段阻止买家下单一件无法交付的商品，只能删除商品（连带
+   * 毁掉订单历史引用）。这里补上显式开关。
+   */
+  async function toggleStatus(product: ProductRow) {
+    const next = product.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    setPendingId(product.id);
+    setStatusError(null);
+    try {
+      const response = await fetch(
+        `/api/plugins/store/admin/products/${encodeURIComponent(product.id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status: next }),
+        },
+      );
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          detail?: string;
+          message?: string;
+        } | null;
+        throw new Error(body?.detail || body?.message || tr('list.statusFailed'));
+      }
+      window.location.reload();
+    } catch (cause) {
+      console.error('[store] product status change failed', cause);
+      setStatusError(cause instanceof Error ? cause.message : tr('list.statusFailed'));
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   return (
     <main className="w-full space-y-8">
@@ -1305,9 +1413,39 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
         }
       />
 
-      <div className="overflow-x-auto rounded-xl border">
+      {blocked.size > 0 ? (
+        <section className="plugin-panel flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-base font-medium">{tr('list.undeliverableTitle')}</h2>
+            <p className="text-sm text-muted-foreground">{tr('list.undeliverableHint')}</p>
+          </div>
+          <ul className="plugin-divide flex flex-col">
+            {[...blocked.values()].map((issue) => (
+              <li key={issue.productId} className="flex flex-col gap-1 py-2 text-sm">
+                <span className="font-medium">{issue.name}</span>
+                <span className="plugin-alert plugin-alert-warn">{issue.message}</span>
+              </li>
+            ))}
+          </ul>
+          {diagnostics?.providers.length ? (
+            <p className="text-xs text-muted-foreground">
+              {tr('list.availableProviders', {
+                providers: diagnostics.providers.map((provider) => provider.id).join(', '),
+              })}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {statusError ? (
+        <p role="alert" className="plugin-alert plugin-alert-error">
+          {statusError}
+        </p>
+      ) : null}
+
+      <div className="plugin-table-wrap">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-muted-foreground">
+          <thead className="plugin-table-head">
             <tr>
               <th className="px-4 py-2.5 font-medium">{tr('list.colProduct')}</th>
               <th className="px-4 py-2.5 font-medium">{tr('list.colType')}</th>
@@ -1322,14 +1460,14 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
             {products.map((product) => {
               const typeLabel = types.find((type) => type.id === product.fulfillmentType)?.label;
               return (
-                <tr key={product.id} className="border-t">
+                <tr key={product.id} className="plugin-table-row">
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{product.name}</p>
                     <p className="text-xs text-muted-foreground">{product.id.slice(0, 12)}</p>
                   </td>
                   <td className="px-4 py-2.5">
                     {typeLabel ? (
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      <span className="plugin-token">
                         {typeLabel}
                       </span>
                     ) : (
@@ -1353,7 +1491,7 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                               : '—'}
                           </span>
                           {source != null && diff ? (
-                            <span className="text-xs text-amber-600">
+                            <span className="plugin-warning text-xs">
                               {tr('list.upstreamBadge', {
                                 price: money(source, product.currency, props.locale),
                               })}
@@ -1365,22 +1503,39 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                   </td>
                   <td className="px-4 py-2.5">{product.stock}</td>
                   <td className="px-4 py-2.5">
-                    {product.status === 'ACTIVE' ? tr('list.onSale') : product.status}
+                    <div className="flex flex-col items-start gap-1">
+                      <span className={product.status === 'ACTIVE' ? undefined : 'text-muted-foreground'}>
+                        {product.status === 'ACTIVE' ? tr('list.onSale') : tr('list.offSale')}
+                      </span>
+                      {blocked.has(product.id) ? (
+                        <span className="plugin-token">{tr('list.undeliverable')}</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      nativeButton={false}
-                      render={
-                        <Link
-                          href={`/admin/plugin/store/products/${encodeURIComponent(product.id)}/edit`}
-                        />
-                      }
-                    >
-                      <Pencil className="size-3.5" />
-                      {tr('list.edit')}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        nativeButton={false}
+                        render={
+                          <Link
+                            href={`/admin/plugin/store/products/${encodeURIComponent(product.id)}/edit`}
+                          />
+                        }
+                      >
+                        <Pencil className="size-3.5" />
+                        {tr('list.edit')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pendingId === product.id}
+                        onClick={() => void toggleStatus(product)}
+                      >
+                        {product.status === 'ACTIVE' ? tr('list.unlist') : tr('list.relist')}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -1657,6 +1812,7 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
         | undefined
     )?.requests ?? [];
   const [busy, start] = useTransition();
+  const [error, setError] = useState('');
   const router = useRouter();
   // Refund states are machine values; never render them verbatim.
   const stateLabel = (state: string) => {
@@ -1666,23 +1822,38 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
   };
   const review = (id: string, decision: 'approve' | 'reject') =>
     start(async () => {
-      await fetch(`/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ decision }),
-      });
+      setError('');
+      const response = await fetch(
+        `/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ decision }),
+        },
+      );
+      // A rejected review (upstream still pending, already handled, …) must be
+      // visible: silently refreshing made the buttons look dead.
+      if (!response.ok) {
+        const failure: unknown = await response.json().catch(() => null);
+        setError(approvalErrorMessage(failure, tr('refund.actionFailed')));
+      }
       router.refresh();
     });
   return (
     <main className="flex flex-col gap-6">
       <PageHeader title={tr('refund.title')} description={tr('refund.description')} />
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">{tr('refund.empty')}</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="plugin-table-wrap">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left">
+              <tr className="plugin-table-head">
                 <th className="p-3">{tr('refund.colOrder')}</th>
                 <th className="p-3">{tr('refund.colUser')}</th>
                 <th className="p-3">{tr('refund.colAmount')}</th>
@@ -1692,7 +1863,7 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b last:border-0">
+                <tr key={row.id} className="plugin-table-row">
                   <td className="p-3 font-mono text-xs">{row.orderId}</td>
                   <td className="p-3">{row.userId}</td>
                   <td className="p-3 tabular-nums">

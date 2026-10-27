@@ -65,6 +65,7 @@ import {
 } from './product-types';
 import { calculateProductPrice } from './pricing';
 import { listCurrencyIssues, normalizeLegacyProductCurrencies } from './currency-migration';
+import { listFulfillmentIssues } from './fulfillment-diagnostics';
 import {
   cartItemModel,
   categoryModel,
@@ -98,7 +99,13 @@ function handle(handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown
   };
 }
 
-const listPaymentMethods = async (): Promise<unknown> => context().payments.listPaymentMethods();
+/*
+ * Buyer-facing list: only methods that are actually configured. A provider
+ * whose `payment_methods` rows are missing or disabled must not appear in the
+ * checkout — the buyer would pick a method with no account number behind it.
+ */
+const listPaymentMethods = async (): Promise<unknown> =>
+  context().payments.listAvailablePaymentMethods();
 
 const listChannelMethods = async (req: HttpRequest): Promise<unknown> => {
   const code = req.params['code'];
@@ -502,6 +509,14 @@ export const storePlugin = definePlugin({
       auth: 'admin',
       permission: 'store.admin',
       handler: handle(async () => ({ issues: await listCurrencyIssues() })),
+    },
+    // 履约可用性诊断：哪些商品当前无法交付、缺哪个提供方插件。
+    {
+      method: 'GET',
+      path: '/store/admin/fulfillment-issues',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(async () => listFulfillmentIssues()),
     },
     {
       method: 'POST',

@@ -224,13 +224,18 @@ export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {
   const claimed = await runTransaction(async tx => {
     const current = await tx.extensions.get<RefundRequestData>(refundRequestModel, id);
     if (!current || current.spec.state !== 'PENDING') return false;
-    const result = await tx.extensions.updateWhere(refundRequestModel, { name: { eq: id }, state: { eq: 'PENDING' } }, { state: { set: 'PROCESSING' }, reviewerId: { set: reviewerId } });
+    // 只有 `indexes` 里声明的字段才是物理列；`reviewerId` 只存在于 spec，不能进
+    // `updateWhere` 的 patch（内核会抛「不可更新的字段」，接口返回 422）。认领只抢占
+    // `state` 列，审核人随最终整行 `update()` 落库。
+    const result = await tx.extensions.updateWhere(refundRequestModel, { name: { eq: id }, state: { eq: 'PENDING' } }, { state: { set: 'PROCESSING' } });
     return result.updated === 1;
   });
   if (!claimed) throw new StoreError(409, '退款申请已被其他管理员处理');
   try {
     // 目前唯一有确定账本语义的是平台钱包；外部支付必须待 provider refund 契约接入后才允许批准。
-    const result = await refundOrder({ params: { id: request.spec.orderId }, body: { amount: request.spec.amount, reason: request.spec.reason, refundRequestId: id }, user: req.user } as never);
+    // `reason` 在申请里可为 null，而 `refundOrderSchema.reason` 是可选字符串：
+    // 原样透传 null 会让内层校验失败，把整笔退款误判为「请求参数无效」。
+    const result = await refundOrder({ params: { id: request.spec.orderId }, body: { amount: request.spec.amount, ...(request.spec.reason ? { reason: request.spec.reason } : {}), refundRequestId: id }, user: req.user } as never);
     await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'SUCCEEDED', reviewerId, failureReason: null });
     await notifyUser({ userId: request.spec.userId, type: 'order.refund.succeeded', title: '退款已到账', body: `退款已退入 StackPanel 平台余额，不会退回真实支付账户。`, link: '/account/orders', data: { requestId: id, amount: request.spec.amount, destination: 'PLATFORM_WALLET' }, dedupeKey: `store:refund:${id}:succeeded` });
     return { request: { id, status: 'SUCCEEDED' }, result };
@@ -238,7 +243,9 @@ export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {
     const reason = error instanceof Error ? error.message : '退款执行失败';
     await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'FAILED', reviewerId, failureReason: reason.slice(0, 191) });
     await notifyUser({ userId: request.spec.userId, type: 'order.refund.failed', title: '退款处理失败', body: '退款未完成，请联系管理员重试。', link: '/account/orders', data: { requestId: id }, dedupeKey: `store:refund:${id}:failed` });
-    throw new StoreError(409, '退款处理失败，请检查订单和履约状态后重试');
+    // 失败原因要透出可操作的业务信息（如「开通结果尚未确认」），否则管理员只能
+    // 看到一句笼统提示，以为按钮点不动。
+    throw new StoreError(409, `退款处理失败：${reason.slice(0, 191)}`);
   }
 }
 

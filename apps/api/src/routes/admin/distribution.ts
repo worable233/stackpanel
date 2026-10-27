@@ -162,19 +162,33 @@ export async function adminDistributionRoutes(app: FastifyInstance): Promise<voi
     },
   );
 
-  /** 立即触发一次刷新（受退避约束），供运维改完配置后验证是否可用。 */
+  /** 立即触发一次刷新（受退避/冷却约束），供运维改完配置后验证是否可用。 */
   app.post(
     '/admin/distribution/refresh',
     { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
     async () => {
       const service = getCatalogRefresh();
       if (!service) {
-        return { configured: false, available: false, failure: null };
+        return { configured: false, available: false, throttled: false, failure: null };
+      }
+      // 与 `POST /admin/updates/check` 共用同一套冷却：两个入口都不能把 GitHub 当免费刷新。
+      const cooldownMs = service.cooldownRemainingMs();
+      if (cooldownMs > 0) {
+        return {
+          configured: true,
+          available: service.current() !== null,
+          throttled: true,
+          retryAtMs: cooldownMs,
+          failure: service.lastFailureInfo(),
+          sequence: service.current()?.sequence ?? null,
+          expired: service.current()?.expired ?? null,
+        };
       }
       const result = await service.refresh();
       return {
         configured: true,
         available: result.resolved !== null,
+        throttled: false,
         failure: result.failure,
         sequence: result.resolved?.snapshot.sequence ?? null,
         expired: result.resolved?.expired ?? null,

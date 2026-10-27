@@ -146,7 +146,7 @@ function ConfigForm({
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="plugin-section flex flex-col gap-1">
         <SectionTitle>{tr('title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{tr('description')}</p>
       </div>
@@ -340,7 +340,7 @@ function ConfigForm({
                       rows={4}
                       maxLength={4096}
                       placeholder={'Authorization: Bearer <token>'}
-                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="plugin-input"
                     />
                     <FieldDescription>{tr('http.headersHint')}</FieldDescription>
                   </Field>
@@ -369,7 +369,7 @@ function ConfigForm({
           {!action && <FieldError>{tr('save.noPermission')}</FieldError>}
         </div>
       </form>
-      <div className="flex flex-col gap-3 border-t pt-6">
+      <div className="plugin-section-top flex flex-col gap-3">
         <SectionTitle>{tr('test.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">
           {tr('test.description')}

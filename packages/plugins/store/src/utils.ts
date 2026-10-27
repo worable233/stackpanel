@@ -187,6 +187,30 @@ function normalizeSelection(value: unknown): CheckoutSelection | undefined {
   };
 }
 
+/**
+ * Stable identity for a cart line's configuration.
+ *
+ * Two lines are "the same purchase" only when the customer would get the same
+ * thing: same cycle and same option→choice mapping. The key must therefore be
+ * order-insensitive (object key order carries no meaning) and must ignore
+ * `summary`, which is a display string the provider may re-word at any time.
+ * `instanceName` is included: two differently-named servers are two servers.
+ *
+ * Returning a canonical JSON string keeps the comparison allocation-free at the
+ * call site and makes a mismatch debuggable in logs.
+ */
+export function selectionKey(config: CheckoutSelection | null | undefined): string {
+  if (!config) return '';
+  const selections = Object.keys(config.selections ?? {})
+    .sort()
+    .map((key) => [key, config.selections?.[key]] as const);
+  return JSON.stringify({
+    cycle: config.cycle ?? '',
+    instanceName: config.instanceName ?? '',
+    selections,
+  });
+}
+
 export const productSchema = z.object({
   name: z.string().trim().min(1).max(191),
   description: z.string().trim().max(191).optional(),
@@ -213,6 +237,17 @@ export const productSchema = z.object({
   // Transient selector value from the admin form. The store persists the verified
   // instance id only in metadata.upstream via the registered source.
   upstreamSourceRef: z.string().min(1).max(191).nullish(),
+  /**
+   * Listing state. Only `ACTIVE` is sellable; anything else hides the product
+   * from the public catalogue, the account catalogue and the cart.
+   *
+   * Without this field a product could never be taken off sale: `status` was
+   * written on create and then unreachable, so an operator whose upstream
+   * provider disappeared had no way to stop customers buying an undeliverable
+   * product — the only escape was deleting the row (which also destroys order
+   * history references).
+   */
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
 });
 
 // 注意：zod 的 .partial() 不会中和 .default()，直接 partial 会让局部更新

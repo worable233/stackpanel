@@ -8,6 +8,7 @@ export { TicketWorkspace } from './ticket-workspace.js';
 export type { TicketWorkspaceLabels } from './ticket-workspace.js';
 export { Label } from './label.js';
 export { Select } from './select.js';
+export { Checkbox } from './checkbox.js';
 export { Slider } from './slider.js';
 export { ConfigurationSlider, ConfigurationQuantity, ConfigurationImages } from './configuration-slider.js';
 export { LocaleSwitcher } from './locale-switcher.js';
@@ -95,3 +96,76 @@ export { ErrorPage } from './error-page.js';
 export type { ErrorPageContent, ErrorPageKind, ErrorPageProps } from './error-page.js';
 export { ErrorPageActions } from './error-page-actions.js';
 export type { ErrorPageActionsLabels } from './error-page-actions.js';
+
+export {
+  TabsRoot,
+  TabsList,
+  TabsTab,
+  TabsPanel,
+  TabsIndicator,
+} from './animate-ui/tabs.js';
+export type {
+  TabsListProps,
+  TabsPanelProps,
+  TabsRootProps,
+  TabsTabProps,
+} from './animate-ui/tabs.js';
+
+export {
+  CountingNumber,
+  SplittingText,
+  ShimmeringText,
+  RollingText,
+  Fade,
+  Fades,
+  Slide,
+  Slides,
+  Magnetic,
+  Tilt,
+  TiltContent,
+  MotionGrid,
+  MotionGridCells,
+  AccordionRoot,
+  AccordionItem,
+  AccordionHeader,
+  AccordionTrigger,
+  AccordionPanel,
+} from './animate-ui/motion.js';
+export type {
+  AccordionPanelProps,
+  CountingNumberProps,
+  FadeListProps,
+  FadeProps,
+  Frame,
+  FrameDot,
+  Frames,
+  MagneticProps,
+  MotionGridCellsProps,
+  MotionGridProps,
+  RollingTextProps,
+  ShimmeringTextProps,
+  SlideListProps,
+  SlideProps,
+  SplittingTextProps,
+  TiltContentProps,
+  TiltProps,
+} from './animate-ui/motion.js';
+
+export {
+  SidebarProvider,
+  SidebarGap,
+  SidebarContainer,
+  SidebarHighlight,
+  SidebarTriggerIcon,
+  useSidebar,
+} from './animate-ui/sidebar.js';
+export type {
+  SidebarContainerProps,
+  SidebarContextProps,
+  SidebarGapProps,
+  SidebarHighlightProps,
+  SidebarProviderProps,
+  SidebarTriggerIconProps,
+} from './animate-ui/sidebar.js';
+export { Badge } from './badge.js';
+export type { BadgeVariant } from './badge.js';

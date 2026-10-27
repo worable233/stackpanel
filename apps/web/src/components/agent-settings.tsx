@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { SectionTitle } from '@stackpanel/ui';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import { agentFetch } from './agent-workspace';
 import { agentErrorText } from '@/lib/agent-errors';
 import { AgentAdvancedSettings } from './agent-settings-advanced';
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Field, FieldDescription, FieldGroup } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { SettingsSelect as AgentSettingSelect } from '@/components/settings-sections';
 import {
   Dialog,
@@ -119,28 +120,26 @@ export function AgentSettings() {
       {loaded && (
         <>
           <FieldGroup>
-            <Field>
-              <Label htmlFor="agent-enabled">{t('agent.admin.serviceLabel')}</Label>
-              <AgentSettingSelect
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <Label htmlFor="agent-enabled">{t('agent.admin.serviceLabel')}</Label>
+                <FieldDescription>{t('agent.admin.serviceHint')}</FieldDescription>
+              </div>
+              <Switch
                 id="agent-enabled"
+                checked={enabled}
                 disabled={Boolean(busy)}
-                value={String(enabled)}
-                options={[
-                  ['false', t('agent.admin.optionOff')],
-                  ['true', t('agent.admin.optionOn')],
-                ]}
-                onChange={(value) =>
+                onCheckedChange={(checked) =>
                   void act('enabled', async () => {
                     const result = await agentFetch<{ enabled: boolean }>('admin/enabled', 'PUT', {
-                      enabled: value === 'true',
+                      enabled: checked,
                     });
                     setEnabled(result.enabled);
                     toast.success(t('agent.admin.serviceSaved'));
                   })
                 }
               />
-              <FieldDescription>{t('agent.admin.serviceHint')}</FieldDescription>
-            </Field>
+            </div>
           </FieldGroup>
           <Separator />
           <form

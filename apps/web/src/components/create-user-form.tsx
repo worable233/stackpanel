@@ -16,7 +16,9 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { createUserAction, type CreateUserResult } from '@/lib/user-actions';
+import { cn } from '@/lib/utils';
 import { useTranslator } from '@/i18n/provider';
+import { Select } from '@stackpanel/ui';
 
 function StatusMessage({ state }: { state: CreateUserResult | null }) {
   if (!state) return null;
@@ -122,25 +124,30 @@ export function CreateUserForm({ groups }: { groups: PermissionGroupInfo[] }) {
           <div className="flex flex-col gap-1">
             <Label>{t('createUser.groups')}</Label>
             <div className="flex flex-wrap gap-2">
-              {groups.map((group) => (
-                <label
-                  key={group.id}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm hover:bg-accent"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedGroups.has(group.id)}
-                    onChange={() => toggleGroup(group.id)}
-                    className="size-4 accent-primary"
-                  />
-                  <span>{group.name}</span>
-                </label>
-              ))}
+              {groups.map((group) => {
+                const selected = selectedGroups.has(group.id);
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleGroup(group.id)}
+                    className={cn(
+                      'rounded-lg px-3 py-2 text-sm transition-colors',
+                      selected
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                  >
+                    {group.name}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="new-user-status">{t('createUser.status')}</Label>
-            <select
+            <Select
               id="new-user-status"
               value={status}
               onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'DISABLED')}
@@ -148,7 +155,7 @@ export function CreateUserForm({ groups }: { groups: PermissionGroupInfo[] }) {
             >
               <option value="ACTIVE">{t('createUser.statusActive')}</option>
               <option value="DISABLED">{t('createUser.statusDisabled')}</option>
-            </select>
+            </Select>
           </div>
 
           {state?.ok && state.generatedPassword ? (

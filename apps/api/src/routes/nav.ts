@@ -24,6 +24,9 @@ const KERNEL_NAV: Record<'public' | 'account' | 'admin', NavItem[]> = {
     { surface: 'admin', label: '审计日志', href: '/admin/audit' },
     { surface: 'admin', label: '主题管理', href: '/admin/themes' },
     { surface: 'admin', label: '通知中心', href: '/admin/notifications' },
+    // 更新中心必须在 API 导航里：管理端布局在 API 可达时用本列表**整体替换**
+    // 前端 fallback，缺了这一项，侧边栏就永远进不去 `/admin/updates`。
+    { surface: 'admin', label: '升级', href: '/admin/updates' },
   ],
 };
 

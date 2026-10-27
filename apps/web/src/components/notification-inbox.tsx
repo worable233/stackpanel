@@ -2,12 +2,13 @@
 
 import { Check, ExternalLink, CircleAlert, Loader } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import { useCallback, useEffect, useState } from 'react';
 import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { mergeNotification, useNotificationStream } from '@/lib/use-notification-stream';
 import { useLocale, useTranslator } from '@/i18n/provider';
@@ -23,7 +24,7 @@ const PAGE_SIZE = 50;
 const EMPTY_ITEMS: NotificationView[] = [];
 
 /** Full in-app notification inbox (account and admin share the same user-scoped list). */
-export function NotificationInbox({ title, description }: { title: string; description?: string }) {
+export function NotificationInbox({ title }: { title: string }) {
   const t = useTranslator();
   const locale = useLocale();
   const [filter, setFilter] = useState<Filter>('all');
@@ -100,7 +101,11 @@ export function NotificationInbox({ title, description }: { title: string; descr
       const response = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
         method: 'POST',
       });
-      if (!response.ok) throw new Error(`mark-read failed: ${response.status}`);
+      // A 404 means the row no longer exists; treat it as already acknowledged
+      // instead of reporting a failure the user cannot act on.
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`mark-read failed: ${response.status}`);
+      }
       window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
       setData((prev) =>
         prev
@@ -147,33 +152,19 @@ export function NotificationInbox({ title, description }: { title: string; descr
     <div ref={visibleRows} className="space-y-6">
       <PageHeader
         title={title}
-        eyebrow={
-          description ? (
-            <p className="mb-1 text-sm text-muted-foreground">{description}</p>
-          ) : undefined
-        }
         actions={
           <>
-            <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
-              {(['all', 'unread'] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setFilter(value)}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                    filter === value
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {value === 'all' ? t('notification.all') : t('notification.unread')}
-                  {value === 'unread' && (data?.unreadCount ?? 0) > 0
-                    ? ` (${data?.unreadCount ?? 0})`
-                    : ''}
-                </button>
-              ))}
-            </div>
+            <Tabs value={filter} onValueChange={(value) => setFilter(value as Filter)}>
+              <TabsList className="h-9 bg-muted">
+                <TabsTrigger value="all" className="px-3">
+                  {t('notification.all')}
+                </TabsTrigger>
+                <TabsTrigger value="unread" className="px-3">
+                  {t('notification.unread')}
+                  {(data?.unreadCount ?? 0) > 0 ? ` (${data?.unreadCount ?? 0})` : ''}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             {(data?.unreadCount ?? 0) > 0 ? (
               <Button
                 variant="outline"

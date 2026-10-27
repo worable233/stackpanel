@@ -4,6 +4,9 @@ Monochrome cloud storefront for StackPanel. White space, tight grotesque type,
 pill controls, rounded cards and restrained motion — shadcn/ui conventions with
 Base UI primitives from `@stackpanel/ui`.
 
+> Visual rules, title hierarchy and component conventions live in
+> [DESIGN.md](./DESIGN.md). Read it before adding or restyling a page.
+
 ## Stack
 
 | Layer      | Choice                                                                 |
@@ -22,6 +25,7 @@ and consumed from `@stackpanel/ui`; the theme ZIP itself stays self-contained.
 ```
 theme.json                      manifest (id, layout hints, assets)
 theme.css                       light (:root) + dark (.dark) design tokens
+DESIGN.md                       visual + component design standard
 assets/                         logo + favicon
 frontend/src/index.tsx          layout, pages, settings schema
 frontend/src/settings.ts        settings schema + safe link helper

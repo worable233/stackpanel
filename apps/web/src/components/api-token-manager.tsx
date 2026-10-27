@@ -4,7 +4,8 @@ import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { ApiTokenScope, ApiTokenView } from '@stackpanel/sdk';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { CopyButton, CopyButtonIcon } from '@animate-ui/react/primitives/buttons/copy';
 import {
   Dialog,
   DialogContent,
@@ -322,10 +323,18 @@ export function ApiTokenManager({
           </DialogHeader>
           <div className="flex items-center gap-2">
             <Input readOnly value={issued ?? ''} className="font-mono text-xs" />
-            <Button variant="outline" onClick={() => void copyIssued()} className="shrink-0">
-              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            <CopyButton
+              content={issued ?? ''}
+              copied={copied}
+              onCopiedChange={(next) => setCopied(next)}
+              className={buttonVariants({ variant: 'outline', className: 'shrink-0' })}
+            >
+              <CopyButtonIcon
+                icon={<Copy className="size-4" />}
+                copiedIcon={<Check className="size-4" />}
+              />
               {copied ? t('apiToken.copied') : t('apiToken.copy')}
-            </Button>
+            </CopyButton>
           </div>
           <p className="text-xs text-muted-foreground">
             {t('apiToken.usageHint', { prefix })}

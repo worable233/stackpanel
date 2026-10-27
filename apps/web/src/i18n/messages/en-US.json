@@ -47,7 +47,16 @@
     "overview": "Overview",
     "quickLinks": "Quick links",
     "workspaceAdmin": "Admin workspace",
-    "workspaceAccount": "Account workspace"
+    "workspaceAccount": "Account workspace",
+    "toggleNav": "Collapse or expand sidebar",
+    "openNav": "Open navigation",
+    "closeNav": "Close navigation",
+    "breadcrumb": "Breadcrumb",
+    "help": "Help center",
+    "navLabel": "Backend navigation",
+    "backend": "Backend",
+    "collapseNav": "Collapse sidebar",
+    "expandNav": "Expand sidebar"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -314,7 +323,8 @@
         "confirmUnbind": "Unbind this service? This only removes the account binding; the upstream purchase is untouched.",
         "confirmDelete": "Delete this service for the user? This cannot be undone.",
         "upstreamEmpty": "The upstream account has no purchased services yet. Confirm it owns services you can bind.",
-        "noUpstreamPlugin": "No upstream plugin is available. Enable a plugin that provides service binding first."
+        "noUpstreamPlugin": "No upstream plugin is available. Enable a plugin that provides service binding first.",
+        "confirmHint": "This action cannot be undone."
       },
       "orders": {
         "title": "Orders",
@@ -782,6 +792,34 @@
         "catalogTokenSubmit": "Save token",
         "catalogKeyIdLabel": "Public key keyId",
         "catalogKeyIdHint": "Must match the keyId inside catalog.sig (catalog-2026 for the default source); a key without its keyId cannot verify."
+      },
+      "payment": {
+        "title": "Payment methods",
+        "description": "Configure how each sales channel collects money. Manual methods (bank transfer / QR) have no gateway — the collection details entered here are the entire payment step the buyer sees.",
+        "add": "Add payment method",
+        "create": "Create",
+        "save": "Save",
+        "empty": "No payment methods configured yet",
+        "emptyHint": "Buyers cannot choose a method until one is configured. Manual methods without collection details are hidden from checkout.",
+        "noChannel": "No sales channel exists yet. Create a channel before adding payment methods.",
+        "channel": "Sales channel",
+        "provider": "Provider",
+        "providerHint": "The id of an installed plugin, e.g. manual (offline payment) or epay. Validated on save.",
+        "name": "Name",
+        "namePlaceholder": "Bank transfer / QR payment",
+        "currencies": "Currencies",
+        "currenciesHint": "Comma-separated currency codes; leave empty to accept every enabled currency.",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "allCurrencies": "All enabled currencies",
+        "collectionTitle": "Collection details",
+        "collectionHint": "What the buyer sees on the order page. A manual method needs at least an account number or QR image, otherwise the buyer cannot pay.",
+        "missingConfig": "No collection details yet — buyers selecting this method will have no way to pay.",
+        "confirmDelete": "Confirm delete",
+        "providerMissing": "This provider's plugin is not active, so the method cannot be used.",
+        "gatewayConfigNote": "This gateway keeps its credentials in its own plugin settings — nothing to enter here.",
+        "qrHint": "Same-origin paths and data: URLs are shown inline on the order page. External image URLs are blocked by the security policy and appear as a link instead.",
+        "confirmDeleteHint": "This payment method will no longer be available for new orders. Existing orders are unaffected."
       }
     },
     "themes": {
@@ -833,7 +871,8 @@
     "pluginSettings": {
       "back": "Back to plugins",
       "title": "Plugin settings",
-      "noSettings": "This plugin has no front-end settings."
+      "noSettings": "This plugin has no front-end settings.",
+      "titleNamed": "{name} settings"
     },
     "notifications": {
       "title": "Notifications",
@@ -959,7 +998,16 @@
     "catalogTokenSaveFailed": "Failed to save the catalog token",
     "distributionRefreshOffline": "Remote catalog is disabled; nothing to refresh.",
     "distributionRefreshOk": "Catalog refreshed, current sequence {sequence}.",
-    "distributionRefreshFailed": "Catalog refresh failed: {message}"
+    "distributionRefreshFailed": "Catalog refresh failed: {message}",
+    "paymentMethodChannelRequired": "Select a sales channel",
+    "paymentMethodProviderRequired": "Enter a payment provider",
+    "paymentMethodNameRequired": "Enter a name",
+    "paymentMethodMissing": "Missing payment method id",
+    "paymentMethodCreated": "Payment method created",
+    "paymentMethodCreateFailed": "Could not create the payment method",
+    "paymentMethodUpdated": "Payment method updated",
+    "paymentMethodUpdateFailed": "Could not update the payment method",
+    "paymentMethodDeleteFailed": "Could not delete the payment method"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -2129,6 +2177,9 @@
     "refresh": "Refresh status",
     "resume": "Continue payment",
     "submitting": "Submitting…",
-    "order": "Order number"
+    "order": "Order number",
+    "payInstructions": "How to pay",
+    "payQrImage": "Payment QR code",
+    "payQrOpen": "Open the QR image"
   }
 }

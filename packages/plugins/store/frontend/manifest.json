@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "851ad57a8afc",
+  "revision": "e5ce72bcc6d0",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -63,6 +63,7 @@
     "store.myServiceChangeQuote",
     "store.adminSummary",
     "store.adminProducts",
+    "store.fulfillmentDiagnostics",
     "store.adminProduct",
     "store.adminProductCategoryIds",
     "store.productTypes",
@@ -157,6 +158,10 @@
         {
           "finder": "store.adminProducts",
           "as": "products"
+        },
+        {
+          "finder": "store.fulfillmentDiagnostics",
+          "as": "fulfillmentDiagnostics"
         },
         {
           "finder": "store.productTypes",
@@ -866,7 +871,10 @@
       "data": [
         {
           "finder": "store.myOrders",
-          "as": "orders"
+          "as": "orders",
+          "input": {
+            "$query": "1"
+          }
         }
       ]
     },
@@ -1224,7 +1232,7 @@
       "editor.priceRequired": "请填写有效的售卖价格",
       "editor.amountInvalid": "成本与原价须为有效的非负金额（{currency} 最多 {digits} 位小数）",
       "editor.stockInvalid": "库存须为 0 至 1000000 的整数",
-      "editor.discountInvalid": "折扣须为 0 至 99 的整数",
+      "editor.discountInvalid": "折扣须为 0.1 至 9.9 之间的数字（如 9.8 折）",
       "editor.saveFailed": "商品保存失败",
       "editor.categorySaveFailed": "分类保存失败：{status}",
       "editor.saveFailedRetry": "保存失败，请重试",
@@ -1253,7 +1261,7 @@
       "editor.useUpstreamPrice": "采用上游价",
       "editor.upstreamInventoryManaged": "上游同步管理：当前成本 {cost} · 当前库存 {stock}。保存后将以最新上游数据为准。",
       "editor.originalPriceLabel": "原价（可选，划线展示）",
-      "editor.discountLabel": "商品折扣（%，可选）",
+      "editor.discountLabel": "商品折扣（折，可选）",
       "editor.configTitle": "产品配置",
       "editor.configDescription": "选择商品类型，并设置对应的交付参数。",
       "editor.cloudProviderRequired": "云服务器必须先关联真实履约提供方；区域、镜像和规格将由上游商品返回。",
@@ -1372,7 +1380,20 @@
       "feedback.refundRequested": "退款申请已提交，等待审核。",
       "feedback.serviceTransferred": "服务已转移。",
       "feedback.refundProcessed": "退款已处理。",
-      "feedback.productSaved": "商品已保存。"
+      "feedback.productSaved": "商品已保存。",
+      "refund.actionFailed": "处理失败，请稍后重试",
+      "refund.state.PROCESSING": "处理中",
+      "refund.state.SUCCEEDED": "已退款",
+      "editor.discountHint": "{zhe} 折 = 优惠 {percent}%，售价 {price}",
+      "product.discountZhe": "{zhe} 折",
+      "list.offSale": "已下架",
+      "list.unlist": "下架",
+      "list.relist": "上架",
+      "list.statusFailed": "修改上架状态失败",
+      "list.undeliverable": "无法交付",
+      "list.undeliverableTitle": "有商品当前无法交付",
+      "list.undeliverableHint": "这些商品的履约提供方插件未启用，买家下单会被拒绝。请安装并启用对应插件，或先把商品下架。",
+      "list.availableProviders": "当前已启用的履约提供方：{providers}"
     },
     "zh-TW": {
       "review.recover": "核驗原賬單並重新送審",
@@ -1646,7 +1667,7 @@
       "editor.priceRequired": "請填寫有效的售賣價格",
       "editor.amountInvalid": "成本與原價須為有效的非負金額（{currency} 最多 {digits} 位小數）",
       "editor.stockInvalid": "庫存須為 0 至 1000000 的整數",
-      "editor.discountInvalid": "折扣須為 0 至 99 的整數",
+      "editor.discountInvalid": "折扣須為 0.1 至 9.9 之間的數字（如 9.8 折）",
       "editor.saveFailed": "商品儲存失敗",
       "editor.categorySaveFailed": "分類儲存失敗：{status}",
       "editor.saveFailedRetry": "儲存失敗，請重試",
@@ -1675,7 +1696,7 @@
       "editor.useUpstreamPrice": "採用上游價",
       "editor.upstreamInventoryManaged": "上游同步管理：當前成本 {cost} · 當前庫存 {stock}。儲存後將以最新上游資料為準。",
       "editor.originalPriceLabel": "原價（可選，劃線展示）",
-      "editor.discountLabel": "商品折扣（%，可選）",
+      "editor.discountLabel": "商品折扣（折，可選）",
       "editor.configTitle": "產品配置",
       "editor.configDescription": "選擇商品型別，並設定對應的交付引數。",
       "editor.cloudProviderRequired": "雲伺服器必須先關聯真實履約提供方；區域、映象和規格將由上游商品返回。",
@@ -1794,7 +1815,20 @@
       "feedback.refundRequested": "退款申請已提交，等待稽核。",
       "feedback.serviceTransferred": "服務已轉移。",
       "feedback.refundProcessed": "退款已處理。",
-      "feedback.productSaved": "商品已儲存。"
+      "feedback.productSaved": "商品已儲存。",
+      "refund.actionFailed": "處理失敗，請稍後重試",
+      "refund.state.PROCESSING": "處理中",
+      "refund.state.SUCCEEDED": "已退款",
+      "editor.discountHint": "{zhe} 折 = 優惠 {percent}%，售價 {price}",
+      "product.discountZhe": "{zhe} 折",
+      "list.offSale": "已下架",
+      "list.unlist": "下架",
+      "list.relist": "上架",
+      "list.statusFailed": "修改上架狀態失敗",
+      "list.undeliverable": "無法交付",
+      "list.undeliverableTitle": "有商品當前無法交付",
+      "list.undeliverableHint": "這些商品的履約提供方外掛未啟用，買家下單會被拒絕。請安裝並啟用對應外掛，或先把商品下架。",
+      "list.availableProviders": "當前已啟用的履約提供方：{providers}"
     },
     "zh-HK": {
       "review.recover": "核驗原賬單並重新送審",
@@ -2068,7 +2102,7 @@
       "editor.priceRequired": "請填寫有效的售賣價格",
       "editor.amountInvalid": "成本與原價須為有效的非負金額（{currency} 最多 {digits} 位小數）",
       "editor.stockInvalid": "庫存須為 0 至 1000000 的整數",
-      "editor.discountInvalid": "折扣須為 0 至 99 的整數",
+      "editor.discountInvalid": "折扣須為 0.1 至 9.9 之間的數字（如 9.8 折）",
       "editor.saveFailed": "商品儲存失敗",
       "editor.categorySaveFailed": "分類儲存失敗：{status}",
       "editor.saveFailedRetry": "儲存失敗，請重試",
@@ -2097,7 +2131,7 @@
       "editor.useUpstreamPrice": "採用上游價",
       "editor.upstreamInventoryManaged": "上游同步管理：當前成本 {cost} · 當前庫存 {stock}。儲存後將以最新上游資料為準。",
       "editor.originalPriceLabel": "原價（可選，劃線展示）",
-      "editor.discountLabel": "商品折扣（%，可選）",
+      "editor.discountLabel": "商品折扣（折，可選）",
       "editor.configTitle": "產品配置",
       "editor.configDescription": "選擇商品型別，並設置對應的交付引數。",
       "editor.cloudProviderRequired": "雲伺服器必須先關聯真實履約提供方；區域、映象和規格將由上游商品返回。",
@@ -2216,7 +2250,20 @@
       "feedback.refundRequested": "退款申請已提交，等待稽核。",
       "feedback.serviceTransferred": "服務已轉移。",
       "feedback.refundProcessed": "退款已處理。",
-      "feedback.productSaved": "商品已儲存。"
+      "feedback.productSaved": "商品已儲存。",
+      "refund.actionFailed": "處理失敗，請稍後重試",
+      "refund.state.PROCESSING": "處理中",
+      "refund.state.SUCCEEDED": "已退款",
+      "editor.discountHint": "{zhe} 折 = 優惠 {percent}%，售價 {price}",
+      "product.discountZhe": "{zhe} 折",
+      "list.offSale": "已下架",
+      "list.unlist": "下架",
+      "list.relist": "上架",
+      "list.statusFailed": "修改上架狀態失敗",
+      "list.undeliverable": "無法交付",
+      "list.undeliverableTitle": "有商品當前無法交付",
+      "list.undeliverableHint": "這些商品的履約提供方外掛未啟用，買家下單會被拒絕。請安裝並啟用對應外掛，或先把商品下架。",
+      "list.availableProviders": "當前已啟用的履約提供方：{providers}"
     },
     "en-US": {
       "review.recover": "Verify invoices and request approval",
@@ -2490,7 +2537,7 @@
       "editor.priceRequired": "Enter a valid sale price",
       "editor.amountInvalid": "Cost and original price must be valid non-negative amounts ({currency}, at most {digits} decimal places)",
       "editor.stockInvalid": "Stock must be an integer from 0 to 1000000",
-      "editor.discountInvalid": "Discount must be an integer from 0 to 99",
+      "editor.discountInvalid": "Discount must be between 0.1 and 9.9 (e.g. 9.8 折 = 98% of price)",
       "editor.saveFailed": "Failed to save product",
       "editor.categorySaveFailed": "Failed to save categories: {status}",
       "editor.saveFailedRetry": "Save failed, please try again",
@@ -2519,7 +2566,7 @@
       "editor.useUpstreamPrice": "Use upstream price",
       "editor.upstreamInventoryManaged": "Managed by upstream: current cost {cost} · current stock {stock}. The latest upstream data is applied when saved.",
       "editor.originalPriceLabel": "Original price (optional, shown struck through)",
-      "editor.discountLabel": "Product discount (%, optional)",
+      "editor.discountLabel": "Product discount (in 折, optional)",
       "editor.configTitle": "Product configuration",
       "editor.configDescription": "Choose the product type and set the matching delivery parameters.",
       "editor.cloudProviderRequired": "Cloud servers must be linked to a real fulfillment provider. Regions, images, and specs come from the upstream product.",
@@ -2638,7 +2685,20 @@
       "feedback.refundRequested": "Refund request submitted for review.",
       "feedback.serviceTransferred": "Service transferred.",
       "feedback.refundProcessed": "Refund processed.",
-      "feedback.productSaved": "Product saved."
+      "feedback.productSaved": "Product saved.",
+      "refund.actionFailed": "Action failed. Please try again.",
+      "refund.state.PROCESSING": "Processing",
+      "refund.state.SUCCEEDED": "Refunded",
+      "editor.discountHint": "{zhe} 折 = {percent}% off, you charge {price}",
+      "product.discountZhe": "{zhe} 折",
+      "list.offSale": "Delisted",
+      "list.unlist": "Delist",
+      "list.relist": "Relist",
+      "list.statusFailed": "Could not change the listing status",
+      "list.undeliverable": "Cannot be delivered",
+      "list.undeliverableTitle": "Some products cannot be delivered",
+      "list.undeliverableHint": "The fulfillment provider plugin for these products is not active, so buyers will be refused at checkout. Install and enable the plugin, or delist the products first.",
+      "list.availableProviders": "Active fulfillment providers: {providers}"
     }
   }
 }

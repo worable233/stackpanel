@@ -17,6 +17,33 @@ import { formatMinorCurrency, type FrontendActionExecutor } from '@stackpanel/sd
 import { resolveLocale } from '@/i18n/config';
 import { createTranslator } from '@/i18n/core';
 
+/**
+ * Whether a config value looks like an image reference rather than plain text.
+ */
+function isImageUrl(value: string): boolean {
+  return /^(https?:|data:|blob:|\/)/i.test(value);
+}
+
+/**
+ * Whether an image reference can actually be rendered under this app's CSP.
+ *
+ * `img-src` is `'self' data: blob:` (plus the API origin), so a third-party URL
+ * — the usual shape of an operator-pasted QR image — is blocked by the browser
+ * and shows as a broken image. Only same-origin paths, `data:` and `blob:` URLs
+ * are embedded; anything else is surfaced as a link instead of pretending to
+ * render.
+ */
+function isEmbeddableImage(value: string): boolean {
+  if (/^(data:|blob:)/i.test(value)) return true;
+  if (value.startsWith('/')) return true;
+  if (!/^https?:\/\//i.test(value)) return false;
+  try {
+    return new URL(value).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export interface CartCheckoutProps {
   lines: Array<{
     id: string;
@@ -35,7 +62,18 @@ export interface CartCheckoutProps {
   labels: { items: string; total: string; payment: string; submit: string; unavailable: string };
   resultRequested?: boolean;
   result?:
-    | { id: string; status: string; total: number; currency: string; paymentUrl?: string | null }
+    | {
+        id: string;
+        status: string;
+        total: number;
+        currency: string;
+        paymentUrl?: string | null;
+        paymentInstructions?: {
+          kind: string;
+          message: string;
+          detail: Record<string, unknown>;
+        } | null;
+      }
     | null
     | undefined;
 }
@@ -153,6 +191,64 @@ export function CartCheckout(props: CartCheckoutProps) {
                 <dd className="font-semibold">{money(result.total, result.currency)}</dd>
               </div>
             </dl>
+          ) : null}
+          {/*
+           * Manual payments (bank transfer / QR) have no `paymentUrl`, so
+           * "waiting" alone left the buyer with nothing to act on: no account
+           * number, no amount to quote, no idea that they must pay manually.
+           * Render the actual instructions as the primary content of the
+           * pending state.
+           */}
+          {result?.status === 'PENDING' && result.paymentInstructions ? (
+            <div className="w-full rounded-xl border bg-card p-5 text-left">
+              <h3 className="text-sm font-medium">{t('checkout.payInstructions')}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {result.paymentInstructions.message}
+              </p>
+              {Object.keys(result.paymentInstructions.detail).length ? (
+                <dl className="mt-4 divide-y text-sm">
+                  {Object.entries(result.paymentInstructions.detail).map(([key, value]) => {
+                    const text = String(value);
+                    return (
+                      <div key={key} className="flex flex-wrap items-center justify-between gap-3 py-2">
+                        <dt className="text-muted-foreground">{key}</dt>
+                        <dd className="break-all font-medium">
+                          {isImageUrl(text) && !isEmbeddableImage(text) ? (
+                            // CSP (`img-src 'self' data: blob:`) forbids third-party
+                            // images, so an external QR would render as a broken
+                            // icon. Offer it as a link instead; the buyer can still
+                            // open it.
+                            <a
+                              href={text}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline underline-offset-2"
+                            >
+                              {t('checkout.payQrOpen')}
+                            </a>
+                          ) : (
+                            text
+                          )}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              ) : null}
+              {(() => {
+                const qr = Object.values(result.paymentInstructions.detail).find(
+                  (value) => typeof value === 'string' && isEmbeddableImage(value),
+                );
+                return qr ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={String(qr)}
+                    alt={t('checkout.payQrImage')}
+                    className="mx-auto mt-4 size-48 rounded-lg border object-contain"
+                  />
+                ) : null;
+              })()}
+            </div>
           ) : null}
           <div className="flex flex-wrap justify-center gap-3">
             {paid ? (

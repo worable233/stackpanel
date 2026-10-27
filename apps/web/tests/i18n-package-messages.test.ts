@@ -154,7 +154,7 @@ describe('localizeSettingsSchema', () => {
  * locales can miss the same key) would catch it.
  */
 describe('shipped theme catalogs cover their settings schema', () => {
-  for (const id of ['default', 'stratus', 'aurora']) {
+  for (const id of ['default', 'stratus', 'aurora', 'atlas']) {
     it(`themes/${id}`, () => {
       const manifest = JSON.parse(
         readFileSync(`../../packages/themes/${id}/frontend/manifest.json`, 'utf8'),

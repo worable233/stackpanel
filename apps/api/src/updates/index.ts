@@ -26,11 +26,13 @@ export type { MaintenanceWindow, UpdatePolicy } from './policy.ts';
 export { listInstalledComponents, readInstalledComponent } from './installed.ts';
 export {
   updateCatalogContext,
+  readCatalogSnapshot,
   updateChannelRoot,
   updateInstanceId,
   setUpdateChannelForTest,
   loadKernelCandidates,
 } from './runtime.ts';
+export type { CatalogRuntimeSnapshot, CatalogRuntimeState } from './runtime.ts';
 export { readUpdaterStatus } from './status.ts';
 export type { UpdaterStatus } from './status.ts';
 export { decideAutoUpdate } from './auto.ts';

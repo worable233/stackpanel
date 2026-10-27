@@ -47,7 +47,16 @@
     "overview": "概览",
     "quickLinks": "快捷入口",
     "workspaceAdmin": "管理员工作区",
-    "workspaceAccount": "账户工作区"
+    "workspaceAccount": "账户工作区",
+    "toggleNav": "收起或展开侧栏",
+    "openNav": "打开导航",
+    "closeNav": "关闭导航",
+    "breadcrumb": "面包屑导航",
+    "help": "帮助文档",
+    "navLabel": "后台导航",
+    "backend": "管理后台",
+    "collapseNav": "收起侧栏",
+    "expandNav": "展开侧栏"
   },
   "nav": {
     "dashboard": "工作台",
@@ -314,7 +323,8 @@
         "confirmUnbind": "确定解绑该服务？仅解除本账号的绑定，不影响上游已购服务。",
         "confirmDelete": "确定删除该用户的这个服务？删除后不可恢复。",
         "upstreamEmpty": "上游暂无已购服务，请先确认上游账号中有可绑定的服务。",
-        "noUpstreamPlugin": "暂无可用的上游插件，请先启用提供服务绑定能力的插件。"
+        "noUpstreamPlugin": "暂无可用的上游插件，请先启用提供服务绑定能力的插件。",
+        "confirmHint": "此操作不可撤销。"
       },
       "orders": {
         "title": "订单",
@@ -782,6 +792,34 @@
         "catalogTokenSubmit": "保存 token",
         "catalogKeyIdLabel": "公钥 keyId",
         "catalogKeyIdHint": "必须与目录签名文件里的 keyId 一致（默认源为 catalog-2026）；只给公钥不给 keyId 会验签失败。"
+      },
+      "payment": {
+        "title": "支付方式",
+        "description": "配置各销售渠道可用的收款方式。手动收款（银行转账/收款码）没有支付网关，此处填写的收款信息就是买家付款时看到的全部内容。",
+        "add": "新增支付方式",
+        "create": "创建",
+        "save": "保存",
+        "empty": "还没有配置任何支付方式",
+        "emptyHint": "新增一条收款方式后，买家结账时才能看到它。未配置收款信息的手动收款方式不会出现在结账页。",
+        "noChannel": "还没有销售渠道，请先创建渠道再配置支付方式。",
+        "channel": "销售渠道",
+        "provider": "支付提供方",
+        "providerHint": "填写已安装插件的标识，例如 manual（手动收款）或 epay。保存时由服务端校验。",
+        "name": "名称",
+        "namePlaceholder": "银行转账 / 收款码支付",
+        "currencies": "支持币种",
+        "currenciesHint": "逗号分隔的币种代码；留空表示支持全部已启用币种。",
+        "enabled": "启用",
+        "disabled": "已停用",
+        "allCurrencies": "全部已启用币种",
+        "collectionTitle": "收款信息",
+        "collectionHint": "买家在订单页看到的内容。手动收款必须至少填写账号或收款码，否则买家无法付款。",
+        "missingConfig": "尚未填写收款信息，买家选择该方式后将无法付款。",
+        "confirmDelete": "确认删除",
+        "providerMissing": "收款提供方插件未启用，该支付方式当前不可用。",
+        "gatewayConfigNote": "该支付方式的收款凭据由插件自身配置，无需在此填写。",
+        "qrHint": "站内路径或以 data: 开头的图片会在订单页直接显示；外部图片地址受安全策略限制，只会显示为可点击链接。",
+        "confirmDeleteHint": "删除后，该支付方式将不能再用于新订单，已产生的订单不受影响。"
       }
     },
     "themes": {
@@ -833,7 +871,8 @@
     "pluginSettings": {
       "back": "返回插件管理",
       "title": "插件设置",
-      "noSettings": "该插件没有前端设置。"
+      "noSettings": "该插件没有前端设置。",
+      "titleNamed": "{name}设置"
     },
     "notifications": {
       "title": "通知中心",
@@ -959,7 +998,16 @@
     "catalogTokenSaveFailed": "保存目录 token 失败",
     "distributionRefreshOffline": "远程目录已关闭，无需刷新。",
     "distributionRefreshOk": "目录刷新成功，当前序号 {sequence}。",
-    "distributionRefreshFailed": "目录刷新失败：{message}"
+    "distributionRefreshFailed": "目录刷新失败：{message}",
+    "paymentMethodChannelRequired": "请选择销售渠道",
+    "paymentMethodProviderRequired": "请填写支付提供方",
+    "paymentMethodNameRequired": "请填写名称",
+    "paymentMethodMissing": "缺少支付方式 ID",
+    "paymentMethodCreated": "支付方式已创建",
+    "paymentMethodCreateFailed": "创建支付方式失败",
+    "paymentMethodUpdated": "支付方式已更新",
+    "paymentMethodUpdateFailed": "更新支付方式失败",
+    "paymentMethodDeleteFailed": "删除支付方式失败"
   },
   "user": {
     "emailRequired": "请填写邮箱",
@@ -2129,6 +2177,9 @@
     "refresh": "刷新状态",
     "resume": "继续付款",
     "submitting": "正在提交…",
-    "order": "订单编号"
+    "order": "订单编号",
+    "payInstructions": "付款方式说明",
+    "payQrImage": "收款码图片",
+    "payQrOpen": "打开收款码图片"
   }
 }

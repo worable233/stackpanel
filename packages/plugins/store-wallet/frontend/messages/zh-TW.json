@@ -79,5 +79,6 @@
   "recharge.noMethods": "暫無支付方式",
   "recharge.submitting": "正在提交",
   "recharge.submit": "確認充值",
-  "records.cancelled": "充值已取消。"
+  "records.cancelled": "充值已取消。",
+  "overview.ledgerToggle": "檢視明細"
 }

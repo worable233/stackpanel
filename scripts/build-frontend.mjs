@@ -76,6 +76,12 @@ async function buildFrontendPackageFromSource(pkg) {
     console.warn(`Skipping missing frontend package: ${pkg.source}`);
     return;
   }
+  // Packages may opt out of source maps when a single map would exceed the
+  // theme upload per-file limit (1 MiB). Opt-in stays the default.
+  const packageMeta = JSON.parse(
+    await readFile(path.join(pkg.source, 'package.json'), 'utf8'),
+  );
+  const sourcemapArgs = packageMeta.stackpanel?.sourcemap === false ? [] : ['--sourcemap'];
   execFileSync(
     esbuildBin,
     [
@@ -86,7 +92,7 @@ async function buildFrontendPackageFromSource(pkg) {
       '--platform=node',
       '--target=node22',
       '--jsx=automatic',
-      '--sourcemap',
+      ...sourcemapArgs,
       '--external:react',
       '--external:react/jsx-runtime',
       '--external:next/link',
@@ -121,7 +127,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         '--banner:js="use client";',
         '--external:react',
         '--external:react/jsx-runtime',
@@ -141,7 +147,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         '--banner:js="use client";',
         '--external:react',
         '--external:react/jsx-runtime',
@@ -176,7 +182,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         '--external:react',
         '--external:react-dom',
         '--external:react/jsx-runtime',
@@ -203,7 +209,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         ...HOST_ABI_ADAPTER_ALIASES,
         '--external:/api/frontend-abi/*',
         '--main-fields=module,main',
@@ -249,7 +255,7 @@ async function buildFrontendPackageFromSource(pkg) {
       '--platform=node',
       '--target=node22',
       '--jsx=automatic',
-      '--sourcemap',
+      ...sourcemapArgs,
       `--alias:next/link=${probeLinkStub}`,
       `--alias:next/form=${probeLinkStub}`,
       `--alias:next/navigation=${probeLinkStub}`,

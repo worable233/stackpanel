@@ -8,6 +8,7 @@
  * satisfy this interface.
  */
 import { PluginError } from '@stackpanel/sdk';
+import type { MediaKind } from './mime.ts';
 
 export type AttachmentVisibility = 'public' | 'private';
 
@@ -96,6 +97,46 @@ export interface AttachmentRepository {
   listPendingVariantAttachments(limit: number, maxAttempts: number): Promise<AttachmentRecord[]>;
   /** Delete the row; callers remove the bytes separately. */
   delete(id: string): Promise<void>;
+  /**
+   * Cross-owner filtered page for the media library (admin console). Unlike
+   * {@link listByOwner} this is not scoped to one owner and carries a total, so
+   * the console can paginate without loading every row.
+   */
+  listForAdmin(query: AttachmentLibraryQuery): Promise<{
+    items: AttachmentRecord[];
+    total: number;
+  }>;
+  /** Aggregate counters for the media library header. */
+  stats(): Promise<AttachmentLibraryStats>;
+  /**
+   * Reset every terminal `failed` variant back to `pending` (all rows, or one
+   * attachment) and return the affected ids so the caller can re-enqueue them.
+   * `failed` is terminal — without this repair an encoder outage strands the
+   * thumbnails forever, even after the encoder is fixed.
+   */
+  resetFailedVariants(attachmentId?: string): Promise<string[]>;
+}
+
+/** Query shape for the media library list. */
+export interface AttachmentLibraryQuery {
+  page: number;
+  pageSize: number;
+  visibility?: AttachmentVisibility;
+  /** Coarse kind derived from the stored MIME type (see `kindOfMime`). */
+  kind?: MediaKind;
+  /** Case-insensitive filename fragment. */
+  q?: string;
+  ownerId?: string;
+}
+
+/** Aggregate counters shown in the media library header. */
+export interface AttachmentLibraryStats {
+  total: number;
+  bytes: number;
+  byVisibility: { public: number; private: number };
+  byKind: Record<MediaKind, number>;
+  /** Variant lifecycle counters across every attachment. */
+  variants: { pending: number; ready: number; failed: number };
 }
 
 /** Public API shape. URL is resolved at read time so it can be signed/short-lived. */

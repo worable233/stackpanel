@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Slider } from './slider.js';
 import { Select } from './select.js';
 import { Input } from './input.js';
-import { RadioGroup } from '@base-ui/react/radio-group';
+import { RadioGroup } from '@animate-ui/react/primitives/base-ui/radio-group';
 import { Radio } from '@base-ui/react/radio';
 import {
   SiDebian,

@@ -16,6 +16,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslator } from '@/i18n/provider';
+import { Select } from '@stackpanel/ui';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 interface SettingsFormProps {
   schema: FrontendSettingsSchema;
@@ -29,6 +33,7 @@ export function SettingsForm({ schema, initial, save }: SettingsFormProps) {
   const [values, setValues] = useState<FrontendSettings>(initial);
   const [state, setState] = useState<FrontendSettingsActionState>({});
   const [pending, startTransition] = useTransition();
+  const [activeGroup, setActiveGroup] = useState(schema.groups[0]?.id ?? '');
 
   const update = (group: string, name: string, value: FrontendSettingsValue) => {
     setValues((current) => ({
@@ -45,21 +50,48 @@ export function SettingsForm({ schema, initial, save }: SettingsFormProps) {
           setState(await save(values));
         });
       }}
-      className="space-y-8"
+      className="flex flex-col gap-6"
     >
-      {schema.groups.map((group) => (
-        <SettingsGroup
-          key={group.id}
-          group={group}
-          values={values[group.id] ?? {}}
-          onChange={update}
-        />
-      ))}
-      {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-      {state.ok ? <p className="text-sm text-muted-foreground">{t('settingsForm.saved')}</p> : null}
-      <Button type="submit" disabled={pending}>
-        {pending ? t('settingsForm.saving') : t('settingsForm.submit')}
-      </Button>
+      <Tabs
+        value={activeGroup}
+        onValueChange={setActiveGroup}
+        orientation="vertical"
+        className="flex min-w-0 flex-col gap-6 lg:flex-row"
+      >
+        {schema.groups.length > 1 ? (
+          <TabsList className="scrollbar-none flex h-auto w-full flex-row gap-1 overflow-x-auto rounded-none bg-transparent p-0 lg:w-44 lg:flex-col lg:overflow-visible">
+            {schema.groups.map((group) => (
+              <TabsTrigger
+                key={group.id}
+                value={group.id}
+                className="h-10 w-full flex-none justify-start rounded-lg px-3 text-sm font-normal whitespace-nowrap text-muted-foreground data-active:bg-muted data-active:font-medium data-active:text-foreground after:hidden hover:bg-muted/60 hover:text-foreground"
+              >
+                {group.label ?? group.id}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        ) : null}
+
+        <div className="min-w-0 flex-1">
+          {schema.groups.map((group) => (
+            <TabsContent key={group.id} value={group.id} className="m-0 max-w-3xl">
+              <SettingsGroup
+                group={group}
+                values={values[group.id] ?? {}}
+                onChange={update}
+              />
+            </TabsContent>
+          ))}
+        </div>
+      </Tabs>
+
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-xl bg-background/90 py-3 backdrop-blur">
+        <Button type="submit" disabled={pending}>
+          {pending ? t('settingsForm.saving') : t('settingsForm.submit')}
+        </Button>
+        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+        {state.ok ? <p className="text-sm text-muted-foreground">{t('settingsForm.saved')}</p> : null}
+      </div>
     </form>
   );
 }
@@ -74,11 +106,18 @@ function SettingsGroup({
   onChange: (group: string, name: string, value: FrontendSettingsValue) => void;
 }) {
   return (
-    <section className="space-y-4 rounded-lg border bg-card p-5 text-card-foreground">
-      <h2 className="text-base font-semibold">{group.label}</h2>
-      <div className="grid gap-4 sm:grid-cols-2">
+    <section className="flex flex-col gap-5 rounded-2xl bg-muted/40 p-5 text-card-foreground">
+      <h2 className="text-base font-semibold">{group.label ?? group.id}</h2>
+      <div className="grid gap-5 sm:grid-cols-2">
         {group.fields.map((field) => (
-          <div key={field.name} className={field.type === 'list' ? 'sm:col-span-2' : undefined}>
+          <div
+              key={field.name}
+              className={
+                field.type === 'list' || field.type === 'boolean'
+                  ? 'sm:col-span-2'
+                  : undefined
+              }
+            >
             <SettingsField
               field={field}
               value={values[field.name]}
@@ -142,7 +181,7 @@ function ListField({
       {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
       <div className="space-y-3">
         {rows.map((row, index) => (
-          <div key={index} className="rounded-lg border bg-background/50 p-4">
+          <div key={index} className="rounded-xl bg-background p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">
                 {(field.itemLabelField ? String(row[field.itemLabelField] ?? '') : '') ||
@@ -198,7 +237,7 @@ function ScalarField({
         <Label htmlFor={field.name}>{field.label}</Label>
         <textarea
           id={field.name}
-          className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="min-h-24 w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           value={String(current)}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -209,7 +248,7 @@ function ScalarField({
     return (
       <div className="space-y-1">
         <Label htmlFor={field.name}>{field.label}</Label>
-        <select
+        <Select
           id={field.name}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           value={String(current)}
@@ -220,19 +259,23 @@ function ScalarField({
               {option.label}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
     );
   }
   if (field.type === 'boolean') {
     return (
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+      <label className="flex items-start gap-3 rounded-xl bg-background px-4 py-3 text-sm">
+        <Checkbox
           checked={Boolean(current)}
-          onChange={(event) => onChange(event.target.checked)}
+          onCheckedChange={(checked) => onChange(checked === true)}
         />
-        {field.label}
+        <span className="min-w-0">
+          <span className="font-medium">{field.label}</span>
+          {field.help ? (
+            <span className="mt-1 block text-xs text-muted-foreground">{field.help}</span>
+          ) : null}
+        </span>
       </label>
     );
   }
@@ -254,21 +297,19 @@ function ScalarField({
   }
   if (field.type === 'radio') {
     return (
-      <div className="space-y-1">
+      <div className="space-y-2">
         <span className="text-sm font-medium">{field.label}</span>
-        <div className="flex flex-wrap gap-3">
+        <RadioGroup
+          value={String(current)}
+          onValueChange={(value) => onChange(String(value))}
+        >
           {field.options.map((option) => (
             <label key={option.value} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name={field.name}
-                checked={current === option.value}
-                onChange={() => onChange(option.value)}
-              />
+              <RadioGroupItem value={option.value} />
               {option.label}
             </label>
           ))}
-        </div>
+        </RadioGroup>
       </div>
     );
   }

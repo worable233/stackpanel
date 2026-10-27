@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { MoreHorizontal, Search } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import type { AdminUser, PermissionGroupInfo } from '@stackpanel/sdk';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';

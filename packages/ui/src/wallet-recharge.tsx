@@ -2,9 +2,9 @@
 
 import { useActionState, useState } from 'react';
 import { Radio } from '@base-ui/react/radio';
-import { RadioGroup } from '@base-ui/react/radio-group';
-import { Toggle } from '@base-ui/react/toggle';
-import { ToggleGroup } from '@base-ui/react/toggle-group';
+import { RadioGroup } from '@animate-ui/react/primitives/base-ui/radio-group';
+import { Toggle } from '@animate-ui/react/primitives/base-ui/toggle';
+import { ToggleGroup } from '@animate-ui/react/primitives/base-ui/toggle-group';
 import { CreditCard, LoaderCircle, Wallet } from 'lucide-react';
 import { Button } from './button.js';
 import { Input } from './input.js';

@@ -10,7 +10,7 @@ import type {
   NotificationTypePreference,
 } from '@stackpanel/sdk';
 import type { z } from 'zod';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import { SectionTitle } from '@stackpanel/ui';
 import { useTranslator } from '@/i18n/provider';
 import {

@@ -1,6 +1,6 @@
 'use client';
 import type { AdminPageComponentProps } from '@stackpanel/sdk';
-import { PageHeader } from '@stackpanel/ui';
+import { Button, Checkbox, PageHeader } from '@stackpanel/ui';
 import { useState, type ReactElement } from 'react';
 import { toast } from 'sonner';
 import { t } from './i18n.js';
@@ -44,13 +44,11 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
   return (
     <main className="w-full space-y-6">
       <PageHeader title={tr('settings.title')} />
-      <p className="text-sm text-muted-foreground">{tr('settings.description')}</p>
-      <section className="space-y-5 border-b pb-6">
+      <section className="plugin-section space-y-5">
         <label className="flex items-start gap-3 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={email}
-            onChange={(e) => setEmail(e.target.checked)}
+            onCheckedChange={(checked) => setEmail(checked === true)}
           />
           <span>
             <strong className="font-medium">{tr('settings.emailGroup')}</strong>
@@ -60,11 +58,10 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
           </span>
         </label>
         <label className="flex items-start gap-3 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={emailVerification}
             disabled={!supported || !email}
-            onChange={(e) => setEmailVerification(e.target.checked)}
+            onCheckedChange={(checked) => setEmailVerification(checked === true)}
           />
           <span>
             <strong className="font-medium">{tr('settings.emailVerification')}</strong>
@@ -72,14 +69,14 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
               {tr('settings.emailVerificationHint')}
             </span>
             {!supported ? (
-              <span className="mt-1 block text-amber-600">
+              <span className="plugin-warning mt-1 block">
                 {tr('settings.emailVerificationUnavailable')}
               </span>
             ) : null}
           </span>
         </label>
         <label className="flex items-start gap-3 text-sm opacity-60">
-          <input type="checkbox" disabled checked={false} readOnly />
+          <Checkbox disabled checked={false} />
           <span>
             <strong className="font-medium">{tr('settings.phoneGroup')}</strong>
             <span className="mt-1 block text-muted-foreground">
@@ -87,13 +84,9 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
             </span>
           </span>
         </label>
-        <button
-          className="h-9 rounded-md bg-primary px-4 text-sm text-primary-foreground disabled:opacity-60"
-          disabled={busy || !email}
-          onClick={() => void save()}
-        >
+        <Button disabled={busy || !email} onClick={() => void save()}>
           {busy ? tr('settings.saving') : tr('settings.save')}
-        </button>
+        </Button>
       </section>
     </main>
   );

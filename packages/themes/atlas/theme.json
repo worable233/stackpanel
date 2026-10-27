@@ -2,7 +2,7 @@
   "$schema": "https://stackpanel.dev/schemas/theme.schema.json",
   "id": "atlas",
   "name": "Atlas",
-  "description": "A monochrome, editorial cloud storefront built on shadcn/ui and Base UI: white space, tight grotesque type, pill controls, rounded cards and restrained motion.",
+  "description": "A monochrome, editorial storefront for stable managed services: clear specs, stock and pricing, built on shadcn/ui and Base UI with restrained motion.",
   "version": "1.0.0",
   "author": "StackPanel",
   "locales": [

@@ -1,6 +1,6 @@
 'use client';
 
-import { SectionTitle } from '@stackpanel/ui';
+import { SectionTitle, Select } from '@stackpanel/ui';
 import { useActionState, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
@@ -46,7 +46,7 @@ export function CurrencySettings({
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="flex flex-col gap-1">
         <SectionTitle>{t('admin.settings.currency.title')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{t('admin.settings.currency.description')}</p>
       </div>
@@ -61,11 +61,11 @@ export function CurrencySettings({
         className="flex flex-col gap-3"
       >
         <Label htmlFor="settlementCurrency">{t('admin.settings.currency.settlement')}</Label>
-        <select
+        <Select
           id="settlementCurrency"
           name="currency"
           defaultValue={catalog.settlementCurrency}
-          className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+          className="h-10 w-full rounded-xl bg-muted/40 px-3 text-sm"
         >
           {candidates.map((candidate) => (
             <option key={candidate.code} value={candidate.code}>
@@ -73,7 +73,7 @@ export function CurrencySettings({
               {t('admin.settings.currency.decimals')}）
             </option>
           ))}
-        </select>
+        </Select>
         <p className="text-xs text-muted-foreground">
           {t('admin.settings.currency.settlementHint')}
         </p>
@@ -88,9 +88,9 @@ export function CurrencySettings({
         </div>
       </form>
 
-      <div className="overflow-x-auto rounded-xl border">
+      <div className="overflow-x-auto rounded-2xl bg-muted/40 p-1">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-muted-foreground">
+          <thead className="text-left text-muted-foreground">
             <tr>
               <th className="px-4 py-2.5 font-medium">{t('admin.settings.currency.code')}</th>
               <th className="px-4 py-2.5 font-medium">{t('admin.settings.currency.symbol')}</th>
@@ -102,7 +102,7 @@ export function CurrencySettings({
           <tbody>
             {currencies.map((currency) => {
               return (
-                <tr key={currency.code} className="border-t">
+                <tr key={currency.code} className="odd:bg-background/40">
                   <td className="px-4 py-2.5">
                     <span className="font-mono">{currency.code}</span>
                     <span className="ml-2 text-muted-foreground">{currency.name}</span>
@@ -150,16 +150,16 @@ export function CurrencySettings({
 
       {toggleError ? <p className="text-sm text-destructive">{toggleError}</p> : null}
 
-      <div className="flex flex-col gap-1 border-b pb-4">
+      <div className="flex flex-col gap-1">
         <SectionTitle>{t('admin.settings.currency.ratesTitle')}</SectionTitle>
         <p className="text-sm text-muted-foreground">
           {t('admin.settings.currency.ratesDescription')}
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border">
+      <div className="overflow-x-auto rounded-2xl bg-muted/40 p-1">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-muted-foreground">
+          <thead className="text-left text-muted-foreground">
             <tr>
               <th className="px-4 py-2.5 font-medium">{t('admin.settings.currency.from')}</th>
               <th className="px-4 py-2.5 font-medium">{t('admin.settings.currency.to')}</th>
@@ -173,7 +173,7 @@ export function CurrencySettings({
           <tbody>
             {rates.length ? (
               rates.map((rate) => (
-                <tr key={rate.id} className="border-t">
+                <tr key={rate.id} className="odd:bg-background/40">
                   <td className="px-4 py-2.5 font-mono">{rate.fromCurrency}</td>
                   <td className="px-4 py-2.5 font-mono">{rate.toCurrency}</td>
                   <td className="px-4 py-2.5 tabular-nums">{(rate.rate / 1_000_000).toFixed(6)}</td>
@@ -208,7 +208,7 @@ export function CurrencySettings({
                 </tr>
               ))
             ) : (
-              <tr className="border-t">
+              <tr>
                 <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
                   {t('admin.settings.currency.noRates')}
                 </td>
@@ -230,10 +230,10 @@ export function CurrencySettings({
       >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="rate-from">{t('admin.settings.currency.from')}</Label>
-          <select
+          <Select
             id="rate-from"
             name="fromCurrency"
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+            className="h-10 w-28 rounded-xl bg-muted/40 px-3 text-sm"
           >
             {currencies
               .filter((currency) => currency.code !== catalog.settlementCurrency)
@@ -242,7 +242,7 @@ export function CurrencySettings({
                   {currency.code}
                 </option>
               ))}
-          </select>
+          </Select>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="rate-value">{t('admin.settings.currency.rate')}</Label>

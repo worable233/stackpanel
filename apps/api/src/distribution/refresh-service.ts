@@ -23,6 +23,15 @@ import type { FileCatalogStateStore } from './catalog-state.ts';
 export const DEFAULT_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const DEFAULT_REFRESH_JITTER_MS = 30 * 60 * 1000;
 
+/**
+ * 成功刷新后的最短间隔。
+ *
+ * 失败有指数退避，成功此前则是「无冷却」——于是「检查更新」按钮可以无限触发 GitHub
+ * 请求，等同于把它们当成自己的 CDN。这里给成功也加一个短冷却（默认 30 秒），
+ * 只在**手动检查**入口生效（后台定时用 `isDue()`，不受影响）。
+ */
+export const DEFAULT_SUCCESS_COOLDOWN_MS = 30 * 1000;
+
 export interface RefreshFailure {
   kind: string;
   message: string;
@@ -53,6 +62,8 @@ export interface CatalogRefreshServiceOptions {
   now?: () => Date;
   intervalMs?: number;
   jitterMs?: number;
+  /** 成功刷新后的手动入口最短间隔；缺省 30 秒。 */
+  successCooldownMs?: number;
 }
 
 /** 计算指数退避（毫秒），上限 6 小时。 */
@@ -72,6 +83,8 @@ export class CatalogRefreshService {
   private lastFailure: RefreshFailure | null = null;
   private failureStreak = 0;
   private nextAllowedAt: number = 0;
+  /** 最近一次真的发起过刷新的时间（毫秒）；从未刷新为 null。 */
+  private lastCheckedAtMs: number | null = null;
 
   constructor(private readonly opts: CatalogRefreshServiceOptions) {}
 
@@ -90,6 +103,16 @@ export class CatalogRefreshService {
    */
   lastFailureInfo(): RefreshFailure | null {
     return this.lastFailure;
+  }
+
+  /**
+   * 最近一次**真的**发起过刷新的时间（ISO）；从未检查过为 null。
+   *
+   * 与 `current()` 的区别：`current()` 是「上次成功」，本方法是「上次尝试」——
+   * 更新中心要用它回答「我上次点检查是什么时候、结果如何」。
+   */
+  lastCheckedAt(): string | null {
+    return this.lastCheckedAtMs === null ? null : new Date(this.lastCheckedAtMs).toISOString();
   }
 
   /**
@@ -168,6 +191,7 @@ export class CatalogRefreshService {
 
   private async run(): Promise<CatalogRefreshResult> {
     const now = this.now();
+    this.lastCheckedAtMs = now.getTime();
     const state = await this.opts.state.read();
     try {
       const keyring = await this.opts.loadKeyring();
@@ -184,7 +208,9 @@ export class CatalogRefreshService {
       this.lastResolved = resolved;
       this.lastFailure = null;
       this.failureStreak = 0;
-      this.nextAllowedAt = 0;
+      // 成功也保留一个短暂口，避免手动入口退化成无成本刷新按钮。
+      this.nextAllowedAt =
+        this.now().getTime() + (this.opts.successCooldownMs ?? DEFAULT_SUCCESS_COOLDOWN_MS);
       return { fetched: true, resolved, failure: null };
     } catch (error) {
       this.failureStreak += 1;

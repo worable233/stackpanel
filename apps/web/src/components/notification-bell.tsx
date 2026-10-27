@@ -2,7 +2,7 @@
 
 import { Bell, Check, CircleAlert, Loader } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import { useCallback, useEffect, useState } from 'react';
 import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
 import { BackendToolbarButton } from '@/components/backend-toolbar-button';
@@ -125,14 +125,20 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
       const response = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, {
         method: 'POST',
       });
-      if (!response.ok) throw new Error(`mark-read failed: ${response.status}`);
-      window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
-      void refreshCount();
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === id ? { ...item, readAt: item.readAt ?? new Date().toISOString() } : item,
-        ),
-      );
+      // 404 means the row is already gone (deleted, or superseded by a newer
+      // deduped activity). There is nothing left to acknowledge, so the local
+      // snapshot is corrected without nagging the user with a failure toast.
+      if (response.ok || response.status === 404) {
+        window.dispatchEvent(new Event(NOTIFICATION_READ_EVENT));
+        void refreshCount();
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === id ? { ...item, readAt: item.readAt ?? new Date().toISOString() } : item,
+          ),
+        );
+        return;
+      }
+      throw new Error(`mark-read failed: ${response.status}`);
     } catch {
       toast.error(t('notification.markReadFailed'));
     }

@@ -13,23 +13,23 @@
  * one code path for the local and S3 drivers, and a private object key is never
  * exposed.
  */
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { extractSession, requireAuth, type AuthUser } from '../plugins/auth.ts';
-import { getPrisma } from '../plugins/prisma.ts';
-import { getStorage } from '../infra.ts';
+import { requireAuth } from '../plugins/auth.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
-import { env } from '../config/env.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
-import { contentDisposition, MediaError } from './service.ts';
+import { contentDisposition } from './service.ts';
 import { isActiveContent } from './disposition.ts';
-import { AttachmentService, type MediaActor, type VariantQueue } from './service.ts';
-import { PrismaAttachmentRepository } from './prisma-attachment-repository.ts';
-import { DEFAULT_MEDIA_POLICY } from './policy.ts';
-import { createSharpTransformer } from './sharp-transformer.ts';
-import { tryBuildVariantQueue } from './jobs.ts';
 import type { AttachmentVisibility } from './attachments.ts';
-import { AttachmentReferenceService } from './references.ts';
+import {
+  attachmentReferences,
+  buildMediaService as buildService,
+  mediaActorFor as actorFor,
+  mediaMaxBytes,
+  optionalMediaActor as optionalActor,
+  sendMediaError,
+} from './kernel-service.ts';
+import { registerMediaAdminRoutes } from './admin-routes.ts';
 
 const uploadQuerySchema = z.object({
   filename: z.string().trim().min(1).max(191).optional(),
@@ -65,65 +65,6 @@ const BINARY_CONTENT_TYPES = [
   'audio/ogg',
   'audio/wav',
 ];
-
-/** Env-tunable upload ceiling (ADR-0014 §3), defaulting to 25 MiB. */
-function mediaMaxBytes(): number {
-  return env.MEDIA_MAX_UPLOAD_BYTES;
-}
-
-function isAdmin(user: AuthUser): boolean {
-  return user.permissions.has('platform.admin');
-}
-
-function actorFor(user: AuthUser | undefined): MediaActor {
-  return user ? { userId: user.id, canManage: isAdmin(user) } : { canManage: false };
-}
-
-function buildService(): AttachmentService {
-  const queue = variantQueue();
-  return new AttachmentService({
-    repository: new PrismaAttachmentRepository(getPrisma()),
-    storage: getStorage(),
-    policy: { ...DEFAULT_MEDIA_POLICY, maxBytes: mediaMaxBytes() },
-    transform: createSharpTransformer(),
-    ...(queue ? { queue } : {}),
-    logger: { warn: (m) => console.warn(m), info: (m) => console.info(m) },
-  });
-}
-
-/**
- * The async variant trigger (ADR-0014 §4 Stage B). Present by default once a job
- * backend exists; `MEDIA_VARIANTS_ASYNC=false` forces the Stage A synchronous
- * path (rollback switch), and before `initInfra()` there is simply no queue, so
- * uploads still succeed on the inline path.
- */
-function variantQueue(): VariantQueue | null {
-  if (!env.MEDIA_VARIANTS_ASYNC) return null;
-  return tryBuildVariantQueue();
-}
-
-/**
- * Reference-integrity port (ADR-0014 §2). Attachment references used to live in
- * the legacy `custom_resources` JSON payload; business-domain rows now live in
- * per-plugin `ext_*` tables whose shape the kernel must not know. Plugins use
- * the SDK media capability to maintain this kernel-owned reference index, so
- * deletion can enforce referential integrity without inspecting plugin tables.
- */
-function attachmentReferences(): AttachmentReferenceService {
-  return new AttachmentReferenceService(getPrisma());
-}
-
-/** Actor for routes that may be anonymous (public attachment reads). */
-async function optionalActor(request: FastifyRequest): Promise<MediaActor> {
-  return actorFor((await extractSession(request)) ?? undefined);
-}
-
-function sendMediaError(reply: FastifyReply, err: unknown): FastifyReply {
-  if (err instanceof MediaError) {
-    return reply.code(err.status).send({ error: err.message, code: err.code });
-  }
-  throw err;
-}
 
 export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
   const uploadLimit = mediaMaxBytes();
@@ -202,7 +143,7 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/media/:id/references', { preHandler: requireAuth }, async (request, reply) => {
-    if (!request.user || !isAdmin(request.user)) {
+    if (!request.user || !actorFor(request.user).canManage) {
       return reply.code(403).send({ error: '无权查看附件引用', code: 'media.forbidden' });
     }
     const { id } = request.params as { id: string };
@@ -278,4 +219,8 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
       return sendMediaError(reply, err);
     }
   });
+
+  // Cross-owner listing, aggregate counters and variant repair for the
+  // media-library console. Requires `platform.admin` on every route.
+  await registerMediaAdminRoutes(app);
 }

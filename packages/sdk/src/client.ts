@@ -12,6 +12,8 @@ import {
   adminCurrencyDefinitionListResponseSchema,
   adminFxRateListResponseSchema,
   adminFxRateViewSchema,
+  adminPaymentMethodMutationResponseSchema,
+  adminSalesChannelListResponseSchema,
   apiTokenCreateResponseSchema,
   apiTokenListResponseSchema,
   apiTokenScopesResponseSchema,
@@ -123,6 +125,8 @@ import type {
   AdminCurrencyDefinitionListResponse,
   AdminFxRateListResponse,
   AdminFxRateView,
+  AdminPaymentMethodMutationResponse,
+  AdminSalesChannelListResponse,
   CurrencyDefinitionListResponse,
   CurrencyDefinitionMutationResponse,
   SettlementCurrencyResponse,
@@ -1137,6 +1141,62 @@ export class ApiClient {
   deleteCurrencyRate(fromCurrency: string, toCurrency: string): Promise<{ deleted: boolean }> {
     return this.del(
       `/admin/currency-rates?fromCurrency=${encodeURIComponent(fromCurrency)}&toCurrency=${encodeURIComponent(toCurrency)}`,
+      z.object({ deleted: z.boolean() }),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sales channels & payment methods (admin)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Sales channels with their configured payment methods.
+   *
+   * This is the admin view: it includes disabled rows and provider `config`
+   * (bank account / QR image), which the buyer-facing `/payment-methods` route
+   * deliberately hides.
+   */
+  getAdminSalesChannels(): Promise<AdminSalesChannelListResponse> {
+    return this.get('/admin/sales-channels', adminSalesChannelListResponseSchema);
+  }
+
+  /** Create a payment method bound to a sales channel. */
+  createAdminPaymentMethod(input: {
+    channelId: string;
+    providerId: string;
+    name: string;
+    enabled?: boolean;
+    scene?: string;
+    currencies?: string[];
+    config?: unknown;
+    sortOrder?: number;
+  }): Promise<AdminPaymentMethodMutationResponse> {
+    return this.post('/admin/payment-methods', input, adminPaymentMethodMutationResponseSchema);
+  }
+
+  /** Patch a payment method (name / enabled / currencies / config / sort order). */
+  updateAdminPaymentMethod(
+    id: string,
+    input: {
+      name?: string;
+      enabled?: boolean;
+      scene?: string;
+      currencies?: string[];
+      config?: unknown;
+      sortOrder?: number;
+    },
+  ): Promise<AdminPaymentMethodMutationResponse> {
+    return this.patch(
+      `/admin/payment-methods/${encodeURIComponent(id)}`,
+      input,
+      adminPaymentMethodMutationResponseSchema,
+    );
+  }
+
+  /** Delete a payment method. Existing payments keep their snapshot. */
+  deleteAdminPaymentMethod(id: string): Promise<{ deleted: boolean }> {
+    return this.del(
+      `/admin/payment-methods/${encodeURIComponent(id)}`,
       z.object({ deleted: z.boolean() }),
     );
   }

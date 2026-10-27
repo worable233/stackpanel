@@ -4,7 +4,7 @@ import { SectionTitle } from '@stackpanel/ui';
 import { useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import type { AdminPlugin, PluginDependencyStatus } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import {

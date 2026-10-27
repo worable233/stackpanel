@@ -59,7 +59,7 @@ importers:
         version: 1.31.0(react@19.3.1)
       next:
         specifier: 16.4.2
-        version: 16.4.2(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 16.4.2(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       prettier:
         specifier: ^3.9.10
         version: 3.9.10
@@ -220,7 +220,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^4.1.12
-        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(vite@8.2.0(@types/node@22.20.1)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(vite@8.2.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/updater:
     dependencies:
@@ -242,10 +242,13 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^4.1.12
-        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(vite@8.2.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.20.1)(vite@8.2.0(@types/node@22.20.1)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/web:
     dependencies:
+      '@animate-ui/react':
+        specifier: 2.2.1
+        version: 2.2.1(@base-ui/react@1.9.0(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@shadcn/react@0.3.1(@types/react@19.3.0)(react@19.3.1))(motion@13.5.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@base-ui/react':
         specifier: ^1.9.0
         version: 1.9.0(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -622,6 +625,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@animate-ui/react':
+        specifier: 2.2.1
+        version: 2.2.1(@base-ui/react@1.9.0(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@shadcn/react@0.3.1(@types/react@19.3.0)(react@19.3.1))(motion@13.5.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@base-ui/react':
         specifier: ^1.9.0
         version: 1.9.0(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -649,6 +655,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      tailwind-merge:
+        specifier: ^3.7.0
+        version: 3.7.0
     devDependencies:
       '@types/react':
         specifier: ^19
@@ -671,6 +680,35 @@ packages:
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
+
+  '@animate-ui/react@2.2.1':
+    resolution: {integrity: sha512-hCY0IvRFhysr4yaCDOkbL0thbsweiQQqfzTXTyAMCZ+0iEUg7xDwDY2yXod5Ij5jfrbG+NarLvbkh3NSGL9m/Q==}
+    peerDependencies:
+      '@base-ui/react': ^1.8.0
+      '@floating-ui/react': ^0.27.20
+      '@shadcn/react': ^0.3.1
+      input-otp: ^1.5.0
+      motion: ^14.0.0
+      radix-ui: ^1.6.0
+      react: ^19.0.0
+      react-aria-components: ^1.21.0
+      react-dom: ^19.0.0
+      shiki: ^4.5.0
+    peerDependenciesMeta:
+      '@base-ui/react':
+        optional: true
+      '@floating-ui/react':
+        optional: true
+      '@shadcn/react':
+        optional: true
+      input-otp:
+        optional: true
+      radix-ui:
+        optional: true
+      react-aria-components:
+        optional: true
+      shiki:
+        optional: true
 
   '@aws-sdk/checksums@3.1001.3':
     resolution: {integrity: sha512-CcAkVyEUKGngbEqJdVdSc53Iy52+XzVL5NIcTen2BlK8UByNC1DThVtf5VKSrNzyA+SqyTvs+3S+knVBbOUizQ==}
@@ -1980,12 +2018,14 @@ packages:
   '@opentelemetry/sdk-trace-base@2.12.0':
     resolution: {integrity: sha512-JOERgZCxRM06FEJ5kEWxlSRChah6MmXDx3KwCruqEv/iEyLkTokCSemf2y1w8oIHtfrr8EVTpzebq/31vn2Cpg==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.3.0 <1.10.0'
 
   '@opentelemetry/sdk-trace-node@2.12.0':
     resolution: {integrity: sha512-9DufH1IlmQMoKAfot5y/FhTP1RnmhLb5K6eKmJO/bvzPjYwPAazoiAUbTZFdPbqxOXN0FEbhZx/e6SB1Og4jmg==}
     engines: {node: ^18.19.0 || >=20.6.0}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
@@ -7164,6 +7204,15 @@ packages:
 snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
+
+  '@animate-ui/react@2.2.1(@base-ui/react@1.9.0(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@shadcn/react@0.3.1(@types/react@19.3.0)(react@19.3.1))(motion@13.5.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      motion: 13.5.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    optionalDependencies:
+      '@base-ui/react': 1.9.0(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@shadcn/react': 0.3.1(@types/react@19.3.0)(react@19.3.1)
 
   '@aws-sdk/checksums@3.1001.3':
     dependencies:
@@ -12525,6 +12574,33 @@ snapshots:
       - '@types/node'
       - babel-plugin-macros
 
+  next@16.4.2(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+    dependencies:
+      '@next/env': 16.4.2
+      '@swc/helpers': 0.5.23
+      baseline-browser-mapping: 2.11.29
+      caniuse-lite: 1.0.30001816
+      postcss: 8.5.25
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+      styled-jsx: 5.1.6(@babel/core@7.29.7)(react@19.3.1)
+    optionalDependencies:
+      '@next/swc-darwin-arm64': 16.4.2
+      '@next/swc-darwin-x64': 16.4.2
+      '@next/swc-linux-arm64-gnu': 16.4.2
+      '@next/swc-linux-arm64-musl': 16.4.2
+      '@next/swc-linux-x64-gnu': 16.4.2
+      '@next/swc-linux-x64-musl': 16.4.2
+      '@next/swc-win32-arm64-msvc': 16.4.2
+      '@next/swc-win32-x64-msvc': 16.4.2
+      '@opentelemetry/api': 1.9.1
+      '@playwright/test': 1.64.1
+      sharp: 0.35.5(@types/node@22.20.1)
+    transitivePeerDependencies:
+      - '@babel/core'
+      - '@types/node'
+      - babel-plugin-macros
+
   node-abi@3.99.0:
     dependencies:
       semver: 7.8.5
@@ -14457,7 +14533,7 @@ snapshots:
 
   wrap-ansi@7.0.0:
     dependencies:
-      ansi-styles: 4.3.0
+      ansi-styles: 4.1.0
       string-width: 4.2.3
       strip-ansi: 6.0.1
 

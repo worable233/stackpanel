@@ -8,10 +8,7 @@ export default async function AdminNotificationsPage() {
   const t = createTranslator(await getLocale());
   return (
     <main className="w-full">
-      <NotificationInbox
-        title={t('admin.notifications.title')}
-        description={t('admin.notifications.description')}
-      />
+      <NotificationInbox title={t('admin.notifications.title')} />
     </main>
   );
 }

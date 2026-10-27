@@ -6,7 +6,7 @@ import type {
   PluginContext,
 } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
-import { refundOrder } from './refund';
+import { refundOrder, reviewRefundRequest } from './refund';
 
 function createFakeExtensions() {
   const tables = new Map<string, Map<string, Stored>>();
@@ -98,6 +98,13 @@ function createFakeExtensions() {
       where: Record<string, Record<string, unknown>>,
       patch: Record<string, { set?: unknown; inc?: number; dec?: number }>,
     ) {
+      // The real extension client only accepts physical columns (the fields
+      // declared in `indexes`); anything else throws「不可更新的字段」and the HTTP
+      // call 422s. Enforcing it here keeps that class of bug visible in tests.
+      const columns = new Set((model.indexes ?? []).flatMap((index) => index.fields));
+      for (const field of Object.keys(patch)) {
+        if (!columns.has(field)) throw new Error(`不可更新的字段：${field}`);
+      }
       const rows = [...table(model.kind).values()].filter((row) => matches(row, where));
       for (const row of rows) applyPatch(row.spec, patch);
       return { updated: rows.length };
@@ -429,5 +436,72 @@ describe('refundOrder', () => {
         payload: { orderId: 'order-tx', amount: 10000, userId: 'user-1', full: true },
       },
     ]);
+  });
+});
+
+describe('reviewRefundRequest', () => {
+  beforeEach(() => resetContext());
+
+  /**
+   * 回归：审核通过曾经整笔 422。两处原因都会在这里复现——
+   * 1) `reviewerId` 只存在 spec 里，不是物理列，不能出现在 `updateWhere` 的 patch；
+   * 2) 申请没有 `reason`（null）时不能原样透传给 `refundOrder` 的 `reason?: string`。
+   */
+  it('approves a pending request without a reason and credits the wallet', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: { items: [{ productId: 'prod-1', quantity: 1 }] },
+        total: 5000,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 5000,
+        fxRate: null,
+      },
+      'order-9',
+    );
+    fake.seed(PRODUCT, { name: '云服务器', stock: 3, status: 'ACTIVE' }, 'prod-1');
+    fake.seed(
+      'store/refund-request',
+      {
+        orderId: 'order-9',
+        userId: 'user-1',
+        amount: 5000,
+        currency: 'CNY',
+        reason: null,
+        state: 'PENDING',
+        reviewerId: null,
+        reviewReason: null,
+        failureReason: null,
+        destination: 'WALLET',
+        idempotencyKey: null,
+      },
+      'rr-1',
+    );
+    const credit = vi.fn(async () => ({}));
+    bindContext(makeCtx(fake, credit));
+
+    const result = (await reviewRefundRequest({
+      params: { id: 'rr-1' },
+      body: { decision: 'approve' },
+      user: { id: 'admin-1', role: 'ADMIN' },
+    } as never)) as { request: { status: string } };
+
+    expect(result.request.status).toBe('SUCCEEDED');
+    expect(fake.all('store/refund-request')[0]!.spec).toMatchObject({
+      state: 'SUCCEEDED',
+      reviewerId: 'admin-1',
+      failureReason: null,
+    });
+    expect(credit).toHaveBeenCalledWith(
+      'user-1',
+      5000,
+      'CNY',
+      expect.objectContaining({ type: 'ORDER_REFUND' }),
+    );
   });
 });

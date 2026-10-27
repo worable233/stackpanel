@@ -552,6 +552,7 @@ const context = {
 
   payments: serviceProxy('payments', [
     'listPaymentMethods',
+    'listAvailablePaymentMethods',
     'createRecord',
     'initiate',
     'create',

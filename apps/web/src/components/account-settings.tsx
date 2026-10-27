@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Bot, Palette, ShieldCheck, UserRound, Plug, ArrowUpRight, Bell } from 'lucide-react';
 import { SectionTitle } from '@stackpanel/ui';
 import type { User } from '@stackpanel/sdk';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import { SettingsSections, SettingsSelect } from '@/components/settings-sections';
 import { useTheme } from '@/components/theme-provider';
 import { NotificationPreferencesSettings } from '@/components/notification-settings';
@@ -424,7 +424,7 @@ function ToolCredential({
   }
   return (
     <form
-      className="flex flex-col gap-4 border-b pb-6 last:border-0"
+      className="flex flex-col gap-4 pb-6"
       onSubmit={(event) => {
         event.preventDefault();
         void save();

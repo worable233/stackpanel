@@ -372,7 +372,12 @@ const purchasableProductListSchema = z.object({
   pageSize: z.number(),
 });
 const purchasableProductSchema = z.object({ product: storePurchasableProductSchema });
-const orderListSchema = z.object({ orders: z.array(storeOrderSchema) });
+const orderListSchema = z.object({
+  orders: z.array(storeOrderSchema),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
+});
 
 const changeQuoteSchema = z.object({
   from: z.number(),
@@ -2149,9 +2154,18 @@ function StoreAccountCatalogPage(props: AccountPageComponentProps): ReactElement
 
 function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement {
   const tr = t(props.locale);
-  const orders = (props.data.orders as StoreOrder[] | undefined) ?? [];
+  const history = props.data.orders as
+    | { orders: StoreOrder[]; total: number; page: number; pageSize: number }
+    | undefined;
+  const orders = history?.orders ?? (Array.isArray(props.data.orders) ? props.data.orders : []);
+  const total = history?.total ?? orders.length;
+  const page = history?.page ?? 1;
+  const pageSize = history?.pageSize ?? 20;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
   const cancel = props.actions?.['store.cancel-order'];
   const refund = props.actions?.['store.request-refund'];
+  const pageHref = (next: number) =>
+    next > 1 ? `/account/orders?page=${next}` : '/account/orders';
   return (
     <main className="flex flex-col gap-6">
       <PageHeader title={tr('orders.title')} />
@@ -2207,6 +2221,29 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
       ) : (
         <Empty text={tr('orders.empty')} />
       )}
+      {pages > 1 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+          <span>{tr('catalog.pagerSummary', { total, page, pages })}</span>
+          <div className="flex items-center gap-2">
+            {page > 1 ? (
+              <a
+                href={pageHref(page - 1)}
+                className="rounded-lg bg-muted px-3 py-1.5 text-foreground transition-colors hover:bg-muted/70"
+              >
+                {tr('catalog.previous')}
+              </a>
+            ) : null}
+            {page < pages ? (
+              <a
+                href={pageHref(page + 1)}
+                className="rounded-lg bg-muted px-3 py-1.5 text-foreground transition-colors hover:bg-muted/70"
+              >
+                {tr('catalog.next')}
+              </a>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -2991,7 +3028,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                         {param.required ? ' *' : ''}
                       </label>
                       {param.type === 'select' ? (
-                        <select
+                        <Select
                           id={`action-${action.id}-${param.name}`}
                           name={param.name}
                           required={param.required}
@@ -3004,7 +3041,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                               {option.label}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                       ) : param.type === 'textarea' ? (
                         <textarea
                           id={`action-${action.id}-${param.name}`}
@@ -3180,12 +3217,14 @@ function ServiceChangePanel({
     else groups.push({ name, options: [option] });
   }
   return (
-    <section className="space-y-3 rounded-2xl border bg-card p-4">
+    <section className="flex flex-col gap-4">
       <SectionTitle>{tr('change.title')}</SectionTitle>
+      <Card>
+        <CardContent className="flex flex-col gap-4">
       <form method="get" action={`/account/services/${serviceId}`} className="space-y-4">
         <div className="grid gap-1.5">
           <label className="text-sm font-medium">{tr('change.cycle')}</label>
-          <select
+          <Select
             name="cycle"
             defaultValue={cycle}
             className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
@@ -3195,7 +3234,7 @@ function ServiceChangePanel({
                 {item.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         {groups.map((group) => (
           <fieldset key={group.name || 'default'} className="space-y-4 rounded-xl border p-3">
@@ -3226,7 +3265,7 @@ function ServiceChangePanel({
               return (
                 <div key={option.id} className="grid gap-1.5">
                   <label className="text-sm font-medium">{option.label}</label>
-                  <select
+                  <Select
                     name={`cfg_${option.id}`}
                     defaultValue={typeof value === 'string' ? value : (choices[0]?.id ?? '')}
                     className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
@@ -3236,7 +3275,7 @@ function ServiceChangePanel({
                         {choice.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               );
             })}
@@ -3271,6 +3310,8 @@ function ServiceChangePanel({
           </button>
         </form>
       ) : null}
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -3618,8 +3659,12 @@ const storeFinders: Record<string, FinderProvider> = {
     },
   },
   'store.myOrders': {
-    handler: async (_input, ctx) =>
-      (await ctx.api.get('/orders?page=1&pageSize=50', orderListSchema)).orders,
+    handler: async (input, ctx) => {
+      const query = (input['$query'] ?? {}) as Record<string, string | string[] | undefined>;
+      const page = Math.max(1, Number(Array.isArray(query.page) ? query.page[0] : query.page) || 1);
+      const pageSize = 20;
+      return ctx.api.get(`/orders?page=${page}&pageSize=${pageSize}`, orderListSchema);
+    },
   },
   'store.myServices': {
     handler: async (_input, ctx) => {
@@ -3738,6 +3783,39 @@ const storeFinders: Record<string, FinderProvider> = {
     handler: async (_input, ctx) =>
       (await ctx.api.get('/store/admin/products?page=1&pageSize=50', productListSchema)).products,
   },
+  /**
+   * 履约可用性诊断：哪些商品当前无法交付、缺哪个提供方插件。
+   *
+   * 商品能否交付取决于运行期已启用的插件，而不是商品行本身；插件被停用后
+   * 商品仍是 ACTIVE。后台需要能直接看到这个问题，而不是等买家下单报错。
+   */
+  'store.fulfillmentDiagnostics': {
+    handler: async (_input, ctx) =>
+      ctx.api.get(
+        '/store/admin/fulfillment-issues',
+        z.object({
+          issues: z.array(
+            z.object({
+              productId: z.string(),
+              name: z.string(),
+              fulfillmentType: z.string(),
+              providerId: z.string().nullable(),
+              providerProductId: z.string().nullable(),
+              code: z.string(),
+              message: z.string(),
+              blocking: z.boolean(),
+            }),
+          ),
+          providers: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              fulfillmentTypes: z.array(z.string()),
+            }),
+          ),
+        }),
+      ),
+  },
   'store.adminProduct': {
     handler: async (input, ctx) => {
       const schema = productListSchema.extend({ total: z.number() });
@@ -3802,6 +3880,16 @@ const storeFinders: Record<string, FinderProvider> = {
               total: z.number(),
               currency: z.string(),
               paymentUrl: z.string().nullable(),
+              // Manual payments carry instructions instead of a URL; dropping
+              // them leaves a PENDING order with nothing for the buyer to do.
+              paymentInstructions: z
+                .object({
+                  kind: z.string(),
+                  message: z.string(),
+                  detail: z.record(z.string(), z.unknown()),
+                })
+                .nullable()
+                .optional(),
             }),
           }),
         )
@@ -3839,8 +3927,7 @@ export const frontend: FrontendPackage = {
   pageComponents: {
     shop: ProductListPage,
     'legacy-cart': () => redirect('/account/store/cart'),
-    'legacy-product': (props) =>
-      redirect(`/account/store/${encodeURIComponent(props.params.id ?? '')}`),
+    'legacy-product': () => redirect('/register'),
   },
   ui: {
     actions: [
@@ -4109,6 +4196,7 @@ export const frontend: FrontendPackage = {
         },
         data: [
           { finder: 'store.adminProducts', as: 'products' },
+          { finder: 'store.fulfillmentDiagnostics', as: 'fulfillmentDiagnostics' },
           { finder: 'store.productTypes', as: 'productTypes' },
           { finder: 'store.upstreamSources', as: 'upstreamSources' },
           { finder: 'catalog.adminCategories', as: 'categories' },
@@ -4199,7 +4287,7 @@ export const frontend: FrontendPackage = {
         component: 'account/orders',
         permission: 'store.view',
         nav: { labelKey: 'nav.orders', groupKey: 'nav.groupBilling', order: 20 },
-        data: [{ finder: 'store.myOrders', as: 'orders' }],
+        data: [{ finder: 'store.myOrders', as: 'orders', input: { $query: '1' } }],
       },
       {
         path: '/services/:id',

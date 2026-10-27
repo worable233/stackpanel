@@ -348,3 +348,165 @@ export async function refreshDistributionAction(): Promise<SettingsActionState> 
     };
   }
 }
+
+// -----------------------------------------------------------------------------
+// Sales channels & payment methods
+// -----------------------------------------------------------------------------
+
+/**
+ * Parse the operator-entered collection details for a manual method.
+ *
+ * Manual methods have no gateway: the `config` object *is* the payment step, and
+ * it is echoed verbatim to the buyer's order page. Accept a small, predictable
+ * key set instead of a free-form JSON blob — a typo in a JSON textarea produces
+ * an order that silently shows nothing to pay with.
+ */
+function parseCollectionConfig(formData: FormData): Record<string, string> {
+  const config: Record<string, string> = {};
+  for (const [field, key] of [
+    ['payee', '收款户名'], // i18n-exempt — stored config key, not UI copy
+    ['bankName', '开户行'], // i18n-exempt — stored config key, not UI copy
+    ['account', '账号'], // i18n-exempt — stored config key, not UI copy
+    ['note', '备注'], // i18n-exempt — stored config key, not UI copy
+    ['qrImage', '收款码'], // i18n-exempt — stored config key, not UI copy
+  ] as const) {
+    const value = formData.get(field);
+    if (typeof value === 'string' && value.trim()) config[key] = value.trim();
+  }
+  return config;
+}
+
+/**
+ * Read a switch field out of `FormData`.
+ *
+ * The UI switch is a native checkbox underneath: when it is off it submits
+ * *nothing at all*, so `get('enabled') !== 'false'` would read "off" as "on" and
+ * silently re-enable a method the operator just disabled. Presence is the
+ * signal; `'false'` is tolerated for any caller that posts it explicitly.
+ */
+function readEnabled(formData: FormData): boolean {
+  const raw = formData.get('enabled');
+  return raw !== null && raw !== 'false';
+}
+
+/** Create a payment method on a sales channel. */
+export async function createPaymentMethodAction(
+  _prev: SettingsActionState,
+  formData: FormData,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  const channelId = formData.get('channelId');
+  const providerId = formData.get('providerId');
+  const name = formData.get('name');
+  if (typeof channelId !== 'string' || !channelId.trim()) {
+    return { error: translate(locale, 'action.paymentMethodChannelRequired') };
+  }
+  if (typeof providerId !== 'string' || !providerId.trim()) {
+    return { error: translate(locale, 'action.paymentMethodProviderRequired') };
+  }
+  if (typeof name !== 'string' || !name.trim()) {
+    return { error: translate(locale, 'action.paymentMethodNameRequired') };
+  }
+  const currencies = String(formData.get('currencies') ?? '')
+    .split(',')
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean);
+  try {
+    const api = await getAuthedApiClient();
+    await api.createAdminPaymentMethod({
+      channelId: channelId.trim(),
+      providerId: providerId.trim(),
+      name: name.trim(),
+      enabled: readEnabled(formData),
+      currencies,
+      config: parseCollectionConfig(formData),
+    });
+    revalidatePath('/admin/settings');
+    return { ok: true, message: translate(locale, 'action.paymentMethodCreated') };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.paymentMethodCreateFailed')),
+    };
+  }
+}
+
+/** Update an existing payment method (name / enabled / currencies / collection details). */
+export async function updatePaymentMethodAction(
+  _prev: SettingsActionState,
+  formData: FormData,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  const id = formData.get('id');
+  if (typeof id !== 'string' || !id.trim()) {
+    return { error: translate(locale, 'action.paymentMethodMissing') };
+  }
+  const name = formData.get('name');
+  const currencies = String(formData.get('currencies') ?? '')
+    .split(',')
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean);
+  try {
+    const api = await getAuthedApiClient();
+    /*
+     * Merge the collection details into the existing config instead of
+     * replacing it.
+     *
+     * `config` is provider-defined: a gateway such as epay keeps credentials
+     * there that this panel never renders. Blind replacement would erase them
+     * the first time an operator renames a method — a silent outage that looks
+     * like a save that "worked". Only the keys this panel owns are overwritten.
+     */
+    const existing = (await api.getAdminSalesChannels()).channels
+      .flatMap((channel) => channel.methods)
+      .find((method) => method.id === id.trim());
+    const baseConfig =
+      existing?.config && typeof existing.config === 'object'
+        ? (existing.config as Record<string, unknown>)
+        : {};
+    await api.updateAdminPaymentMethod(id.trim(), {
+      ...(typeof name === 'string' && name.trim() ? { name: name.trim() } : {}),
+      enabled: readEnabled(formData),
+      currencies,
+      config: { ...baseConfig, ...parseCollectionConfig(formData) },
+    });
+    revalidatePath('/admin/settings');
+    return { ok: true, message: translate(locale, 'action.paymentMethodUpdated') };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.paymentMethodUpdateFailed')),
+    };
+  }
+}
+
+/** Toggle a payment method's availability at checkout. */
+export async function togglePaymentMethodAction(
+  id: string,
+  enabled: boolean,
+): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  try {
+    const api = await getAuthedApiClient();
+    await api.updateAdminPaymentMethod(id, { enabled });
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.paymentMethodUpdateFailed')),
+    };
+  }
+}
+
+/** Delete a payment method. */
+export async function deletePaymentMethodAction(id: string): Promise<SettingsActionState> {
+  const locale = await getLocale();
+  try {
+    const api = await getAuthedApiClient();
+    await api.deleteAdminPaymentMethod(id);
+    revalidatePath('/admin/settings');
+    return { ok: true };
+  } catch (err) {
+    return {
+      error: await apiErrorMessage(err, translate(locale, 'action.paymentMethodDeleteFailed')),
+    };
+  }
+}

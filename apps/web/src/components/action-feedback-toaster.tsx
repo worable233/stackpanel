@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import { useTranslator } from '@/i18n/provider';
 
 /** Long errors keep this much inline; the rest folds into a details block. */

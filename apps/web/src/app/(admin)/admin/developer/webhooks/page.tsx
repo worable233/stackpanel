@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { WebhookDeliveryListResponse } from '@stackpanel/sdk';
-import { PageHeader } from '@stackpanel/ui';
+import { PageHeader, Select } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { Button } from '@/components/ui/button';
@@ -88,7 +88,7 @@ export default async function AdminDeveloperWebhooksPage({
         </div>
         <div className="space-y-1">
           <Label htmlFor="status">{t('admin.developer.webhooks.filterStatus')}</Label>
-          <select
+          <Select
             id="status"
             name="status"
             defaultValue={status}
@@ -100,7 +100,7 @@ export default async function AdminDeveloperWebhooksPage({
                 {statusLabel(value, t)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <Button type="submit" variant="outline" size="sm">
           {t('admin.developer.webhooks.search')}

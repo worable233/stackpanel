@@ -53,13 +53,36 @@ const methodSchema = z.object({
 });
 
 export async function adminSalesRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/admin/sales-channels', { preHandler: adminOnly }, async () => {
+  app.get('/admin/sales-channels', { preHandler: adminOnly }, async (request) => {
     const prisma = getPrisma();
     const channels = await prisma.salesChannel.findMany({
       include: { methods: { orderBy: { sortOrder: 'asc' } } },
       orderBy: { sortOrder: 'asc' },
     });
-    return { channels };
+    /*
+     * Tell the admin UI which provider family each row belongs to.
+     *
+     * A manual provider (bank transfer / QR) has no gateway: the row's `config`
+     * is the entire payment step, so a row without collection details is a dead
+     * end for the buyer and deserves a warning. A gateway provider (epay and
+     * friends) keeps its credentials in its own plugin settings, so empty
+     * `config` is normal — warning there would train operators to ignore the
+     * warning. `mode` comes from the live runtime, not from the row.
+     */
+    const listing = request.server.payments.listPaymentMethods();
+    const modes = new Map(listing.providers.map((provider) => [provider.id, provider.mode]));
+    return {
+      // The installable provider catalogue, so the admin UI can offer a picker
+      // instead of a free-text id (a typo there is only caught on save).
+      providers: listing.providers,
+      channels: channels.map((channel) => ({
+        ...channel,
+        methods: channel.methods.map((method) => ({
+          ...method,
+          providerMode: modes.get(method.providerId) ?? null,
+        })),
+      })),
+    };
   });
 
   app.post('/admin/sales-channels', { preHandler: adminOnly }, async (request, reply) => {

@@ -1,5 +1,10 @@
 import { cache, createElement } from 'react';
-import { activeThemeCandidate, importFrontendPackage, readThemeSettings } from '@/lib/slots';
+import {
+  activeThemeCandidate,
+  importFrontendPackage,
+  listPluginFrontendCandidates,
+  readThemeSettings,
+} from '@/lib/slots';
 import type { ReactElement } from 'react';
 import { z } from 'zod';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
@@ -129,7 +134,7 @@ async function renderPublicLayout(
   themeId?: string,
   settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
-  const [navigation, token, platform, categories, brand, settings] = await Promise.all([
+  const [navigation, token, platform, categories, brand, settings, pluginCandidates] = await Promise.all([
     getApiClient()
       .getNav('public')
       .then((result) => result.items.map(({ label, href }) => ({ label, href })))
@@ -154,6 +159,7 @@ async function renderPublicLayout(
       : activeThemeCandidate().then((candidate) =>
           candidate ? readThemeSettings(candidate.id) : {},
         ),
+    listPluginFrontendCandidates().catch(() => []),
   ]);
   return createElement(layout, {
     children: page,
@@ -168,6 +174,7 @@ async function renderPublicLayout(
     // same-origin BFF is the only browser-reachable kernel origin.
     assetsBaseUrl: assetsBaseUrl ?? KERNEL_BFF_PREFIX,
     locale,
+    plugins: pluginCandidates.map((candidate) => candidate.id),
     brand: brand
       ? {
           logoUrl: brand.logo ? apiAssetUrl(brand.logo) : null,

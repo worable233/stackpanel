@@ -20,7 +20,7 @@ import * as navigation from 'next/navigation';
 import * as ui from '@stackpanel/ui';
 import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
-import * as sonner from 'sonner';
+import * as sonner from '@/components/ui/toast';
 
 interface ClientAbiGlobal {
   __STACKPANEL_CLIENT_ABI__?: unknown;
