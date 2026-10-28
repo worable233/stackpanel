@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { z } from 'zod';
+import { PluginError, formatMinorCurrency, toMinorUnits } from '@stackpanel/sdk';
 import type { CustomModelDefinition } from '@stackpanel/sdk';
 import {
   decodeWire,
@@ -18,6 +19,52 @@ import {
   RAW_WINDOW_BYTES,
 } from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
+
+/**
+ * Serialise a thrown error for the host side.
+ *
+ * `detail` has to travel with the code: the host rebuilds a branded
+ * `PluginError` from this payload, and the human-readable detail would otherwise
+ * be replaced by the machine code.
+ */
+function wireThrown(error: unknown): {
+  message: string;
+  code?: string;
+  status?: number;
+  detail?: string;
+} {
+  const candidate = error as { code?: unknown; status?: unknown; detail?: unknown };
+  return {
+    message: String(error instanceof Error ? error.message : error),
+    ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
+    ...(typeof candidate.status === 'number' ? { status: candidate.status } : {}),
+    ...(typeof candidate.detail === 'string' ? { detail: candidate.detail } : {}),
+  };
+}
+
+/**
+ * Rebuild an error the host reported into a `PluginError` instance.
+ *
+ * Plugins routinely branch on `error instanceof PluginError` before deciding
+ * whether to surface or wrap a failure. Copying fields onto a bare `Error` (the
+ * previous behaviour) broke that check across the RPC boundary, so plugin code
+ * collapsed the kernel's precise error into a generic one — a disabled currency
+ * surfaced as "不支持的币种" instead of "币种已被停用". Rebuilding the real class
+ * keeps `code`/`status`/`detail` and satisfies `instanceof` for plugins that load
+ * the same SDK module instance as the worker.
+ */
+function restoreHostError(payload: {
+  message?: string;
+  code?: string;
+  status?: number;
+  detail?: string;
+}): Error {
+  const message = payload.message ?? 'host capability failed';
+  if (typeof payload.code === 'string' && typeof payload.status === 'number') {
+    return new PluginError(payload.code, payload.status, payload.detail ?? message);
+  }
+  return Object.assign(new Error(message), payload);
+}
 import { resolveMaxRssMb, startMemoryGuard } from './memory-guard.ts';
 
 type PluginHook = (value: unknown) => unknown | Promise<unknown>;
@@ -578,6 +625,19 @@ const context = {
     'listAccounts',
     'listLedger',
   ]),
+  // Currency governance was reachable in-process only: the isolated worker had
+  // no `currency` entry at all, so `ctx.currency.requireEnabled(...)` threw a
+  // TypeError that plugins caught and rewrote into a vague "不支持的币种".
+  // The pure helpers run locally so synchronous plugin code keeps working.
+  currency: {
+    list: (...args: unknown[]) => callHost('currency.list', args),
+    listEnabled: (...args: unknown[]) => callHost('currency.listEnabled', args),
+    get: (...args: unknown[]) => callHost('currency.get', args),
+    requireEnabled: (...args: unknown[]) => callHost('currency.requireEnabled', args),
+    toMinor: (value: unknown, code: unknown) => toMinorUnits(value as never, String(code)),
+    format: (amountMinor: unknown, code: unknown, locale: unknown) =>
+      formatMinorCurrency(Number(amountMinor), String(code), String(locale)),
+  },
   fx: serviceProxy('fx', ['quote', 'getRate', 'listRates']),
   extensions,
   registerExtension,
@@ -1023,7 +1083,6 @@ async function runRawRoute(session: RawSession): Promise<void> {
     }
   } catch (error) {
     if (session.aborted) return;
-    const candidate = error as { code?: unknown; status?: unknown };
     session.ended = true;
     rawSessions.delete(session.id);
     // Mirror the in-process path: before headers, the dispatcher maps this to a
@@ -1033,11 +1092,7 @@ async function runRawRoute(session: RawSession): Promise<void> {
       pluginId,
       type: 'raw-error',
       id: session.id,
-      error: {
-        message: String(error instanceof Error ? error.message : error),
-        ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
-        ...(typeof candidate.status === 'number' ? { status: candidate.status } : {}),
-      },
+      error: wireThrown(error),
     });
   }
 }
@@ -1093,8 +1148,7 @@ process.on('message', async (raw: unknown) => {
     pending.delete(requestId);
     clearTimeout(waiter.timer);
     if (message.error) {
-      const error = Object.assign(new Error(message.error.message), message.error);
-      waiter.reject(error);
+      waiter.reject(restoreHostError(message.error));
     } else waiter.resolve(message.value);
     return;
   }
@@ -1404,17 +1458,12 @@ process.on('message', async (raw: unknown) => {
         : {}),
     });
   } catch (error) {
-    const candidate = error as { code?: unknown; status?: unknown };
     sendHost({
       protocol: 1,
       pluginId,
       type: 'result',
       id: requestId,
-      error: {
-        message: String(error instanceof Error ? error.message : error),
-        ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
-        ...(typeof candidate.status === 'number' ? { status: candidate.status } : {}),
-      },
+      error: wireThrown(error),
     });
   }
 });

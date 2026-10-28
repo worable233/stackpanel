@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
+import { PluginError } from '@stackpanel/sdk';
 import type {
   PluginDefinition,
   PluginManifest,
@@ -88,6 +89,37 @@ const SYNC_SERVICE_METHODS: Record<string, readonly string[]> = {
   secrets: ['isAvailable'],
   payments: ['listPaymentMethods'],
 };
+
+/** Shape a worker reported error as JSON over the RPC channel. */
+type WorkerErrorPayload = {
+  message?: string;
+  code?: string;
+  status?: number;
+  detail?: string;
+};
+
+/**
+ * Rebuild an error thrown inside a worker process into one the kernel error
+ * boundary recognises.
+ *
+ * A plain `Error` with `.status` copied onto it is **not** enough: `app.ts`
+ * decides between "render the declared problem document" and "generic 500" by
+ * {@link isPluginError}, which matches a non-enumerable brand living on
+ * `PluginError.prototype`. Errors serialised across the process boundary lose
+ * that prototype, so every deterministic 400/403/409/429 raised by an isolated
+ * plugin used to surface as a 500. Reconstructing a real `PluginError` restores
+ * the brand (and therefore the status code the plugin asked for).
+ */
+function restoreWorkerError(payload: WorkerErrorPayload | undefined): Error {
+  const message = payload?.message ?? 'isolated plugin failed';
+  if (typeof payload?.code === 'string' && typeof payload?.status === 'number') {
+    return new PluginError(payload.code, payload.status, payload.detail ?? message);
+  }
+  const failure = new Error(message) as Error & { code?: string; status?: number };
+  if (payload?.code !== undefined) failure.code = payload.code;
+  if (payload?.status !== undefined) failure.status = payload.status;
+  return failure;
+}
 
 interface IsolatedWorker {
   child: ChildProcess;
@@ -325,15 +357,8 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
       if (!request) return;
       clearTimeout(request.timer);
       state.pending.delete(message.id);
-      if (message.error) {
-        const error = new Error(message.error.message) as Error & {
-          code?: string;
-          status?: number;
-        };
-        if (message.error.code !== undefined) error.code = message.error.code;
-        if (message.error.status !== undefined) error.status = message.error.status;
-        request.reject(error);
-      } else request.resolve(message);
+      if (message.error) request.reject(restoreWorkerError(message.error));
+      else request.resolve(message);
     });
     child.once('exit', () => {
       if (!readySettled) {
@@ -408,7 +433,16 @@ async function handleCapability(
   }
   // Method names are camelCase (`settleHold`), so the second group must accept
   // uppercase letters.
-  const transactionMatch = /^tx\.([a-z]+)\.([a-zA-Z]+)$/.exec(message.capability);
+  //
+  // `tx.extensions.*` deliberately does NOT belong to this branch: extension
+  // writes inside a transaction are dispatched by the dedicated block below,
+  // which is the only place that can route them onto
+  // `transaction.tx.extensions`. Without the negative lookahead this generic
+  // pattern matched first and reported `未知事务操作：extensions.create`, so
+  // every isolated plugin that created a model row inside `ctx.tx()` failed.
+  const transactionMatch = /^tx\.(?!extensions\.)([a-z]+)\.([a-zA-Z]+)$/.exec(
+    message.capability,
+  );
   if (transactionMatch) {
     const transaction = state.transactions.get(String(args.txId));
     if (!transaction) throw new Error('事务不存在或已结束');
@@ -668,6 +702,7 @@ async function handleCapability(
       'payments',
       'wallet',
       'fx',
+      'currency',
       'cache',
     ].includes(serviceMatch[1] ?? '')
   ) {
@@ -1232,13 +1267,7 @@ function handleRawFrame(id: string, state: IsolatedWorker, frame: Record<string,
         session.resolve();
         return;
       }
-      const failure = new Error(error?.message ?? 'isolated raw route failed') as Error & {
-        code?: string;
-        status?: number;
-      };
-      if (error?.code !== undefined) failure.code = error.code;
-      if (error?.status !== undefined) failure.status = error.status;
-      session.reject(failure);
+      session.reject(restoreWorkerError(error));
       return;
     }
     default:

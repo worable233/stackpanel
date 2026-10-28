@@ -66,12 +66,27 @@ export function decodeWire(value: unknown): unknown {
   return value.map(decodeWire);
 }
 
-export function wireError(error: unknown): { message: string; code?: string; status?: number; details?: unknown } {
-  const candidate = error as { message?: unknown; code?: unknown; status?: unknown; details?: unknown };
+export function wireError(error: unknown): {
+  message: string;
+  code?: string;
+  status?: number;
+  detail?: string;
+  details?: unknown;
+} {
+  const candidate = error as {
+    message?: unknown;
+    code?: unknown;
+    status?: unknown;
+    detail?: unknown;
+    details?: unknown;
+  };
   return {
     message: String(candidate?.message ?? error),
     ...(typeof candidate?.code === 'string' ? { code: candidate.code } : {}),
     ...(typeof candidate?.status === 'number' ? { status: candidate.status } : {}),
+    // `detail` is the human-readable half of a plugin error; without it the
+    // receiving side can only show the machine code.
+    ...(typeof candidate?.detail === 'string' ? { detail: candidate.detail } : {}),
     ...(candidate?.details !== undefined ? { details: encodeWire(candidate.details) } : {}),
   };
 }

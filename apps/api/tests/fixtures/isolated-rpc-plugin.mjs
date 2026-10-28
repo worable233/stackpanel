@@ -12,6 +12,19 @@ export default {
   routes: [
     { method: 'GET', path: '/probe', handler: async () => ({ ok: true }) },
     {
+      // A plugin-declared failure: the code/status/detail must survive the IPC
+      // boundary *and* be recognisable again (`isPluginError`) on the host side.
+      method: 'GET',
+      path: '/error-status',
+      handler: async () => {
+        const error = new Error('probe.invalid');
+        error.code = 'probe.invalid';
+        error.status = 409;
+        error.detail = '冲突：状态不允许';
+        throw error;
+      },
+    },
+    {
       method: 'GET',
       path: '/services',
       handler: async () => ({

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadIsolatedPluginDefinition, stopIsolatedPlugin } from '../../src/plugins/isolated/host.ts';
+import { isPluginError } from '@stackpanel/sdk';
 import type { PluginManifest, RawHttpReply, RawHttpRequest, LlmProvider, PluginContext } from '@stackpanel/sdk';
 
 type Message = {
@@ -215,6 +216,37 @@ describe('isolated worker RPC protocol', () => {
       stopIsolatedPlugin(id);
     }
   });
+
+  it('keeps a plugin error branded and preserves its status across IPC', async () => {
+    // Regression: the worker used to rebuild host/plugin errors as plain `Error`
+    // objects with copied fields, which lost the non-enumerable plugin-error
+    // brand. The kernel boundary then treated a deliberate 409 as a generic 500,
+    // and plugin code branching on `instanceof PluginError` rewrote the cause.
+    const id = 'isolated-error-status-test';
+    const manifest: PluginManifest = { id, name: 'Error status test', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/error-status');
+      expect(route).toBeDefined();
+      let failure: unknown = null;
+      try {
+        await route?.handler(
+          { params: {}, query: {}, body: null, headers: {} } as never,
+          { code: () => undefined, send: () => undefined } as never,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      const pluginError = failure as { code?: string; status?: number; detail?: string };
+      expect(pluginError.code).toBe('probe.invalid');
+      expect(pluginError.status).toBe(409);
+      expect(pluginError.detail).toBe('冲突：状态不允许');
+      expect(isPluginError(failure)).toBe(true);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
 
   it('rejects an in-flight route when the isolated worker exits', async () => {
     const id = 'isolated-crash-test';
