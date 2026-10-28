@@ -8,6 +8,23 @@ const model = {
   indexes: [{ fields: ['title'], types: { title: 'string' } }],
 };
 
+/**
+ * 类实例形式的扩展实现：宿主通过 workerProxy 回调时必须保留 receiver，
+ * 否则内部访问 this.xxx 会抛 "Cannot read properties of undefined"。
+ * 对象字面量风格看不出这个差异，所以夹具固定用类。
+ */
+class ProbeExtension {
+  constructor() {
+    this.id = 'rpc-extension';
+    this.calls = 0;
+  }
+
+  async run(value) {
+    this.calls += 1;
+    return `${value}:${this.calls}`;
+  }
+}
+
 export default {
   routes: [
     { method: 'GET', path: '/probe', handler: async () => ({ ok: true }) },
@@ -259,9 +276,6 @@ export default {
       version: '1',
       greet: (name) => `hello ${name}`,
     });
-    ctx.registerExtension('probe.extension', {
-      id: 'rpc-extension',
-      run: async (value) => value,
-    });
+    ctx.registerExtension('probe.extension', new ProbeExtension());
   },
 };

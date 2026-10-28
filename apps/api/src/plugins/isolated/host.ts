@@ -56,6 +56,8 @@ type Ready = {
   routes: Array<Record<string, unknown>>;
   models?: ModelDescriptor[];
   inject?: string[];
+  /** 插件定义里声明的扩展点消费，与磁盘 manifest 合并后作为白名单。 */
+  consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
   unsupported?: string[];
 };
 type Result = {
@@ -1342,11 +1344,24 @@ export async function loadIsolatedPluginDefinition(
   const state = workers.get(id);
   if (!state) throw new Error(`isolated plugin ${id} is unavailable`);
   state.allowedServices = new Set(ready.inject ?? []);
-  state.allowedExtensions = new Set(
-    (manifest.consumes ?? []).map(
-      (consumer) => `${consumer.extensionPoint}\u0000${consumer.pluginId}`,
-    ),
-  );
+  // 能力白名单与下发的扩展描述必须用同一份声明。`inject` 早已从插件定义
+  // 取（见上一行），这里同理同时接受「插件定义声明的 consumes」与「磁盘
+  // manifest 声明的 consumes」：安装器生成的 manifest.json 可能只带执行/
+  // 权限字段，若只读磁盘就会把已声明的能力全部拒掉（表现为插件在 trusted
+  // 下正常、在 isolated 下拿到空扩展列表）。
+  const declaredConsumers: Array<{
+    pluginId: string;
+    extensionPoint: string;
+    optional?: boolean;
+  }> = [];
+  const seenConsumer = new Set<string>();
+  for (const consumer of [...(ready.consumes ?? []), ...(manifest.consumes ?? [])]) {
+    const key = `${consumer.extensionPoint}\u0000${consumer.pluginId}`;
+    if (seenConsumer.has(key)) continue;
+    seenConsumer.add(key);
+    declaredConsumers.push(consumer);
+  }
+  state.allowedExtensions = new Set(seenConsumer);
   workerSpecs.set(id, {
     entry,
     manifest,
@@ -1403,7 +1418,7 @@ export async function loadIsolatedPluginDefinition(
             { name, ...shape, ...(Object.keys(syncValues).length > 0 ? { syncValues } : {}) },
           ];
         });
-        const extensions = (manifest.consumes ?? []).flatMap((consumer) => {
+        const extensions = declaredConsumers.flatMap((consumer) => {
           const entries = ctx
             .getExtensionsWithOwner<Record<string, unknown>>(consumer.extensionPoint)
             .filter((entry) => entry.pluginId === consumer.pluginId);

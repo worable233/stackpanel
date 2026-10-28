@@ -325,6 +325,24 @@ describe('isolated worker RPC protocol', () => {
     const lifecycleResult = await nextMessage(child);
     expect(lifecycleResult.type).toBe('result');
 
+    // 宿主回调 worker 内的扩展实现时必须保留 receiver。类实例风格的实现依赖
+    // this（如 provider 的 private 辅助方法），丢掉 this 会变成
+    // "Cannot read properties of undefined"，而对象字面量实现看不出任何异常。
+    const extensionToken = (extensionRequest.args as { token: string }).token;
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'service',
+      id: randomUUID(),
+      token: extensionToken,
+      method: 'run',
+      payload: ['probe'],
+    });
+    const extensionCall = await nextMessage(child);
+    expect(extensionCall.type).toBe('result');
+    expect(extensionCall.error).toBeUndefined();
+    expect(extensionCall.value).toBe('probe:1');
+
     send(child, { protocol: 1, pluginId, type: 'event', token: eventToken, payload: { value: 'ok' } });
     const loggerRequest = await nextMessage(child);
     expect(loggerRequest).toMatchObject({ type: 'capability', capability: 'logger.info' });
