@@ -1820,17 +1820,32 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
     const label = tr(key);
     return label === key ? state : label;
   };
+  const submitReview = (id: string, decision: 'approve' | 'reject', attest = false) =>
+    fetch(`/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(attest ? { decision, confirmNoUpstreamInstance: true } : { decision }),
+    });
   const review = (id: string, decision: 'approve' | 'reject') =>
     start(async () => {
       setError('');
-      const response = await fetch(
-        `/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ decision }),
-        },
-      );
+      let response = await submitReview(id, decision);
+      if (!response.ok && decision === 'approve') {
+        // When fulfilment died before the upstream ever returned an invoice, no
+        // machine evidence exists and none can be produced — the order would be
+        // stuck between "cannot deliver" and "cannot refund". Hand the burden of
+        // proof to the operator here, explicitly and once, instead of a dead end.
+        const failure: unknown = await response.clone().json().catch(() => null);
+        const code = (failure as { code?: string } | null)?.code;
+        if (code === 'store.refund.needs_upstream_attestation') {
+          if (window.confirm(tr('refund.attestConfirm'))) {
+            response = await submitReview(id, decision, true);
+          } else {
+            router.refresh();
+            return;
+          }
+        }
+      }
       // A rejected review (upstream still pending, already handled, …) must be
       // visible: silently refreshing made the buttons look dead.
       if (!response.ok) {
