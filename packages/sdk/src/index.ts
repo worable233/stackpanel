@@ -32,6 +32,7 @@ export type {
   ServiceActionParam,
   ServiceActionResult,
   ServiceChangeInput,
+  ServiceChangeOption,
   ServiceDetail,
   ServiceDetailField,
   ServiceRenewalInput,
@@ -210,6 +211,10 @@ export type {
 export type {
   AdminPaymentCancelResult,
   AdminPaymentConfirmResult,
+  AdminPaymentListQuery,
+  AdminPaymentListResponse,
+  AdminPaymentProviderMode,
+  AdminPaymentRecord,
   ChannelMethod,
   ExternalPaymentCancelResult,
   ExternalPaymentCreateInput,

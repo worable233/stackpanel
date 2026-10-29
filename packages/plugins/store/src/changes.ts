@@ -5,8 +5,9 @@ import type {
   HttpRequest,
   PluginContext,
   ProviderServiceContext,
+  ServiceChangeOption,
 } from '@stackpanel/sdk';
-import { WALLET_CURRENCY } from '@stackpanel/sdk';
+import { WALLET_CURRENCY, readCheckoutConfig } from '@stackpanel/sdk';
 import { context, logger, runTransaction } from './context';
 import { StoreError, stockItems } from './errors';
 import {
@@ -96,6 +97,68 @@ export interface ChangeQuote {
 }
 
 /** 计算变更差价。正数=需补差价；差额退还按 0 处理（前端提示）。 */
+/**
+ * 上游只受理**部分**配置项的变更：报价与下单前必须拦住其余项。
+ *
+ * 商品配置里有区域/系统/CPU…，但 zjmf 财务版只允许改它 `upgrade/index` 里列出的
+ * 那几项（这台机器是「快照数量」「IP 数量」）。少了这道闸，报价对任何选择都绿灯，
+ * 用户付完钱上游回 400「参数异常」——钱收了配置没变，最贵的失败模式。
+ *
+ * 探测失败（网络抖动/提供方未实现）不阻断：变更在履约阶段还有上游校验与自动重试
+ * 兜底，而把一次探测抖动升级成「整个变更功能不可用」是更坏的结果。
+ */
+export async function assertChangeableSelection(
+  provider: FulfillmentProvider | null,
+  service: ServiceInstanceRecord,
+  newSelection: CheckoutSelection | undefined,
+  product?: Pick<ProductRecord, 'metadata'> | null,
+): Promise<void> {
+  // 上游白名单里的 `key` 是上游配置项 id（如 `3395987`）；报错必须说人话
+  // （「网络类型」），否则用户根本不知道被拒的是哪一项。
+  const labels = new Map<string, string>();
+  for (const option of readCheckoutConfig(product?.metadata ?? null)?.options ?? []) {
+    labels.set(String(option.id), option.label);
+  }
+  const labelOf = (key: string) => labels.get(key) ?? key;
+  const selections = newSelection?.selections;
+  if (!provider?.listChangeOptions || !selections) return;
+  const from = readServiceSelection(service);
+  const changed = Object.entries(selections).filter(([key, value]) => {
+    const current = from?.selections?.[key];
+    return current === undefined || String(current) !== String(value);
+  });
+  if (changed.length === 0) return;
+  let options: ServiceChangeOption[] | undefined;
+  try {
+    options = await provider.listChangeOptions(providerServiceContext(service));
+  } catch (error) {
+    logger().warn(
+      `store: change options probe failed for service ${service.id}: ${messageOf(error)}`,
+    );
+    return;
+  }
+  // `undefined` = 提供方不支持探测，维持旧行为（商品全量配置）。
+  if (!options) return;
+  const byKey = new Map(options.map((option) => [option.key, option]));
+  const rejected: string[] = [];
+  for (const [key, value] of changed) {
+    const option = byKey.get(key);
+    if (!option) {
+      rejected.push(labelOf(key));
+      continue;
+    }
+    if (!option.choices.some((choice) => String(choice.value) === String(value))) {
+      rejected.push(option.label);
+    }
+  }
+  if (rejected.length === 0) return;
+  const allowed = options.map((option) => option.label).join('、');
+  throw new StoreError(
+    400,
+    `该服务不支持变更这些配置项：${rejected.join('、')}${allowed ? `（仅支持：${allowed}）` : ''}`,
+  );
+}
+
 async function computeChangeDiff(
   service: ServiceInstanceRecord,
   product: ProductRecord,
@@ -191,6 +254,14 @@ export async function quoteServiceChange(req: HttpRequest): Promise<unknown> {
   const parsed = changeQuoteSchema.safeParse(req.body ?? {});
   if (!parsed.success) throw new StoreError(400, '请求参数无效');
   const target = await resolveTargetProduct(service, parsed.data);
+  if (target.id === service.productId) {
+    await assertChangeableSelection(
+      providerForService(service),
+      service,
+      parseCheckoutSelection(parsed.data.config),
+      target,
+    );
+  }
   return computeChangeDiff(service, target, parsed.data.config, await effectiveGroupDiscount(userId));
 }
 
@@ -212,6 +283,15 @@ export async function changeService(ctx: PluginContext, req: HttpRequest): Promi
   if (product.status !== 'ACTIVE') throw new StoreError(409, '商品不可用');
   const changeType =
     input.targetProductId && input.targetProductId !== service.productId ? 'product' : 'package';
+  // 换商品走本地差额估算，不受「同商品可变更项」白名单约束。
+  if (changeType === 'package') {
+    await assertChangeableSelection(
+      providerForService(service),
+      service,
+      parseCheckoutSelection(input.config),
+      product,
+    );
+  }
   const quoteDiff = await computeChangeDiff(
     service,
     product,

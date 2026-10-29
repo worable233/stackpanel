@@ -62,6 +62,8 @@ const STORE_ERROR_CODES: Record<string, string> = {
 /** Messages that carry a variable suffix; matched on the part before `：`. */
 const STORE_ERROR_PREFIX_CODES: Record<string, string> = {
   商品配置无效: 'store.checkout.config_invalid',
+  // 动态列出被拒项与可用项，故只按稳定前缀映射。
+  该服务不支持变更这些配置项: 'store.change.option_unsupported',
 };
 
 export class StoreError extends Error {
