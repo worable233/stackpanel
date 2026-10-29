@@ -425,6 +425,35 @@ async function markTaskFailed(taskId: string, message: string): Promise<void> {
 }
 
 /** Read-only upstream reconciliation; never calls provision again. */
+/**
+ * 结果未确认的任务自动重试（有界）。
+ *
+ * 安全性由提供方保证：标识丢失时提供方会**只读**反查上游账单——能定位就恢复原实例，
+ * 定位不到就拒绝重新下单。所以重试不会多买一台；次数用尽后仍保留人工核对入口。
+ */
+export async function retryUnconfirmedProvisioning(nowMs = Date.now()): Promise<number> {
+  const tasks = await context().extensions.listAll<StoreDeliveryTaskData>(deliveryTaskModel, {
+    where: { state: { eq: 'REQUIRES_RECONCILIATION' }, nextAttemptAtMs: { lte: nowMs } },
+  });
+  let requeued = 0;
+  for (const task of tasks) {
+    if (task.spec.attempts >= task.spec.maxAttempts) continue;
+    // 退避：避免每次轮询都烧一次尝试次数，也避免对上游形成重试风暴。
+    const delayMs = 300_000 * Math.max(1, task.spec.attempts);
+    const { updated } = await context().extensions.updateWhere(
+      deliveryTaskModel,
+      {
+        name: { eq: task.name },
+        state: { eq: 'REQUIRES_RECONCILIATION' },
+        attempts: { eq: task.spec.attempts },
+      },
+      { state: { set: 'PENDING' }, nextAttemptAtMs: { set: nowMs + delayMs } },
+    );
+    if (updated === 1) requeued += 1;
+  }
+  return requeued;
+}
+
 export async function reconcileProvisioning(): Promise<void> {
   // Snapshot pages before mutating states, otherwise offset pagination skips rows.
   const items: ServiceInstanceRecord[] = [];

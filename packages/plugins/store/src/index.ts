@@ -3,7 +3,7 @@ import { EXTENSION_POINTS, definePlugin, PluginError } from '@stackpanel/sdk';
 import { bindContext, context, resetContext } from './context';
 import { StoreError } from './errors';
 import { storeSettings, saveStoreSettings } from './settings';
-import { approveAdminDeliveryTask, reconcileProvisioning, reconcileAdminDeliveryTask, listAdminReconciliationCandidates, resumeAdminDeliveryPayment, recoverAdminDeliveryTask } from './fulfillment';
+import { approveAdminDeliveryTask, reconcileProvisioning, retryUnconfirmedProvisioning, reconcileAdminDeliveryTask, listAdminReconciliationCandidates, resumeAdminDeliveryPayment, recoverAdminDeliveryTask } from './fulfillment';
 import {
   settlementHandler,
   createOrder,
@@ -805,6 +805,8 @@ export const storePlugin = definePlugin({
     ctx.jobs.handle('fulfillment-poll', async () => {
       await processDue();
       await reconcileProvisioning();
+      // 结果未确认的任务不再等人抬：先自动只读反查上游并重试（有界退避）。
+      await retryUnconfirmedProvisioning();
     });
     ctx.jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
     // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。
