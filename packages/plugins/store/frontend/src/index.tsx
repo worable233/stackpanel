@@ -153,6 +153,16 @@ interface StorePayment {
   status: string;
 }
 
+interface StoreOrderLine {
+  productId: string;
+  name: string;
+  price: number;
+  currency: string;
+  quantity: number;
+  description?: string | undefined;
+  config?: unknown;
+}
+
 interface StoreOrder {
   id: string;
   total: number;
@@ -161,7 +171,25 @@ interface StoreOrder {
   settlementCurrency?: string | undefined;
   settlementTotal?: number | undefined;
   status: string;
+  /** Snapshot of the purchased lines: `{ items: StoreOrderLine[] }`. */
+  items?: { items?: StoreOrderLine[] | undefined } | null | undefined;
+  createdAt?: string | undefined;
+  updatedAt?: string | undefined;
+  channelCode?: string | null | undefined;
   payment?: StorePayment | null;
+}
+
+interface StorePaymentInstructions {
+  kind: string;
+  message: string;
+  detail?: Record<string, unknown> | null | undefined;
+}
+
+interface StoreOrderDetail extends StoreOrder {
+  createdAt: string;
+  updatedAt: string;
+  paymentUrl?: string | null | undefined;
+  paymentInstructions?: StorePaymentInstructions | null | undefined;
 }
 
 interface CartItem {
@@ -318,6 +346,16 @@ const pricePreviewSchema = z.object({
   summary: z.string().optional(),
 });
 
+const storeOrderLineSchema = z.object({
+  productId: z.string(),
+  name: z.string(),
+  price: z.number(),
+  currency: z.string(),
+  quantity: z.number(),
+  description: z.string().optional(),
+  config: z.unknown().optional(),
+});
+
 const storeOrderSchema = z.object({
   id: z.string(),
   total: z.number(),
@@ -325,6 +363,15 @@ const storeOrderSchema = z.object({
   settlementCurrency: z.string().optional(),
   settlementTotal: z.number().optional(),
   status: z.string(),
+  items: z
+    .object({
+      items: z.array(storeOrderLineSchema).optional(),
+    })
+    .nullable()
+    .optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+  channelCode: z.string().nullable().optional(),
   payment: z
     .object({
       id: z.string(),
@@ -335,6 +382,21 @@ const storeOrderSchema = z.object({
     })
     .nullable()
     .optional(),
+});
+
+const storePaymentInstructionsSchema = z.object({
+  kind: z.string(),
+  message: z.string(),
+  detail: z.record(z.string(), z.unknown()).nullable().optional(),
+});
+
+const orderDetailSchema = z.object({
+  order: storeOrderSchema.extend({
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    paymentUrl: z.string().nullable().optional(),
+    paymentInstructions: storePaymentInstructionsSchema.nullable().optional(),
+  }),
 });
 
 const paymentMethodsSchema = z.object({
@@ -2152,6 +2214,64 @@ function StoreAccountCatalogPage(props: AccountPageComponentProps): ReactElement
   );
 }
 
+function orderLines(order: StoreOrder): StoreOrderLine[] {
+  return Array.isArray(order.items?.items) ? order.items.items : [];
+}
+
+function orderTimestamp(value: string | undefined, locale: string | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(locale ?? PACKAGE_FALLBACK_LOCALE, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function paymentStatusCopy(status: string, tr: ReturnType<typeof t>): string {
+  switch (status) {
+    case 'SUCCEEDED':
+    case 'PAID':
+      return tr('paymentStatus.succeeded');
+    case 'PENDING':
+      return tr('paymentStatus.pending');
+    case 'FAILED':
+      return tr('paymentStatus.failed');
+    case 'CANCELLED':
+      return tr('paymentStatus.cancelled');
+    case 'EXPIRED':
+      return tr('paymentStatus.expired');
+    case 'REFUNDED':
+      return tr('paymentStatus.refunded');
+    default:
+      return tr('paymentStatus.unknown');
+  }
+}
+
+function paymentMethodCopy(method: string | null | undefined, tr: ReturnType<typeof t>): string {
+  switch (method) {
+    case 'bank_transfer':
+      return tr('paymentMethod.bankTransfer');
+    case 'qrcode':
+      return tr('paymentMethod.qrcode');
+    case 'wallet':
+      return tr('paymentMethod.wallet');
+    case 'alipay':
+      return tr('paymentMethod.alipay');
+    case 'wechat':
+    case 'wxpay':
+      return tr('paymentMethod.wechat');
+    case 'card':
+      return tr('paymentMethod.card');
+    case null:
+    case undefined:
+    case '':
+      return tr('orders.notAvailable');
+    default:
+      return method.replaceAll('_', ' ');
+  }
+}
+
 function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement {
   const tr = t(props.locale);
   const history = props.data.orders as
@@ -2167,56 +2287,127 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
   const pageHref = (next: number) =>
     next > 1 ? `/account/orders?page=${next}` : '/account/orders';
   return (
-    <main className="flex flex-col gap-6">
-      <PageHeader title={tr('orders.title')} />
+    <main className="flex min-w-0 flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <PageHeader
+          title={tr('orders.title')}
+          actions={
+            <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+              {tr('orders.count', { count: total })}
+            </span>
+          }
+        />
+        <p className="text-sm text-muted-foreground">{tr('orders.subtitle')}</p>
+      </div>
       {orders.length ? (
-        <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
-          {orders.map((order) => (
-            <li
-              key={order.id}
-              className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_8rem_8rem_auto] sm:items-center sm:px-6"
-            >
-              <span className="truncate font-mono text-xs text-muted-foreground">{order.id}</span>
-              <span className="flex flex-col gap-0.5">
-                <span className="font-mono font-semibold">
-                  {money(order.total, order.currency, props.locale)}
-                </span>
-                {order.settlementCurrency &&
-                order.settlementTotal !== undefined &&
-                order.settlementCurrency !== order.currency ? (
-                  <span className="text-xs text-muted-foreground">
-                    {tr('orders.settlement', {
-                      amount: money(order.settlementTotal, order.settlementCurrency, props.locale),
-                    })}
-                  </span>
+        <ul className="flex flex-col gap-3">
+          {orders.map((order) => {
+            const lines = orderLines(order);
+            const primary = lines[0];
+            const remaining = Math.max(0, lines.length - 1);
+            const pending = order.status === 'PENDING';
+            return (
+              <li
+                key={order.id}
+                className="rounded-2xl bg-muted/40 p-4 transition-colors hover:bg-muted/60 sm:p-5"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/account/orders/${encodeURIComponent(order.id)}`}
+                        className="text-base font-medium break-words hover:underline underline-offset-4"
+                      >
+                        {primary?.name ?? tr('orders.untitled')}
+                      </Link>
+                      {remaining > 0 ? (
+                        <span className="rounded-full bg-background px-2 py-0.5 text-xs text-muted-foreground">
+                          {tr('orders.moreItems', { count: remaining })}
+                        </span>
+                      ) : null}
+                      <OrderStatus status={order.status} tr={tr} />
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {orderTimestamp(order.createdAt, props.locale)} ·{' '}
+                      {tr('orders.number', { number: order.id.slice(-12) })}
+                    </p>
+                    {primary?.description ? (
+                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{primary.description}</p>
+                    ) : null}
+                    {lines.length ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {tr('orders.lineSummary', {
+                          count: lines.length,
+                          quantity: lines.reduce((sum, line) => sum + line.quantity, 0),
+                        })}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 flex-row items-end justify-between gap-3 sm:flex-col sm:items-end sm:gap-1">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-lg font-semibold tabular-nums">
+                        {money(order.total, order.currency, props.locale)}
+                      </span>
+                      {order.settlementCurrency &&
+                      order.settlementTotal !== undefined &&
+                      order.settlementCurrency !== order.currency ? (
+                        <span className="text-xs text-muted-foreground">
+                          {tr('orders.settlement', {
+                            amount: money(
+                              order.settlementTotal,
+                              order.settlementCurrency,
+                              props.locale,
+                            ),
+                          })}
+                        </span>
+                      ) : null}
+                    </div>
+                    <Link
+                      href={`/account/orders/${encodeURIComponent(order.id)}`}
+                      className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {tr('orders.viewDetails')}
+                      <ArrowRight className="size-3.5" />
+                    </Link>
+                  </div>
+                </div>
+                {pending || (refund && ['PAID', 'PARTIALLY_REFUNDED'].includes(order.status)) ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+                    {pending && order.payment?.paymentUrl ? (
+                      <a
+                        href={order.payment.paymentUrl}
+                        className="inline-flex h-9 items-center rounded-xl bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90"
+                      >
+                        {tr('orders.continuePayment')}
+                      </a>
+                    ) : null}
+                    {pending && cancel ? (
+                      <form action={cancel}>
+                        <input type="hidden" name="id" value={order.id} />
+                        <button
+                          type="submit"
+                          className="text-sm text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          {tr('orders.cancelOrder')}
+                        </button>
+                      </form>
+                    ) : null}
+                    {refund && ['PAID', 'PARTIALLY_REFUNDED'].includes(order.status) ? (
+                      <form action={refund}>
+                        <input type="hidden" name="id" value={order.id} />
+                        <button
+                          type="submit"
+                          className="text-sm text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          {tr('orders.requestRefund')}
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
                 ) : null}
-                {refund && ['PAID', 'PARTIALLY_REFUNDED'].includes(order.status) ? (
-                  <form action={refund}>
-                    <input type="hidden" name="id" value={order.id} />
-                    <button type="submit" className="text-muted-foreground hover:text-destructive">
-                      {tr('orders.requestRefund')}
-                    </button>
-                  </form>
-                ) : null}
-              </span>
-              <OrderStatus status={order.status} tr={tr} />
-              <span className="flex items-center gap-3">
-                {order.payment?.paymentUrl && order.status === 'PENDING' ? (
-                  <a href={order.payment.paymentUrl} className="text-primary hover:underline">
-                    {tr('orders.continuePayment')}
-                  </a>
-                ) : null}
-                {cancel && order.status === 'PENDING' ? (
-                  <form action={cancel}>
-                    <input type="hidden" name="id" value={order.id} />
-                    <button type="submit" className="text-muted-foreground hover:text-destructive">
-                      {tr('orders.cancel')}
-                    </button>
-                  </form>
-                ) : null}
-              </span>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <Empty text={tr('orders.empty')} />
@@ -2244,6 +2435,207 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
           </div>
         </div>
       ) : null}
+    </main>
+  );
+}
+
+function StoreAccountOrderDetailPage(props: AccountPageComponentProps): ReactElement {
+  const tr = t(props.locale);
+  const payload = props.data.order as { order: StoreOrderDetail } | null | undefined;
+  const order = payload?.order;
+  const cancel = props.actions?.['store.cancel-order'];
+  const refund = props.actions?.['store.request-refund'];
+  if (!order) {
+    return (
+      <main className="flex min-w-0 flex-col gap-6">
+        <PageHeader
+          backHref="/account/orders"
+          backLabel={tr('orders.title')}
+          title={tr('orders.detailTitle')}
+        />
+        <Empty text={tr('orders.notFound')} />
+      </main>
+    );
+  }
+  const lines = orderLines(order);
+  const pending = order.status === 'PENDING';
+  const paymentUrl = order.paymentUrl ?? order.payment?.paymentUrl ?? null;
+  return (
+    <main className="flex min-w-0 flex-col gap-6">
+      <PageHeader
+        backHref="/account/orders"
+        backLabel={tr('orders.title')}
+        title={tr('orders.detailTitle')}
+        actions={<OrderStatus status={order.status} tr={tr} />}
+      />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex flex-col gap-4">
+          <section className="rounded-2xl bg-muted/40 p-5">
+            <h2 className="text-sm font-medium">{tr('orders.items')}</h2>
+            {lines.length ? (
+              <ul className="mt-3 flex flex-col gap-2">
+                {lines.map((line, index) => (
+                  <li
+                    key={`${line.productId}-${index}`}
+                    className="rounded-xl bg-background p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium break-words">{line.name}</p>
+                        {line.description ? (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {line.description
+                              .split(' · ')
+                              .filter(Boolean)
+                              .map((part, partIndex) => (
+                                <span
+                                  key={`${partIndex}-${part}`}
+                                  className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
+                                >
+                                  {part}
+                                </span>
+                              ))}
+                          </div>
+                        ) : null}
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {tr('orders.quantity', { count: line.quantity })} ·{' '}
+                          {tr('orders.unitPrice', {
+                            amount: money(line.price, line.currency, props.locale),
+                          })}
+                        </p>
+                      </div>
+                      <span className="text-sm font-medium tabular-nums">
+                        {money(line.price * line.quantity, line.currency, props.locale)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 rounded-xl bg-background p-4 text-sm text-muted-foreground">
+                {tr('orders.noItems')}
+              </p>
+            )}
+          </section>
+          <section className="rounded-2xl bg-muted/40 p-5">
+            <h2 className="text-sm font-medium">{tr('orders.payment')}</h2>
+            <dl className="mt-3 flex flex-col gap-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted-foreground">{tr('orders.paymentMethod')}</dt>
+                <dd>{paymentMethodCopy(order.payment?.paymentMethod, tr)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted-foreground">{tr('orders.paymentStatus')}</dt>
+                <dd>
+                  {order.payment
+                    ? paymentStatusCopy(order.payment.status, tr)
+                    : tr('orders.notAvailable')}
+                </dd>
+              </div>
+            </dl>
+            {order.paymentInstructions?.message ? (
+              <div className="mt-3 rounded-xl bg-background p-4">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {tr('orders.paymentInstructions')}
+                </p>
+                <p className="mt-2 text-sm whitespace-pre-line">
+                  {order.paymentInstructions.message}
+                </p>
+                {order.paymentInstructions.detail &&
+                Object.keys(order.paymentInstructions.detail).length ? (
+                  <dl className="mt-3 flex flex-col gap-2 rounded-xl bg-muted/60 p-3 text-sm">
+                    {Object.entries(order.paymentInstructions.detail)
+                      .filter(([, value]) => value !== null && value !== undefined && value !== '')
+                      .map(([label, value]) => (
+                        <div
+                          key={label}
+                          className="flex items-start justify-between gap-3"
+                        >
+                          <dt className="text-muted-foreground">{label}</dt>
+                          <dd className="max-w-[65%] break-all text-right font-medium">
+                            {typeof value === 'string' || typeof value === 'number'
+                              ? String(value)
+                              : JSON.stringify(value)}
+                          </dd>
+                        </div>
+                      ))}
+                  </dl>
+                ) : null}
+              </div>
+            ) : null}
+            {pending && paymentUrl ? (
+              <a
+                href={paymentUrl}
+                className="mt-3 inline-flex h-10 items-center rounded-xl bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90"
+              >
+                {tr('orders.continuePayment')}
+              </a>
+            ) : null}
+          </section>
+        </div>
+        <aside className="flex flex-col gap-4">
+          <section className="rounded-2xl bg-muted/40 p-5">
+            <h2 className="text-sm font-medium">{tr('orders.orderInfo')}</h2>
+            <dl className="mt-3 flex flex-col gap-2 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-muted-foreground">{tr('orders.orderId')}</dt>
+                <dd className="max-w-[60%] break-all text-right font-mono text-xs">{order.id}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted-foreground">{tr('orders.createdAt')}</dt>
+                <dd>{orderTimestamp(order.createdAt, props.locale)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted-foreground">{tr('orders.updatedAt')}</dt>
+                <dd>{orderTimestamp(order.updatedAt, props.locale)}</dd>
+              </div>
+            </dl>
+          </section>
+          <section className="rounded-2xl bg-muted/40 p-5">
+            <h2 className="text-sm font-medium">{tr('orders.summary')}</h2>
+            <dl className="mt-3 flex flex-col gap-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted-foreground">{tr('orders.total')}</dt>
+                <dd className="text-lg font-semibold tabular-nums">
+                  {money(order.total, order.currency, props.locale)}
+                </dd>
+              </div>
+              {order.settlementCurrency &&
+              (order.settlementCurrency !== order.currency ||
+                order.settlementTotal !== order.total) ? (
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">{tr('orders.settlementLabel')}</dt>
+                  <dd className="tabular-nums">
+                    {money(order.settlementTotal ?? order.total, order.settlementCurrency, props.locale)}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+            {pending && cancel ? (
+              <form action={cancel} className="mt-4">
+                <input type="hidden" name="id" value={order.id} />
+                <button
+                  type="submit"
+                  className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-background text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-destructive"
+                >
+                  {tr('orders.cancelOrder')}
+                </button>
+              </form>
+            ) : null}
+            {refund && ['PAID', 'PARTIALLY_REFUNDED'].includes(order.status) ? (
+              <form action={refund} className="mt-2">
+                <input type="hidden" name="id" value={order.id} />
+                <button
+                  type="submit"
+                  className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-background text-sm font-medium text-foreground transition-colors hover:bg-muted hover:text-destructive"
+                >
+                  {tr('orders.requestRefund')}
+                </button>
+              </form>
+            ) : null}
+          </section>
+        </aside>
+      </div>
     </main>
   );
 }
@@ -3470,6 +3862,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'orderStatus.cancelled',
   FAILED: 'orderStatus.failed',
   REFUNDED: 'orderStatus.refunded',
+  PARTIALLY_REFUNDED: 'orderStatus.partiallyRefunded',
 };
 
 function StoreSummaryWidget(_props: AdminWidgetProps): ReactElement {
@@ -3664,6 +4057,15 @@ const storeFinders: Record<string, FinderProvider> = {
       const page = Math.max(1, Number(Array.isArray(query.page) ? query.page[0] : query.page) || 1);
       const pageSize = 20;
       return ctx.api.get(`/orders?page=${page}&pageSize=${pageSize}`, orderListSchema);
+    },
+  },
+  'store.myOrder': {
+    handler: async (input, ctx) => {
+      const id = typeof input.id === 'string' ? input.id : '';
+      if (!id || id.length > 191) return null;
+      return ctx.api
+        .get(`/orders/${encodeURIComponent(id)}`, orderDetailSchema)
+        .catch(() => null);
     },
   },
   'store.myServices': {
@@ -4290,6 +4692,12 @@ export const frontend: FrontendPackage = {
         data: [{ finder: 'store.myOrders', as: 'orders', input: { $query: '1' } }],
       },
       {
+        path: '/orders/:id',
+        component: 'account/order-detail',
+        permission: 'store.view',
+        data: [{ finder: 'store.myOrder', as: 'order', input: { id: ':id' } }],
+      },
+      {
         path: '/services/:id',
         component: 'account/service-detail',
         permission: 'store.view',
@@ -4314,6 +4722,7 @@ export const frontend: FrontendPackage = {
       'account/cart': StoreCartPage,
       'account/checkout': StoreCheckoutPage,
       'account/orders': StoreAccountOrdersPage,
+      'account/order-detail': StoreAccountOrderDetailPage,
       'account/services': StoreAccountServicesPage,
       'account/service-detail': StoreAccountServiceDetailPage,
     },

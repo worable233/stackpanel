@@ -486,18 +486,80 @@ export async function getMyOrder(req: HttpRequest): Promise<unknown> {
     pending && payment && !payment.paymentUrl
       ? await context().payments.manualInstructions(payment.id)
       : null;
+  const items = publicOrderLines(order.items, order.currency);
   return {
     order: {
       id: order.id,
       status: order.status,
+      ...(items.length ? { items: { items } } : {}),
       total: order.total,
       currency: order.currency,
       settlementTotal: order.settlementTotal,
       settlementCurrency: order.settlementCurrency,
+      ...(order.channelCode ? { channelCode: order.channelCode } : {}),
+      ...(order.createdAt ? { createdAt: order.createdAt } : {}),
+      ...(order.updatedAt ? { updatedAt: order.updatedAt } : {}),
       paymentUrl: pending ? (payment?.paymentUrl ?? null) : null,
+      ...(payment?.id
+        ? {
+            payment: {
+              id: payment.id,
+              providerId: payment.providerId,
+              paymentMethod: payment.paymentMethod,
+              paymentUrl: payment.paymentUrl,
+              status: payment.status,
+              createdAt: payment.createdAt,
+            },
+          }
+        : {}),
       ...(instructions ? { paymentInstructions: instructions } : {}),
     },
   };
+}
+
+/**
+ * Project the order's frozen line snapshot onto buyer-safe fields.
+ *
+ * Checkout selections can carry provider secrets or credentials introduced by
+ * a product extension. The order page only needs name/price/quantity, so never
+ * forward the raw `config` object to the browser.
+ */
+function publicOrderLines(
+  items: unknown,
+  fallbackCurrency: string,
+): Array<{
+  productId: string;
+  name: string;
+  price: number;
+  currency: string;
+  quantity: number;
+  description?: string;
+}> {
+  const source =
+    items && typeof items === 'object' && Array.isArray((items as { items?: unknown }).items)
+      ? (items as { items: unknown[] }).items
+      : [];
+  return source.flatMap((line) => {
+    if (!line || typeof line !== 'object') return [];
+    const value = line as Record<string, unknown>;
+    if (
+      typeof value.name !== 'string' ||
+      typeof value.price !== 'number' ||
+      typeof value.quantity !== 'number'
+    ) {
+      return [];
+    }
+    return [
+      {
+        productId: typeof value.productId === 'string' ? value.productId : '',
+        name: value.name,
+        price: value.price,
+        currency: typeof value.currency === 'string' ? value.currency : fallbackCurrency,
+        quantity: value.quantity,
+        ...(typeof value.description === 'string' ? { description: value.description } : {}),
+      },
+    ];
+  });
 }
 
 export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise<unknown> {
