@@ -30,6 +30,18 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
+  Sheet,
+  SheetBody,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+  CopyButton,
+  SecretValue,
+  MetricsExplorer,
 } from '@stackpanel/ui';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
@@ -51,16 +63,26 @@ import {
   KeyRound,
   CalendarDays,
   Activity,
-  Shield,
   Settings2,
-  List,
   ChevronDown,
+  Pencil,
+  Wrench,
+  Clock,
+  TriangleAlert,
 } from 'lucide-react';
 import { z } from 'zod';
 import { messages, t } from './i18n.js';
 import { AutoSubmitForm, CartCheckout } from './auto-submit.js';
 import { reconcileSelection } from './checkout-model.js';
-import { canManageService, isPublicIpLabel, serviceDate, serviceInstanceName } from './service-presentation.js';
+import {
+  canManageService,
+  isPublicIpLabel,
+  serviceDate,
+  serviceDisplayName,
+  serviceExpiryState,
+  serviceInstanceName,
+  serviceRemark,
+} from './service-presentation.js';
 
 interface StoreProduct {
   id: string;
@@ -552,6 +574,15 @@ const serviceSchema = z.object({
     provisionedAt: z.string().nullable(),
     createdAt: z.string(),
     detail: serviceDetailSchema,
+    renewal: z
+      .object({
+        price: z.number(),
+        currency: z.string(),
+        months: z.number(),
+        cycle: z.string().nullable(),
+      })
+      .nullable()
+      .optional(),
   }),
 });
 const serviceMetricsSchema = z.object({
@@ -2275,8 +2306,7 @@ function paymentMethodCopy(method: string | null | undefined, tr: ReturnType<typ
 function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement {
   const tr = t(props.locale);
   const history = props.data.orders as
-    | { orders: StoreOrder[]; total: number; page: number; pageSize: number }
-    | undefined;
+    { orders: StoreOrder[]; total: number; page: number; pageSize: number } | undefined;
   const orders = history?.orders ?? (Array.isArray(props.data.orders) ? props.data.orders : []);
   const total = history?.total ?? orders.length;
   const page = history?.page ?? 1;
@@ -2332,7 +2362,9 @@ function StoreAccountOrdersPage(props: AccountPageComponentProps): ReactElement 
                       {tr('orders.number', { number: order.id.slice(-12) })}
                     </p>
                     {primary?.description ? (
-                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{primary.description}</p>
+                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                        {primary.description}
+                      </p>
                     ) : null}
                     {lines.length ? (
                       <p className="mt-2 text-xs text-muted-foreground">
@@ -2475,10 +2507,7 @@ function StoreAccountOrderDetailPage(props: AccountPageComponentProps): ReactEle
             {lines.length ? (
               <ul className="mt-3 flex flex-col gap-2">
                 {lines.map((line, index) => (
-                  <li
-                    key={`${line.productId}-${index}`}
-                    className="rounded-xl bg-background p-4"
-                  >
+                  <li key={`${line.productId}-${index}`} className="rounded-xl bg-background p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium break-words">{line.name}</p>
@@ -2547,10 +2576,7 @@ function StoreAccountOrderDetailPage(props: AccountPageComponentProps): ReactEle
                     {Object.entries(order.paymentInstructions.detail)
                       .filter(([, value]) => value !== null && value !== undefined && value !== '')
                       .map(([label, value]) => (
-                        <div
-                          key={label}
-                          className="flex items-start justify-between gap-3"
-                        >
+                        <div key={label} className="flex items-start justify-between gap-3">
                           <dt className="text-muted-foreground">{label}</dt>
                           <dd className="max-w-[65%] break-all text-right font-medium">
                             {typeof value === 'string' || typeof value === 'number'
@@ -2606,7 +2632,11 @@ function StoreAccountOrderDetailPage(props: AccountPageComponentProps): ReactEle
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-muted-foreground">{tr('orders.settlementLabel')}</dt>
                   <dd className="tabular-nums">
-                    {money(order.settlementTotal ?? order.total, order.settlementCurrency, props.locale)}
+                    {money(
+                      order.settlementTotal ?? order.total,
+                      order.settlementCurrency,
+                      props.locale,
+                    )}
                   </dd>
                 </div>
               ) : null}
@@ -2679,66 +2709,6 @@ const SERVICE_STATUS_LABELS: Record<string, string> = {
   TERMINATED: 'serviceStatus.terminated',
   FAILED: 'serviceStatus.failed',
 };
-
-function MetricsChart({
-  series,
-  tr,
-}: {
-  series: Array<{
-    id: string;
-    label: string;
-    unit: string;
-    color?: string;
-    points: Array<{ t: number; v: number }>;
-  }>;
-  tr: ReturnType<typeof t>;
-}): ReactElement {
-  if (!series.length) return <p className="text-sm text-muted-foreground">{tr('metrics.empty')}</p>;
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {series.map((item) => {
-        const pts = item.points;
-        const color = item.color ?? 'var(--primary)';
-        if (!pts.length) {
-          return (
-            <div key={item.id} className="rounded-xl border bg-card p-4">
-              <p className="text-sm font-semibold">{item.label}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{tr('metrics.noData')}</p>
-            </div>
-          );
-        }
-        const min = Math.min(...pts.map((p) => p.v));
-        const max = Math.max(...pts.map((p) => p.v));
-        const span = max - min || 1;
-        const w = 320;
-        const h = 96;
-        const poly = pts
-          .map((p, i) => {
-            const x = pts.length === 1 ? w / 2 : (i / (pts.length - 1)) * w;
-            const y = h - ((p.v - min) / span) * (h - 8) - 4;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-          })
-          .join(' ');
-        const latest = pts[pts.length - 1]?.v;
-        return (
-          <div key={item.id} className="rounded-xl border bg-card p-4">
-            <div className="flex items-baseline justify-between">
-              <p className="text-sm font-semibold">{item.label}</p>
-              <p className="font-mono text-sm">
-                {latest?.toFixed(1)}
-                <span className="ml-0.5 text-xs text-muted-foreground">{item.unit}</span>
-              </p>
-            </div>
-            <svg viewBox={`0 0 ${w} ${h}`} className="mt-2 w-full" aria-hidden="true">
-              <polyline points={poly} fill="none" stroke={color} strokeWidth="2" />
-              {pts.length === 1 ? <circle cx={w / 2} cy={h - 4} r={3} fill={color} /> : null}
-            </svg>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 type ServiceCardSummary = z.infer<typeof serviceSummarySchema> & {
   metrics?: z.infer<typeof serviceMetricsSchema>['metrics'];
@@ -2906,67 +2876,6 @@ function ServiceInstanceCard({
   );
 }
 
-function ServiceMonitorOverview({
-  metrics,
-  tr,
-}: {
-  metrics: z.infer<typeof serviceMetricsSchema>['metrics'];
-  tr: ReturnType<typeof t>;
-}): ReactElement {
-  return (
-    <div className="grid grid-cols-2 gap-5">
-      {(
-        [
-          [tr('console.cpu'), /cpu|处理器/i],
-          [tr('console.memory'), /memory|mem|内存/i],
-        ] as const
-      ).map(([label, pattern]) => {
-        const metric = metrics.find((item) => pattern.test(`${item.id} ${item.label}`));
-        const last = metric?.points.at(-1)?.v;
-        const valid = typeof last === 'number' && Number.isFinite(last);
-        const percentage = valid && metric?.unit === '%' && last >= 0 && last <= 100 ? last : null;
-        return (
-          <div key={label} className="flex flex-col items-center gap-3 py-2">
-            <div className="relative size-28">
-              <svg viewBox="0 0 100 100" className="size-full -rotate-90" aria-hidden="true">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="44"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="5"
-                  className="text-muted"
-                />
-                {percentage !== null ? (
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="44"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    pathLength="100"
-                    strokeDasharray={`${percentage} 100`}
-                    className="text-primary"
-                  />
-                ) : null}
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-                <span className="text-xs text-muted-foreground">{label}</span>
-                <span className="text-lg font-semibold tabular-nums">
-                  {valid ? `${last.toFixed(1)}${metric?.unit ?? ''}` : '—'}
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function StoreAccountServicesPage(props: AccountPageComponentProps): ReactElement {
   const tr = t(props.locale);
   const services = (props.data.services as ServiceCardSummary[] | undefined) ?? [];
@@ -2988,9 +2897,219 @@ function StoreAccountServicesPage(props: AccountPageComponentProps): ReactElemen
   );
 }
 
+function ServiceMetaSheet({
+  service,
+  name,
+  remark,
+  action,
+  tr,
+  trigger,
+}: {
+  service: z.infer<typeof serviceSchema>['service'];
+  name: string;
+  remark: string | null;
+  action: FrontendActionExecutor;
+  tr: ReturnType<typeof t>;
+  trigger: ReactElement;
+}): ReactElement {
+  const formId = `service-meta-${service.id}`;
+  return (
+    <Sheet>
+      <SheetTrigger render={trigger} />
+      <SheetContent closeLabel={tr('console.close')} className="sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>{tr('console.editInstance')}</SheetTitle>
+          <SheetDescription>{tr('console.editInstanceHint')}</SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          <form id={formId} action={action} className="flex flex-col gap-4">
+            <input type="hidden" name="id" value={service.id} />
+            <Field>
+              <label htmlFor={`${formId}-name`} className="text-sm font-medium">
+                {tr('console.instanceName')}
+              </label>
+              <Input
+                id={`${formId}-name`}
+                name="name"
+                defaultValue={name}
+                maxLength={64}
+                placeholder={tr('console.instanceName')}
+              />
+            </Field>
+            <Field>
+              <label htmlFor={`${formId}-remark`} className="text-sm font-medium">
+                {tr('console.remark')}
+              </label>
+              <textarea
+                id={`${formId}-remark`}
+                name="remark"
+                defaultValue={remark ?? ''}
+                maxLength={500}
+                rows={4}
+                placeholder={tr('console.remarkPlaceholder')}
+                className="rounded-xl bg-muted/30 px-3 py-2 text-sm"
+              />
+            </Field>
+          </form>
+        </SheetBody>
+        <SheetFooter>
+          <SheetClose
+            render={
+              <Button type="button" variant="outline">
+                {tr('console.cancel')}
+              </Button>
+            }
+          />
+          <Button type="submit" form={formId}>
+            {tr('console.save')}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ServiceActionSheet({
+  action,
+  label,
+  icon,
+  serviceId,
+  executor,
+  tr,
+  trigger,
+}: {
+  action: z.infer<typeof serviceActionSchema>;
+  label: string;
+  icon: ReactElement;
+  serviceId: string;
+  executor: FrontendActionExecutor;
+  tr: ReturnType<typeof t>;
+  trigger: ReactElement;
+}): ReactElement {
+  const extraParams = (action.params ?? []).filter(
+    (param) => !STATIC_ACTION_FIELDS.has(param.name),
+  );
+  const formId = `service-action-${action.id}`;
+  return (
+    <Sheet>
+      <SheetTrigger render={trigger} />
+      <SheetContent closeLabel={tr('console.close')} className="sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
+            {icon}
+            {label}
+          </SheetTitle>
+          <SheetDescription>{tr('console.actionHint')}</SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          <form id={formId} action={executor} className="flex flex-col gap-4">
+            <input type="hidden" name="id" value={serviceId} />
+            <input type="hidden" name="actionId" value={action.id} />
+            {(action.params ?? [])
+              .filter((param) => STATIC_ACTION_FIELDS.has(param.name))
+              .map((param) => (
+                <Field key={param.name}>
+                  <label htmlFor={`${formId}-${param.name}`} className="text-sm font-medium">
+                    {param.label}
+                    {param.required ? ' *' : ''}
+                  </label>
+                  {param.type === 'select' ? (
+                    <Select
+                      id={`${formId}-${param.name}`}
+                      name={param.name}
+                      required={param.required}
+                      defaultValue={param.default != null ? String(param.default) : ''}
+                      className="h-10 rounded-xl bg-background px-3 text-sm"
+                    >
+                      <option value="">{tr('service.selectPlaceholder')}</option>
+                      {(param.options ?? []).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : param.type === 'textarea' ? (
+                    <textarea
+                      id={`${formId}-${param.name}`}
+                      name={param.name}
+                      required={param.required}
+                      defaultValue={param.default != null ? String(param.default) : ''}
+                      maxLength={param.maxLength}
+                      placeholder={param.placeholder}
+                      rows={3}
+                      className="rounded-xl bg-background px-3 py-2 text-sm"
+                    />
+                  ) : (
+                    <Input
+                      id={`${formId}-${param.name}`}
+                      name={param.name}
+                      type={
+                        param.type === 'password'
+                          ? 'password'
+                          : param.type === 'number'
+                            ? 'number'
+                            : 'text'
+                      }
+                      required={param.required}
+                      defaultValue={param.default != null ? String(param.default) : ''}
+                      min={param.min}
+                      max={param.max}
+                      maxLength={param.maxLength}
+                      placeholder={param.placeholder}
+                    />
+                  )}
+                </Field>
+              ))}
+            {extraParams.length > 0 ? (
+              <Field>
+                <label htmlFor={`${formId}-params`} className="text-sm font-medium">
+                  {tr('service.extraParams')}
+                </label>
+                <textarea
+                  id={`${formId}-params`}
+                  name="params"
+                  rows={3}
+                  maxLength={4000}
+                  placeholder={`{"${extraParams[0]!.name}": "…"}`}
+                  className="rounded-xl bg-background px-3 py-2 font-mono text-sm"
+                />
+                <span className="text-[11px] text-muted-foreground">
+                  {tr('service.availableKeys', {
+                    keys: extraParams.map((param) => param.name).join(', '),
+                  })}
+                </span>
+              </Field>
+            ) : null}
+            {action.confirm || action.danger ? (
+              <label className="flex items-start gap-2 rounded-xl bg-muted/30 p-3 text-sm">
+                <input type="checkbox" required className="mt-0.5 size-4 accent-foreground" />
+                <span>{tr('console.confirmOperation', { action: label })}</span>
+              </label>
+            ) : null}
+          </form>
+        </SheetBody>
+        <SheetFooter>
+          <SheetClose
+            render={
+              <Button type="button" variant="outline">
+                {tr('console.cancel')}
+              </Button>
+            }
+          />
+          <Button type="submit" form={formId} variant={action.danger ? 'destructive' : 'default'}>
+            {tr('console.runAction')}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactElement {
   const tr = t(props.locale);
   const service = props.data.service as z.infer<typeof serviceSchema>['service'] | undefined;
+  const refund = props.data.refund as z.infer<typeof refundEligibilitySchema> | undefined;
+  const refundAction = props.actions?.['store.request-service-refund'];
   const metrics =
     (props.data.metrics as
       | Array<{
@@ -3002,6 +3121,7 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
         }>
       | undefined) ?? [];
   const runAction = props.actions?.['store.service-action'];
+  const openConsoleAction = props.actions?.['store.open-service-console'];
   const renewAction = props.actions?.['store.renew-service-wallet'];
   const resourceCreateAction = props.actions?.['store.service-resource-create'];
   const resourceRunAction = props.actions?.['store.service-resource-action'];
@@ -3054,323 +3174,628 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
   const availablePanels = [
     'overview',
     ...(resourceGroups.length ? ['resources'] : []),
-    ...(renewable && actions.length && runAction ? ['operations'] : []),
     ...(renewable && changeAction && changeOptions?.config ? ['change'] : []),
     ...(renewable && renewAction ? ['renew'] : []),
+    // 退款面板只在运营打开了退款政策时出现：没开就是一场空入口。
+    ...(refund?.policy.enabled ? ['refund'] : []),
   ];
   const panel = availablePanels.includes(selectedPanel) ? selectedPanel : 'overview';
   const baseHref = `/account/services/${encodeURIComponent(service.id)}`;
-  const operationLinks = [
-    { label: tr('console.vnc'), icon: Monitor, pattern: /vnc|console|控制台|远程/i },
-    { label: tr('console.powerOn'), icon: Power, pattern: /^(start|boot|power.?on)$|开机/i },
-    { label: tr('console.reboot'), icon: RotateCw, pattern: /reboot|restart|重启/i },
-    { label: tr('console.powerOff'), icon: Square, pattern: /^(stop|shutdown|power.?off)$|关机/i },
-    { label: tr('console.resetPassword'), icon: KeyRound, pattern: /password|密码/i },
+  const displayName =
+    serviceDisplayName(service.runtime) ?? service.detail?.title ?? service.productName;
+  const remark = serviceRemark(service.runtime);
+  const expiry = serviceExpiryState(service.expiresAt);
+  const rows: Array<{
+    key: string;
+    label: string;
+    value: string;
+    mono?: boolean;
+    copyable?: boolean;
+    editable?: boolean;
+    expiry?: boolean;
+  }> = [
+    {
+      key: 'serviceId',
+      label: tr('console.serviceId'),
+      value: service.id,
+      mono: true,
+      copyable: true,
+    },
+    {
+      key: 'instanceName',
+      label: tr('console.instanceName'),
+      value: displayName,
+      editable: Boolean(runAction),
+    },
+    {
+      key: 'region',
+      label: tr('console.region'),
+      value: configValue(/区域|地区|region|location/i),
+    },
+    {
+      key: 'os',
+      label: tr('console.os'),
+      value: configValue(/操作系统|镜像|operating.?system|^os$/i),
+    },
+    {
+      key: 'created',
+      label: tr('console.created'),
+      value: serviceDate(service.createdAt, props.locale),
+    },
+    {
+      key: 'provisioned',
+      label: tr('console.provisioned'),
+      value: serviceDate(service.provisionedAt, props.locale),
+    },
+    {
+      key: 'expires',
+      label: tr('console.expires'),
+      value: serviceDate(service.expiresAt, props.locale),
+      expiry: true,
+    },
   ];
-  const rows = [
-    [tr('console.serviceId'), service.id],
-    [tr('console.instanceName'), serviceInstanceName(service.runtime) ?? '—'],
-    [tr('console.region'), configValue(/区域|地区|region|location/i)],
-    [tr('console.os'), configValue(/操作系统|镜像|operating.?system|^os$/i)],
-    [tr('console.created'), serviceDate(service.createdAt, props.locale)],
-    [tr('console.provisioned'), serviceDate(service.provisionedAt, props.locale)],
-    [tr('console.expires'), serviceDate(service.expiresAt, props.locale)],
+  const additionalFields = informationFields.filter(
+    (field) =>
+      !/密码|password|用户名|username|端口|port|^cpu$|内存|memory|磁盘|disk|带宽|bandwidth|操作系统|^os$|地域|区域|region/i.test(
+        field.label,
+      ),
+  );
+  const hasMetricData = metrics.some((item) => item.points.length > 0);
+  const topActionDefinitions = [
+    { key: 'vnc', label: tr('console.vnc'), icon: Monitor, pattern: /vnc|console|控制台|远程/i },
+    {
+      key: 'start',
+      label: tr('console.powerOn'),
+      icon: Power,
+      pattern: /^(start|boot|power.?on)$|开机/i,
+    },
+    { key: 'reboot', label: tr('console.reboot'), icon: RotateCw, pattern: /reboot|restart|重启/i },
+    {
+      key: 'stop',
+      label: tr('console.powerOff'),
+      icon: Square,
+      pattern: /^(stop|shutdown|power.?off)$|关机/i,
+    },
   ];
+  const topActions = topActionDefinitions.flatMap((definition) => {
+    const action = actions.find(
+      (item) => definition.pattern.test(item.id) || definition.pattern.test(item.label),
+    );
+    if (!action || !renewable || !runAction) return [];
+    return [{ ...definition, action }];
+  });
+  const topActionIds = new Set(topActions.map(({ action }) => action.id));
+  const maintenanceActions = actions.filter(
+    (action) => runAction && !topActionIds.has(action.id) && action.id !== 'vnc',
+  );
+  const actionLabel = (action: (typeof actions)[number]) =>
+    /reinstall|重装/i.test(`${action.id} ${action.label}`)
+      ? tr('console.reinstall')
+      : /password|密码/i.test(`${action.id} ${action.label}`)
+        ? tr('console.resetPassword')
+        : /exit.?rescue|退出救援/i.test(`${action.id} ${action.label}`)
+          ? tr('console.exitRescue')
+          : /rescue|救援/i.test(`${action.id} ${action.label}`)
+            ? tr('console.rescue')
+            : /hard.?off|强制关机/i.test(`${action.id} ${action.label}`)
+              ? tr('console.hardPowerOff')
+              : /hard.?reboot|强制重启/i.test(`${action.id} ${action.label}`)
+                ? tr('console.hardReboot')
+                : action.label;
+  const actionIcon = (action: (typeof actions)[number]) =>
+    /reinstall|重装/i.test(`${action.id} ${action.label}`)
+      ? Wrench
+      : /password|密码/i.test(`${action.id} ${action.label}`)
+        ? KeyRound
+        : Settings2;
+  const panelLinks: Array<{ id: string; label: string; icon: typeof Activity; href: string }> = [
+    {
+      id: 'overview',
+      label: tr('console.informationMonitoring'),
+      icon: Activity,
+      href: baseHref,
+    },
+    ...(resourceGroups.length
+      ? [
+          {
+            id: 'resources',
+            label: tr('console.resources'),
+            icon: HardDrive,
+            href: `${baseHref}?panel=resources`,
+          },
+        ]
+      : []),
+    ...(renewable && changeAction && changeOptions?.config
+      ? [
+          {
+            id: 'change',
+            label: tr('console.change'),
+            icon: ArrowUpRight,
+            href: `${baseHref}?panel=change`,
+          },
+        ]
+      : []),
+    ...(renewable && renewAction
+      ? [
+          {
+            id: 'renew',
+            label: tr('console.renewal'),
+            icon: CalendarDays,
+            href: `${baseHref}?panel=renew`,
+          },
+        ]
+      : []),
+    ...(refund?.policy.enabled
+      ? [
+          {
+            id: 'refund',
+            label: tr('service.refundTitle'),
+            icon: Wallet,
+            href: `${baseHref}?panel=refund`,
+          },
+        ]
+      : []),
+  ];
+  const updateAction = props.actions?.['store.update-service-meta'];
   return (
     <main className="flex min-w-0 flex-col gap-5">
       <PageHeader
         backHref="/account/services"
         backLabel={tr('services.title')}
-        title={serviceInstanceName(service.runtime) ?? service.detail?.title ?? service.productName}
+        title={displayName}
       />
-      <div
-        className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3"
+      <section
+        className="flex flex-col gap-4 rounded-2xl bg-muted/35 p-3.5 sm:flex-row sm:items-start sm:justify-between"
         aria-label={tr('console.management')}
       >
-        {operationLinks.map(({ label, icon: Icon, pattern }) => {
-          const action = actions.find((item) => pattern.test(item.id) || pattern.test(item.label));
-          return action && renewable && runAction ? (
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <ServiceStatusBadge
+              status={service.detail?.status ?? service.status}
+              label={service.detail?.statusLabel}
+              tr={tr}
+            />
+            {expiry?.expired ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive">
+                <TriangleAlert className="size-3.5" aria-hidden="true" />
+                {tr('console.expired')}
+              </span>
+            ) : expiry ? (
+              <span
+                className={
+                  expiry.soon
+                    ? 'inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400'
+                    : 'inline-flex items-center gap-1 rounded-full bg-background/60 px-2.5 py-1 text-xs text-muted-foreground'
+                }
+              >
+                <Clock className="size-3.5" aria-hidden="true" />
+                {tr('console.expiresIn', { days: String(Math.max(expiry.days, 0)) })}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex min-w-0 items-start gap-1.5">
+            <p
+              className={
+                remark
+                  ? 'min-w-0 whitespace-pre-wrap break-words text-sm text-foreground'
+                  : 'min-w-0 text-sm text-muted-foreground'
+              }
+            >
+              {remark ?? tr('console.noRemark')}
+            </p>
+            {updateAction ? (
+              <ServiceMetaSheet
+                service={service}
+                name={displayName}
+                remark={remark}
+                action={updateAction}
+                tr={tr}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={tr('console.editInstance')}
+                    title={tr('console.editInstance')}
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                }
+              />
+            ) : null}
+          </div>
+        </div>
+        {topActions.length && runAction ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {topActions.map(({ key, label, icon: Icon, action }) => {
+              const dangerous = Boolean(action.danger);
+              const needsConfirmation = Boolean(action.confirm || action.danger);
+              const executor = key === 'vnc' ? (openConsoleAction ?? runAction) : runAction;
+              const button = (
+                <Button
+                  key={`${key}-button`}
+                  type={needsConfirmation ? 'button' : 'submit'}
+                  variant={key === 'vnc' ? 'default' : dangerous ? 'destructive' : 'ghost'}
+                  size="sm"
+                >
+                  <Icon data-icon="inline-start" />
+                  {label}
+                </Button>
+              );
+              if (!needsConfirmation) {
+                return (
+                  <form key={key} action={executor}>
+                    <input type="hidden" name="id" value={service.id} />
+                    <input type="hidden" name="actionId" value={action.id} />
+                    {button}
+                  </form>
+                );
+              }
+              const formId = `top-service-action-${action.id}`;
+              return (
+                <Sheet key={key}>
+                  <SheetTrigger render={button} />
+                  <SheetContent closeLabel={tr('console.close')} className="sm:max-w-md">
+                    <SheetHeader>
+                      <SheetTitle>{actionLabel(action)}</SheetTitle>
+                      <SheetDescription>{tr('console.confirmActionHint')}</SheetDescription>
+                    </SheetHeader>
+                    <SheetBody>
+                      <form id={formId} action={executor} className="flex flex-col gap-4">
+                        <input type="hidden" name="id" value={service.id} />
+                        <input type="hidden" name="actionId" value={action.id} />
+                        <label className="flex items-start gap-2 rounded-xl bg-muted/30 p-3 text-sm">
+                          <input
+                            type="checkbox"
+                            required
+                            className="mt-0.5 size-4 accent-foreground"
+                          />
+                          <span>
+                            {tr('console.confirmOperation', { action: actionLabel(action) })}
+                          </span>
+                        </label>
+                      </form>
+                    </SheetBody>
+                    <SheetFooter>
+                      <SheetClose
+                        render={
+                          <Button type="button" variant="outline">
+                            {tr('console.cancel')}
+                          </Button>
+                        }
+                      />
+                      <Button
+                        type="submit"
+                        form={formId}
+                        variant={dangerous ? 'destructive' : 'default'}
+                      >
+                        {actionLabel(action)}
+                      </Button>
+                    </SheetFooter>
+                  </SheetContent>
+                </Sheet>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
+      {panelLinks.length > 1 ? (
+        <nav
+          aria-label={tr('console.sections')}
+          className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-2xl bg-muted/35 p-1"
+        >
+          {panelLinks.map(({ id, label, icon: Icon, href }) => (
             <Button
-              key={label}
-              variant="outline"
+              key={id}
+              variant={panel === id ? 'default' : 'ghost'}
               size="sm"
               nativeButton={false}
-              render={
-                <Link
-                  href={`${baseHref}?panel=operations#service-action-${encodeURIComponent(action.id)}`}
-                />
-              }
+              render={<Link href={href} aria-current={panel === id ? 'page' : undefined} />}
             >
               <Icon data-icon="inline-start" />
               {label}
             </Button>
-          ) : (
-            <Button key={label} variant="outline" size="sm" disabled>
-              <Icon data-icon="inline-start" />
-              {label}
-            </Button>
-          );
-        })}
-        {renewable && renewAction ? (
-          <Button
-            variant="outline"
-            size="sm"
-            nativeButton={false}
-            render={<Link href={`${baseHref}?panel=renew`} />}
-          >
-            <CalendarDays data-icon="inline-start" />
-            {tr('console.renewal')}
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" disabled>
-            <CalendarDays data-icon="inline-start" />
-            {tr('console.renewal')}
-          </Button>
-        )}
-      </div>
-      <nav
-        aria-label={tr('console.sections')}
-        className="flex min-w-0 flex-wrap items-center gap-1 border-b pb-2"
-      >
-        <Button
-          variant={panel === 'overview' ? 'secondary' : 'ghost'}
-          size="sm"
-          nativeButton={false}
-          render={<Link href={baseHref} aria-current={panel === 'overview' ? 'page' : undefined} />}
-        >
-          <Activity data-icon="inline-start" />
-          {tr('console.informationMonitoring')}
-        </Button>
-        {resourceGroups.length ? (
-          <Button
-            variant={panel === 'resources' ? 'secondary' : 'ghost'}
-            size="sm"
-            nativeButton={false}
-            render={<Link href={`${baseHref}?panel=resources`} />}
-          >
-            <HardDrive data-icon="inline-start" />
-            {tr('console.resources')}
-          </Button>
-        ) : (
-          <Button variant="ghost" size="sm" disabled>
-            <HardDrive data-icon="inline-start" />
-            {tr('console.resources')}
-          </Button>
-        )}
-        <Button variant="ghost" size="sm" disabled>
-          <Shield data-icon="inline-start" />
-          {tr('console.firewall')}
-        </Button>
-        {renewable && actions.length && runAction ? (
-          <Button
-            variant={panel === 'operations' ? 'secondary' : 'ghost'}
-            size="sm"
-            nativeButton={false}
-            render={<Link href={`${baseHref}?panel=operations`} />}
-          >
-            <Settings2 data-icon="inline-start" />
-            {tr('console.systemOperations')}
-          </Button>
-        ) : (
-          <Button variant="ghost" size="sm" disabled>
-            <Settings2 data-icon="inline-start" />
-            {tr('console.systemOperations')}
-          </Button>
-        )}
-        {changeOptions?.config && renewable ? (
-          <Button
-            variant={panel === 'change' ? 'secondary' : 'ghost'}
-            size="sm"
-            nativeButton={false}
-            render={<Link href={`${baseHref}?panel=change`} />}
-          >
-            <ArrowUpRight data-icon="inline-start" />
-            {tr('console.change')}
-          </Button>
-        ) : (
-          <Button variant="ghost" size="sm" disabled>
-            <ArrowUpRight data-icon="inline-start" />
-            {tr('console.change')}
-          </Button>
-        )}
-        {renewable && renewAction ? (
-          <Button
-            variant={panel === 'renew' ? 'secondary' : 'ghost'}
-            size="sm"
-            nativeButton={false}
-            render={<Link href={`${baseHref}?panel=renew`} />}
-          >
-            <CalendarDays data-icon="inline-start" />
-            {tr('console.renewal')}
-          </Button>
-        ) : (
-          <Button variant="ghost" size="sm" disabled>
-            <CalendarDays data-icon="inline-start" />
-            {tr('console.renewal')}
-          </Button>
-        )}
-        <Button variant="ghost" size="sm" disabled>
-          <List data-icon="inline-start" />
-          {tr('console.logs')}
-        </Button>
-      </nav>
+          ))}
+        </nav>
+      ) : null}
       {panel === 'overview' ? (
-        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-5">
-            <Card className="min-w-0">
-              <CardHeader>
-                <CardTitle>{tr('console.serverInformation')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <dl className="divide-y rounded-lg border text-sm">
-                  <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 px-4 py-3">
-                    <dt className="text-muted-foreground">{tr('console.runningStatus')}</dt>
-                    <dd>
-                      <ServiceStatusBadge
-                        status={service.detail?.status ?? service.status}
-                        label={service.detail?.statusLabel}
-                        tr={tr}
-                      />
-                    </dd>
-                  </div>
-                  {rows.map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-4 py-3"
-                    >
-                      <dt className="text-muted-foreground">{label}</dt>
-                      <dd
-                        className={
-                          label === tr('console.serviceId')
-                            ? 'min-w-0 truncate font-mono text-xs leading-5'
-                            : 'min-w-0 break-words text-sm tabular-nums'
-                        }
-                        title={value}
-                      >
-                        {value}
+        <div className="flex min-w-0 flex-col gap-5">
+          <div className="grid min-w-0 items-start gap-5 lg:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-5">
+              <Card className="min-w-0 border-0">
+                <CardHeader>
+                  <CardTitle>{tr('console.serverInformation')}</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-5">
+                  <dl className="flex flex-col gap-1">
+                    <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 rounded-lg bg-muted/25 px-3 py-2.5">
+                      <dt className="text-muted-foreground">{tr('console.runningStatus')}</dt>
+                      <dd>
+                        <ServiceStatusBadge
+                          status={service.detail?.status ?? service.status}
+                          label={service.detail?.statusLabel}
+                          tr={tr}
+                        />
                       </dd>
                     </div>
-                  ))}
-                </dl>
-                <h3 className="mb-3 mt-6 text-sm font-medium">{tr('console.remoteConnection')}</h3>
-                <dl className="divide-y rounded-lg border text-sm">
-                  {[
-                    [tr('console.publicIp'), publicIp],
-                    [tr('console.remoteUsername'), safeField(/用户名|username|login.?user/i)],
-                    [
-                      tr('console.remotePassword'),
-                      fields.some((field) => /密码|password/i.test(field.label)) ? '••••••••' : '—',
-                    ],
-                    [tr('console.remotePort'), safeField(/端口|port/i)],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-4 py-3"
-                    >
-                      <dt className="text-muted-foreground">{label}</dt>
-                      <dd className="min-w-0 break-all font-mono text-xs leading-5">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </CardContent>
-            </Card>
-            <Card className="min-w-0">
-              <CardHeader>
-                <CardTitle>{tr('console.configuration')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-5 text-sm">
-                  {(configuration.length
-                    ? configuration
-                    : [
-                        { label: tr('console.cpu'), value: '—' },
-                        { label: tr('console.memory'), value: '—' },
-                        { label: tr('console.disk'), value: '—' },
-                        { label: tr('console.bandwidth'), value: '—' },
-                      ]
-                  ).map((item) => (
-                    <div key={item.label}>
-                      <dt className="text-xs text-muted-foreground">{item.label}</dt>
-                      <dd className="mt-1 break-words font-medium">{item.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </CardContent>
-            </Card>
-          </div>
-          <div className="flex min-w-0 flex-col gap-5">
-            <Card id="instance-network" className="min-w-0">
-              <CardHeader>
-                <CardTitle>{tr('console.publicIpList')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto rounded-lg border">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted/40 text-xs text-muted-foreground">
-                      <tr>
-                        <th scope="col" className="px-4 py-3 font-medium">
-                          {tr('console.ipAddress')}
-                        </th>
-                        <th scope="col" className="px-4 py-3 font-medium">
-                          {tr('console.remark')}
-                        </th>
-                        <th scope="col" className="px-4 py-3 font-medium">
-                          {tr('console.operations')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {(publicFields.length ? publicFields : [{ label: '—', value: '—' }]).map(
-                        (field, index) => (
-                          <tr key={`${field.label}-${index}`}>
-                            <td className="break-all px-4 py-3 font-mono text-xs">{field.value}</td>
-                            <td className="px-4 py-3 text-muted-foreground">—</td>
-                            <td className="px-4 py-3 text-muted-foreground">—</td>
-                          </tr>
-                        ),
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-            <Card id="instance-monitoring" className="min-w-0">
-              <CardHeader>
-                <CardTitle>{tr('console.realtimeMonitoring')}</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-5">
-                <ServiceMonitorOverview metrics={metrics} tr={tr} />
-                <ServiceUsage
-                  tr={tr}
-                  metrics={metrics.filter(
-                    (item) => !/cpu|处理器|memory|mem|内存/i.test(`${item.id} ${item.label}`),
-                  )}
-                  networkOnly
-                />
-                {metrics.some((item) => item.points.length > 0) ? (
-                  <MetricsChart series={metrics} tr={tr} />
-                ) : null}
-              </CardContent>
-            </Card>
-            {informationFields.filter(
-              (field) => !/密码|password|用户名|username|端口|port/i.test(field.label),
-            ).length ? (
-              <Card className="min-w-0">
+                    {rows.map((row) => (
+                      <div
+                        key={row.key}
+                        className={
+                          row.mono
+                            ? 'flex flex-col gap-1 rounded-lg bg-muted/25 px-3 py-2.5'
+                            : 'grid grid-cols-[7rem_minmax(0,1fr)] gap-3 rounded-lg bg-muted/25 px-3 py-2.5'
+                        }
+                      >
+                        <dt className="text-muted-foreground">{row.label}</dt>
+                        <dd
+                          className={
+                            row.mono
+                              ? 'flex min-w-0 flex-wrap items-center gap-1 font-mono text-[11px] leading-5'
+                              : 'flex min-w-0 flex-wrap items-center gap-1 text-sm'
+                          }
+                          title={row.value}
+                        >
+                          <span className={row.mono ? 'min-w-0 break-all' : 'min-w-0 break-words'}>
+                            {row.value}
+                          </span>
+                          {row.copyable ? (
+                            <CopyButton
+                              value={row.value}
+                              label={tr('console.copy')}
+                              copiedLabel={tr('console.copied')}
+                            />
+                          ) : null}
+                          {row.editable && updateAction ? (
+                            <ServiceMetaSheet
+                              service={service}
+                              name={displayName}
+                              remark={remark}
+                              action={updateAction}
+                              tr={tr}
+                              trigger={
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={tr('console.editInstance')}
+                                  title={tr('console.editInstance')}
+                                >
+                                  <Pencil className="size-3.5" />
+                                </Button>
+                              }
+                            />
+                          ) : null}
+                          {row.expiry && expiry ? (
+                            <span
+                              className={
+                                expiry.expired
+                                  ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive'
+                                  : expiry.soon
+                                    ? 'rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400'
+                                    : 'rounded-full bg-background px-2 py-0.5 text-[11px] text-muted-foreground'
+                              }
+                            >
+                              {expiry.expired
+                                ? tr('console.expired')
+                                : tr('console.expiresIn', {
+                                    days: String(Math.max(expiry.days, 0)),
+                                  })}
+                            </span>
+                          ) : null}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {(() => {
+                    const passwordField = fields.find((field) =>
+                      /密码|password/i.test(field.label),
+                    );
+                    const remoteRows = [
+                      {
+                        key: 'ip',
+                        label: tr('console.publicIp'),
+                        value: publicIp,
+                        secret: true,
+                      },
+                      {
+                        key: 'username',
+                        label: tr('console.remoteUsername'),
+                        value: safeField(/用户名|username|login.?user/i),
+                        secret: false,
+                      },
+                      ...(passwordField
+                        ? [
+                            {
+                              key: 'password',
+                              label: tr('console.remotePassword'),
+                              value: passwordField.value,
+                              secret: true,
+                            },
+                          ]
+                        : []),
+                      {
+                        key: 'port',
+                        label: tr('console.remotePort'),
+                        value: safeField(/端口|port/i),
+                        secret: false,
+                      },
+                    ].filter((row) => row.value && row.value !== '—');
+                    if (!remoteRows.length) return null;
+                    return (
+                      <section
+                        className="flex flex-col gap-2"
+                        aria-label={tr('console.remoteConnection')}
+                      >
+                        <h3 className="px-1 text-sm font-medium">
+                          {tr('console.remoteConnection')}
+                        </h3>
+                        <dl className="flex flex-col gap-1">
+                          {remoteRows.map((row) => (
+                            <div
+                              key={row.key}
+                              className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 rounded-lg bg-muted/25 px-3 py-2.5"
+                            >
+                              <dt className="text-muted-foreground">{row.label}</dt>
+                              <dd className="min-w-0 break-all font-mono text-xs leading-5">
+                                {row.secret ? (
+                                  <SecretValue
+                                    value={row.value}
+                                    revealLabel={tr('console.show')}
+                                    hideLabel={tr('console.hide')}
+                                    copyLabel={tr('console.copy')}
+                                    copiedLabel={tr('console.copied')}
+                                  />
+                                ) : (
+                                  row.value
+                                )}
+                              </dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+              <Card className="min-w-0 border-0">
                 <CardHeader>
-                  <CardTitle>{tr('console.additionalInformation')}</CardTitle>
+                  <CardTitle>{tr('console.configuration')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <dl className="grid grid-cols-2 gap-4">
-                    {informationFields
-                      .filter(
-                        (field) => !/密码|password|用户名|username|端口|port/i.test(field.label),
-                      )
-                      .map((field) => (
-                        <div key={field.label}>
+                  <dl className="grid grid-cols-2 gap-2 text-sm">
+                    {(configuration.length
+                      ? configuration
+                      : [
+                          { label: tr('console.cpu'), value: '—' },
+                          { label: tr('console.memory'), value: '—' },
+                          { label: tr('console.disk'), value: '—' },
+                          { label: tr('console.bandwidth'), value: '—' },
+                        ]
+                    ).map((item) => (
+                      <div key={item.label} className="rounded-xl bg-muted/25 px-3 py-3">
+                        <dt className="text-xs text-muted-foreground">{item.label}</dt>
+                        <dd className="mt-1 break-words font-medium">{item.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </CardContent>
+              </Card>
+              {maintenanceActions.length && runAction ? (
+                <Card className="min-w-0 border-0">
+                  <CardHeader>
+                    <CardTitle>{tr('console.systemMaintenance')}</CardTitle>
+                    <CardDescription>{tr('console.systemMaintenanceDescription')}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-2 sm:grid-cols-2">
+                    {maintenanceActions.map((action) => {
+                      const Icon = actionIcon(action);
+                      return (
+                        <ServiceActionSheet
+                          key={action.id}
+                          action={action}
+                          label={actionLabel(action)}
+                          icon={<Icon className="size-4" aria-hidden="true" />}
+                          serviceId={service.id}
+                          executor={runAction}
+                          tr={tr}
+                          trigger={
+                            <Button type="button" variant="secondary" className="justify-start">
+                              <Icon data-icon="inline-start" />
+                              {actionLabel(action)}
+                            </Button>
+                          }
+                        />
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              ) : null}
+              {service.renewal ? (
+                <Card className="min-w-0 border-0">
+                  <CardHeader>
+                    <CardTitle>{tr('console.renewal')}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-wrap items-end justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">{tr('console.renewalPrice')}</p>
+                      <p className="mt-1 text-2xl font-semibold tracking-tight">
+                        {money(service.renewal.price, service.renewal.currency, props.locale)}
+                        <span className="ml-1 text-sm font-normal text-muted-foreground">
+                          / {tr('console.months', { months: String(service.renewal.months) })}
+                        </span>
+                      </p>
+                    </div>
+                    {renewable && renewAction ? (
+                      <Button
+                        nativeButton={false}
+                        render={<Link href={`${baseHref}?panel=renew`} />}
+                      >
+                        {tr('console.renewal')}
+                      </Button>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+            <div className="flex min-w-0 flex-col gap-5">
+              <Card id="instance-network" className="min-w-0 border-0">
+                <CardHeader>
+                  <CardTitle>{tr('console.publicIpList')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {publicFields.length ? (
+                    <div className="flex flex-col gap-2">
+                      {publicFields.map((field, index) => (
+                        <div
+                          key={`${field.label}-${index}`}
+                          className="flex items-center justify-between gap-3 rounded-xl bg-muted/25 px-4 py-3"
+                        >
+                          <div className="min-w-0">
+                            <SecretValue
+                              value={field.value}
+                              className="font-mono text-sm"
+                              revealLabel={tr('console.show')}
+                              hideLabel={tr('console.hide')}
+                              copyLabel={tr('console.copy')}
+                              copiedLabel={tr('console.copied')}
+                            />
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {tr('console.ipAddress')}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                            {field.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl bg-muted/25 px-4 py-6 text-center text-sm text-muted-foreground">
+                      {tr('console.noNetwork')}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+              {additionalFields.length ? (
+                <Card className="min-w-0 border-0">
+                  <CardHeader>
+                    <CardTitle>{tr('console.additionalInformation')}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {additionalFields.map((field) => (
+                        <div key={field.label} className="rounded-xl bg-muted/25 px-3 py-3">
                           <dt className="text-xs text-muted-foreground">{field.label}</dt>
                           <dd className="mt-1 break-all text-sm">
                             {field.secret ? (
-                              '••••••••'
+                              <SecretValue
+                                value={field.value}
+                                revealLabel={tr('console.show')}
+                                hideLabel={tr('console.hide')}
+                                copyLabel={tr('console.copy')}
+                                copiedLabel={tr('console.copied')}
+                              />
                             ) : isHttpUrl(field.value) ? (
                               <a
                                 href={field.value}
@@ -3386,178 +3811,114 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                           </dd>
                         </div>
                       ))}
-                  </dl>
-                </CardContent>
-              </Card>
-            ) : null}
+                    </dl>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
           </div>
+          <Card id="instance-monitoring" className="min-w-0 border-0">
+            <CardHeader>
+              <CardTitle>{tr('console.realtimeMonitoring')}</CardTitle>
+              <CardDescription>{tr('console.monitoringHint')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {hasMetricData ? (
+                <MetricsExplorer
+                  series={metrics}
+                  locale={props.locale}
+                  labels={{
+                    range: tr('metrics.range'),
+                    start: tr('metrics.start'),
+                    end: tr('metrics.end'),
+                    quick1h: tr('metrics.quick1h'),
+                    quick6h: tr('metrics.quick6h'),
+                    quick12h: tr('metrics.quick12h'),
+                    quick24h: tr('metrics.quick24h'),
+                    all: tr('metrics.all'),
+                    dataRange: tr('metrics.dataRange'),
+                    empty: tr('metrics.empty'),
+                    noData: tr('metrics.noData'),
+                    points: tr('metrics.points'),
+                    latest: tr('metrics.latest'),
+                    min: tr('metrics.min'),
+                    max: tr('metrics.max'),
+                    avg: tr('metrics.avg'),
+                    zoomHint: tr('metrics.zoomHint'),
+                  }}
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-2 rounded-xl bg-muted/25 px-4 py-10 text-center">
+                  <Activity className="size-5 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm font-medium">{tr('metrics.empty')}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       ) : null}
-      {panel === 'operations' && renewable && actions.length && runAction ? (
-        <div className="flex flex-wrap gap-3">
-          {actions.map((action) => {
-            const extraParams = (action.params ?? []).filter(
-              (param) => !STATIC_ACTION_FIELDS.has(param.name),
-            );
-            return (
-              <form
-                key={action.id}
-                id={`service-action-${action.id}`}
-                action={runAction}
-                className="flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-4"
-              >
-                <input type="hidden" name="id" value={service.id} />
-                <input type="hidden" name="actionId" value={action.id} />
-                {(action.params ?? [])
-                  .filter((param) => STATIC_ACTION_FIELDS.has(param.name))
-                  .map((param) => (
-                    <div key={param.name} className="flex flex-col gap-1">
-                      <label
-                        htmlFor={`action-${action.id}-${param.name}`}
-                        className="text-xs text-muted-foreground"
-                      >
-                        {param.label}
-                        {param.required ? ' *' : ''}
-                      </label>
-                      {param.type === 'select' ? (
-                        <Select
-                          id={`action-${action.id}-${param.name}`}
-                          name={param.name}
-                          required={param.required}
-                          defaultValue={param.default != null ? String(param.default) : ''}
-                          className="h-10 rounded-xl border bg-background px-3 text-sm"
-                        >
-                          <option value="">{tr('service.selectPlaceholder')}</option>
-                          {(param.options ?? []).map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </Select>
-                      ) : param.type === 'textarea' ? (
-                        <textarea
-                          id={`action-${action.id}-${param.name}`}
-                          name={param.name}
-                          required={param.required}
-                          defaultValue={param.default != null ? String(param.default) : ''}
-                          maxLength={param.maxLength}
-                          placeholder={param.placeholder}
-                          rows={3}
-                          className="rounded-xl border bg-background px-3 py-2 text-sm"
-                        />
-                      ) : (
-                        <input
-                          id={`action-${action.id}-${param.name}`}
-                          name={param.name}
-                          type={
-                            param.type === 'password'
-                              ? 'password'
-                              : param.type === 'number'
-                                ? 'number'
-                                : 'text'
-                          }
-                          required={param.required}
-                          defaultValue={param.default != null ? String(param.default) : ''}
-                          min={param.min}
-                          max={param.max}
-                          maxLength={param.maxLength}
-                          placeholder={param.placeholder}
-                          className="h-10 rounded-xl border bg-background px-3 text-sm"
-                        />
-                      )}
-                    </div>
-                  ))}
-                {extraParams.length > 0 ? (
-                  <div className="flex flex-col gap-1">
-                    <label
-                      htmlFor={`action-${action.id}-params`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      {tr('service.extraParams')}
-                    </label>
-                    <textarea
-                      id={`action-${action.id}-params`}
-                      name="params"
-                      rows={2}
-                      maxLength={4000}
-                      placeholder={`{"${extraParams[0]!.name}": "…"}`}
-                      className="rounded-xl border bg-background px-3 py-2 font-mono text-sm"
-                    />
-                    <span className="text-[11px] text-muted-foreground">
-                      {tr('service.availableKeys', {
-                        keys: extraParams.map((param) => param.name).join(', '),
-                      })}
-                    </span>
-                  </div>
-                ) : null}
-                {action.confirm || action.danger ? (
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" required />
-                    {tr('console.confirmOperation', { action: action.label })}
-                  </label>
-                ) : null}
-                <button
-                  type="submit"
-                  className={
-                    action.danger
-                      ? 'h-10 rounded-xl border border-destructive/40 px-4 text-sm font-semibold text-destructive hover:bg-destructive/10'
-                      : 'h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background'
-                  }
-                >
-                  {action.label}
-                </button>
-              </form>
-            );
-          })}
-        </div>
+      {panel === 'renew' && renewable && renewAction ? (
+        <Card className="w-full max-w-2xl border-0 bg-muted/25">
+          <CardHeader>
+            <CardTitle>{tr('console.renewal')}</CardTitle>
+            <CardDescription>{tr('console.renewalHint')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            {service.renewal ? (
+              <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl bg-background px-4 py-3">
+                <span className="text-sm text-muted-foreground">{tr('console.renewalPrice')}</span>
+                <span className="text-lg font-semibold">
+                  {money(service.renewal.price, service.renewal.currency, props.locale)}
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                    / {tr('console.months', { months: String(service.renewal.months) })}
+                  </span>
+                </span>
+              </div>
+            ) : null}
+            <form action={renewAction} className="flex flex-col gap-4 sm:flex-row sm:items-end">
+              <input type="hidden" name="id" value={service.id} />
+              <input type="hidden" name="paymentMode" value="wallet" />
+              <div className="grid gap-1.5">
+                <span className="text-xs text-muted-foreground">{tr('console.expires')}</span>
+                <span className="text-sm tabular-nums">
+                  {serviceDate(service.expiresAt, props.locale)}
+                </span>
+              </div>
+              <div className="grid gap-1.5">
+                <label htmlFor="renew-months" className="text-xs text-muted-foreground">
+                  {tr('service.renewMonths')}
+                </label>
+                <Input
+                  id="renew-months"
+                  name="months"
+                  type="number"
+                  min={1}
+                  max={120}
+                  defaultValue={1}
+                  className="w-28"
+                />
+              </div>
+              <Button type="submit">{tr('service.renew')}</Button>
+            </form>
+          </CardContent>
+        </Card>
       ) : null}
 
-      {panel === 'renew' && renewable && renewAction ? (
-        <form
-          action={renewAction}
-          className="flex flex-wrap items-end gap-3 rounded-2xl border bg-card p-4"
-        >
-          <input type="hidden" name="id" value={service.id} />
-          <input type="hidden" name="paymentMode" value="wallet" />
-          <div>
-            <label htmlFor="renew-months" className="mb-1 block text-xs text-muted-foreground">
-              {tr('service.renewMonths')}
-            </label>
-            <input
-              id="renew-months"
-              name="months"
-              type="number"
-              min={1}
-              max={120}
-              defaultValue={1}
-              className="h-10 w-28 rounded-xl border bg-background px-3 text-sm"
-            />
-          </div>
-          <button
-            type="submit"
-            className="h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background"
-          >
-            {tr('service.renew')}
-          </button>
-        </form>
+      {panel === 'refund' && refund?.policy.enabled ? (
+        <ServiceRefundPanel refund={refund} action={refundAction} locale={props.locale} tr={tr} />
       ) : null}
 
       {panel === 'change' && renewable && changeAction && changeOptions?.config ? (
-        <details open className="rounded-xl border bg-card p-4">
-          <summary className="cursor-pointer text-sm font-medium">{tr('console.change')}</summary>
-          <div className="pt-4">
-            <ServiceChangePanel
-              serviceId={service.id}
-              currency={service.currency}
-              config={changeOptions.config}
-              current={changeOptions.current}
-              quote={changeQuote ?? null}
-              changeAction={changeAction}
-              tr={tr}
-              locale={props.locale}
-            />
-          </div>
-        </details>
+        <ServiceChangePanel
+          serviceId={service.id}
+          currency={service.currency}
+          config={changeOptions.config}
+          current={changeOptions.current}
+          quote={changeQuote ?? null}
+          changeAction={changeAction}
+          tr={tr}
+          locale={props.locale}
+        />
       ) : null}
 
       {panel === 'resources' && resourceGroups.length ? (
@@ -3570,6 +3931,101 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
         />
       ) : null}
     </main>
+  );
+}
+
+/**
+ * 退款面板：显示可退金额与申请入口，并把申请状态（待审 / 已拒 / 已退）说清楚。
+ *
+ * 金额是服务端算好的（政策 + 未使用时长），前端只负责展示：客户端能改金额的退款
+ * 表单等于把定价权交给了浏览器。
+ */
+function ServiceRefundPanel({
+  refund,
+  action,
+  locale,
+  tr,
+}: {
+  refund: z.infer<typeof refundEligibilitySchema>;
+  action: FrontendActionExecutor | undefined;
+  locale: string | undefined;
+  tr: ReturnType<typeof t>;
+}): ReactElement {
+  const request = refund.request;
+  const inFlight = Boolean(request && ['PENDING', 'PROCESSING', 'FAILED'].includes(request.state));
+  return (
+    <Card className="w-full max-w-2xl border-0 bg-muted/25">
+      <CardHeader>
+        <CardTitle>{tr('service.refundTitle')}</CardTitle>
+        <CardDescription>{tr('service.refundIntro')}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {inFlight && request ? (
+          <div className="rounded-xl bg-background px-4 py-3">
+            <p className="text-sm font-medium">{tr('service.refundPendingTitle')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tr('service.refundPendingBody')}</p>
+            <p className="mt-2 text-sm tabular-nums">
+              {money(request.amount, refund.currency, locale)}
+            </p>
+          </div>
+        ) : null}
+
+        {request?.state === 'REJECTED' ? (
+          <div className="rounded-xl bg-background px-4 py-3">
+            <p className="text-sm font-medium">{tr('service.refundRejectedTitle')}</p>
+            {request.reviewReason ? (
+              <p className="mt-1 text-xs text-muted-foreground">{request.reviewReason}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {request?.state === 'SUCCEEDED' ? (
+          <div className="rounded-xl bg-background px-4 py-3">
+            <p className="text-sm font-medium">{tr('service.refundSucceededTitle')}</p>
+            <p className="mt-2 text-sm tabular-nums">
+              {money(request.amount, refund.currency, locale)}
+            </p>
+          </div>
+        ) : null}
+
+        {refund.eligible && action ? (
+          <>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-xl bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">{tr('service.refundAmount')}</span>
+              <span className="text-lg font-semibold tabular-nums">
+                {money(refund.refundableAmount, refund.currency, locale)}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {refund.windowEndsAt
+                ? tr('service.refundWindow', { date: serviceDate(refund.windowEndsAt, locale) })
+                : tr('service.refundForever')}
+            </p>
+            <form action={action} className="flex flex-col gap-3">
+              <input type="hidden" name="id" value={refund.serviceId} />
+              <Field>
+                <Input
+                  name="reason"
+                  maxLength={500}
+                  aria-label={tr('service.refundReason')}
+                  placeholder={tr('service.refundReasonPlaceholder')}
+                />
+              </Field>
+              <Button type="submit" variant="outline" className="self-start">
+                {tr('service.refundSubmit')}
+              </Button>
+            </form>
+          </>
+        ) : null}
+
+        {!refund.eligible && !inFlight && request?.state !== 'SUCCEEDED' ? (
+          <p className="text-sm text-muted-foreground">
+            {tr('service.refundNotEligible')}
+            {refund.reason ? `：${refund.reason}` : ''}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3611,97 +4067,110 @@ function ServiceChangePanel({
   return (
     <section className="flex flex-col gap-4">
       <SectionTitle>{tr('change.title')}</SectionTitle>
-      <Card>
+      <Card className="border-0 bg-muted/25">
         <CardContent className="flex flex-col gap-4">
-      <form method="get" action={`/account/services/${serviceId}`} className="space-y-4">
-        <div className="grid gap-1.5">
-          <label className="text-sm font-medium">{tr('change.cycle')}</label>
-          <Select
-            name="cycle"
-            defaultValue={cycle}
-            className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
+          <form
+            method="get"
+            action={`/account/services/${serviceId}`}
+            className="flex flex-col gap-4"
           >
-            {config.cycles.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-        {groups.map((group) => (
-          <fieldset key={group.name || 'default'} className="space-y-4 rounded-xl border p-3">
-            {group.name ? (
-              <legend className="px-1 text-xs font-semibold text-muted-foreground">
-                {group.name}
-              </legend>
-            ) : null}
-            {group.options.map((option) => {
-              const value = sel[option.id];
-              const choices = allowedChoices(option, sel, cycle);
-              if (option.type === 'quantity') {
-                return (
-                  <div key={option.id} className="grid gap-1.5">
-                    <label className="text-sm font-medium">{option.label}</label>
-                    <input
-                      name={`cfg_${option.id}`}
-                      type="number"
-                      min={option.min ?? 0}
-                      max={option.max ?? undefined}
-                      step={option.step ?? 1}
-                      defaultValue={typeof value === 'number' ? value : (option.min ?? 0)}
-                      className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
-                    />
-                  </div>
-                );
-              }
-              return (
-                <div key={option.id} className="grid gap-1.5">
-                  <label className="text-sm font-medium">{option.label}</label>
-                  <Select
-                    name={`cfg_${option.id}`}
-                    defaultValue={typeof value === 'string' ? value : (choices[0]?.id ?? '')}
-                    className="h-9 w-full rounded-lg border bg-background px-3 text-sm"
-                  >
-                    {choices.map((choice) => (
-                      <option key={choice.id} value={choice.id}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </Select>
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">{tr('change.cycle')}</label>
+              <Select
+                name="cycle"
+                defaultValue={cycle}
+                className="h-10 w-full max-w-sm rounded-xl bg-background px-3 text-sm"
+              >
+                {config.cycles.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            {groups.map((group) => (
+              <fieldset key={group.name || 'default'} className="rounded-2xl bg-background p-4">
+                {group.name ? (
+                  <legend className="px-1 text-xs font-semibold text-muted-foreground">
+                    {group.name}
+                  </legend>
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {group.options.map((option) => {
+                    const value = sel[option.id];
+                    const choices = allowedChoices(option, sel, cycle);
+                    if (option.type === 'quantity') {
+                      return (
+                        <div
+                          key={option.id}
+                          className={
+                            group.options.length === 1
+                              ? 'grid gap-1.5 sm:col-span-2'
+                              : 'grid gap-1.5'
+                          }
+                        >
+                          <label className="text-xs text-muted-foreground">{option.label}</label>
+                          <input
+                            name={`cfg_${option.id}`}
+                            type="number"
+                            min={option.min ?? 0}
+                            max={option.max ?? undefined}
+                            step={option.step ?? 1}
+                            defaultValue={typeof value === 'number' ? value : (option.min ?? 0)}
+                            className="h-10 w-full rounded-xl bg-background px-3 text-sm"
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={option.id}
+                        className={
+                          group.options.length === 1 ? 'grid gap-1.5 sm:col-span-2' : 'grid gap-1.5'
+                        }
+                      >
+                        <label className="text-xs text-muted-foreground">{option.label}</label>
+                        <Select
+                          name={`cfg_${option.id}`}
+                          defaultValue={typeof value === 'string' ? value : (choices[0]?.id ?? '')}
+                          className="h-10 w-full rounded-xl bg-background px-3 text-sm"
+                        >
+                          {choices.map((choice) => (
+                            <option key={choice.id} value={choice.id}>
+                              {choice.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </fieldset>
-        ))}
-        <button
-          type="submit"
-          className="h-10 rounded-xl border bg-background px-4 text-sm font-semibold hover:bg-muted"
-        >
-          {tr('change.quote')}
-        </button>
-      </form>
-      {quote ? (
-        <form action={changeAction} className="flex items-center gap-3 border-t pt-3">
-          <input type="hidden" name="id" value={serviceId} />
-          <input type="hidden" name="paymentMode" value="wallet" />
-          <input type="hidden" name="config" value={JSON.stringify(quote.selection)} />
-          <span className="text-sm">
-            {tr('change.diff')}
-            <span className="font-semibold">
-              {money(quote.diff, quote.currency || currency, locale)}
-            </span>
-            {quote.summary ? (
-              <span className="ml-2 text-xs text-muted-foreground">{quote.summary}</span>
-            ) : null}
-          </span>
-          <button
-            type="submit"
-            className="h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background"
-          >
-            {tr('change.confirm')}
-          </button>
-        </form>
-      ) : null}
+              </fieldset>
+            ))}
+            <Button type="submit" variant="secondary">
+              {tr('change.quote')}
+            </Button>
+          </form>
+          {quote ? (
+            <form
+              action={changeAction}
+              className="flex flex-wrap items-center gap-3 rounded-xl bg-background/60 p-3"
+            >
+              <input type="hidden" name="id" value={serviceId} />
+              <input type="hidden" name="paymentMode" value="wallet" />
+              <input type="hidden" name="config" value={JSON.stringify(quote.selection)} />
+              <span className="text-sm">
+                {tr('change.diff')}
+                <span className="font-semibold">
+                  {money(quote.diff, quote.currency || currency, locale)}
+                </span>
+                {quote.summary ? (
+                  <span className="ml-2 text-xs text-muted-foreground">{quote.summary}</span>
+                ) : null}
+              </span>
+              <Button type="submit">{tr('change.confirm')}</Button>
+            </form>
+          ) : null}
         </CardContent>
       </Card>
     </section>
@@ -3729,7 +4198,7 @@ function ServiceResourcesPanel({
     <section className="space-y-4">
       <SectionTitle>{tr('resources.title')}</SectionTitle>
       {groups.map(({ kind, resources }) => (
-        <div key={kind.id} className="space-y-3 rounded-2xl border bg-card p-4">
+        <div key={kind.id} className="space-y-3 rounded-2xl bg-muted/25 p-4">
           <h3 className="text-sm font-semibold">{kind.label}</h3>
           {resources.length ? (
             <table className="w-full text-sm">
@@ -3884,12 +4353,54 @@ function StoreSummaryWidget(_props: AdminWidgetProps): ReactElement {
   );
 }
 
+/** 实例页退款资格：政策开关/窗口/金额/已有申请，前端据此决定是否显示入口。 */
+const refundEligibilitySchema = z.object({
+  serviceId: z.string(),
+  eligible: z.boolean(),
+  reason: z.string().nullable(),
+  orderId: z.string().nullable(),
+  orderAmount: z.number(),
+  refundableAmount: z.number(),
+  currency: z.string(),
+  windowEndsAt: z.string().nullable(),
+  policy: z.object({
+    enabled: z.boolean(),
+    windowDays: z.number().nullable(),
+    amountMode: z.enum(['full', 'prorated']),
+    feePercentBps: z.number(),
+    suspendOnRequest: z.boolean(),
+    terminateOnApprove: z.boolean(),
+    oncePerOrder: z.boolean(),
+  }),
+  request: z
+    .object({
+      id: z.string(),
+      state: z.string(),
+      amount: z.number(),
+      serviceId: z.string().nullable(),
+      reason: z.string().nullable(),
+      reviewReason: z.string().nullable(),
+    })
+    .nullable(),
+});
+
 const storeFinders: Record<string, FinderProvider> = {
   'store.settings': {
     handler: async (_input, ctx) =>
       ctx.api.get(
         '/store/admin/settings',
-        z.object({ provisioningMode: z.enum(['manual', 'automatic']) }),
+        z.object({
+          provisioningMode: z.enum(['manual', 'automatic']),
+          refund: z.object({
+            enabled: z.boolean(),
+            windowDays: z.number().int().nullable(),
+            amountMode: z.enum(['full', 'prorated']),
+            feePercentBps: z.number().int(),
+            suspendOnRequest: z.boolean(),
+            terminateOnApprove: z.boolean(),
+            oncePerOrder: z.boolean(),
+          }),
+        }),
       ),
   },
   'store.approvals': {
@@ -3938,6 +4449,12 @@ const storeFinders: Record<string, FinderProvider> = {
               state: z.string(),
               reason: z.string().nullable(),
               failureReason: z.string().nullable(),
+              // 实例页发起的退款申请：与订单页手工退款共用队列，但运营需要知道
+              // 这台机器已经被停用、以及审核通过后上游停用是否真的落地。
+              serviceId: z.string().nullable().optional(),
+              suspendApplied: z.boolean().optional(),
+              terminateApplied: z.boolean().optional(),
+              terminateError: z.string().nullable().optional(),
             }),
           ),
         }),
@@ -4067,9 +4584,7 @@ const storeFinders: Record<string, FinderProvider> = {
     handler: async (input, ctx) => {
       const id = typeof input.id === 'string' ? input.id : '';
       if (!id || id.length > 191) return null;
-      return ctx.api
-        .get(`/orders/${encodeURIComponent(id)}`, orderDetailSchema)
-        .catch(() => null);
+      return ctx.api.get(`/orders/${encodeURIComponent(id)}`, orderDetailSchema).catch(() => null);
     },
   },
   'store.myServices': {
@@ -4113,6 +4628,13 @@ const storeFinders: Record<string, FinderProvider> = {
           serviceSchema,
         )
       ).service,
+  },
+  'store.myServiceRefund': {
+    handler: async (input, ctx) =>
+      ctx.api.get(
+        `/services/${encodeURIComponent(typeof input.id === 'string' ? input.id : '')}/refund-eligibility`,
+        refundEligibilitySchema,
+      ),
   },
   'store.myServiceMetrics': {
     handler: async (input, ctx) =>
@@ -4420,6 +4942,18 @@ export const frontend: FrontendPackage = {
         ],
       },
       {
+        // 实例页退款：提交后实例立即停用，管理员审核通过才退余额并终止实例。
+        id: 'store.request-service-refund',
+        successFeedback: { messageKey: 'feedback.refundRequested' },
+        method: 'POST',
+        path: '/services/:id/refund-requests',
+        permission: 'store.buy',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'reason', type: 'string', maxLength: 500 },
+        ],
+      },
+      {
         id: 'store.service-action',
         // Service actions report their result inline in the console.
         silent: true,
@@ -4435,6 +4969,36 @@ export const frontend: FrontendPackage = {
           // 通用参数袋（JSON 对象字符串）：动作声明了 os/password 之外的参数时使用。
           { name: 'params', type: 'string', maxLength: 4000 },
         ],
+      },
+      {
+        id: 'store.open-service-console',
+        // Console/VNC actions return a one-time URL; open it in the same tab.
+        silent: true,
+        method: 'POST',
+        path: '/services/:id/actions',
+        permission: 'store.view',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          { name: 'actionId', type: 'string', required: true, maxLength: 64 },
+        ],
+        redirect: { responsePath: 'nextPath', external: true },
+      },
+      {
+        id: 'store.update-service-meta',
+        successFeedback: { messageKey: 'feedback.serviceUpdated' },
+        method: 'POST',
+        path: '/services/:id/meta',
+        permission: 'store.view',
+        input: [
+          { name: 'id', type: 'string', required: true, maxLength: 191 },
+          // Empty defaults let the form submit an empty string so the field can
+          // be cleared; without them the bridge drops empty optional inputs.
+          { name: 'name', type: 'string', default: '', maxLength: 64 },
+          { name: 'remark', type: 'string', default: '', maxLength: 500 },
+        ],
+        // Reload the detail page so the sheet closes and the saved remark renders
+        // immediately instead of relying on the router cache invalidating itself.
+        redirect: { responsePath: 'nextPath' },
       },
       {
         id: 'store.renew-service-wallet',
@@ -4707,6 +5271,7 @@ export const frontend: FrontendPackage = {
         permission: 'store.view',
         data: [
           { finder: 'store.myService', as: 'service', input: { id: ':id' } },
+          { finder: 'store.myServiceRefund', as: 'refund', input: { id: ':id' } },
           { finder: 'store.myServiceMetrics', as: 'metrics', input: { id: ':id' } },
           { finder: 'store.myServiceResources', as: 'resources', input: { id: ':id' } },
           { finder: 'store.myServiceChangeOptions', as: 'changeOptions', input: { id: ':id' } },

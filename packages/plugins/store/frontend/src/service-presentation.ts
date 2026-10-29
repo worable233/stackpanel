@@ -23,6 +23,46 @@ export function serviceInstanceName(runtime: unknown): string | null {
     : null;
 }
 
+export function serviceCustomName(runtime: unknown): string | null {
+  if (!runtime || typeof runtime !== 'object' || !('customName' in runtime)) return null;
+  const value = runtime.customName;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function serviceDisplayName(runtime: unknown): string | null {
+  return serviceCustomName(runtime) ?? serviceInstanceName(runtime);
+}
+
+export function serviceRemark(runtime: unknown): string | null {
+  if (!runtime || typeof runtime !== 'object' || !('remark' in runtime)) return null;
+  const value = runtime.remark;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export interface ServiceExpiryState {
+  /** Whole days until expiry (negative when already expired). */
+  days: number;
+  expired: boolean;
+  soon: boolean;
+}
+
+/** Encode the green/amber/red state around a service expiry without locale copy. */
+export function serviceExpiryState(
+  expiresAt: string | Date | null | undefined,
+  now = Date.now(),
+): ServiceExpiryState | null {
+  if (!expiresAt) return null;
+  const end = expiresAt instanceof Date ? expiresAt.getTime() : Date.parse(expiresAt);
+  if (!Number.isFinite(end)) return null;
+  const remaining = end - now;
+  const days = Math.ceil(remaining / 86_400_000);
+  return {
+    days: remaining <= 0 ? Math.floor(remaining / 86_400_000) : days,
+    expired: remaining <= 0,
+    soon: remaining > 0 && remaining <= 7 * 86_400_000,
+  };
+}
+
 export function canManageService(status: string): boolean {
   return status === 'ACTIVE' || status === 'SUSPENDED';
 }

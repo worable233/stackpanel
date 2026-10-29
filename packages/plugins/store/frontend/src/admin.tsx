@@ -1628,30 +1628,210 @@ function StoreAdminOverviewPage(props: AdminPageComponentProps) {
   );
 }
 
+/** 退款政策（与后端 settings schema 同形）。 */
+interface RefundSettings {
+  enabled: boolean;
+  windowDays: number | null;
+  amountMode: 'full' | 'prorated';
+  feePercentBps: number;
+  suspendOnRequest: boolean;
+  terminateOnApprove: boolean;
+  oncePerOrder: boolean;
+}
+
+const DEFAULT_REFUND_SETTINGS: RefundSettings = {
+  enabled: false,
+  windowDays: 7,
+  amountMode: 'prorated',
+  feePercentBps: 0,
+  suspendOnRequest: true,
+  terminateOnApprove: true,
+  oncePerOrder: true,
+};
+
 function StoreSettingsPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
-  const initial = props.data.settings as { provisioningMode: string } | undefined;
+  const initial = props.data.settings as
+    | { provisioningMode: string; refund?: RefundSettings }
+    | undefined;
   const [mode, setMode] = useState(initial?.provisioningMode ?? 'manual');
+  const [refund, setRefund] = useState<RefundSettings>(initial?.refund ?? DEFAULT_REFUND_SETTINGS);
+  // 窗口用「永久 / 自定义天数 / 一律不可」三态：直接填数字无法表达 null（永久），
+  // 而运营最常问的恰好就是「怎么设成永久可退」。
+  const [windowMode, setWindowMode] = useState<'forever' | 'custom' | 'disabled'>(() => {
+    const days = initial?.refund?.windowDays;
+    if (days === null) return 'forever';
+    if (days === 0) return 'disabled';
+    return 'custom';
+  });
+  const [windowDays, setWindowDays] = useState(String(initial?.refund?.windowDays ?? 7));
   const [busy, start] = useTransition();
   const [error, setError] = useState('');
   const router = useRouter();
-  return <main className="flex flex-col gap-6">
-    <PageHeader title={tr('settings.store.title')} description={tr('settings.store.help')} />
-    <FieldGroup><Field><Label htmlFor="provisioning-mode">{tr('settings.store.mode')}</Label>
-      <Select id="provisioning-mode" value={mode} disabled={busy || !initial} onChange={e => setMode(e.target.value)}>
-        <option value="manual">{tr('settings.store.manual')}</option>
-        <option value="automatic">{tr('settings.store.automatic')}</option>
-      </Select></Field></FieldGroup>
-    {error ? <p role="alert">{error}</p> : null}
-    <Button disabled={busy || !initial} onClick={() => start(async () => {
-      setError('');
-      try {
-        const response = await fetch('/api/plugins/store/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provisioningMode: mode }) });
-        if (!response.ok) throw new Error();
-        router.refresh();
-      } catch { setError(tr('settings.store.failed')); }
-    })}>{tr('settings.store.save')}</Button>
-  </main>;
+  const patch = (next: Partial<RefundSettings>) => setRefund((prev) => ({ ...prev, ...next }));
+  const resolvedWindowDays = (): number | null => {
+    if (windowMode === 'forever') return null;
+    if (windowMode === 'disabled') return 0;
+    const parsed = Number.parseInt(windowDays, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 7;
+  };
+  return (
+    <main className="flex flex-col gap-6">
+      <PageHeader title={tr('settings.store.title')} description={tr('settings.store.help')} />
+      <FieldGroup>
+        <Field>
+          <Label htmlFor="provisioning-mode">{tr('settings.store.mode')}</Label>
+          <Select
+            id="provisioning-mode"
+            value={mode}
+            disabled={busy || !initial}
+            onChange={(e) => setMode(e.target.value)}
+          >
+            <option value="manual">{tr('settings.store.manual')}</option>
+            <option value="automatic">{tr('settings.store.automatic')}</option>
+          </Select>
+        </Field>
+      </FieldGroup>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{tr('settings.store.refundSection')}</CardTitle>
+          <CardDescription>{tr('settings.store.refundHelp')}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <FieldGroup>
+            <Field>
+              <Label htmlFor="refund-enabled">{tr('settings.store.refundEnabled')}</Label>
+              <Select
+                id="refund-enabled"
+                value={refund.enabled ? 'on' : 'off'}
+                disabled={busy || !initial}
+                onChange={(e) => patch({ enabled: e.target.value === 'on' })}
+              >
+                <option value="off">{tr('common.disabled')}</option>
+                <option value="on">{tr('common.enabled')}</option>
+              </Select>
+            </Field>
+            <Field>
+              <Label htmlFor="refund-window">{tr('settings.store.refundWindow')}</Label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select
+                  id="refund-window"
+                  value={windowMode}
+                  disabled={busy || !initial}
+                  onChange={(e) => setWindowMode(e.target.value as 'forever' | 'custom' | 'disabled')}
+                >
+                  <option value="custom">{tr('settings.store.refundWindowCustom')}</option>
+                  <option value="forever">{tr('service.refundForever')}</option>
+                  <option value="disabled">{tr('settings.store.refundWindowDisabled')}</option>
+                </Select>
+                {windowMode === 'custom' ? (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={windowDays}
+                    disabled={busy || !initial}
+                    aria-label={tr('settings.store.refundWindow')}
+                    onChange={(e) => setWindowDays(e.target.value)}
+                    className="w-28"
+                  />
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {tr('settings.store.refundWindowHelp')}
+              </p>
+            </Field>
+            <Field>
+              <Label htmlFor="refund-amount-mode">{tr('settings.store.refundAmountMode')}</Label>
+              <Select
+                id="refund-amount-mode"
+                value={refund.amountMode}
+                disabled={busy || !initial}
+                onChange={(e) => patch({ amountMode: e.target.value as 'full' | 'prorated' })}
+              >
+                <option value="prorated">{tr('settings.store.refundAmountProrated')}</option>
+                <option value="full">{tr('settings.store.refundAmountFull')}</option>
+              </Select>
+            </Field>
+            <Field>
+              <Label htmlFor="refund-fee">{tr('settings.store.refundFee')}</Label>
+              <Input
+                id="refund-fee"
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={String(refund.feePercentBps / 100)}
+                disabled={busy || !initial}
+                onChange={(e) => {
+                  const percent = Number(e.target.value);
+                  patch({
+                    feePercentBps: Number.isFinite(percent)
+                      ? Math.min(10_000, Math.max(0, Math.round(percent * 100)))
+                      : 0,
+                  });
+                }}
+                className="w-28"
+              />
+            </Field>
+          </FieldGroup>
+          <div className="flex flex-col gap-3">
+            <Label>
+              <Checkbox
+                checked={refund.suspendOnRequest}
+                disabled={busy || !initial}
+                onCheckedChange={(checked) => patch({ suspendOnRequest: checked === true })}
+              />
+              {tr('settings.store.refundSuspend')}
+            </Label>
+            <Label>
+              <Checkbox
+                checked={refund.terminateOnApprove}
+                disabled={busy || !initial}
+                onCheckedChange={(checked) => patch({ terminateOnApprove: checked === true })}
+              />
+              {tr('settings.store.refundTerminate')}
+            </Label>
+            <Label>
+              <Checkbox
+                checked={refund.oncePerOrder}
+                disabled={busy || !initial}
+                onCheckedChange={(checked) => patch({ oncePerOrder: checked === true })}
+              />
+              {tr('settings.store.refundOncePerOrder')}
+            </Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {error ? <p role="alert">{error}</p> : null}
+      <Button
+        disabled={busy || !initial}
+        onClick={() =>
+          start(async () => {
+            setError('');
+            try {
+              const response = await fetch('/api/plugins/store/admin/settings', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  provisioningMode: mode,
+                  refund: { ...refund, windowDays: resolvedWindowDays() },
+                }),
+              });
+              if (!response.ok) throw new Error();
+              router.refresh();
+            } catch {
+              setError(tr('settings.store.failed'));
+            }
+          })
+        }
+      >
+        {tr('settings.store.save')}
+      </Button>
+    </main>
+  );
 }
 
 function StoreApprovalsPage(props: AdminPageComponentProps) {
@@ -1807,6 +1987,8 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
               state: string;
               reason: string | null;
               failureReason: string | null;
+              serviceId?: string | null;
+              terminateError?: string | null;
             }>;
           }
         | undefined
@@ -1879,7 +2061,14 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id} className="plugin-table-row">
-                  <td className="p-3 font-mono text-xs">{row.orderId}</td>
+                  <td className="p-3 font-mono text-xs">
+                    {row.orderId}
+                    {row.serviceId ? (
+                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {tr('refund.fromService')}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="p-3">{row.userId}</td>
                   <td className="p-3 tabular-nums">
                     {money(row.amount, row.currency, props.locale)}
@@ -1891,6 +2080,13 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
                           reason: row.failureReason,
                         })
                       : stateLabel(row.state)}
+                    {/* 钱退了但机器没停：必须显式提醒运营手工处理，否则“已退款”
+                        的客户还在用一台没人付费的机器。 */}
+                    {row.terminateError ? (
+                      <p className="mt-1 text-[11px] text-destructive">
+                        {tr('refund.terminateFailed', { reason: row.terminateError })}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="p-3">
                     {row.state === 'PENDING' ? (

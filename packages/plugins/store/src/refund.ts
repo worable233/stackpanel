@@ -1,12 +1,16 @@
 import type { HttpRequest } from '@stackpanel/sdk';
-import { extensions, logger, runTransaction } from './context';
+import { context, extensions, logger, runTransaction } from './context';
 import { StoreError, stockItems } from './errors';
-import { getOrder } from './repository';
-import type { OrderRecord } from './repository';
+import { getOrder, getProduct, getService } from './repository';
+import type { OrderRecord, ServiceInstanceRecord } from './repository';
 import { orderModel, productModel, deliveryTaskModel, serviceInstanceModel, refundRequestModel } from './data';
 import { refundOrderSchema } from './utils';
 import { notifyAdmins, notifyUser } from './notifications';
 import { formatStoreMoney } from './currency';
+import { providerForProduct } from './fulfillment';
+import { refundPolicy } from './settings';
+import { computeRefundAmount, refundWindowEndsAt } from './refund-policy';
+import type { RefundPolicy } from './refund-policy';
 
 /**
  * 退款（refund）。
@@ -42,6 +46,14 @@ interface RefundRequestData {
   failureReason: string | null;
   destination: string;
   idempotencyKey: string | null;
+  /** 实例页发起的申请带服务 id；订单页发起为 null。 */
+  serviceId: string | null;
+  /** 申请时是否已把实例关机。 */
+  suspendApplied: boolean;
+  /** 审核通过后是否已向上游提交停用申请。 */
+  terminateApplied: boolean;
+  /** 停服失败原因（钱已退但机器没停时留给运营的手工任务）。 */
+  terminateError: string | null;
 }
 
 /**
@@ -242,9 +254,324 @@ export async function createRefundRequest(req: HttpRequest): Promise<unknown> {
     orderId, userId, amount, currency: order.settlementCurrency,
     reason: parsed.data.reason ?? null, state: 'PENDING', destination: 'WALLET',
     reviewerId: null, reviewReason: null, failureReason: null, idempotencyKey: null,
+    serviceId: null, suspendApplied: false, terminateApplied: false, terminateError: null,
   });
   await notifyAdmins({ type: 'order.refund.requested', title: '新的退款申请', body: `用户 ${userId} 申请订单 ${orderId} 退款。`, link: '/admin/plugin/store/refunds', data: { requestId: request.name, orderId, amount } });
   return { request: { id: request.name, orderId, amount, currency: order.settlementCurrency, status: 'PENDING', reason: parsed.data.reason ?? null } };
+}
+
+/* ---------------------- 实例页退款（服务级申请） ---------------------- */
+
+/** 服务级退款资格：政策窗口 + 政策金额 + 是否已提交过申请。 */
+export interface ServiceRefundEligibility {
+  eligible: boolean;
+  /** 不可申请时的原因（直接展示给客户）。 */
+  reason: string | null;
+  orderId: string | null;
+  orderAmount: number;
+  /** 政策允许退给客户的最大金额（已扣手续费）。 */
+  refundableAmount: number;
+  currency: string;
+  /** 申请截止时刻 ISO；null 表示不设截止（永久可申请）。 */
+  windowEndsAt: string | null;
+  policy: RefundPolicy;
+}
+
+/** 已占用订单退款额度的状态：这些状态下不允许再提一笔。 */
+const OCCUPYING_REFUND_STATES = new Set(['PENDING', 'PROCESSING', 'FAILED', 'SUCCEEDED']);
+
+/**
+ * 计算一个服务当前的退款资格。
+ *
+ * 资格查询与提交申请共用同一份推导：展示给客户的可退金额和最后真正退的金额
+ * 必须同源，否则就是「页面写 ¥47.60、实际退 ¥38」这类最伤信任的差异。
+ */
+async function evaluateServiceRefund(service: ServiceInstanceRecord): Promise<ServiceRefundEligibility> {
+  const policy = await refundPolicy();
+  const order = service.orderId ? await getOrder(service.orderId) : null;
+  const orderAmount = order ? order.settlementTotal : service.amount;
+  const currency = order ? order.settlementCurrency : service.currency;
+  // 窗口起点：开通时间最接近付款，且开通在前才可能退款；缺失时退化到订单创建时间。
+  const baseDate = service.provisionedAt ?? order?.createdAt ?? service.createdAt;
+  const baseMs = baseDate ? baseDate.getTime() : null;
+  const windowEnd = refundWindowEndsAt(baseMs, policy);
+  const nowMs = Date.now();
+  const refundableAmount = computeRefundAmount({
+    policy,
+    orderAmount,
+    periodStartMs: service.provisionedAt ? service.provisionedAt.getTime() : baseMs,
+    periodEndMs: service.expiresAt ? service.expiresAt.getTime() : null,
+    nowMs,
+  });
+  const skeleton: Omit<ServiceRefundEligibility, 'eligible' | 'reason'> = {
+    orderId: service.orderId,
+    orderAmount,
+    refundableAmount,
+    currency,
+    windowEndsAt: windowEnd ? new Date(windowEnd).toISOString() : null,
+    policy,
+  };
+  const deny = (reason: string): ServiceRefundEligibility => ({ ...skeleton, eligible: false, reason });
+  if (!policy.enabled) return deny('当前暂未开放退款');
+  if (!order || !service.orderId) return deny('该服务没有关联订单，无法自助退款');
+  if (order.userId !== service.userId) return deny('订单归属不一致，请联系客服');
+  if (!['PAID', 'PARTIALLY_REFUNDED'].includes(order.status)) return deny('订单当前状态不可退款');
+  if (isPartnerPrepaidOrder(order)) return deny('该订单不是平台收款订单');
+  if (service.status === 'TERMINATED') return deny('服务已终止');
+  if (service.status === 'PENDING_PROVISION' || service.status === 'PROVISIONING') {
+    return deny('服务正在开通中，请稍后再试');
+  }
+  if (policy.windowDays === 0) return deny('该服务不支持退款');
+  if (windowEnd !== null && nowMs > windowEnd) return deny('已超过可申请退款的时间窗口');
+  const requests = await extensions().listAll<RefundRequestData>(refundRequestModel, {
+    where: { orderId: { eq: order.id } },
+  });
+  const occupied = requests
+    .filter((r) => OCCUPYING_REFUND_STATES.has(r.spec.state))
+    .reduce((sum, r) => sum + r.spec.amount, 0);
+  if (policy.oncePerOrder && requests.some((r) => OCCUPYING_REFUND_STATES.has(r.spec.state))) {
+    return deny('该订单已提交过退款申请');
+  }
+  if (occupied >= orderAmount && policy.amountMode === 'full') return deny('订单没有可退余额');
+  if (refundableAmount <= 0) return deny('按当前退款政策，可退金额为 0');
+  return { ...skeleton, eligible: true, reason: null };
+}
+
+/** 实例页读退款资格（前端据此决定是否显示入口与金额）。 */
+export async function getServiceRefundEligibility(req: HttpRequest): Promise<unknown> {
+  const id = req.params['id'];
+  const userId = req.user?.id;
+  if (!id || !userId) throw new StoreError(400, '缺少服务或用户身份');
+  const service = await getService(id);
+  if (!service || service.userId !== userId) throw new StoreError(404, '服务不存在');
+  const eligibility = await evaluateServiceRefund(service);
+  const requests = service.orderId
+    ? await extensions().listAll<RefundRequestData>(refundRequestModel, {
+        where: { orderId: { eq: service.orderId } },
+      })
+    : [];
+  const latest = requests
+    .slice()
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+  return {
+    serviceId: id,
+    ...eligibility,
+    request: latest
+      ? {
+          id: latest.name,
+          state: latest.spec.state,
+          amount: latest.spec.amount,
+          serviceId: latest.spec.serviceId,
+          reason: latest.spec.reason,
+          reviewReason: latest.spec.reviewReason,
+        }
+      : null,
+  };
+}
+
+/**
+ * 从实例页提交退款申请。
+ *
+ * 顺序很关键：**先真的把实例停用，再落申请**。反过来的话，从「申请」到「停用」
+ * 之间（以及停用失败时）客户仍旧白用着机器，而我们已经在流程里承诺了退款。
+ * 停用是关机型（可逆），审核驳回后会自动恢复；不可逆的停用申请留到通过之后。
+ */
+export async function createServiceRefundRequest(req: HttpRequest): Promise<unknown> {
+  const id = req.params['id'];
+  const userId = req.user?.id;
+  if (!id || !userId) throw new StoreError(400, '缺少服务或用户身份');
+  const service = await getService(id);
+  if (!service || service.userId !== userId) throw new StoreError(404, '服务不存在');
+  const body = (req.body ?? {}) as { reason?: unknown };
+  const eligibility = await evaluateServiceRefund(service);
+  if (!eligibility.eligible) {
+    throw new StoreError(409, `无法申请退款：${eligibility.reason ?? '不满足退款条件'}`);
+  }
+  const orderId = eligibility.orderId;
+  if (!orderId) throw new StoreError(409, '该服务没有关联订单');
+  const order = await getOrder(orderId);
+  if (!order) throw new StoreError(404, '订单不存在');
+  let suspendApplied = false;
+  if (eligibility.policy.suspendOnRequest) {
+    try {
+      await runServiceLifecycle(service, 'suspend');
+      suspendApplied = true;
+      await extensions().updateWhere(
+        serviceInstanceModel,
+        { name: { eq: service.id } },
+        { state: { set: 'SUSPENDED' } },
+      );
+    } catch (error) {
+      // 停不掉就别建申请：申请存在但机器还在跑，是最坏的一种「已承诺未执行」。
+      throw new StoreError(502, `实例停用失败，请稍后重试：${messageOf(error).slice(0, 120)}`);
+    }
+  }
+  const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : null;
+  const request = await extensions().create<RefundRequestData>(refundRequestModel, {
+    orderId,
+    userId,
+    amount: eligibility.refundableAmount,
+    currency: eligibility.currency,
+    reason: reason && reason.length > 0 ? reason : null,
+    state: 'PENDING',
+    destination: 'WALLET',
+    reviewerId: null,
+    reviewReason: null,
+    failureReason: null,
+    idempotencyKey: null,
+    serviceId: service.id,
+    suspendApplied,
+    terminateApplied: false,
+    terminateError: null,
+  });
+  await notifyAdmins({
+    type: 'order.refund.requested',
+    title: '新的退款申请',
+    body: `用户 ${userId} 为服务「${service.productName}」申请退款 ${formatStoreMoney(eligibility.refundableAmount, eligibility.currency)}（实例已停用）。`,
+    link: '/admin/plugin/store/refunds',
+    data: { requestId: request.name, orderId, serviceId: service.id, amount: eligibility.refundableAmount },
+  });
+  await notifyUser({
+    userId,
+    type: 'order.refund.submitted',
+    title: '退款申请已提交',
+    body: `实例已停用，退款申请审核中。可退金额 ${formatStoreMoney(eligibility.refundableAmount, eligibility.currency)}，审核通过后进入平台余额。`,
+    link: `/account/services`,
+    data: { requestId: request.name, serviceId: service.id, amount: eligibility.refundableAmount },
+    dedupeKey: `store:refund:${request.name}:created`,
+  });
+  return {
+    request: {
+      id: request.name,
+      orderId,
+      serviceId: service.id,
+      amount: eligibility.refundableAmount,
+      currency: eligibility.currency,
+      status: 'PENDING',
+      reason: request.spec.reason,
+    },
+    serviceSuspended: suspendApplied,
+  };
+}
+
+/**
+ * 在一个实例上执行上游生命周期动作（suspend / resume / terminate）。
+ *
+ * 与到期扫描同构：绑定了上游却解析不到提供方或钩子时必须抛错，绝不能静默当作
+ * 成功——那会让「已停用」「已恢复」变成一句谎话。本地交付物无外部副作用，保持
+ * no-op 成功。
+ */
+async function runServiceLifecycle(
+  service: ServiceInstanceRecord,
+  action: 'suspend' | 'resume' | 'terminate',
+): Promise<void> {
+  const product = await getProduct(service.productId);
+  const provider = providerForProduct({
+    providerId: service.providerId ?? product?.providerId ?? null,
+    fulfillmentType: service.fulfillmentType,
+  });
+  const hook = provider
+    ? action === 'suspend'
+      ? provider.suspend
+      : action === 'resume'
+        ? provider.resume
+        : provider.terminate
+    : undefined;
+  const expectsUpstream = Boolean(service.providerId || service.providerServiceId);
+  if (!provider || !hook) {
+    if (expectsUpstream) {
+      throw new Error(
+        `未找到可执行 ${action} 的上游提供方（providerId=${service.providerId ?? 'null'}）`,
+      );
+    }
+    return;
+  }
+  await hook.call(provider, {
+    service: {
+      id: service.id,
+      providerId: service.providerId,
+      providerServiceId: service.providerServiceId,
+      runtime: service.runtime,
+      credentialsRef: service.credentialsRef,
+      userId: service.userId,
+      orderId: service.orderId,
+      productId: service.productId,
+      productName: service.productName,
+      status: service.status,
+      expiresAt: service.expiresAt ? service.expiresAt.toISOString() : null,
+    },
+    secrets: context().secrets,
+  });
+}
+
+/**
+ * 审核驳回后恢复实例（申请时关过机才需要）。
+ *
+ * 恢复失败不回滚驳回结论：申请状态是人的决定，机器状态是运维事实。失败要留痕
+ * 并通知运营，否则客户看到的是一台「被驳回但还停着」的机器。
+ */
+async function resumeServiceAfterReject(spec: RefundRequestData): Promise<void> {
+  if (!spec.serviceId || !spec.suspendApplied) return;
+  const service = await getService(spec.serviceId);
+  if (!service || service.status === 'TERMINATED') return;
+  try {
+    await runServiceLifecycle(service, 'resume');
+    await extensions().updateWhere(
+      serviceInstanceModel,
+      { name: { eq: service.id }, state: { eq: 'SUSPENDED' } },
+      { state: { set: 'ACTIVE' } },
+    );
+  } catch (error) {
+    const reason = messageOf(error).slice(0, 191);
+    logger().warn(`store: refund rejected but resume failed for service ${service.id}: ${reason}`);
+    await notifyAdmins({
+      type: 'store.refund.resume-failed',
+      title: '退款驳回后实例未恢复',
+      body: `服务 ${service.productName}（${service.id}）恢复失败：${reason}。请手工开机。`,
+      link: `/admin/plugin/store/services`,
+      data: { serviceId: service.id, error: reason },
+    });
+  }
+}
+
+/**
+ * 审核通过后向上游提交停用申请（不可逆）。
+ *
+ * 钱先退、机器后停：停服失败不能让客户拿不到已批准的钱。失败写回申请并通知运营，
+ * 由人来决定是补刀还是换机。
+ */
+async function terminateServiceAfterApprove(
+  spec: RefundRequestData,
+  requestId: string,
+): Promise<{ applied: boolean; error: string | null }> {
+  if (!spec.serviceId) return { applied: false, error: null };
+  // 政策在审核时才读：运营可能在客户提交后把「通过即停服」关掉，用申请时的快照
+  // 会逆着最新政策动手。
+  const policy = await refundPolicy();
+  if (!policy.terminateOnApprove) return { applied: false, error: null };
+  const service = await getService(spec.serviceId);
+  if (!service) return { applied: false, error: null };
+  if (service.status === 'TERMINATED') return { applied: true, error: null };
+  try {
+    await runServiceLifecycle(service, 'terminate');
+    await extensions().updateWhere(
+      serviceInstanceModel,
+      { name: { eq: service.id } },
+      { state: { set: 'TERMINATED' } },
+    );
+    return { applied: true, error: null };
+  } catch (error) {
+    const reason = messageOf(error).slice(0, 191);
+    logger().warn(`store: refund ${requestId} approved but terminate failed for service ${service.id}: ${reason}`);
+    await notifyAdmins({
+      type: 'store.refund.terminate-failed',
+      title: '退款已批准但上游停用失败',
+      body: `服务 ${service.productName}（${service.id}）退款已退入余额，但上游停用失败：${reason}。请手工停用。`,
+      link: `/admin/plugin/store/services`,
+      data: { serviceId: service.id, requestId, error: reason },
+    });
+    return { applied: false, error: reason };
+  }
 }
 
 export async function listRefundRequests(req: HttpRequest, admin: boolean): Promise<unknown> {
@@ -296,7 +623,9 @@ export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {
   }
   if (decision === 'reject') {
     await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'REJECTED', reviewerId, reviewReason: typeof body.reason === 'string' ? body.reason.slice(0, 191) : '管理员拒绝', failureReason: null });
-    await notifyUser({ userId: request.spec.userId, type: 'order.refund.rejected', title: '退款申请未通过', body: '管理员未批准本次退款申请。', link: '/account/orders', data: { requestId: id }, dedupeKey: `store:refund:${id}:rejected` });
+    // 申请时把实例关过机 → 驳回必须还回去。否则「拒绝退款」顺手把客户的服务停了。
+    await resumeServiceAfterReject(request.spec);
+    await notifyUser({ userId: request.spec.userId, type: 'order.refund.rejected', title: '退款申请未通过', body: request.spec.serviceId ? '管理员未批准本次退款申请，实例已恢复运行。' : '管理员未批准本次退款申请。', link: request.spec.serviceId ? '/account/services' : '/account/orders', data: { requestId: id, serviceId: request.spec.serviceId }, dedupeKey: `store:refund:${id}:rejected` });
     return { request: { id, status: 'REJECTED' } };
   }
   const claimed = await runTransaction(async tx => {
@@ -319,8 +648,11 @@ export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {
     // `reason` 在申请里可为 null，而 `refundOrderSchema.reason` 是可选字符串：
     // 原样透传 null 会让内层校验失败，把整笔退款误判为「请求参数无效」。
     const result = await refundOrder({ params: { id: request.spec.orderId }, body: { amount: request.spec.amount, ...(request.spec.reason ? { reason: request.spec.reason } : {}), refundRequestId: id, ...(confirmNoUpstreamInstance ? { confirmNoUpstreamInstance: true } : {}) }, user: req.user } as never);
-    await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'SUCCEEDED', reviewerId, reviewReason: confirmNoUpstreamInstance ? '运营确认上游无实例后授权退款' : request.spec.reviewReason, failureReason: null });
-    await notifyUser({ userId: request.spec.userId, type: 'order.refund.succeeded', title: '退款已到账', body: `退款已退入 StackPanel 平台余额，不会退回真实支付账户。`, link: '/account/orders', data: { requestId: id, amount: request.spec.amount, destination: 'PLATFORM_WALLET' }, dedupeKey: `store:refund:${id}:succeeded` });
+    // 钱先进余额（客户优先），随后把上游停掉。停服失败不让退款翻回失败态：
+    // 钱已经退了，把结论改成「失败」会让运营重复退款。失败只留痕并告警。
+    const stop = await terminateServiceAfterApprove(request.spec, id);
+    await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'SUCCEEDED', reviewerId, reviewReason: confirmNoUpstreamInstance ? '运营确认上游无实例后授权退款' : request.spec.reviewReason, failureReason: null, terminateApplied: stop.applied, terminateError: stop.error });
+    await notifyUser({ userId: request.spec.userId, type: 'order.refund.succeeded', title: '退款已到账', body: request.spec.serviceId ? `退款已退入 StackPanel 平台余额（不会退回真实支付账户），实例已按退款完成停用。` : `退款已退入 StackPanel 平台余额，不会退回真实支付账户。`, link: request.spec.serviceId ? '/account/services' : '/account/orders', data: { requestId: id, amount: request.spec.amount, destination: 'PLATFORM_WALLET', serviceId: request.spec.serviceId }, dedupeKey: `store:refund:${id}:succeeded` });
     return { request: { id, status: 'SUCCEEDED' }, result };
   } catch (error) {
     const reason = error instanceof Error ? error.message : '退款执行失败';

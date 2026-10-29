@@ -12,14 +12,21 @@ import type {
 import { EXTENSION_POINTS, readCheckoutConfig } from '@stackpanel/sdk';
 import { bus, context, logger, runTransaction } from './context';
 import { z } from 'zod';
-import { deliveryTaskModel, orderModel, serviceInstanceModel, type StoreDeliveryTaskData, type StoreServiceInstanceData } from './data';
+import {
+  deliveryTaskModel,
+  orderModel,
+  serviceInstanceModel,
+  type StoreDeliveryTaskData,
+  type StoreServiceInstanceData,
+} from './data';
 import { notifyAdmins, notifyUser } from './notifications';
 import { StoreError } from './errors';
 import { storeSettings } from './settings';
 import { auditActor, recordStoreAudit } from './audit';
 import { stockItems } from './errors';
 import { productTypeById } from './product-types';
-import { initialExpiryAt } from './utils';
+import { initialExpiryAt, monthsForCycle, readCycles } from './utils';
+import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
 import {
   claimTask,
   approveDeliveryTask,
@@ -116,54 +123,59 @@ export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
     if (!product) continue;
     seen.add(line.productId);
     // Never expand a legacy batch: it may already have created all remote units.
-    if (existing.some(task => task.productId === line.productId && task.quantity > 1)) continue;
+    if (existing.some((task) => task.productId === line.productId && task.quantity > 1)) continue;
     for (let unitIndex = 0; unitIndex < line.quantity; unitIndex++) {
-    const snapshot: TaskProductSnapshot = {
-      name: product.name,
-      price: line.price ?? product.price,
-      currency: product.currency,
-      metadata: product.metadata,
-      providerProductId: product.providerProductId,
-      ...(line.config !== undefined && line.config !== null ? { config: line.config } : {}),
-    };
-    const createdTask = await createTaskInstance({
-      orderId: order.id,
-      productId: product.id,
-      userId: order.userId,
-      productName: product.name,
-      fulfillmentType: product.fulfillmentType,
-      providerId: product.providerId,
-      quantity: 1,
-      state: policy.provisioningMode === 'manual' ? 'AWAITING_APPROVAL' : 'PENDING',
-      attempts: 0,
-      maxAttempts: 3,
-      error: null,
-      payload: snapshot,
-      serviceId: null,
-      nextAttemptAtMs: 0,
-    }, unitIndex);
-    // Make a paid instance visible before the provider finishes provisioning.
-    // Deterministic instance identity also deduplicates concurrent initialization.
-    if (!createdTask.serviceId) {
-      await createServiceInstance(
+      const snapshot: TaskProductSnapshot = {
+        name: product.name,
+        price: line.price ?? product.price,
+        currency: product.currency,
+        metadata: product.metadata,
+        providerProductId: product.providerProductId,
+        ...(line.config !== undefined && line.config !== null ? { config: line.config } : {}),
+      };
+      const createdTask = await createTaskInstance(
         {
-          userId: order.userId,
           orderId: order.id,
           productId: product.id,
-          productName: (line.config as CheckoutSelection | undefined)?.instanceName ?? product.name,
+          userId: order.userId,
+          productName: product.name,
           fulfillmentType: product.fulfillmentType,
           providerId: product.providerId,
-          providerServiceId: null,
-          state: createdTask.status === 'AWAITING_APPROVAL' ? 'AWAITING_APPROVAL' : 'PROVISIONING',
-          credentialsRef: null,
-          runtime: mergeRuntime(undefined, line.config as CheckoutSelection | undefined),
-          amount: line.price ?? product.price,
-          currency: product.currency,
-          provisionedAt: null,
+          quantity: 1,
+          state: policy.provisioningMode === 'manual' ? 'AWAITING_APPROVAL' : 'PENDING',
+          attempts: 0,
+          maxAttempts: 3,
+          error: null,
+          payload: snapshot,
+          serviceId: null,
+          nextAttemptAtMs: 0,
         },
-        `instance-${createdTask.id}`,
+        unitIndex,
       );
-    }
+      // Make a paid instance visible before the provider finishes provisioning.
+      // Deterministic instance identity also deduplicates concurrent initialization.
+      if (!createdTask.serviceId) {
+        await createServiceInstance(
+          {
+            userId: order.userId,
+            orderId: order.id,
+            productId: product.id,
+            productName:
+              (line.config as CheckoutSelection | undefined)?.instanceName ?? product.name,
+            fulfillmentType: product.fulfillmentType,
+            providerId: product.providerId,
+            providerServiceId: null,
+            state:
+              createdTask.status === 'AWAITING_APPROVAL' ? 'AWAITING_APPROVAL' : 'PROVISIONING',
+            credentialsRef: null,
+            runtime: mergeRuntime(undefined, line.config as CheckoutSelection | undefined),
+            amount: line.price ?? product.price,
+            currency: product.currency,
+            provisionedAt: null,
+          },
+          `instance-${createdTask.id}`,
+        );
+      }
     }
   }
   if (hasRenewal) {
@@ -234,12 +246,20 @@ async function runTask(taskId: string): Promise<void> {
     return;
   }
 
-  if (product.providerId !== task.providerId || ((task.payload as Partial<TaskProductSnapshot> | null)?.providerProductId !== undefined && (task.payload as Partial<TaskProductSnapshot>).providerProductId !== product.providerProductId)) {
+  if (
+    product.providerId !== task.providerId ||
+    ((task.payload as Partial<TaskProductSnapshot> | null)?.providerProductId !== undefined &&
+      (task.payload as Partial<TaskProductSnapshot>).providerProductId !==
+        product.providerProductId)
+  ) {
     await markTaskFailed(taskId, '商品上游映射已变更，请核对原订单后处理');
     return;
   }
-  const originalSource = (task.payload as { metadata?: { upstream?: { sourceRef?: string } } } | null)?.metadata?.upstream?.sourceRef;
-  const currentSource = (product.metadata as { upstream?: { sourceRef?: string } } | null)?.upstream?.sourceRef;
+  const originalSource = (
+    task.payload as { metadata?: { upstream?: { sourceRef?: string } } } | null
+  )?.metadata?.upstream?.sourceRef;
+  const currentSource = (product.metadata as { upstream?: { sourceRef?: string } } | null)?.upstream
+    ?.sourceRef;
   if (originalSource !== currentSource) {
     await markTaskFailed(taskId, '商品上游来源已变更，请核对原订单后处理');
     return;
@@ -276,7 +296,8 @@ async function runTask(taskId: string): Promise<void> {
   const initialExpiry = initialExpiryAt(product.metadata, selection?.cycle, new Date());
   const provisionCtx: ProvisionContext = {
     fulfillmentId: task.id,
-    recoveryGeneration: (task.payload as { recoveryGeneration?: number } | null)?.recoveryGeneration ?? 0,
+    recoveryGeneration:
+      (task.payload as { recoveryGeneration?: number } | null)?.recoveryGeneration ?? 0,
     orderId: task.orderId,
     userId: task.userId,
     productId: task.productId,
@@ -293,19 +314,43 @@ async function runTask(taskId: string): Promise<void> {
     ...(selection ? { config: selection } : {}),
     expiresAt: initialExpiry ? initialExpiry.toISOString() : null,
     secrets: context().secrets,
-    resumePayment: placeholder.providerServiceId !== null && (task.payload as { resumePayment?: boolean } | null)?.resumePayment === true,
-    checkpoint: async result => {
+    resumePayment:
+      placeholder.providerServiceId !== null &&
+      (task.payload as { resumePayment?: boolean } | null)?.resumePayment === true,
+    checkpoint: async (result) => {
       if (!result.providerServiceId) throw new StoreError(409, '上游订单缺少实例标识，禁止付款');
-      await runTransaction(async tx => {
-        const currentTask = await tx.extensions.get<StoreDeliveryTaskData>(deliveryTaskModel, taskId);
-        const current = await tx.extensions.get<StoreServiceInstanceData>(serviceInstanceModel, placeholder.id);
-        if (!currentTask || !current || currentTask.spec.attempts !== task.attempts || !['RUNNING', 'REQUIRES_RECONCILIATION'].includes(currentTask.spec.state)) throw new StoreError(409, '开通任务已变更，禁止继续付款');
-        if (current.spec.providerServiceId && current.spec.providerServiceId !== result.providerServiceId) throw new StoreError(409, '上游实例标识不一致，禁止覆盖');
-        await tx.extensions.update(serviceInstanceModel, placeholder.id, {
-          ...current.spec, providerServiceId: result.providerServiceId,
-          state: result.runtime?.paid === true ? 'PROVISIONING' : 'AWAITING_UPSTREAM_PAYMENT',
-          runtime: mergeRuntime(result.runtime, provisionCtx.config),
-        }, { expectedVersion: current.version });
+      await runTransaction(async (tx) => {
+        const currentTask = await tx.extensions.get<StoreDeliveryTaskData>(
+          deliveryTaskModel,
+          taskId,
+        );
+        const current = await tx.extensions.get<StoreServiceInstanceData>(
+          serviceInstanceModel,
+          placeholder.id,
+        );
+        if (
+          !currentTask ||
+          !current ||
+          currentTask.spec.attempts !== task.attempts ||
+          !['RUNNING', 'REQUIRES_RECONCILIATION'].includes(currentTask.spec.state)
+        )
+          throw new StoreError(409, '开通任务已变更，禁止继续付款');
+        if (
+          current.spec.providerServiceId &&
+          current.spec.providerServiceId !== result.providerServiceId
+        )
+          throw new StoreError(409, '上游实例标识不一致，禁止覆盖');
+        await tx.extensions.update(
+          serviceInstanceModel,
+          placeholder.id,
+          {
+            ...current.spec,
+            providerServiceId: result.providerServiceId,
+            state: result.runtime?.paid === true ? 'PROVISIONING' : 'AWAITING_UPSTREAM_PAYMENT',
+            runtime: mergeRuntime(result.runtime, provisionCtx.config),
+          },
+          { expectedVersion: current.version },
+        );
       });
     },
   };
@@ -324,8 +369,9 @@ async function runTask(taskId: string): Promise<void> {
       fulfillmentType: task.fulfillmentType,
       providerId: product.providerId,
       providerServiceId: result.providerServiceId ?? null,
-      state:
-        awaitingPayment ? 'AWAITING_UPSTREAM_PAYMENT' : result.status === 'ACTIVE'
+      state: awaitingPayment
+        ? 'AWAITING_UPSTREAM_PAYMENT'
+        : result.status === 'ACTIVE'
           ? 'ACTIVE'
           : result.status === 'PENDING'
             ? 'PROVISIONING'
@@ -354,12 +400,22 @@ async function runTask(taskId: string): Promise<void> {
 
     await replaceTask(taskId, {
       ...toTaskData(task),
-      state: awaitingPayment ? 'REQUIRES_RECONCILIATION' : result.status === 'FAILED' ? 'FAILED' : 'SUCCEEDED',
+      state: awaitingPayment
+        ? 'REQUIRES_RECONCILIATION'
+        : result.status === 'FAILED'
+          ? 'FAILED'
+          : 'SUCCEEDED',
       serviceId: service.id,
       error: null,
     });
     if (awaitingPayment) {
-      await notifyAdmins({ type: 'admin.service.provision.failed', title: '上游订单付款待处理', body: `订单 ${task.orderId} 已取得上游实例标识，但付款尚未确认，请处理原账单，禁止重新下单。`, link: '/admin/plugin/store/approvals', data: { orderId: task.orderId, serviceId: service.id } });
+      await notifyAdmins({
+        type: 'admin.service.provision.failed',
+        title: '上游订单付款待处理',
+        body: `订单 ${task.orderId} 已取得上游实例标识，但付款尚未确认，请处理原账单，禁止重新下单。`,
+        link: '/admin/plugin/store/approvals',
+        data: { orderId: task.orderId, serviceId: service.id },
+      });
       return;
     }
     if (result.status === 'FAILED') return;
@@ -382,7 +438,12 @@ async function runTask(taskId: string): Promise<void> {
     const message = messageOf(error);
     if ((error as { retryableBeforeSubmit?: boolean })?.retryableBeforeSubmit === true) {
       // Provider guarantees this invocation never submitted a remote mutation.
-      await replaceTask(taskId, { ...toTaskData(task), state: 'PENDING', error: message, nextAttemptAtMs: Date.now() + 30_000 });
+      await replaceTask(taskId, {
+        ...toTaskData(task),
+        state: 'PENDING',
+        error: message,
+        nextAttemptAtMs: Date.now() + 30_000,
+      });
       return;
     }
     // Notifications/credential persistence can fail after provision succeeded.
@@ -391,7 +452,12 @@ async function runTask(taskId: string): Promise<void> {
     if (recorded?.providerServiceId) {
       await replaceTask(taskId, {
         ...toTaskData(task),
-        state: recorded.status === 'AWAITING_UPSTREAM_PAYMENT' ? 'REQUIRES_RECONCILIATION' : recorded.status === 'FAILED' ? 'FAILED' : 'SUCCEEDED',
+        state:
+          recorded.status === 'AWAITING_UPSTREAM_PAYMENT'
+            ? 'REQUIRES_RECONCILIATION'
+            : recorded.status === 'FAILED'
+              ? 'FAILED'
+              : 'SUCCEEDED',
         serviceId: recorded.id,
         error: message,
       });
@@ -417,11 +483,14 @@ async function runTask(taskId: string): Promise<void> {
         },
       });
       await notifyAdmins({
-        type: 'admin.service.provision.failed', title: '开通结果待核对',
+        type: 'admin.service.provision.failed',
+        title: '开通结果待核对',
         body: `订单 ${task.orderId} 的开通结果未确认，请核对上游实例，禁止直接重试。`,
         link: '/admin/plugin/store/approvals',
         data: { orderId: task.orderId, productId: task.productId, userId: task.userId },
-      }).catch(error => logger().error(`store: reconciliation notification failed: ${messageOf(error)}`));
+      }).catch((error) =>
+        logger().error(`store: reconciliation notification failed: ${messageOf(error)}`),
+      );
     }
   }
 }
@@ -459,12 +528,20 @@ export async function retryUnconfirmedProvisioning(nowMs = Date.now()): Promise<
           body: `订单 ${task.spec.orderId} 开通结果仍未确认，自动重试已用尽 ${task.spec.attempts}/${task.spec.maxAttempts}。请核对上游是否存在实例：无实例则在订单页退款（声明上游无实例）。`,
           link: '/admin/plugin/store/approvals',
           data: { orderId: task.spec.orderId, taskId: task.name, attempts: task.spec.attempts },
-        }).catch(error => logger().error(`store: exhaustion notification failed: ${messageOf(error)}`));
-        await context().extensions.updateWhere(
-          deliveryTaskModel,
-          { name: { eq: task.name }, state: { eq: 'REQUIRES_RECONCILIATION' }, attempts: { eq: task.spec.attempts } },
-          { exhaustedNotifiedAt: { set: new Date(nowMs).toISOString() } },
-        ).catch(() => undefined);
+        }).catch((error) =>
+          logger().error(`store: exhaustion notification failed: ${messageOf(error)}`),
+        );
+        await context()
+          .extensions.updateWhere(
+            deliveryTaskModel,
+            {
+              name: { eq: task.name },
+              state: { eq: 'REQUIRES_RECONCILIATION' },
+              attempts: { eq: task.spec.attempts },
+            },
+            { exhaustedNotifiedAt: { set: new Date(nowMs).toISOString() } },
+          )
+          .catch(() => undefined);
       }
       continue;
     }
@@ -504,20 +581,36 @@ export async function reconcileProvisioning(): Promise<void> {
         !['ACTIVE', 'SUSPENDED', 'FAILED', 'TERMINATED'].includes(detail.status)
       )
         continue;
-      await runTransaction(async tx => {
-        const current = await tx.extensions.get<StoreServiceInstanceData>(serviceInstanceModel, service.id);
-        if (!current || current.spec.state !== service.status || current.spec.providerServiceId !== service.providerServiceId) return;
+      await runTransaction(async (tx) => {
+        const current = await tx.extensions.get<StoreServiceInstanceData>(
+          serviceInstanceModel,
+          service.id,
+        );
+        if (
+          !current ||
+          current.spec.state !== service.status ||
+          current.spec.providerServiceId !== service.providerServiceId
+        )
+          return;
         // A remote service state is not proof of a financial transaction.
         // Preserve paymentState and the admin reconciliation task until the invoice is verified.
-        await tx.extensions.update(serviceInstanceModel, service.id, {
-          ...current.spec,
-          state: detail.status!,
-          provisionedAt: validProviderDate(detail.provisionedAt) ?? current.spec.provisionedAt ?? null,
-          ...(validProviderDate(detail.expiresAt) ? {
-            expiresAt: validProviderDate(detail.expiresAt)!,
-            expiresAtMs: Date.parse(detail.expiresAt!),
-          } : {}),
-        }, { expectedVersion: current.version });
+        await tx.extensions.update(
+          serviceInstanceModel,
+          service.id,
+          {
+            ...current.spec,
+            state: detail.status!,
+            provisionedAt:
+              validProviderDate(detail.provisionedAt) ?? current.spec.provisionedAt ?? null,
+            ...(validProviderDate(detail.expiresAt)
+              ? {
+                  expiresAt: validProviderDate(detail.expiresAt)!,
+                  expiresAtMs: Date.parse(detail.expiresAt!),
+                }
+              : {}),
+          },
+          { expectedVersion: current.version },
+        );
       });
     } catch (error) {
       logger().warn(`store: provisioning status ${service.id}: ${messageOf(error)}`);
@@ -527,7 +620,8 @@ export async function reconcileProvisioning(): Promise<void> {
 
 function validProviderDate(value: unknown): string | null {
   return typeof value === 'string' && Number.isFinite(Date.parse(value))
-    ? new Date(value).toISOString() : null;
+    ? new Date(value).toISOString()
+    : null;
 }
 
 const toServiceData = toServiceInstanceData;
@@ -601,7 +695,12 @@ export async function applyServiceLifecycleAction(
 /* ------------------------- 用户「我的服务」API ------------------------- */
 
 async function visibleServiceStatus(service: ServiceInstanceRecord): Promise<string> {
-  if (service.status !== 'PROVISIONING' || service.providerServiceId || !service.id.startsWith('instance-')) return service.status;
+  if (
+    service.status !== 'PROVISIONING' ||
+    service.providerServiceId ||
+    !service.id.startsWith('instance-')
+  )
+    return service.status;
   const task = await getTask(service.id.slice('instance-'.length));
   return task?.status === 'REQUIRES_RECONCILIATION' ? 'REQUIRES_RECONCILIATION' : service.status;
 }
@@ -615,9 +714,13 @@ export async function listMyServices(req: HttpRequest): Promise<unknown> {
   const query = (req.query ?? {}) as { includeTerminated?: string };
   const includeTerminated = query.includeTerminated === '1' || query.includeTerminated === 'true';
   const services = (await listServicesByUser(userId)).filter(
-    service => includeTerminated || service.status !== 'TERMINATED',
+    (service) => includeTerminated || service.status !== 'TERMINATED',
   );
-  const reviewStates = new Map(await Promise.all(services.map(async service => [service.id, await visibleServiceStatus(service)] as const)));
+  const reviewStates = new Map(
+    await Promise.all(
+      services.map(async (service) => [service.id, await visibleServiceStatus(service)] as const),
+    ),
+  );
   const products = new Map(
     await Promise.all(
       [...new Set(services.map((service) => service.productId).filter(Boolean))].map(
@@ -686,6 +789,14 @@ export async function getMyService(req: HttpRequest): Promise<unknown> {
       });
     }
   }
+  const renewal = await renewalInfo(service, userId);
+  // 前端用 `detail.status` / `detail.statusLabel` 展示状态，所以本地暂停/终止必须
+  // 同步改写到 detail 上：只改顶层字段前端根本看不到（上游会继续报「已激活」）。
+  const localOverride =
+    service.status === 'SUSPENDED' || service.status === 'TERMINATED' ? service.status : null;
+  const clientDetail = localOverride
+    ? { ...(detail ?? { fields: [] as never[] }), status: localOverride, statusLabel: null }
+    : detail;
   return {
     service: {
       id: service.id,
@@ -694,8 +805,17 @@ export async function getMyService(req: HttpRequest): Promise<unknown> {
       fulfillmentType: service.fulfillmentType,
       providerId: service.providerId,
       providerServiceId: service.providerServiceId,
-      status: service.status === 'AWAITING_UPSTREAM_PAYMENT' ? service.status : detail?.status ?? await visibleServiceStatus(service),
-      statusLabel: detail?.statusLabel ?? null,
+      status:
+        // 本地 state 是「流程/运营的意图」，上游 `detail.status` 只说明「服务在开通中」
+        // —— `Active` 与电源无关：机器被 power_off 后上游仍报 Active。所以本地
+        // 处于暂停/终止时必顶过上游，否则客户在实例页看到「已激活」，而机器
+        // 其实已经关了（退票冻结、到期暂停都会踩这个坑）。
+        localOverride ??
+        (service.status === 'AWAITING_UPSTREAM_PAYMENT'
+          ? service.status
+          : (detail?.status ?? (await visibleServiceStatus(service)))),
+      // 上游的「已激活」文案和本地暂停冲突，本地终态/暂停时交给 i18n 状态映射。
+      statusLabel: localOverride ? null : (detail?.statusLabel ?? null),
       title: detail?.title ?? service.productName,
       runtime: service.runtime,
       amount: service.amount,
@@ -703,8 +823,78 @@ export async function getMyService(req: HttpRequest): Promise<unknown> {
       expiresAt: service.expiresAt,
       provisionedAt: service.provisionedAt,
       createdAt: service.createdAt,
-      detail: detail ?? { fields: [] },
+      detail: clientDetail ?? { fields: [] },
+      renewal,
     },
+  };
+}
+
+/**
+ * 续费报价与续费订单使用同一套规则（商品续费价 → 现价，再叠加用户折扣），
+ * 让详情页展示的金额与实际扣款一致。
+ */
+async function renewalInfo(
+  service: ServiceInstanceRecord,
+  userId: string,
+): Promise<{ price: number; currency: string; months: number; cycle: string | null } | null> {
+  const product = await getProduct(service.productId);
+  if (!product) return null;
+  const runtime = service.runtime;
+  const config =
+    runtime && typeof runtime === 'object' && !Array.isArray(runtime)
+      ? (runtime as { config?: { cycle?: unknown } }).config
+      : undefined;
+  const configuredCycle = typeof config?.cycle === 'string' ? config.cycle : null;
+  const cycles = readCycles(product.metadata);
+  const cycle =
+    cycles?.find((candidate) => candidate.id === configuredCycle) ?? cycles?.[0] ?? null;
+  const base = cycle?.renewPrice ?? cycle?.price ?? product.price;
+  const discount = betterDiscount(product.discount, await effectiveGroupDiscount(userId));
+  const price = applyDiscount(base, discount);
+  if (!Number.isInteger(price) || price < 0) return null;
+  const months =
+    cycle?.months && Number.isInteger(cycle.months) && cycle.months > 0
+      ? cycle.months
+      : monthsForCycle(cycle?.id ?? configuredCycle ?? undefined);
+  return { price, currency: product.currency, months, cycle: cycle?.id ?? configuredCycle };
+}
+
+/** 更新用户可见的实例名称与备注；仅写入本站 runtime，不触碰上游实例。 */
+export async function updateMyServiceMeta(req: HttpRequest): Promise<unknown> {
+  const userId = req.user?.id;
+  if (!userId) throw new StoreError(401, '未登录');
+  const id = req.params['id'];
+  if (!id) throw new StoreError(400, '缺少 ID');
+  const service = await getService(id);
+  if (!service) throw new StoreError(404, '服务不存在');
+  requireOwnedService(service, userId);
+  const body =
+    req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+  const rawName = typeof body['name'] === 'string' ? body['name'].trim() : undefined;
+  const rawRemark = typeof body['remark'] === 'string' ? body['remark'].trim() : undefined;
+  if (rawName !== undefined && rawName.length > 64) throw new StoreError(400, '实例名称过长');
+  if (rawRemark !== undefined && rawRemark.length > 500) throw new StoreError(400, '备注过长');
+  const baseRuntime =
+    service.runtime && typeof service.runtime === 'object' && !Array.isArray(service.runtime)
+      ? { ...(service.runtime as Record<string, unknown>) }
+      : {};
+  if (rawName !== undefined) {
+    if (rawName) baseRuntime['customName'] = rawName;
+    else delete baseRuntime['customName'];
+  }
+  if (rawRemark !== undefined) {
+    if (rawRemark) baseRuntime['remark'] = rawRemark;
+    else delete baseRuntime['remark'];
+  }
+  await replaceServiceInstance(service.id, {
+    ...toServiceData(service),
+    runtime: Object.keys(baseRuntime).length ? baseRuntime : null,
+  });
+  return {
+    ok: true,
+    // A nonce busts the App Router's cached RSC payload, so clearing a field is
+    // visible immediately after the sheet submits.
+    nextPath: `/account/services/${encodeURIComponent(service.id)}?updated=${Date.now()}`,
   };
 }
 
@@ -751,7 +941,13 @@ export async function runMyServiceAction(req: HttpRequest): Promise<unknown> {
     };
     await replaceServiceInstance(service.id, merged);
   }
-  return { ok: true, result: result ?? null };
+  return {
+    ok: true,
+    result: result ?? null,
+    // Console actions return a URL (VNC, one-time console); promote it so the
+    // dedicated frontend action can open it without a second round trip.
+    ...(typeof result?.url === 'string' && result.url ? { nextPath: result.url } : {}),
+  };
 }
 
 /* ------------------------- 增值运维：服务子资源 ------------------------- */
@@ -1043,97 +1239,230 @@ function isScalar(value: unknown): value is string | number | boolean {
 /* ------------------------- 管理端：履约任务/服务 ------------------------- */
 
 export async function listAdminDeliveryTasks(req: HttpRequest): Promise<unknown> {
-  const query = z.object({ status: z.string().optional(), orderId: z.string().optional(), page: z.coerce.number().int().min(1).default(1) }).parse(req.query);
+  const query = z
+    .object({
+      status: z.string().optional(),
+      orderId: z.string().optional(),
+      page: z.coerce.number().int().min(1).default(1),
+    })
+    .parse(req.query);
   const { status, orderId, page } = query;
   const { items, total } = await listTasksPage(page, 50, {
     ...(status ? { status } : {}),
     ...(orderId ? { orderId } : {}),
   });
   // Return only review data, never snapshots/configuration or provider errors containing secrets.
-  return { tasks: await Promise.all(items.map(async task => {
-    const service = await getService(task.serviceId ?? `instance-${task.id}`);
-    const runtime = service?.runtime as { invoiceId?: string; paymentState?: string } | null;
-    // 自动重试是有界的（`retryUnconfirmedProvisioning` 到 maxAttempts 就停手）。用尽
-    // 之后订单不会自己往前走，既不重试也不退款 —— 如果不显式标出来，付了钱没拿到
-    // 机器的单就永远躺在「待核对」里没人知道（真实案例：上游购物车锁竞争，3 次用尽）。
-    const retryExhausted = task.status === 'REQUIRES_RECONCILIATION' && task.attempts >= task.maxAttempts;
-    return {
-    id: task.id, orderId: task.orderId, userId: task.userId, productName: task.productName,
-    productId: task.productId, quantity: task.quantity, status: task.status,
-    attempts: task.attempts, maxAttempts: task.maxAttempts, retryExhausted, createdAt: task.createdAt,
-    upstreamServiceId: service?.providerServiceId ?? null,
-    invoiceId: runtime?.invoiceId ?? null, paymentState: runtime?.paymentState ?? null,
-    canResumePayment: service?.status === 'AWAITING_UPSTREAM_PAYMENT' && Boolean(service.providerServiceId && runtime?.invoiceId && ['ORDER_CREATED', 'PAYMENT_REQUIRED'].includes(runtime.paymentState ?? '')),
-    reason: task.status !== 'REQUIRES_RECONCILIATION' ? null
-      : retryExhausted
-        ? '自动重试已用尽，需人工核对上游：确认无实例请在订单页退款'
-        : '开通请求结果未确认，请核对上游实例后处理',
-  }; })), total, page, pageSize: 50 };
+  return {
+    tasks: await Promise.all(
+      items.map(async (task) => {
+        const service = await getService(task.serviceId ?? `instance-${task.id}`);
+        const runtime = service?.runtime as { invoiceId?: string; paymentState?: string } | null;
+        // 自动重试是有界的（`retryUnconfirmedProvisioning` 到 maxAttempts 就停手）。用尽
+        // 之后订单不会自己往前走，既不重试也不退款 —— 如果不显式标出来，付了钱没拿到
+        // 机器的单就永远躺在「待核对」里没人知道（真实案例：上游购物车锁竞争，3 次用尽）。
+        const retryExhausted =
+          task.status === 'REQUIRES_RECONCILIATION' && task.attempts >= task.maxAttempts;
+        return {
+          id: task.id,
+          orderId: task.orderId,
+          userId: task.userId,
+          productName: task.productName,
+          productId: task.productId,
+          quantity: task.quantity,
+          status: task.status,
+          attempts: task.attempts,
+          maxAttempts: task.maxAttempts,
+          retryExhausted,
+          createdAt: task.createdAt,
+          upstreamServiceId: service?.providerServiceId ?? null,
+          invoiceId: runtime?.invoiceId ?? null,
+          paymentState: runtime?.paymentState ?? null,
+          canResumePayment:
+            service?.status === 'AWAITING_UPSTREAM_PAYMENT' &&
+            Boolean(
+              service.providerServiceId &&
+              runtime?.invoiceId &&
+              ['ORDER_CREATED', 'PAYMENT_REQUIRED'].includes(runtime.paymentState ?? ''),
+            ),
+          reason:
+            task.status !== 'REQUIRES_RECONCILIATION'
+              ? null
+              : retryExhausted
+                ? '自动重试已用尽，需人工核对上游：确认无实例请在订单页退款'
+                : '开通请求结果未确认，请核对上游实例后处理',
+        };
+      }),
+    ),
+    total,
+    page,
+    pageSize: 50,
+  };
 }
 
 export async function resumeAdminDeliveryPayment(req: HttpRequest): Promise<unknown> {
-  z.object({ confirmed: z.literal(true) }).strict().parse(req.body);
+  z.object({ confirmed: z.literal(true) })
+    .strict()
+    .parse(req.body);
   const id = req.params['id'];
   if (!id) throw new StoreError(400, '缺少任务 ID');
-  await runTransaction(async tx => {
+  await runTransaction(async (tx) => {
     const task = await tx.extensions.get<StoreDeliveryTaskData>(deliveryTaskModel, id);
-    if (!task || task.spec.state !== 'REQUIRES_RECONCILIATION') throw new StoreError(409, '任务不在待核对状态');
-    const paid = await tx.extensions.updateWhere(orderModel, { name: { eq: task.spec.orderId }, state: { eq: 'PAID' } }, { state: { set: 'PAID' } });
+    if (!task || task.spec.state !== 'REQUIRES_RECONCILIATION')
+      throw new StoreError(409, '任务不在待核对状态');
+    const paid = await tx.extensions.updateWhere(
+      orderModel,
+      { name: { eq: task.spec.orderId }, state: { eq: 'PAID' } },
+      { state: { set: 'PAID' } },
+    );
     if (paid.updated !== 1) throw new StoreError(409, '订单未付款或已退款');
-    const service = await tx.extensions.get<StoreServiceInstanceData>(serviceInstanceModel, task.spec.serviceId ?? `instance-${id}`);
+    const service = await tx.extensions.get<StoreServiceInstanceData>(
+      serviceInstanceModel,
+      task.spec.serviceId ?? `instance-${id}`,
+    );
     const runtime = service?.spec.runtime as { invoiceId?: string; paymentState?: string } | null;
-    if (!service || service.spec.orderId !== task.spec.orderId || service.spec.userId !== task.spec.userId || service.spec.state !== 'AWAITING_UPSTREAM_PAYMENT' || !service.spec.providerServiceId || !runtime?.invoiceId || !['ORDER_CREATED', 'PAYMENT_REQUIRED'].includes(runtime.paymentState ?? '')) throw new StoreError(409, '原账单不存在、已付款或付款结果未知，禁止重试');
-    await tx.extensions.update(deliveryTaskModel, id, {
-      ...task.spec, state: 'PENDING', nextAttemptAtMs: 0,
-      payload: { ...((task.spec.payload as Record<string, unknown>) ?? {}), resumePayment: true },
-    }, { expectedVersion: task.version });
+    if (
+      !service ||
+      service.spec.orderId !== task.spec.orderId ||
+      service.spec.userId !== task.spec.userId ||
+      service.spec.state !== 'AWAITING_UPSTREAM_PAYMENT' ||
+      !service.spec.providerServiceId ||
+      !runtime?.invoiceId ||
+      !['ORDER_CREATED', 'PAYMENT_REQUIRED'].includes(runtime.paymentState ?? '')
+    )
+      throw new StoreError(409, '原账单不存在、已付款或付款结果未知，禁止重试');
+    await tx.extensions.update(
+      deliveryTaskModel,
+      id,
+      {
+        ...task.spec,
+        state: 'PENDING',
+        nextAttemptAtMs: 0,
+        payload: { ...((task.spec.payload as Record<string, unknown>) ?? {}), resumePayment: true },
+      },
+      { expectedVersion: task.version },
+    );
   });
-  await recordStoreAudit({ action: 'store.provision.resume-payment', resource: 'store.delivery-task', resourceId: id, ...auditActor(req) });
+  await recordStoreAudit({
+    action: 'store.provision.resume-payment',
+    resource: 'store.delivery-task',
+    resourceId: id,
+    ...auditActor(req),
+  });
   return { queued: true };
 }
 
 /** Verification queues a new manual review; it never creates or pays an upstream order. */
 export async function recoverAdminDeliveryTask(req: HttpRequest): Promise<unknown> {
-  z.object({ confirmed: z.literal(true) }).strict().parse(req.body);
+  z.object({ confirmed: z.literal(true) })
+    .strict()
+    .parse(req.body);
   const id = req.params['id'];
-  const task = id ? await context().extensions.get<StoreDeliveryTaskData>(deliveryTaskModel, id) : null;
+  const task = id
+    ? await context().extensions.get<StoreDeliveryTaskData>(deliveryTaskModel, id)
+    : null;
   if (!task || task.spec.state !== 'REQUIRES_RECONCILIATION' || task.spec.quantity !== 1)
     throw new StoreError(409, '仅单台待核对任务可以申请重开');
   const verifiedTaskVersion = task.version;
   const product = await getProduct(task.spec.productId);
   if (!product) throw new StoreError(409, '商品不存在');
   const snapshot = task.spec.payload as TaskProductSnapshot & { recoveryGeneration?: number };
-  if (!snapshot || product.providerId !== task.spec.providerId || product.providerProductId !== snapshot.providerProductId || JSON.stringify(product.metadata) !== JSON.stringify(snapshot.metadata))
+  if (
+    !snapshot ||
+    product.providerId !== task.spec.providerId ||
+    product.providerProductId !== snapshot.providerProductId ||
+    JSON.stringify(product.metadata) !== JSON.stringify(snapshot.metadata)
+  )
     throw new StoreError(409, '商品上游配置已变更，请先核对原订单');
   const generation = (snapshot.recoveryGeneration ?? 0) + 1;
   const provider = providerForProduct(product);
   if (!provider?.verifyCancelledProvision) throw new StoreError(409, '提供方不支持原账单取消核验');
   const evidence = await provider.verifyCancelledProvision({
-    fulfillmentId: id!, recoveryGeneration: generation,
-    orderId: task.spec.orderId, productId: task.spec.productId, userId: task.spec.userId,
-    quantity: 1, product, ...(snapshot.config ? { config: snapshot.config as CheckoutSelection } : {}), secrets: context().secrets,
+    fulfillmentId: id!,
+    recoveryGeneration: generation,
+    orderId: task.spec.orderId,
+    productId: task.spec.productId,
+    userId: task.spec.userId,
+    quantity: 1,
+    product,
+    ...(snapshot.config ? { config: snapshot.config as CheckoutSelection } : {}),
+    secrets: context().secrets,
   });
-  if (!evidence.requests.length || evidence.requests.length !== generation || !Number.isFinite(Date.parse(evidence.checkedAt)) || Math.abs(Date.now() - Date.parse(evidence.checkedAt)) > 60_000)
+  if (
+    !evidence.requests.length ||
+    evidence.requests.length !== generation ||
+    !Number.isFinite(Date.parse(evidence.checkedAt)) ||
+    Math.abs(Date.now() - Date.parse(evidence.checkedAt)) > 60_000
+  )
     throw new StoreError(409, '原请求核验证据不完整或已过期');
-  await runTransaction(async tx => {
-    const paid = await tx.extensions.updateWhere(orderModel, { name: { eq: task.spec.orderId }, state: { eq: 'PAID' } }, { state: { set: 'PAID' } });
+  await runTransaction(async (tx) => {
+    const paid = await tx.extensions.updateWhere(
+      orderModel,
+      { name: { eq: task.spec.orderId }, state: { eq: 'PAID' } },
+      { state: { set: 'PAID' } },
+    );
     if (paid.updated !== 1) throw new StoreError(409, '仅已付款且未退款订单可以重新申请');
     const current = await tx.extensions.get<StoreDeliveryTaskData>(deliveryTaskModel, id!);
-    if (!current || current.version !== verifiedTaskVersion || current.spec.state !== 'REQUIRES_RECONCILIATION') throw new StoreError(409, '任务已变更，请重新核验');
+    if (
+      !current ||
+      current.version !== verifiedTaskVersion ||
+      current.spec.state !== 'REQUIRES_RECONCILIATION'
+    )
+      throw new StoreError(409, '任务已变更，请重新核验');
     const serviceId = current.spec.serviceId ?? `instance-${id}`;
-    const service = await tx.extensions.get<StoreServiceInstanceData>(serviceInstanceModel, serviceId);
-    if (!service || service.spec.orderId !== task.spec.orderId || service.spec.userId !== task.spec.userId) throw new StoreError(409, '实例归属已变更');
-    await tx.extensions.update(serviceInstanceModel, serviceId, {
-      ...service.spec, providerServiceId: null, credentialsRef: null, state: 'AWAITING_APPROVAL',
-      provisionedAt: null, expiresAt: null, expiresAtMs: null,
-      runtime: { config: snapshot.config ?? null, previousProvision: service.spec.runtime, recoveryGeneration: generation },
-    }, { expectedVersion: service.version });
-    await tx.extensions.update(deliveryTaskModel, id!, {
-      ...current.spec, state: 'AWAITING_APPROVAL', error: null, nextAttemptAtMs: 0,
-      payload: { ...snapshot, resumePayment: false, recoveryGeneration: generation, recoveryEvidence: evidence },
-    }, { expectedVersion: current.version });
+    const service = await tx.extensions.get<StoreServiceInstanceData>(
+      serviceInstanceModel,
+      serviceId,
+    );
+    if (
+      !service ||
+      service.spec.orderId !== task.spec.orderId ||
+      service.spec.userId !== task.spec.userId
+    )
+      throw new StoreError(409, '实例归属已变更');
+    await tx.extensions.update(
+      serviceInstanceModel,
+      serviceId,
+      {
+        ...service.spec,
+        providerServiceId: null,
+        credentialsRef: null,
+        state: 'AWAITING_APPROVAL',
+        provisionedAt: null,
+        expiresAt: null,
+        expiresAtMs: null,
+        runtime: {
+          config: snapshot.config ?? null,
+          previousProvision: service.spec.runtime,
+          recoveryGeneration: generation,
+        },
+      },
+      { expectedVersion: service.version },
+    );
+    await tx.extensions.update(
+      deliveryTaskModel,
+      id!,
+      {
+        ...current.spec,
+        state: 'AWAITING_APPROVAL',
+        error: null,
+        nextAttemptAtMs: 0,
+        payload: {
+          ...snapshot,
+          resumePayment: false,
+          recoveryGeneration: generation,
+          recoveryEvidence: evidence,
+        },
+      },
+      { expectedVersion: current.version },
+    );
   });
-  await recordStoreAudit({ action: 'store.provision.recovery-requested', resource: 'store.delivery-task', resourceId: id!, ...auditActor(req), meta: { generation, checkedAt: evidence.checkedAt, sourceId: evidence.sourceId } });
+  await recordStoreAudit({
+    action: 'store.provision.recovery-requested',
+    resource: 'store.delivery-task',
+    resourceId: id!,
+    ...auditActor(req),
+    meta: { generation, checkedAt: evidence.checkedAt, sourceId: evidence.sourceId },
+  });
   return { awaitingApproval: true, generation };
 }
 
@@ -1141,52 +1470,154 @@ export async function recoverAdminDeliveryTask(req: HttpRequest): Promise<unknow
 export async function listAdminReconciliationCandidates(req: HttpRequest): Promise<unknown> {
   const task = req.params['id'] ? await getTask(req.params['id']) : null;
   if (!task) throw new StoreError(404, '任务不存在');
-  const source = (task.payload as { metadata?: { upstream?: { sourceRef?: string } } } | null)?.metadata?.upstream?.sourceRef;
-  return { services: (await listServicesByUser(task.userId)).filter(service =>
-    service.providerServiceId && !service.orderId && service.productId === task.productId && service.providerId === task.providerId &&
-    ['ACTIVE', 'SUSPENDED', 'PROVISIONING'].includes(service.status) &&
-    (!source || (service.runtime as { upstreamId?: string } | null)?.upstreamId === source),
-  ).map(service => ({ id: service.id, productName: service.productName, providerServiceId: service.providerServiceId, status: service.status })) };
+  const source = (task.payload as { metadata?: { upstream?: { sourceRef?: string } } } | null)
+    ?.metadata?.upstream?.sourceRef;
+  return {
+    services: (await listServicesByUser(task.userId))
+      .filter(
+        (service) =>
+          service.providerServiceId &&
+          !service.orderId &&
+          service.productId === task.productId &&
+          service.providerId === task.providerId &&
+          ['ACTIVE', 'SUSPENDED', 'PROVISIONING'].includes(service.status) &&
+          (!source || (service.runtime as { upstreamId?: string } | null)?.upstreamId === source),
+      )
+      .map((service) => ({
+        id: service.id,
+        productName: service.productName,
+        providerServiceId: service.providerServiceId,
+        status: service.status,
+      })),
+  };
 }
 
 export async function reconcileAdminDeliveryTask(req: HttpRequest): Promise<unknown> {
-  const body = z.discriminatedUnion('outcome', [
-    z.object({ outcome: z.literal('not_created'), confirmed: z.literal(true), note: z.string().trim().min(5).max(500) }).strict(),
-    z.object({ outcome: z.literal('existing'), serviceId: z.string().min(1), confirmed: z.literal(true), note: z.string().trim().min(5).max(500) }).strict(),
-  ]).parse(req.body);
+  const body = z
+    .discriminatedUnion('outcome', [
+      z
+        .object({
+          outcome: z.literal('not_created'),
+          confirmed: z.literal(true),
+          note: z.string().trim().min(5).max(500),
+        })
+        .strict(),
+      z
+        .object({
+          outcome: z.literal('existing'),
+          serviceId: z.string().min(1),
+          confirmed: z.literal(true),
+          note: z.string().trim().min(5).max(500),
+        })
+        .strict(),
+    ])
+    .parse(req.body);
   const id = req.params['id'];
   if (!id) throw new StoreError(400, '缺少任务 ID');
-  await runTransaction(async tx => {
+  await runTransaction(async (tx) => {
     const task = await tx.extensions.get<StoreDeliveryTaskData>(deliveryTaskModel, id);
-    if (!task || !['REQUIRES_RECONCILIATION', 'FAILED'].includes(task.spec.state)) throw new StoreError(409, '任务不在待核对状态');
-    if (body.outcome === 'not_created' && task.spec.attempts > 0) throw new StoreError(409, '请求已执行过，不能通过人工声明重新下单；请核对并关联原上游订单');
+    if (!task || !['REQUIRES_RECONCILIATION', 'FAILED'].includes(task.spec.state))
+      throw new StoreError(409, '任务不在待核对状态');
+    if (body.outcome === 'not_created' && task.spec.attempts > 0)
+      throw new StoreError(409, '请求已执行过，不能通过人工声明重新下单；请核对并关联原上游订单');
     // Same order lock as claim/refund: a refunded order cannot be recovered.
-    const paid = await tx.extensions.updateWhere(orderModel, { name: { eq: task.spec.orderId }, state: { eq: 'PAID' } }, { state: { set: 'PAID' } });
+    const paid = await tx.extensions.updateWhere(
+      orderModel,
+      { name: { eq: task.spec.orderId }, state: { eq: 'PAID' } },
+      { state: { set: 'PAID' } },
+    );
     if (paid.updated !== 1) throw new StoreError(409, '仅已付款订单可处理开通');
-    const placeholder = await tx.extensions.get<StoreServiceInstanceData>(serviceInstanceModel, `instance-${id}`);
-    if (!placeholder || placeholder.spec.providerServiceId || placeholder.spec.userId !== task.spec.userId || placeholder.spec.orderId !== task.spec.orderId) throw new StoreError(409, '实例关联已变更，请重新核对');
-    const runtime = { ...((placeholder.spec.runtime as Record<string, unknown>) ?? {}), provisioningReviewRequired: false };
-    let serviceSpec: StoreServiceInstanceData = { ...placeholder.spec, state: 'AWAITING_APPROVAL', runtime };
+    const placeholder = await tx.extensions.get<StoreServiceInstanceData>(
+      serviceInstanceModel,
+      `instance-${id}`,
+    );
+    if (
+      !placeholder ||
+      placeholder.spec.providerServiceId ||
+      placeholder.spec.userId !== task.spec.userId ||
+      placeholder.spec.orderId !== task.spec.orderId
+    )
+      throw new StoreError(409, '实例关联已变更，请重新核对');
+    const runtime = {
+      ...((placeholder.spec.runtime as Record<string, unknown>) ?? {}),
+      provisioningReviewRequired: false,
+    };
+    let serviceSpec: StoreServiceInstanceData = {
+      ...placeholder.spec,
+      state: 'AWAITING_APPROVAL',
+      runtime,
+    };
     if (body.outcome === 'existing') {
       // Only an already imported/verified resource belonging to this user and product can be used.
-      const bound = await tx.extensions.get<StoreServiceInstanceData>(serviceInstanceModel, body.serviceId);
-      if (!bound || !bound.spec.providerServiceId || bound.spec.orderId || bound.spec.userId !== task.spec.userId || bound.spec.productId !== task.spec.productId || bound.spec.providerId !== task.spec.providerId || !['ACTIVE', 'SUSPENDED', 'PROVISIONING'].includes(bound.spec.state)) throw new StoreError(409, '请选择已绑定到该用户、同一商品且未关联订单的上游实例');
-      const sourceRef = (task.spec.payload as { metadata?: { upstream?: { sourceRef?: string } } } | null)?.metadata?.upstream?.sourceRef;
+      const bound = await tx.extensions.get<StoreServiceInstanceData>(
+        serviceInstanceModel,
+        body.serviceId,
+      );
+      if (
+        !bound ||
+        !bound.spec.providerServiceId ||
+        bound.spec.orderId ||
+        bound.spec.userId !== task.spec.userId ||
+        bound.spec.productId !== task.spec.productId ||
+        bound.spec.providerId !== task.spec.providerId ||
+        !['ACTIVE', 'SUSPENDED', 'PROVISIONING'].includes(bound.spec.state)
+      )
+        throw new StoreError(409, '请选择已绑定到该用户、同一商品且未关联订单的上游实例');
+      const sourceRef = (
+        task.spec.payload as { metadata?: { upstream?: { sourceRef?: string } } } | null
+      )?.metadata?.upstream?.sourceRef;
       const importedSource = (bound.spec.runtime as { upstreamId?: string } | null)?.upstreamId;
-      if (sourceRef && sourceRef !== importedSource) throw new StoreError(409, '上游来源不一致，禁止关联');
-      serviceSpec = { ...bound.spec, orderId: task.spec.orderId, amount: placeholder.spec.amount, currency: placeholder.spec.currency, runtime: { ...runtime, ...((bound.spec.runtime as Record<string, unknown>) ?? {}), provisioningReviewRequired: false } };
+      if (sourceRef && sourceRef !== importedSource)
+        throw new StoreError(409, '上游来源不一致，禁止关联');
+      serviceSpec = {
+        ...bound.spec,
+        orderId: task.spec.orderId,
+        amount: placeholder.spec.amount,
+        currency: placeholder.spec.currency,
+        runtime: {
+          ...runtime,
+          ...((bound.spec.runtime as Record<string, unknown>) ?? {}),
+          provisioningReviewRequired: false,
+        },
+      };
       // Preserve the order's canonical service URL. Retire the imported duplicate atomically.
-      await tx.extensions.update(serviceInstanceModel, body.serviceId, bound.spec, { expectedVersion: bound.version });
+      await tx.extensions.update(serviceInstanceModel, body.serviceId, bound.spec, {
+        expectedVersion: bound.version,
+      });
       await tx.extensions.delete(serviceInstanceModel, body.serviceId);
     }
-    await tx.extensions.update(serviceInstanceModel, placeholder.name, serviceSpec, { expectedVersion: placeholder.version });
-    await tx.extensions.update(deliveryTaskModel, id, {
-      ...task.spec, state: body.outcome === 'existing' ? 'SUCCEEDED' : 'AWAITING_APPROVAL',
-      serviceId: body.outcome === 'existing' ? placeholder.name : null, error: null, nextAttemptAtMs: 0,
-      payload: { ...((task.spec.payload as Record<string, unknown>) ?? {}), reconciliation: { outcome: body.outcome, note: body.note, actorId: req.user?.id, at: new Date().toISOString() } },
-    }, { expectedVersion: task.version });
+    await tx.extensions.update(serviceInstanceModel, placeholder.name, serviceSpec, {
+      expectedVersion: placeholder.version,
+    });
+    await tx.extensions.update(
+      deliveryTaskModel,
+      id,
+      {
+        ...task.spec,
+        state: body.outcome === 'existing' ? 'SUCCEEDED' : 'AWAITING_APPROVAL',
+        serviceId: body.outcome === 'existing' ? placeholder.name : null,
+        error: null,
+        nextAttemptAtMs: 0,
+        payload: {
+          ...((task.spec.payload as Record<string, unknown>) ?? {}),
+          reconciliation: {
+            outcome: body.outcome,
+            note: body.note,
+            actorId: req.user?.id,
+            at: new Date().toISOString(),
+          },
+        },
+      },
+      { expectedVersion: task.version },
+    );
   });
-  await recordStoreAudit({ action: 'store.provision.reconciled', resource: 'store.delivery-task', resourceId: id, ...auditActor(req), meta: { outcome: body.outcome, note: body.note } });
+  await recordStoreAudit({
+    action: 'store.provision.reconciled',
+    resource: 'store.delivery-task',
+    resourceId: id,
+    ...auditActor(req),
+    meta: { outcome: body.outcome, note: body.note },
+  });
   return { reconciled: true };
 }
 

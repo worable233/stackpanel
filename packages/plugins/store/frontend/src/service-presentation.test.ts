@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { canManageService, isPublicIpLabel, serviceDate, serviceInstanceName } from './service-presentation';
+import {
+  canManageService,
+  isPublicIpLabel,
+  serviceDate,
+  serviceInstanceName,
+} from './service-presentation';
 
 describe('service console presentation', () => {
   it.each([
@@ -37,11 +42,21 @@ describe('service console presentation', () => {
  * 旧正则 `^ipv4$` 匹配不上 → 卡片显示「—」，买家以为机器没有 IP。
  */
 describe('isPublicIpLabel', () => {
-  it.each(['IPv4 地址', 'IPv4', 'IP', 'IP 地址', '公网 IP', 'Public IP'])(
-    'identifies the public-IP field labeled %s',
-    (label) => expect(isPublicIpLabel(label)).toBe(true),
+  it.each([
+    'IPv4 地址', // i18n-exempt — test fixture
+    'IPv4',
+    'IP',
+    'IP 地址', // i18n-exempt — test fixture
+    '公网 IP', // i18n-exempt — test fixture
+    'Public IP',
+  ])('identifies the public-IP field labeled %s', (label) =>
+    expect(isPublicIpLabel(label)).toBe(true),
   );
-  it.each(['IP数量', 'vCPU', '带宽'])('does not treat configuration rows as an IP: %s', (label) =>
+  it.each([
+    'IP数量', // i18n-exempt — test fixture
+    'vCPU',
+    '带宽', // i18n-exempt — test fixture
+  ])('does not treat configuration rows as an IP: %s', (label) =>
     expect(isPublicIpLabel(label)).toBe(false),
   );
 });

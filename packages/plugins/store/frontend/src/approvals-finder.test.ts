@@ -16,11 +16,11 @@ describe('store approvals finder contract', () => {
   const task = {
     id: 'task-1',
     orderId: 'order-1',
-    productName: '香港EPYC-4H8G',
+    productName: '香港EPYC-4H8G', // i18n-exempt — test fixture
     quantity: 1,
     status: 'REQUIRES_RECONCILIATION',
     userId: 'user-1',
-    reason: '自动重试已用尽，需人工核对上游：确认无实例请在订单页退款',
+    reason: '自动重试已用尽，需人工核对上游：确认无实例请在订单页退款', // i18n-exempt — test fixture
     attempts: 3,
     maxAttempts: 3,
     retryExhausted: true,
@@ -41,7 +41,7 @@ describe('store approvals finder contract', () => {
       maxAttempts: 3,
       attempts: 3,
     });
-    expect(String(result.tasks[0]!['reason'])).toContain('自动重试已用尽');
+    expect(String(result.tasks[0]!['reason'])).toContain('自动重试已用尽'); // i18n-exempt — test fixture
     expect(String(get.mock.calls[0]?.[0])).toContain('/store/admin/delivery-tasks?status=attention');
   });
 });

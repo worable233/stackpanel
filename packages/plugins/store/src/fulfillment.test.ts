@@ -1064,6 +1064,59 @@ describe('store fulfillment dispatcher', () => {
     expect(result.service.status).toBe('ACTIVE');
   });
 
+  it('shows a locally suspended service as SUSPENDED even when upstream still reports ACTIVE', async () => {
+    // 上游 `host/list` 的 Active 只说明「服务在开通中」，与电源无关：机器被
+    // power_off 后上游仍报 Active。退票冻结、到期暂停都会把本地置为 SUSPENDED，
+    // 若让上游的 ACTIVE 盖过去，客户在实例页看到「已激活」而机器已经关了。
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'up-1',
+        runtime: null,
+        credentialsRef: null,
+        orderId: null,
+        productId: 'prod-1',
+        state: 'SUSPENDED',
+        amount: 9900,
+        currency: 'CNY',
+        provisionedAt: null,
+        expiresAt: null,
+        terminatedAt: null,
+      },
+      'svc-detail-suspended',
+    );
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      getDetail: vi.fn(async () => ({
+        title: '云服务器',
+        status: 'ACTIVE',
+        statusLabel: '已激活',
+        fields: [],
+      })),
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    const result = (await getMyService({
+      params: { id: 'svc-detail-suspended' },
+      user: { id: 'user-1', role: 'USER' },
+    } as never)) as {
+      service: { status: string; statusLabel: unknown; detail: { status?: string } };
+    };
+
+    expect(result.service.status).toBe('SUSPENDED');
+    // 前端渲染的是 `detail.status`，所以 detail 也必须被改写。
+    expect(result.service.detail.status).toBe('SUSPENDED');
+    // 上游的「已激活」文案不能跟着挂上去，否则和状态自相矛盾。
+    expect(result.service.statusLabel).toBeNull();
+  });
+
   it('forwards action params to the provider and merges the returned runtime', async () => {
     const fake = createFakeExtensions();
     fake.seed(

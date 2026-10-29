@@ -202,11 +202,23 @@ export const refundRequestModel = defineModel({
     failureReason: z.string().nullable().default(null),
     destination: z.string().default('WALLET'),
     idempotencyKey: z.string().nullable().default(null),
+    /**
+     * 从**实例页**发起的申请会带上服务 id；订单页发起的申请为 null。
+     * 有了它，审核时的停用/恢复/停服才能精确落到那一个实例上。
+     */
+    serviceId: z.string().nullable().default(null),
+    /** 申请时是否已真的把实例停用（关机）。驳回时要据此决定是否恢复。 */
+    suspendApplied: z.boolean().default(false),
+    /** 审核通过后是否已向上游提交停用申请（不可逆）。 */
+    terminateApplied: z.boolean().default(false),
+    /** 停服失败原因：钱已退但上游没停掉，必须留痕给运营手工处理。 */
+    terminateError: z.string().nullable().default(null),
   }),
   indexes: [
     { fields: ['orderId'], types: { orderId: 'string' } },
     { fields: ['userId'], types: { userId: 'string' } },
     { fields: ['state'], types: { state: 'string' } },
+    { fields: ['serviceId'], types: { serviceId: 'string' } },
   ],
 });
 
