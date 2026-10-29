@@ -85,19 +85,41 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
   const isFull = refundedBefore + amount >= order.settlementTotal;
 
   const reason = parsed.data.reason;
+  const attestedNoUpstreamInstance = parsed.data.confirmNoUpstreamInstance === true;
   await runTransaction(async (tx) => {
+    // Every refusal is decided before the first write: relying on a rollback to
+    // undo the order-state flip makes the outcome depend on transaction semantics
+    // rather than on the rule itself.
+    const tasks = await tx.extensions.listAll<{ state: string }>(deliveryTaskModel, { where: { orderId: { eq: id } } });
+    // `RUNNING` is a live attempt: it may be creating the upstream object right
+    // now, so no operator statement can make a refund safe.
+    if (tasks.some(task => task.spec.state === 'RUNNING')) {
+      throw new StoreError(409, '开通仍在执行中，请等待结果再退款', 'store.refund.provisioning_running');
+    }
+    const reconciling = tasks.filter(task => task.spec.state === 'REQUIRES_RECONCILIATION');
+    const services = await tx.extensions.listAll<{ state: string; providerServiceId: string | null }>(serviceInstanceModel, { where: { orderId: { eq: id } } });
+    if (services.some(service => service.spec.state === 'PROVISIONING' && service.spec.providerServiceId)) throw new StoreError(409, '上游仍在开通中，请先确认结果再退款', 'store.refund.provisioning_running');
+    if (reconciling.length > 0) {
+      // An upstream id is evidence the remote object exists. No attestation can
+      // override evidence — only an operator statement about an *empty* upstream.
+      if (services.some(service => service.spec.providerServiceId)) {
+        throw new StoreError(409, '该订单已有上游实例，请先终止实例再退款', 'store.refund.upstream_instance_exists');
+      }
+      if (!attestedNoUpstreamInstance) {
+        throw new StoreError(
+          409,
+          '开通结果尚未确认，请先核对上游实例；确认无实例后可授权退款',
+          'store.refund.needs_upstream_attestation',
+        );
+      }
+    }
+
     const { updated } = await tx.extensions.updateWhere(
       orderModel,
       { name: { eq: id }, state: { in: ['PAID', 'PARTIALLY_REFUNDED'] } },
       { state: { set: isFull ? 'REFUNDED' : 'PARTIALLY_REFUNDED' } },
     );
     if (updated === 0) throw new StoreError(409, '订单状态已变更');
-    const tasks = await tx.extensions.listAll<{ state: string }>(deliveryTaskModel, { where: { orderId: { eq: id } } });
-    if (tasks.some(task => ['RUNNING', 'REQUIRES_RECONCILIATION'].includes(task.spec.state))) {
-      throw new StoreError(409, '开通结果尚未确认，请先核对上游状态再退款');
-    }
-    const services = await tx.extensions.listAll<{ state: string; providerServiceId: string | null }>(serviceInstanceModel, { where: { orderId: { eq: id } } });
-    if (services.some(service => service.spec.state === 'PROVISIONING' && service.spec.providerServiceId)) throw new StoreError(409, '上游仍在开通中，请先确认结果再退款');
     for (const state of ['AWAITING_APPROVAL', 'PROVISIONING']) {
       await tx.extensions.updateWhere(serviceInstanceModel, { orderId: { eq: id }, state: { eq: state }, providerServiceId: { eq: null } }, { state: { set: 'TERMINATED' } });
     }
@@ -105,6 +127,13 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
       { orderId: { eq: id }, state: { eq: 'PENDING' } }, { state: { set: 'CANCELLED' } });
     await tx.extensions.updateWhere(deliveryTaskModel,
       { orderId: { eq: id }, state: { eq: 'AWAITING_APPROVAL' } }, { state: { set: 'CANCELLED' } });
+    // Closing the reconcile-blocked tasks is the point of the attestation: leaving
+    // them in `REQUIRES_RECONCILIATION` would keep the order out of every later
+    // settlement and the operator out of the refund flow forever.
+    if (attestedNoUpstreamInstance) {
+      await tx.extensions.updateWhere(deliveryTaskModel,
+        { orderId: { eq: id }, state: { eq: 'REQUIRES_RECONCILIATION' } }, { state: { set: 'CANCELLED' } });
+    }
     await tx.wallet.credit(order.userId, amount, order.settlementCurrency, {
       type: 'ORDER_REFUND',
       referenceType: REFUND_REFERENCE,
@@ -112,8 +141,8 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
       // use the request id as their independent ledger idempotency key.
       referenceId: refundRequestId ?? id,
       note: actorId
-        ? `退款 订单 ${id}（操作人 ${actorId}）${reason ? `｜${reason}` : ''}`
-        : `退款 订单 ${id}${reason ? `｜${reason}` : ''}`,
+        ? `退款 订单 ${id}（操作人 ${actorId}）${reason ? `｜${reason}` : ''}${attestedNoUpstreamInstance ? '｜运营确认上游无实例' : ''}`
+        : `退款 订单 ${id}${reason ? `｜${reason}` : ''}${attestedNoUpstreamInstance ? '｜运营确认上游无实例' : ''}`,
     });
     // 仅全额退款回补库存：非续费、非变配行才占用库存（变配订单从未 reserve）。
     if (isFull) {
@@ -210,12 +239,20 @@ export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {
   const id = req.params['id'];
   const reviewerId = req.user?.id;
   if (!id || !reviewerId) throw new StoreError(400, '缺少申请或审核人');
-  const body = req.body as { decision?: unknown; reason?: unknown };
+  const body = req.body as { decision?: unknown; reason?: unknown; confirmNoUpstreamInstance?: unknown };
+  // Operator attestation travels with the review decision: the refund path needs it
+  // to act on an order whose delivery outcome can never be proven by the provider.
+  const confirmNoUpstreamInstance = body?.confirmNoUpstreamInstance === true;
   const decision = body?.decision === 'approve' ? 'approve' : body?.decision === 'reject' ? 'reject' : null;
   if (!decision) throw new StoreError(400, '审核结果无效');
   const request = await extensions().get<RefundRequestData>(refundRequestModel, id);
   if (!request) throw new StoreError(404, '退款申请不存在');
-  if (request.spec.state !== 'PENDING') throw new StoreError(409, '退款申请已处理');
+  // A failed attempt is not a decision. The failure notification literally tells
+  // the admin to retry, and the upstream attestation is part of that retry —
+  // treating FAILED as terminal made the request permanently unreviewable.
+  if (request.spec.state !== 'PENDING' && request.spec.state !== 'FAILED') {
+    throw new StoreError(409, '退款申请已处理');
+  }
   if (decision === 'reject') {
     await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'REJECTED', reviewerId, reviewReason: typeof body.reason === 'string' ? body.reason.slice(0, 191) : '管理员拒绝', failureReason: null });
     await notifyUser({ userId: request.spec.userId, type: 'order.refund.rejected', title: '退款申请未通过', body: '管理员未批准本次退款申请。', link: '/account/orders', data: { requestId: id }, dedupeKey: `store:refund:${id}:rejected` });
@@ -223,11 +260,16 @@ export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {
   }
   const claimed = await runTransaction(async tx => {
     const current = await tx.extensions.get<RefundRequestData>(refundRequestModel, id);
-    if (!current || current.spec.state !== 'PENDING') return false;
+    // `FAILED` is a *retryable* outcome, not a decision: the failure notification
+    // tells the admin to retry, and the attestation flow retries the very same
+    // request. Claiming only from `PENDING` turned that into “已被其他管理员处理”.
+    if (!current || (current.spec.state !== 'PENDING' && current.spec.state !== 'FAILED')) {
+      return false;
+    }
     // 只有 `indexes` 里声明的字段才是物理列；`reviewerId` 只存在于 spec，不能进
     // `updateWhere` 的 patch（内核会抛「不可更新的字段」，接口返回 422）。认领只抢占
     // `state` 列，审核人随最终整行 `update()` 落库。
-    const result = await tx.extensions.updateWhere(refundRequestModel, { name: { eq: id }, state: { eq: 'PENDING' } }, { state: { set: 'PROCESSING' } });
+    const result = await tx.extensions.updateWhere(refundRequestModel, { name: { eq: id }, state: { in: ['PENDING', 'FAILED'] } }, { state: { set: 'PROCESSING' } });
     return result.updated === 1;
   });
   if (!claimed) throw new StoreError(409, '退款申请已被其他管理员处理');
@@ -235,17 +277,20 @@ export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {
     // 目前唯一有确定账本语义的是平台钱包；外部支付必须待 provider refund 契约接入后才允许批准。
     // `reason` 在申请里可为 null，而 `refundOrderSchema.reason` 是可选字符串：
     // 原样透传 null 会让内层校验失败，把整笔退款误判为「请求参数无效」。
-    const result = await refundOrder({ params: { id: request.spec.orderId }, body: { amount: request.spec.amount, ...(request.spec.reason ? { reason: request.spec.reason } : {}), refundRequestId: id }, user: req.user } as never);
-    await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'SUCCEEDED', reviewerId, failureReason: null });
+    const result = await refundOrder({ params: { id: request.spec.orderId }, body: { amount: request.spec.amount, ...(request.spec.reason ? { reason: request.spec.reason } : {}), refundRequestId: id, ...(confirmNoUpstreamInstance ? { confirmNoUpstreamInstance: true } : {}) }, user: req.user } as never);
+    await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'SUCCEEDED', reviewerId, reviewReason: confirmNoUpstreamInstance ? '运营确认上游无实例后授权退款' : request.spec.reviewReason, failureReason: null });
     await notifyUser({ userId: request.spec.userId, type: 'order.refund.succeeded', title: '退款已到账', body: `退款已退入 StackPanel 平台余额，不会退回真实支付账户。`, link: '/account/orders', data: { requestId: id, amount: request.spec.amount, destination: 'PLATFORM_WALLET' }, dedupeKey: `store:refund:${id}:succeeded` });
     return { request: { id, status: 'SUCCEEDED' }, result };
   } catch (error) {
     const reason = error instanceof Error ? error.message : '退款执行失败';
+    // Keep the stable code: the admin UI branches on it to ask for the operator's
+    // "no upstream instance" attestation instead of showing a dead end.
+    const code = error instanceof StoreError ? error.code : undefined;
     await extensions().update<RefundRequestData>(refundRequestModel, id, { ...request.spec, state: 'FAILED', reviewerId, failureReason: reason.slice(0, 191) });
     await notifyUser({ userId: request.spec.userId, type: 'order.refund.failed', title: '退款处理失败', body: '退款未完成，请联系管理员重试。', link: '/account/orders', data: { requestId: id }, dedupeKey: `store:refund:${id}:failed` });
     // 失败原因要透出可操作的业务信息（如「开通结果尚未确认」），否则管理员只能
     // 看到一句笼统提示，以为按钮点不动。
-    throw new StoreError(409, `退款处理失败：${reason.slice(0, 191)}`);
+    throw new StoreError(409, `退款处理失败：${reason.slice(0, 191)}`, code);
   }
 }
 

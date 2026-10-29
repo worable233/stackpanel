@@ -327,6 +327,16 @@ export const transferServiceSchema = z.object({
 export const refundOrderSchema = z.object({
   amount: z.number().int().positive().max(MAX_MINOR_AMOUNT).optional(),
   reason: z.string().trim().max(191).optional(),
+  /**
+   * 运营者显式声明：已核对上游，不存在任何实例。
+   *
+   * 「开通结果未确认」的任务只能靠 provider 的记账证据自动重开；但 fork 在首个
+   * 远端变更之前就失败时（例如上游结算阶段报错），根本不存在这种证据。此时若既
+   * 不能重开也不能退款，订单就死在「已付款、未交付、退不了」的死结里。
+   * 这个开关把「证明责任」从机器转移到人：只有显式声明才放行，并且退款流必须
+   * 自己复核「没有任何服务实例带有上游 ID」——有 ID 就说明对象真的存在过。
+   */
+  confirmNoUpstreamInstance: z.boolean().optional(),
 });
 
 export const addToCartSchema = z.object({

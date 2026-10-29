@@ -505,3 +505,109 @@ describe('reviewRefundRequest', () => {
     );
   });
 });
+
+/**
+ * 开通结果无法由 provider 证明时（fence 之前就失败），订单会夹在「不能交付」和
+ * 「不能退款」之间。这组用例锁住新出口的边界：只有显式声明才放行，且声明永远
+ * 不能覆盖“上游对象确实存在”的硬证据。
+ */
+describe('refundOrder · 开通结果待核对', () => {
+  const TASK = 'store/delivery-task';
+  const SERVICE = 'store/service-instance';
+
+  beforeEach(() => resetContext());
+
+  function seedOrder(options: { taskState?: string; service?: Record<string, unknown> } = {}) {
+    const fake = createFakeExtensions();
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: { items: [{ productId: 'prod-1', quantity: 1 }] },
+        total: 6635,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 6635,
+        fxRate: null,
+      },
+      'order-1',
+    );
+    fake.seed(PRODUCT, { name: '云服务器', stock: 7, status: 'ACTIVE' }, 'prod-1');
+    fake.seed(
+      TASK,
+      { orderId: 'order-1', state: options.taskState ?? 'REQUIRES_RECONCILIATION' },
+      'task-1',
+    );
+    if (options.service) {
+      fake.seed(SERVICE, { orderId: 'order-1', ...options.service }, 'svc-1');
+    }
+    const credit = vi.fn(async (..._args: unknown[]) => ({}));
+    bindContext(makeCtx(fake, credit));
+    return { fake, credit };
+  }
+
+  const refund = (body: Record<string, unknown> = {}) =>
+    refundOrder({
+      params: { id: 'order-1' },
+      body,
+      user: { id: 'admin-1', role: 'ADMIN' },
+    } as never);
+
+  it('未声明时拒绝退款，并给出可判别的错误码', async () => {
+    const { fake, credit } = seedOrder();
+    await expect(refund()).rejects.toMatchObject({
+      status: 409,
+      code: 'store.refund.needs_upstream_attestation',
+    });
+    expect(fake.all(ORDER)[0]!.spec.state).toBe('PAID');
+    expect(fake.all(TASK)[0]!.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(credit).not.toHaveBeenCalled();
+  });
+
+  it('运营声明无上游实例后退款成功，并把卡住的任务置为已取消', async () => {
+    const { fake, credit } = seedOrder();
+    const result = (await refund({
+      confirmNoUpstreamInstance: true,
+      reason: '上游未返回账单',
+    })) as { refunded: number };
+
+    expect(result.refunded).toBe(6635);
+    expect(fake.all(ORDER)[0]!.spec.state).toBe('REFUNDED');
+    expect(fake.all(TASK)[0]!.spec.state).toBe('CANCELLED');
+    expect(credit).toHaveBeenCalledWith(
+      'user-1',
+      6635,
+      'CNY',
+      expect.objectContaining({ type: 'ORDER_REFUND' }),
+    );
+    // 声明必须留在账本备注里：这条钱是“人工断言”而非机器证据换来的。
+    expect(credit.mock.calls[0]?.[3]).toMatchObject({
+      note: expect.stringContaining('运营确认上游无实例'),
+    });
+  });
+
+  it('已有上游实例 ID 时，声明无效（证据高于断言）', async () => {
+    const { fake, credit } = seedOrder({
+      service: { state: 'ACTIVE', providerServiceId: 'remote-42' },
+    });
+    await expect(refund({ confirmNoUpstreamInstance: true })).rejects.toMatchObject({
+      status: 409,
+      code: 'store.refund.upstream_instance_exists',
+    });
+    expect(fake.all(ORDER)[0]!.spec.state).toBe('PAID');
+    expect(credit).not.toHaveBeenCalled();
+  });
+
+  it('开通仍在执行时，声明无效', async () => {
+    const { fake, credit } = seedOrder({ taskState: 'RUNNING' });
+    await expect(refund({ confirmNoUpstreamInstance: true })).rejects.toMatchObject({
+      status: 409,
+      code: 'store.refund.provisioning_running',
+    });
+    expect(fake.all(ORDER)[0]!.spec.state).toBe('PAID');
+    expect(fake.all(TASK)[0]!.spec.state).toBe('RUNNING');
+    expect(credit).not.toHaveBeenCalled();
+  });
+});
