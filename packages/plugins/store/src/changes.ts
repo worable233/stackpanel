@@ -14,6 +14,7 @@ import {
   providerForProduct,
   providerForService,
   providerServiceContext,
+  errorDetail,
 } from './fulfillment';
 import { resolveCheckoutPrice } from './pricing';
 import { applyDiscount, betterDiscount, effectiveGroupDiscount } from './discount';
@@ -32,7 +33,7 @@ import {
   type StoreOrderData,
   type StoreServiceInstanceData,
 } from './data';
-import { notifyUser } from './notifications';
+import { notifyAdmins, notifyUser } from './notifications';
 import {
   changeQuoteSchema,
   changeServiceSchema,
@@ -340,6 +341,23 @@ export async function changeService(ctx: PluginContext, req: HttpRequest): Promi
  * 变更前的配置/商品供全额退款回滚。
  */
 export async function applyChangeOrder(orderId: string): Promise<void> {
+  // 同一订单的变更应用必须串行：`order.paid` 是 at-least-once，定时重试也会并发触发。
+  // 两个执行者同时读同一订单并各自写服务，会有一个撞上版本/校验错误而白跑一轮。
+  const previous = changeLocks.get(orderId) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(() => applyChangeOrderOnce(orderId));
+  const tracked = run.catch(() => undefined);
+  changeLocks.set(orderId, tracked);
+  try {
+    await run;
+  } finally {
+    if (changeLocks.get(orderId) === tracked) changeLocks.delete(orderId);
+  }
+}
+
+/** 同订单变更应用的进程内串行队列（跨副本仍靠 `changeApplied` 幂等标记）。 */
+const changeLocks = new Map<string, Promise<void>>();
+
+async function applyChangeOrderOnce(orderId: string): Promise<void> {
   const record = await context().extensions.get<StoreOrderData>(orderModel, orderId);
   if (!record) return;
   const raw = record.spec.items as { items?: Array<Record<string, unknown>> } | null;
@@ -368,6 +386,10 @@ export async function applyChangeOrder(orderId: string): Promise<void> {
     // `applyServiceChange` 返回 false 仅表示「提供方无对应钩子」（本地/即时商品，
     // 变更仅发生在平台侧）；钩子存在但抛错时它会抛出——那种情况必须保留可重试，
     // 不能标记已应用，否则平台显示新配置而上游未变。
+    // 变更**前**的配置必须在调用提供方之前读取：钩子成功后服务 runtime 已被换成
+    // 新配置，此时再读会把「新配置」记成「旧配置」，全额退款回滚时将无动作。
+    const previousSelection = readServiceSelection(service) ?? null;
+    const previousProductId = service.productId;
     let applied = true;
     try {
       applied = await applyServiceChange(service, {
@@ -377,13 +399,18 @@ export async function applyChangeOrder(orderId: string): Promise<void> {
         ...(targetProviderProductId !== undefined ? { targetProviderProductId } : {}),
       });
     } catch (error) {
-      logger().error(`store: change hook failed for service ${service.id}: ${messageOf(error)}`);
+      // 用户已经付过钱了：变更没落地绝不能只留一行日志。把原因与下次重试时间写回
+      // 订单行，由 `retryFailedChanges()` 退避重试，后台订单页与用户通知都能看到。
+      await recordChangeFailure(record, rawItems, rawLine, orderId, service, error);
       continue;
     }
     if (rawLine) {
-      rawLine['previousSelection'] = readServiceSelection(service) ?? null;
-      rawLine['previousProductId'] = service.productId;
+      rawLine['previousSelection'] = previousSelection;
+      rawLine['previousProductId'] = previousProductId;
       rawLine['changeApplied'] = true;
+      delete rawLine['changeError'];
+      delete rawLine['changeAttempts'];
+      delete rawLine['changeNextAttemptAtMs'];
     }
     const refreshed = await getService(service.id);
     if (refreshed) {
@@ -438,6 +465,174 @@ export async function applyChangeOrder(orderId: string): Promise<void> {
       });
     }
   }
+}
+
+/**
+ * 管理端「重新应用变更」（`POST /store/admin/orders/:id/apply-change`）。
+ *
+ * 清掉退避状态（`changeNextAttemptAtMs` / `changeAttempts`）后立刻重试一次：上游恢复
+ * 或运营修好配置后，不需要等退避窗口，也不必手动改库。
+ */
+export async function reapplyOrderChange(req: HttpRequest): Promise<{ order: unknown }> {
+  const id = (req.params as { id?: string }).id ?? '';
+  if (!id) throw new StoreError(400, '缺少订单 id');
+  const record = await context().extensions.get<StoreOrderData>(orderModel, id);
+  if (!record) throw new StoreError(404, '订单不存在');
+  const raw = record.spec.items as { items?: Array<Record<string, unknown>> } | null;
+  const rawItems = Array.isArray(raw?.items) ? raw!.items : [];
+  let touched = false;
+  for (const line of rawItems) {
+    if (typeof line['changeServiceId'] !== 'string') continue;
+    if (line['changeApplied'] === true) continue;
+    delete line['changeError'];
+    delete line['changeAttempts'];
+    delete line['changeNextAttemptAtMs'];
+    touched = true;
+  }
+  if (!touched) throw new StoreError(409, '该订单没有待应用的配置变更');
+  await runTransaction(async (tx) => {
+    await tx.extensions.update<StoreOrderData>(orderModel, id, {
+      ...record.spec,
+      items: { items: rawItems },
+    });
+  });
+  await applyChangeOrder(id);
+  const refreshed = await context().extensions.get<StoreOrderData>(orderModel, id);
+  return { order: refreshed ? toOrder(refreshed) : null };
+}
+
+/** 变更应用失败的最多自动重试次数。 */
+const CHANGE_MAX_ATTEMPTS = 6;
+/** 自动重试的退避上限（超过后只保留错误，等人工或用户再次触发）。 */
+const CHANGE_MAX_BACKOFF_MS = 60 * 60_000;
+
+/**
+ * 记录一次变更应用失败：写回订单行 + 通知用户与管理员。
+ *
+ * 「钱收了、配置没变、只有服务器日志里一行 error」是这条链路最贵的失败模式，
+ * 所以错误必须落在订单上（人可见），并按退避自动重试（机器可见）。
+ */
+async function recordChangeFailure(
+  record: { spec: StoreOrderData },
+  rawItems: Array<Record<string, unknown>>,
+  rawLine: Record<string, unknown> | undefined,
+  orderId: string,
+  service: ServiceInstanceRecord,
+  error: unknown,
+): Promise<void> {
+  const message = messageOf(error);
+  const attempts = Number(rawLine?.['changeAttempts'] ?? 0) + 1;
+  const backoff = Math.min(CHANGE_MAX_BACKOFF_MS, 5 * 60_000 * 2 ** Math.min(attempts, 6));
+  logger().error(`store: change apply failed for service ${service.id}: ${message}${errorDetail(error)}`);
+  if (!rawLine) {
+    return;
+  }
+  rawLine['changeError'] = message;
+  rawLine['changeAttempts'] = attempts;
+  rawLine['changeNextAttemptAtMs'] =
+    attempts >= CHANGE_MAX_ATTEMPTS ? Number.MAX_SAFE_INTEGER : Date.now() + backoff;
+  try {
+    await runTransaction(async (tx) => {
+      await tx.extensions.update<StoreOrderData>(orderModel, orderId, {
+        ...record.spec,
+        items: { items: rawItems },
+      });
+    });
+  } catch (persistError) {
+    logger().error(`store: 记录变更失败原因失败 ${orderId}: ${messageOf(persistError)}`);
+  }
+  void notifyUser({
+    userId: record.spec.userId,
+    type: 'service.change.failed',
+    title: '配置变更暂未生效',
+    body: `你的服务「${service.productName}」配置变更未能完成（${message}）。我们已自动重试，无需重复付款。`,
+    link: `/account/services/${service.id}`,
+    data: { serviceId: service.id, orderId, attempts },
+    status: 'info',
+    dedupeKey: `store:service:${service.id}:change-failed:${orderId}:${attempts}`,
+  }).catch(() => undefined);
+  if (attempts >= CHANGE_MAX_ATTEMPTS) {
+    void notifyAdmins({
+      type: 'store.change.exhausted',
+      title: '变更订单重试已用尽',
+      body: `订单 ${orderId} 的服务「${service.productName}」配置变更 ${attempts} 次仍未成功：${message}`,
+      link: `/admin/orders`,
+      data: { orderId, serviceId: service.id, attempts },
+      status: 'error',
+    }).catch(() => undefined);
+  }
+}
+
+/** 一条待重试的变更（订单行视角）。 */
+interface PendingChangeRetry {
+  orderId: string;
+  serviceId: string;
+  attempts: number;
+  nextAttemptAtMs: number;
+}
+
+/**
+ * 找出「已付款但变更未落地」的订单行，供定时任务退避重试。
+ *
+ * 只扫最近 30 天的已支付订单：变配订单量小，扫窗口足够；更老的由人工处理。
+ */
+export async function listPendingChangeRetries(nowMs = Date.now()): Promise<PendingChangeRetry[]> {
+  const pending: PendingChangeRetry[] = [];
+  // 已支付订单可能很多，但「变更行未应用」是少数：扫最近 300 单足够覆盖在途重试。
+  for (let page = 1; page <= 3; page += 1) {
+    const batch = await context().extensions.list<StoreOrderData>(orderModel, {
+      where: { state: { eq: 'PAID' } },
+      page,
+      pageSize: 100,
+    });
+    for (const row of batch.items) {
+      collectPendingRetries(row, nowMs, pending);
+    }
+    if (batch.items.length < 100) break;
+  }
+  return pending;
+}
+
+/** 从一条订单里挑出「有变更行、未应用、到了重试时间」的行。 */
+function collectPendingRetries(
+  row: { name: string; spec: StoreOrderData },
+  nowMs: number,
+  pending: PendingChangeRetry[],
+): void {
+  {
+    for (const line of stockItems({ items: row.spec.items })) {
+      if (!line.changeServiceId || line.changeApplied === true) continue;
+      const nextAt = line.changeNextAttemptAtMs ?? 0;
+      if (nextAt > nowMs) continue;
+      pending.push({
+        orderId: row.name,
+        serviceId: line.changeServiceId,
+        attempts: line.changeAttempts ?? 0,
+        nextAttemptAtMs: nextAt,
+      });
+    }
+  }
+}
+
+/**
+ * 重试所有到期的变更应用（幂等：`changeApplied` 置位后不再重复）。
+ * 由 `fulfillment-poll` 周期调用；单条失败不影响其他订单。
+ */
+export async function retryFailedChanges(nowMs = Date.now()): Promise<{ retried: number }> {
+  const pending = await listPendingChangeRetries(nowMs);
+  const seen = new Set<string>();
+  let retried = 0;
+  for (const item of pending) {
+    if (seen.has(item.orderId)) continue;
+    seen.add(item.orderId);
+    try {
+      await applyChangeOrder(item.orderId);
+      retried += 1;
+    } catch (error) {
+      logger().error(`store: retry change for ${item.orderId} failed: ${messageOf(error)}`);
+    }
+  }
+  return { retried };
 }
 
 /**

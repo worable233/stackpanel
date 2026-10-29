@@ -35,6 +35,7 @@ const STORE_ERROR_CODES: Record<string, string> = {
   '支付仍在处理中，无法取消': 'store.order.payment_processing',
   '订单商品币种不一致，请分开下单': 'store.order.currency_mismatch',
   '该服务不支持此操作': 'store.service.unsupported',
+  '该服务暂不支持此操作': 'store.service.unsupported',
   '商店插件未就绪': 'store.not_ready',
   // 续费 / 退款 / 运维动作（本次新增）
   '请求参数无效': 'store.request.invalid',
@@ -112,6 +113,12 @@ export function stockItems(order: {
   previousProductId?: string;
   /** 变更前的配置选择，供全额退款回滚。 */
   previousSelection?: unknown;
+  /** 上一次应用失败的原因（非空表示变更尚未落地，而用户已付款）。 */
+  changeError?: string;
+  /** 已尝试应用次数（用于退避与人工判断）。 */
+  changeAttempts?: number;
+  /** 下一次允许自动重试的时间戳（毫秒）。 */
+  changeNextAttemptAtMs?: number;
 }> {
   const value = order.items as {
     items?: Array<{
@@ -130,6 +137,9 @@ export function stockItems(order: {
       changeApplied?: unknown;
       previousProductId?: unknown;
       previousSelection?: unknown;
+      changeError?: unknown;
+      changeAttempts?: unknown;
+      changeNextAttemptAtMs?: unknown;
     }>;
   };
   return (value.items ?? []).flatMap((item) =>
@@ -170,6 +180,14 @@ export function stockItems(order: {
             ...(item.changeApplied === true ? { changeApplied: true } : {}),
             ...(typeof item.previousProductId === 'string'
               ? { previousProductId: item.previousProductId }
+              : {}),
+            ...(typeof item.changeError === 'string' ? { changeError: item.changeError } : {}),
+            ...(typeof item.changeAttempts === 'number' && Number.isInteger(item.changeAttempts)
+              ? { changeAttempts: item.changeAttempts }
+              : {}),
+            ...(typeof item.changeNextAttemptAtMs === 'number' &&
+            Number.isFinite(item.changeNextAttemptAtMs)
+              ? { changeNextAttemptAtMs: item.changeNextAttemptAtMs }
               : {}),
             ...('previousSelection' in item
               ? { previousSelection: item.previousSelection }

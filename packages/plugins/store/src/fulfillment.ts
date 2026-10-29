@@ -173,7 +173,9 @@ export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
   }
   if (hasChange) {
     await applyChangeOrder(orderId).catch((error) => {
-      logger().error(`store: change apply failed for ${orderId}: ${messageOf(error)}`);
+      logger().error(
+        `store: change apply failed for ${orderId}: ${messageOf(error)}${errorDetail(error)}`,
+      );
     });
   }
   await processDue().catch((error) => {
@@ -185,6 +187,12 @@ export async function enqueueOrderFulfillment(orderId: string): Promise<void> {
  * 消费一轮到期的 PENDING 任务（带 DB 乐观锁，避免并发重复执行）。
  * 由内核任务 `fulfillment-poll` 周期调用（见 index.ts），集群下只执行一次。
  */
+/** 附加 SDK 错误的 `detail`（校验类错误只有它说得清哪个字段不对）。 */
+export function errorDetail(error: unknown): string {
+  const detail = (error as { detail?: unknown } | null)?.detail;
+  return typeof detail === 'string' && detail ? `（${detail}）` : '';
+}
+
 export async function processDue(): Promise<void> {
   const nowMs = Date.now();
   // 回收超租约仍 RUNNING 的任务（认领者崩溃/被 kill），避免永久卡住。
@@ -907,9 +915,32 @@ export async function applyServiceChange(
   };
   const hook = change.type === 'product' ? provider.changeProduct : provider.changePackage;
   if (!hook) return false;
-  const result = await hook.call(provider, ctx, input);
+  // 上游变配是外部调用：提供方卡住时不能把整条支付后链路一起拖死。
+  const result = await withTimeout(hook.call(provider, ctx, input), CHANGE_HOOK_TIMEOUT_MS);
   await mergeActionResult(service, result);
   return true;
+}
+
+/** 变配钩子超时：上游 60s 网络超时之上留一次重试的余量。 */
+const CHANGE_HOOK_TIMEOUT_MS = 90_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new StoreError(504, '上游变配超时（已在服务端撤销等待，可稍后重试）')),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /** 续费回调：通知提供方到期时间已推进（尽力而为，失败不阻断）。 */
@@ -936,16 +967,20 @@ async function restrictActionParams(
   actionId: string,
   params: Record<string, string> | undefined,
 ): Promise<Record<string, string> | undefined> {
-  if (!params || !provider.getDetail) return params;
-  let declared: string[] | null = null;
+  if (!provider.getDetail) return params;
+  let actions: { id: string; params?: { name: string }[] }[] | null = null;
   try {
-    const detail = await provider.getDetail(ctx);
-    const action = detail.actions?.find((candidate) => candidate.id === actionId);
-    if (action) declared = (action.params ?? []).map((param) => param.name);
+    actions = (await provider.getDetail(ctx)).actions ?? null;
   } catch {
     return params;
   }
-  if (declared === null) return params;
+  if (!actions) return params;
+  const action = actions.find((candidate) => candidate.id === actionId);
+  // 提供方详情里没有声明这个动作 = 该服务不支持它。直接说清楚，避免把用户
+  // 送到上游再吃一个 406，也避免与「参数写错」混为一谈。
+  if (!action) throw new StoreError(501, '该服务暂不支持此操作');
+  if (!params) return params;
+  const declared = (action.params ?? []).map((param) => param.name);
   for (const key of Object.keys(params)) {
     if (!declared.includes(key)) throw new StoreError(400, '动作参数无效');
   }
@@ -967,15 +1002,20 @@ const ACTION_PARAM_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
  */
 function collectActionParams(body: Record<string, unknown>): Record<string, string> | undefined {
   const out: Record<string, string> = {};
-  // 通用参数袋（可选 JSON 对象）。
+  // 通用参数袋：接受 JSON 字符串，也接受同形态对象。
+  // 只认字符串会让人把 `{os: '15711313'}` 直接塞进 `params` 时得到一句
+  // 「动作参数无效」——错误指向参数内容，实际是序列化形态不对。
   const bag = body['params'];
   if (bag !== undefined && bag !== null && bag !== '') {
-    if (typeof bag !== 'string') throw new StoreError(400, '动作参数无效');
     let parsed: unknown;
-    try {
-      parsed = JSON.parse(bag);
-    } catch {
-      throw new StoreError(400, '动作参数无效');
+    if (typeof bag === 'string') {
+      try {
+        parsed = JSON.parse(bag);
+      } catch {
+        throw new StoreError(400, '动作参数无效');
+      }
+    } else {
+      parsed = bag;
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new StoreError(400, '动作参数无效');

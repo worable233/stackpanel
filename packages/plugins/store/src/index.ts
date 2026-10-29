@@ -53,7 +53,13 @@ import { createCategory, deleteCategory, listCategories, updateCategory } from '
 import { storeOperations } from './operations';
 import { renewService } from './renewal';
 import { STORE_NOTIFICATION_TYPES } from './notifications';
-import { changeService, quoteServiceChange, transferService } from './changes';
+import {
+  changeService,
+  quoteServiceChange,
+  reapplyOrderChange,
+  retryFailedChanges,
+  transferService,
+} from './changes';
 import { refundOrder, createRefundRequest, listRefundRequests, reviewRefundRequest } from './refund';
 import { runExpirySweep, EXPIRY_SWEEP_INTERVAL_MS } from './expiry';
 import {
@@ -546,6 +552,14 @@ export const storePlugin = definePlugin({
       permission: 'store.admin',
       handler: handle(listAdminOrders),
     },
+    // 手动重新应用变更（管理端）：清掉退避状态后立即重试一次，用于上游恢复后的兜底。
+    {
+      method: 'POST',
+      path: '/store/admin/orders/:id/apply-change',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(reapplyOrderChange),
+    },
     // 退款：已支付订单退回用户钱包（管理端）
     {
       method: 'POST',
@@ -807,6 +821,8 @@ export const storePlugin = definePlugin({
       await reconcileProvisioning();
       // 结果未确认的任务不再等人抬：先自动只读反查上游并重试（有界退避）。
       await retryUnconfirmedProvisioning();
+      // 变配订单「已付款但未落地」同样自动重试（有界退避，错误写回订单行）。
+      await retryFailedChanges();
     });
     ctx.jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
     // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。

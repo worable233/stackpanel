@@ -297,13 +297,25 @@ export const renewOrderSchema = z.object({
 });
 
 /**
+ * 配置选择入参：既接受 JSON 字符串（历史契约），也接受同形态对象。
+ *
+ * 前端一直在 `JSON.stringify` 之后传字符串，但直接调用 API 时把对象塞进 `config`
+ * 是最自然写法；只认字符串会让它静默 400「请选择商品配置」。这里统一归一化成字符串。
+ */
+const selectionInput = z.preprocess(
+  (value) =>
+    value && typeof value === 'object' && !Array.isArray(value) ? JSON.stringify(value) : value,
+  z.string().optional(),
+);
+
+/**
  * 升配/降配/换商品下单入参。
  * - `config`：目标配置选择（JSON 字符串），与下单同形。
  * - `targetProductId`：换商品时的目标商品 id；与 `config` 二选一（可同时给）。
  */
 export const changeServiceSchema = z.object({
   serviceId: z.string().min(1).max(191).optional(),
-  config: z.string().optional(),
+  config: selectionInput,
   targetProductId: z.string().min(1).max(191).optional(),
   paymentMode: z.enum(['wallet', 'external']).default('wallet'),
   channelCode: z.string().min(1).max(64).default('MALL_PC'),
@@ -314,7 +326,7 @@ export const changeServiceSchema = z.object({
 
 /** 变更试算入参。 */
 export const changeQuoteSchema = z.object({
-  config: z.string().optional(),
+  config: selectionInput,
   targetProductId: z.string().min(1).max(191).optional(),
 });
 

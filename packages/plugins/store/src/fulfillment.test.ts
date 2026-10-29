@@ -22,7 +22,7 @@ import {
   resumeAdminDeliveryPayment,
   recoverAdminDeliveryTask,
 } from './fulfillment';
-import { applyChangeOrder } from './changes';
+import { applyChangeOrder, retryFailedChanges } from './changes';
 import { storeOperations } from './operations';
 
 interface Stored {
@@ -1421,5 +1421,99 @@ describe('store fulfillment dispatcher', () => {
     // 本地服务未被改写成目标配置。
     const service = fake.all(SERVICE)[0]!;
     expect((service.spec.runtime as { config?: { plan?: string } }).config?.plan).toBe('small');
+    // 用户已付款：失败原因与退避时间必须落在订单行上，否则这条链路对人是不可见的。
+    expect(raw.items[0]!['changeError']).toContain('upstream change failed');
+    expect(raw.items[0]!['changeAttempts']).toBe(1);
+    expect(Number(raw.items[0]!['changeNextAttemptAtMs'])).toBeGreaterThan(Date.now());
+    // 退避到期后自动重试：上游恢复 → 变更落地、错误被清除。
+    raw.items[0]!['changeNextAttemptAtMs'] = 0;
+    const recovered = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      changePackage: vi.fn(async () => ({ message: 'ok' })),
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, recovered));
+    const retried = await retryFailedChanges();
+    expect(retried.retried).toBe(1);
+    const after = fake.all(ORDER)[0]!.spec.items as { items: Array<Record<string, unknown>> };
+    expect(after.items[0]!['changeApplied']).toBe(true);
+    expect(after.items[0]!['changeError']).toBeUndefined();
+    expect(after.items[0]!['changeAttempts']).toBeUndefined();
+    // 变更前的配置必须来自「钩子执行之前」，否则退款回滚会把新配置当成旧配置。
+    expect(after.items[0]!['previousSelection']).toEqual({ plan: 'small' });
+  });
+});
+
+describe('store 变配应用：旧配置快照与失败可见性', () => {
+  it('成功时 previousSelection 记录变更前配置，服务 runtime 换成新配置', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: 'order-change',
+        productId: 'prod-1',
+        productName: 'small',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: '42',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: { config: { plan: 'small' } },
+        amount: 5000,
+        currency: 'CNY',
+        expiresAt: null,
+        expiresAtMs: null,
+        expiryStage: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-change',
+    );
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: {
+          items: [
+            {
+              productId: 'prod-1',
+              quantity: 1,
+              changeServiceId: 'svc-change',
+              changeType: 'package',
+              changeSelection: { plan: 'large' },
+            },
+          ],
+        },
+        total: 1000,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 1000,
+        fxRate: null,
+      },
+      'order-change',
+    );
+    // 提供方成功并回写新配置（模拟上游已改，运行时状态由钩子返回）。
+    const changePackage = vi.fn(async () => ({ runtime: { config: { plan: 'large' } } }));
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      changePackage,
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await applyChangeOrder('order-change');
+
+    const line = (fake.all(ORDER)[0]!.spec.items as { items: Array<Record<string, unknown>> })
+      .items[0]!;
+    expect(line['changeApplied']).toBe(true);
+    // 旧配置来自钩子执行前 —— 这是全额退款回滚的唯一依据。
+    expect(line['previousSelection']).toEqual({ plan: 'small' });
+    const service = fake.all(SERVICE)[0]!;
+    expect((service.spec.runtime as { config?: { plan?: string } }).config?.plan).toBe('large');
   });
 });

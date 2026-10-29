@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
   EventBus,
   ExtensionClient,
@@ -42,10 +43,22 @@ export function extensions(): ExtensionClient {
   return ext;
 }
 
+/**
+ * 当前正在执行的扩展事务。
+ *
+ * `ctx.tx` 不允许嵌套：在已有事务里再开一层会直接抛 `extension.validation_error`
+ * （「不允许嵌套 ctx.tx」）。而「订单支付」这类入口本身就是事务内的，履约钩子又在
+ * 其中调用了需要事务的写入，于是**每一次**都会先失败一次、再靠定时重试成功。
+ * 用 AsyncLocalStorage 记住进行中的事务，重入时直接复用外层，语义就是「一起提交」。
+ */
+const activeTx = new AsyncLocalStorage<ExtensionTransaction>();
+
 /** Run a set of extension/wallet/payment writes atomically via `ctx.tx`. */
 export function runTransaction<T>(fn: (tx: ExtensionTransaction) => Promise<T>): Promise<T> {
+  const outer = activeTx.getStore();
+  if (outer) return fn(outer);
   if (!runTx) throw new StoreError(503, '商店插件未就绪');
-  return runTx(fn);
+  return runTx((tx) => activeTx.run(tx, () => fn(tx)));
 }
 
 /** Resolve the plugin's logger (no-op when the plugin is not bound, so

@@ -61,6 +61,20 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   { type: 'service.resumed', category: 'store', label: '服务已恢复', order: 105 },
   { type: 'service.terminated', category: 'store', label: '服务已终止', order: 110 },
   { type: 'service.changed', category: 'store', label: '服务配置已变更', order: 115 },
+  // 变更失败必须让用户知道：钱已经付了、配置还没生效，只有服务器日志等于没发生。
+  {
+    type: 'service.change.failed',
+    category: 'store',
+    label: '配置变更失败（自动重试中）',
+    order: 116,
+  },
+  {
+    type: 'store.change.exhausted',
+    category: 'store',
+    label: '配置变更重试用尽（管理员）',
+    audience: 'admin',
+    order: 118,
+  },
   { type: 'service.transferred', category: 'store', label: '服务已转移', order: 117 },
   { type: 'order.cancelled', category: 'store', label: '订单已取消', order: 35 },
 ];
