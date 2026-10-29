@@ -60,7 +60,7 @@ import { z } from 'zod';
 import { messages, t } from './i18n.js';
 import { AutoSubmitForm, CartCheckout } from './auto-submit.js';
 import { reconcileSelection } from './checkout-model.js';
-import { canManageService, serviceDate, serviceInstanceName } from './service-presentation.js';
+import { canManageService, isPublicIpLabel, serviceDate, serviceInstanceName } from './service-presentation.js';
 
 interface StoreProduct {
   id: string;
@@ -4090,7 +4090,7 @@ const storeFinders: Record<string, FinderProvider> = {
               const publicIp =
                 detail.status === 'fulfilled'
                   ? detail.value.service.detail.fields.find(
-                      (field) => !field.secret && /公网|public.?ip|^ipv4$|^ip$/i.test(field.label),
+                      (field) => !field.secret && isPublicIpLabel(field.label),
                     )?.value
                   : undefined;
               return {
