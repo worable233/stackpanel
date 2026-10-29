@@ -144,6 +144,24 @@ export async function refundOrder(req: HttpRequest): Promise<unknown> {
         ? `退款 订单 ${id}（操作人 ${actorId}）${reason ? `｜${reason}` : ''}${attestedNoUpstreamInstance ? '｜运营确认上游无实例' : ''}`
         : `退款 订单 ${id}${reason ? `｜${reason}` : ''}${attestedNoUpstreamInstance ? '｜运营确认上游无实例' : ''}`,
     });
+    // 直接退款（跳过申请）必须顺手关掉同一订单上还开着的申请：否则运营商看着
+    // 「退款申请」列表里那几条永远 PENDING，点批准只会得到「订单不可退款」，
+    // 一笔钱在账上已经退完了，队列里却永远清不掉。
+    if (!refundRequestId) {
+      const openRequests = await tx.extensions.listAll<RefundRequestData>(refundRequestModel, {
+        where: { orderId: { eq: id } },
+      });
+      for (const request of openRequests) {
+        if (request.spec.state !== 'PENDING' && request.spec.state !== 'FAILED') continue;
+        await tx.extensions.update<RefundRequestData>(refundRequestModel, request.name, {
+          ...request.spec,
+          state: 'SUCCEEDED',
+          reviewerId: actorId ?? null,
+          reviewReason: '运营直接退款，无需单独审核',
+          failureReason: null,
+        });
+      }
+    }
     // 仅全额退款回补库存：非续费、非变配行才占用库存（变配订单从未 reserve）。
     if (isFull) {
       for (const line of stockItems(order)) {
@@ -231,8 +249,31 @@ export async function createRefundRequest(req: HttpRequest): Promise<unknown> {
 
 export async function listRefundRequests(req: HttpRequest, admin: boolean): Promise<unknown> {
   const where = admin ? undefined : { userId: { eq: req.user?.id ?? '' } };
-  const rows = await extensions().listAll<{ orderId: string; userId: string; amount: number; currency: string; reason: string | null; state: string; reviewerId: string | null; reviewReason: string | null; failureReason: string | null; destination: string }>(refundRequestModel, { ...(where ? { where } : {}) });
-  return { requests: rows.map(row => ({ id: row.name, ...row.spec })) };
+  const rows = await extensions().listAll<RefundRequestData>(refundRequestModel, { ...(where ? { where } : {}) });
+  // 自愈：订单已经全额退款，申请却还挂着 PENDING（历史上跳过申请直接退款的路径
+  // 就是这么留下的）。这种申请永远无法被审核（订单已退款 → 409），留在队列里只会
+  // 让人以为有笔钱没处理。列表时顺手收尾一次，不需要人去库房改数据。
+  const settled: typeof rows = [];
+  for (const row of rows) {
+    if (row.spec.state !== 'PENDING' && row.spec.state !== 'FAILED') {
+      settled.push(row);
+      continue;
+    }
+    const order = await getOrder(row.spec.orderId);
+    if (order?.status !== 'REFUNDED') {
+      settled.push(row);
+      continue;
+    }
+    const next = {
+      ...row.spec,
+      state: 'SUCCEEDED',
+      reviewReason: '订单已全额退款，申请自动关闭',
+      failureReason: null,
+    };
+    await extensions().update<RefundRequestData>(refundRequestModel, row.name, next);
+    settled.push({ ...row, spec: next });
+  }
+  return { requests: settled.map(row => ({ id: row.name, ...row.spec })) };
 }
 
 export async function reviewRefundRequest(req: HttpRequest): Promise<unknown> {

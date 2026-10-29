@@ -6,7 +6,7 @@ import type {
   PluginContext,
 } from '@stackpanel/sdk';
 import { bindContext, resetContext } from './context';
-import { refundOrder, reviewRefundRequest } from './refund';
+import { listRefundRequests, refundOrder, reviewRefundRequest } from './refund';
 
 function createFakeExtensions() {
   const tables = new Map<string, Map<string, Stored>>();
@@ -586,6 +586,82 @@ describe('refundOrder · 开通结果待核对', () => {
     expect(credit.mock.calls[0]?.[3]).toMatchObject({
       note: expect.stringContaining('运营确认上游无实例'),
     });
+  });
+
+  it('直接退款时关掉同一订单上还开着的申请，否则队列永远清不掉', async () => {
+    const { fake, credit } = seedOrder();
+    fake.seed(
+      'store/refund-request',
+      {
+        orderId: 'order-1',
+        userId: 'user-1',
+        amount: 6635,
+        currency: 'CNY',
+        reason: '一直没收到机器',
+        state: 'PENDING',
+        reviewerId: null,
+        reviewReason: null,
+        failureReason: null,
+        destination: 'WALLET',
+        idempotencyKey: null,
+      },
+      'rr-open',
+    );
+
+    await refund({ confirmNoUpstreamInstance: true, reason: '上游确认无实例' });
+
+    // 钱只退一次；申请被同一次退款顺手关闭，不留第二个待处理项。
+    expect(credit).toHaveBeenCalledTimes(1);
+    expect(fake.all('store/refund-request')[0]!.spec).toMatchObject({
+      state: 'SUCCEEDED',
+      reviewerId: 'admin-1',
+      failureReason: null,
+    });
+    expect(String(fake.all('store/refund-request')[0]!.spec['reviewReason'])).toContain('直接退款');
+    // 已经关掉的申请不能再审一次（否则会撞「订单不可退款」变成永久卡住）。
+    await expect(
+      reviewRefundRequest({
+        params: { id: 'rr-open' },
+        body: { decision: 'approve' },
+        user: { id: 'admin-1', role: 'ADMIN' },
+      } as never),
+    ).rejects.toThrow(/已处理/);
+  });
+
+  it('列表时自愈：订单已全额退款的申请不再永远挂在待处理', async () => {
+    const { fake } = seedOrder();
+    fake.seed(
+      'store/refund-request',
+      {
+        orderId: 'order-1',
+        userId: 'user-1',
+        amount: 6635,
+        currency: 'CNY',
+        reason: null,
+        state: 'PENDING',
+        reviewerId: null,
+        reviewReason: null,
+        failureReason: null,
+        destination: 'WALLET',
+        idempotencyKey: null,
+      },
+      'rr-orphan',
+    );
+    await refund({ confirmNoUpstreamInstance: true });
+    // 模拟历史数据：订单已退款，申请还是 PENDING（旧版本跳过申请直接退款会留下它）。
+    fake.seed(
+      'store/refund-request',
+      { ...fake.all('store/refund-request')[0]!.spec, state: 'PENDING', reviewReason: null },
+      'rr-orphan',
+    );
+
+    const listed = (await listRefundRequests({ user: { id: 'admin-1' } } as never, true)) as {
+      requests: Array<{ id: string; state: string; reviewReason: string | null }>;
+    };
+    const orphan = listed.requests.find((r) => r.id === 'rr-orphan')!;
+    expect(orphan.state).toBe('SUCCEEDED');
+    expect(orphan.reviewReason).toContain('自动关闭');
+    expect(fake.all('store/refund-request').find((r) => r.name === 'rr-orphan')!.spec['state']).toBe('SUCCEEDED');
   });
 
   it('已有上游实例 ID 时，声明无效（证据高于断言）', async () => {
