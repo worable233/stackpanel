@@ -472,5 +472,7 @@
   "paymentMethod.wechat": "WeChat Pay",
   "paymentMethod.card": "Card",
   "orders.cancelOrder": "Cancel order",
-  "refund.attestConfirm": "Have you verified the upstream and confirmed there is no instance for this order? The buyer will be refunded and the stuck fulfilment task will be marked cancelled."
+  "refund.attestConfirm": "Have you verified the upstream and confirmed there is no instance for this order? The buyer will be refunded and the stuck fulfilment task will be marked cancelled.",
+  "review.exhausted": "Auto retries exhausted",
+  "review.exhaustedHint": "Automatic retries are exhausted ({attempts}/{maxAttempts}). Check whether the upstream created an instance; if not, refund from the order page (tick “no upstream instance”)."
 }

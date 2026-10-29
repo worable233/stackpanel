@@ -18,6 +18,7 @@ import {
   reconcileProvisioning,
   reconcileAdminDeliveryTask,
   listAdminDeliveryTasks,
+  retryUnconfirmedProvisioning,
   resumeAdminDeliveryPayment,
   recoverAdminDeliveryTask,
 } from './fulfillment';
@@ -39,7 +40,7 @@ interface Stored {
 const INDEX_FIELDS: Record<string, Set<string>> = {
   'store/order': new Set(['userId', 'state']),
   'store/product': new Set(['status', 'categoryId', 'stock', 'providerId']),
-  'store/delivery-task': new Set(['state', 'orderId', 'userId', 'nextAttemptAtMs', 'attempts']),
+  'store/delivery-task': new Set(['state', 'orderId', 'userId', 'nextAttemptAtMs', 'attempts', 'exhaustedNotifiedAt']),
   'store/service-instance': new Set([
     'userId',
     'orderId',
@@ -212,6 +213,7 @@ function makeProvider(): { provider: FulfillmentProvider; provision: ReturnType<
 function makeCtx(
   fake: ReturnType<typeof createFakeExtensions>,
   provider: FulfillmentProvider,
+  capture?: { warnings: string[]; adminNotices: Array<Record<string, unknown>> },
 ): PluginContext {
   const secrets = {
     isAvailable: () => true,
@@ -224,7 +226,11 @@ function makeCtx(
   };
   return {
     manifest: { id: 'store', name: '商店插件', version: '0.3.0' },
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    logger: {
+      info: () => {},
+      warn: (message: string) => void capture?.warnings.push(message),
+      error: () => {},
+    },
     events: {
       publish: () => {},
       subscribe: () => () => {},
@@ -242,7 +248,10 @@ function makeCtx(
     notifications: {
       create: async () => ({}) as never,
       upsert: async () => ({}) as never,
-      notifyPermissionHolders: async () => 0,
+      notifyPermissionHolders: async (_permission: string, notice: Record<string, unknown>) => {
+        capture?.adminNotices.push(notice);
+        return 1;
+      },
     } as never,
     notificationPolicy: {} as never,
     identity: {} as never,
@@ -381,8 +390,44 @@ describe('store fulfillment dispatcher', () => {
     const queue = await listAdminDeliveryTasks({ query: { status: 'attention' } } as never) as { tasks: unknown[]; total: number };
     expect(queue.total).toBe(1);
     expect(JSON.stringify(queue)).not.toContain('secret-provider-error');
+    // 尝试用尽必须自己在队列里说出来：否则这单永远停在「待核对」，无人知道该退款。
+    const row = (queue as { tasks: Array<{ attempts: number; maxAttempts: number; retryExhausted: boolean; reason: string | null }> }).tasks[0]!;
+    expect(row.retryExhausted).toBe(true);
+    expect(row.maxAttempts).toBe(3);
+    expect(row.reason).toContain('自动重试已用尽');
     const result = await getMyService({ params: { id: 'instance-review' }, user: { id: 'user' } } as never) as { service: { status: string } };
     expect(result.service.status).toBe('REQUIRES_RECONCILIATION');
+  });
+
+  it('tells operators exactly once when automatic retries run out', async () => {
+    const { fake } = seedReview();
+    const capture = { warnings: [] as string[], adminNotices: [] as Array<Record<string, unknown>> };
+    bindContext(makeCtx(fake, makeProvider().provider, capture));
+
+    // 用尽的单不再入队：再跑一遍还是 0，但必须留下可见的痕迹。
+    const requeued = await retryUnconfirmedProvisioning(Date.parse('2026-10-30T00:00:00Z'));
+    expect(requeued).toBe(0);
+    expect(fake.all(TASK)[0]!.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(capture.warnings.join('\n')).toMatch(/自动重试用尽 3\/3/);
+    expect(capture.adminNotices).toHaveLength(1);
+    expect(capture.adminNotices[0]!['title']).toBe('订单开通自动重试用尽');
+    expect(typeof fake.all(TASK)[0]!.spec.exhaustedNotifiedAt).toBe('string');
+
+    // 排障轮询每 5 分钟一轮：第二轮不许再刷一条相同通知。
+    await retryUnconfirmedProvisioning(Date.parse('2026-10-30T00:05:00Z'));
+    expect(capture.adminNotices).toHaveLength(1);
+    expect(capture.warnings).toHaveLength(1);
+  });
+
+  it('still requeues a task that has retry budget left', async () => {
+    const { fake } = seedReview();
+    const row = fake.all(TASK)[0]!;
+    fake.seed(TASK, { ...row.spec, attempts: 1 }, row.name);
+    const capture = { warnings: [] as string[], adminNotices: [] as Array<Record<string, unknown>> };
+    bindContext(makeCtx(fake, makeProvider().provider, capture));
+    expect(await retryUnconfirmedProvisioning(Date.parse('2026-10-30T00:00:00Z'))).toBe(1);
+    expect(fake.all(TASK)[0]!.spec.state).toBe('PENDING');
+    expect(capture.adminNotices).toHaveLength(0);
   });
 
   it('never lets a manual declaration replay a previously submitted request', async () => {

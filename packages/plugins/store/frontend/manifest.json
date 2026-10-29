@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "b17d14061903",
+  "revision": "b8c0e53462d2",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -1449,7 +1449,9 @@
       "paymentMethod.wechat": "微信支付",
       "paymentMethod.card": "银行卡",
       "orders.cancelOrder": "取消订单",
-      "refund.attestConfirm": "已核对上游，确认该订单没有任何实例？确认后将为买家退款，并把卡住的开通任务标记为已取消。"
+      "refund.attestConfirm": "已核对上游，确认该订单没有任何实例？确认后将为买家退款，并把卡住的开通任务标记为已取消。",
+      "review.exhausted": "自动重试已用尽",
+      "review.exhaustedHint": "自动重试已用尽（{attempts}/{maxAttempts}）：请核对上游是否存在实例，确认无实例请在订单页退款（需勾选「上游无实例」）。"
     },
     "zh-TW": {
       "review.recover": "核驗原賬單並重新送審",
@@ -1925,7 +1927,9 @@
       "paymentMethod.wechat": "微信支付",
       "paymentMethod.card": "銀行卡",
       "orders.cancelOrder": "取消訂單",
-      "refund.attestConfirm": "已核對上游，確認該訂單沒有任何執行個體？確認後將為買家退款，並把卡住的開通任務標記為已取消。"
+      "refund.attestConfirm": "已核對上游，確認該訂單沒有任何例項？確認後將為買家退款，並把卡住的開通任務標記為已取消。",
+      "review.exhausted": "自動重試已用盡",
+      "review.exhaustedHint": "自動重試已用盡（{attempts}/{maxAttempts}）：請核對上游是否有執行個體，確認沒有請在訂單頁退款（需勾選「上游無執行個體」）。"
     },
     "zh-HK": {
       "review.recover": "核驗原賬單並重新送審",
@@ -2401,7 +2405,9 @@
       "paymentMethod.wechat": "微信支付",
       "paymentMethod.card": "銀行卡",
       "orders.cancelOrder": "取消訂單",
-      "refund.attestConfirm": "已核對上游，確認該訂單沒有任何實例？確認後將為買家退款，並把卡住的開通任務標記為已取消。"
+      "refund.attestConfirm": "已核對上游，確認該訂單沒有任何例項？確認後將為買家退款，並把卡住的開通任務標記為已取消。",
+      "review.exhausted": "自動重試已用盡",
+      "review.exhaustedHint": "自動重試已用盡（{attempts}/{maxAttempts}）：請核對上游是否存在實例，確認無實例請在訂單頁退款（需勾選「上游無實例」）。"
     },
     "en-US": {
       "review.recover": "Verify invoices and request approval",
@@ -2877,7 +2883,9 @@
       "paymentMethod.wechat": "WeChat Pay",
       "paymentMethod.card": "Card",
       "orders.cancelOrder": "Cancel order",
-      "refund.attestConfirm": "Have you verified the upstream and confirmed there is no instance for this order? The buyer will be refunded and the stuck fulfilment task will be marked cancelled."
+      "refund.attestConfirm": "Have you verified the upstream and confirmed there is no instance for this order? The buyer will be refunded and the stuck fulfilment task will be marked cancelled.",
+      "review.exhausted": "Auto retries exhausted",
+      "review.exhaustedHint": "Automatic retries are exhausted ({attempts}/{maxAttempts}). Check whether the upstream created an instance; if not, refund from the order page (tick “no upstream instance”)."
     }
   }
 }

@@ -1656,7 +1656,7 @@ function StoreSettingsPage(props: AdminPageComponentProps) {
 
 function StoreApprovalsPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
-  const data = props.data.approvals as { total: number; page: number; pageSize: number; tasks: Array<{ id: string; orderId: string; userId: string; productName: string; quantity: number; status: string; reason: string | null; attempts: number; upstreamServiceId: string | null; invoiceId: string | null; paymentState: string | null; canResumePayment: boolean }> } | undefined;
+  const data = props.data.approvals as { total: number; page: number; pageSize: number; tasks: Array<{ id: string; orderId: string; userId: string; productName: string; quantity: number; status: string; reason: string | null; attempts: number; upstreamServiceId: string | null; invoiceId: string | null; paymentState: string | null; canResumePayment: boolean; maxAttempts: number; retryExhausted: boolean }> } | undefined;
   const [candidates, setCandidates] = useState<Record<string, Array<{ id: string; productName: string; providerServiceId: string }>>>({});
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, start] = useTransition();
@@ -1676,9 +1676,9 @@ function StoreApprovalsPage(props: AdminPageComponentProps) {
     {data?.tasks.map(task => <Card key={task.id}><CardHeader>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <CardTitle>{task.productName} × {task.quantity}</CardTitle>
-        <StatusBadge tone={task.status === 'AWAITING_APPROVAL' ? 'neutral' : 'warn'}>{tr(`review.status.${task.status}`)}</StatusBadge>
+        <StatusBadge tone={task.retryExhausted ? 'error' : task.status === 'AWAITING_APPROVAL' ? 'neutral' : 'warn'}>{tr(`review.status.${task.status}`)}</StatusBadge>
       </div>
-      <CardDescription>{task.status === 'AWAITING_APPROVAL' ? tr('review.approveHint') : task.paymentState ? tr(`review.payment.${task.paymentState}`) : tr('review.checkHint')}</CardDescription>
+      <CardDescription>{task.retryExhausted ? tr('review.exhaustedHint', { attempts: task.attempts, maxAttempts: task.maxAttempts }) : task.status === 'AWAITING_APPROVAL' ? tr('review.approveHint') : task.paymentState ? tr(`review.payment.${task.paymentState}`) : tr('review.checkHint')}</CardDescription>
     </CardHeader><CardContent className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
       {task.canResumePayment ? <Button disabled={busy} onClick={() => {

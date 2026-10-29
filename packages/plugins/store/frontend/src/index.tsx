@@ -3914,6 +3914,10 @@ const storeFinders: Record<string, FinderProvider> = {
               invoiceId: z.string().nullable(),
               paymentState: z.string().nullable(),
               canResumePayment: z.boolean(),
+              // 新增字段必须同步进 schema：zod 会静默剔除未知键，
+              // 漏了它前端就拿不到「自动重试用尽」标记，红标永远不显示。
+              maxAttempts: z.number(),
+              retryExhausted: z.boolean(),
             }),
           ),
         }),

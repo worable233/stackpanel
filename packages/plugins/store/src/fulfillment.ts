@@ -437,7 +437,29 @@ export async function retryUnconfirmedProvisioning(nowMs = Date.now()): Promise<
   });
   let requeued = 0;
   for (const task of tasks) {
-    if (task.spec.attempts >= task.spec.maxAttempts) continue;
+    if (task.spec.attempts >= task.spec.maxAttempts) {
+      // 用尽后这里什么也不做，但必须说一次话：静默放弃会让「付了钱、没拿到机器」
+      // 的单无声无息地留在待核对里（真实案例：上游购物车锁竞争把 3 次尝试烧光）。
+      // 管理端任务列表用同一个判定打红标，这里再给运营发一次性站内信。
+      if (!task.spec.exhaustedNotifiedAt) {
+        logger().warn(
+          `[store] 履约任务 ${task.name}（订单 ${task.spec.orderId}）自动重试用尽 ${task.spec.attempts}/${task.spec.maxAttempts}，需人工核对上游：确认无实例请在订单页退款`,
+        );
+        await notifyAdmins({
+          type: 'admin.service.provision.failed',
+          title: '订单开通自动重试用尽',
+          body: `订单 ${task.spec.orderId} 开通结果仍未确认，自动重试已用尽 ${task.spec.attempts}/${task.spec.maxAttempts}。请核对上游是否存在实例：无实例则在订单页退款（声明上游无实例）。`,
+          link: '/admin/plugin/store/approvals',
+          data: { orderId: task.spec.orderId, taskId: task.name, attempts: task.spec.attempts },
+        }).catch(error => logger().error(`store: exhaustion notification failed: ${messageOf(error)}`));
+        await context().extensions.updateWhere(
+          deliveryTaskModel,
+          { name: { eq: task.name }, state: { eq: 'REQUIRES_RECONCILIATION' }, attempts: { eq: task.spec.attempts } },
+          { exhaustedNotifiedAt: { set: new Date(nowMs).toISOString() } },
+        ).catch(() => undefined);
+      }
+      continue;
+    }
     // 退避：避免每次轮询都烧一次尝试次数，也避免对上游形成重试风暴。
     const delayMs = 300_000 * Math.max(1, task.spec.attempts);
     const { updated } = await context().extensions.updateWhere(
@@ -984,14 +1006,21 @@ export async function listAdminDeliveryTasks(req: HttpRequest): Promise<unknown>
   return { tasks: await Promise.all(items.map(async task => {
     const service = await getService(task.serviceId ?? `instance-${task.id}`);
     const runtime = service?.runtime as { invoiceId?: string; paymentState?: string } | null;
+    // 自动重试是有界的（`retryUnconfirmedProvisioning` 到 maxAttempts 就停手）。用尽
+    // 之后订单不会自己往前走，既不重试也不退款 —— 如果不显式标出来，付了钱没拿到
+    // 机器的单就永远躺在「待核对」里没人知道（真实案例：上游购物车锁竞争，3 次用尽）。
+    const retryExhausted = task.status === 'REQUIRES_RECONCILIATION' && task.attempts >= task.maxAttempts;
     return {
     id: task.id, orderId: task.orderId, userId: task.userId, productName: task.productName,
     productId: task.productId, quantity: task.quantity, status: task.status,
-    attempts: task.attempts, createdAt: task.createdAt,
+    attempts: task.attempts, maxAttempts: task.maxAttempts, retryExhausted, createdAt: task.createdAt,
     upstreamServiceId: service?.providerServiceId ?? null,
     invoiceId: runtime?.invoiceId ?? null, paymentState: runtime?.paymentState ?? null,
     canResumePayment: service?.status === 'AWAITING_UPSTREAM_PAYMENT' && Boolean(service.providerServiceId && runtime?.invoiceId && ['ORDER_CREATED', 'PAYMENT_REQUIRED'].includes(runtime.paymentState ?? '')),
-    reason: task.status === 'REQUIRES_RECONCILIATION' ? '开通请求结果未确认，请核对上游实例后处理' : null,
+    reason: task.status !== 'REQUIRES_RECONCILIATION' ? null
+      : retryExhausted
+        ? '自动重试已用尽，需人工核对上游：确认无实例请在订单页退款'
+        : '开通请求结果未确认，请核对上游实例后处理',
   }; })), total, page, pageSize: 50 };
 }
 

@@ -472,5 +472,7 @@
   "paymentMethod.wechat": "微信支付",
   "paymentMethod.card": "银行卡",
   "orders.cancelOrder": "取消订单",
-  "refund.attestConfirm": "已核对上游，确认该订单没有任何实例？确认后将为买家退款，并把卡住的开通任务标记为已取消。"
+  "refund.attestConfirm": "已核对上游，确认该订单没有任何实例？确认后将为买家退款，并把卡住的开通任务标记为已取消。",
+  "review.exhausted": "自动重试已用尽",
+  "review.exhaustedHint": "自动重试已用尽（{attempts}/{maxAttempts}）：请核对上游是否存在实例，确认无实例请在订单页退款（需勾选「上游无实例」）。"
 }

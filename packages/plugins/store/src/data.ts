@@ -170,6 +170,11 @@ export const deliveryTaskModel = defineModel({
     serviceId: z.string().nullable().default(null),
     /** 下次可执行时刻（epoch 毫秒）；0 表示无延迟（原 null）。 */
     nextAttemptAtMs: z.number().int().default(0),
+    /**
+     * 自动重试用尽时告知运营的时间。只写一次：排障轮询每 5 分钟跑一轮，没有这个
+     * 标记就会把同一条「重试用尽」通知刷成噪音，运营反而会忽略它。
+     */
+    exhaustedNotifiedAt: z.string().nullable().default(null),
   }),
   indexes: [
     { fields: ['state'], types: { state: 'string' } },
@@ -177,6 +182,7 @@ export const deliveryTaskModel = defineModel({
     { fields: ['userId'], types: { userId: 'string' } },
     { fields: ['nextAttemptAtMs'], types: { nextAttemptAtMs: 'number' } },
     { fields: ['attempts'], types: { attempts: 'integer' } },
+    { fields: ['exhaustedNotifiedAt'], types: { exhaustedNotifiedAt: 'string' } },
   ],
 });
 
@@ -294,4 +300,6 @@ export interface StoreDeliveryTaskData {
   payload: unknown;
   serviceId: string | null;
   nextAttemptAtMs: number;
+  /** 自动重试用尽时告知运营的时间（只告知一次，防止每次轮询重复刷）。 */
+  exhaustedNotifiedAt?: string | null;
 }
