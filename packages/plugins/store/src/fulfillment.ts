@@ -601,7 +601,14 @@ async function visibleServiceStatus(service: ServiceInstanceRecord): Promise<str
 export async function listMyServices(req: HttpRequest): Promise<unknown> {
   const userId = req.user?.id;
   if (!userId) throw new StoreError(401, '未登录');
-  const services = await listServicesByUser(userId);
+  // 已终止的实例（退款撤销、到期回收）不是“正在用的云服务”，混在列表里只会让买家
+  // 以为还有一台机器在跑。历史记录仍在订单页与详情页可查，`?includeTerminated=1`
+  // 是给需要回看历史的入口留的口子。
+  const query = (req.query ?? {}) as { includeTerminated?: string };
+  const includeTerminated = query.includeTerminated === '1' || query.includeTerminated === 'true';
+  const services = (await listServicesByUser(userId)).filter(
+    service => includeTerminated || service.status !== 'TERMINATED',
+  );
   const reviewStates = new Map(await Promise.all(services.map(async service => [service.id, await visibleServiceStatus(service)] as const)));
   const products = new Map(
     await Promise.all(

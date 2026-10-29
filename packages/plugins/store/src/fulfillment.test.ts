@@ -832,6 +832,25 @@ describe('store fulfillment dispatcher', () => {
     expect(result.services).toHaveLength(1);
   });
 
+  it('已终止的实例不出现在"我的云服务"里，历史仍可显式查询', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(SERVICE, { userId: 'user-1', productName: 'A', state: 'ACTIVE' }, 'svc-live');
+    fake.seed(SERVICE, { userId: 'user-1', productName: 'B', state: 'TERMINATED' }, 'svc-dead');
+    bindContext(makeCtx(fake, makeProvider().provider));
+
+    const listed = (await listMyServices({ user: { id: 'user-1', role: 'USER' } } as never)) as {
+      services: Array<{ id: string }>;
+    };
+    // 退款撤销 / 到期回收的实例留着只会让买家以为还有机器在跑。
+    expect(listed.services.map((service) => service.id)).toEqual(['svc-live']);
+
+    const withHistory = (await listMyServices({
+      user: { id: 'user-1', role: 'USER' },
+      query: { includeTerminated: '1' },
+    } as never)) as { services: Array<{ id: string }> };
+    expect(withHistory.services.map((service) => service.id).sort()).toEqual(['svc-dead', 'svc-live']);
+  });
+
   it('lists persisted selected specifications without substituting product defaults or leaking metadata', async () => {
     const fake = createFakeExtensions();
     fake.seed(
