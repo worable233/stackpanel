@@ -41,12 +41,13 @@ export async function initJobs(options: InitJobsOptions): Promise<void> {
     );
     options.logger.info('[jobs] 已启用 Redis/BullMQ 任务后端（集群安全）');
   } else {
-    // Losing Redis is not fatal to boot, but it silently downgrades scheduled
-    // work (payment/outbox/state sweeps) to a per-process timer and **drops**
-    // cron declarations entirely — so make the degradation loud, not a footnote
-    // (audit E-10). `/ready` also reports the backend via `backendKind()`.
+    // Losing Redis is not fatal to boot: every scheduled job (including `cron`)
+    // keeps running on an in-process timer. What Redis provides is *coordination*
+    // — one scheduler and one execution across replicas — so the degradation is
+    // about duplicate work, not about silently dropping schedules (audit E-10).
+    // `/ready` also reports the backend via `backendKind()`.
     options.logger.warn(
-      '[jobs] 未配置 Redis：任务使用进程内实现，cron 计划任务将被忽略、且仅单副本正确。生产环境请配置 REDIS_URL。',
+      '[jobs] 未配置 Redis：任务使用进程内定时器（含 cron），每个副本都会各自执行一次。生产环境请配置 REDIS_URL 以获得集群内单次执行。',
     );
     await runtime.useBackend(new MemoryJobBackend({ logger: options.logger }));
   }

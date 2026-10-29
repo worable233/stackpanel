@@ -1,9 +1,9 @@
 /**
  * In-process job backend for development and tests without Redis (ADR-0013
- * fallback). It preserves the *contract* — namespaced handlers, recurring jobs,
- * bounded retries — but not the cluster guarantee: timers run in whichever
- * process created them. Production requires Redis, so this is never the
- * multi-replica path.
+ * fallback). It preserves the *contract* — namespaced handlers, recurring jobs
+ * (including `cron`), bounded retries — but not the cluster guarantee: timers
+ * run in whichever process created them, so `everyMs`/`cron` fire once *per
+ * process*. Redis (BullMQ) is what makes them fire once across replicas.
  */
 import { randomUUID } from 'node:crypto';
 import type { JobHandler, JobOptions } from '@stackpanel/sdk';
@@ -13,6 +13,7 @@ import {
   type JobBackend,
   type RegisteredSchedule,
 } from './types.ts';
+import { nextCronFireMs } from './cron.ts';
 
 export interface MemoryJobBackendOptions {
   logger: { warn: (m: string) => void };
@@ -23,8 +24,10 @@ export class MemoryJobBackend implements JobBackend {
   private readonly handlers = new Map<string, JobHandler>();
   private readonly schedules = new Map<
     string,
-    { timer: ReturnType<typeof setInterval>; entry: RegisteredSchedule }
+    { stop: () => void; entry: RegisteredSchedule }
   >();
+  /** Names whose previous run has not finished; a timer tick never stacks up. */
+  private readonly inFlight = new Set<string>();
   private readonly timers = new Map<ReturnType<typeof setTimeout>, { fullName: string; jobId?: string }>();
   private readonly queuedIds = new Map<string, string>();
 
@@ -39,24 +42,55 @@ export class MemoryJobBackend implements JobBackend {
   }
 
   async schedule(entry: RegisteredSchedule): Promise<void> {
-    if (!('everyMs' in entry.schedule)) {
-      this.options.logger.warn(
-        `[jobs] cron 调度需要 Redis；开发回退忽略 ${entry.fullName} 的 cron 声明`,
-      );
+    await this.unschedule(entry.fullName);
+    if ('everyMs' in entry.schedule) {
+      const timer = setInterval(() => {
+        void this.run(entry.fullName, entry.payload, entry.options);
+      }, entry.schedule.everyMs);
+      timer.unref?.();
+      this.schedules.set(entry.fullName, { stop: () => clearInterval(timer), entry });
       return;
     }
-    await this.unschedule(entry.fullName);
-    const timer = setInterval(() => {
-      void this.run(entry.fullName, entry.payload, entry.options);
-    }, entry.schedule.everyMs);
-    timer.unref?.();
-    this.schedules.set(entry.fullName, { timer, entry });
+
+    // cron：进程内按「下一次触发时刻」重新武装定时器。丢掉 cron 会让排期工作
+    // 在无 Redis 的单节点部署里静默失效（audit E-10）——Redis 只负责多副本协调，
+    // 不是「能不能跑」的前提。表达式非法时只警告一次并停止，绝不自作主张猜。
+    const cron = entry.schedule.cron;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    const arm = (): void => {
+      if (stopped) return;
+      let delayMs: number;
+      try {
+        delayMs = Math.max(0, nextCronFireMs(cron, Date.now()) - Date.now());
+      } catch (error) {
+        stopped = true;
+        this.options.logger.warn(
+          `[jobs] ${entry.fullName} 的 cron 表达式不可用（${String(error)}），已停止调度`,
+        );
+        return;
+      }
+      timer = setTimeout(() => {
+        if (stopped) return;
+        arm();
+        void this.run(entry.fullName, entry.payload, entry.options);
+      }, delayMs);
+      timer.unref?.();
+    };
+    arm();
+    this.schedules.set(entry.fullName, {
+      stop: () => {
+        stopped = true;
+        if (timer) clearTimeout(timer);
+      },
+      entry,
+    });
   }
 
   async unschedule(fullName: string): Promise<void> {
     const existing = this.schedules.get(fullName);
     if (existing) {
-      clearInterval(existing.timer);
+      existing.stop();
       this.schedules.delete(fullName);
     }
   }
@@ -114,21 +148,29 @@ export class MemoryJobBackend implements JobBackend {
       this.options.logger.warn(`[jobs] 忽略未知任务：${fullName}`);
       return;
     }
-    const attempts = Math.max(1, options?.attempts ?? DEFAULT_ATTEMPTS);
-    const backoff = options?.backoffMs ?? DEFAULT_BACKOFF_MS;
-    for (let made = 1; made <= attempts; made += 1) {
-      try {
-        await handler(payload);
-        return;
-      } catch (err) {
-        if (made >= attempts) {
-          this.options.logger.warn(
-            `[jobs] 任务 ${fullName} 在 ${made} 次尝试后进入死信：${String(err)}`,
-          );
+    // A slow sweep must not stack up: without a queue, skipping the tick is the
+    // only sane behaviour (the handler is idempotent and runs again next tick).
+    if (this.inFlight.has(fullName)) return;
+    this.inFlight.add(fullName);
+    try {
+      const attempts = Math.max(1, options?.attempts ?? DEFAULT_ATTEMPTS);
+      const backoff = options?.backoffMs ?? DEFAULT_BACKOFF_MS;
+      for (let made = 1; made <= attempts; made += 1) {
+        try {
+          await handler(payload);
           return;
+        } catch (err) {
+          if (made >= attempts) {
+            this.options.logger.warn(
+              `[jobs] 任务 ${fullName} 在 ${made} 次尝试后进入死信：${String(err)}`,
+            );
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, backoff));
         }
-        await new Promise((resolve) => setTimeout(resolve, backoff));
       }
+    } finally {
+      this.inFlight.delete(fullName);
     }
   }
 }

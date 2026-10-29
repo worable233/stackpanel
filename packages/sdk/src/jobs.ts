@@ -33,8 +33,9 @@ export interface JobOptions {
  * - `everyMs`: fixed interval (seconds-resolution work such as polling);
  * - `cron`: a 5-field cron expression (minute resolution and above).
  *
- * Cron scheduling requires Redis (the in-process development fallback only
- * supports `everyMs`).
+ * Both work without Redis: the in-process backend arms a timer for the next
+ * matching minute. Redis is only needed to run a schedule **once across
+ * replicas** — without it, every process fires its own copy.
  */
 export type JobSchedule = { everyMs: number } | { cron: string };
 
