@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CronParseError, matchesCron, nextCronFireMs, parseCron } from '../../src/jobs/cron.ts';
 import { MemoryJobBackend } from '../../src/jobs/memory-backend.ts';
-import { createKernelJobContext } from '../../src/jobs/kernel-jobs.ts';
+import { createKernelJobContext, getJobRuntime } from '../../src/jobs/kernel-jobs.ts';
+import { describeSchedules } from '../../src/jobs/index.ts';
 
 /**
  * In-process scheduling (ADR-0013 / audit E-10).
@@ -121,5 +122,34 @@ describe('MemoryJobBackend cron scheduling', () => {
     await vi.advanceTimersByTimeAsync(MINUTE);
     expect(runs).toBe(2);
     await backend.stop();
+  });
+});
+
+describe('schedule diagnostics (/admin/jobs/schedules)', () => {
+  it('reports cadence, next cron fire, and flags expressions that never fire', async () => {
+    const runtime = getJobRuntime();
+    const nowMs = Date.parse('2026-01-01T00:00:30.000Z');
+    await runtime.schedule({ fullName: 'diag.every', schedule: { everyMs: 60_000 }, payload: null });
+    await runtime.schedule({ fullName: 'diag.cron', schedule: { cron: '*/15 * * * *' }, payload: null });
+    await runtime.schedule({ fullName: 'diag.broken', schedule: { cron: '0 0 30 2 *' }, payload: null });
+
+    const { schedules } = describeSchedules(nowMs);
+    const byName = new Map(schedules.map((entry) => [entry.name, entry]));
+    expect(byName.get('diag.every')).toMatchObject({
+      kind: 'everyMs',
+      everyMs: 60_000,
+      nextFireAt: null,
+    });
+    expect(byName.get('diag.cron')).toMatchObject({
+      kind: 'cron',
+      cron: '*/15 * * * *',
+      nextFireAt: '2026-01-01T00:15:00.000Z',
+    });
+    // 一年内不会触发的表达式必须显式暴露，而不是安静地不跑。
+    expect(byName.get('diag.broken')?.nextFireAt).toBeNull();
+    expect(byName.get('diag.broken')?.error).toMatch(/一年内不会触发/);
+
+    await runtime.removeByOwner('diag');
+    expect(getJobRuntime().listSchedules().some((name) => name.startsWith('diag.'))).toBe(false);
   });
 });

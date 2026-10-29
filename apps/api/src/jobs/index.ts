@@ -11,6 +11,8 @@ import { REDIS_KEY_PREFIX } from '@stackpanel/sdk';
 import type { JobContext } from '@stackpanel/sdk';
 import { redisConnectionOptions } from './redis-connection.ts';
 import { getJobRuntime, KERNEL_JOBS } from './kernel-jobs.ts';
+import { nextCronFireMs } from './cron.ts';
+import type { JobSchedule } from '@stackpanel/sdk';
 import { BullMqJobBackend, KERNEL_QUEUE_NAME } from './bullmq-backend.ts';
 import { MemoryJobBackend } from './memory-backend.ts';
 
@@ -52,6 +54,65 @@ export async function initJobs(options: InitJobsOptions): Promise<void> {
     await runtime.useBackend(new MemoryJobBackend({ logger: options.logger }));
   }
   await runtime.start();
+}
+
+/** One recurring job as reported by the diagnostics surface. */
+export interface JobScheduleInfo {
+  /** Fully-qualified name (`<owner>.<name>`). */
+  name: string;
+  kind: 'everyMs' | 'cron';
+  /** Fixed interval, for `everyMs` schedules. */
+  everyMs?: number;
+  /** Cron expression, for `cron` schedules. */
+  cron?: string;
+  /**
+   * Next fire time (ISO) for `cron` schedules. `null` for `everyMs` (driven by
+   * the backend timer) and for expressions that cannot be scheduled.
+   */
+  nextFireAt: string | null;
+  /** Why `nextFireAt` is null even though the schedule is a cron. */
+  error?: string;
+}
+
+/**
+ * Describe each declared recurring job for operators: which cadence, and when a
+ * cron will next fire. This is the answer to "这个定时任务到底跑没跑" — a schedule
+ * with no handler, an invalid expression, or a replica that never armed it all
+ * show up here (audit E-10).
+ */
+export function describeSchedules(nowMs = Date.now()): {
+  backend: 'bullmq' | 'memory' | null;
+  schedules: JobScheduleInfo[];
+} {
+  const runtime = getJobRuntime();
+  const schedules = runtime.listScheduleEntries().map((entry) => {
+    const schedule: JobSchedule = entry.schedule;
+    if ('everyMs' in schedule) {
+      return {
+        name: entry.fullName,
+        kind: 'everyMs' as const,
+        everyMs: schedule.everyMs,
+        nextFireAt: null,
+      };
+    }
+    try {
+      return {
+        name: entry.fullName,
+        kind: 'cron' as const,
+        cron: schedule.cron,
+        nextFireAt: new Date(nextCronFireMs(schedule.cron, nowMs)).toISOString(),
+      };
+    } catch (error) {
+      return {
+        name: entry.fullName,
+        kind: 'cron' as const,
+        cron: schedule.cron,
+        nextFireAt: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+  return { backend: runtime.backendKind(), schedules };
 }
 
 export interface KernelSweepDeps {

@@ -98,6 +98,11 @@ class CanonicalJobRuntime implements JobRuntime {
     return [...this.schedules.keys()];
   }
 
+  /** Registered recurring jobs with their declared cadence (diagnostics). */
+  listScheduleEntries(): RegisteredSchedule[] {
+    return [...this.schedules.values()].map((entry) => ({ ...entry }));
+  }
+
   /**
    * Whether a storage backend is attached (i.e. `initInfra()`/`initJobs()` has
    * run). Read-only diagnostics; the media async pipeline uses it to keep the
