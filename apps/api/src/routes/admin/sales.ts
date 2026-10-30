@@ -69,7 +69,7 @@ export async function adminSalesRoutes(app: FastifyInstance): Promise<void> {
      * `config` is normal — warning there would train operators to ignore the
      * warning. `mode` comes from the live runtime, not from the row.
      */
-    const listing = request.server.payments.listPaymentMethods();
+    const listing = await request.server.payments.listPaymentMethods();
     const modes = new Map(listing.providers.map((provider) => [provider.id, provider.mode]));
     return {
       // The installable provider catalogue, so the admin UI can offer a picker

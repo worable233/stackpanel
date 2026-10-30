@@ -121,9 +121,13 @@ export class PaymentsService implements PaymentServiceContract {
     return this.options.getProviders();
   }
 
-  private providerFor(providerId: string, method: string): PaymentProvider {
+  private async providerFor(providerId: string, method: string): Promise<PaymentProvider> {
     const provider = this.providers().find((candidate) => candidate.id === providerId);
-    if (!provider || !provider.getMethods().some((candidate) => candidate.id === method)) {
+    // `await` is required even for in-process providers: an isolated plugin's
+    // `getMethods()` is an async proxy, so an un-awaited call yields a Promise
+    // and `.some(...)` throws. Gateway checkout then 500s for every method.
+    const methods = provider ? await provider.getMethods() : [];
+    if (!provider || !methods.some((candidate) => candidate.id === method)) {
       throw new PaymentError(400, '所选支付方式不可用');
     }
     return provider;
@@ -215,15 +219,17 @@ export class PaymentsService implements PaymentServiceContract {
   // Public contract
   // ---------------------------------------------------------------------------
 
-  listPaymentMethods(): PaymentMethodListing {
+  async listPaymentMethods(): Promise<PaymentMethodListing> {
     return {
       wallet: { id: 'wallet', label: '余额支付' },
-      providers: this.providers().map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        mode: provider.mode,
-        methods: provider.getMethods(),
-      })),
+      providers: await Promise.all(
+        this.providers().map(async (provider) => ({
+          id: provider.id,
+          name: provider.name,
+          mode: provider.mode,
+          methods: await provider.getMethods(),
+        })),
+      ),
     };
   }
 
@@ -250,17 +256,17 @@ export class PaymentsService implements PaymentServiceContract {
     });
     const configuredProviders = new Set(configured.map((row) => row.providerId));
     if (configuredProviders.size === 0) return this.listPaymentMethods();
-    return {
-      wallet: { id: 'wallet', label: '余额支付' },
-      providers: providers
+    const listed = await Promise.all(
+      providers
         .filter((provider) => provider.mode !== 'manual' || configuredProviders.has(provider.id))
-        .map((provider) => ({
+        .map(async (provider) => ({
           id: provider.id,
           name: provider.name,
           mode: provider.mode,
-          methods: provider.getMethods(),
+          methods: await provider.getMethods(),
         })),
-    };
+    );
+    return { wallet: { id: 'wallet', label: '余额支付' }, providers: listed };
   }
 
   async createRecord(input: ExternalPaymentCreateInput, tx?: Tx): Promise<ExternalPaymentRecord> {
@@ -271,7 +277,7 @@ export class PaymentsService implements PaymentServiceContract {
     ) {
       throw new PaymentError(400, '金额无效');
     }
-    const provider = this.providerFor(input.providerId, input.paymentMethod);
+    const provider = await this.providerFor(input.providerId, input.paymentMethod);
     const db = tx ?? this.options.db;
     /*
      * Manual methods are pure instructions: no gateway call, no `paymentUrl`.
@@ -368,7 +374,7 @@ export class PaymentsService implements PaymentServiceContract {
     const payment = await this.options.db.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new PaymentError(404, '支付记录不存在');
     if (payment.status !== 'PENDING') throw new PaymentError(409, '支付已处理');
-    const provider = this.providerFor(
+    const provider = await this.providerFor(
       payment.providerId as string,
       payment.paymentMethod as string,
     );
@@ -376,7 +382,16 @@ export class PaymentsService implements PaymentServiceContract {
     const method = payment.methodId
       ? await this.options.db.paymentMethod.findUnique({ where: { id: payment.methodId } })
       : null;
-    const config = method?.config;
+    /*
+     * Only a *manual* provider takes its configuration from the bound
+     * `payment_methods` row — for bank transfer/QR that row **is** the payment
+     * step. A gateway provider keeps its credentials in its own plugin settings
+     * and its row is normally `{}`, so passing that empty object through made
+     * every gateway call parse `{}` as a full config and fail: "易支付支付方式
+     * 配置无效" on every top-up and every checkout. Hand gateways `undefined`
+     * so they fall back to their own configuration.
+     */
+    const config = provider.mode === 'manual' ? method?.config : undefined;
     try {
       const initiated = await provider.createPayment(
         {
@@ -682,7 +697,17 @@ export class PaymentsService implements PaymentServiceContract {
     const method = await this.options.db.paymentMethod.findFirst({
       where: { providerId, enabled: true },
     });
-    return method?.config ?? null;
+    const config = method?.config;
+    /*
+     * A gateway provider's row is normally `{}`: its credentials live in its own
+     * plugin settings, so the row only records that the method is offered. An
+     * empty object must therefore mean "no row config" rather than "config is
+     * the empty object" — plugins parse this value as a complete credential set
+     * and `{}` fails that parse, which used to make activation log a spurious
+     * schema error before falling back to its own secret.
+     */
+    if (!config || typeof config !== 'object' || Object.keys(config).length === 0) return null;
+    return config;
   }
 
   async listByOrderIds(orderIds: string[]): Promise<PaymentOrderLink[]> {
