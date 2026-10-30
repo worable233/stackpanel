@@ -24,6 +24,7 @@ import { installExtensionRoutes } from './extensions/routes.ts';
 import { installObservability } from './observability/index.ts';
 import { maintenanceWriteGuard } from './backup/guard.ts';
 import { getPrisma } from './plugins/prisma.ts';
+import { installAdminCapabilityAliases } from './lib/capability-alias.ts';
 import { createPluginHost } from './plugin-host.ts';
 import { adminAuditRoutes } from './routes/admin/audit.ts';
 import { adminBackupRoutes } from './routes/admin-backup.ts';
@@ -439,6 +440,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await initThemes();
     await seedDefaultBrand();
   });
+  // Open-platform aliases for `/admin/*` (ADR-0001). Installed BEFORE the admin
+  // sub-plugins below so its `onRoute` hook observes every one of them, and each
+  // alias reuses that route's own handler + preHandler chain — the coarse
+  // `requireRole('ADMIN')` guard always runs first, so a refined scope can only
+  // ever narrow access, never widen it.
+  installAdminCapabilityAliases(app);
   void app.register(adminUserRoutes);
   void app.register(adminAuditRoutes);
   void app.register(adminJobsRoutes);

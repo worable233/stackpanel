@@ -409,6 +409,7 @@ export {
   buildMcpTools,
   isMcpWriteAuthorized,
   mcpToolName,
+  normalizeToolBody,
 } from './mcp.js';
 export type {
   McpApiCall,

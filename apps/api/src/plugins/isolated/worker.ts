@@ -87,7 +87,18 @@ const definition = (mod[manifest.export ?? 'default'] ?? mod.default) as {
   manifest?: {
     consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
     inject?: string[];
+    /**
+     * Open-platform capabilities the plugin declares.
+     *
+     * 必须跨进程序列化回宿主：宿主只有磁盘 manifest，而安装器生成的
+     * manifest.json 只写权限/执行等字段，`capabilities` 只存在于插件定义里。
+     * 漏传的后果是插件路由照常可用、`/api/v1/<capability.path>` 别名也挂上了，
+     * 但 `pluginRuntime.listCapabilities()` 返回空 —— 于是 `/api/v1/capabilities`
+     * 与 MCP `tools/list` 里看不到任何插件贡献的能力，Agent 无从调用。
+     */
+    capabilities?: Array<Record<string, unknown>>;
   };
+  capabilities?: Array<Record<string, unknown>>;
   consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
   eventListeners?: Array<{ topic: string; handler: (payload: unknown) => void }>;
   onRegister?: PluginHook;
@@ -169,6 +180,12 @@ function sendHost(message: Record<string, unknown>): void {
 
 const declaredConsumes = definition.manifest?.consumes ?? definition.consumes ?? [];
 const declaredInject = definition.manifest?.inject ?? definition.inject ?? [];
+// 插件定义优先，磁盘 manifest 兜底：与 consumes 同理，安装器可能只写后者。
+const declaredCapabilities: Array<Record<string, unknown>> =
+  definition.manifest?.capabilities ??
+  definition.capabilities ??
+  (manifest['capabilities'] as Array<Record<string, unknown>> | undefined) ??
+  [];
 
 sendHost({
   protocol: RPC_PROTOCOL,
@@ -178,6 +195,7 @@ sendHost({
   ...(modelDescriptors.length > 0 ? { models: modelDescriptors } : {}),
   ...(declaredInject.length > 0 ? { inject: declaredInject } : {}),
   ...(declaredConsumes.length > 0 ? { consumes: declaredConsumes } : {}),
+  ...(declaredCapabilities.length > 0 ? { capabilities: declaredCapabilities } : {}),
   ...(unsupported.length > 0 ? { unsupported } : {}),
 });
 

@@ -337,8 +337,23 @@ export function requireOpenScope(scope: string) {
  * group), `USER` maps to no additional permission (any authenticated user).
  * Kept so existing admin route call sites stay unchanged.
  */
+/**
+ * Marks a guard built by {@link requireRole}.
+ *
+ * Consumers that need to *re-derive* an admin route's admission (e.g. the
+ * open-platform alias builder, which replaces the coarse role check with a
+ * refined scope) must be able to identify this kind of guard without comparing
+ * function identity — each `requireRole()` call produces a fresh closure.
+ */
+export const ROLE_GUARD = Symbol('stackpanel.roleGuard');
+
+/** Whether `guard` came from {@link requireRole}. */
+export function isRoleGuard(guard: unknown): boolean {
+  return typeof guard === 'function' && (guard as unknown as Record<symbol, unknown>)[ROLE_GUARD] === true;
+}
+
 export function requireRole(...roles: readonly string[]) {
-  return async function roleGuard(
+  const roleGuard = async function roleGuard(
     request: FastifyRequest,
     reply: FastifyReply,
   ): Promise<void> {
@@ -361,4 +376,6 @@ export function requireRole(...roles: readonly string[]) {
       await reply.code(403).send({ error: '没有权限执行此操作' });
     }
   };
+  Object.defineProperty(roleGuard, ROLE_GUARD, { value: true });
+  return roleGuard;
 }

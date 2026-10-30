@@ -27,6 +27,8 @@ async function executeViaApi(
   call: McpApiCall,
 ): Promise<McpExecutionResult> {
   const headers: Record<string, string> = { accept: 'application/json' };
+  // See makeExecutor: only an object payload gets an inferred content-type.
+  if (call.body !== undefined) headers['content-type'] = 'application/json';
   const authorization = request.headers.authorization;
   const cookie = request.headers.cookie;
   if (typeof authorization === 'string') headers['authorization'] = authorization;

@@ -122,7 +122,11 @@ export function buildMcpTool(capability: McpCapability): McpToolDescriptor {
           additionalProperties: true,
         },
         body: {
-          description: 'JSON request body (mutating operations only).',
+          type: 'object',
+          description:
+            'JSON request body (mutating operations only). Pass an object, not a JSON string. ' +
+            'The endpoint validates it strictly: read the matching read tool first so you can send ' +
+            'every required field (a partial object is rejected with 422).',
         },
         ...(capability.mutating
           ? {
@@ -214,6 +218,31 @@ function isBodyMethod(method: HttpMethod): boolean {
 }
 
 /**
+ * Normalise a model-supplied `body` into the JSON value the endpoint expects.
+ *
+ * Tool schemas describe `body` as "JSON request body", so a model routinely
+ * sends it as a **string** containing JSON (LLM tool-call arguments are text).
+ * Passing that string through to `inject({ payload })` makes Fastify skip its
+ * JSON serialiser, so the request arrives with no `content-type` and the strict
+ * body parsers reject every write with 415/422. Parsing here — once, at the one
+ * place a tool call becomes an HTTP request — fixes both surfaces (the kernel
+ * Agent and an external MCP client), which is the whole point of ADR-0001.
+ *
+ * A string that is not valid JSON is left untouched: the endpoint may accept a
+ * raw text body, and silently dropping it would be worse than a clear 4xx.
+ */
+export function normalizeToolBody(body: unknown): unknown {
+  if (typeof body !== 'string') return body;
+  const trimmed = body.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return body;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return body;
+  }
+}
+
+/**
  * Turn a tool call into the concrete `/api/v1` request.
  *
  * `params` fills `:name` path segments (URL-encoded); `query` appends a query
@@ -250,7 +279,7 @@ export function buildMcpApiCall(
   return {
     method: capability.method,
     path: qs ? `${path}?${qs}` : path,
-    ...(mutating && args.body !== undefined ? { body: args.body } : {}),
+    ...(mutating && args.body !== undefined ? { body: normalizeToolBody(args.body) } : {}),
     ...(mutating && args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : {}),
   };
 }

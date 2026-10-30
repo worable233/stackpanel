@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
 import type {
+  PluginCapability,
   PluginDefinition,
   PluginManifest,
   PluginRoute,
@@ -59,6 +60,16 @@ type Ready = {
   inject?: string[];
   /** 插件定义里声明的扩展点消费，与磁盘 manifest 合并后作为白名单。 */
   consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
+  /**
+   * Open-platform capabilities the plugin declared in its definition.
+   *
+   * The isolated worker is the only party that can read them: the installer's
+   * `manifest.json` carries permissions/execution but not capabilities, so
+   * without this channel every plugin capability would vanish from
+   * `/api/v1/capabilities` and MCP `tools/list` — leaving the Agent unable to
+   * reach any plugin operation even though its alias routes exist.
+   */
+  capabilities?: Array<Record<string, unknown>>;
   unsupported?: string[];
 };
 type Result = {
@@ -1435,7 +1446,15 @@ export async function loadIsolatedPluginDefinition(
     } as PluginRoute;
   });
   return {
-    manifest,
+    // The worker re-reports the capabilities it declared in its definition, so
+    // merge them over the on-disk manifest (which never carries them) — this is
+    // what `mountCapabilities` reads to populate the open-platform surface.
+    manifest: (() => {
+      const declared = Array.isArray(ready.capabilities)
+        ? (ready.capabilities as unknown as PluginCapability[])
+        : [];
+      return { ...manifest, ...(declared.length > 0 ? { capabilities: declared } : {}) };
+    })(),
     routes,
     ...(ready.inject !== undefined ? { inject: ready.inject } : {}),
     ...(customModels.length > 0 ? { customModels } : {}),
