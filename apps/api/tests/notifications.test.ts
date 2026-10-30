@@ -55,6 +55,24 @@ function createFakeDb() {
       findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
         return rows.find((candidate) => matchesWhere(candidate, where)) ?? null;
       }),
+      findFirst: vi.fn(
+        async ({
+          where,
+          select,
+        }: {
+          where?: Record<string, unknown>;
+          select?: Record<string, boolean>;
+        }) => {
+          const row = rows.find((candidate) => matchesWhere(candidate, where));
+          if (!row) return null;
+          if (!select) return row;
+          return Object.fromEntries(
+            Object.keys(select)
+              .filter((key) => select[key])
+              .map((key) => [key, row[key]]),
+          );
+        },
+      ),
       findMany: vi.fn(
         async ({
           where = {},
@@ -283,8 +301,11 @@ describe('KernelNotificationsService', () => {
     expect(marked).toBe(true);
     expect(await service.unreadCount('user-1')).toBe(0);
 
+    // Re-acknowledging an already-read notification stays successful: the UI
+    // fires this from several places, and a 404 there surfaced as a bogus
+    // “标记已读失败” toast.
     const again = await service.markRead('user-1', created.id);
-    expect(again).toBe(false);
+    expect(again).toBe(true);
   });
 
   it('marks all read and returns the updated count', async () => {

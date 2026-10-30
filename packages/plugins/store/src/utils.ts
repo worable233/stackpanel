@@ -187,6 +187,30 @@ function normalizeSelection(value: unknown): CheckoutSelection | undefined {
   };
 }
 
+/**
+ * Stable identity for a cart line's configuration.
+ *
+ * Two lines are "the same purchase" only when the customer would get the same
+ * thing: same cycle and same option→choice mapping. The key must therefore be
+ * order-insensitive (object key order carries no meaning) and must ignore
+ * `summary`, which is a display string the provider may re-word at any time.
+ * `instanceName` is included: two differently-named servers are two servers.
+ *
+ * Returning a canonical JSON string keeps the comparison allocation-free at the
+ * call site and makes a mismatch debuggable in logs.
+ */
+export function selectionKey(config: CheckoutSelection | null | undefined): string {
+  if (!config) return '';
+  const selections = Object.keys(config.selections ?? {})
+    .sort()
+    .map((key) => [key, config.selections?.[key]] as const);
+  return JSON.stringify({
+    cycle: config.cycle ?? '',
+    instanceName: config.instanceName ?? '',
+    selections,
+  });
+}
+
 export const productSchema = z.object({
   name: z.string().trim().min(1).max(191),
   description: z.string().trim().max(191).optional(),
@@ -213,6 +237,17 @@ export const productSchema = z.object({
   // Transient selector value from the admin form. The store persists the verified
   // instance id only in metadata.upstream via the registered source.
   upstreamSourceRef: z.string().min(1).max(191).nullish(),
+  /**
+   * Listing state. Only `ACTIVE` is sellable; anything else hides the product
+   * from the public catalogue, the account catalogue and the cart.
+   *
+   * Without this field a product could never be taken off sale: `status` was
+   * written on create and then unreachable, so an operator whose upstream
+   * provider disappeared had no way to stop customers buying an undeliverable
+   * product — the only escape was deleting the row (which also destroys order
+   * history references).
+   */
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
 });
 
 // 注意：zod 的 .partial() 不会中和 .default()，直接 partial 会让局部更新
@@ -262,13 +297,25 @@ export const renewOrderSchema = z.object({
 });
 
 /**
+ * 配置选择入参：既接受 JSON 字符串（历史契约），也接受同形态对象。
+ *
+ * 前端一直在 `JSON.stringify` 之后传字符串，但直接调用 API 时把对象塞进 `config`
+ * 是最自然写法；只认字符串会让它静默 400「请选择商品配置」。这里统一归一化成字符串。
+ */
+const selectionInput = z.preprocess(
+  (value) =>
+    value && typeof value === 'object' && !Array.isArray(value) ? JSON.stringify(value) : value,
+  z.string().optional(),
+);
+
+/**
  * 升配/降配/换商品下单入参。
  * - `config`：目标配置选择（JSON 字符串），与下单同形。
  * - `targetProductId`：换商品时的目标商品 id；与 `config` 二选一（可同时给）。
  */
 export const changeServiceSchema = z.object({
   serviceId: z.string().min(1).max(191).optional(),
-  config: z.string().optional(),
+  config: selectionInput,
   targetProductId: z.string().min(1).max(191).optional(),
   paymentMode: z.enum(['wallet', 'external']).default('wallet'),
   channelCode: z.string().min(1).max(64).default('MALL_PC'),
@@ -279,7 +326,7 @@ export const changeServiceSchema = z.object({
 
 /** 变更试算入参。 */
 export const changeQuoteSchema = z.object({
-  config: z.string().optional(),
+  config: selectionInput,
   targetProductId: z.string().min(1).max(191).optional(),
 });
 
@@ -292,6 +339,16 @@ export const transferServiceSchema = z.object({
 export const refundOrderSchema = z.object({
   amount: z.number().int().positive().max(MAX_MINOR_AMOUNT).optional(),
   reason: z.string().trim().max(191).optional(),
+  /**
+   * 运营者显式声明：已核对上游，不存在任何实例。
+   *
+   * 「开通结果未确认」的任务只能靠 provider 的记账证据自动重开；但 fork 在首个
+   * 远端变更之前就失败时（例如上游结算阶段报错），根本不存在这种证据。此时若既
+   * 不能重开也不能退款，订单就死在「已付款、未交付、退不了」的死结里。
+   * 这个开关把「证明责任」从机器转移到人：只有显式声明才放行，并且退款流必须
+   * 自己复核「没有任何服务实例带有上游 ID」——有 ID 就说明对象真的存在过。
+   */
+  confirmNoUpstreamInstance: z.boolean().optional(),
 });
 
 export const addToCartSchema = z.object({

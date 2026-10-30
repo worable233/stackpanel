@@ -67,9 +67,9 @@ function MarketRow({
   const PackageIcon = pkg.kind === 'plugin' ? Blocks : Palette;
 
   return (
-    <li className="flex flex-col gap-3 border-b border-border/70 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
+    <li className="plugin-row flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-start gap-3">
-        <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <span className="plugin-icon-tile mt-0.5">
           <PackageIcon aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
@@ -149,7 +149,7 @@ function MarketSection({
 }) {
   return (
     <section aria-label={title}>
-      <div className="flex items-baseline justify-between gap-3 border-b border-border pb-2">
+      <div className="plugin-header flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold">{title}</h2>
         <span className="text-xs tabular-nums text-muted-foreground">{packages.length}</span>
       </div>
@@ -212,18 +212,15 @@ function SourceStatus({ status, tr }: { status: MarketStatusView; tr: ReturnType
   if (notes.length === 0) return null;
 
   const toneClass = {
-    warn: 'border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400',
-    error: 'border-destructive/40 bg-destructive/5 text-destructive',
-    info: 'border-border bg-muted/40 text-muted-foreground',
+    warn: 'plugin-alert plugin-alert-warn',
+    error: 'plugin-alert plugin-alert-error',
+    info: 'plugin-alert plugin-alert-info',
   } as const;
 
   return (
     <ul className="space-y-2">
       {notes.map((note, index) => (
-        <li
-          key={index}
-          className={`rounded-lg border px-3 py-2 text-sm ${toneClass[note.tone]}`}
-        >
+        <li key={index} className={toneClass[note.tone]}>
           {note.text}
         </li>
       ))}
@@ -262,7 +259,7 @@ function MarketAdminPage(props: AdminPageComponentProps) {
       {status ? <SourceStatus status={status} tr={tr} /> : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex w-fit items-center rounded-lg border border-border p-0.5">
+        <div className="plugin-segmented inline-flex w-fit items-center">
           {filters.map((value) => (
             <Button
               key={value}

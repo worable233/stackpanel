@@ -2,6 +2,9 @@ import zhCN from './messages/zh-CN.json';
 import zhTW from './messages/zh-TW.json';
 import zhHK from './messages/zh-HK.json';
 import enUS from './messages/en-US.json';
+import jaJP from './messages/ja-JP.json';
+import koKR from './messages/ko-KR.json';
+import frFR from './messages/fr-FR.json';
 
 /**
  * All interface locales the kernel ships with.
@@ -11,7 +14,7 @@ import enUS from './messages/en-US.json';
  * deployment. Adding a locale is a two-file change: drop a `<locale>.json` next
  * to the existing catalogs and register it here.
  */
-export const LOCALES = ['zh-CN', 'zh-TW', 'zh-HK', 'en-US'] as const;
+export const LOCALES = ['zh-CN', 'zh-TW', 'zh-HK', 'en-US', 'ja-JP', 'ko-KR', 'fr-FR'] as const;
 
 export type Locale = (typeof LOCALES)[number];
 
@@ -45,6 +48,12 @@ export const CATALOGS: Record<Locale, Record<string, unknown>> = {
   'zh-TW': zhTW as Record<string, unknown>,
   'zh-HK': zhHK as Record<string, unknown>,
   'en-US': enUS as Record<string, unknown>,
+  // ja-JP / ko-KR / fr-FR 目前是「已接线 + 部分翻译」：未翻译的键在文件里以英文
+  // 兜底（不是运行时回退，避免出现「日语界面里冒出中文」）。新增键的翻译按
+  // `nav` / `common` / `locale` 这类分组推进，缺的继续以英文呈现。
+  'ja-JP': jaJP as Record<string, unknown>,
+  'ko-KR': koKR as Record<string, unknown>,
+  'fr-FR': frFR as Record<string, unknown>,
 };
 
 /** True when `value` is one of the shipped locales. */

@@ -35,6 +35,15 @@ describe('productUpdateSchema', () => {
     expect(parsed).not.toHaveProperty('fulfillmentType');
   });
 
+  it('accepts a listing-status change so a product can be taken off sale', () => {
+    // Regression: `status` was write-once (set on create, unreachable after), so
+    // an operator whose upstream provider disappeared could not stop customers
+    // buying an undeliverable product without deleting the row and its history.
+    expect(productUpdateSchema.parse({ status: 'INACTIVE' })).toEqual({ status: 'INACTIVE' });
+    expect(productUpdateSchema.parse({ status: 'ACTIVE' })).toEqual({ status: 'ACTIVE' });
+    expect(productUpdateSchema.safeParse({ status: 'DELETED' }).success).toBe(false);
+  });
+
   it('keeps explicitly provided values', () => {
     const parsed = productUpdateSchema.parse({
       stock: 5,

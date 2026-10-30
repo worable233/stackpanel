@@ -29,6 +29,12 @@ export interface User {
   lastLoginAt: string | null;
   /** When email ownership was verified, or `null`. */
   emailVerifiedAt: string | null;
+  /**
+   * Delivery URL of the account avatar (a kernel media route, carrying a content
+   * revision), or `null`/absent when no avatar is set. Optional so a BFF can
+   * still parse a reply minted by an API that predates avatars.
+   */
+  avatarUrl?: string | null;
 }
 
 /** Public auth policy for the frontend (register form). */
@@ -186,6 +192,8 @@ export interface AdminUser {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  /** Derived avatar URL (kernel media content route), or null when unset. */
+  avatarUrl?: string | null | undefined;
   /** Spendable wallet balance in the currency's minor unit. */
   balance?: number | undefined;
   balanceCurrency?: string | undefined;
@@ -721,17 +729,36 @@ export interface PermissionCheckResponse {
   allowed: boolean;
 }
 
+/**
+ * A plugin row that survived its package.
+ *
+ * Uninstalling a plugin is normally what deletes its database row, so a plugin
+ * whose directory was removed by hand (or by a failed upgrade) leaves a record
+ * behind: the runtime no longer knows it, `/admin/plugins` cannot list it, and
+ * the operator still sees its capabilities "installed" in the database. Surfacing
+ * these is what turns "the provider plugin is disabled" into an actionable
+ * cleanup.
+ */
+export interface StalePluginRecord {
+  id: string;
+  name: string;
+  version: string;
+  enabled: boolean;
+  installedAt: string;
+}
+
 /** Response of GET /admin/plugins. */
 export interface AdminPluginsResponse {
   plugins: AdminPlugin[];
+  /** Records left behind after the package directory disappeared. */
+  stale: StalePluginRecord[];
 }
 
 /** Update channel. */
 export type UpdateChannel = 'stable' | 'beta';
 
 /** Update strategy (GET /admin/updates/status · PUT /admin/updates/policy). */
-export interface UpdatePolicyView {
-  autoUpdate: boolean;
+export interface UpdatePolicyView {  autoUpdate: boolean;
   channel: UpdateChannel;
   autoUpdateKernel: boolean;
   excluded: string[];
@@ -743,11 +770,50 @@ export interface UpdatePolicyView {
   updatedBy?: string | null;
 }
 
+/**
+ * `PUT /admin/updates/policy` 的请求体。
+ *
+ * 未给出的字段保持原值；`maintenanceWindow: null` 表示清除窗口限制（否则设过就关不掉）。
+ */
+export type UpdatePolicyPatch = Omit<Partial<UpdatePolicyView>, 'maintenanceWindow'> & {
+  maintenanceWindow?: { startHour: number; endHour: number } | null;
+};
+
 /** Block reason returned when a deployment plan cannot be solved. */
 export interface UpdateBlockReason {
   code: string;
   detail: string;
   component?: { kind: string; id: string };
+}
+
+/**
+ * 目录运行时状态（`GET /admin/updates/status`）。
+ *
+ * 旧契约只有一个 `catalogConfigured: boolean`，把「显式关闭 / 还没取到 / 取到了 /
+ * 取失败」四种情况塔缩成一个布尔值，前端只能把失败说成「未配置」。
+ */
+export type UpdateCatalogState = 'unconfigured' | 'pending' | 'ready' | 'failed';
+
+/** 目录检查/验签失败原因（含建议重试时间）。 */
+export interface UpdateCatalogFailure {
+  kind: string;
+  message: string;
+  retryAt: string | null;
+}
+
+/** 目录快照的只读投影；**发网络请求**是单独的显式动作（`checkUpdateCatalog`）。 */
+export interface UpdateCatalogView {
+  state: UpdateCatalogState;
+  repository: string | null;
+  channel: UpdateChannel | null;
+  sequence: number | null;
+  generatedAt: string | null;
+  expired: boolean | null;
+  failure: UpdateCatalogFailure | null;
+  /** 最近一次真的发起过检查的时间（ISO）；从未检查为 null。 */
+  lastCheckedAt: string | null;
+  /** 手动检查的剩余冷却（毫秒）；0 表示可立即检查。 */
+  cooldownMs: number;
 }
 
 /** One planned component upgrade. */
@@ -761,26 +827,67 @@ export interface UpdatePlannedPackage {
   reversible: boolean;
 }
 
+/** 一个已完成阶段的凭据（升级协议 `UpdateCheckpoint` 的投影）。 */
+export interface UpdateCheckpointView {
+  phase: string;
+  at: string;
+  inputDigest: string;
+  credential?: string;
+}
+
+/** 失败后的恢复结果。 */
+export interface UpdateRecoveryView {
+  recovered: boolean;
+  backupRef?: string;
+  detail: string;
+}
+
+/**
+ * 升级任务结果投影。
+ *
+ * 旧 schema 只透出 `phase`，把 `checkpoints` / `recovery` / `block` 全部丢掉，
+ * 于是「任务失败在哪一步、恢复了没有」在后台完全不可见。
+ */
+export interface UpdateTaskResultView {
+  phase: string;
+  checkpoints?: UpdateCheckpointView[];
+  block?: UpdateBlockReason;
+  recovery?: UpdateRecoveryView;
+}
+
 /** Updater status projection (GET /admin/updates/status). */
 export interface UpdateUpdaterStatus {
   generation: number;
   digest: string | null;
   activeTask: string | null;
-  recent: Array<{ idempotencyKey: string; result: { phase: string } }>;
+  recent: Array<{ idempotencyKey: string; result: UpdateTaskResultView }>;
   updatedAt: string;
 }
 
 export interface UpdateStatusResponse {
   status: UpdateUpdaterStatus | null;
   policy: UpdatePolicyView;
+  /** 目录状态（四态）；`ready` 只说明有快照，新鲜度看 `catalogExpired`。 */
+  catalogState: UpdateCatalogState;
   catalogConfigured: boolean;
   catalogExpired: boolean | null;
+  catalogFailure: UpdateCatalogFailure | null;
+  catalogRepository: string | null;
+  catalogChannel: UpdateChannel | null;
+  catalogSequence: number | null;
+  catalogGeneratedAt: string | null;
+  lastCheckedAt: string | null;
+  cooldownMs: number;
+  /** 升级载体（`oci` / `artifact`）。 */
+  carrier: string;
   instanceId: string;
 }
 
 export interface UpdatePlanResponse {
   ok: boolean;
   blocks?: UpdateBlockReason[];
+  /** 目录快照已过期：可展示可求解，但投递需显式覆盖。 */
+  catalogExpired?: boolean;
   planDigest?: string;
   plan?: {
     kernel: { version: string; digest: string; migration: string };
@@ -801,6 +908,56 @@ export interface UpdateSubmitResponse {
   submitted: boolean;
   idempotencyKey: string;
   planDigest: string;
+  catalogExpired?: boolean;
+}
+
+/** `GET /admin/updates/results`：updater 回写的最近结果。 */
+export interface UpdateResultsResponse {
+  results: Array<{ idempotencyKey: string; result: UpdateTaskResultView }>;
+}
+
+/** `GET /admin/updates/results/:key`。 */
+export interface UpdateResultResponse {
+  result: UpdateTaskResultView;
+}
+
+/**
+ * `POST /admin/updates/check`：显式「检查更新」的结果。
+ *
+ * - `checked=false` + `throttled=true`：在冷却/退避期内，**没有**发网络请求；
+ *   用 `retryAtMs` 告诉管理员还要等多久。
+ * - `checked=false` + `catalog.state==='unconfigured'`：目录源被显式关闭。
+ * - `checked=true` 且 `catalog.state==='ready'`：拿到验签通过的快照，`plan` 是随求解结果。
+ */
+export interface UpdateCheckResponse {
+  checked: boolean;
+  throttled: boolean;
+  retryAtMs: number;
+  catalog: UpdateCatalogView;
+  plan: UpdatePlanResponse | null;
+}
+
+/** updater 自升级请求（共享卷上的 `self-update-request.json`）。 */
+export interface UpdateSelfUpdateRequestView {
+  candidateDigest: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** `GET /admin/updates/self-update`。 */
+export interface UpdateSelfUpdateResponse {
+  request: UpdateSelfUpdateRequestView | null;
+}
+
+/** `POST /admin/updates/self-update`。 */
+export interface UpdateSelfUpdateSubmitResponse {
+  submitted: boolean;
+  request: UpdateSelfUpdateRequestView;
+}
+
+/** `DELETE /admin/updates/self-update`。 */
+export interface UpdateSelfUpdateCancelResponse {
+  cleared: boolean;
 }
 
 /** Progress of the web tier's plugin-frontend rebuild/reload (GET /admin/plugins/frontend-status). */
@@ -1182,4 +1339,55 @@ export interface AdminFxRateView {
 export interface AdminFxRateListResponse {
   settlementCurrency: string;
   rates: AdminFxRateView[];
+}
+
+/** Admin-visible sales channel row (with its payment methods). */
+export interface AdminSalesChannel {
+  id: string;
+  code: string;
+  name: string;
+  terminal: string;
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  methods: AdminPaymentMethod[];
+}
+
+/**
+ * Admin-visible `payment_methods` row.
+ *
+ * `config` is provider-specific and may contain secrets (bank account, QR URL),
+ * so it is only ever returned on the admin surface — never to buyers.
+ */
+export interface AdminPaymentMethod {
+  id: string;
+  channelId: string;
+  providerId: string;
+  /**
+   * Provider family from the live runtime, or null when the plugin is gone.
+   * Manual providers need collection details in `config`; gateways do not.
+   */
+  providerMode?: 'gateway' | 'manual' | null;
+  name: string;
+  enabled: boolean;
+  scene: string;
+  currencies: string[];
+  config: unknown;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface AdminSalesChannelListResponse {
+  channels: AdminSalesChannel[];
+  /** Every payment provider the runtime currently exposes (for a picker). */
+  providers?: Array<{
+    id: string;
+    name: string;
+    mode: 'gateway' | 'manual';
+    methods: Array<{ id: string; label: string }>;
+  }>;
+}
+
+export interface AdminPaymentMethodMutationResponse {
+  method: AdminPaymentMethod;
 }

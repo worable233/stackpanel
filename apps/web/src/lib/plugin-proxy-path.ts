@@ -38,6 +38,9 @@ export function decodeSegmentsSafely(segments: string[]): string[] | null {
 /** Plugin namespace / theme id shape; mirrors the kernel's route patterns. */
 const NAMESPACE_PATTERN = /^[a-z0-9_-]{1,64}$/;
 
+/** Kernel media attachment id shape (`att_<opaque>`). */
+const ATTACHMENT_ID_PATTERN = /^att_[A-Za-z0-9]{4,64}$/;
+
 /**
  * Public kernel resources the browser may load **without a session**: brand
  * assets, theme CSS, theme assets, and compiled frontend packages (theme &
@@ -59,6 +62,14 @@ export function isPublicAssetRequest(method: string, segments: string[]): boolea
       segments[2] === 'frontend' &&
       isAssetTail(segments, 3)
     );
+  }
+  // Public media content. An avatar is rendered for other people, so it cannot
+  // depend on the viewer's session. This opens exactly one kernel route — the
+  // one whose visibility rule the API already enforces (a private attachment
+  // still needs the token the BFF forwards) — never the rest of `/media`, whose
+  // listing and admin endpoints stay behind the authenticated target check.
+  if (segments[0] === 'media' && segments.length === 3 && segments[2] === 'content') {
+    return ATTACHMENT_ID_PATTERN.test(segments[1] ?? '');
   }
   if (
     segments[0] !== 'themes' ||

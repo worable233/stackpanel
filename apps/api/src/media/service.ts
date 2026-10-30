@@ -14,6 +14,7 @@
 import type { StorageDriver } from '@stackpanel/db';
 import { ContentDisposition } from './disposition.ts';
 import {
+  attachmentRevision,
   variantStatus,
   toAttachmentView,
   type AttachmentRecord,
@@ -21,12 +22,15 @@ import {
   type AttachmentVariant,
   type AttachmentView,
   type AttachmentVisibility,
+  type AttachmentLibraryQuery,
+  type AttachmentLibraryStats,
 } from './attachments.ts';
 import { buildMediaKey } from './keys.ts';
 import { detectImageDimensions, sniffMime, type SniffedMime } from './mime.ts';
 import { checkUpload, DEFAULT_MEDIA_POLICY, type MediaPolicy } from './policy.ts';
 import {
   extensionForFormat,
+  optimizeTargetForMime,
   planImageVariants,
   unavailableImageTransformer,
   type ImageTransformer,
@@ -68,6 +72,11 @@ export interface AttachmentServiceDeps {
   queue?: VariantQueue;
   /** Encoded format for planned variants (Stage B). Defaults to `webp`. */
   variantFormat?: VariantSpec['format'];
+  /**
+   * Full-size WebP delivery encode (ADR-0014 §4 addendum). On by default: image
+   * uploads are stored as WebP whenever that actually saves bytes.
+   */
+  optimize?: boolean;
   /** Id generator; defaults to a crypto cuid-like value. */
   generateId?: () => string;
   logger?: { warn: (message: string) => void; info?: (message: string) => void };
@@ -80,6 +89,7 @@ export class AttachmentService {
   private readonly policy: MediaPolicy;
   private readonly queue: VariantQueue | undefined;
   private readonly variantFormat: VariantSpec['format'];
+  private readonly optimize: boolean;
   private readonly generateId: () => string;
   private readonly logger: { warn: (message: string) => void; info?: (message: string) => void };
 
@@ -90,6 +100,7 @@ export class AttachmentService {
     this.policy = deps.policy ?? DEFAULT_MEDIA_POLICY;
     this.queue = deps.queue;
     this.variantFormat = deps.variantFormat ?? 'webp';
+    this.optimize = deps.optimize ?? true;
     this.generateId = deps.generateId ?? defaultId;
     this.logger = deps.logger ?? { warn: (message) => console.warn(message) };
   }
@@ -106,25 +117,34 @@ export class AttachmentService {
 
     const id = this.generateId();
     const createdAt = new Date();
-    const key = buildMediaKey(id, type.ext, createdAt);
-    await this.storage.put(key, input.data, { contentType: type.mime, public: false });
+    // Full-size WebP delivery encode runs BEFORE the first write, so a rejected
+    // source never lands in storage and there is exactly one copy of the bytes
+    // (ADR-0014 §4 addendum: the WebP *is* the stored original from here on).
+    const delivered = await this.deliverAsWebp(input.data, type);
+    const stored: SniffedMime = delivered ? { ...type, mime: 'image/webp', ext: 'webp' } : type;
+    const bytes = delivered?.bytes ?? input.data;
+    const key = buildMediaKey(id, stored.ext, createdAt);
+    await this.storage.put(key, bytes, { contentType: stored.mime, public: false });
 
-    const dims = type.kind === 'image' ? detectImageDimensions(input.data, type.mime) : null;
+    const dims = stored.kind === 'image' ? detectImageDimensions(bytes, stored.mime) : null;
 
     // Stage B engages only for an eligible image with a live queue; everything
     // else (or async switched off) keeps the Stage A inline path.
     const asyncEligible =
-      this.queue !== undefined && dims !== null && this.transform.supports(type.mime);
+      this.queue !== undefined && dims !== null && this.transform.supports(stored.mime);
     const variants = asyncEligible
       ? planPendingVariants(id, createdAt, dims, this.variantFormat)
-      : await this.generateVariants(input.data, type, id, createdAt, dims);
+      : await this.generateVariants(bytes, stored, id, createdAt, dims);
 
     const record = await this.repository.create({
       id,
       key,
-      filename: sanitizeFilename(input.filename, type.ext),
-      mime: type.mime,
-      size: input.data.length,
+      filename: sanitizeFilename(
+        delivered ? replaceExtension(input.filename, 'webp') : input.filename,
+        stored.ext,
+      ),
+      mime: stored.mime,
+      size: bytes.length,
       width: dims?.width ?? null,
       height: dims?.height ?? null,
       ownerId: input.ownerId !== undefined ? input.ownerId : (actor.userId ?? null),
@@ -141,7 +161,7 @@ export class AttachmentService {
           this.logger.warn(`media: 变体入队失败，等待回填：${(err as Error).message}`),
         );
     }
-    this.logger.info?.(`media: stored attachment ${id} (${type.mime}, ${input.data.length}B)`);
+    this.logger.info?.(`media: stored attachment ${id} (${stored.mime}, ${bytes.length}B)`);
     return this.toView(record);
   }
 
@@ -206,8 +226,78 @@ export class AttachmentService {
     return records.map((record) => this.toView(record));
   }
 
-  /** Update display metadata (filename / visibility), owner or admin only. */
-  async updateMetadata(
+  /**
+   * Admin console: cross-owner filtered page. Authorization lives in the route
+   * (`platform.admin`); this method is the query half so the media library page
+   * does not have to paw through per-owner lists.
+   */
+  async library(query: AttachmentLibraryQuery): Promise<{
+    items: AttachmentView[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const { items, total } = await this.repository.listForAdmin(query);
+    return {
+      items: items.map((record) => this.toView(record)),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
+  /** Admin console: aggregate counters (no per-row loading). */
+  async libraryStats(): Promise<AttachmentLibraryStats> {
+    return this.repository.stats();
+  }
+
+  /**
+   * Admin repair: put every terminal `failed` variant back on the queue.
+   *
+   * `failed` is terminal by design (the recovery sweep only picks `pending`
+   * rows), so an encoder outage strands affected thumbnails even after the
+   * encoder starts working again. This is the explicit repair path; without a
+   * queue the variants are re-encoded inline from the stored original.
+   */
+  async rebuildFailedVariants(
+    attachmentId?: string,
+  ): Promise<{ requeued: number; ids: string[] }> {
+    const ids = await this.repository.resetFailedVariants(attachmentId);
+    if (ids.length === 0) return { requeued: 0, ids: [] };
+
+    if (this.queue) {
+      for (const id of ids) {
+        await this.queue
+          .enqueue({ attachmentId: id, format: this.variantFormat })
+          .catch((err: unknown) =>
+            this.logger.warn(`media: 变体重建入队失败 ${id}：${(err as Error).message}`),
+          );
+      }
+      return { requeued: ids.length, ids };
+    }
+
+    // No queue (async pipeline disabled): converge inline instead of leaving the
+    // rows pending forever.
+    for (const id of ids) {
+      const record = await this.repository.findById(id);
+      if (!record || record.variants.length === 0) continue;
+      const data = await this.storage.get(record.key);
+      if (!data) {
+        this.logger.warn(`media: 重建变体时读不到原图 ${id}`);
+        continue;
+      }
+      const type: SniffedMime = { mime: record.mime, ext: '', kind: 'image' };
+      const dims =
+        record.width !== null && record.height !== null
+          ? { width: record.width, height: record.height }
+          : null;
+      const variants = await this.generateVariants(data, type, record.id, record.createdAt, dims);
+      if (variants.length > 0) await this.repository.updateVariants(record.id, variants);
+    }
+    return { requeued: ids.length, ids };
+  }
+
+  /** Update display metadata (filename / visibility), owner or admin only. */  async updateMetadata(
     id: string,
     patch: { filename?: string | undefined; visibility?: AttachmentVisibility | undefined },
     actor: MediaActor,
@@ -231,7 +321,7 @@ export class AttachmentService {
     id: string,
     actor: MediaActor,
     variantName?: string,
-  ): Promise<{ data: Uint8Array; mime: string; record: AttachmentRecord } | null> {
+  ): Promise<{ data: Uint8Array; mime: string; record: AttachmentRecord; rev: string } | null> {
     const record = await this.getRecord(id, actor);
     const target = variantName
       ? record.variants.find((variant) => variant.name === variantName)
@@ -248,7 +338,14 @@ export class AttachmentService {
     const key = target ? target.key : record.key;
     const data = await this.storage.get(key);
     if (!data) return null;
-    return { data, mime: target ? `image/${target.format}` : record.mime, record };
+    const mime = target ? `image/${target.format}` : record.mime;
+    // The revision travels with the bytes so the HTTP layer can answer both
+    // "is this link's copy current?" (ETag/304) and "may it be cached forever?"
+    // (`?v=<rev>`) without a second storage read.
+    const rev = target
+      ? attachmentRevision({ key, size: target.size, mime })
+      : attachmentRevision({ key, size: record.size, mime });
+    return { data, mime, record, rev };
   }
 
   /** Delete an attachment and every stored object under its prefix. */
@@ -283,6 +380,106 @@ export class AttachmentService {
     }
   }
 
+  /**
+   * Full-size delivery encode (ADR-0014 §4 addendum).
+   *
+   * Returns null whenever the original is the better choice: not an image, an
+   * SVG, no encoder wired, an encode failure — or when the WebP did not actually
+   * get smaller. That last guard is what makes "convert everything" safe: a
+   * lossless WebP of an already-lossy JPEG, or of a 3 KB icon, can be larger, and
+   * trading bytes for identical pixels would be a net loss.
+   */
+  private async deliverAsWebp(
+    data: Uint8Array,
+    type: SniffedMime,
+  ): Promise<{ bytes: Uint8Array; mime: string; ext: string } | null> {
+    if (!this.optimize || type.kind !== 'image' || !this.transform.optimize) return null;
+    const target = optimizeTargetForMime(type.mime);
+    if (!target) return null;
+    try {
+      const encoded = await this.transform.optimize(data, type.mime, target);
+      if (!encoded || encoded.length === 0 || encoded.length >= data.length) return null;
+      return { bytes: encoded, mime: 'image/webp', ext: 'webp' };
+    } catch (error) {
+      this.logger.warn(`media: WebP 交付编码失败，保留原图：${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Re-encode stored attachments as WebP delivery files (media-library batch).
+   *
+   * Bounded on purpose: lossless WebP is the most CPU-expensive profile we run,
+   * so one console click converts at most {@link OPTIMIZE_BATCH_LIMIT} rows and
+   * the operator simply presses again. Rows that cannot improve (SVG, already
+   * WebP, missing bytes, or an encode that came out larger) count as `skipped`,
+   * so "nothing happened" always has a number behind it.
+   */
+  async optimizeLibrary(attachmentId?: string): Promise<{
+    optimized: number;
+    skipped: number;
+    savedBytes: number;
+    ids: string[];
+  }> {
+    const records = attachmentId
+      ? [await this.repository.findById(attachmentId)]
+      : await this.repository.listOptimizable(OPTIMIZE_BATCH_LIMIT);
+    const ids: string[] = [];
+    let skipped = 0;
+    let savedBytes = 0;
+    for (const record of records) {
+      const converted = record ? await this.convertStored(record) : null;
+      if (!record || !converted) {
+        skipped += 1;
+        continue;
+      }
+      ids.push(record.id);
+      savedBytes += converted.savedBytes;
+    }
+    return { optimized: ids.length, skipped, savedBytes, ids };
+  }
+
+  /** One in-place conversion; null when the row cannot or should not change. */
+  private async convertStored(record: AttachmentRecord): Promise<{ savedBytes: number } | null> {
+    if (!this.optimize || !this.transform.optimize) return null;
+    // Already WebP: re-encoding a lossy source losslessly only inflates it.
+    if (record.mime === 'image/webp') return null;
+    const target = optimizeTargetForMime(record.mime);
+    if (!target) return null;
+    const data = await this.storage.get(record.key);
+    if (!data) return null;
+    // Snapshot the old identity: the repository may hand back the very same row
+    // object we are about to mutate, so reading `record.key` after `update()`
+    // would point at the *new* object — and we would delete the bytes we just
+    // wrote instead of the superseded ones.
+    const previousKey = record.key;
+    let encoded: Uint8Array | null;
+    try {
+      encoded = await this.transform.optimize(data, record.mime, target);
+    } catch (error) {
+      this.logger.warn(`media: WebP 转换失败 (${record.id})：${(error as Error).message}`);
+      return null;
+    }
+    // Same guard as upload: never trade bytes for identical pixels.
+    if (!encoded || encoded.length === 0 || encoded.length >= data.length) return null;
+    const key = buildMediaKey(record.id, 'webp', record.createdAt);
+    await this.storage.put(key, encoded, { contentType: 'image/webp', public: false });
+    const updated = await this.repository.update(record.id, {
+      key,
+      mime: 'image/webp',
+      size: encoded.length,
+      filename: replaceExtension(record.filename, 'webp'),
+    });
+    if (!updated) {
+      // The row was deleted while we were encoding: drop the bytes we just wrote
+      // so no orphan object is left behind, and report a skip.
+      await this.storage.delete(key);
+      return null;
+    }
+    if (key !== previousKey) await this.storage.delete(previousKey);
+    return { savedBytes: data.length - encoded.length };
+  }
+
   /** Resolve the API content URL for a stored key; public and private alike. */
   contentUrl(id: string, variant?: string): string {
     const query = variant ? `?variant=${encodeURIComponent(variant)}` : '';
@@ -307,6 +504,16 @@ export class AttachmentService {
 /** RFC 6266 / 5987 safe filename for Content-Disposition. */
 export function contentDisposition(filename: string, inline: boolean): string {
   return ContentDisposition.build(filename, inline);
+}
+
+/** Lossless WebP is CPU-heavy; bound one console click to this many rows. */
+const OPTIMIZE_BATCH_LIMIT = 50;
+
+/** Swap a filename's extension for display after a format change. */
+export function replaceExtension(filename: string, ext: string): string {
+  const trimmed = filename.trim();
+  const dot = trimmed.lastIndexOf('.');
+  return `${dot > 0 ? trimmed.slice(0, dot) : trimmed}.${ext}`;
 }
 
 /** Strip any path components and control characters; fall back to the type ext. */

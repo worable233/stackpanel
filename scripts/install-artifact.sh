@@ -332,7 +332,8 @@ if [[ -z "${SETUP_TOKEN}" ]]; then SETUP_TOKEN="$(gen_hex 32)"; GENERATED="${GEN
 
 # 写配置：保留已有键，覆盖安装器负责的键。用 node 生成，保证引号与转义
 # 与内核/runner 的解析器完全一致（同一个子集，见 config-file.ts）。
-node - "${ENV_FILE}" "${DATA_DIR_VALUE}" "${STATE_DIR}" "${JWT_SECRET}" \
+STACKPANEL_UPDATE_INSTANCE_ID="${INSTANCE_ID}" \
+  node - "${ENV_FILE}" "${DATA_DIR_VALUE}" "${STATE_DIR}" "${JWT_SECRET}" \
   "${SETTINGS_ENCRYPTION_KEY}" "${SETUP_TOKEN}" "${SITE_URL}" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -388,6 +389,26 @@ entries.set('SETTINGS_ENCRYPTION_KEY', encKey);
 entries.set('STACKPANEL_SETUP_TOKEN', token);
 if (siteUrl) entries.set('SITE_URL', siteUrl);
 if (!entries.has('API_BASE_URL')) entries.set('API_BASE_URL', 'http://127.0.0.1:3001');
+
+// ---- 升级器接线（ADR-0025 决策 3） ----------------------------------------
+// 产物载体的通道根是 <状态目录>/update，状态投影是它下面的 status.json。
+// 此前这里一个默认值都不写，于是空白安装完成后更新中心永远显示「执行器状态不可读」
+// 且基线代次恒为 0——能力齐备但页面空转。仅在用户没有显式配置时补默认值。
+if (!entries.has('DISTRIBUTION_UPDATE_CARRIER')) {
+  entries.set('DISTRIBUTION_UPDATE_CARRIER', 'artifact');
+}
+if (!entries.has('DISTRIBUTION_UPDATE_CHANNEL_DIR')) {
+  entries.set('DISTRIBUTION_UPDATE_CHANNEL_DIR', path.join(stateDir, 'update'));
+}
+if (!entries.has('DISTRIBUTION_UPDATER_STATUS_FILE')) {
+  entries.set('DISTRIBUTION_UPDATER_STATUS_FILE', path.join(stateDir, 'update', 'status.json'));
+}
+if (!entries.has('DISTRIBUTION_UPDATE_INSTANCE_ID')) {
+  const instanceId = process.env.STACKPANEL_UPDATE_INSTANCE_ID
+    ? process.env.STACKPANEL_UPDATE_INSTANCE_ID
+    : 'stackpanel';
+  entries.set('DISTRIBUTION_UPDATE_INSTANCE_ID', instanceId);
+}
 
 const dir = path.dirname(file);
 fs.mkdirSync(dir, { recursive: true });

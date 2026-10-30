@@ -1,5 +1,4 @@
 'use client';
-import { SectionTitle } from '@stackpanel/ui';
 
 import { useCallback, useState, useTransition } from 'react';
 import Link from 'next/link';
@@ -22,6 +21,7 @@ import {
   StatusBadge,
   CardDescription,
   CardContent,
+  Checkbox,
   Field,
   FieldGroup,
   FieldError,
@@ -34,6 +34,20 @@ import {
 import { Package, Pencil, Plus, RefreshCw, Save, Search } from 'lucide-react';
 import { t } from './i18n.js';
 import { approvalErrorMessage } from './approval-feedback.js';
+
+/** 履约诊断条目（对应 store 插件 `/store/admin/fulfillment-issues`）。 */
+interface FulfillmentIssue {
+  productId: string;
+  name: string;
+  code: string;
+  message: string;
+  blocking: boolean;
+}
+
+interface FulfillmentDiagnostics {
+  issues: FulfillmentIssue[];
+  providers: Array<{ id: string; name: string; fulfillmentTypes: string[] }>;
+}
 
 interface ProductRow {
   id: string;
@@ -50,6 +64,34 @@ interface ProductRow {
   providerId: string | null;
   providerProductId: string | null;
   metadata: Record<string, unknown> | null;
+}
+
+/**
+ * 折扣口径换算：运营者看到的「折」与数据库里的「% off」。
+ *
+ * 「9.8 折」= 支付原价的 98% = 「优惠 2%」。中文电商界面上「折」是唯一不会
+ * 误读的说法：把「% off」直接展示给运营者，没人分得清 98 是「优惠 98%」还是
+ * 「打 98 折」，本仓库已经因此把一个 ¥72/月的商品错卖成 ¥1.44。
+ *
+ * 内部继续存 % off，因为 `betterDiscount` / `applyDiscount` / 权限组折扣
+ * 全是这一个口径，改成「折」会让两条折扣来源无法比较（取更优者）。
+ */
+
+/** % off → “折” 文本（两位小数，去掉末尾 0）。2 → "9.8"。 */
+function percentOffToZhe(percentOff: number): string {
+  const zhe = (100 - percentOff) / 10;
+  return String(Math.round(zhe * 100) / 100);
+}
+
+/** “折” 文本 → % off 整数；空串 = 无折扣（null），非法输入返回 null。 */
+function zheToPercentOff(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const zhe = Number(trimmed);
+  // 0.1 折（1% 价）到 9.9 折（99% 价），“10 折”等于不打折 → 用空值表达。
+  if (!Number.isFinite(zhe) || zhe < 0.1 || zhe >= 10) return null;
+  const percentOff = Math.round((10 - zhe) * 10);
+  return percentOff <= 0 ? null : percentOff;
 }
 
 /** 读取商品 metadata.upstream.sourcePrice（上游源价，分）。 */
@@ -212,7 +254,7 @@ function ConfigFieldControl({
         }}
         placeholder={field.placeholder}
         spellCheck={false}
-        className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="plugin-input"
         rows={field.type === 'json' ? 5 : 3}
       />
     );
@@ -232,15 +274,14 @@ function ConfigFieldControl({
   if (field.type === 'multiselect') {
     const selected = Array.isArray(value) ? (value as unknown[]).map((v) => String(v)) : [];
     return (
-      <div className="flex flex-wrap gap-1.5 rounded-lg border p-2">
+      <div className="plugin-segmented flex flex-wrap gap-1.5">
         {(field.options ?? []).map((option) => {
           const checked = selected.includes(option.value);
           return (
             <label
               key={option.value}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
-                checked ? 'border-primary bg-primary/10 text-primary' : 'bg-muted/40'
-              }`}
+              data-checked={checked}
+              className="plugin-chip"
             >
               <input
                 type="checkbox"
@@ -264,11 +305,9 @@ function ConfigFieldControl({
   if (field.type === 'boolean') {
     return (
       <Label className="gap-2 font-normal">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={value === true || value === 'true'}
-          onChange={(e) => onChange(e.target.checked)}
-          className="size-4 accent-primary"
+          onCheckedChange={(checked) => onChange(checked === true)}
         />
         {field.label}
       </Label>
@@ -340,7 +379,7 @@ function ConfigFields({
       {buckets.map((bucket) => {
         if (bucket.group !== null) {
           return (
-            <fieldset key={`group-${bucket.group}`} className="rounded-lg border bg-muted/30 p-4">
+            <fieldset key={`group-${bucket.group}`} className="plugin-panel plugin-panel-muted">
               <legend className="px-1 text-sm font-medium">{bucket.group}</legend>
               <FieldList fields={bucket.fields} scope={scope} onChange={onChange} tr={tr} />
             </fieldset>
@@ -387,7 +426,7 @@ function FieldList({
 
         if (field.type === 'group') {
           return (
-            <fieldset key={field.name} className={`rounded-lg border bg-muted/30 p-4 ${span}`}>
+            <fieldset key={field.name} className={`plugin-panel plugin-panel-muted ${span}`}>
               <legend className="px-1 text-sm font-medium">{field.label}</legend>
               <ConfigFields fields={field.fields ?? []} scope={scope} onChange={onChange} tr={tr} />
             </fieldset>
@@ -401,7 +440,7 @@ function FieldList({
           return (
             <div
               key={field.name}
-              className={`flex flex-col gap-3 rounded-lg border bg-muted/30 p-4 ${span}`}
+              className={`plugin-panel plugin-panel-muted flex flex-col gap-3 ${span}`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">{field.label}</span>
@@ -419,7 +458,7 @@ function FieldList({
                 <p className="text-xs text-muted-foreground">{tr('editor.noItems')}</p>
               ) : null}
               {items.map((item, index) => (
-                <div key={index} className="rounded-lg border bg-background p-3">
+                <div key={index} className="plugin-panel">
                   <div className="mb-2 flex justify-end">
                     <Button
                       type="button"
@@ -548,8 +587,11 @@ function ProductForm({
   const [originalPrice, setOriginalPrice] = useState(
     editing?.originalPrice != null ? minorToInput(editing.originalPrice, editing.currency) : '',
   );
+  // 折扣以「折」输入（9.8 折 = 原价 × 0.98），但落库仍是 % off（2），
+  // 因为权限组折扣、betterDiscount/applyDiscount 全链路都是 % off 口径。
+  // 只在这一层做换算，价格计算链一行都不用改。
   const [discount, setDiscount] = useState(
-    editing?.discount != null ? String(editing.discount) : '',
+    editing?.discount != null ? percentOffToZhe(editing.discount) : '',
   );
   const [icon, setIcon] = useState(
     typeof editing?.metadata?.icon === 'string' ? editing.metadata.icon : '',
@@ -580,6 +622,27 @@ function ProductForm({
   const currentType = types.find((candidate) => candidate.id === typeId) ?? null;
   const isCloudServer = typeId === 'cloud_server';
   const isUpstreamManaged = Boolean(providerId && providerProductId);
+
+  /*
+   * 实时把「折」换算成实际收取比例与示例价。
+   *
+   * 折扣属于价格类字段，错了就是直接收错钱，所以不能只靠一句标签文案。
+   * 输入后当场把「售价 = 原价 × 0.98」和「优惠 2%」写出来，运营者不用心算。
+   */
+  const discountHint = (() => {
+    const percentOff = zheToPercentOff(discount);
+    if (percentOff === null) return null;
+    const zhe = (100 - percentOff) / 10;
+    const base =
+      amountToMinor(originalPrice, currency) ?? amountToMinor(price, currency) ?? null;
+    return tr('editor.discountHint', {
+      zhe: String(zhe),
+      percent: String(percentOff),
+      ...(base != null
+        ? { price: money(Math.round((base * (100 - percentOff)) / 100), currency, locale) }
+        : {}),
+    });
+  })();
 
   const runSearch = useCallback(async () => {
     if (!searchSource) return;
@@ -696,10 +759,8 @@ function ProductForm({
       setError(tr('editor.stockInvalid'));
       return;
     }
-    if (
-      discount.trim() &&
-      (!Number.isInteger(Number(discount)) || Number(discount) < 0 || Number(discount) > 99)
-    ) {
+    const zhe = zheToPercentOff(discount);
+    if (discount.trim() && zhe === null) {
       setError(tr('editor.discountInvalid'));
       return;
     }
@@ -712,7 +773,7 @@ function ProductForm({
       currency,
       ...(!isUpstreamManaged ? { stock: Number(stock), cost: optionalAmount(cost ?? '') } : {}),
       originalPrice: optionalAmount(originalPrice ?? ''),
-      discount: discount.trim() ? Number(discount) : null,
+      discount: zhe,
       ...(typeId ? { fulfillmentType: typeId } : {}),
       providerId: providerId || null,
       providerProductId: providerProductId || null,
@@ -787,12 +848,12 @@ function ProductForm({
           {sources.length > 0 ? (
             <Card id="upstream">
               <CardHeader>
-                <SectionTitle as="h3">{tr('editor.upstreamTitle')}</SectionTitle>
+                <CardTitle className="text-base">{tr('editor.upstreamTitle')}</CardTitle>
                 <CardDescription>{tr('editor.upstreamDescription')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {providerId && providerProductId ? (
-                  <div className="flex items-center justify-between rounded-lg border bg-primary/5 px-4 py-3 text-sm">
+                  <div className="plugin-callout flex items-center justify-between text-sm">
                     <span>
                       {tr('editor.linked')}
                       {sources.find((source) => source.id === providerId)?.name ?? providerId}
@@ -804,7 +865,7 @@ function ProductForm({
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4">
+                  <div className="plugin-panel plugin-panel-muted flex flex-col gap-3">
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="flex min-w-40 flex-1 flex-col gap-1.5">
                         <Label>{tr('editor.upstream')}</Label>
@@ -848,7 +909,7 @@ function ProductForm({
                       </Button>
                     </div>
                     {searchResults.length > 0 ? (
-                      <ul className="divide-y rounded-lg border bg-background">
+                      <ul className="plugin-panel plugin-panel-flush plugin-divide">
                         {searchResults.map((item) => (
                           <li
                             key={item.id}
@@ -905,7 +966,7 @@ function ProductForm({
           ) : null}
           <Card id="basic">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.basicTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.basicTitle')}</CardTitle>
               <CardDescription>{tr('editor.basicDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -940,7 +1001,7 @@ function ProductForm({
           </Card>
           <Card id="pricing">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.pricingTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.pricingTitle')}</CardTitle>
               <CardDescription>
                 {isUpstreamManaged
                   ? tr('editor.pricingUpstreamDescription')
@@ -986,7 +1047,7 @@ function ProductForm({
                   <p className="text-xs text-muted-foreground">{tr('editor.currencyHint')}</p>
                 </Field>
                 {isUpstreamManaged ? (
-                  <div className="sm:col-span-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+                  <div className="plugin-panel plugin-panel-muted sm:col-span-2 text-sm text-muted-foreground">
                     {tr('editor.upstreamInventoryManaged', {
                       cost: cost
                         ? money(amountToMinor(cost, currency) ?? 0, currency, locale)
@@ -1058,18 +1119,24 @@ function ProductForm({
                   <Input
                     id="product-discount"
                     type="number"
-                    min="0"
-                    max="99"
+                    min="0.1"
+                    max="9.9"
+                    step="0.1"
+                    inputMode="decimal"
+                    placeholder="9.8"
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                   />
+                  {discountHint ? (
+                    <p className="text-xs text-muted-foreground">{discountHint}</p>
+                  ) : null}
                 </Field>
               </FieldGroup>
             </CardContent>
           </Card>
           <Card id="configuration">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.configTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.configTitle')}</CardTitle>
               <CardDescription>{tr('editor.configDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1107,7 +1174,7 @@ function ProductForm({
                   </Select>
                 )}
                 {currentType && currentType.configFields.length > 0 && !providerId ? (
-                  <div className="rounded-lg border bg-muted/30 p-4">
+                  <div className="plugin-panel plugin-panel-muted">
                     <ConfigFields
                       fields={currentType.configFields}
                       scope={configData}
@@ -1126,7 +1193,7 @@ function ProductForm({
           </Card>
           <Card id="checkout">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.checkoutTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.checkoutTitle')}</CardTitle>
               <CardDescription>{tr('editor.checkoutDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1140,7 +1207,7 @@ function ProductForm({
                   rows={6}
                   spellCheck={false}
                   placeholder={tr('editor.checkoutPlaceholder')}
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="plugin-input plugin-input-mono"
                 />
                 <p className="text-xs text-muted-foreground">
                   {providerId ? tr('editor.upstreamConfigManaged') : tr('editor.checkoutHelp')}
@@ -1152,7 +1219,7 @@ function ProductForm({
         <aside className="flex min-w-0 flex-col gap-6 xl:sticky xl:top-24">
           <Card id="summary">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.summaryTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.summaryTitle')}</CardTitle>
               <CardDescription>{tr('editor.summaryDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1190,7 +1257,7 @@ function ProductForm({
           </Card>
           <Card id="categories">
             <CardHeader>
-              <SectionTitle as="h3">{tr('editor.categoriesTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('editor.categoriesTitle')}</CardTitle>
               <CardDescription>{tr('editor.categoriesDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1202,11 +1269,8 @@ function ProductForm({
                       return (
                         <label
                           key={option.value}
-                          className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                            checked
-                              ? 'border-primary bg-primary/10 text-primary'
-                              : 'bg-muted/40 hover:bg-muted'
-                          }`}
+                          data-checked={checked}
+                          className="plugin-chip"
                         >
                           <input
                             type="checkbox"
@@ -1303,6 +1367,50 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
   const products = (props.data.products as ProductRow[] | undefined) ?? [];
   const types = (props.data.productTypes as ProductTypeInfo[] | undefined) ?? [];
+  const diagnostics = props.data.fulfillmentDiagnostics as FulfillmentDiagnostics | undefined;
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const blocked = new Map(
+    (diagnostics?.issues ?? [])
+      .filter((issue) => issue.blocking)
+      .map((issue) => [issue.productId, issue]),
+  );
+
+  /**
+   * 上架/下架。
+   *
+   * 商品此前只能在创建时决定 status，之后无法更改：上游履约插件被停用后，
+   * 运营者没有任何手段阻止买家下单一件无法交付的商品，只能删除商品（连带
+   * 毁掉订单历史引用）。这里补上显式开关。
+   */
+  async function toggleStatus(product: ProductRow) {
+    const next = product.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    setPendingId(product.id);
+    setStatusError(null);
+    try {
+      const response = await fetch(
+        `/api/plugins/store/admin/products/${encodeURIComponent(product.id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status: next }),
+        },
+      );
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          detail?: string;
+          message?: string;
+        } | null;
+        throw new Error(body?.detail || body?.message || tr('list.statusFailed'));
+      }
+      window.location.reload();
+    } catch (cause) {
+      console.error('[store] product status change failed', cause);
+      setStatusError(cause instanceof Error ? cause.message : tr('list.statusFailed'));
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   return (
     <main className="w-full space-y-8">
@@ -1316,9 +1424,37 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
         }
       />
 
-      <div className="overflow-x-auto rounded-xl border">
+      {blocked.size > 0 ? (
+        <section className="plugin-panel flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-base font-medium">{tr('list.undeliverableTitle')}</h2>
+            <p className="text-sm text-muted-foreground">{tr('list.undeliverableHint')}</p>
+          </div>
+          <ul className="plugin-divide flex flex-col">
+            {[...blocked.values()].map((issue) => (
+              <li key={issue.productId} className="flex flex-col gap-1 py-2 text-sm">
+                <span className="font-medium">{issue.name}</span>
+                <span className="plugin-alert plugin-alert-warn">{issue.message}</span>
+              </li>
+            ))}
+          </ul>
+          {diagnostics?.providers.length ? (
+            <p className="text-xs text-muted-foreground">
+              {tr('list.availableProviders', {
+                providers: diagnostics.providers.map((provider) => provider.id).join(', '),
+              })}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {statusError ? (
+        <InlineError>{statusError}</InlineError>
+      ) : null}
+
+      <div className="plugin-table-wrap">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-muted-foreground">
+          <thead className="plugin-table-head">
             <tr>
               <th className="px-4 py-2.5 font-medium">{tr('list.colProduct')}</th>
               <th className="px-4 py-2.5 font-medium">{tr('list.colType')}</th>
@@ -1333,14 +1469,14 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
             {products.map((product) => {
               const typeLabel = types.find((type) => type.id === product.fulfillmentType)?.label;
               return (
-                <tr key={product.id} className="border-t">
+                <tr key={product.id} className="plugin-table-row">
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{product.name}</p>
                     <p className="text-xs text-muted-foreground">{product.id.slice(0, 12)}</p>
                   </td>
                   <td className="px-4 py-2.5">
                     {typeLabel ? (
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      <span className="plugin-token">
                         {typeLabel}
                       </span>
                     ) : (
@@ -1364,7 +1500,7 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                               : '—'}
                           </span>
                           {source != null && diff ? (
-                            <span className="text-xs text-amber-600">
+                            <span className="plugin-warning text-xs">
                               {tr('list.upstreamBadge', {
                                 price: money(source, product.currency, props.locale),
                               })}
@@ -1376,22 +1512,39 @@ export function StoreAdminProductsPage(props: AdminPageComponentProps) {
                   </td>
                   <td className="px-4 py-2.5">{product.stock}</td>
                   <td className="px-4 py-2.5">
-                    {product.status === 'ACTIVE' ? tr('list.onSale') : product.status}
+                    <div className="flex flex-col items-start gap-1">
+                      <span className={product.status === 'ACTIVE' ? undefined : 'text-muted-foreground'}>
+                        {product.status === 'ACTIVE' ? tr('list.onSale') : tr('list.offSale')}
+                      </span>
+                      {blocked.has(product.id) ? (
+                        <span className="plugin-token">{tr('list.undeliverable')}</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      nativeButton={false}
-                      render={
-                        <Link
-                          href={`/admin/plugin/store/products/${encodeURIComponent(product.id)}/edit`}
-                        />
-                      }
-                    >
-                      <Pencil className="size-3.5" />
-                      {tr('list.edit')}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        nativeButton={false}
+                        render={
+                          <Link
+                            href={`/admin/plugin/store/products/${encodeURIComponent(product.id)}/edit`}
+                          />
+                        }
+                      >
+                        <Pencil className="size-3.5" />
+                        {tr('list.edit')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pendingId === product.id}
+                        onClick={() => void toggleStatus(product)}
+                      >
+                        {product.status === 'ACTIVE' ? tr('list.unlist') : tr('list.relist')}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -1484,13 +1637,53 @@ function StoreAdminOverviewPage(props: AdminPageComponentProps) {
   );
 }
 
+/** 退款政策（与后端 settings schema 同形）。 */
+interface RefundSettings {
+  enabled: boolean;
+  windowDays: number | null;
+  amountMode: 'full' | 'prorated';
+  feePercentBps: number;
+  suspendOnRequest: boolean;
+  terminateOnApprove: boolean;
+  oncePerOrder: boolean;
+}
+
+const DEFAULT_REFUND_SETTINGS: RefundSettings = {
+  enabled: false,
+  windowDays: 7,
+  amountMode: 'prorated',
+  feePercentBps: 0,
+  suspendOnRequest: true,
+  terminateOnApprove: true,
+  oncePerOrder: true,
+};
+
 function StoreSettingsPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
-  const initial = props.data.settings as { provisioningMode: string } | undefined;
+  const initial = props.data.settings as
+    | { provisioningMode: string; refund?: RefundSettings }
+    | undefined;
   const [mode, setMode] = useState(initial?.provisioningMode ?? 'manual');
+  const [refund, setRefund] = useState<RefundSettings>(initial?.refund ?? DEFAULT_REFUND_SETTINGS);
+  // 窗口用「永久 / 自定义天数 / 一律不可」三态：直接填数字无法表达 null（永久），
+  // 而运营最常问的恰好就是「怎么设成永久可退」。
+  const [windowMode, setWindowMode] = useState<'forever' | 'custom' | 'disabled'>(() => {
+    const days = initial?.refund?.windowDays;
+    if (days === null) return 'forever';
+    if (days === 0) return 'disabled';
+    return 'custom';
+  });
+  const [windowDays, setWindowDays] = useState(String(initial?.refund?.windowDays ?? 7));
   const [busy, start] = useTransition();
   const [error, setError] = useState('');
   const router = useRouter();
+  const patch = (next: Partial<RefundSettings>) => setRefund((prev) => ({ ...prev, ...next }));
+  const resolvedWindowDays = (): number | null => {
+    if (windowMode === 'forever') return null;
+    if (windowMode === 'disabled') return 0;
+    const parsed = Number.parseInt(windowDays, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 7;
+  };
   return (
     <main className="flex flex-col gap-6">
       <PageHeader title={tr('settings.store.title')} description={tr('settings.store.help')} />
@@ -1509,6 +1702,117 @@ function StoreSettingsPage(props: AdminPageComponentProps) {
         </Field>
       </FieldGroup>
       {error ? <InlineError>{error}</InlineError> : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>{tr('settings.store.refundSection')}</CardTitle>
+          <CardDescription>{tr('settings.store.refundHelp')}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <FieldGroup>
+            <Field>
+              <Label htmlFor="refund-enabled">{tr('settings.store.refundEnabled')}</Label>
+              <Select
+                id="refund-enabled"
+                value={refund.enabled ? 'on' : 'off'}
+                disabled={busy || !initial}
+                onChange={(e) => patch({ enabled: e.target.value === 'on' })}
+              >
+                <option value="off">{tr('common.disabled')}</option>
+                <option value="on">{tr('common.enabled')}</option>
+              </Select>
+            </Field>
+            <Field>
+              <Label htmlFor="refund-window">{tr('settings.store.refundWindow')}</Label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select
+                  id="refund-window"
+                  value={windowMode}
+                  disabled={busy || !initial}
+                  onChange={(e) => setWindowMode(e.target.value as 'forever' | 'custom' | 'disabled')}
+                >
+                  <option value="custom">{tr('settings.store.refundWindowCustom')}</option>
+                  <option value="forever">{tr('service.refundForever')}</option>
+                  <option value="disabled">{tr('settings.store.refundWindowDisabled')}</option>
+                </Select>
+                {windowMode === 'custom' ? (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={windowDays}
+                    disabled={busy || !initial}
+                    aria-label={tr('settings.store.refundWindow')}
+                    onChange={(e) => setWindowDays(e.target.value)}
+                    className="w-28"
+                  />
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {tr('settings.store.refundWindowHelp')}
+              </p>
+            </Field>
+            <Field>
+              <Label htmlFor="refund-amount-mode">{tr('settings.store.refundAmountMode')}</Label>
+              <Select
+                id="refund-amount-mode"
+                value={refund.amountMode}
+                disabled={busy || !initial}
+                onChange={(e) => patch({ amountMode: e.target.value as 'full' | 'prorated' })}
+              >
+                <option value="prorated">{tr('settings.store.refundAmountProrated')}</option>
+                <option value="full">{tr('settings.store.refundAmountFull')}</option>
+              </Select>
+            </Field>
+            <Field>
+              <Label htmlFor="refund-fee">{tr('settings.store.refundFee')}</Label>
+              <Input
+                id="refund-fee"
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={String(refund.feePercentBps / 100)}
+                disabled={busy || !initial}
+                onChange={(e) => {
+                  const percent = Number(e.target.value);
+                  patch({
+                    feePercentBps: Number.isFinite(percent)
+                      ? Math.min(10_000, Math.max(0, Math.round(percent * 100)))
+                      : 0,
+                  });
+                }}
+                className="w-28"
+              />
+            </Field>
+          </FieldGroup>
+          <div className="flex flex-col gap-3">
+            <Label>
+              <Checkbox
+                checked={refund.suspendOnRequest}
+                disabled={busy || !initial}
+                onCheckedChange={(checked) => patch({ suspendOnRequest: checked === true })}
+              />
+              {tr('settings.store.refundSuspend')}
+            </Label>
+            <Label>
+              <Checkbox
+                checked={refund.terminateOnApprove}
+                disabled={busy || !initial}
+                onCheckedChange={(checked) => patch({ terminateOnApprove: checked === true })}
+              />
+              {tr('settings.store.refundTerminate')}
+            </Label>
+            <Label>
+              <Checkbox
+                checked={refund.oncePerOrder}
+                disabled={busy || !initial}
+                onCheckedChange={(checked) => patch({ oncePerOrder: checked === true })}
+              />
+              {tr('settings.store.refundOncePerOrder')}
+            </Label>
+          </div>
+        </CardContent>
+      </Card>
       <Button
         disabled={busy || !initial}
         onClick={() =>
@@ -1518,7 +1822,10 @@ function StoreSettingsPage(props: AdminPageComponentProps) {
               const response = await fetch('/api/plugins/store/admin/settings', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ provisioningMode: mode }),
+                body: JSON.stringify({
+                  provisioningMode: mode,
+                  refund: { ...refund, windowDays: resolvedWindowDays() },
+                }),
               });
               if (!response.ok) throw new Error();
               router.refresh();
@@ -1536,30 +1843,8 @@ function StoreSettingsPage(props: AdminPageComponentProps) {
 
 function StoreApprovalsPage(props: AdminPageComponentProps) {
   const tr = t(props.locale);
-  const data = props.data.approvals as
-    | {
-        total: number;
-        page: number;
-        pageSize: number;
-        tasks: Array<{
-          id: string;
-          orderId: string;
-          userId: string;
-          productName: string;
-          quantity: number;
-          status: string;
-          reason: string | null;
-          attempts: number;
-          upstreamServiceId: string | null;
-          invoiceId: string | null;
-          paymentState: string | null;
-          canResumePayment: boolean;
-        }>;
-      }
-    | undefined;
-  const [candidates, setCandidates] = useState<
-    Record<string, Array<{ id: string; productName: string; providerServiceId: string }>>
-  >({});
+  const data = props.data.approvals as { total: number; page: number; pageSize: number; tasks: Array<{ id: string; orderId: string; userId: string; productName: string; quantity: number; status: string; reason: string | null; attempts: number; upstreamServiceId: string | null; invoiceId: string | null; paymentState: string | null; canResumePayment: boolean; maxAttempts: number; retryExhausted: boolean }> } | undefined;
+  const [candidates, setCandidates] = useState<Record<string, Array<{ id: string; productName: string; providerServiceId: string }>>>({});
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, start] = useTransition();
   const showFeedback = (kind: 'error' | 'success', message: string) => {
@@ -1616,16 +1901,29 @@ function StoreApprovalsPage(props: AdminPageComponentProps) {
               <CardTitle>
                 {task.productName} × {task.quantity}
               </CardTitle>
-              <StatusBadge tone={task.status === 'AWAITING_APPROVAL' ? 'neutral' : 'warn'}>
+              <StatusBadge
+                tone={
+                  task.retryExhausted
+                    ? 'error'
+                    : task.status === 'AWAITING_APPROVAL'
+                      ? 'neutral'
+                      : 'warn'
+                }
+              >
                 {tr(`review.status.${task.status}`)}
               </StatusBadge>
             </div>
             <CardDescription>
-              {task.status === 'AWAITING_APPROVAL'
-                ? tr('review.approveHint')
-                : task.paymentState
-                  ? tr(`review.payment.${task.paymentState}`)
-                  : tr('review.checkHint')}
+              {task.retryExhausted
+                ? tr('review.exhaustedHint', {
+                    attempts: task.attempts,
+                    maxAttempts: task.maxAttempts,
+                  })
+                : task.status === 'AWAITING_APPROVAL'
+                  ? tr('review.approveHint')
+                  : task.paymentState
+                    ? tr(`review.payment.${task.paymentState}`)
+                    : tr('review.checkHint')}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -1882,11 +2180,14 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
               state: string;
               reason: string | null;
               failureReason: string | null;
+              serviceId?: string | null;
+              terminateError?: string | null;
             }>;
           }
         | undefined
     )?.requests ?? [];
   const [busy, start] = useTransition();
+  const [error, setError] = useState('');
   const router = useRouter();
   // Refund states are machine values; never render them verbatim.
   const stateLabel = (state: string) => {
@@ -1894,25 +2195,51 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
     const label = tr(key);
     return label === key ? state : label;
   };
+  const submitReview = (id: string, decision: 'approve' | 'reject', attest = false) =>
+    fetch(`/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(attest ? { decision, confirmNoUpstreamInstance: true } : { decision }),
+    });
   const review = (id: string, decision: 'approve' | 'reject') =>
     start(async () => {
-      await fetch(`/api/plugins/store/admin/refund-requests/${encodeURIComponent(id)}/review`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ decision }),
-      });
+      setError('');
+      let response = await submitReview(id, decision);
+      if (!response.ok && decision === 'approve') {
+        // When fulfilment died before the upstream ever returned an invoice, no
+        // machine evidence exists and none can be produced — the order would be
+        // stuck between "cannot deliver" and "cannot refund". Hand the burden of
+        // proof to the operator here, explicitly and once, instead of a dead end.
+        const failure: unknown = await response.clone().json().catch(() => null);
+        const code = (failure as { code?: string } | null)?.code;
+        if (code === 'store.refund.needs_upstream_attestation') {
+          if (window.confirm(tr('refund.attestConfirm'))) {
+            response = await submitReview(id, decision, true);
+          } else {
+            router.refresh();
+            return;
+          }
+        }
+      }
+      // A rejected review (upstream still pending, already handled, …) must be
+      // visible: silently refreshing made the buttons look dead.
+      if (!response.ok) {
+        const failure: unknown = await response.json().catch(() => null);
+        setError(approvalErrorMessage(failure, tr('refund.actionFailed')));
+      }
       router.refresh();
     });
   return (
     <main className="flex flex-col gap-6">
       <PageHeader title={tr('refund.title')} description={tr('refund.description')} />
+      {error ? <InlineError>{error}</InlineError> : null}
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">{tr('refund.empty')}</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="plugin-table-wrap">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left">
+              <tr className="plugin-table-head">
                 <th className="p-3">{tr('refund.colOrder')}</th>
                 <th className="p-3">{tr('refund.colUser')}</th>
                 <th className="p-3">{tr('refund.colAmount')}</th>
@@ -1922,8 +2249,15 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b last:border-0">
-                  <td className="p-3 font-mono text-xs">{row.orderId}</td>
+                <tr key={row.id} className="plugin-table-row">
+                  <td className="p-3 font-mono text-xs">
+                    {row.orderId}
+                    {row.serviceId ? (
+                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                        {tr('refund.fromService')}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="p-3">{row.userId}</td>
                   <td className="p-3 tabular-nums">
                     {money(row.amount, row.currency, props.locale)}
@@ -1935,6 +2269,13 @@ export function StoreAdminRefundsPage(props: AdminPageComponentProps) {
                           reason: row.failureReason,
                         })
                       : stateLabel(row.state)}
+                    {/* 钱退了但机器没停：必须显式提醒运营手工处理，否则“已退款”
+                        的客户还在用一台没人付费的机器。 */}
+                    {row.terminateError ? (
+                      <p className="mt-1 text-[11px] text-destructive">
+                        {tr('refund.terminateFailed', { reason: row.terminateError })}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="p-3">
                     {row.state === 'PENDING' ? (

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Field, FieldDescription, FieldGroup } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { SettingsSelect as AgentSettingSelect } from '@/components/settings-sections';
 import {
   Dialog,
@@ -24,7 +25,33 @@ import {
 import { formatDateTime, formatNumber } from '@/i18n/core';
 import { useLocale, useTranslator } from '@/i18n/provider';
 
+/** Sentinel for "no explicit choice": the runtime picks the provider's first tool-capable model. */
+const AUTO = '__auto__';
+
+/**
+ * A price hint for the picker. Amounts stay in the provider's minor unit — the
+ * interface must not invent a currency the gateway never declared.
+ */
+function priceText(model: Catalog['models'][number]): string {
+  const { inputPriceMinorPerMillion: input, outputPriceMinorPerMillion: output } = model;
+  if (input === undefined && output === undefined) return '—';
+  return `${input ?? '—'}/${output ?? '—'}`;
+}
+
 type Model = { baseUrl: string | null; model: string | null; apiKeyConfigured: boolean };
+type Catalog = {
+  provider: { id: string; name: string } | null;
+  fromPlugin: boolean;
+  models: Array<{
+    id: string;
+    label: string;
+    supportsTools: boolean;
+    inputPriceMinorPerMillion?: number;
+    outputPriceMinorPerMillion?: number;
+  }>;
+  defaultModel: string | null;
+  fallbackConfigured: boolean;
+};
 type Retention = {
   policy: { retentionDays: number | null; maxConversationsPerUser: number | null };
   stats: { conversations: number; messages: number };
@@ -35,8 +62,8 @@ export function AgentSettings() {
   const t = useTranslator();
   const locale = useLocale();
   const [loaded, setLoaded] = useState(false);
-  const [enabled, setEnabled] = useState(false);
-  const [model, setModel] = useState<Model>({ baseUrl: '', model: '', apiKeyConfigured: false });
+  const [enabled, setEnabled] = useState(false);  const [model, setModel] = useState<Model>({ baseUrl: '', model: '', apiKeyConfigured: false });
+  const [catalog, setCatalog] = useState<Catalog>();
   const [secret, setSecret] = useState('');
   const [retention, setRetention] = useState<Retention>();
   const [days, setDays] = useState('0');
@@ -44,6 +71,8 @@ export function AgentSettings() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState<'cleanup' | 'model' | null>(null);
+  /** Unsaved picker choice; `null` follows the saved catalog value. */
+  const [choice, setChoice] = useState<string | null>(null);
   const applyRetention = (value: Retention) => {
     setRetention(value);
     setDays(String(value.policy.retentionDays ?? 0));
@@ -52,13 +81,16 @@ export function AgentSettings() {
   async function load() {
     setError('');
     try {
-      const [status, config, history] = await Promise.all([
+      const [status, config, history, models] = await Promise.all([
         agentFetch<{ enabled: boolean }>('status'),
         agentFetch<Model>('admin/model'),
         agentFetch<Retention>('admin/retention'),
+        agentFetch<Catalog>('admin/model/catalog'),
       ]);
       setEnabled(status.enabled);
       setModel(config);
+      setCatalog(models);
+      setChoice(null);
       applyRetention(history);
       setLoaded(true);
     } catch (cause) {
@@ -91,6 +123,7 @@ export function AgentSettings() {
     retention &&
     (Number(days) !== (retention.policy.retentionDays ?? 0) ||
       Number(cap) !== (retention.policy.maxConversationsPerUser ?? 0));
+  const defaultModel = choice ?? catalog?.defaultModel ?? AUTO;
   return (
     <section className="flex flex-col gap-8" aria-busy={Boolean(busy)}>
       <div className="flex items-center justify-between gap-4 border-b pb-4">
@@ -116,29 +149,86 @@ export function AgentSettings() {
       {loaded && (
         <>
           <FieldGroup>
-            <Field>
-              <Label htmlFor="agent-enabled">{t('agent.admin.serviceLabel')}</Label>
-              <AgentSettingSelect
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <Label htmlFor="agent-enabled">{t('agent.admin.serviceLabel')}</Label>
+                <FieldDescription>{t('agent.admin.serviceHint')}</FieldDescription>
+              </div>
+              <Switch
                 id="agent-enabled"
+                checked={enabled}
                 disabled={Boolean(busy)}
-                value={String(enabled)}
-                options={[
-                  ['false', t('agent.admin.optionOff')],
-                  ['true', t('agent.admin.optionOn')],
-                ]}
-                onChange={(value) =>
+                onCheckedChange={(checked) =>
                   void act('enabled', async () => {
                     const result = await agentFetch<{ enabled: boolean }>('admin/enabled', 'PUT', {
-                      enabled: value === 'true',
+                      enabled: checked,
                     });
                     setEnabled(result.enabled);
                     toast.success(t('agent.admin.serviceSaved'));
                   })
                 }
               />
-              <FieldDescription>{t('agent.admin.serviceHint')}</FieldDescription>
-            </Field>
+            </div>
           </FieldGroup>
+          <Separator />
+          <form
+            className="flex flex-col gap-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void act('defaultModel', async () => {
+                setCatalog(
+                  await agentFetch<Catalog>('admin/model/default', 'PUT', {
+                    model: defaultModel === AUTO ? null : defaultModel,
+                  }),
+                );
+                toast.success(t('agent.admin.defaultModelSaved'));
+              });
+            }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <SectionTitle>{t('agent.admin.defaultModelTitle')}</SectionTitle>
+              <Badge variant="secondary">
+                {catalog?.provider
+                  ? `${t('agent.admin.providerLabel')}: ${catalog.provider.name}`
+                  : t('agent.admin.providerNone')}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">{t('agent.admin.defaultModelHint')}</p>
+            <FieldGroup>
+              <Field>
+                <Label htmlFor="agent-default-model">{t('agent.admin.defaultModelLabel')}</Label>
+                <AgentSettingSelect
+                  id="agent-default-model"
+                  value={defaultModel}
+                  onChange={setChoice}
+                  disabled={Boolean(busy) || !catalog?.models.length}
+                  options={[
+                    [AUTO, t('agent.admin.defaultModelAuto')],
+                    ...(catalog?.models ?? []).map(
+                      (item): [string, string] => [
+                        item.id,
+                        item.supportsTools
+                          ? `${item.label} · ${priceText(item)}`
+                          : `${item.label} · ${t('agent.admin.noToolsModel')}`,
+                      ],
+                    ),
+                  ]}
+                />
+                <FieldDescription>
+                  {catalog && !catalog.models.length
+                    ? t('agent.admin.catalogEmpty')
+                    : t('agent.admin.defaultModelHelp')}
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={Boolean(busy) || defaultModel === (catalog?.defaultModel ?? AUTO)}>
+                {busy === 'defaultModel'
+                  ? t('agent.admin.saving')
+                  : t('agent.admin.defaultModelSave')}
+              </Button>
+            </div>
+          </form>
           <Separator />
           <form
             className="flex flex-col gap-6"
@@ -163,7 +253,9 @@ export function AgentSettings() {
                 {model.apiKeyConfigured ? t('agent.admin.keySaved') : t('agent.admin.keyPending')}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">{t('agent.admin.modelHint')}</p>
+            <p className="text-sm text-muted-foreground">
+              {catalog?.fromPlugin ? t('agent.admin.fallbackHintPlugin') : t('agent.admin.modelHint')}
+            </p>
             <FieldGroup>
               <Field>
                 <Label htmlFor="agent-base-url">{t('agent.admin.baseUrlLabel')}</Label>
@@ -207,7 +299,7 @@ export function AgentSettings() {
               </Field>
             </FieldGroup>
             <div className="flex flex-wrap gap-2">
-              <Button disabled={Boolean(busy)}>
+              <Button type="submit" disabled={Boolean(busy)}>
                 {busy === 'model' ? t('agent.admin.saving') : t('agent.admin.saveModel')}
               </Button>
               <Button
@@ -302,7 +394,7 @@ export function AgentSettings() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button disabled={Boolean(busy) || !dirty}>
+              <Button type="submit" disabled={Boolean(busy) || !dirty}>
                 {busy === 'retention' ? t('agent.admin.saving') : t('agent.admin.saveRetention')}
               </Button>
               <Button

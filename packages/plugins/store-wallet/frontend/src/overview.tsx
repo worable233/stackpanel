@@ -5,6 +5,7 @@ import {
   CardContent,
   CardHeader,
   CardDescription,
+  CardTitle,
   PageHeader,
   SectionTitle,
 } from '@stackpanel/ui';
@@ -182,16 +183,18 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
         </Card>
       </div>
 
-      <Card>
-        <details open className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 [&::-webkit-details-marker]:hidden">
-            <SectionTitle icon={<Wallet />}>{tr('overview.ledgerTitle')}</SectionTitle>
-            <ChevronDown
-              className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
-              aria-hidden="true"
-            />
-          </summary>
-          <CardContent className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <section className="flex flex-col gap-4">
+        <SectionTitle icon={<Wallet />}>{tr('overview.ledgerTitle')}</SectionTitle>
+        <Card>
+          <details open className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 [&::-webkit-details-marker]:hidden">
+              <span className="text-sm font-medium">{tr('overview.ledgerToggle')}</span>
+              <ChevronDown
+                className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
+            </summary>
+            <CardContent className="grid gap-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
             <dl className="flex flex-col divide-y">
               {rows.map((row) => (
                 <div
@@ -224,15 +227,16 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
                 <ArrowUpRight data-icon="inline-end" />
               </Button>
             </div>
-          </CardContent>
-        </details>
-      </Card>
+            </CardContent>
+          </details>
+        </Card>
+      </section>
 
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <Card id="monthly-spending" className="scroll-mt-24">
           <CardHeader>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <SectionTitle icon={<ChartNoAxesColumn />}>{tr('overview.monthlyTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('overview.monthlyTitle')}</CardTitle>
               <CardDescription>
                 {monthly.length
                   ? `${monthLabel(monthly[0]!.month, props.locale)} — ${monthLabel(current!.month, props.locale)}`
@@ -297,7 +301,7 @@ export function WalletOverviewPage(props: AccountPageComponentProps) {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <SectionTitle icon={<ListFilter />}>{tr('overview.recentTitle')}</SectionTitle>
+              <CardTitle className="text-base">{tr('overview.recentTitle')}</CardTitle>
               <Link
                 href="/account/balance/records#ledger"
                 className="shrink-0 text-xs text-primary hover:underline"

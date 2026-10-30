@@ -2,7 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
 import { getInfraConfig } from '../../infra.ts';
-import { listDeadLetterJobs, retryDeadLetterJob } from '../../jobs/index.ts';
+import {
+  describeSchedules,
+  listDeadLetterJobs,
+  retryDeadLetterJob,
+} from '../../jobs/index.ts';
 
 const adminOnly = [requireAuth, requireRole('ADMIN')];
 
@@ -13,6 +17,10 @@ const adminOnly = [requireAuth, requireRole('ADMIN')];
  */
 export async function adminJobsRoutes(app: FastifyInstance): Promise<void> {
   const redisUrl = () => getInfraConfig().redisUrl ?? null;
+
+  // Which recurring jobs exist, on which backend, and when a cron fires next.
+  // Operators otherwise have to guess whether a sweep is armed at all.
+  app.get('/admin/jobs/schedules', { preHandler: adminOnly }, async () => describeSchedules());
 
   app.get('/admin/jobs/dead-letter', { preHandler: adminOnly }, async () => {
     const jobs = await listDeadLetterJobs(redisUrl());

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -49,7 +49,12 @@ export function SettingsSections({
     window.history.replaceState(null, '', `#${id}`);
   }
   return (
-    <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-6">
+    <Tabs
+      value={selected?.id}
+      onValueChange={select}
+      orientation="vertical"
+      className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-6"
+    >
       <aside className="shrink-0 lg:w-40 lg:pt-1">
         <div className="md:hidden">
           <Select value={selected?.id} onValueChange={(value) => value && select(value)}>
@@ -67,43 +72,36 @@ export function SettingsSections({
             </SelectContent>
           </Select>
         </div>
-        <nav
+        <TabsList
           aria-label={label}
-          className="scrollbar-none hidden gap-1 overflow-x-auto md:flex lg:flex-col lg:overflow-visible"
+          className="scrollbar-none hidden h-auto w-full flex-col gap-1 overflow-x-auto rounded-none bg-transparent p-0 md:flex lg:overflow-visible"
         >
-          <p className="mb-2 hidden px-2.5 text-xs font-medium text-muted-foreground lg:block">
-            {label}
-          </p>
           {sections.map(({ id, title, Icon }) => (
-            <Button
+            <TabsTrigger
               key={id}
-              variant={selected?.id === id ? 'secondary' : 'ghost'}
-              onClick={() => select(id)}
-              aria-pressed={selected?.id === id}
-              aria-controls={selected?.id === id ? `settings-panel-${id}` : undefined}
+              value={id}
+              aria-controls={`settings-panel-${id}`}
               className={cn(
-                'justify-start gap-3 whitespace-nowrap lg:w-full',
-                selected?.id === id ? 'hover:bg-accent' : 'hover:bg-transparent',
+                'h-10 w-full flex-none justify-start gap-3 rounded-lg px-3 text-sm font-normal whitespace-nowrap text-muted-foreground data-active:bg-muted data-active:font-medium data-active:text-foreground after:hidden hover:bg-muted/60 hover:text-foreground',
               )}
             >
-              <Icon />
+              <Icon className="size-4" />
               {title}
-            </Button>
+            </TabsTrigger>
           ))}
-        </nav>
+        </TabsList>
       </aside>
-      <div className="min-w-0 flex-1 p-1">
+      <TabsContent value={selected?.id ?? ''} className="min-w-0 flex-1 p-1">
         {selected && (
           <div
             id={`settings-panel-${selected.id}`}
-            key={selected.id}
             className="w-full max-w-xl pb-12"
           >
             {selected.content}
           </div>
         )}
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 

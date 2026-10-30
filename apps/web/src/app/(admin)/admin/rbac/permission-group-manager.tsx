@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useState, useTransition } from 'react';
+import { Fragment, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { CircleHelp, ChevronLeft, ChevronRight, MoreVertical, Search } from 'lucide-react';
 import type { PermissionGroupView, PermissionInfo } from '@stackpanel/sdk';
@@ -56,6 +56,7 @@ import {
   type RbacActionResult,
 } from '@/lib/rbac-actions';
 import { useLocale, useTranslator } from '@/i18n/provider';
+import { toast } from '@/components/ui/toast';
 import { formatNumber, type Translator } from '@/i18n/core';
 
 const PAGE_SIZE = 12;
@@ -63,11 +64,10 @@ const PAGE_SIZE = 12;
 type TypeFilter = 'all' | 'system' | 'custom';
 
 function StatusMessage({ state }: { state: RbacActionResult | null }) {
-  if (!state) return null;
-  if (state.ok && state.message) {
-    return <span className="text-sm text-muted-foreground">{state.message}</span>;
-  }
-  if (state.error) {
+  useEffect(() => {
+    if (state?.ok && state.message) toast.success(state.message);
+  }, [state]);
+  if (state?.error) {
     return <span className="text-sm text-destructive">{state.error}</span>;
   }
   return null;

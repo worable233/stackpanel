@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { ArrowUpRight, Layers, LogIn } from 'lucide-react';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { Button } from '@/components/ui/button';
-import { Reveal, HeroRays } from '@stackpanel/ui';
 import { localeOptions } from '@/i18n/core';
 import { useLocale, useTranslator } from '@/i18n/provider';
 
@@ -73,7 +72,7 @@ export function AuthShell({
         ) : null}
 
         <div className="flex flex-1 items-center justify-center px-5 pb-24 pt-28 sm:px-12 sm:py-28">
-          <Reveal className="w-full max-w-[350px]">
+          <div className="w-full max-w-[350px]">
             <div className="mb-8 flex flex-col gap-2 text-center">
               <h1 className="text-3xl font-medium tracking-tight text-foreground">{title}</h1>
               <p className="text-sm text-muted-foreground">{subtitle}</p>
@@ -113,7 +112,7 @@ export function AuthShell({
                 {crossPrompt} {crossLink}
               </p>
             ) : null}
-          </Reveal>
+          </div>
         </div>
 
         <div className="absolute bottom-5 flex w-full items-center justify-between px-10">
@@ -128,18 +127,9 @@ export function AuthShell({
         </div>
       </div>
 
-      <aside className="relative hidden overflow-hidden rounded-3xl border border-foreground/10 bg-foreground/[0.025] lg:flex lg:flex-col">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 [background:radial-gradient(ellipse_at_50%_30%,color-mix(in_oklch,var(--primary)_18%,transparent),transparent_70%)]"
-        />
-        <HeroRays />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:linear-gradient(to_bottom,transparent,black,transparent)]"
-        />
+      <aside className="relative hidden overflow-hidden rounded-3xl bg-muted/55 lg:flex lg:flex-col">
         <div className="relative flex flex-1 flex-col gap-10 p-8 xl:p-12">
-          <Reveal>
+          <div>
             <Link
               href="/"
               className="inline-flex items-center gap-3 text-xl font-semibold tracking-tight"
@@ -152,16 +142,16 @@ export function AuthShell({
               )}
               {platformName}
             </Link>
-          </Reveal>
-          <Reveal className="flex flex-1 flex-col justify-center py-10">
+          </div>
+          <div className="flex flex-1 flex-col justify-center py-10">
             <h2 className="text-4xl font-medium leading-tight tracking-tight xl:text-5xl">
               {t('auth.panel.heroLine1')}
               <br />
               <span className="text-muted-foreground">{t('auth.panel.heroLine2')}</span>
             </h2>
-          </Reveal>
+          </div>
           {posts.length > 0 ? (
-            <Reveal className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4">
               <p className="text-xs font-medium text-muted-foreground">
                 {t('auth.panel.latestPosts')}
               </p>
@@ -170,7 +160,7 @@ export function AuthShell({
                   <Link
                     key={post.path}
                     href={post.path}
-                    className="group rounded-xl border border-foreground/10 bg-background/25 p-4 backdrop-blur-xl transition-colors hover:border-primary/30 hover:bg-background/40"
+                    className="group rounded-2xl bg-background/80 p-4 transition-colors hover:bg-background"
                   >
                     <div className="mb-2 flex items-start justify-between gap-3">
                       <h3 className="line-clamp-2 text-sm font-medium leading-6">{post.title}</h3>
@@ -187,7 +177,7 @@ export function AuthShell({
                   </Link>
                 ))}
               </div>
-            </Reveal>
+            </div>
           ) : null}
         </div>
       </aside>

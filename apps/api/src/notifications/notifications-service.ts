@@ -320,12 +320,31 @@ export class KernelNotificationsService implements NotificationsService {
     return this.options.db.notification.count({ where: { userId, ...exclusions, readAt: null } });
   }
 
+  /**
+   * Acknowledge one notification for its owner.
+   *
+   * Idempotent on purpose: re-marking an already-read notification must not
+   * look like a failure. Callers fire this from several places (bell preview
+   * rows, inbox buttons, the visibility observer, SSE refreshes), so the same
+   * id legitimately arrives twice. Returning `false` for "already read" made
+   * the route answer 404 and the UI toast “标记已读失败”.
+   *
+   * Returns `true` when the notification exists for this user (already read
+   * counts as success), `false` only when it does not exist or belongs to
+   * somebody else.
+   */
   async markRead(userId: string, notificationId: string): Promise<boolean> {
     const result = await this.options.db.notification.updateMany({
       where: { id: notificationId, userId, readAt: null },
       data: { readAt: new Date() },
     });
-    return result.count > 0;
+    if (result.count > 0) return true;
+    // Nothing updated: either already read, or not this user's notification.
+    const existing = await this.options.db.notification.findFirst({
+      where: { id: notificationId, userId },
+      select: { id: true },
+    });
+    return existing !== null;
   }
 
   async markAllRead(userId: string): Promise<number> {

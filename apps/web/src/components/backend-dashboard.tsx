@@ -130,7 +130,8 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Bar
                         dataKey="revenue"
-                        fill="var(--primary)"
+                        fill="var(--muted-foreground)"
+                        fillOpacity={0.35}
                         radius={[4, 4, 0, 0]}
                         maxBarSize={28}
                       />

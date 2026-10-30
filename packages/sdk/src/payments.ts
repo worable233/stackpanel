@@ -141,6 +141,8 @@ export interface PaymentOrderLink {
   paymentUrl: string | null;
   paymentMethod: string | null;
   providerId: string | null;
+  /** Bound `payment_methods` row, so callers can recover per-method config. */
+  methodId?: string | null;
   amount: number;
   currency: string;
   createdAt: string;
@@ -149,7 +151,19 @@ export interface PaymentOrderLink {
 /** Payment methods surfaced at checkout. */
 export interface PaymentMethodListing {
   wallet: { id: 'wallet'; label: string };
-  providers: Array<{ id: string; name: string; methods: PaymentMethod[] }>;
+  /**
+   * `mode` lets a consumer tell the two provider families apart. A gateway
+   * provider is configured by its own plugin settings and returns a
+   * `paymentUrl`; a manual provider has no gateway at all, so its configured
+   * `payment_methods` row *is* the payment step. Admin surfaces use this to
+   * avoid demanding collection details from gateways.
+   */
+  providers: Array<{
+    id: string;
+    name: string;
+    mode: 'gateway' | 'manual';
+    methods: PaymentMethod[];
+  }>;
 }
 
 /** 销售渠道下的一个可用支付方式（结账渠道选择器用）。 */
@@ -194,12 +208,73 @@ export type ExternalTopUpCancelResult =
   | { cancelled: true }
   | { cancelled: false; reason: 'NOT_CANCELLABLE' | 'UNSUPPORTED' | 'STILL_PROCESSING' };
 
+/** How a provider collects money (mirrors the provider contract). */
+export type AdminPaymentProviderMode = 'gateway' | 'manual';
+
+/**
+ * A payment record as an operator sees it.
+ *
+ * A manual provider (bank transfer / QR) never redirects the buyer anywhere, so
+ * "confirm receipt" *is* the settlement step. That makes the record itself the
+ * working surface: the row has to carry the buyer, the collection method and the
+ * order link, otherwise an operator cannot tell one transfer from another.
+ */
+export interface AdminPaymentRecord {
+  id: string;
+  purpose: PaymentPurpose;
+  status: string;
+  /** Settlement amount (what the provider actually receives). */
+  amount: number;
+  currency: string;
+  /** Order-currency amount when it differs from the settlement currency. */
+  orderAmount: number | null;
+  orderCurrency: string | null;
+  providerId: string | null;
+  providerMode: AdminPaymentProviderMode | null;
+  /** Provider-specific collection code, e.g. `bank_transfer`. */
+  paymentMethod: string | null;
+  /** Display name of the configured `payment_methods` row, when bound. */
+  methodName: string | null;
+  orderId: string | null;
+  buyerId: string;
+  buyerEmail: string | null;
+  externalId: string | null;
+  paymentUrl: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+/** Filters for the admin payment list. */
+export interface AdminPaymentListQuery {
+  status?: string;
+  mode?: AdminPaymentProviderMode;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AdminPaymentListResponse {
+  payments: AdminPaymentRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /**
  * Kernel payment orchestration exposed to plugins via `ctx.payments`.
  */
 export interface PaymentService {
   /** List wallet + active external providers for checkout UI. */
   listPaymentMethods(): PaymentMethodListing;
+  /**
+   * Provider id → collection mode.
+   *
+   * The mode is part of the provider contract, not of the stored record, so
+   * admin tooling cannot label a row "needs manual confirmation" without asking
+   * the registry. Exposing it here keeps provider ids out of calling code.
+   */
+  providerModes(): Record<string, AdminPaymentProviderMode>;
+  /** Same shape, filtered to methods that are actually configured. */
+  listAvailablePaymentMethods(): Promise<PaymentMethodListing>;
   /**
    * Create a PENDING external payment record. When `tx` is provided the record
    * is created inside the caller's transaction (order flows need payment +
@@ -234,6 +309,13 @@ export interface PaymentService {
   getProviderConfig(providerId: string): Promise<unknown | null>;
   /** Batch-load the payment records bound to the given order ids. */
   listByOrderIds(orderIds: string[]): Promise<PaymentOrderLink[]>;
+  /**
+   * Buyer-facing instructions for a manual payment (bank account / QR image),
+   * or null when the payment is not a manual one. Manual payments have no
+   * `paymentUrl`, so this is the only way an order page can tell the buyer how
+   * to pay.
+   */
+  manualInstructions(paymentId: string): Promise<ManualPaymentInstructions | null>;
   /**
    * 按 code 取销售渠道及其可用支付方式（结账渠道选择器），不存在返回 null。
    * 让商城插件解析渠道而不直接读内核 `sales_channels` 表。

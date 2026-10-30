@@ -9,7 +9,15 @@ import { EXTENSION_POINTS, definePlugin, PluginError } from '@stackpanel/sdk';
 import { bindContext, context, resetContext } from './context';
 import { StoreError } from './errors';
 import { storeSettings, saveStoreSettings } from './settings';
-import { approveAdminDeliveryTask, reconcileProvisioning, reconcileAdminDeliveryTask, listAdminReconciliationCandidates, resumeAdminDeliveryPayment, recoverAdminDeliveryTask } from './fulfillment';
+import {
+  approveAdminDeliveryTask,
+  reconcileProvisioning,
+  retryUnconfirmedProvisioning,
+  reconcileAdminDeliveryTask,
+  listAdminReconciliationCandidates,
+  resumeAdminDeliveryPayment,
+  recoverAdminDeliveryTask,
+} from './fulfillment';
 import {
   settlementHandler,
   createOrder,
@@ -46,6 +54,7 @@ import { withIdempotency } from './idempotency';
 import {
   getMyService,
   getMyServiceMetrics,
+  updateMyServiceMeta,
   listAdminDeliveryTasks,
   listAdminServices,
   listMyServices,
@@ -63,8 +72,21 @@ import { createCategory, deleteCategory, listCategories, updateCategory } from '
 import { storeOperations } from './operations';
 import { renewService } from './renewal';
 import { STORE_NOTIFICATION_TYPES } from './notifications';
-import { changeService, quoteServiceChange, transferService } from './changes';
-import { refundOrder, createRefundRequest, listRefundRequests, reviewRefundRequest } from './refund';
+import {
+  changeService,
+  quoteServiceChange,
+  reapplyOrderChange,
+  retryFailedChanges,
+  transferService,
+} from './changes';
+import {
+  refundOrder,
+  createRefundRequest,
+  createServiceRefundRequest,
+  getServiceRefundEligibility,
+  listRefundRequests,
+  reviewRefundRequest,
+} from './refund';
 import { runExpirySweep, EXPIRY_SWEEP_INTERVAL_MS } from './expiry';
 import { runUnpaidOrderReminder, UNPAID_REMIND_INTERVAL_MS } from './unpaid-reminder';
 import {
@@ -76,6 +98,7 @@ import {
 } from './product-types';
 import { calculateProductPrice } from './pricing';
 import { listCurrencyIssues, normalizeLegacyProductCurrencies } from './currency-migration';
+import { listFulfillmentIssues } from './fulfillment-diagnostics';
 import {
   cartItemModel,
   categoryModel,
@@ -109,7 +132,13 @@ function handle(handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown
   };
 }
 
-const listPaymentMethods = async (): Promise<unknown> => context().payments.listPaymentMethods();
+/*
+ * Buyer-facing list: only methods that are actually configured. A provider
+ * whose `payment_methods` rows are missing or disabled must not appear in the
+ * checkout — the buyer would pick a method with no account number behind it.
+ */
+const listPaymentMethods = async (): Promise<unknown> =>
+  context().payments.listAvailablePaymentMethods();
 
 const listChannelMethods = async (req: HttpRequest): Promise<unknown> => {
   const code = req.params['code'];
@@ -139,6 +168,10 @@ export function registerStoreJobs(jobs: JobContext): void {
   jobs.handle('fulfillment-poll', async () => {
     await processDue();
     await reconcileProvisioning();
+    // 结果未确认的任务不再等人抬：先自动只读反查上游并重试（有界退避）。
+    await retryUnconfirmedProvisioning();
+    // 变配订单「已付款但未落地」同样自动重试（有界退避，错误写回订单行）。
+    await retryFailedChanges();
   });
   void jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
 
@@ -429,13 +462,69 @@ export const storePlugin = definePlugin({
   ],
 
   routes: [
-    { method: 'GET', path: '/store/admin/settings', auth: 'admin', permission: 'platform.admin', handler: handle(storeSettings) },
-    { method: 'POST', path: '/store/admin/settings', auth: 'admin', permission: 'platform.admin', handler: handle(saveStoreSettings) },
-    { method: 'POST', path: '/store/admin/delivery-tasks/:id/approve', auth: 'admin', permission: 'store.admin', handler: handle(approveAdminDeliveryTask) },
-    { method: 'POST', path: '/orders/:id/refund-requests', auth: 'user', permission: 'store.buy', handler: handle(createRefundRequest) },
-    { method: 'GET', path: '/refund-requests', auth: 'user', permission: 'store.view', handler: handle((req) => listRefundRequests(req, false)) },
-    { method: 'GET', path: '/store/admin/refund-requests', auth: 'admin', permission: 'store.admin', handler: handle((req) => listRefundRequests(req, true)) },
-    { method: 'POST', path: '/store/admin/refund-requests/:id/review', auth: 'admin', permission: 'store.admin', handler: handle(reviewRefundRequest) },
+    {
+      method: 'GET',
+      path: '/store/admin/settings',
+      auth: 'admin',
+      permission: 'platform.admin',
+      handler: handle(storeSettings),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/settings',
+      auth: 'admin',
+      permission: 'platform.admin',
+      handler: handle(saveStoreSettings),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/delivery-tasks/:id/approve',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(approveAdminDeliveryTask),
+    },
+    {
+      method: 'POST',
+      path: '/orders/:id/refund-requests',
+      auth: 'user',
+      permission: 'store.buy',
+      handler: handle(createRefundRequest),
+    },
+    {
+      method: 'GET',
+      path: '/services/:id/refund-eligibility',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle(getServiceRefundEligibility),
+    },
+    {
+      method: 'POST',
+      path: '/services/:id/refund-requests',
+      auth: 'user',
+      permission: 'store.buy',
+      handler: handle(createServiceRefundRequest),
+    },
+    {
+      method: 'GET',
+      path: '/refund-requests',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle((req) => listRefundRequests(req, false)),
+    },
+    {
+      method: 'GET',
+      path: '/store/admin/refund-requests',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle((req) => listRefundRequests(req, true)),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/refund-requests/:id/review',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(reviewRefundRequest),
+    },
     { method: 'GET', path: '/products', auth: 'public', handler: handle(listProducts) },
     { method: 'GET', path: '/products/:id', auth: 'public', handler: handle(getProduct) },
     // 账户商城：登录用户的可购买目录与详情（返回 PurchasableProduct）。
@@ -570,6 +659,14 @@ export const storePlugin = definePlugin({
       permission: 'store.admin',
       handler: handle(async () => ({ issues: await listCurrencyIssues() })),
     },
+    // 履约可用性诊断：哪些商品当前无法交付、缺哪个提供方插件。
+    {
+      method: 'GET',
+      path: '/store/admin/fulfillment-issues',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(async () => listFulfillmentIssues()),
+    },
     {
       method: 'POST',
       path: '/store/admin/products',
@@ -597,6 +694,14 @@ export const storePlugin = definePlugin({
       auth: 'admin',
       permission: 'store.admin',
       handler: handle(listAdminOrders),
+    },
+    // 手动重新应用变更（管理端）：清掉退避状态后立即重试一次，用于上游恢复后的兜底。
+    {
+      method: 'POST',
+      path: '/store/admin/orders/:id/apply-change',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(reapplyOrderChange),
     },
     // 退款：已支付订单退回用户钱包（管理端）
     {
@@ -650,6 +755,13 @@ export const storePlugin = definePlugin({
       auth: 'user',
       permission: 'store.view',
       handler: handle(getMyServiceMetrics),
+    },
+    {
+      method: 'POST',
+      path: '/services/:id/meta',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle(updateMyServiceMeta),
     },
     {
       method: 'POST',
@@ -764,12 +876,18 @@ export const storePlugin = definePlugin({
     },
     // 管理端：履约任务与交付物
     {
-      method: 'POST', path: '/store/admin/delivery-tasks/:id/recover',
-      auth: 'admin', permission: 'store.admin', handler: handle(recoverAdminDeliveryTask),
+      method: 'POST',
+      path: '/store/admin/delivery-tasks/:id/recover',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(recoverAdminDeliveryTask),
     },
     {
-      method: 'POST', path: '/store/admin/delivery-tasks/:id/resume-payment',
-      auth: 'admin', permission: 'store.admin', handler: handle(resumeAdminDeliveryPayment),
+      method: 'POST',
+      path: '/store/admin/delivery-tasks/:id/resume-payment',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(resumeAdminDeliveryPayment),
     },
     {
       method: 'GET',

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LocalDiskDriver } from '@stackpanel/db';
 import {
   type AttachmentRecord,
+  type AttachmentLibraryStats,
   type AttachmentRepository,
   type AttachmentVariant,
   type AttachmentVisibility,
@@ -55,12 +56,21 @@ class FakeRepository implements AttachmentRepository {
   }
   async update(
     id: string,
-    patch: { filename?: string | undefined; visibility?: AttachmentVisibility | undefined },
+    patch: {
+      filename?: string | undefined;
+      visibility?: AttachmentVisibility | undefined;
+      key?: string | undefined;
+      mime?: string | undefined;
+      size?: number | undefined;
+    },
   ): Promise<AttachmentRecord | null> {
     const row = this.rows.get(id);
     if (!row) return null;
     if (patch.filename !== undefined) row.filename = patch.filename;
     if (patch.visibility !== undefined) row.visibility = patch.visibility;
+    if (patch.key !== undefined) row.key = patch.key;
+    if (patch.mime !== undefined) row.mime = patch.mime;
+    if (patch.size !== undefined) row.size = patch.size;
     return row;
   }
   async updateVariants(id: string, variants: AttachmentVariant[]): Promise<AttachmentRecord | null> {
@@ -79,6 +89,28 @@ class FakeRepository implements AttachmentRepository {
           (v) => (v.status ?? 'ready') === 'pending' && (v.attempts ?? 0) < maxAttempts,
         ),
       )
+      .slice(0, limit);
+  }
+  async listForAdmin(): Promise<{ items: AttachmentRecord[]; total: number }> {
+    const items = [...this.rows.values()];
+    return { items, total: items.length };
+  }
+  async stats(): Promise<AttachmentLibraryStats> {
+    const items = [...this.rows.values()];
+    return {
+      total: items.length,
+      bytes: items.reduce((sum, row) => sum + row.size, 0),
+      byVisibility: { public: 0, private: 0 },
+      byKind: { image: 0, document: 0, archive: 0, video: 0, audio: 0, text: 0, other: 0 },
+      variants: { pending: 0, ready: 0, failed: 0 },
+    };
+  }
+  async resetFailedVariants(): Promise<string[]> {
+    return [];
+  }
+  async listOptimizable(limit: number): Promise<AttachmentRecord[]> {
+    return [...this.rows.values()]
+      .filter((row) => ['image/png', 'image/jpeg', 'image/gif'].includes(row.mime))
       .slice(0, limit);
   }
   async delete(id: string): Promise<void> {

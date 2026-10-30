@@ -48,6 +48,24 @@ describe('isPublicAssetRequest (contract 04 §5/§6)', () => {
     );
   });
 
+  it('admits public media content so avatars render without a session', () => {
+    expect(
+      isPublicAssetRequest('GET', ['media', 'att_d32c45f8e94e4edda0c09568', 'content']),
+    ).toBe(true);
+    expect(isPublicAssetRequest('HEAD', ['media', 'att_abc12345', 'content'])).toBe(true);
+  });
+
+  it('keeps the rest of the media surface behind the target check', () => {
+    // Listing, metadata, references and variant rebuild all stay authenticated —
+    // only the content route has a visibility rule the kernel enforces itself.
+    expect(isPublicAssetRequest('GET', ['media', 'att_abc12345'])).toBe(false);
+    expect(isPublicAssetRequest('GET', ['media', 'att_abc12345', 'references'])).toBe(false);
+    expect(isPublicAssetRequest('GET', ['media'])).toBe(false);
+    expect(isPublicAssetRequest('GET', ['media', 'admin', 'attachments'])).toBe(false);
+    expect(isPublicAssetRequest('GET', ['media', 'not-an-id', 'content'])).toBe(false);
+    expect(isPublicAssetRequest('POST', ['media', 'att_abc12345', 'content'])).toBe(false);
+  });
+
   it('rejects traversal and empty segments', () => {
     expect(
       isPublicAssetRequest('GET', ['plugins', 'store', 'frontend', 'dist', '..', 'secret']),

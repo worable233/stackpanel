@@ -221,8 +221,45 @@ export class PaymentsService implements PaymentServiceContract {
       providers: this.providers().map((provider) => ({
         id: provider.id,
         name: provider.name,
+        mode: provider.mode,
         methods: provider.getMethods(),
       })),
+    };
+  }
+
+  /**
+   * Buyer-facing method catalogue — same shape as {@link listPaymentMethods}
+   * but filtered by what is actually configured.
+   *
+   * `listPaymentMethods` reports provider *capabilities*: a provider that can
+   * do bank transfer always lists it. That is right for an admin building a
+   * sales channel, and wrong for a checkout: once operators maintain
+   * `payment_methods` here, showing a method with no account number behind it
+   * gives the buyer a pay button that leads nowhere. Manual providers are the
+   * sharp case — they have no `paymentUrl`, so the configured row *is* the
+   * payment step.
+   *
+   * Providers with no enabled rows at all are reported untouched, so installs
+   * that never configured `payment_methods` keep their previous behaviour.
+   */
+  async listAvailablePaymentMethods(): Promise<PaymentMethodListing> {
+    const providers = this.providers();
+    const configured = await this.options.db.paymentMethod.findMany({
+      where: { enabled: true },
+      select: { providerId: true, currencies: true },
+    });
+    const configuredProviders = new Set(configured.map((row) => row.providerId));
+    if (configuredProviders.size === 0) return this.listPaymentMethods();
+    return {
+      wallet: { id: 'wallet', label: '余额支付' },
+      providers: providers
+        .filter((provider) => provider.mode !== 'manual' || configuredProviders.has(provider.id))
+        .map((provider) => ({
+          id: provider.id,
+          name: provider.name,
+          mode: provider.mode,
+          methods: provider.getMethods(),
+        })),
     };
   }
 
@@ -236,12 +273,57 @@ export class PaymentsService implements PaymentServiceContract {
     }
     const provider = this.providerFor(input.providerId, input.paymentMethod);
     const db = tx ?? this.options.db;
+    /*
+     * Manual methods are pure instructions: no gateway call, no `paymentUrl`.
+     * Everything the buyer needs (bank account, QR image, reference format)
+     * lives in the bound `payment_methods.config`, so a manual order created
+     * without that row is unpayable — the buyer sees an order, no way to pay it,
+     * and the admin has to reconstruct the details by hand.
+     *
+     * Refuse it at creation instead of producing a dead order. The operator's
+     * fix (configure the收款方式) is one screen away, and a clear error is far
+     * better than a silent dead end.
+     */
+    if (provider.mode === 'manual') {
+      const configured = await db.paymentMethod.findFirst({
+        where: { providerId: provider.id, enabled: true },
+        select: { id: true },
+      });
+      if (!configured) {
+        throw new PaymentError(
+          409,
+          '收款方式未配置，暂时无法使用该支付方式，请联系客服或选择其他支付方式',
+        );
+      }
+    }
+    /*
+     * Pin the payment to the `payment_methods` row that serves it.
+     *
+     * Callers legitimately pass only `providerId` + `paymentMethod` (the store
+     * plugin does), and the row is what carries the per-method config: bank
+     * account, QR image, currency allow-list. Leaving `methodId` null made the
+     * record un-resolvable later — the buyer's order page could not say where
+     * to send money, and the currency allow-list could not be enforced.
+     *
+     * Choose the enabled row for this provider, preferring one that actually
+     * declares the requested method when config carries a `method` marker.
+     * `sortOrder` makes the choice stable when several rows qualify.
+     */
+    let methodId = input.methodId;
+    if (!methodId) {
+      const candidate = await db.paymentMethod.findFirst({
+        where: { providerId: provider.id, enabled: true },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true },
+      });
+      methodId = candidate?.id;
+    }
     // The payment record must state the currency the gateway actually collects.
     // Validate it against the catalog and, when the method declares a currency
     // allow-list, against that too (plan §4.4 / §5.3).
     const currency = assertCurrency(input.currency, { enabledOnly: true });
-    if (input.methodId) {
-      const method = await db.paymentMethod.findUnique({ where: { id: input.methodId } });
+    if (methodId) {
+      const method = await db.paymentMethod.findUnique({ where: { id: methodId } });
       const supported = method?.currencies ?? [];
       if (supported.length > 0 && !supported.includes(currency)) {
         throw new CurrencyError(
@@ -257,7 +339,7 @@ export class PaymentsService implements PaymentServiceContract {
         purpose: input.purpose,
         userId: input.userId,
         ...(input.orderId ? { orderId: input.orderId } : {}),
-        ...(input.methodId ? { methodId: input.methodId } : {}),
+        ...(methodId ? { methodId } : {}),
         gateway: provider.id,
         providerId: provider.id,
         paymentMethod: input.paymentMethod,
@@ -615,10 +697,43 @@ export class PaymentsService implements PaymentServiceContract {
       paymentUrl: row.paymentUrl,
       paymentMethod: row.paymentMethod,
       providerId: row.providerId,
+      methodId: row.methodId,
       amount: row.amount,
       currency: row.currency,
       createdAt: row.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * Buyer-facing instructions for a manual (bank transfer / QR code) payment.
+   *
+   * Manual providers never produce a `paymentUrl`: the gateway call *is* the
+   * instruction payload, returned once at creation and then dropped. Without a
+   * way to read it back, a PENDING order shows the buyer nothing to act on —
+   * no account number, no QR image, no explanation of what happens next — so
+   * the order silently rots until the admin confirms it out of band.
+   *
+   * Recomputing from the payment's own `methodId` (not "first enabled method of
+   * this provider") matters: a store can run several bank accounts, and the
+   * buyer must be shown the one this payment was actually created against.
+   */
+  async manualInstructions(paymentId: string): Promise<ManualPaymentInstructions | null> {
+    const payment = await this.options.db.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) return null;
+    if (!this.isManualPayment(payment)) return null;
+    const method = payment.methodId
+      ? await this.options.db.paymentMethod.findUnique({ where: { id: payment.methodId } })
+      : null;
+    const detail = (method?.config ?? {}) as Record<string, unknown>;
+    const kind = payment.paymentMethod ?? 'bank_transfer';
+    return {
+      kind,
+      message:
+        kind === 'bank_transfer'
+          ? '请使用以下银行账户转账，并在备注中填写订单号。到账后管理员将确认订单。'
+          : '请扫描收款码完成支付。到账后管理员将确认订单。',
+      detail,
+    };
   }
 
   async listChannelMethods(code: string): Promise<SalesChannelView | null> {
@@ -700,6 +815,20 @@ export class PaymentsService implements PaymentServiceContract {
   // ---------------------------------------------------------------------------
   // Manual payments (admin confirmation)
   // ---------------------------------------------------------------------------
+
+  /**
+   * Provider id → collection mode.
+   *
+   * Admin tooling has to label a record as "needs manual confirmation" or
+   * "settles itself", but the mode lives in the provider contract, not in the
+   * `payments` row. Exposing it here keeps that single source of truth instead
+   * of hard-coding provider ids in a route.
+   */
+  providerModes(): Record<string, 'gateway' | 'manual'> {
+    const modes: Record<string, 'gateway' | 'manual'> = {};
+    for (const provider of this.providers()) modes[provider.id] = provider.mode;
+    return modes;
+  }
 
   private manualProviders(): PaymentProvider[] {
     return this.providers().filter((candidate) => candidate.mode === 'manual');

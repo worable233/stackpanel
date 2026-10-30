@@ -4,8 +4,8 @@ import { SectionTitle } from '@stackpanel/ui';
 import { useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import type { AdminPlugin, PluginDependencyStatus } from '@stackpanel/sdk';
+import { toast } from '@/components/ui/toast';
+import type { AdminPlugin, PluginDependencyStatus, StalePluginRecord } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -59,7 +59,18 @@ function DependencyBadge({
 }
 
 /** Interactive plugin manager: enable/disable or remove a plugin. */
-export function PluginManager({ plugins }: { plugins: AdminPlugin[] }) {
+export function PluginManager({
+  plugins,
+  stale = [],
+}: {
+  plugins: AdminPlugin[];
+  /**
+   * Rows whose package directory is gone. They are not loaded, so they cannot be
+   * listed as plugins — but until they are removed the database keeps claiming
+   * their capabilities/capabilities-providers exist.
+   */
+  stale?: StalePluginRecord[];
+}) {
   const router = useRouter();
   const t = useTranslator();
   const [isMutating, startTransition] = useTransition();
@@ -232,6 +243,47 @@ export function PluginManager({ plugins }: { plugins: AdminPlugin[] }) {
           ))}
         </ul>
       </section>
+      {stale.length > 0 ? (
+        <section>
+          <SectionTitle>{t('admin.plugins.stale.title')}</SectionTitle>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t('admin.plugins.stale.description')}
+          </p>
+          <ul className="mt-3 space-y-2">
+            {stale.map((record) => (
+              <li
+                key={record.id}
+                className="flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground"
+              >
+                <div>
+                  <p className="font-medium">
+                    {record.name}
+                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      {record.id}@{record.version}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t('admin.plugins.stale.body')}
+                  </p>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={isMutating}
+                  onClick={() => {
+                    const form = new FormData();
+                    form.set('_op', 'delete');
+                    form.set('id', record.id);
+                    void mutate(form);
+                  }}
+                >
+                  {t('admin.plugins.stale.cleanup')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }

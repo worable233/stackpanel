@@ -26,6 +26,7 @@ import {
   toStringArray,
 } from '../lib/api-tokens.ts';
 import { env } from '../config/env.ts';
+import { avatarContentUrl } from './avatar.ts';
 import { resolveCookieSecure } from '../lib/cookie-security.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
 import { toPublicUser } from '../lib/user.ts';
@@ -472,6 +473,7 @@ export class KernelAuthService implements AuthService {
     updatedAt?: Date;
     lastLoginAt?: Date | null;
     emailVerifiedAt?: Date | null;
+    avatarAttachmentId?: string | null;
   }): Promise<AuthUser> {
     const isAdmin =
       (await this.options.db.userGroup.count({
@@ -486,6 +488,7 @@ export class KernelAuthService implements AuthService {
       updatedAt: (user.updatedAt ?? new Date()).toISOString(),
       lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
       emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null,
+      avatarUrl: await avatarContentUrl(this.options.db, user.avatarAttachmentId),
     };
   }
 

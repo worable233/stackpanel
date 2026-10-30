@@ -20,6 +20,18 @@ import {
   RAW_WINDOW_BYTES,
 } from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
+
+/**
+ * Serialise a thrown error for the host side.
+ *
+ * Delegates to `wireError` instead of hand-rolling the literal: `details` and
+ * the SDK error-class brand have to travel too, otherwise `isWalletError` /
+ * `isPluginError` narrowing on the host silently takes the generic branch. The
+ * human-readable `detail` also has to survive, or the host can only show the
+ * machine code.
+ */
+const wireThrown = (error: unknown): ReturnType<typeof wireError> => wireError(error);
+
 import { resolveMaxRssMb, startMemoryGuard } from './memory-guard.ts';
 
 type PluginHook = (value: unknown) => unknown | Promise<unknown>;
@@ -68,6 +80,15 @@ const definition = (mod[manifest.export ?? 'default'] ?? mod.default) as {
   }>;
   customModels?: CustomModelDefinition[];
   inject?: string[];
+  // `definePlugin({ manifest, ... })` 把 requires/consumes/inject 写在嵌套的
+  // manifest 里，也有插件直接平铺在定义顶层。隔离模式构造 extensions 与服务
+  // 白名单时两种形态都要识别，否则声明过的能力会被当成未声明而静默拒掉
+  // （外部症状：同一插件 trusted 正常、isolated 下报「未就绪」）。
+  manifest?: {
+    consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
+    inject?: string[];
+  };
+  consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
   eventListeners?: Array<{ topic: string; handler: (payload: unknown) => void }>;
   onRegister?: PluginHook;
   onActivate?: PluginHook;
@@ -146,13 +167,17 @@ function sendHost(message: Record<string, unknown>): void {
   });
 }
 
+const declaredConsumes = definition.manifest?.consumes ?? definition.consumes ?? [];
+const declaredInject = definition.manifest?.inject ?? definition.inject ?? [];
+
 sendHost({
   protocol: RPC_PROTOCOL,
   pluginId,
   type: 'ready',
   routes,
   ...(modelDescriptors.length > 0 ? { models: modelDescriptors } : {}),
-  ...(definition.inject?.length ? { inject: definition.inject } : {}),
+  ...(declaredInject.length > 0 ? { inject: declaredInject } : {}),
+  ...(declaredConsumes.length > 0 ? { consumes: declaredConsumes } : {}),
   ...(unsupported.length > 0 ? { unsupported } : {}),
 });
 
@@ -555,6 +580,11 @@ const context = {
 
   payments: serviceProxy('payments', [
     'listPaymentMethods',
+    // Provider capability map for the admin UI (which modes each provider
+    // supports). Missing here means an isolated plugin sees an undefined method.
+    'providerModes',
+    'manualInstructions',
+    'listAvailablePaymentMethods',
     'createRecord',
     'initiate',
     'create',
@@ -1044,7 +1074,6 @@ async function runRawRoute(session: RawSession): Promise<void> {
     }
   } catch (error) {
     if (session.aborted) return;
-    const candidate = error as { code?: unknown; status?: unknown };
     session.ended = true;
     rawSessions.delete(session.id);
     // Mirror the in-process path: before headers, the dispatcher maps this to a
@@ -1054,11 +1083,7 @@ async function runRawRoute(session: RawSession): Promise<void> {
       pluginId,
       type: 'raw-error',
       id: session.id,
-      error: {
-        message: String(error instanceof Error ? error.message : error),
-        ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
-        ...(typeof candidate.status === 'number' ? { status: candidate.status } : {}),
-      },
+      error: wireThrown(error),
     });
   }
 }
@@ -1208,7 +1233,11 @@ process.on('message', async (raw: unknown) => {
       const args = Array.isArray(message.payload) ? message.payload : [];
       if (args[1] && typeof args[1] === 'object' && 'callId' in args[1])
         args[1] = { ...args[1], signal: controller.signal };
-      const result = await method(...args);
+      // 必须带上 receiver：实现可能是类的实例，方法内部会访问 this（如
+      // provider 的 private 辅助方法）。直接 `method(...args)` 会把 this 丢成
+      // undefined，表现为「Cannot read properties of undefined (reading 'x')」，
+      // 而对象字面量风格的实现看不出任何异常。
+      const result = await method.apply(implementation, args);
       sendHost({ protocol: 1, pluginId, type: 'result', id: requestId, value: result });
     } catch (error) {
       sendHost({

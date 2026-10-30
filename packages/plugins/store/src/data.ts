@@ -205,6 +205,11 @@ export const deliveryTaskModel = defineModel({
     serviceId: z.string().nullable().default(null),
     /** 下次可执行时刻（epoch 毫秒）；0 表示无延迟（原 null）。 */
     nextAttemptAtMs: z.number().int().default(0),
+    /**
+     * 自动重试用尽时告知运营的时间。只写一次：排障轮询每 5 分钟跑一轮，没有这个
+     * 标记就会把同一条「重试用尽」通知刷成噪音，运营反而会忽略它。
+     */
+    exhaustedNotifiedAt: z.string().nullable().default(null),
   }),
   indexes: [
     { fields: ['state'], types: { state: 'string' } },
@@ -212,6 +217,7 @@ export const deliveryTaskModel = defineModel({
     { fields: ['userId'], types: { userId: 'string' } },
     { fields: ['nextAttemptAtMs'], types: { nextAttemptAtMs: 'number' } },
     { fields: ['attempts'], types: { attempts: 'integer' } },
+    { fields: ['exhaustedNotifiedAt'], types: { exhaustedNotifiedAt: 'string' } },
   ],
 });
 
@@ -231,11 +237,23 @@ export const refundRequestModel = defineModel({
     failureReason: z.string().nullable().default(null),
     destination: z.string().default('WALLET'),
     idempotencyKey: z.string().nullable().default(null),
+    /**
+     * 从**实例页**发起的申请会带上服务 id；订单页发起的申请为 null。
+     * 有了它，审核时的停用/恢复/停服才能精确落到那一个实例上。
+     */
+    serviceId: z.string().nullable().default(null),
+    /** 申请时是否已真的把实例停用（关机）。驳回时要据此决定是否恢复。 */
+    suspendApplied: z.boolean().default(false),
+    /** 审核通过后是否已向上游提交停用申请（不可逆）。 */
+    terminateApplied: z.boolean().default(false),
+    /** 停服失败原因：钱已退但上游没停掉，必须留痕给运营手工处理。 */
+    terminateError: z.string().nullable().default(null),
   }),
   indexes: [
     { fields: ['orderId'], types: { orderId: 'string' } },
     { fields: ['userId'], types: { userId: 'string' } },
     { fields: ['state'], types: { state: 'string' } },
+    { fields: ['serviceId'], types: { serviceId: 'string' } },
   ],
 });
 
@@ -337,4 +355,6 @@ export interface StoreDeliveryTaskData {
   payload: unknown;
   serviceId: string | null;
   nextAttemptAtMs: number;
+  /** 自动重试用尽时告知运营的时间（只告知一次，防止每次轮询重复刷）。 */
+  exhaustedNotifiedAt?: string | null;
 }

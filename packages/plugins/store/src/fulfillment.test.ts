@@ -18,10 +18,11 @@ import {
   reconcileProvisioning,
   reconcileAdminDeliveryTask,
   listAdminDeliveryTasks,
+  retryUnconfirmedProvisioning,
   resumeAdminDeliveryPayment,
   recoverAdminDeliveryTask,
 } from './fulfillment';
-import { applyChangeOrder } from './changes';
+import { applyChangeOrder, retryFailedChanges } from './changes';
 import { storeOperations } from './operations';
 
 interface Stored {
@@ -39,7 +40,7 @@ interface Stored {
 const INDEX_FIELDS: Record<string, Set<string>> = {
   'store/order': new Set(['userId', 'state']),
   'store/product': new Set(['status', 'categoryId', 'stock', 'providerId']),
-  'store/delivery-task': new Set(['state', 'orderId', 'userId', 'nextAttemptAtMs', 'attempts']),
+  'store/delivery-task': new Set(['state', 'orderId', 'userId', 'nextAttemptAtMs', 'attempts', 'exhaustedNotifiedAt']),
   'store/service-instance': new Set([
     'userId',
     'orderId',
@@ -212,6 +213,7 @@ function makeProvider(): { provider: FulfillmentProvider; provision: ReturnType<
 function makeCtx(
   fake: ReturnType<typeof createFakeExtensions>,
   provider: FulfillmentProvider,
+  capture?: { warnings: string[]; adminNotices: Array<Record<string, unknown>> },
 ): PluginContext {
   const secrets = {
     isAvailable: () => true,
@@ -224,7 +226,11 @@ function makeCtx(
   };
   return {
     manifest: { id: 'store', name: '商店插件', version: '0.3.0' },
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    logger: {
+      info: () => {},
+      warn: (message: string) => void capture?.warnings.push(message),
+      error: () => {},
+    },
     events: {
       publish: () => {},
       subscribe: () => () => {},
@@ -242,7 +248,10 @@ function makeCtx(
     notifications: {
       create: async () => ({}) as never,
       upsert: async () => ({}) as never,
-      notifyPermissionHolders: async () => 0,
+      notifyPermissionHolders: async (_permission: string, notice: Record<string, unknown>) => {
+        capture?.adminNotices.push(notice);
+        return 1;
+      },
     } as never,
     notificationPolicy: {} as never,
     identity: {} as never,
@@ -381,8 +390,44 @@ describe('store fulfillment dispatcher', () => {
     const queue = await listAdminDeliveryTasks({ query: { status: 'attention' } } as never) as { tasks: unknown[]; total: number };
     expect(queue.total).toBe(1);
     expect(JSON.stringify(queue)).not.toContain('secret-provider-error');
+    // 尝试用尽必须自己在队列里说出来：否则这单永远停在「待核对」，无人知道该退款。
+    const row = (queue as { tasks: Array<{ attempts: number; maxAttempts: number; retryExhausted: boolean; reason: string | null }> }).tasks[0]!;
+    expect(row.retryExhausted).toBe(true);
+    expect(row.maxAttempts).toBe(3);
+    expect(row.reason).toContain('自动重试已用尽');
     const result = await getMyService({ params: { id: 'instance-review' }, user: { id: 'user' } } as never) as { service: { status: string } };
     expect(result.service.status).toBe('REQUIRES_RECONCILIATION');
+  });
+
+  it('tells operators exactly once when automatic retries run out', async () => {
+    const { fake } = seedReview();
+    const capture = { warnings: [] as string[], adminNotices: [] as Array<Record<string, unknown>> };
+    bindContext(makeCtx(fake, makeProvider().provider, capture));
+
+    // 用尽的单不再入队：再跑一遍还是 0，但必须留下可见的痕迹。
+    const requeued = await retryUnconfirmedProvisioning(Date.parse('2026-10-30T00:00:00Z'));
+    expect(requeued).toBe(0);
+    expect(fake.all(TASK)[0]!.spec.state).toBe('REQUIRES_RECONCILIATION');
+    expect(capture.warnings.join('\n')).toMatch(/自动重试用尽 3\/3/);
+    expect(capture.adminNotices).toHaveLength(1);
+    expect(capture.adminNotices[0]!['title']).toBe('订单开通自动重试用尽');
+    expect(typeof fake.all(TASK)[0]!.spec.exhaustedNotifiedAt).toBe('string');
+
+    // 排障轮询每 5 分钟一轮：第二轮不许再刷一条相同通知。
+    await retryUnconfirmedProvisioning(Date.parse('2026-10-30T00:05:00Z'));
+    expect(capture.adminNotices).toHaveLength(1);
+    expect(capture.warnings).toHaveLength(1);
+  });
+
+  it('still requeues a task that has retry budget left', async () => {
+    const { fake } = seedReview();
+    const row = fake.all(TASK)[0]!;
+    fake.seed(TASK, { ...row.spec, attempts: 1 }, row.name);
+    const capture = { warnings: [] as string[], adminNotices: [] as Array<Record<string, unknown>> };
+    bindContext(makeCtx(fake, makeProvider().provider, capture));
+    expect(await retryUnconfirmedProvisioning(Date.parse('2026-10-30T00:00:00Z'))).toBe(1);
+    expect(fake.all(TASK)[0]!.spec.state).toBe('PENDING');
+    expect(capture.adminNotices).toHaveLength(0);
   });
 
   it('never lets a manual declaration replay a previously submitted request', async () => {
@@ -787,6 +832,25 @@ describe('store fulfillment dispatcher', () => {
     expect(result.services).toHaveLength(1);
   });
 
+  it('已终止的实例不出现在"我的云服务"里，历史仍可显式查询', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(SERVICE, { userId: 'user-1', productName: 'A', state: 'ACTIVE' }, 'svc-live');
+    fake.seed(SERVICE, { userId: 'user-1', productName: 'B', state: 'TERMINATED' }, 'svc-dead');
+    bindContext(makeCtx(fake, makeProvider().provider));
+
+    const listed = (await listMyServices({ user: { id: 'user-1', role: 'USER' } } as never)) as {
+      services: Array<{ id: string }>;
+    };
+    // 退款撤销 / 到期回收的实例留着只会让买家以为还有机器在跑。
+    expect(listed.services.map((service) => service.id)).toEqual(['svc-live']);
+
+    const withHistory = (await listMyServices({
+      user: { id: 'user-1', role: 'USER' },
+      query: { includeTerminated: '1' },
+    } as never)) as { services: Array<{ id: string }> };
+    expect(withHistory.services.map((service) => service.id).sort()).toEqual(['svc-dead', 'svc-live']);
+  });
+
   it('lists persisted selected specifications without substituting product defaults or leaking metadata', async () => {
     const fake = createFakeExtensions();
     fake.seed(
@@ -998,6 +1062,59 @@ describe('store fulfillment dispatcher', () => {
     expect('statusLabel' in result.service).toBe(true);
     expect(result.service.statusLabel).toBeNull();
     expect(result.service.status).toBe('ACTIVE');
+  });
+
+  it('shows a locally suspended service as SUSPENDED even when upstream still reports ACTIVE', async () => {
+    // 上游 `host/list` 的 Active 只说明「服务在开通中」，与电源无关：机器被
+    // power_off 后上游仍报 Active。退票冻结、到期暂停都会把本地置为 SUSPENDED，
+    // 若让上游的 ACTIVE 盖过去，客户在实例页看到「已激活」而机器已经关了。
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'up-1',
+        runtime: null,
+        credentialsRef: null,
+        orderId: null,
+        productId: 'prod-1',
+        state: 'SUSPENDED',
+        amount: 9900,
+        currency: 'CNY',
+        provisionedAt: null,
+        expiresAt: null,
+        terminatedAt: null,
+      },
+      'svc-detail-suspended',
+    );
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      getDetail: vi.fn(async () => ({
+        title: '云服务器',
+        status: 'ACTIVE',
+        statusLabel: '已激活',
+        fields: [],
+      })),
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    const result = (await getMyService({
+      params: { id: 'svc-detail-suspended' },
+      user: { id: 'user-1', role: 'USER' },
+    } as never)) as {
+      service: { status: string; statusLabel: unknown; detail: { status?: string } };
+    };
+
+    expect(result.service.status).toBe('SUSPENDED');
+    // 前端渲染的是 `detail.status`，所以 detail 也必须被改写。
+    expect(result.service.detail.status).toBe('SUSPENDED');
+    // 上游的「已激活」文案不能跟着挂上去，否则和状态自相矛盾。
+    expect(result.service.statusLabel).toBeNull();
   });
 
   it('forwards action params to the provider and merges the returned runtime', async () => {
@@ -1357,5 +1474,99 @@ describe('store fulfillment dispatcher', () => {
     // 本地服务未被改写成目标配置。
     const service = fake.all(SERVICE)[0]!;
     expect((service.spec.runtime as { config?: { plan?: string } }).config?.plan).toBe('small');
+    // 用户已付款：失败原因与退避时间必须落在订单行上，否则这条链路对人是不可见的。
+    expect(raw.items[0]!['changeError']).toContain('upstream change failed');
+    expect(raw.items[0]!['changeAttempts']).toBe(1);
+    expect(Number(raw.items[0]!['changeNextAttemptAtMs'])).toBeGreaterThan(Date.now());
+    // 退避到期后自动重试：上游恢复 → 变更落地、错误被清除。
+    raw.items[0]!['changeNextAttemptAtMs'] = 0;
+    const recovered = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      changePackage: vi.fn(async () => ({ message: 'ok' })),
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, recovered));
+    const retried = await retryFailedChanges();
+    expect(retried.retried).toBe(1);
+    const after = fake.all(ORDER)[0]!.spec.items as { items: Array<Record<string, unknown>> };
+    expect(after.items[0]!['changeApplied']).toBe(true);
+    expect(after.items[0]!['changeError']).toBeUndefined();
+    expect(after.items[0]!['changeAttempts']).toBeUndefined();
+    // 变更前的配置必须来自「钩子执行之前」，否则退款回滚会把新配置当成旧配置。
+    expect(after.items[0]!['previousSelection']).toEqual({ plan: 'small' });
+  });
+});
+
+describe('store 变配应用：旧配置快照与失败可见性', () => {
+  it('成功时 previousSelection 记录变更前配置，服务 runtime 换成新配置', async () => {
+    const fake = createFakeExtensions();
+    fake.seed(
+      SERVICE,
+      {
+        userId: 'user-1',
+        orderId: 'order-change',
+        productId: 'prod-1',
+        productName: 'small',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: '42',
+        state: 'ACTIVE',
+        credentialsRef: null,
+        runtime: { config: { plan: 'small' } },
+        amount: 5000,
+        currency: 'CNY',
+        expiresAt: null,
+        expiresAtMs: null,
+        expiryStage: null,
+        provisionedAt: null,
+        terminatedAt: null,
+      },
+      'svc-change',
+    );
+    fake.seed(
+      ORDER,
+      {
+        userId: 'user-1',
+        items: {
+          items: [
+            {
+              productId: 'prod-1',
+              quantity: 1,
+              changeServiceId: 'svc-change',
+              changeType: 'package',
+              changeSelection: { plan: 'large' },
+            },
+          ],
+        },
+        total: 1000,
+        currency: 'CNY',
+        state: 'PAID',
+        channelCode: null,
+        settlementCurrency: 'CNY',
+        settlementTotal: 1000,
+        fxRate: null,
+      },
+      'order-change',
+    );
+    // 提供方成功并回写新配置（模拟上游已改，运行时状态由钩子返回）。
+    const changePackage = vi.fn(async () => ({ runtime: { config: { plan: 'large' } } }));
+    const provider = {
+      id: 'zjmf',
+      name: '智简魔方',
+      fulfillmentTypes: ['upstream_service'],
+      changePackage,
+    } as unknown as FulfillmentProvider;
+    bindContext(makeCtx(fake, provider));
+
+    await applyChangeOrder('order-change');
+
+    const line = (fake.all(ORDER)[0]!.spec.items as { items: Array<Record<string, unknown>> })
+      .items[0]!;
+    expect(line['changeApplied']).toBe(true);
+    // 旧配置来自钩子执行前 —— 这是全额退款回滚的唯一依据。
+    expect(line['previousSelection']).toEqual({ plan: 'small' });
+    const service = fake.all(SERVICE)[0]!;
+    expect((service.spec.runtime as { config?: { plan?: string } }).config?.plan).toBe('large');
   });
 });

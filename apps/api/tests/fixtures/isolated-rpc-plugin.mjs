@@ -8,9 +8,51 @@ const model = {
   indexes: [{ fields: ['title'], types: { title: 'string' } }],
 };
 
+/**
+ * 类实例形式的扩展实现：宿主通过 workerProxy 回调时必须保留 receiver，
+ * 否则内部访问 this.xxx 会抛 "Cannot read properties of undefined"。
+ * 对象字面量风格看不出这个差异，所以夹具固定用类。
+ */
+class ProbeExtension {
+  constructor() {
+    this.id = 'rpc-extension';
+    this.calls = 0;
+  }
+
+  async run(value) {
+    this.calls += 1;
+    return `${value}:${this.calls}`;
+  }
+}
+
 export default {
   routes: [
     { method: 'GET', path: '/probe', handler: async () => ({ ok: true }) },
+    {
+      // A plugin-declared failure: the code/status/detail must survive the IPC
+      // boundary *and* be recognisable again (`isPluginError`) on the host side.
+      method: 'GET',
+      path: '/error-status',
+      handler: async () => {
+        const error = new Error('probe.invalid');
+        error.code = 'probe.invalid';
+        error.status = 409;
+        error.detail = '冲突：状态不允许';
+        throw error;
+      },
+    },
+    {
+      // A plugin-local error class may carry only a status (`statusCode`) and no
+      // stable code — the zjmf provider does exactly that. The kernel must still
+      // honour the status; requiring a code demoted this refusal to a 500.
+      method: 'GET',
+      path: '/error-status-only',
+      handler: async () => {
+        const error = new Error('缺少原请求的持久化账单证据，禁止通过人工声明重开');
+        error.status = 409;
+        throw error;
+      },
+    },
     {
       method: 'GET',
       path: '/services',
@@ -246,9 +288,6 @@ export default {
       version: '1',
       greet: (name) => `hello ${name}`,
     });
-    ctx.registerExtension('probe.extension', {
-      id: 'rpc-extension',
-      run: async (value) => value,
-    });
+    ctx.registerExtension('probe.extension', new ProbeExtension());
   },
 };

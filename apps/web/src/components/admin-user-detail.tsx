@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { InlineError, SectionTitle } from '@stackpanel/ui';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -45,6 +45,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
   adjustUserWalletAction,
@@ -58,6 +59,7 @@ import {
   type UserActionResult,
 } from '@/lib/user-actions';
 import { useTranslator, useLocale } from '@/i18n/provider';
+import { toast } from '@/components/ui/toast';
 import type { Translator } from '@/i18n/core';
 import { formatMoney, formatDate as formatLocaleDate } from '@/i18n/core';
 import type { Locale } from '@/i18n/config';
@@ -95,11 +97,10 @@ function formatDate(iso: string | null | undefined, locale: Locale): string {
 }
 
 function StatusMessage({ state }: { state: UserActionResult | null }) {
-  if (!state) return null;
-  if (state.ok && state.message) {
-    return <span className="text-sm text-muted-foreground">{state.message}</span>;
-  }
-  if (state.error) {
+  useEffect(() => {
+    if (state?.ok && state.message) toast.success(state.message);
+  }, [state]);
+  if (state?.error) {
     return <span className="text-sm text-destructive">{state.error}</span>;
   }
   return null;
@@ -798,14 +799,40 @@ function ServicesSection({
                           <Button size="sm" variant="outline" onClick={() => startEdit(service)}>
                             {t('common.edit')}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => void remove(service.id)}
-                            disabled={isPending}
-                          >
-                            {bound ? t('admin.userDetail.services.unbind') : t('common.delete')}
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger
+                              render={
+                                <Button size="sm" variant="destructive" disabled={isPending}>
+                                  {bound
+                                    ? t('admin.userDetail.services.unbind')
+                                    : t('common.delete')}
+                                </Button>
+                              }
+                            />
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  {bound
+                                    ? t('admin.userDetail.services.confirmUnbind')
+                                    : t('admin.userDetail.services.confirmDelete')}
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  {t('admin.userDetail.services.confirmHint')}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => void remove(service.id)}
+                                  disabled={isPending}
+                                >
+                                  {bound
+                                    ? t('admin.userDetail.services.unbind')
+                                    : t('common.delete')}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       )}
                     </td>

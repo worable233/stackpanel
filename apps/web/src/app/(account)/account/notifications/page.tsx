@@ -8,10 +8,7 @@ export default async function AccountNotificationsPage() {
   const t = createTranslator(await getLocale());
   return (
     <main className="w-full">
-      <NotificationInbox
-        title={t('account.notifications.title')}
-        description={t('account.notifications.description')}
-      />
+      <NotificationInbox title={t('account.notifications.title')} />
     </main>
   );
 }

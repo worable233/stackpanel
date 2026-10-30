@@ -86,6 +86,69 @@ function catalogSnapshot(): CatalogSnapshot {
   };
 }
 
+const KEYS = keypair();
+const KEYRING: Keyring = {
+  formatVersion: 1,
+  keys: [
+    {
+      keyId: 'catalog-2026',
+      purpose: 'catalog',
+      publicKeyPem: KEYS.publicKeyPem,
+      allowedRepositories: [CATALOG_REPO],
+    },
+    {
+      keyId: 'pkg-1',
+      purpose: 'package',
+      publicKeyPem: KEYS.publicKeyPem,
+      publisher: 'stackpanel',
+      allowedRepositories: ['worable233/stackpanel-plugins'],
+    },
+  ],
+};
+
+/**
+ * 用同一套密钥构造刷新协调器；`overrides` 让「过期目录」场景只差一个时间点，
+ * 不必复制整份目录/签名代码。
+ */
+function makeCatalogService(
+  stateRoot: string,
+  overrides: { expiresAt?: string; sequence?: number; now?: Date } = {},
+): CatalogRefreshService {
+  const base = catalogSnapshot();
+  const sequence = overrides.sequence ?? base.sequence;
+  const snapshot: CatalogSnapshot = {
+    ...base,
+    sequence,
+    channels: [{ channel: 'stable', sequence }],
+    ...(overrides.expiresAt ? { expiresAt: overrides.expiresAt } : {}),
+  };
+  const body = JSON.stringify(snapshot);
+  const digest = catalogDigest(new TextEncoder().encode(body));
+  const signature = {
+    algorithm: 'ed25519' as const,
+    keyId: 'catalog-2026',
+    digest,
+    signature: edSign(null, Buffer.from(digest, 'utf8'), KEYS.privateKey).toString('base64'),
+  };
+  const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+    const url = String(input);
+    if (url === rawUrl('main', 'channels.json')) {
+      return new Response(JSON.stringify({ channels: [{ channel: 'stable', sequence }] }));
+    }
+    if (url === rawUrl(`catalog-v1/${sequence}`, 'catalog.json')) return new Response(body);
+    if (url === rawUrl(`catalog-v1/${sequence}`, 'catalog.sig'))
+      return new Response(JSON.stringify(signature));
+    return new Response('not found', { status: 404 });
+  });
+  return new CatalogRefreshService({
+    options: { repository: CATALOG_REPO, channel: 'stable', fetchImpl },
+    cache: new MemorySourceCache(),
+    state: new FileCatalogStateStore(path.join(stateRoot, 'catalog-state.json')),
+    loadKeyring: async () => KEYRING,
+    now: () => overrides.now ?? new Date('2026-10-16T00:00:00Z'),
+  });
+}
+
 describe.skipIf(!dbAvailable)('admin update center', () => {
   let app: FastifyInstance;
   let stateDir: string;
@@ -93,6 +156,7 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
   const email = `it_updates_${Date.now()}@example.com`;
   const password = 'test_password_123456';
   let adminToken: string;
+  let service: CatalogRefreshService;
 
   beforeAll(async () => {
     stateDir = await mkdtemp(path.join(tmpdir(), 'sp-updates-it-'));
@@ -100,50 +164,7 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
     setUpdateChannelForTest({ channelRoot: channelDir, instanceId: 'sp-it' });
     // updater 状态卷与通道同卷（compose 里是同一个 `stackpanel-updater-state`）。
     setUpdaterStateDirForTest(stateDir);
-    const { publicKeyPem, privateKey } = keypair();
-    const body = JSON.stringify(catalogSnapshot());
-    const digest = catalogDigest(new TextEncoder().encode(body));
-    const signature = {
-      algorithm: 'ed25519' as const,
-      keyId: 'catalog-2026',
-      digest,
-      signature: edSign(null, Buffer.from(digest, 'utf8'), privateKey).toString('base64'),
-    };
-    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
-      const url = String(input);
-      if (url === rawUrl('main', 'channels.json')) {
-        return new Response(JSON.stringify({ channels: [{ channel: 'stable', sequence: 4 }] }));
-      }
-      if (url === rawUrl('catalog-v1/4', 'catalog.json')) return new Response(body);
-      if (url === rawUrl('catalog-v1/4', 'catalog.sig'))
-        return new Response(JSON.stringify(signature));
-      return new Response('not found', { status: 404 });
-    });
-    const keyring: Keyring = {
-      formatVersion: 1,
-      keys: [
-        {
-          keyId: 'catalog-2026',
-          purpose: 'catalog',
-          publicKeyPem,
-          allowedRepositories: [CATALOG_REPO],
-        },
-        {
-          keyId: 'pkg-1',
-          purpose: 'package',
-          publicKeyPem,
-          publisher: 'stackpanel',
-          allowedRepositories: ['worable233/stackpanel-plugins'],
-        },
-      ],
-    };
-    const service = new CatalogRefreshService({
-      options: { repository: CATALOG_REPO, channel: 'stable', fetchImpl },
-      cache: new MemorySourceCache(),
-      state: new FileCatalogStateStore(path.join(stateDir, 'catalog-state.json')),
-      loadKeyring: async () => keyring,
-      now: () => new Date('2026-10-16T00:00:00Z'),
-    });
+    service = makeCatalogService(stateDir);
     setCatalogRefreshForTest(service);
 
     app = buildApp();
@@ -174,6 +195,62 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
     const body = res.json() as { catalogConfigured: boolean; policy: { autoUpdate: boolean } };
     expect(body.catalogConfigured).toBe(true);
     expect(body.policy.autoUpdate).toBe(false);
+  });
+
+  it('keeps status read-only: rendering never resolves the catalog', async () => {
+    // 渲染路径不得出网（refresh-service 契约）。目录只能由显式「检查更新」触发，
+    // 否则进程重启后第一次进页面就会被 GitHub 请求拖住。
+    expect(service.current()).toBeNull();
+    const call = () =>
+      app.inject({
+        method: 'GET',
+        url: '/admin/updates/status',
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+    const first = await call();
+    const second = await call();
+    const body = second.json() as { catalogState: string; lastCheckedAt: string | null };
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(body.catalogState).toBe('pending');
+    expect(body.lastCheckedAt).toBeNull();
+    expect(service.current()).toBeNull();
+    expect(service.lastCheckedAt()).toBeNull();
+  });
+
+  it('checks the catalog on explicit request and solves the plan', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/updates/check',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      checked: boolean;
+      throttled: boolean;
+      catalog: { state: string; sequence: number | null };
+      plan: { ok: boolean; plan: { packages: Array<{ id: string }> } } | null;
+    };
+    expect(body.checked).toBe(true);
+    expect(body.throttled).toBe(false);
+    expect(body.catalog.state).toBe('ready');
+    expect(body.catalog.sequence).toBe(4);
+    expect(body.plan?.ok).toBe(true);
+    expect(body.plan?.plan.packages.some((pkg) => pkg.id === 'remote-analytics')).toBe(true);
+  });
+
+  it('throttles an immediate second check instead of re-hitting GitHub', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/updates/check',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { checked: boolean; throttled: boolean; retryAtMs: number };
+    // 成功后的最短间隔同样生效：手动入口不能退化成无成本刷新按钮。
+    expect(body.checked).toBe(false);
+    expect(body.throttled).toBe(true);
+    expect(body.retryAtMs).toBe(30_000);
   });
 
   it('persists an updated policy', async () => {
@@ -257,6 +334,71 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
     expect(Array.isArray(body.results)).toBe(true);
   });
 
+  it('clears a maintenance window with an explicit null', async () => {
+    const set = await app.inject({
+      method: 'PUT',
+      url: '/admin/updates/policy',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { maintenanceWindow: { startHour: 1, endHour: 3 } },
+    });
+    expect(set.statusCode).toBe(200);
+    expect(
+      (set.json() as { policy: { maintenanceWindow?: unknown } }).policy.maintenanceWindow,
+    ).toEqual({ startHour: 1, endHour: 3 });
+    const cleared = await app.inject({
+      method: 'PUT',
+      url: '/admin/updates/policy',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { maintenanceWindow: null },
+    });
+    expect(cleared.statusCode).toBe(200);
+    // null 是「清除」，不是「保持原样」：否则设过窗口就再也关不掉。
+    expect(
+      (cleared.json() as { policy: { maintenanceWindow?: unknown } }).policy.maintenanceWindow,
+    ).toBeUndefined();
+  });
+
+  it('refuses to submit against an expired catalog unless explicitly allowed', async () => {
+    // generatedAt 2026-10-16T00:00Z：expiresAt 必须不早于它，now 再往后 2 小时即为过期。
+    const expired = makeCatalogService(stateDir, {
+      sequence: 5,
+      expiresAt: '2026-10-16T01:00:00.000Z',
+      now: new Date('2026-10-16T02:00:00.000Z'),
+    });
+    setCatalogRefreshForTest(expired);
+    try {
+      const plan = await app.inject({
+        method: 'POST',
+        url: '/admin/updates/plan',
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: {},
+      });
+      expect(plan.statusCode).toBe(200);
+      // 过期目录仍然可以看、可以算——人工据此判断要不要强行投递。
+      expect((plan.json() as { ok: boolean; catalogExpired: boolean }).catalogExpired).toBe(true);
+
+      const blocked = await app.inject({
+        method: 'POST',
+        url: '/admin/updates/submit',
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { idempotencyKey: 'expired-blocked' },
+      });
+      expect(blocked.statusCode).toBe(409);
+      expect((blocked.json() as { code: string }).code).toBe('updates.catalog_expired');
+
+      const allowed = await app.inject({
+        method: 'POST',
+        url: '/admin/updates/submit',
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { idempotencyKey: 'expired-allowed', allowExpired: true },
+      });
+      expect(allowed.statusCode).toBe(202);
+      expect((allowed.json() as { catalogExpired: boolean }).catalogExpired).toBe(true);
+    } finally {
+      setCatalogRefreshForTest(service);
+    }
+  });
+
   it('submits and cancels an updater self-update request', async () => {
     const digest = 'b'.repeat(64);
     const submit = await app.inject({
@@ -266,9 +408,9 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
       payload: { candidateDigest: `ghcr.io/acme/updater@sha256:${digest}` },
     });
     expect(submit.statusCode).toBe(202);
-    expect((submit.json() as { request: { candidateDigest: string } }).request.candidateDigest).toBe(
-      digest,
-    );
+    expect(
+      (submit.json() as { request: { candidateDigest: string } }).request.candidateDigest,
+    ).toBe(digest);
 
     const pending = await app.inject({
       method: 'GET',
@@ -276,9 +418,9 @@ describe.skipIf(!dbAvailable)('admin update center', () => {
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(pending.statusCode).toBe(200);
-    expect((pending.json() as { request: { candidateDigest: string } }).request.candidateDigest).toBe(
-      digest,
-    );
+    expect(
+      (pending.json() as { request: { candidateDigest: string } }).request.candidateDigest,
+    ).toBe(digest);
 
     const cancel = await app.inject({
       method: 'DELETE',

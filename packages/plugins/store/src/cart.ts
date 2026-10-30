@@ -1,4 +1,4 @@
-import type { HttpReply, HttpRequest } from '@stackpanel/sdk';
+import type { CheckoutSelection, HttpReply, HttpRequest } from '@stackpanel/sdk';
 import { StoreError } from './errors';
 import { resolveCheckoutPrice, effectiveDiscount } from './pricing';
 import { applyDiscount, betterDiscount } from './discount';
@@ -10,7 +10,7 @@ import {
   listCartItemsByUser,
   replaceCartItem,
 } from './repository';
-import { addToCartSchema, parseCheckoutSelection, updateCartQuantitySchema } from './utils';
+import { addToCartSchema, parseCheckoutSelection, selectionKey, updateCartQuantitySchema } from './utils';
 
 export async function listCart(req: HttpRequest): Promise<unknown> {
   const userId = req.user?.id;
@@ -126,8 +126,43 @@ export async function addToCart(req: HttpRequest, reply: HttpReply): Promise<unk
     throw new StoreError(409, '商品不可购买');
   }
   const config = input.config ? parseCheckoutSelection(input.config) : undefined;
-  if (input.quantity > product.stock) throw new StoreError(409, '库存不足');
   const quantity = input.quantity;
+
+  /*
+   * Merge into the existing line when the same product is added twice with the
+   * same configuration.
+   *
+   * Without this, clicking 加入购物车 twice produced two identical lines — the
+   * customer then pays for and fulfils two services they only meant to buy
+   * once. Merging is also what makes the quantity cap below meaningful: the
+   * cap must apply to the *combined* quantity, not to each click separately.
+   *
+   * Identity is `productId` + the normalised selection, so a different cycle or
+   * a different OS stays a separate line (they are different purchases).
+   */
+  const existing = (await listCartItemsByUser(userId)).find(
+    (item) =>
+      item.productId === input.productId &&
+      selectionKey(item.config as CheckoutSelection | null) === selectionKey(config ?? null),
+  );
+  if (existing) {
+    const mergedQuantity = existing.quantity + quantity;
+    if (mergedQuantity > product.stock) throw new StoreError(409, '库存不足');
+    await resolveCheckoutPrice(product, mergedQuantity, config);
+    const updated = await replaceCartItem(existing.id, {
+      userId,
+      productId: input.productId,
+      quantity: mergedQuantity,
+      config: existing.config,
+    });
+    return reply.code(200).send({
+      item: { id: updated.id, productId: updated.productId, quantity: updated.quantity },
+      merged: true,
+      nextPath: '/account/store/cart',
+    });
+  }
+
+  if (quantity > product.stock) throw new StoreError(409, '库存不足');
   await resolveCheckoutPrice(product, quantity, config);
   const item = await createCartItem({
     userId,

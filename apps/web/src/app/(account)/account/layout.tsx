@@ -56,6 +56,7 @@ async function loadAccountShell(): Promise<{
       email: currentUser.user.email,
       role: currentUser.user.role,
       status: currentUser.user.status,
+      avatarUrl: currentUser.user.avatarUrl ?? null,
     };
     return { user, items };
   } catch {

@@ -214,7 +214,8 @@
       "recharge.noMethods": "暂无支付方式",
       "recharge.submitting": "正在提交",
       "recharge.submit": "确认充值",
-      "records.cancelled": "充值已取消。"
+      "records.cancelled": "充值已取消。",
+      "overview.ledgerToggle": "查看明细"
     },
     "zh-TW": {
       "nav.overview": "概覽",
@@ -297,7 +298,8 @@
       "recharge.noMethods": "暫無支付方式",
       "recharge.submitting": "正在提交",
       "recharge.submit": "確認充值",
-      "records.cancelled": "充值已取消。"
+      "records.cancelled": "充值已取消。",
+      "overview.ledgerToggle": "檢視明細"
     },
     "zh-HK": {
       "nav.overview": "概覽",
@@ -380,7 +382,8 @@
       "recharge.noMethods": "暫無支付方式",
       "recharge.submitting": "正在提交",
       "recharge.submit": "確認充值",
-      "records.cancelled": "充值已取消。"
+      "records.cancelled": "充值已取消。",
+      "overview.ledgerToggle": "檢視明細"
     },
     "en-US": {
       "nav.overview": "Overview",
@@ -463,7 +466,8 @@
       "recharge.noMethods": "No payment methods available",
       "recharge.submitting": "Submitting…",
       "recharge.submit": "Confirm top-up",
-      "records.cancelled": "Top-up cancelled."
+      "records.cancelled": "Top-up cancelled.",
+      "overview.ledgerToggle": "View details"
     }
   }
 }

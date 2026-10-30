@@ -61,7 +61,13 @@ export function resolveFrontendSpecifier(
   const abi = g.__STACKPANEL_SERVER_ABI__;
   const absorbed = g.__STACKPANEL_ABSORBED_CLIENT__;
   // 宿主收编的客户端能力：包内相对导入 `./route-progress.js` → 宿主 bundle 的客户端引用。
+  // 仅当**发起导入的包自己没有这个文件**时才重定向：absorbed 能力目前只为宿主主题
+  // 准备，而插件（如 referral）可能自带同名模块（导出完全不同）。收编本意是替
+  // 缺失的文件，不是抢占包内真实存在的文件——先解析包内路径，解析失败才落 shim。
   const stem = absorbedStem(specifier);
+  // 收编能力优先于包内同名文件：包自带的那个文件是 `'use client'` 模块，在
+  // RSC 服务端直接 import 会崩（`useState` 为 null，见 SPIKE-results §0）。
+  // 宿主收编表需覆盖该 stem 下**所有**包用到的导出名。
   if (stem && absorbed && Object.prototype.hasOwnProperty.call(absorbed, stem)) {
     return {
       url: shimUrl(absorbed[stem] as Record<string, unknown>, `absorbed:${stem}`),

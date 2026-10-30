@@ -7,6 +7,8 @@ import {
   ArrowLeft,
   ArrowDown,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Inbox,
   LoaderCircle,
   MessagesSquare,
@@ -220,6 +222,15 @@ interface TicketWorkspaceProps {
   locale?: string;
   /** Localized copy. See {@link TicketWorkspaceLabels}. */
   labels?: TicketWorkspaceLabels;
+  pagination?: {
+    page: number;
+    pages: number;
+    total: number;
+    summary: string;
+    previousLabel: string;
+    nextLabel: string;
+    onPageChange: (page: number) => void;
+  };
 }
 
 /** Account support inbox; the plugin owns routes, data and server actions. */
@@ -235,6 +246,7 @@ export function TicketWorkspace({
   basePath = '/account/tickets',
   locale,
   labels = missingTicketWorkspaceLabels,
+  pagination,
 }: TicketWorkspaceProps) {
   const [search, setSearch] = useState('');
   const replyForm = useRef<HTMLFormElement>(null);
@@ -327,6 +339,31 @@ export function TicketWorkspace({
             </div>
           )}
         </nav>
+        {pagination && pagination.pages > 1 ? (
+          <div className="flex items-center justify-between gap-2 border-t border-border/50 px-1 pt-3 text-xs text-muted-foreground">
+            <span className="truncate">{pagination.summary}</span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={pagination.previousLabel}
+                disabled={pagination.page <= 1}
+                onClick={() => pagination.onPageChange(pagination.page - 1)}
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={pagination.nextLabel}
+                disabled={pagination.page >= pagination.pages}
+                onClick={() => pagination.onPageChange(pagination.page + 1)}
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </aside>
       <div
         className={cn(

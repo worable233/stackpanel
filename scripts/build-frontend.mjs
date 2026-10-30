@@ -45,7 +45,35 @@ const HOST_ABI_ADAPTER_ALIASES = [
 
 const { sourcePackages } = await discoverFrontendPackages();
 
-for (const pkg of sourcePackages) {
+/**
+ * Optional per-package rebuild: `STACKPANEL_FRONTEND_ONLY=plugins/llm-gateway`.
+ *
+ * Why it exists: iterating on one plugin's admin bundle used to rebuild **every**
+ * package in the workspace (and their `data/` copies), which is both slow and a
+ * write-conflict hazard when several checkouts/sessions share one data dir.
+ * Blank value keeps the historical "build everything" behaviour, so CI and
+ * `pnpm build` are unaffected.
+ */
+const only = (process.env.STACKPANEL_FRONTEND_ONLY ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const selected =
+  only.length === 0
+    ? sourcePackages
+    : sourcePackages.filter((pkg) => only.includes(`${pkg.kind}/${pkg.id}`));
+
+if (only.length > 0) {
+  console.log(
+    `[build-frontend] 只构建 ${selected.length}/${sourcePackages.length} 个前端包：${only.join(', ')}`,
+  );
+  if (selected.length === 0) {
+    console.error('[build-frontend] STACKPANEL_FRONTEND_ONLY 没有匹配到任何包');
+    process.exit(1);
+  }
+}
+
+for (const pkg of selected) {
   // Surfaced by the web supervisor as live progress ("正在编译 plugins/catalog").
   console.log(`Building frontend ${pkg.kind}/${pkg.id}…`);
   await buildFrontendPackageFromSource(pkg);
@@ -64,7 +92,10 @@ for (const pkg of sourcePackages) {
 // `STACKPANEL_FRONTEND_RUNTIME_LOAD=0 pnpm build:frontend` regenerates the static
 // registry (then `next build` bundles them) — the reversible fallback.
 const legacyRegistry = process.env.STACKPANEL_FRONTEND_RUNTIME_LOAD === '0';
-if (legacyRegistry) {
+if (only.length > 0) {
+  // 部分构建不能动 registry：那会按「当前看到的包」把别人的条目删掉。
+  console.log('[build-frontend] 部分构建：跳过 registry 生成');
+} else if (legacyRegistry) {
   await generateFrontendRegistry(await discoverRegistryPackages());
 } else {
   await writeEmptyRegistry();
@@ -75,6 +106,10 @@ async function buildFrontendPackageFromSource(pkg) {
     console.warn(`Skipping missing frontend package: ${pkg.source}`);
     return;
   }
+  // Packages may opt out of source maps when a single map would exceed the
+  // theme upload per-file limit (1 MiB). Opt-in stays the default.
+  const packageMeta = JSON.parse(await readFile(path.join(pkg.source, 'package.json'), 'utf8'));
+  const sourcemapArgs = packageMeta.stackpanel?.sourcemap === false ? [] : ['--sourcemap'];
   execFileSync(
     esbuildBin,
     [
@@ -85,7 +120,7 @@ async function buildFrontendPackageFromSource(pkg) {
       '--platform=node',
       '--target=node22',
       '--jsx=automatic',
-      '--sourcemap',
+      ...sourcemapArgs,
       '--external:react',
       '--external:react/jsx-runtime',
       '--external:next/link',
@@ -120,7 +155,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         '--banner:js="use client";',
         '--external:react',
         '--external:react/jsx-runtime',
@@ -140,7 +175,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         '--banner:js="use client";',
         '--external:react',
         '--external:react/jsx-runtime',
@@ -175,7 +210,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         '--external:react',
         '--external:react-dom',
         '--external:react/jsx-runtime',
@@ -202,7 +237,7 @@ async function buildFrontendPackageFromSource(pkg) {
         '--platform=neutral',
         '--target=es2020',
         '--jsx=automatic',
-        '--sourcemap',
+        ...sourcemapArgs,
         ...HOST_ABI_ADAPTER_ALIASES,
         '--external:/api/frontend-abi/*',
         '--main-fields=module,main',
@@ -248,7 +283,7 @@ async function buildFrontendPackageFromSource(pkg) {
       '--platform=node',
       '--target=node22',
       '--jsx=automatic',
-      '--sourcemap',
+      ...sourcemapArgs,
       `--alias:next/link=${probeLinkStub}`,
       `--alias:next/form=${probeLinkStub}`,
       `--alias:next/navigation=${probeLinkStub}`,

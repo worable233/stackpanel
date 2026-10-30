@@ -34,7 +34,10 @@ describe('sonner host ABI wiring', () => {
   it('publishes the host sonner namespace on both sides of the bridge', () => {
     const client = read('apps/web/src/components/frontend-abi-bridge.tsx');
     const server = read('apps/web/src/lib/frontend-host-abi.ts');
-    expect(client).toMatch(/import \* as sonner from 'sonner'/);
+    // 宿主 toast 已经从 sonner 包迁移到 @animate-ui 的 toast primitives（对外仍是
+    // sonner 兼容 API：toast / success / error / info / dismiss），所以客户端侧发布
+    // 的是宿主自己的 `ui/toast` 封装。服务端没有 DOM，仍用真正的 sonner 包。
+    expect(client).toMatch(/import \* as sonner from '@\/components\/ui\/toast'/);
     expect(client).toMatch(/\bsonner,/);
     expect(server).toMatch(/import \* as sonner from 'sonner'/);
     expect(server).toMatch(/\bsonner,/);

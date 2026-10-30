@@ -31,7 +31,6 @@ import {
   toMinorUnits,
 } from '@stackpanel/sdk';
 import type { ExtensionTransaction } from '@stackpanel/sdk';
-import { ExtensionValidationError } from '@stackpanel/sdk';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import semver from 'semver';
 import type { PrismaClient } from '@stackpanel/db';
@@ -60,7 +59,7 @@ import {
 import { OutboxEventBus, outboxOrigin, serializeOutboxBody } from './events.ts';
 
 /** Tracks an in-flight `ctx.tx` so nested calls fail with a clear error. */
-const txContext = new AsyncLocalStorage<true>();
+const txContext = new AsyncLocalStorage<ExtensionTransaction>();
 const ISOLATED_WORKER_FAILURE_THRESHOLD = 3;
 
 /** True when the bound event bus is the durable outbox bus (kernel default). */
@@ -919,11 +918,13 @@ export class PluginRuntime {
       events: this.options.events,
       extensions: this.options.extensions.client(pluginId, null),
       tx: <T>(fn: (tx: ExtensionTransaction) => Promise<T>): Promise<T> => {
-        if (txContext.getStore()) {
-          return Promise.reject(new ExtensionValidationError('不允许嵌套 ctx.tx'));
-        }
+        // 允许嵌套：已经有外层事务时直接「加入」它（join 语义），而不是报错。
+        // 报错会让所有在事务内触发的插件钩子必然失败一次——例如 outbox relay 在
+        // 自己的事务里派发 `order.paid`，订阅方再要事务就只能等下一次重试。
+        const outer = txContext.getStore();
+        if (outer) return fn(outer);
         const prisma = this.options.db as PrismaClient;
-        return txContext.run(true, () =>
+        return (
           prisma
             .$transaction(async (trx) => {
               const wallet: ExtensionTransaction['wallet'] = {
@@ -962,7 +963,7 @@ export class PluginRuntime {
                   });
                 },
               };
-              const result = await fn(tx);
+              const result = await txContext.run(tx, () => fn(tx));
               for (const event of pending) {
                 await trx.outboxEvent.create({
                   data: {
@@ -982,7 +983,7 @@ export class PluginRuntime {
                 this.options.events.nudgeRelay();
               }
               return result;
-            }),
+            })
         );
       },
       payments: this.options.payments,

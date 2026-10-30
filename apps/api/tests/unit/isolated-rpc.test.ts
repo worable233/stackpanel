@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadIsolatedPluginDefinition, stopIsolatedPlugin } from '../../src/plugins/isolated/host.ts';
+import { isPluginError } from '@stackpanel/sdk';
 import type { PluginManifest, RawHttpReply, RawHttpRequest, LlmProvider, PluginContext } from '@stackpanel/sdk';
 
 type Message = {
@@ -216,6 +217,68 @@ describe('isolated worker RPC protocol', () => {
     }
   });
 
+  it('keeps a plugin error branded and preserves its status across IPC', async () => {
+    // Regression: the worker used to rebuild host/plugin errors as plain `Error`
+    // objects with copied fields, which lost the non-enumerable plugin-error
+    // brand. The kernel boundary then treated a deliberate 409 as a generic 500,
+    // and plugin code branching on `instanceof PluginError` rewrote the cause.
+    const id = 'isolated-error-status-test';
+    const manifest: PluginManifest = { id, name: 'Error status test', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/error-status');
+      expect(route).toBeDefined();
+      let failure: unknown = null;
+      try {
+        await route?.handler(
+          { params: {}, query: {}, body: null, headers: {} } as never,
+          { code: () => undefined, send: () => undefined } as never,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      const pluginError = failure as { code?: string; status?: number; detail?: string };
+      expect(pluginError.code).toBe('probe.invalid');
+      expect(pluginError.status).toBe(409);
+      expect(pluginError.detail).toBe('冲突：状态不允许');
+      expect(isPluginError(failure)).toBe(true);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
+  it('honours a status raised without a plugin error code', async () => {
+    // Real case: a provider's local error class carries `status`/`statusCode` but
+    // no `code`. Reconstructing the error only when *both* were present left the
+    // status stranded on a plain `Error`, so the kernel re-rendered a deliberate
+    // 409 as "internal server error" and the operator saw no reason at all.
+    const id = 'isolated-error-status-only-test';
+    const manifest: PluginManifest = { id, name: 'Error status only test', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/error-status-only');
+      expect(route).toBeDefined();
+      let failure: unknown = null;
+      try {
+        await route?.handler(
+          { params: {}, query: {}, body: null, headers: {} } as never,
+          { code: () => undefined, send: () => undefined } as never,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as { status?: number }).status).toBe(409);
+      expect((failure as { detail?: string }).detail).toBe(
+        '缺少原请求的持久化账单证据，禁止通过人工声明重开',
+      );
+      expect(isPluginError(failure)).toBe(true);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
   it('rejects an in-flight route when the isolated worker exits', async () => {
     const id = 'isolated-crash-test';
     const manifest: PluginManifest = { id, name: 'Crash test', version: '1.0.0' };
@@ -292,6 +355,24 @@ describe('isolated worker RPC protocol', () => {
     send(child, { protocol: 1, pluginId, type: 'result', id: messageId(extensionRequest), value: undefined });
     const lifecycleResult = await nextMessage(child);
     expect(lifecycleResult.type).toBe('result');
+
+    // 宿主回调 worker 内的扩展实现时必须保留 receiver。类实例风格的实现依赖
+    // this（如 provider 的 private 辅助方法），丢掉 this 会变成
+    // "Cannot read properties of undefined"，而对象字面量实现看不出任何异常。
+    const extensionToken = (extensionRequest.args as { token: string }).token;
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'service',
+      id: randomUUID(),
+      token: extensionToken,
+      method: 'run',
+      payload: ['probe'],
+    });
+    const extensionCall = await nextMessage(child);
+    expect(extensionCall.type).toBe('result');
+    expect(extensionCall.error).toBeUndefined();
+    expect(extensionCall.value).toBe('probe:1');
 
     send(child, { protocol: 1, pluginId, type: 'event', token: eventToken, payload: { value: 'ok' } });
     const loggerRequest = await nextMessage(child);

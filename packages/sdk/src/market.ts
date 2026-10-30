@@ -103,6 +103,10 @@ export interface DistributionSourceInput {
 export interface DistributionRefreshResult {
   configured: boolean;
   available: boolean;
+  /** 冷却/退避期内被拦下：**未发网络请求**。 */
+  throttled?: boolean | undefined;
+  /** 被拦下时建议的重试等待（毫秒）。 */
+  retryAtMs?: number | undefined;
   failure: { kind: string; message: string; retryAt?: string | undefined } | null;
   sequence?: number | null | undefined;
   expired?: boolean | null | undefined;

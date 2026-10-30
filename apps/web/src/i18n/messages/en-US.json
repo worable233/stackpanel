@@ -47,7 +47,16 @@
     "overview": "Overview",
     "quickLinks": "Quick links",
     "workspaceAdmin": "Admin workspace",
-    "workspaceAccount": "Account workspace"
+    "workspaceAccount": "Account workspace",
+    "toggleNav": "Collapse or expand sidebar",
+    "openNav": "Open navigation",
+    "closeNav": "Close navigation",
+    "breadcrumb": "Breadcrumb",
+    "help": "Help center",
+    "navLabel": "Backend navigation",
+    "backend": "Backend",
+    "collapseNav": "Collapse sidebar",
+    "expandNav": "Expand sidebar"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -76,7 +85,8 @@
     "homeAriaLabel": "Back to home",
     "updates": "Updates",
     "accountOverview": "Account overview",
-    "credentials": "Credentials"
+    "credentials": "Credentials",
+    "payments": "Payments"
   },
   "auth": {
     "login": {
@@ -314,7 +324,8 @@
         "confirmUnbind": "Unbind this service? This only removes the account binding; the upstream purchase is untouched.",
         "confirmDelete": "Delete this service for the user? This cannot be undone.",
         "upstreamEmpty": "The upstream account has no purchased services yet. Confirm it owns services you can bind.",
-        "noUpstreamPlugin": "No upstream plugin is available. Enable a plugin that provides service binding first."
+        "noUpstreamPlugin": "No upstream plugin is available. Enable a plugin that provides service binding first.",
+        "confirmHint": "This action cannot be undone."
       },
       "orders": {
         "title": "Orders",
@@ -646,7 +657,13 @@
       "deleted": "Plugin deleted.",
       "mutationFailed": "Plugin operation failed. Please try again.",
       "deleteConfirmTitle": "Delete this plugin?",
-      "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone."
+      "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone.",
+      "stale": {
+        "body": "The package files are missing, so the runtime never loaded this plugin.",
+        "cleanup": "Remove record",
+        "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
+        "title": "Leftover plugin records"
+      }
     },
     "users": {
       "title": "Users",
@@ -782,6 +799,64 @@
         "catalogTokenSubmit": "Save token",
         "catalogKeyIdLabel": "Public key keyId",
         "catalogKeyIdHint": "Must match the keyId inside catalog.sig (catalog-2026 for the default source); a key without its keyId cannot verify."
+      },
+      "payment": {
+        "title": "Payment methods",
+        "description": "Configure how each sales channel collects money. Manual methods (bank transfer / QR) have no gateway — the collection details entered here are the entire payment step the buyer sees.",
+        "add": "Add payment method",
+        "create": "Create",
+        "save": "Save",
+        "empty": "No payment methods configured yet",
+        "emptyHint": "Buyers cannot choose a method until one is configured. Manual methods without collection details are hidden from checkout.",
+        "noChannel": "No sales channel exists yet. Create a channel before adding payment methods.",
+        "channel": "Sales channel",
+        "provider": "Provider",
+        "providerHint": "The id of an installed plugin, e.g. manual (offline payment) or epay. Validated on save.",
+        "name": "Name",
+        "namePlaceholder": "Bank transfer / QR payment",
+        "currencies": "Currencies",
+        "currenciesHint": "Comma-separated currency codes; leave empty to accept every enabled currency.",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "allCurrencies": "All enabled currencies",
+        "collectionTitle": "Collection details",
+        "collectionHint": "What the buyer sees on the order page. A manual method needs at least an account number or QR image, otherwise the buyer cannot pay.",
+        "missingConfig": "No collection details yet — buyers selecting this method will have no way to pay.",
+        "confirmDelete": "Confirm delete",
+        "providerMissing": "This provider's plugin is not active, so the method cannot be used.",
+        "gatewayConfigNote": "This gateway keeps its credentials in its own plugin settings — nothing to enter here.",
+        "qrHint": "Same-origin paths and data: URLs are shown inline on the order page. External image URLs are blocked by the security policy and appear as a link instead.",
+        "confirmDeleteHint": "This payment method will no longer be available for new orders. Existing orders are unaffected."
+      },
+      "updates": {
+        "allowIrreversibleMigration": "Run irreversible migrations automatically",
+        "allowIrreversibleMigrationHint": "Dangerous: automatic updates may run database migrations that cannot be rolled back.",
+        "allowPermissionIncrease": "Accept added permissions automatically",
+        "allowPermissionIncreaseHint": "Dangerous: automatic updates may grant plugins new permissions without manual confirmation.",
+        "autoUpdate": "Enable automatic updates",
+        "autoUpdateHint": "When off, the instance only checks and solves plans; every upgrade is dispatched manually.",
+        "autoUpdateKernel": "Allow automatic kernel upgrades",
+        "autoUpdateKernelHint": "When off, automatic updates only cover plugins and themes; kernel upgrades stay manual.",
+        "channel": "Update channel",
+        "channelBeta": "beta (pre-release)",
+        "channelHint": "The channel pointer is published in the signed catalog; beta usually receives new versions before stable.",
+        "channelStable": "stable",
+        "description": "Scope, channel, maintenance window and exceptions for automatic updates. Everything defaults to off: tasks are only dispatched automatically once you enable it here.",
+        "excluded": "Excluded components",
+        "excludedHint": "One per line, e.g. plugin/referral. Excluded components are left out of every plan.",
+        "maintenanceWindow": "Maintenance window",
+        "maintenanceWindowHint": "Leave empty for no time restriction; wrap past midnight with start > end (e.g. 23 → 5).",
+        "neverUpdated": "Never changed; the conservative defaults are in use.",
+        "pinned": "Pinned versions",
+        "pinnedHint": "One per line as “component version”, e.g. plugin/referral 1.2.0. Pinned components never upgrade automatically.",
+        "saved": "Update policy saved.",
+        "saving": "Saving…",
+        "submit": "Save update policy",
+        "title": "Update policy",
+        "updatedBy": "Last changed {at} by {by}",
+        "windowEnable": "Only run automatically inside the window",
+        "windowEnd": "End (hour 0-23)",
+        "windowStart": "Start (hour 0-23)"
       }
     },
     "themes": {
@@ -833,7 +908,8 @@
     "pluginSettings": {
       "back": "Back to plugins",
       "title": "Plugin settings",
-      "noSettings": "This plugin has no front-end settings."
+      "noSettings": "This plugin has no front-end settings.",
+      "titleNamed": "{name} settings"
     },
     "notifications": {
       "title": "Notifications",
@@ -871,14 +947,94 @@
       "addsPermissions": "Added",
       "noPermissions": "None",
       "dispatched": "Update task submitted ({taskKey}…)",
-      "blockDetail": "{component}: {detail}"
+      "blockDetail": "{component}: {detail}",
+      "acknowledgeLabel": "I understand the changes above and authorize this upgrade",
+      "actionFailed": "The action did not complete. Check your connection or try again later.",
+      "advancedInfo": "Advanced",
+      "allowExpiredLabel": "Submit against the expired snapshot (this time only)",
+      "authorizationBody": "Review the impact below; submission stays disabled until you confirm.",
+      "authorizationIrreversible": "{component}: contains an irreversible migration",
+      "authorizationPermissions": "“{component}” gains new permissions after the upgrade",
+      "authorizationTitle": "This upgrade contains changes that need manual authorization",
+      "availableBadge": "Update available",
+      "availableSummary": "A new version is available: upgrade to v{version} with {count} component updates.",
+      "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours.",
+      "beforeCheckTitle": "Checking for updates does not affect the running service",
+      "cancel": "Cancel",
+      "carrier": "Carrier",
+      "catalogChannel": "Channel",
+      "catalogExpiredBadge": "Snapshot expired",
+      "catalogFreshBadge": "Snapshot within validity",
+      "catalogGeneratedAt": "Snapshot generated at",
+      "catalogMissingKeysHint": "Artifact deployments must set these in stackpanel.env: DISTRIBUTION_UPDATE_CARRIER=artifact, DISTRIBUTION_UPDATE_CHANNEL_DIR=<state dir>/update, DISTRIBUTION_UPDATER_STATUS_FILE=<state dir>/update/status.json — then restart the API.",
+      "catalogRepository": "Catalog repository",
+      "catalogSequence": "Snapshot sequence",
+      "catalogStateFailed": "Unavailable",
+      "catalogStatePending": "Not checked yet (no snapshot in this process)",
+      "catalogStateReady": "Ready",
+      "catalogStateUnconfigured": "Not configured (catalog source is off)",
+      "checkAction": "Check for updates",
+      "checkCooldownHint": "Checking is rate limited to once every {seconds} seconds, so the button never becomes an unbounded refresh loop.",
+      "checkFailed": "Check failed: {message}",
+      "checkNoChanges": "Check finished: nothing to upgrade right now.",
+      "checkPrompt": "Check for updates to see the new version and what changed.",
+      "checkSucceeded": "Check finished: catalog sequence {sequence}.",
+      "checkThrottled": "Cooling down: retry in {seconds}s (no request was sent).",
+      "checkUnconfigured": "The catalog source is off, nothing to check.",
+      "checking": "Checking…",
+      "componentCount": "{count} components",
+      "confirmSubmit": "Confirm submission",
+      "currentVersion": "Current version",
+      "errorDetails": "Technical details",
+      "expiredBlocked": "The catalog snapshot has expired, so the submission was refused. Run “Check for updates” first.",
+      "expiredWarning": "The catalog snapshot has expired: you may still solve and inspect plans, but submitting is refused by default.",
+      "historyBlock": "Block reason",
+      "historyCheckpoints": "Phase checkpoints",
+      "historyEmpty": "No results have been written back yet.",
+      "historyKey": "Idempotency key",
+      "historyNone": "None",
+      "historyNotRecovered": "Recovery failed ({detail})",
+      "historyPhase": "Phase",
+      "historyRecovered": "Rolled back to the pre-upgrade state ({detail})",
+      "historyRecovery": "Recovery",
+      "historyTitle": "Recent results",
+      "instance": "Instance",
+      "kernelComponent": "System kernel",
+      "lastCheckedAt": "Last checked: {at}",
+      "lastCheckedLabel": "Last checked",
+      "lastCheckedNever": "Never checked",
+      "notCheckedBadge": "Not checked",
+      "progressHint": "This page refreshes every {seconds}s and stops when the task ends.",
+      "progressPhase": "Current phase: {phase}",
+      "progressTitle": "Active task",
+      "retryAtHint": "Suggested retry at {at}",
+      "selfUpdateCancel": "Cancel pending request",
+      "selfUpdateCancelled": "Pending request cancelled.",
+      "selfUpdateDescription": "Writes a rollback point before switching the executor image; refused while an upgrade task is in flight.",
+      "selfUpdateDigestHint": "Use a sha256 digest (a sha256: prefix is accepted). Empty values are rejected.",
+      "selfUpdateDigestLabel": "Candidate executor image digest",
+      "selfUpdateNone": "No updater self-upgrade request is pending.",
+      "selfUpdatePending": "Pending: target digest {digest}, requested by {requestedBy} at {requestedAt}",
+      "selfUpdateSubmit": "Queue self-upgrade",
+      "selfUpdateSubmitted": "Self-upgrade request queued.",
+      "selfUpdateTitle": "Updater self-upgrade",
+      "statusUnreadableHint": "Check that the updater is running and that the API sets DISTRIBUTION_UPDATER_STATUS_FILE (for artifact deployments: <state dir>/update/status.json).",
+      "targetVersion": "Target version v{version}",
+      "upToDateBadge": "Up to date",
+      "upToDateSummary": "You are on the latest version. Nothing to update.",
+      "upToDateTitle": "You are up to date",
+      "updateContentTitle": "What will be updated",
+      "updatedAt": "Status updated at"
     }
   },
   "locale": {
     "zh-CN": "简体中文",
-    "zh-TW": "繁體中文（台灣）",
+    "zh-TW": "繁體中文",
     "zh-HK": "繁體中文（香港）",
-    "en-US": "English"
+    "en-US": "English",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "fr-FR": "Français"
   },
   "action": {
     "feedback": {
@@ -976,7 +1132,23 @@
     "seoPageDeleted": "Page override deleted",
     "apiTokenSigningSaved": "Signing key saved",
     "apiTokenSigningCleared": "Request signing disabled",
-    "apiTokenRevoked": "API token revoked"
+    "apiTokenRevoked": "API token revoked",
+    "paymentMethodChannelRequired": "Select a sales channel",
+    "paymentMethodProviderRequired": "Enter a payment provider",
+    "paymentMethodNameRequired": "Enter a name",
+    "paymentMethodMissing": "Missing payment method id",
+    "paymentMethodCreated": "Payment method created",
+    "paymentMethodCreateFailed": "Could not create the payment method",
+    "paymentMethodUpdated": "Payment method updated",
+    "paymentMethodUpdateFailed": "Could not update the payment method",
+    "paymentMethodDeleteFailed": "Could not delete the payment method",
+    "updateCheckFailed": "Failed to check for updates",
+    "updatePolicyInvalid": "Invalid update policy: check the excluded and pinned lists",
+    "updatePolicySaveFailed": "Failed to save the update policy",
+    "updateResultsFailed": "Failed to read update results",
+    "updateSelfUpdateCancelFailed": "Failed to cancel the self-upgrade request",
+    "updateSelfUpdateSubmitFailed": "Failed to queue the self-upgrade request",
+    "updateSubmitFailed": "Failed to submit the update task"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -1401,7 +1573,16 @@
       "invalid_target": "Invalid OAuth target"
     },
     "rate_limited": "Too many requests. Please try again shortly.",
-    "not_writable": "This action is not allowed in the current state. Please try again later."
+    "not_writable": "This action is not allowed in the current state. Please try again later.",
+    "updates": {
+      "authorization_required": "The plan contains changes that need manual authorization",
+      "catalog_expired": "The catalog snapshot has expired: check for updates first, or explicitly allow submitting against it",
+      "catalog_unavailable": "The remote catalog is temporarily unavailable, please retry later",
+      "catalog_unconfigured": "No remote catalog is configured (offline mode)",
+      "policy": {
+        "invalid": "Invalid policy fields: check the channel, maintenance window, exclusion list and pins"
+      }
+    }
   },
   "auditAction": {
     "auth": {
@@ -1686,7 +1867,17 @@
         "statusDisabled": "Disabled",
         "createdAt": "Registered",
         "lastLoginAt": "Last sign-in",
-        "none": "No records"
+        "none": "No records",
+        "avatar": "Avatar",
+        "avatarChange": "Change avatar",
+        "avatarFailed": "Could not process the image. Try again.",
+        "avatarHint": "Shown in the account menu and admin navigation. PNG / JPEG / GIF / WebP, up to 5MB.",
+        "avatarRemove": "Remove avatar",
+        "avatarRemoved": "Avatar removed.",
+        "avatarTooLarge": "The image must be 5MB or smaller.",
+        "avatarUnsupported": "Only PNG / JPEG / GIF / WebP are supported.",
+        "avatarUpdated": "Avatar updated.",
+        "avatarUpload": "Upload avatar"
       },
       "appearance": {
         "theme": "Theme",
@@ -1696,7 +1887,9 @@
         "themeHint": "Applied immediately and stored in this browser.",
         "language": "Display language",
         "languageHint": "Switch the interface language for this site; stored in this browser.",
-        "languageSaveFailed": "The language setting was not saved. Please try again."
+        "languageSaveFailed": "The language setting was not saved. Please try again.",
+        "switching": "Switching language…",
+        "autosave": "Changes save automatically; no submit needed."
       },
       "access": {
         "apiKeys": "API keys",
@@ -1964,7 +2157,19 @@
       "cleaned": "Cleaned {count} conversations",
       "cleared": "Model settings cleared",
       "processing": "Working…",
-      "loadFailed": "Failed to load"
+      "loadFailed": "Failed to load",
+      "defaultModelTitle": "Default model",
+      "defaultModelHint": "Pick one of the models the current provider offers; Agent runs use it by default.",
+      "defaultModelLabel": "Model",
+      "defaultModelAuto": "Automatic (the provider’s first available model)",
+      "defaultModelHelp": "A saved model that the provider no longer lists is ignored and the run falls back automatically.",
+      "defaultModelSave": "Save default model",
+      "defaultModelSaved": "Default model saved",
+      "providerLabel": "Provider",
+      "providerNone": "No model provider detected",
+      "catalogEmpty": "The current provider returned no models. Check its configuration.",
+      "noToolsModel": "No tool calling",
+      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable."
     },
     "advanced": {
       "title": "Advanced settings",
@@ -2080,7 +2285,10 @@
     "failed": "Could not save. Please try again.",
     "unavailable": "Notification settings are temporarily unavailable. Please try again.",
     "forbidden": "You do not have permission to manage notification policy.",
-    "invalidRequest": "Invalid request format."
+    "invalidRequest": "Invalid request format.",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "autosave": "Changes are saved automatically."
   },
   "errorPage": {
     "unauthorized": {
@@ -2153,7 +2361,10 @@
     "refresh": "Refresh status",
     "resume": "Continue payment",
     "submitting": "Submitting…",
-    "order": "Order number"
+    "order": "Order number",
+    "payInstructions": "How to pay",
+    "payQrImage": "Payment QR code",
+    "payQrOpen": "Open the QR image"
   },
   "adminSeo": {
     "title": "SEO settings",
@@ -2207,5 +2418,61 @@
     "add": "Add",
     "hrefHint": "Use a path starting with / for in-site pages, or a full http(s) URL for external ones. A mistyped link is not detected automatically — click it once after adding.",
     "hrefPlaceholder": "/admin/orders or https://docs.example.com"
+  },
+  "adminPayments": {
+    "title": "Payment records",
+    "filterAll": "All",
+    "filterStatus": "Filter by status",
+    "statusPending": "Pending",
+    "statusPaid": "Paid",
+    "statusReview": "Needs review",
+    "statusCancelled": "Cancelled",
+    "statusExpired": "Expired",
+    "statusRefunded": "Refunded",
+    "statusUnknown": "Unknown",
+    "colPayment": "Payment",
+    "colPurpose": "Purpose",
+    "purposeOrder": "Order payment",
+    "purposeTopUp": "Wallet top-up",
+    "colBuyer": "Buyer",
+    "buyerUnknown": "Unknown buyer",
+    "colMethod": "Method",
+    "colAmount": "Amount",
+    "colStatus": "Status",
+    "colCreatedAt": "Created",
+    "colActions": "Actions",
+    "modeManual": "Needs manual confirmation",
+    "modeGateway": "Settles automatically",
+    "methodAlipay": "Alipay",
+    "methodWechat": "WeChat Pay",
+    "methodPaypal": "PayPal",
+    "methodStripe": "Card",
+    "methodBankTransfer": "Bank transfer",
+    "methodQrCode": "QR code",
+    "methodWallet": "Wallet",
+    "settlement": "Settled {amount}",
+    "expiredHint": "This payment expired before the buyer paid. If the money did arrive, you can still confirm it.",
+    "confirm": "Confirm receipt",
+    "confirmed": "Receipt confirmed",
+    "confirmFailed": "Could not confirm receipt",
+    "cancel": "Cancel",
+    "cancelled": "Cancelled",
+    "cancelFailed": "Could not cancel",
+    "reason": {
+      "notFound": "That payment record does not exist.",
+      "notManual": "Only manual collections can be confirmed by hand.",
+      "notPending": "This record has already been handled."
+    },
+    "orderRef": "Order {id}",
+    "empty": "No matching payment records",
+    "emptyHint": "Try another status, or wait for the next order.",
+    "pageInfo": "Page {page} / {pages} · {total} records",
+    "prev": "Previous",
+    "next": "Next",
+    "loadFailed": "Could not load payment records",
+    "description": "Every incoming payment in one place. Manual collections (bank transfer / QR) only settle after you confirm them here.",
+    "filterApply": "Apply",
+    "listDescription": "Filter by status. Confirming receipt settles the order and starts delivery.",
+    "listTitle": "Collection ledger"
   }
 }

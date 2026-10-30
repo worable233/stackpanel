@@ -115,7 +115,8 @@ export async function loadRuntimeFrontend(
   try {
     const mod = (await pending) as { default?: unknown };
     return mod.default ?? mod;
-  } catch {
+  } catch (error) {
+    console.error(`[frontend-runtime] failed to load ${kind}/${id}:`, error);
     return null;
   }
 }

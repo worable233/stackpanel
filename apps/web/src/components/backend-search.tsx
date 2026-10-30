@@ -16,11 +16,14 @@ import {
 } from '@/components/ui/command';
 import { useTranslator } from '@/i18n/provider';
 import { useTheme } from '@/components/theme-provider';
+import { cn } from '@/lib/utils';
 
 export function BackendSearch({
   items,
+  compact = false,
 }: {
   items: { href: string; label: string; groupLabel?: string }[];
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -55,10 +58,13 @@ export function BackendSearch({
         aria-label={t('common.search')}
         aria-keyshortcuts="Meta+K Control+K"
         onClick={() => setOpen(true)}
-        className="h-9 w-full min-w-0 flex-1 justify-start gap-2 rounded-xl border-border/70 bg-muted/25 px-3 text-muted-foreground shadow-none has-[>svg]:px-3 lg:w-44 lg:flex-none 2xl:w-52"
+        className={cn(
+          'h-9 min-w-0 justify-start gap-2 rounded-lg border border-border/70 bg-background px-3 text-muted-foreground shadow-none hover:bg-background has-[>svg]:px-3',
+          compact ? 'w-9 shrink-0 justify-center px-0 sm:w-44 sm:justify-start sm:px-3' : 'w-full',
+        )}
       >
         <Search className="size-4" />
-        <span className="truncate">{t('common.search')}</span>
+        <span className={cn('truncate', compact && 'hidden sm:inline')}>{t('common.search')}</span>
         <kbd className="ml-auto hidden h-5 items-center rounded border bg-muted px-1.5 font-mono text-[10px] md:inline-flex">
           ⌘ K
         </kbd>

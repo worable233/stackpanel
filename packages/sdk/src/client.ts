@@ -12,6 +12,11 @@ import {
   adminCurrencyDefinitionListResponseSchema,
   adminFxRateListResponseSchema,
   adminFxRateViewSchema,
+  adminPaymentCancelResultSchema,
+  adminPaymentConfirmResultSchema,
+  adminPaymentListResponseSchema,
+  adminPaymentMethodMutationResponseSchema,
+  adminSalesChannelListResponseSchema,
   apiTokenCreateResponseSchema,
   apiTokenListResponseSchema,
   seoPageListResponseSchema,
@@ -38,6 +43,11 @@ import {
   updatePlanResponseSchema,
   updateSubmitResponseSchema,
   updateResultsResponseSchema,
+  updateResultResponseSchema,
+  updateCheckResponseSchema,
+  updateSelfUpdateResponseSchema,
+  updateSelfUpdateSubmitResponseSchema,
+  updateSelfUpdateCancelResponseSchema,
   frontendDescriptorSchema,
   healthSchema,
   loginResponseSchema,
@@ -99,6 +109,12 @@ import {
   webhookDeliveryListResponseSchema,
 } from './schemas.js';
 import type {
+  AdminPaymentCancelResult,
+  AdminPaymentConfirmResult,
+  AdminPaymentListQuery,
+  AdminPaymentListResponse,
+} from './payments.js';
+import type {
   ActiveThemeResponse,
   AdminDashboardWidgetsResponse,
   AdminActionsResponse,
@@ -107,8 +123,15 @@ import type {
   FrontendApplyStatusResponse,
   UpdateStatusResponse,
   UpdatePolicyView,
+  UpdatePolicyPatch,
   UpdatePlanResponse,
   UpdateSubmitResponse,
+  UpdateCheckResponse,
+  UpdateResultsResponse,
+  UpdateTaskResultView,
+  UpdateSelfUpdateResponse,
+  UpdateSelfUpdateSubmitResponse,
+  UpdateSelfUpdateCancelResponse,
   AdminThemesResponse,
   AdminProductsResponse,
   AdminServiceMutationResponse,
@@ -127,6 +150,8 @@ import type {
   AdminCurrencyDefinitionListResponse,
   AdminFxRateListResponse,
   AdminFxRateView,
+  AdminPaymentMethodMutationResponse,
+  AdminSalesChannelListResponse,
   CurrencyDefinitionListResponse,
   CurrencyDefinitionMutationResponse,
   SettlementCurrencyResponse,
@@ -384,13 +409,18 @@ export class ApiClient {
     return this.get('/admin/plugins/frontend-status', frontendApplyStatusResponseSchema);
   }
 
-  /** Read the update center status (policy, updater projection, catalog state). */
+  /** Read the update center status (policy, updater projection, catalog state). Never touches the network. */
   getUpdateStatus(): Promise<UpdateStatusResponse> {
     return this.get('/admin/updates/status', updateStatusResponseSchema);
   }
 
+  /** Read the persisted auto-update policy on its own (settings page). */
+  getUpdatePolicy(): Promise<{ policy: UpdatePolicyView }> {
+    return this.get('/admin/updates/policy', updatePolicyResponseSchema);
+  }
+
   /** Update the auto-update policy. */
-  updateUpdatePolicy(patch: Partial<UpdatePolicyView>): Promise<{ policy: UpdatePolicyView }> {
+  updateUpdatePolicy(patch: UpdatePolicyPatch): Promise<{ policy: UpdatePolicyView }> {
     return request(
       this.#fetch,
       `${this.baseUrl}/admin/updates/policy`,
@@ -400,23 +430,67 @@ export class ApiClient {
     );
   }
 
+  /**
+   * Force one signed-catalog check (explicit admin action).
+   *
+   * Returns `checked:false, throttled:true` while the cooldown/backoff window is
+   * open — that call does **not** reach GitHub. Rendering a page must never call
+   * this; only a user action may.
+   */
+  checkUpdateCatalog(): Promise<UpdateCheckResponse> {
+    return this.post('/admin/updates/check', {}, updateCheckResponseSchema);
+  }
+
   /** Solve a full deployment plan from the signed catalog (no state change). */
   planUpdate(): Promise<UpdatePlanResponse> {
     return this.post('/admin/updates/plan', {}, updatePlanResponseSchema);
   }
 
-  /** Submit an update task to the instance-private channel. */
+  /**
+   * Submit an update task to the instance-private channel.
+   *
+   * `acknowledge` and `allowExpired` must come from an explicit user decision —
+   * never derived from the plan payload itself.
+   */
   submitUpdate(
-    input: { acknowledge?: boolean; idempotencyKey?: string } = {},
+    input: { acknowledge?: boolean; allowExpired?: boolean; idempotencyKey?: string } = {},
   ): Promise<UpdateSubmitResponse> {
     return this.post('/admin/updates/submit', input, updateSubmitResponseSchema);
   }
 
   /** List recent update task results projected by the updater. */
-  listUpdateResults(): Promise<{
-    results: Array<{ idempotencyKey: string; result: { phase: string } }>;
-  }> {
+  listUpdateResults(): Promise<UpdateResultsResponse> {
     return this.get('/admin/updates/results', updateResultsResponseSchema);
+  }
+
+  /** Read one update task result (phase/checkpoints/recovery) by idempotency key. */
+  getUpdateResult(key: string): Promise<{ result: UpdateTaskResultView }> {
+    return this.get(`/admin/updates/results/${encodeURIComponent(key)}`, updateResultResponseSchema);
+  }
+
+  /** Read the pending updater self-update request (if any). */
+  getUpdateSelfUpdate(): Promise<UpdateSelfUpdateResponse> {
+    return this.get('/admin/updates/self-update', updateSelfUpdateResponseSchema);
+  }
+
+  /** Queue an updater self-update for the given image digest. */
+  submitUpdateSelfUpdate(candidateDigest: string): Promise<UpdateSelfUpdateSubmitResponse> {
+    return this.post(
+      '/admin/updates/self-update',
+      { candidateDigest },
+      updateSelfUpdateSubmitResponseSchema,
+    );
+  }
+
+  /** Cancel a queued (not yet consumed) updater self-update request. */
+  cancelUpdateSelfUpdate(): Promise<UpdateSelfUpdateCancelResponse> {
+    return request(
+      this.#fetch,
+      `${this.baseUrl}/admin/updates/self-update`,
+      { method: 'DELETE', body: undefined, token: this.token },
+      this.timeoutMs,
+      updateSelfUpdateCancelResponseSchema,
+    );
   }
 
   /** Read the append-only audit trail (admin only). */
@@ -1198,6 +1272,98 @@ export class ApiClient {
     return this.del(
       `/admin/currency-rates?fromCurrency=${encodeURIComponent(fromCurrency)}&toCurrency=${encodeURIComponent(toCurrency)}`,
       z.object({ deleted: z.boolean() }),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sales channels & payment methods (admin)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Sales channels with their configured payment methods.
+   *
+   * This is the admin view: it includes disabled rows and provider `config`
+   * (bank account / QR image), which the buyer-facing `/payment-methods` route
+   * deliberately hides.
+   */
+  getAdminSalesChannels(): Promise<AdminSalesChannelListResponse> {
+    return this.get('/admin/sales-channels', adminSalesChannelListResponseSchema);
+  }
+
+  /** Create a payment method bound to a sales channel. */
+  createAdminPaymentMethod(input: {
+    channelId: string;
+    providerId: string;
+    name: string;
+    enabled?: boolean;
+    scene?: string;
+    currencies?: string[];
+    config?: unknown;
+    sortOrder?: number;
+  }): Promise<AdminPaymentMethodMutationResponse> {
+    return this.post('/admin/payment-methods', input, adminPaymentMethodMutationResponseSchema);
+  }
+
+  /** Patch a payment method (name / enabled / currencies / config / sort order). */
+  updateAdminPaymentMethod(
+    id: string,
+    input: {
+      name?: string;
+      enabled?: boolean;
+      scene?: string;
+      currencies?: string[];
+      config?: unknown;
+      sortOrder?: number;
+    },
+  ): Promise<AdminPaymentMethodMutationResponse> {
+    return this.patch(
+      `/admin/payment-methods/${encodeURIComponent(id)}`,
+      input,
+      adminPaymentMethodMutationResponseSchema,
+    );
+  }
+
+  /** Delete a payment method. Existing payments keep their snapshot. */
+  deleteAdminPaymentMethod(id: string): Promise<{ deleted: boolean }> {
+    return this.del(
+      `/admin/payment-methods/${encodeURIComponent(id)}`,
+      z.object({ deleted: z.boolean() }),
+    );
+  }
+
+  /**
+   * List payment records for operators, newest first.
+   *
+   * A manual provider (bank transfer / QR) has no `paymentUrl`, so the operator
+   * confirmation is the settlement step. Without a list the record id only
+   * surfaces inside a single buyer's order page, which makes "confirm receipt"
+   * unreachable in practice.
+   */
+  listAdminPayments(query: AdminPaymentListQuery = {}): Promise<AdminPaymentListResponse> {
+    const params = new URLSearchParams();
+    if (query.status) params.set('status', query.status);
+    if (query.mode) params.set('mode', query.mode);
+    if (query.page) params.set('page', String(query.page));
+    if (query.pageSize) params.set('pageSize', String(query.pageSize));
+    const qs = params.toString();
+    return this.get(`/admin/payments${qs ? `?${qs}` : ''}`, adminPaymentListResponseSchema);
+  }
+
+  /** Confirm a manual payment as received (this settles the order). */
+  confirmAdminPayment(id: string): Promise<AdminPaymentConfirmResult> {
+    return this.post(
+      `/admin/payments/${encodeURIComponent(id)}/confirm`,
+      {},
+      adminPaymentConfirmResultSchema,
+    );
+  }
+
+  /** Cancel a manual payment that will never be paid. */
+  cancelAdminPayment(id: string): Promise<AdminPaymentCancelResult> {
+    return this.post(
+      `/admin/payments/${encodeURIComponent(id)}/cancel`,
+      {},
+      adminPaymentCancelResultSchema,
     );
   }
 

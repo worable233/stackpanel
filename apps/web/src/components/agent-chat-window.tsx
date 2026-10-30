@@ -19,8 +19,7 @@ const handles = [
   ['sw', '-left-1 -bottom-1 size-4 cursor-nesw-resize'],
 ] as const;
 function limits() {
-  const header = document.querySelector('.backend-shell__header')?.getBoundingClientRect().bottom ?? 64;
-  return { left: 12, top: Math.max(12, header + 12), right: innerWidth - 12, bottom: innerHeight - 12 };
+  return { left: 12, top: 12, right: innerWidth - 12, bottom: innerHeight - 12 };
 }
 function fit(b: Bounds): Bounds {
   const l = limits();
@@ -98,7 +97,7 @@ export function AgentChatWindow({ open, header, children, sidebar, onSidebarDism
   const end = () => { gesture.current = null; };
   if (!open) return null;
   return createPortal(
-    <aside ref={panel} id="agent-workspace" aria-label={t('agentFrame.ariaLabel')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} className={cn('fixed left-0 top-0 z-40 flex h-dvh w-full flex-col border border-border/70 bg-card shadow-2xl shadow-foreground/15 sm:left-auto sm:right-3 sm:top-20 sm:h-[720px] sm:w-[540px] sm:rounded-2xl', hasSidebar && 'min-[820px]:rounded-l-none!')}>
+    <aside ref={panel} id="agent-workspace" aria-label={t('agentFrame.ariaLabel')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end} className={cn('fixed left-0 top-0 z-[60] flex h-dvh w-full flex-col border border-border/70 bg-card shadow-2xl shadow-foreground/15 sm:left-auto sm:right-3 sm:top-20 sm:h-[720px] sm:w-[540px] sm:rounded-2xl', hasSidebar && 'min-[820px]:rounded-l-none!')}>
       <AnimatePresence initial={false}>
         {sidebar && <>
           <motion.button

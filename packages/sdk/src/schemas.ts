@@ -17,6 +17,11 @@ import type {
 } from './frontend.js';
 import type { PluginDependency, PluginExtensionConsumer, PluginRoleTemplate } from './plugin.js';
 import type {
+  AdminPaymentCancelResult,
+  AdminPaymentConfirmResult,
+  AdminPaymentListResponse,
+} from './payments.js';
+import type {
   AdminDashboardWidget,
   ApiTokenCreateResponse,
   ApiTokenListResponse,
@@ -30,6 +35,10 @@ import type {
   AdminCurrencyDefinitionView,
   AdminFxRateListResponse,
   AdminFxRateView,
+  AdminPaymentMethod,
+  AdminPaymentMethodMutationResponse,
+  AdminSalesChannel,
+  AdminSalesChannelListResponse,
   ConnectedIdentity,
   ConnectedIdentityListResponse,
   AccountMutationResponse,
@@ -69,6 +78,13 @@ import type {
   UpdatePolicyView,
   UpdatePlanResponse,
   UpdateSubmitResponse,
+  UpdateCatalogView,
+  UpdateCheckResponse,
+  UpdateResultResponse,
+  UpdateResultsResponse,
+  UpdateSelfUpdateResponse,
+  UpdateSelfUpdateSubmitResponse,
+  UpdateSelfUpdateCancelResponse,
   PluginDependencyStatus,
   PluginConsumesStatus,
   AdminDashboardWidgetsResponse,
@@ -122,6 +138,7 @@ import type {
   SendRegisterCodeResponse,
 } from './types.js';
 import type { UpstreamProductItem } from './upstream.js';
+import type { AdminPaymentRecord } from './payments.js';
 import type { ProductConfigField } from './fulfillment.js';
 import type { NotificationView } from './notifications.js';
 import type { DistributionRefreshResult, DistributionSourceResponse } from './market.js';
@@ -145,6 +162,9 @@ export const userSchema = z.object({
   // Tolerance for responses minted before this field existed; the API always
   // sends it now, but the BFF must not fail parsing an older replica's reply.
   emailVerifiedAt: z.string().nullable().default(null),
+  // Same tolerance as `emailVerifiedAt`: only an API that predates avatars omits
+  // it, and a shell must render (with the initial) rather than fail to parse.
+  avatarUrl: z.string().nullable().default(null),
 }) satisfies z.ZodType<User>;
 
 export const authConfigResponseSchema = z.object({
@@ -267,6 +287,9 @@ export const adminUserSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   lastLoginAt: z.string().nullable(),
+  // Older kernels omit it; the parser stays lenient so a rolling upgrade cannot
+  // break the admin console.
+  avatarUrl: z.string().nullable().optional(),
   balance: z.number().int().optional(),
   balanceCurrency: z.string().optional(),
   serviceCount: z.number().int().nonnegative().nullable().optional(),
@@ -1088,8 +1111,17 @@ export const frontendAuditResponseSchema = z.object({
   ok: z.boolean(),
 });
 
+export const stalePluginRecordSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  version: z.string(),
+  enabled: z.boolean(),
+  installedAt: z.string(),
+});
+
 export const adminPluginsResponseSchema = z.object({
   plugins: z.array(adminPluginSchema),
+  stale: z.array(stalePluginRecordSchema).default([]),
 }) as z.ZodType<AdminPluginsResponse>;
 
 const updatePolicyViewSchema = z.object({
@@ -1111,6 +1143,45 @@ const updateBlockReasonSchema = z.object({
   component: z.object({ kind: z.string(), id: z.string() }).optional(),
 });
 
+/** 升级任务结果投影（`UpdateTaskResult` 的宽松视图：未知字段不报错，避免协议演进而卡死页面）。 */
+const updateCheckpointViewSchema = z.object({
+  phase: z.string(),
+  at: z.string(),
+  inputDigest: z.string(),
+  credential: z.string().optional(),
+});
+
+const updateRecoveryViewSchema = z.object({
+  recovered: z.boolean(),
+  backupRef: z.string().optional(),
+  detail: z.string(),
+});
+
+const updateTaskResultViewSchema = z.object({
+  phase: z.string(),
+  checkpoints: z.array(updateCheckpointViewSchema).optional(),
+  block: updateBlockReasonSchema.optional(),
+  recovery: updateRecoveryViewSchema.optional(),
+});
+
+const updateCatalogFailureSchema = z.object({
+  kind: z.string(),
+  message: z.string(),
+  retryAt: z.string().nullable(),
+});
+
+export const updateCatalogViewSchema = z.object({
+  state: z.enum(['unconfigured', 'pending', 'ready', 'failed']),
+  repository: z.string().nullable(),
+  channel: z.enum(['stable', 'beta']).nullable(),
+  sequence: z.number().nullable(),
+  generatedAt: z.string().nullable(),
+  expired: z.boolean().nullable(),
+  failure: updateCatalogFailureSchema.nullable(),
+  lastCheckedAt: z.string().nullable(),
+  cooldownMs: z.number(),
+}) as unknown as z.ZodType<UpdateCatalogView>;
+
 export const updateStatusResponseSchema = z.object({
   status: z
     .object({
@@ -1118,14 +1189,23 @@ export const updateStatusResponseSchema = z.object({
       digest: z.string().nullable(),
       activeTask: z.string().nullable(),
       recent: z.array(
-        z.object({ idempotencyKey: z.string(), result: z.object({ phase: z.string() }) }),
+        z.object({ idempotencyKey: z.string(), result: updateTaskResultViewSchema }),
       ),
       updatedAt: z.string(),
     })
     .nullable(),
   policy: updatePolicyViewSchema,
+  catalogState: z.enum(['unconfigured', 'pending', 'ready', 'failed']),
   catalogConfigured: z.boolean(),
   catalogExpired: z.boolean().nullable(),
+  catalogFailure: updateCatalogFailureSchema.nullable(),
+  catalogRepository: z.string().nullable(),
+  catalogChannel: z.enum(['stable', 'beta']).nullable(),
+  catalogSequence: z.number().nullable(),
+  catalogGeneratedAt: z.string().nullable(),
+  lastCheckedAt: z.string().nullable(),
+  cooldownMs: z.number(),
+  carrier: z.string(),
   instanceId: z.string(),
 }) as unknown as z.ZodType<UpdateStatusResponse>;
 
@@ -1136,6 +1216,7 @@ export const updatePolicyResponseSchema = z.object({
 export const updatePlanResponseSchema = z.object({
   ok: z.boolean(),
   blocks: z.array(updateBlockReasonSchema).optional(),
+  catalogExpired: z.boolean().optional(),
   planDigest: z.string().optional(),
   plan: z
     .object({
@@ -1169,13 +1250,43 @@ export const updateSubmitResponseSchema = z.object({
   submitted: z.boolean(),
   idempotencyKey: z.string(),
   planDigest: z.string(),
+  catalogExpired: z.boolean().optional(),
 }) as unknown as z.ZodType<UpdateSubmitResponse>;
 
 export const updateResultsResponseSchema = z.object({
-  results: z.array(
-    z.object({ idempotencyKey: z.string(), result: z.object({ phase: z.string() }) }),
-  ),
+  results: z.array(z.object({ idempotencyKey: z.string(), result: updateTaskResultViewSchema })),
+}) as unknown as z.ZodType<UpdateResultsResponse>;
+
+export const updateResultResponseSchema = z.object({
+  result: updateTaskResultViewSchema,
+}) as unknown as z.ZodType<UpdateResultResponse>;
+
+export const updateCheckResponseSchema = z.object({
+  checked: z.boolean(),
+  throttled: z.boolean(),
+  retryAtMs: z.number(),
+  catalog: updateCatalogViewSchema,
+  plan: updatePlanResponseSchema.nullable(),
+}) as unknown as z.ZodType<UpdateCheckResponse>;
+
+const updateSelfUpdateRequestViewSchema = z.object({
+  candidateDigest: z.string(),
+  requestedBy: z.string(),
+  requestedAt: z.string(),
 });
+
+export const updateSelfUpdateResponseSchema = z.object({
+  request: updateSelfUpdateRequestViewSchema.nullable(),
+}) as unknown as z.ZodType<UpdateSelfUpdateResponse>;
+
+export const updateSelfUpdateSubmitResponseSchema = z.object({
+  submitted: z.boolean(),
+  request: updateSelfUpdateRequestViewSchema,
+}) as unknown as z.ZodType<UpdateSelfUpdateSubmitResponse>;
+
+export const updateSelfUpdateCancelResponseSchema = z.object({
+  cleared: z.boolean(),
+}) as unknown as z.ZodType<UpdateSelfUpdateCancelResponse>;
 
 export const frontendApplyStatusSchema = z.object({
   state: z.enum(['pending', 'building', 'restarting', 'succeeded', 'failed']),
@@ -1392,6 +1503,8 @@ const distributionFailureSchema = z.object({
 export const distributionRefreshResultSchema = z.object({
   configured: z.boolean(),
   available: z.boolean(),
+  throttled: z.boolean().optional(),
+  retryAtMs: z.number().optional(),
   failure: distributionFailureSchema.nullable(),
   sequence: z.number().nullable().optional(),
   expired: z.boolean().nullable().optional(),
@@ -1536,3 +1649,94 @@ export const adminFxRateListResponseSchema = z.object({
   settlementCurrency: z.string(),
   rates: z.array(adminFxRateViewSchema),
 }) satisfies z.ZodType<AdminFxRateListResponse>;
+
+export const adminPaymentMethodSchema = z.object({
+  id: z.string(),
+  channelId: z.string(),
+  providerId: z.string(),
+  // `.default(null)` (not `.optional()`) so the output type stays free of
+  // `undefined`, which `exactOptionalPropertyTypes` refuses on optional props.
+  providerMode: z.enum(['gateway', 'manual']).nullable().default(null),
+  name: z.string(),
+  enabled: z.boolean(),
+  scene: z.string(),
+  currencies: z.array(z.string()),
+  config: z.unknown(),
+  sortOrder: z.number(),
+  createdAt: z.string(),
+}) satisfies z.ZodType<AdminPaymentMethod>;
+
+export const adminSalesChannelSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+  terminal: z.string(),
+  enabled: z.boolean(),
+  sortOrder: z.number(),
+  createdAt: z.string(),
+  methods: z.array(adminPaymentMethodSchema),
+}) satisfies z.ZodType<AdminSalesChannel>;
+
+export const adminSalesChannelListResponseSchema = z.object({
+  channels: z.array(adminSalesChannelSchema),
+  providers: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['gateway', 'manual']),
+        methods: z.array(z.object({ id: z.string(), label: z.string() })),
+      }),
+    )
+    .default([]),
+}) satisfies z.ZodType<AdminSalesChannelListResponse>;
+
+export const adminPaymentMethodMutationResponseSchema = z.object({
+  method: adminPaymentMethodSchema,
+}) satisfies z.ZodType<AdminPaymentMethodMutationResponse>;
+
+export const adminPaymentRecordSchema = z.object({
+  id: z.string(),
+  purpose: z.enum(['ORDER', 'TOP_UP']),
+  status: z.string(),
+  amount: z.number().int(),
+  currency: z.string(),
+  // `.default(null)` rather than `.optional()` keeps `undefined` out of the
+  // output type, which `exactOptionalPropertyTypes` refuses on optional props.
+  orderAmount: z.number().int().nullable().default(null),
+  orderCurrency: z.string().nullable().default(null),
+  providerId: z.string().nullable().default(null),
+  providerMode: z.enum(['gateway', 'manual']).nullable().default(null),
+  paymentMethod: z.string().nullable().default(null),
+  methodName: z.string().nullable().default(null),
+  orderId: z.string().nullable().default(null),
+  buyerId: z.string(),
+  buyerEmail: z.string().nullable().default(null),
+  externalId: z.string().nullable().default(null),
+  paymentUrl: z.string().nullable().default(null),
+  createdAt: z.string(),
+  expiresAt: z.string().nullable().default(null),
+}) satisfies z.ZodType<AdminPaymentRecord>;
+
+export const adminPaymentListResponseSchema = z.object({
+  payments: z.array(adminPaymentRecordSchema),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+}) satisfies z.ZodType<AdminPaymentListResponse>;
+
+export const adminPaymentConfirmResultSchema = z.discriminatedUnion('confirmed', [
+  z.object({ confirmed: z.literal(true) }),
+  z.object({
+    confirmed: z.literal(false),
+    reason: z.enum(['NOT_FOUND', 'NOT_MANUAL', 'NOT_PENDING']),
+  }),
+]) satisfies z.ZodType<AdminPaymentConfirmResult>;
+
+export const adminPaymentCancelResultSchema = z.discriminatedUnion('cancelled', [
+  z.object({ cancelled: z.literal(true) }),
+  z.object({
+    cancelled: z.literal(false),
+    reason: z.enum(['NOT_FOUND', 'NOT_MANUAL', 'NOT_PENDING']),
+  }),
+]) satisfies z.ZodType<AdminPaymentCancelResult>;

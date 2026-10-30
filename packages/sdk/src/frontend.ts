@@ -69,6 +69,8 @@ export interface FrontendLayoutProps {
   assetsBaseUrl?: string;
   /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
   locale?: string;
+  /** IDs of installed public plugin frontends, for optional integrations. */
+  plugins?: string[];
 }
 
 /** One server-side action executor bound to a declared plugin action. */
@@ -649,6 +651,8 @@ export interface AccountWidgetProps {
   settings: FrontendSettings;
   /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
   locale?: string;
+  /** IDs of installed public plugin frontends, for optional integrations. */
+  plugins?: string[];
 }
 
 export type AccountWidgetComponent = ComponentType<AccountWidgetProps>;
@@ -677,6 +681,8 @@ export interface AdminActionComponentProps {
   pluginId: string;
   /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
   locale?: string;
+  /** IDs of installed public plugin frontends, for optional integrations. */
+  plugins?: string[];
 }
 
 export type AdminActionComponent = ComponentType<AdminActionComponentProps>;
@@ -710,6 +716,8 @@ export interface AdminPageComponentProps {
   actions: FrontendActionExecutors;
   /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
   locale?: string;
+  /** IDs of installed public plugin frontends, for optional integrations. */
+  plugins?: string[];
 }
 
 export type AdminPageComponent = ComponentType<AdminPageComponentProps>;

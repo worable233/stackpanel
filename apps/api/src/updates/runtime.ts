@@ -11,7 +11,7 @@ import path from 'node:path';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { catalogKernelRefs, type KernelManifest } from '@stackpanel/spec';
 import type { CatalogInstallContext } from '../distribution/runtime.ts';
-import { resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import { getCatalogRefresh, resolveCatalogInstallContext } from '../distribution/runtime.ts';
 import { fetchAndVerifyKernelManifest } from '../distribution/kernel-source.ts';
 import { env } from '../config/env.ts';
 
@@ -52,6 +52,79 @@ export function updateInstanceId(): string {
 /** 目录安装/更新上下文；目录源被显式关闭时为 null（离线）。 */
 export async function updateCatalogContext(): Promise<CatalogInstallContext | null> {
   return resolveCatalogInstallContext();
+}
+
+/**
+ * 更新中心看到的目录状态。
+ *
+ * 页面渲染路径必须能回答「我现在到底能不能检查/求解」，而旧实现只有 `configured: boolean`，
+ * 把四种完成不同的事塌缩成一个布尔值：
+ * - `unconfigured`：目录源被显式关闭（离线部署，配置问题）；
+ * - `pending`：配置了，但本进程还没拿到过任何快照（首次启动，可检查）；
+ * - `ready`：有已验证快照（`expired` 单独表达新鲜度）；
+ * - `failed`：尝试过且失败（GitHub 不可达 / 验签失败 / 回放拒绝，见 `failure`）。
+ */
+export type CatalogRuntimeState = 'unconfigured' | 'pending' | 'ready' | 'failed';
+
+export interface CatalogRuntimeSnapshot {
+  state: CatalogRuntimeState;
+  /** 目录仓（`owner/repo`）；未配置为 null。 */
+  repository: string | null;
+  channel: 'stable' | 'beta' | null;
+  /** 已验证快照序号；无快照为 null。 */
+  sequence: number | null;
+  /** 快照生成时间（ISO）；无快照为 null。 */
+  generatedAt: string | null;
+  /** 快照是否已过期；无快照为 null。 */
+  expired: boolean | null;
+  failure: { kind: string; message: string; retryAt: string | null } | null;
+  /** 最近一次真的发起过检查的时间（ISO）；从未检查为 null。 */
+  lastCheckedAt: string | null;
+  /** 手动检查的剩余冷却（毫秒）；0 表示可立即检查。 */
+  cooldownMs: number;
+}
+
+/**
+ * 读取目录快照的**只读**投影——绝不发起网络请求。
+ *
+ * 「检查更新」是显式动作（`POST /admin/updates/check`）；首屏渲染、`/status`、市场列表
+ * 都只读这份投影，因此重启后的第一屏不会被 GitHub 请求阻塞。
+ */
+export function readCatalogSnapshot(): CatalogRuntimeSnapshot {
+  const service = getCatalogRefresh();
+  if (!service) {
+    return {
+      state: 'unconfigured',
+      repository: null,
+      channel: null,
+      sequence: null,
+      generatedAt: null,
+      expired: null,
+      failure: null,
+      lastCheckedAt: null,
+      cooldownMs: 0,
+    };
+  }
+  const current = service.current();
+  const failure = service.lastFailureInfo();
+  const state: CatalogRuntimeState = current ? 'ready' : failure ? 'failed' : 'pending';
+  return {
+    state,
+    repository: service.repository ?? null,
+    channel: service.channel ?? null,
+    sequence: current?.sequence ?? null,
+    generatedAt: current?.snapshot.generatedAt ?? null,
+    expired: current?.expired ?? null,
+    failure: failure
+      ? {
+          kind: failure.kind,
+          message: failure.message,
+          retryAt: failure.retryAt ?? null,
+        }
+      : null,
+    lastCheckedAt: service.lastCheckedAt(),
+    cooldownMs: service.cooldownRemainingMs(),
+  };
 }
 
 /**

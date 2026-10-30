@@ -191,6 +191,34 @@ function jpegDimensions(data: Uint8Array): ImageDimensions | null {
   return null;
 }
 
+/**
+ * The MIME types the sniffer can produce, grouped by coarse kind.
+ *
+ * Exported so SQL filters (the media library's `kind` facet) and UI labels
+ * derive from the same table as detection: adding a signature above without
+ * classifying it here would otherwise silently fall into `other`.
+ */
+export const MEDIA_KIND_MIMES: Record<Exclude<MediaKind, 'other'>, readonly string[]> = {
+  image: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'],
+  document: ['application/pdf'],
+  archive: ['application/zip', 'application/gzip'],
+  video: ['video/mp4', 'video/webm'],
+  audio: ['audio/ogg', 'audio/wav', 'audio/mpeg'],
+  // Declared by {@link MediaKind} but never produced by the sniffer yet.
+  text: [],
+};
+
+/** Every MIME type the sniffer can produce (flattened). */
+export const KNOWN_MEDIA_MIMES: readonly string[] = Object.values(MEDIA_KIND_MIMES).flat();
+
+/** Coarse kind for a stored MIME type — the inverse of the sniff table. */
+export function kindOfMime(mime: string): MediaKind {
+  for (const [kind, mimes] of Object.entries(MEDIA_KIND_MIMES)) {
+    if (mimes.includes(mime)) return kind as MediaKind;
+  }
+  return 'other';
+}
+
 function webpDimensions(data: Uint8Array): ImageDimensions | null {
   if (data.length < 30) return null;
   const v = view(data);

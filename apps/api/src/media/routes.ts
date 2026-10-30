@@ -13,23 +13,40 @@
  * one code path for the local and S3 drivers, and a private object key is never
  * exposed.
  */
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { extractSession, requireAuth, type AuthUser } from '../plugins/auth.ts';
-import { getPrisma } from '../plugins/prisma.ts';
-import { getStorage } from '../infra.ts';
+import { requireAuth } from '../plugins/auth.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
-import { env } from '../config/env.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
-import { contentDisposition, MediaError } from './service.ts';
+import { contentDisposition } from './service.ts';
 import { isActiveContent } from './disposition.ts';
-import { AttachmentService, type MediaActor, type VariantQueue } from './service.ts';
-import { PrismaAttachmentRepository } from './prisma-attachment-repository.ts';
-import { DEFAULT_MEDIA_POLICY } from './policy.ts';
-import { createSharpTransformer } from './sharp-transformer.ts';
-import { tryBuildVariantQueue } from './jobs.ts';
 import type { AttachmentVisibility } from './attachments.ts';
-import { AttachmentReferenceService } from './references.ts';
+import {
+  attachmentReferences,
+  buildMediaService as buildService,
+  mediaActorFor as actorFor,
+  mediaMaxBytes,
+  optionalMediaActor as optionalActor,
+  sendMediaError,
+} from './kernel-service.ts';
+import { registerMediaAdminRoutes } from './admin-routes.ts';
+
+/**
+ * Match an `If-None-Match` header against the etag we would send.
+ *
+ * The header is a comma-separated list of validators (or `*`), and a client may
+ * echo our weak validator verbatim or strip the `W/` prefix — both must count as
+ * a match, otherwise a revalidation silently re-sends a multi-megabyte body.
+ */
+function matchesEtag(header: string | string[] | undefined, etag: string): boolean {
+  if (!header) return false;
+  const weak = etag.replace(/^W\//, '');
+  const raw = Array.isArray(header) ? header.join(',') : header;
+  return raw.split(',').some((value) => {
+    const candidate = value.trim();
+    return candidate === '*' || candidate === etag || candidate.replace(/^W\//, '') === weak;
+  });
+}
 
 const uploadQuerySchema = z.object({
   filename: z.string().trim().min(1).max(191).optional(),
@@ -65,65 +82,6 @@ const BINARY_CONTENT_TYPES = [
   'audio/ogg',
   'audio/wav',
 ];
-
-/** Env-tunable upload ceiling (ADR-0014 §3), defaulting to 25 MiB. */
-function mediaMaxBytes(): number {
-  return env.MEDIA_MAX_UPLOAD_BYTES;
-}
-
-function isAdmin(user: AuthUser): boolean {
-  return user.permissions.has('platform.admin');
-}
-
-function actorFor(user: AuthUser | undefined): MediaActor {
-  return user ? { userId: user.id, canManage: isAdmin(user) } : { canManage: false };
-}
-
-function buildService(): AttachmentService {
-  const queue = variantQueue();
-  return new AttachmentService({
-    repository: new PrismaAttachmentRepository(getPrisma()),
-    storage: getStorage(),
-    policy: { ...DEFAULT_MEDIA_POLICY, maxBytes: mediaMaxBytes() },
-    transform: createSharpTransformer(),
-    ...(queue ? { queue } : {}),
-    logger: { warn: (m) => console.warn(m), info: (m) => console.info(m) },
-  });
-}
-
-/**
- * The async variant trigger (ADR-0014 §4 Stage B). Present by default once a job
- * backend exists; `MEDIA_VARIANTS_ASYNC=false` forces the Stage A synchronous
- * path (rollback switch), and before `initInfra()` there is simply no queue, so
- * uploads still succeed on the inline path.
- */
-function variantQueue(): VariantQueue | null {
-  if (!env.MEDIA_VARIANTS_ASYNC) return null;
-  return tryBuildVariantQueue();
-}
-
-/**
- * Reference-integrity port (ADR-0014 §2). Attachment references used to live in
- * the legacy `custom_resources` JSON payload; business-domain rows now live in
- * per-plugin `ext_*` tables whose shape the kernel must not know. Plugins use
- * the SDK media capability to maintain this kernel-owned reference index, so
- * deletion can enforce referential integrity without inspecting plugin tables.
- */
-function attachmentReferences(): AttachmentReferenceService {
-  return new AttachmentReferenceService(getPrisma());
-}
-
-/** Actor for routes that may be anonymous (public attachment reads). */
-async function optionalActor(request: FastifyRequest): Promise<MediaActor> {
-  return actorFor((await extractSession(request)) ?? undefined);
-}
-
-function sendMediaError(reply: FastifyReply, err: unknown): FastifyReply {
-  if (err instanceof MediaError) {
-    return reply.code(err.status).send({ error: err.message, code: err.code });
-  }
-  throw err;
-}
 
 export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
   const uploadLimit = mediaMaxBytes();
@@ -202,7 +160,7 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/media/:id/references', { preHandler: requireAuth }, async (request, reply) => {
-    if (!request.user || !isAdmin(request.user)) {
+    if (!request.user || !actorFor(request.user).canManage) {
       return reply.code(403).send({ error: '无权查看附件引用', code: 'media.forbidden' });
     }
     const { id } = request.params as { id: string };
@@ -222,7 +180,7 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
       const result = await buildService().readContent(id, await optionalActor(request), variant);
       if (!result)
         return reply.code(404).send({ error: '附件内容不存在', code: 'media.not_found' });
-      const { record } = result;
+      const { record, rev } = result;
       const isInline = record.mime.startsWith('image/') || record.mime === 'application/pdf';
       // Active content (SVG is XML and can carry <script>) must never render
       // inline same-origin: the global CSP includes `script-src 'unsafe-inline'`,
@@ -230,13 +188,31 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
       // the browser download it instead of executing it. The global onSend hook
       // owns the CSP header, so this disposition is the effective control.
       const inline = isInline && !isActiveContent(record.mime);
-      reply.header('Content-Type', result.mime);
-      reply.header('Content-Disposition', contentDisposition(record.filename, inline));
+      // Same link, moving bytes: `/media/:id/content` is stable on purpose — every
+      // URL already published keeps resolving after a conversion — so how long a
+      // copy may be cached has to be decided by the content revision, not the path.
+      //
+      // `?v=<rev>` (what the API hands out to clients that opt in) is immutable;
+      // anything else — a link written before the conversion, or with an outdated
+      // `v` — revalidates every time, so an old link is corrected on its next view
+      // instead of showing pre-conversion bytes for a day.
+      const etag = `W/"${rev}"`;
+      const versioned = (request.query as { v?: string }).v === rev;
+      reply.header('ETag', etag);
+      reply.header('X-Content-Type-Options', 'nosniff');
       reply.header(
         'Cache-Control',
-        record.visibility === 'public' ? 'public, max-age=86400' : 'private',
+        record.visibility !== 'public'
+          ? 'private, max-age=0, must-revalidate'
+          : versioned
+            ? 'public, max-age=31536000, immutable'
+            : 'public, max-age=0, must-revalidate',
       );
-      reply.header('X-Content-Type-Options', 'nosniff');
+      if (matchesEtag(request.headers['if-none-match'], etag)) {
+        return reply.code(304).send();
+      }
+      reply.header('Content-Type', result.mime);
+      reply.header('Content-Disposition', contentDisposition(record.filename, inline));
       return reply.send(Buffer.from(result.data));
     } catch (err) {
       return sendMediaError(reply, err);
@@ -278,4 +254,8 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
       return sendMediaError(reply, err);
     }
   });
+
+  // Cross-owner listing, aggregate counters and variant repair for the
+  // media-library console. Requires `platform.admin` on every route.
+  await registerMediaAdminRoutes(app);
 }

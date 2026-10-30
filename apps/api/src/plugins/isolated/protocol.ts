@@ -85,6 +85,7 @@ export function wireError(error: unknown): {
   message: string;
   code?: string;
   status?: number;
+  detail?: string;
   details?: unknown;
   sdkError?: string;
 } {
@@ -92,6 +93,7 @@ export function wireError(error: unknown): {
     message?: unknown;
     code?: unknown;
     status?: unknown;
+    detail?: unknown;
     details?: unknown;
   };
   // The SDK error-class brand (`WalletError` et al.) lives on the prototype and
@@ -105,6 +107,9 @@ export function wireError(error: unknown): {
     message: String(candidate?.message ?? error),
     ...(typeof candidate?.code === 'string' ? { code: candidate.code } : {}),
     ...(typeof candidate?.status === 'number' ? { status: candidate.status } : {}),
+    // `detail` is the human-readable half of a plugin error; without it the
+    // receiving side can only show the machine code.
+    ...(typeof candidate?.detail === 'string' ? { detail: candidate.detail } : {}),
     ...(candidate?.details !== undefined ? { details: encodeWire(candidate.details) } : {}),
     ...(sdkError !== undefined ? { sdkError } : {}),
   };
@@ -135,6 +140,8 @@ export interface WireError {
   message: string;
   code?: string;
   status?: number;
+  /** Human-readable reason rendered in the problem document. */
+  detail?: string;
   details?: unknown;
   /**
    * SDK error class name (`WalletError`, `CurrencyError`, …) the worker threw.
@@ -165,18 +172,36 @@ export function reviveWireError(input: WireError): Error {
     if (input.sdkError !== undefined) brandSdkErrorValue(error, input.sdkError);
     return error;
   };
-  if (input.code === undefined || input.status === undefined) {
+  // No `status`, or a 5xx, means the worker did not claim a deterministic client
+  // error. Those stay plain `Error`s so `isPluginError` keeps returning false:
+  // a kernel crash or an upstream 500 must surface as an internal fault, not be
+  // dressed up as a deliberate refusal.
+  if (input.status === undefined || input.status >= 500) {
     const error = new Error(input.message) as Error & {
       code?: string;
       status?: number;
+      detail?: string;
       details?: unknown;
     };
     if (input.code !== undefined) error.code = input.code;
+    // The status still has to travel — the kernel reads it to pick the problem
+    // document — it just must not come with the `PluginError` brand, which is
+    // what tells the boundary "the plugin deliberately refused this".
     if (input.status !== undefined) error.status = input.status;
+    if (input.detail !== undefined) error.detail = input.detail;
     if (details !== undefined) error.details = details;
     return restoreBrand(error);
   }
-  const error = new PluginError(input.code, input.status, input.message);
+  // A 4xx status without a code is a real case — a provider's local error class
+  // may only carry `status`/`statusCode`. Requiring a code used to leave the
+  // status on a plain `Error`, so the kernel re-rendered a deliberate 409 as a
+  // generic 500 and the operator saw no reason at all. Fall back to a generic
+  // code so the `PluginError` brand (and therefore the status) survives.
+  //
+  // `detail` is the human-readable half the kernel renders in the problem
+  // document; without carrying it the operator only ever sees the machine code.
+  const detail = input.detail ?? input.message;
+  const error = new PluginError(input.code ?? 'plugin.error', input.status, detail);
   // `PluginError` sets `message` to the code; keep the worker's human-readable
   // text so logs and the problem-details `detail` stay meaningful.
   error.message = input.message;

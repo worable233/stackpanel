@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import type { NotificationView } from '@stackpanel/sdk';
 import { shouldToast, subscribeNotifications } from '@/lib/use-notification-stream';
 import { useTranslator } from '@/i18n/provider';

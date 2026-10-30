@@ -34,7 +34,7 @@ import * as sonner from 'sonner';
 // "createContext only works in Client Components" and every page 500s.
 // If a plugin ever needs charts, publish them from a `'use client'` module the
 // way `frontend-abi-bridge.tsx` publishes the rest of the client ABI.
-import { AutoSubmitForm, RouteProgress } from '@/components/frontend-absorbed-clients';
+import { AutoSubmitForm, CopyLinkButton, RouteProgress } from '@/components/frontend-absorbed-clients';
 import { CartCheckout } from '@/components/cart-checkout';
 
 /**
@@ -48,7 +48,12 @@ import { CartCheckout } from '@/components/cart-checkout';
  * absorption; new capabilities are added here.
  */
 const ABSORBED_CLIENT_CAPABILITIES: Record<string, unknown> = {
-  'route-progress': { RouteProgress },
+  // Keyed by dist file stem, shared by every package that ships a module with
+  // that name. The shim re-exports every name here, so each package only picks
+  // up the exports it actually imports.
+  // - default theme's `route-progress.js` → RouteProgress
+  // - referral plugin's `route-progress.js` → CopyLinkButton
+  'route-progress': { RouteProgress, CopyLinkButton },
   'auto-submit': { AutoSubmitForm, CartCheckout },
 };
 

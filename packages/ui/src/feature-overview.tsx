@@ -38,12 +38,21 @@ export function FeatureOverview({
   unavailable,
   labels,
 }: FeatureOverviewProps) {
+  // Older plugins may still call this component without localized labels.
+  // Keep the page usable instead of crashing the whole admin route.
+  const copy = labels ?? {
+    unavailable: '',
+    manageTitle: '',
+    manageDescription: '',
+    activityDescription: '',
+    empty: '',
+  };
   return (
     <div className="flex min-w-0 flex-col gap-8">
       <PageHeader title={title} />
       {unavailable ? (
         <p role="status" className="text-sm text-muted-foreground">
-          {labels.unavailable}
+          {copy.unavailable}
         </p>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -66,8 +75,8 @@ export function FeatureOverview({
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{labels.manageTitle}</CardTitle>
-            <CardDescription>{labels.manageDescription}</CardDescription>
+            <CardTitle>{copy.manageTitle}</CardTitle>
+            <CardDescription>{copy.manageDescription}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col">
             {links.map((link) => (
@@ -89,7 +98,7 @@ export function FeatureOverview({
           <Card>
             <CardHeader>
               <CardTitle>{activity.title}</CardTitle>
-              <CardDescription>{labels.activityDescription}</CardDescription>
+              <CardDescription>{copy.activityDescription}</CardDescription>
             </CardHeader>
             <CardContent>
               {activity.items.length ? (
@@ -117,7 +126,7 @@ export function FeatureOverview({
               ) : (
                 <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-muted-foreground">
                   <CircleDashed className="size-6 opacity-50" />
-                  <span className="text-sm">{labels.empty}</span>
+                  <span className="text-sm">{copy.empty}</span>
                 </div>
               )}
             </CardContent>

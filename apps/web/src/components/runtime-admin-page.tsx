@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { InlineError } from '@stackpanel/ui';
 import type { AdminPageComponentProps } from '@stackpanel/sdk';
+import { LoaderCircle } from 'lucide-react';
 import { FrontendAbiBridge } from './frontend-abi-bridge';
 import { FrontendScopeRoot } from './frontend-scope';
 import { useRuntimeModule } from '@/lib/use-runtime-module';
@@ -67,9 +68,13 @@ export function RuntimeAdminPage({
     return (
       <>
         {bridge}
-        <main className="mx-auto w-full max-w-3xl">
-          <p className="text-sm text-muted-foreground">{t('pluginPage.loading')}</p>
-        </main>
+        {state.kind === 'loaded' ? (
+          <main className="mx-auto w-full max-w-3xl">
+            <p className="text-sm text-muted-foreground">{t('pluginPage.notFound')}</p>
+          </main>
+        ) : (
+          <PluginPageSkeleton label={t('pluginPage.loading')} />
+        )}
       </>
     );
   }
@@ -85,12 +90,74 @@ export function RuntimeAdminPage({
   return (
     <>
       {bridge}
-      <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="block space-y-6">
+      <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="plugin-admin block space-y-6">
         <RuntimeErrorBoundary>
           {createElement(Component, props as never) as unknown as ReactElement}
         </RuntimeErrorBoundary>
       </FrontendScopeRoot>
     </>
+  );
+}
+
+/**
+ * Plugin pages are loaded as browser modules after the shell renders. A bare
+ * text placeholder makes that transition look broken, so hold the layout with
+ * a quiet skeleton until the real page arrives.
+ */
+function PluginPageSkeleton({ label }: { label: string }): ReactElement {
+  return (
+    <main
+      aria-busy="true"
+      aria-live="polite"
+      className="mx-auto flex w-full max-w-5xl flex-col gap-6"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="size-10 shrink-0 animate-pulse rounded-xl bg-muted" />
+          <div className="space-y-2">
+            <div className="h-6 w-44 animate-pulse rounded-md bg-muted" />
+            <div className="h-3.5 w-64 max-w-[60vw] animate-pulse rounded-md bg-muted/70" />
+          </div>
+        </div>
+        <div className="h-9 w-28 animate-pulse rounded-xl bg-muted" />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {[0, 1, 2].map((card) => (
+          <div key={card} className="rounded-2xl bg-muted/40 p-5">
+            <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+            <div className="mt-4 h-8 w-16 animate-pulse rounded-md bg-muted" />
+            <div className="mt-3 h-3 w-32 animate-pulse rounded bg-muted/70" />
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl bg-muted/40 p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="h-5 w-32 animate-pulse rounded bg-muted" />
+          <div className="h-8 w-24 animate-pulse rounded-lg bg-muted" />
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
+          {[0, 1, 2, 3].map((row) => (
+            <div
+              key={row}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-background p-4"
+            >
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-4 w-2/5 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-1/3 animate-pulse rounded bg-muted/70" />
+              </div>
+              <div className="h-4 w-16 animate-pulse rounded bg-muted/70" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+        <span>{label}</span>
+      </div>
+    </main>
   );
 }
 

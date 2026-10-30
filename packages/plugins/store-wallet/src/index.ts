@@ -44,7 +44,7 @@ const getWallet = async (req: HttpRequest): Promise<unknown> => {
     wallet.getAccount(userId),
     wallet.listLedger(userId, 50),
     payments.listTopUps(userId, 50),
-    payments.listPaymentMethods(),
+    payments.listAvailablePaymentMethods(),
   ]);
   return {
     account: account ?? { userId, currency: CURRENCY, balance: 0 },

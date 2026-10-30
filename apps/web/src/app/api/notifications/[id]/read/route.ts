@@ -7,7 +7,14 @@ import { createTranslator } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
-/** BFF proxy for POST /notifications/:id/read. */
+/**
+ * BFF proxy for POST /notifications/:id/read.
+ *
+ * The kernel answers 204 both on the first acknowledgement and on repeats, so
+ * this route is idempotent by construction. Only a genuinely unknown or
+ * foreign id is a 404 — surfacing that as 500 (the previous behaviour) made a
+ * missing row indistinguishable from an outage.
+ */
 export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const t = createTranslator(await getLocale());
   try {
@@ -20,6 +27,12 @@ export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: s
     const message = error instanceof Error ? error.message : t('api.notificationsUnavailable');
     if (status === 401) {
       return NextResponse.json({ error: t('common.notLoggedIn') }, { status: 401 });
+    }
+    if (status === 404) {
+      return NextResponse.json(
+        { error: message, ...(error instanceof ApiError ? { code: error.code } : {}) },
+        { status: 404 },
+      );
     }
     return NextResponse.json(
       { error: message, ...(error instanceof ApiError ? { code: error.code } : {}) },

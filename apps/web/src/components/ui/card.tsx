@@ -1,7 +1,7 @@
 /**
  * Card Component - Clarity Design System
  *
- * 简洁的卡片组件，带统一的 hover 效果
+ * 简洁的卡片组件：结构由组件定义，视觉完全由主题 token 控制。
  */
 
 import * as React from 'react';
@@ -17,27 +17,14 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     data-slot="card"
-    data-spotlight=""
-    data-interactive={interactive || undefined}
     className={cn(
-      'relative isolate flex flex-col gap-3 rounded-xl border border-border bg-card py-4 text-card-foreground shadow-sm [&>*:not([data-spotlight-layer])]:relative [&>*:not([data-spotlight-layer])]:z-[1]',
+      'relative flex flex-col gap-3 rounded-xl border border-border bg-card py-4 text-card-foreground',
       interactive &&
-        'cursor-pointer transition duration-300 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 motion-reduce:transition-none',
-      !interactive && 'transition-shadow duration-200',
+        'cursor-pointer transition-colors hover:bg-muted/40 motion-reduce:transition-none',
       className,
     )}
     {...props}
   >
-    <div
-      aria-hidden="true"
-      data-spotlight-layer="border"
-      className="pointer-events-none absolute -inset-px z-10 rounded-[inherit] p-px opacity-0 [mask-image:linear-gradient(#000_0_0),linear-gradient(#000_0_0)] [mask-clip:content-box,border-box] [mask-composite:exclude]"
-    />
-    <div
-      aria-hidden="true"
-      data-spotlight-layer="surface"
-      className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] opacity-0"
-    />
     {children}
   </div>
 ));

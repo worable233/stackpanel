@@ -13,6 +13,7 @@ const FALLBACK_NAV: BackendNavigationItem[] = [
   { label: 'nav.rbac', href: '/admin/rbac' },
   { label: 'nav.audit', href: '/admin/audit' },
   { label: 'nav.themes', href: '/admin/themes' },
+  { label: 'nav.notifications', href: '/admin/notifications' },
   { label: 'nav.updates', href: '/admin/updates' },
 ];
 /**
@@ -29,6 +30,8 @@ const KERNEL_GROUPS: Record<string, string> = {
   '/admin/plugins': 'system',
   '/admin/market': 'system',
   '/admin/audit': 'system',
+  // 更新中心属于系统运维，与插件市场/审计同组；缺这一项时它会掉进未分组。
+  '/admin/updates': 'system',
   '/admin/developer': 'developer',
 };
 /**
@@ -55,14 +58,25 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         email: currentUser.user.email,
         role: currentUser.user.role,
         status: currentUser.user.status,
+        avatarUrl: currentUser.user.avatarUrl ?? null,
       };
     }
   } catch {
     // Fallback shell if the API is unreachable.
   }
 
+  // Payment records are part of finance. The finance group is currently
+  // contributed by the invoice plugin, whose group label is package-localized,
+  // so reuse that label when present; otherwise fall back to the kernel
+  // `nav.billing` label (same text).
+  const financeGroup =
+    pluginMenus.find((item) => item.pluginId === 'invoice' && item.group)?.group ??
+    t('nav.billing');
   const navigationItems: BackendNavigationItem[] = [
-    ...nav.map((item) => ({ ...item, group: KERNEL_GROUPS[item.href] })),
+    ...nav.map((item) => ({
+      ...item,
+      group: item.href === '/admin/payments' ? financeGroup : KERNEL_GROUPS[item.href],
+    })),
     ...pluginMenus.map((item) => ({ ...item, group: item.group ?? item.pluginId })),
   ];
 

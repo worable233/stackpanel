@@ -3,15 +3,17 @@ import { getPluginSettingsSections } from '@/lib/admin-frontend';
 import {
   DEFAULT_PLATFORM_INFO,
   type AdminCurrencyDefinitionView,
+  type AdminSalesChannel,
+  type AdminSalesChannelListResponse,
   type AdminFxRateView,
   type DistributionSourceConfig,
   type PlatformBrand,
   type PlatformInfo,
   type SettlementCurrencyResponse,
   type SigningStatus,
+  type UpdatePolicyView,
 } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
-import { Separator } from '@/components/ui/separator';
 import { apiAssetUrl, getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { SettingsManager } from './settings-manager';
@@ -31,6 +33,9 @@ export default async function AdminSettingsPage() {
   let rates: AdminFxRateView[] = [];
   let distribution: DistributionSourceConfig | null = null;
   let distributionDefaults: { repository: string | null; mirror: string | null } | undefined;
+  let updatePolicy: UpdatePolicyView | null = null;
+  let salesChannels: AdminSalesChannel[] = [];
+  let paymentProviders: NonNullable<AdminSalesChannelListResponse['providers']> = [];
   let error: string | null = null;
   try {
     const api = await getAuthedApiClient();
@@ -42,6 +47,8 @@ export default async function AdminSettingsPage() {
       catalogResult,
       rateResult,
       distributionResult,
+      salesChannelsResult,
+      updatePolicyResult,
     ] = await Promise.all([
       api.getAdminPlatformInfo(),
       api.getSigningStatus(),
@@ -50,6 +57,14 @@ export default async function AdminSettingsPage() {
       api.getAdminCurrencyDefinitions(),
       api.getAdminCurrencyRates(),
       api.getDistributionSource(),
+      // Payment methods live on the admin sales API. A failure here must not
+      // blank the whole settings page, so it is recovered per-panel below.
+      api.getAdminSalesChannels().catch(() => ({
+        channels: [] as AdminSalesChannel[],
+        providers: [] as NonNullable<AdminSalesChannelListResponse['providers']>,
+      })),
+      // 更新策略是独立设置项：它失败不能把整个设置页清空（与销售渠道同样的降级策略）。
+      api.getUpdatePolicy().catch(() => null),
     ]);
     platform = platformResult.platform;
     signing = signingResult.signing;
@@ -58,6 +73,9 @@ export default async function AdminSettingsPage() {
     rates = rateResult.rates;
     distribution = distributionResult.source;
     distributionDefaults = distributionResult.defaults;
+    salesChannels = salesChannelsResult.channels;
+    paymentProviders = salesChannelsResult.providers ?? [];
+    updatePolicy = updatePolicyResult?.policy ?? null;
   } catch (err) {
     error = await apiErrorMessage(err);
   }
@@ -72,11 +90,9 @@ export default async function AdminSettingsPage() {
   return (
     <main className="w-full">
       <PageHeader title={t('admin.settings.title')} />
-      <Separator className="my-4 lg:my-6" />
+      <div className="h-5 lg:h-6" />
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.settings.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.settings.serviceUnavailable')}</p>
       ) : (
         <SettingsManager
           platform={platform}
@@ -86,6 +102,9 @@ export default async function AdminSettingsPage() {
           currencyRates={rates}
           distribution={distribution}
           distributionDefaults={distributionDefaults}
+          updatePolicy={updatePolicy}
+          salesChannels={salesChannels}
+          paymentProviders={paymentProviders}
           pluginSections={pluginSettings.map((section) => ({
             id: section.id,
             title: section.title,

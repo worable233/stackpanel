@@ -47,7 +47,16 @@
     "overview": "概覽",
     "quickLinks": "快捷入口",
     "workspaceAdmin": "管理員工作區",
-    "workspaceAccount": "賬戶工作區"
+    "workspaceAccount": "賬戶工作區",
+    "toggleNav": "收起或展開側欄",
+    "openNav": "開啟導航",
+    "closeNav": "關閉導航",
+    "breadcrumb": "麵包屑導航",
+    "help": "幫助文件",
+    "navLabel": "後臺導航",
+    "backend": "管理後臺",
+    "collapseNav": "收起側欄",
+    "expandNav": "展開側欄"
   },
   "nav": {
     "dashboard": "工作臺",
@@ -76,7 +85,8 @@
     "homeAriaLabel": "回到首頁",
     "updates": "升級",
     "accountOverview": "賬戶概覽",
-    "credentials": "訪問憑證"
+    "credentials": "訪問憑證",
+    "payments": "支付記錄"
   },
   "auth": {
     "login": {
@@ -314,7 +324,8 @@
         "confirmUnbind": "確定解綁該服務？僅解除本賬號的繫結，不影響上游已購服務。",
         "confirmDelete": "確定刪除該用戶的這個服務？刪除後不可恢復。",
         "upstreamEmpty": "上游暫無已購服務，請先確認上游賬號中有可繫結的服務。",
-        "noUpstreamPlugin": "暫無可用的上游外掛，請先啟用提供服務繫結能力的外掛。"
+        "noUpstreamPlugin": "暫無可用的上游外掛，請先啟用提供服務繫結能力的外掛。",
+        "confirmHint": "此操作不可撤銷。"
       },
       "orders": {
         "title": "訂單",
@@ -646,7 +657,13 @@
       "deleted": "外掛已刪除",
       "mutationFailed": "外掛操作失敗，請稍後再試",
       "deleteConfirmTitle": "刪除外掛？",
-      "deleteConfirmDescription": "將移除外掛「{name}」及其前端資源，此操作不可撤銷。"
+      "deleteConfirmDescription": "將移除外掛「{name}」及其前端資源，此操作不可撤銷。",
+      "stale": {
+        "body": "套件檔案已遺失，執行期從未載入過此外掛。",
+        "cleanup": "刪除記錄",
+        "description": "這些記錄還在資料庫裡，但套件已經不在了，執行期載入不到。清理會移除它們的能力宣告；重新安裝外掛即可恢復。",
+        "title": "殘留的外掛記錄"
+      }
     },
     "users": {
       "title": "用戶管理",
@@ -782,6 +799,64 @@
         "catalogTokenSubmit": "儲存 token",
         "catalogKeyIdLabel": "公鑰 keyId",
         "catalogKeyIdHint": "必須與目錄簽名文件裡的 keyId 一致（默認源為 catalog-2026）；只給公鑰不給 keyId 會驗籤失敗。"
+      },
+      "payment": {
+        "title": "支付方式",
+        "description": "配置各銷售渠道可用的收款方式。手動收款（銀行轉賬/收款碼）沒有支付閘道器，此處填寫的收款資訊就是買家付款時看到的全部內容。",
+        "add": "新增支付方式",
+        "create": "建立",
+        "save": "儲存",
+        "empty": "還沒有配置任何支付方式",
+        "emptyHint": "新增一條收款方式後，買家結賬時才能看到它。未配置收款資訊的手動收款方式不會出現在結賬頁。",
+        "noChannel": "還沒有銷售渠道，請先建立渠道再配置支付方式。",
+        "channel": "銷售渠道",
+        "provider": "支付提供方",
+        "providerHint": "填寫已安裝外掛的標識，例如 manual（手動收款）或 epay。儲存時由服務端校驗。",
+        "name": "名稱",
+        "namePlaceholder": "銀行轉賬 / 收款碼支付",
+        "currencies": "支援幣種",
+        "currenciesHint": "逗號分隔的幣種程序碼；留空表示支援全部已啟用幣種。",
+        "enabled": "啟用",
+        "disabled": "已停用",
+        "allCurrencies": "全部已啟用幣種",
+        "collectionTitle": "收款資訊",
+        "collectionHint": "買家在訂單頁看到的內容。手動收款必須至少填寫賬號或收款碼，否則買家無法付款。",
+        "missingConfig": "尚未填寫收款資訊，買家選擇該方式後將無法付款。",
+        "confirmDelete": "確認刪除",
+        "providerMissing": "收款提供方外掛未啟用，該支付方式當前不可用。",
+        "gatewayConfigNote": "該支付方式的收款憑據由外掛自身配置，無需在此填寫。",
+        "qrHint": "站內路徑或以 data: 開頭的圖片會在訂單頁直接顯示；外部圖片地址受安全策略限制，只會顯示為可點選連結。",
+        "confirmDeleteHint": "刪除後，該支付方式將不能再用於新訂單，已產生的訂單不受影響。"
+      },
+      "updates": {
+        "allowIrreversibleMigration": "自動執行不可回滾的遷移",
+        "allowIrreversibleMigrationHint": "危險：自動更新可能執行無法回滾的資料庫遷移。",
+        "allowPermissionIncrease": "自動接受新增權限",
+        "allowPermissionIncreaseHint": "危險：自動更新可能不經人工確認就為外掛新增權限。",
+        "autoUpdate": "啟用自動更新",
+        "autoUpdateHint": "關閉時只做檢查與方案求解，每次升級都要手動派送。",
+        "autoUpdateKernel": "允許自動升級核心",
+        "autoUpdateKernelHint": "關閉時自動更新只涵蓋外掛與主題，核心升級仍需手動。",
+        "channel": "更新通道",
+        "channelBeta": "beta（預覽版）",
+        "channelHint": "通道指標發佈在簽章目錄中；beta 通常比 stable 更早取得新版本。",
+        "channelStable": "stable（穩定版）",
+        "description": "自動更新的範圍、通道、維護視窗與例外。預設全部關閉：只有在這裡開啟後，任務才會自動派送。",
+        "excluded": "排除的元件",
+        "excludedHint": "每行一個，例如 plugin/referral。被排除的元件不會出現在任何方案中。",
+        "maintenanceWindow": "維護視窗",
+        "maintenanceWindowHint": "留空表示不限時間；跨午夜用 start > end（例如 23 → 5）。",
+        "neverUpdated": "從未修改過，正在使用保守的預設值。",
+        "pinned": "鎖定的版本",
+        "pinnedHint": "每行一個，格式為「元件 版本」，例如 plugin/referral 1.2.0。鎖定的元件永遠不會自動升級。",
+        "saved": "更新策略已儲存。",
+        "saving": "儲存中…",
+        "submit": "儲存更新策略",
+        "title": "更新策略",
+        "updatedBy": "最後修改：{at}，由 {by}",
+        "windowEnable": "只在視窗內自動執行",
+        "windowEnd": "結束（0-23 時）",
+        "windowStart": "開始（0-23 時）"
       }
     },
     "themes": {
@@ -833,7 +908,8 @@
     "pluginSettings": {
       "back": "返回外掛管理",
       "title": "外掛設置",
-      "noSettings": "該外掛沒有前端設置。"
+      "noSettings": "該外掛沒有前端設置。",
+      "titleNamed": "{name}設置"
     },
     "notifications": {
       "title": "通知中心",
@@ -871,14 +947,94 @@
       "addsPermissions": "新增",
       "noPermissions": "無",
       "dispatched": "升級任務已投遞（{taskKey}…）",
-      "blockDetail": "{component}：{detail}"
+      "blockDetail": "{component}：{detail}",
+      "acknowledgeLabel": "我已了解上述變更並授權此次升級",
+      "actionFailed": "操作未完成。請檢查網路或稍後再試。",
+      "advancedInfo": "進階資訊",
+      "allowExpiredLabel": "針對已過期的快照提交（僅此一次）",
+      "authorizationBody": "請先確認下方影響；在你確認之前提交按鈕維持停用。",
+      "authorizationIrreversible": "{component}：包含不可回滾的遷移",
+      "authorizationPermissions": "「{component}」升級後會取得新權限",
+      "authorizationTitle": "這次升級包含需要人工授權的變更",
+      "availableBadge": "有可用更新",
+      "availableSummary": "有新版本可用：升級到 v{version}，包含 {count} 個元件更新。",
+      "beforeCheckBody": "檢查只讀取版本資訊。安裝前先看清楚變更內容；安裝會重啟服務，建議避開尖峰時段。",
+      "beforeCheckTitle": "檢查更新不會影響正在運行的服務",
+      "cancel": "取消",
+      "carrier": "載體",
+      "catalogChannel": "通道",
+      "catalogExpiredBadge": "快照已過期",
+      "catalogFreshBadge": "快照在有效期內",
+      "catalogGeneratedAt": "快照產生時間",
+      "catalogMissingKeysHint": "製品部署必須在 stackpanel.env 中設定：DISTRIBUTION_UPDATE_CARRIER=artifact、DISTRIBUTION_UPDATE_CHANNEL_DIR=<state dir>/update、DISTRIBUTION_UPDATER_STATUS_FILE=<state dir>/update/status.json，然後重啟 API。",
+      "catalogRepository": "目錄倉庫",
+      "catalogSequence": "快照序號",
+      "catalogStateFailed": "不可用",
+      "catalogStatePending": "尚未檢查（本行程內沒有快照）",
+      "catalogStateReady": "就緒",
+      "catalogStateUnconfigured": "未設定（目錄來源已關閉）",
+      "checkAction": "檢查更新",
+      "checkCooldownHint": "檢查每 {seconds} 秒最多一次，避免按鈕變成無限制重新整理。",
+      "checkFailed": "檢查失敗：{message}",
+      "checkNoChanges": "檢查完成：目前沒有可升級的內容。",
+      "checkPrompt": "檢查更新，看看新版本與變更內容。",
+      "checkSucceeded": "檢查完成：目錄序號 {sequence}。",
+      "checkThrottled": "冷卻中：{seconds} 秒後可重試（未發出請求）。",
+      "checkUnconfigured": "目錄來源已關閉，無可檢查。",
+      "checking": "檢查中…",
+      "componentCount": "{count} 個元件",
+      "confirmSubmit": "確認提交",
+      "currentVersion": "目前版本",
+      "errorDetails": "技術細節",
+      "expiredBlocked": "目錄快照已過期，提交被拒絕。請先「檢查更新」。",
+      "expiredWarning": "目錄快照已過期：仍可求解與檢視方案，但預設拒絕提交。",
+      "historyBlock": "阻斷原因",
+      "historyCheckpoints": "階段檢查點",
+      "historyEmpty": "還沒有寫回結果。",
+      "historyKey": "冪等鍵",
+      "historyNone": "無",
+      "historyNotRecovered": "復原失敗（{detail}）",
+      "historyPhase": "階段",
+      "historyRecovered": "已回滾到升級前狀態（{detail}）",
+      "historyRecovery": "復原",
+      "historyTitle": "最近結果",
+      "instance": "實例",
+      "kernelComponent": "系統核心",
+      "lastCheckedAt": "上次檢查：{at}",
+      "lastCheckedLabel": "上次檢查",
+      "lastCheckedNever": "從未檢查",
+      "notCheckedBadge": "未檢查",
+      "progressHint": "本頁每 {seconds} 秒重新整理一次，任務結束即停止。",
+      "progressPhase": "目前階段：{phase}",
+      "progressTitle": "進行中的任務",
+      "retryAtHint": "建議在 {at} 後重試",
+      "selfUpdateCancel": "取消待處理請求",
+      "selfUpdateCancelled": "待處理請求已取消。",
+      "selfUpdateDescription": "切換執行器映像前會先寫入回滾點；有升級任務在進行時會拒絕。",
+      "selfUpdateDigestHint": "使用 sha256 摘要（可帶 sha256: 前綴）。空值會被拒絕。",
+      "selfUpdateDigestLabel": "候選執行器映像摘要",
+      "selfUpdateNone": "目前沒有待處理的更新器自升級請求。",
+      "selfUpdatePending": "待處理：目標摘要 {digest}，由 {requestedBy} 於 {requestedAt} 請求",
+      "selfUpdateSubmit": "排隊自升級",
+      "selfUpdateSubmitted": "自升級請求已排隊。",
+      "selfUpdateTitle": "更新器自升級",
+      "statusUnreadableHint": "檢查更新器是否在運行，以及 API 是否設定了 DISTRIBUTION_UPDATER_STATUS_FILE（製品部署為 <state dir>/update/status.json）。",
+      "targetVersion": "目標版本 v{version}",
+      "upToDateBadge": "已是最新",
+      "upToDateSummary": "你已經是最新版本，無需更新。",
+      "upToDateTitle": "已是最新",
+      "updateContentTitle": "將會更新什麼",
+      "updatedAt": "狀態更新時間"
     }
   },
   "locale": {
     "zh-CN": "简体中文",
     "zh-TW": "繁體中文（台灣）",
     "zh-HK": "繁體中文（香港）",
-    "en-US": "English"
+    "en-US": "English",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "fr-FR": "Français"
   },
   "action": {
     "feedback": {
@@ -976,7 +1132,23 @@
     "seoPageDeleted": "頁面覆寫已刪除",
     "apiTokenSigningSaved": "請求籤名公鑰已儲存",
     "apiTokenSigningCleared": "已停用請求籤名",
-    "apiTokenRevoked": "API 金鑰已撤銷"
+    "apiTokenRevoked": "API 金鑰已撤銷",
+    "paymentMethodChannelRequired": "請選擇銷售渠道",
+    "paymentMethodProviderRequired": "請填寫支付提供方",
+    "paymentMethodNameRequired": "請填寫名稱",
+    "paymentMethodMissing": "缺少支付方式 ID",
+    "paymentMethodCreated": "支付方式已建立",
+    "paymentMethodCreateFailed": "建立支付方式失敗",
+    "paymentMethodUpdated": "支付方式已更新",
+    "paymentMethodUpdateFailed": "更新支付方式失敗",
+    "paymentMethodDeleteFailed": "刪除支付方式失敗",
+    "updateCheckFailed": "檢查更新失敗",
+    "updatePolicyInvalid": "更新策略無效：請檢查排除與鎖定清單",
+    "updatePolicySaveFailed": "儲存更新策略失敗",
+    "updateResultsFailed": "讀取更新結果失敗",
+    "updateSelfUpdateCancelFailed": "取消自升級請求失敗",
+    "updateSelfUpdateSubmitFailed": "提交自升級請求失敗",
+    "updateSubmitFailed": "提交更新任務失敗"
   },
   "user": {
     "emailRequired": "請填寫郵箱",
@@ -1401,7 +1573,16 @@
       "invalid_target": "OAuth 目標地址無效"
     },
     "rate_limited": "請求過於頻繁，請稍後再試",
-    "not_writable": "當前狀態不接受該操作，請稍後再試"
+    "not_writable": "當前狀態不接受該操作，請稍後再試",
+    "updates": {
+      "authorization_required": "方案包含需要人工授權的變更",
+      "catalog_expired": "目錄快照已過期：請先檢查更新，或明確允許針對快照提交",
+      "catalog_unavailable": "遠端目錄暫時不可用，請稍後重試",
+      "catalog_unconfigured": "未設定遠端目錄（離線模式）",
+      "policy": {
+        "invalid": "更新策略欄位無效：請檢查通道、維護視窗、排除與鎖定清單"
+      }
+    }
   },
   "auditAction": {
     "auth": {
@@ -1686,7 +1867,17 @@
         "statusDisabled": "已停用",
         "createdAt": "註冊時間",
         "lastLoginAt": "最近登錄",
-        "none": "暫無記錄"
+        "none": "暫無記錄",
+        "avatar": "頭像",
+        "avatarChange": "更換頭像",
+        "avatarFailed": "頭像處理失敗，請再試一次。",
+        "avatarHint": "會顯示在帳戶選單與管理後台導覽列。PNG / JPEG / GIF / WebP，最大 5MB。",
+        "avatarRemove": "移除頭像",
+        "avatarRemoved": "頭像已移除。",
+        "avatarTooLarge": "圖片不能超過 5MB。",
+        "avatarUnsupported": "只支援 PNG / JPEG / GIF / WebP。",
+        "avatarUpdated": "頭像已更新。",
+        "avatarUpload": "上傳頭像"
       },
       "appearance": {
         "theme": "介面主題",
@@ -1696,7 +1887,9 @@
         "themeHint": "立即應用，儲存在當前瀏覽器中。",
         "language": "顯示語言",
         "languageHint": "切換本站支援的介面語言，儲存在當前瀏覽器中。",
-        "languageSaveFailed": "語言設置未儲存，請重試。"
+        "languageSaveFailed": "語言設置未儲存，請重試。",
+        "switching": "正在切換語言…",
+        "autosave": "更改自動儲存，無需再次提交。"
       },
       "access": {
         "apiKeys": "API 金鑰",
@@ -1964,7 +2157,19 @@
       "cleaned": "已清理 {count} 個對話",
       "cleared": "模型配置已清除",
       "processing": "處理中…",
-      "loadFailed": "載入失敗"
+      "loadFailed": "載入失敗",
+      "defaultModelTitle": "默認模型",
+      "defaultModelHint": "從當前模型提供方已開放的模型中選擇一個，Agent 執行任務時默認使用它。",
+      "defaultModelLabel": "模型",
+      "defaultModelAuto": "自動（使用提供方的首個可用模型）",
+      "defaultModelHelp": "已儲存的模型若不在提供方列表中會被忽略，執行時會自動回退。",
+      "defaultModelSave": "儲存默認模型",
+      "defaultModelSaved": "默認模型已儲存",
+      "providerLabel": "提供方",
+      "providerNone": "未檢測到模型提供方",
+      "catalogEmpty": "當前提供方沒有返回可用模型，請檢查提供方配置。",
+      "noToolsModel": "不支援工具呼叫",
+      "fallbackHintPlugin": "當前由模型提供方外掛提供服務，下面的兜底介面僅在外掛不可用時生效。"
     },
     "advanced": {
       "title": "進階設置",
@@ -2080,7 +2285,10 @@
     "failed": "儲存失敗，請重試。",
     "unavailable": "暫時無法載入通知設置，請稍後重試。",
     "forbidden": "你沒有管理通知策略的許可權。",
-    "invalidRequest": "請求格式無效。"
+    "invalidRequest": "請求格式無效。",
+    "saving": "正在儲存…",
+    "saved": "已儲存",
+    "autosave": "更改自動儲存。"
   },
   "errorPage": {
     "unauthorized": {
@@ -2153,7 +2361,10 @@
     "refresh": "重新整理狀態",
     "resume": "繼續付款",
     "submitting": "正在提交…",
-    "order": "訂單編號"
+    "order": "訂單編號",
+    "payInstructions": "付款方式說明",
+    "payQrImage": "收款碼圖片",
+    "payQrOpen": "開啟收款碼圖片"
   },
   "adminSeo": {
     "title": "SEO 設置",
@@ -2207,5 +2418,61 @@
     "add": "新增",
     "hrefHint": "站內頁面寫路徑（以 / 開頭），站外寫完整的 http(s) 地址。打錯連結不會被自動發現，新增後建議點一下確認。",
     "hrefPlaceholder": "/admin/orders 或 https://docs.example.com"
+  },
+  "adminPayments": {
+    "title": "支付記錄",
+    "filterAll": "全部",
+    "filterStatus": "按狀態篩選",
+    "statusPending": "待支付",
+    "statusPaid": "已支付",
+    "statusReview": "待核對",
+    "statusCancelled": "已取消",
+    "statusExpired": "已超時",
+    "statusRefunded": "已退款",
+    "statusUnknown": "未知狀態",
+    "colPayment": "支付單號",
+    "colPurpose": "用途",
+    "purposeOrder": "訂單支付",
+    "purposeTopUp": "餘額充值",
+    "colBuyer": "買家",
+    "buyerUnknown": "未知買家",
+    "colMethod": "收款方式",
+    "colAmount": "金額",
+    "colStatus": "狀態",
+    "colCreatedAt": "創建時間",
+    "colActions": "操作",
+    "modeManual": "需人工確認",
+    "modeGateway": "自動結算",
+    "methodAlipay": "支付寶",
+    "methodWechat": "微信支付",
+    "methodPaypal": "PayPal",
+    "methodStripe": "信用卡",
+    "methodBankTransfer": "銀行轉賬",
+    "methodQrCode": "收款碼",
+    "methodWallet": "餘額",
+    "settlement": "實收 {amount}",
+    "expiredHint": "該支付單已超時（買家未在時限內付款）。如果錢確實到賬了，仍然可以確認收款。",
+    "confirm": "確認收款",
+    "confirmed": "已確認收款",
+    "confirmFailed": "確認收款失敗",
+    "cancel": "取消",
+    "cancelled": "已取消",
+    "cancelFailed": "取消失敗",
+    "reason": {
+      "notFound": "該支付記錄不存在。",
+      "notManual": "只有手動收款的記錄才能人工確認。",
+      "notPending": "這筆記錄已經處理過了。"
+    },
+    "orderRef": "訂單 {id}",
+    "empty": "沒有匹配的支付記錄",
+    "emptyHint": "換個狀態再看看，或者等買家下單。",
+    "pageInfo": "第 {page} / {pages} 頁 · 共 {total} 條",
+    "prev": "上一頁",
+    "next": "下一頁",
+    "loadFailed": "加載支付記錄失敗",
+    "description": "全部入金一覽。手動收款（銀行轉賬 / 收款碼）只有在這裡確認收款後才會生效。",
+    "filterApply": "篩選",
+    "listDescription": "可以按狀態篩選。確認收款後訂單即完成支付並開始交付。",
+    "listTitle": "收款台帳"
   }
 }

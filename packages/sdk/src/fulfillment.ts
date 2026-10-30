@@ -180,6 +180,25 @@ export interface ServiceDetail {
 }
 
 /**
+ * 服务**实际可变更**的一个配置项（升配/降配白名单）。
+ *
+ * 商品配置里有区域/系统/CPU 等一大堆项，但上游往往只受理其中少数几项的变更
+ * （如「快照数量」「IP 数量」）。没有这份白名单，用户能在报价阶段选到上游根本
+ * 不受理的项——报价一路绿灯，钱收了上游回 400，这才是最贵的失败模式。
+ */
+export interface ServiceChangeOption {
+  /** 配置项 key，与 {@link CheckoutSelection.selections} 的 key 一致。 */
+  key: string;
+  label: string;
+  /** 当前档位的 value（与 selections 里的值同域）。 */
+  current?: string | number;
+  /** 当前档位的展示文案（如「2个IP」）。 */
+  currentLabel?: string;
+  /** 允许改成的档位；空数组表示该项不可变更。 */
+  choices: Array<{ value: string | number; label: string; fee?: number }>;
+}
+
+/**
  * 一种「服务子资源」种类（磁盘/快照/备份/IP/安全组/流量包…）的声明。
  *
  * 提供方只做声明，商店通用渲染「资源面板」：列表 + 新建 + 行内动作。
@@ -333,6 +352,13 @@ export interface FulfillmentProvider {
 
   /** 读取并展示服务详情（可选；无实现则回退到缓存的 runtime）。 */
   getDetail?(ctx: ProviderServiceContext): Promise<ServiceDetail>;
+  /**
+   * 列出该服务**实际可变更**的配置项（可选）。
+   *
+   * 返回 `undefined` 表示提供方不支持探测，store 回退到商品全量配置（旧行为）。
+   * 返回数组时，store 会在报价与下单前拦截白名单外的变更。
+   */
+  listChangeOptions?(ctx: ProviderServiceContext): Promise<ServiceChangeOption[] | undefined>;
   /** 读取监控时序（CPU/内存等）。 */
   getMetrics?(ctx: ProviderServiceContext): Promise<MetricSeries[]>;
   /**

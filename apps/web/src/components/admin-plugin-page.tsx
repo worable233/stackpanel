@@ -86,7 +86,7 @@ export function AdminPluginPage({
     locale,
   } as AdminPageComponentProps;
   return (
-    <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="block space-y-6">
+    <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="plugin-admin block space-y-6">
       {createElement(Component, props as never) as unknown as ReactElement}
     </FrontendScopeRoot>
   );

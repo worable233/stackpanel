@@ -19,7 +19,7 @@ import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { currentUser, requireAuth, requireRole, extractSession } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { CAPABILITIES, scopeSatisfied } from '../lib/capability-registry.ts';
-import { readConfiguredLlmConfig, resolveLlmProvider } from '../lib/llm-provider.ts';
+import { readConfiguredLlmConfig, readDefaultModel, resolveLlmProvider } from '../lib/llm-provider.ts';
 import { resumeAgent, runAgentUntilBlocked, toRunView } from '../lib/agent-runtime.ts';
 import type { AgentRuntimeDeps, AgentToolExecution } from '../lib/agent-runtime.ts';
 import { mcpCapabilitiesFor, mcpGrantedScopes } from '../mcp/index.ts';
@@ -298,15 +298,36 @@ function requireTokenCaller(request: FastifyRequest): { actorId: string; tokenId
   return { actorId: user.id, tokenId: user.tokenId };
 }
 
-/** Choose the model: explicit body → allowlist → the admin's configured model. */
+/**
+ * Choose the model: explicit body → allowlist → the admin's default model →
+ * the fallback endpoint's model → whatever the provider advertises first.
+ *
+ * The admin default (`Setting['agent.model']`) outranks `agent.llm.model`
+ * because the two answer different questions: the former is "which of the
+ * provider's models should runs use", the latter is part of the fallback
+ * endpoint triple and is meaningless when a plugin provider is active.
+ *
+ * A stored default that the active provider does not advertise is ignored
+ * rather than surfaced as an error — an admin may switch providers (or a plugin
+ * may drop a model) after choosing it, and failing every run with a stale id
+ * would be worse than quietly using the provider's own list. `available` is that
+ * list, already fetched by the caller: when it is non-empty and does not contain
+ * the stored choice, `null` is returned so the caller picks the provider's first
+ * tool-capable model. Only a provider that advertises nothing falls through to
+ * the fallback endpoint's model.
+ */
 async function resolveModel(
   prisma: PrismaClient,
   requested: string | undefined,
   caps: RunCaps,
+  available: readonly string[],
 ): Promise<string | null> {
   if (requested) return requested;
   const first = caps.allowedModels[0];
   if (first) return first;
+  const preferred = await readDefaultModel(prisma);
+  if (preferred && (available.length === 0 || available.includes(preferred))) return preferred;
+  if (available.length > 0) return null;
   const configured = await readConfiguredLlmConfig(prisma);
   return configured?.model ?? null;
 }
@@ -553,9 +574,10 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     if (parent) caps = restrictAgentPolicy(caps, agentPolicySchema.parse(parent.policy));
     const provider = await resolveLlmProvider(app.pluginRuntime);
     if (!provider) throw llmUnconfigured();
+    const advertised = await provider.listModels();
     const model =
-      (await resolveModel(prisma, parsed.data.model, caps)) ??
-      (await provider.listModels()).find((item) => item.supportsTools)?.id;
+      (await resolveModel(prisma, parsed.data.model, caps, advertised.map((item) => item.id))) ??
+      advertised.find((item) => item.supportsTools)?.id;
     if (!model) throw llmUnconfigured();
     if (caps.allowedModels.length && !caps.allowedModels.includes(model)) {
       throw new PluginError('agent.model_not_allowed', 403, '模型不在该凭证的允许名单内');

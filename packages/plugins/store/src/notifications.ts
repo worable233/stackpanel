@@ -36,6 +36,9 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   { type: 'order.paid', category: 'store', label: '订单支付成功', order: 20 },
   { type: 'order.refunded', category: 'store', label: '订单已退款', order: 30 },
   { type: 'order.refund.requested', category: 'store', label: '退款申请待审核', audience: 'admin', order: 31 },
+  { type: 'order.refund.submitted', category: 'store', label: '退款申请已提交', order: 31 },
+  { type: 'store.refund.resume-failed', category: 'store', label: '退款驳回后实例未恢复', audience: 'admin', order: 35 },
+  { type: 'store.refund.terminate-failed', category: 'store', label: '退款已批准但上游停用失败', audience: 'admin', order: 36 },
   { type: 'order.refund.rejected', category: 'store', label: '退款申请未通过', order: 32 },
   { type: 'order.refund.succeeded', category: 'store', label: '退款已进入平台余额', order: 33 },
   { type: 'order.refund.failed', category: 'store', label: '退款处理失败', order: 34 },
@@ -62,6 +65,20 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   { type: 'service.resumed', category: 'store', label: '服务已恢复', order: 105 },
   { type: 'service.terminated', category: 'store', label: '服务已终止', order: 110 },
   { type: 'service.changed', category: 'store', label: '服务配置已变更', order: 115 },
+  // 变更失败必须让用户知道：钱已经付了、配置还没生效，只有服务器日志等于没发生。
+  {
+    type: 'service.change.failed',
+    category: 'store',
+    label: '配置变更失败（自动重试中）',
+    order: 116,
+  },
+  {
+    type: 'store.change.exhausted',
+    category: 'store',
+    label: '配置变更重试用尽（管理员）',
+    audience: 'admin',
+    order: 118,
+  },
   { type: 'service.transferred', category: 'store', label: '服务已转移', order: 117 },
   { type: 'order.cancelled', category: 'store', label: '订单已取消', order: 35 },
   // 未付款订单催付（对标 #12.5）：与「订单待支付」（下单即发）分开，

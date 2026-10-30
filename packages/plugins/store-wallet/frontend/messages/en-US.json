@@ -79,5 +79,6 @@
   "recharge.noMethods": "No payment methods available",
   "recharge.submitting": "Submitting…",
   "recharge.submit": "Confirm top-up",
-  "records.cancelled": "Top-up cancelled."
+  "records.cancelled": "Top-up cancelled.",
+  "overview.ledgerToggle": "View details"
 }

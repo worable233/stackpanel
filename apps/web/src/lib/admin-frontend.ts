@@ -66,16 +66,14 @@ export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
         continue;
       // Labels are resolved through the package's own catalog (ADR-0016 §5).
       // The literal `label` stays the fallback for locales the package omits.
-      const group = packageLabel(
-        messages,
-        locale,
-        route.nav.groupKey,
-        route.nav.group,
-        [DEFAULT_LOCALE],
-      );
+      const group = packageLabel(messages, locale, route.nav.groupKey, route.nav.group, [
+        DEFAULT_LOCALE,
+      ]);
       menus.push({
         pluginId: candidate.id,
-        label: packageLabel(messages, locale, route.nav.labelKey, route.nav.label, [DEFAULT_LOCALE]),
+        label: packageLabel(messages, locale, route.nav.labelKey, route.nav.label, [
+          DEFAULT_LOCALE,
+        ]),
         href: pluginAdminHref(candidate.id, route.path),
         order: route.nav.order,
         activePaths: route.nav.activePaths?.map((path) => pluginAdminHref(candidate.id, path)),
@@ -104,7 +102,12 @@ export async function resolvePluginAdminRoute(
     const check = await api.checkPermission(route.permission);
     if (!check.allowed) return { status: 'denied', permission: route.permission };
   }
-  const pkg = await importFrontendPackage('plugins', pluginId, candidate.manifest, candidate.revision);
+  const pkg = await importFrontendPackage(
+    'plugins',
+    pluginId,
+    candidate.manifest,
+    candidate.revision,
+  );
   if (!pkg) return { status: 'not-found' };
   // 合并所有已加载插件的前端 finders，使 admin 页面可跨插件复用数据提供者
   // （例如 store 的商品管理页读取 catalog 的分类数据）。
@@ -113,7 +116,12 @@ export async function resolvePluginAdminRoute(
     // Trust boundary (contract 03 §3.1): an unauthorized package's finder must
     // not be registered for execution in the web process.
     if (!candidateAdmitsServerExecution(item)) continue;
-    const candidatePkg = await importFrontendPackage('plugins', item.id, item.manifest, item.revision);
+    const candidatePkg = await importFrontendPackage(
+      'plugins',
+      item.id,
+      item.manifest,
+      item.revision,
+    );
     if (!candidatePkg?.finders) continue;
     for (const [name, finder] of Object.entries(candidatePkg.finders)) {
       if (!mergedFinders[name]) mergedFinders[name] = finder;

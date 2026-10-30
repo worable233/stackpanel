@@ -154,6 +154,102 @@ for (const { id, dir } of listCatalogDirs()) {
   summaries.push({ id, locales, keys: referenceKeys.size });
 }
 
+// ---------------------------------------------------------------------------
+// Kernel catalogs (apps/web)
+// ---------------------------------------------------------------------------
+/**
+ * The kernel catalog is **nested**, and `lookupMessage` resolves a key by
+ * splitting it on `.` and walking the object. A literal key such as
+ * `"admin.settings.payment.title"` sitting at the top level is therefore
+ * unreachable: it looks fine in review, parses fine, and renders the raw key at
+ * runtime. That exact mistake shipped once, so it is gated here.
+ *
+ * Package catalogs are the opposite (flat, literal lookup) and are checked
+ * above; the two formats cannot be unified without breaking one of them.
+ */
+function flattenCatalog(value, path = '', out = new Map()) {
+  if (typeof value === 'string') {
+    out.set(path, value);
+    return out;
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return out;
+  for (const [key, child] of Object.entries(value)) {
+    flattenCatalog(child, path ? `${path}.${key}` : key, out);
+  }
+  return out;
+}
+
+/**
+ * Keys that intentionally use different placeholder names per locale.
+ *
+ * `admin.rbac.discountPercent` renders a *different quantity* in Chinese and
+ * English: zh says "打 9.8 折" (`{fold}`) while en says "2% off" (`{discount}`).
+ * The caller passes both (`permission-group-manager.tsx`), so each locale picks
+ * the one it needs. Everywhere else, a placeholder mismatch is a typo that
+ * renders a literal `{name}` — keep this list empty unless the divergence is
+ * semantic, not cosmetic.
+ */
+const KERNEL_PLACEHOLDER_EXCEPTIONS = new Set(['admin.rbac.discountPercent']);
+
+const kernelMessagesDir = path.join(root, 'apps', 'web', 'src', 'i18n', 'messages');
+if (existsSync(kernelMessagesDir)) {
+  const kernelLocales = readdirSync(kernelMessagesDir)
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => name.slice(0, -'.json'.length))
+    .sort();
+  const flat = {};
+  for (const locale of kernelLocales) {
+    const file = path.join(kernelMessagesDir, `${locale}.json`);
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (error) {
+      problems.push(`kernel ${locale}: ${error instanceof Error ? error.message : 'invalid JSON'}`);
+      continue;
+    }
+    for (const key of Object.keys(parsed)) {
+      if (key.includes('.')) {
+        problems.push(
+          `kernel ${locale}: top-level key "${key}" contains a dot — it can never be resolved; nest it instead`,
+        );
+      }
+    }
+    flat[locale] = flattenCatalog(parsed);
+  }
+
+  const kernelKnown = Object.keys(flat);
+  if (kernelKnown.length > 0) {
+    const [reference, ...rest] = kernelKnown;
+    for (const locale of rest) {
+      for (const key of flat[reference].keys()) {
+        if (!flat[locale].has(key)) {
+          problems.push(`kernel ${locale}: missing key "${key}" (present in ${reference})`);
+        }
+      }
+      for (const key of flat[locale].keys()) {
+        if (!flat[reference].has(key)) {
+          problems.push(`kernel ${reference}: missing key "${key}" (present in ${locale})`);
+        }
+      }
+    }
+    for (const [key, template] of flat[reference]) {
+      if (KERNEL_PLACEHOLDER_EXCEPTIONS.has(key)) continue;
+      const expected = placeholderNames(template);
+      for (const locale of rest) {
+        const value = flat[locale].get(key);
+        if (typeof value !== 'string') continue;
+        const actual = placeholderNames(value);
+        if (expected.join(',') !== actual.join(',')) {
+          problems.push(
+            `kernel ${locale}: placeholders for "${key}" are {${actual.join('}, {')}} but ${reference} uses {${expected.join('}, {')}}`,
+          );
+        }
+      }
+    }
+    summaries.push({ id: 'kernel catalogs', locales: kernelKnown, keys: flat[reference].size });
+  }
+}
+
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify({ packages: summaries, problems }, null, 2));
 } else {

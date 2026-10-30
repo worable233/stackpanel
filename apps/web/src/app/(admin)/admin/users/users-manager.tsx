@@ -4,10 +4,10 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { MoreHorizontal, Search } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/ui/toast';
 import type { AdminUser, PermissionGroupInfo } from '@stackpanel/sdk';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/table';
 import { CreateUserForm } from '@/components/create-user-form';
 import { impersonateUserAction, updateUserStatusAction } from '@/lib/user-actions';
+import { kernelAssetUrl } from '@/lib/kernel-asset-url';
 import { isNextRedirectError } from '@/lib/next-navigation';
 import { useLocale, useTranslator } from '@/i18n/provider';
 import { formatDate, formatMoney } from '@/i18n/core';
@@ -326,6 +327,11 @@ export function UsersManager({
                     <TableCell className="py-4">
                       <div className="flex items-center gap-3">
                         <Avatar>
+                          {/* Decorative: the address sits immediately next to it, so the
+                              image needs no separate alt text. */}
+                          {user.avatarUrl ? (
+                            <AvatarImage src={kernelAssetUrl(user.avatarUrl)} alt="" />
+                          ) : null}
                           <AvatarFallback className="font-medium">
                             {initialsFromEmail(user.email)}
                           </AvatarFallback>

@@ -132,9 +132,9 @@ function WalletAccountWidget(props: AccountWidgetProps): ReactElement {
   return (
     <Link
       href="/account/balance"
-      className="group block rounded-2xl border bg-card p-5 text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+      className="group block h-full rounded-[14px] bg-muted/55 p-5 text-card-foreground transition-colors hover:bg-muted"
     >
-      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+      <span className="flex size-10 items-center justify-center rounded-xl bg-background text-foreground">
         <Icon name="wallet" />
       </span>
       <p className="mt-4 text-sm font-semibold">{tr('widget.title')}</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DeveloperSpScope, ResellerView } from '@stackpanel/sdk';
 import { DEVELOPER_SP_SCOPES } from '@stackpanel/sdk';
@@ -23,14 +23,15 @@ import {
   updateResellerAction,
   type DeveloperActionResult,
 } from '@/lib/developer-actions';
+import { toast } from '@/components/ui/toast';
 import { useTranslator } from '@/i18n/provider';
+import { Select } from '@stackpanel/ui';
 
 function StatusMessage({ state }: { state: DeveloperActionResult | null }) {
-  if (!state) return null;
-  if (state.ok && state.message) {
-    return <span className="text-sm text-muted-foreground">{state.message}</span>;
-  }
-  if (state.error) {
+  useEffect(() => {
+    if (state?.ok && state.message) toast.success(state.message);
+  }, [state]);
+  if (state?.error) {
     return <span className="text-sm text-destructive">{state.error}</span>;
   }
   return null;
@@ -347,7 +348,7 @@ function EditResellerDialog({
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-reseller-status">{t('admin.developer.write.status')}</Label>
-            <select
+            <Select
               id="edit-reseller-status"
               value={status}
               onChange={(e) => setStatus(e.target.value === 'DISABLED' ? 'DISABLED' : 'ACTIVE')}
@@ -355,7 +356,7 @@ function EditResellerDialog({
             >
               <option value="ACTIVE">{t('admin.developer.resellers.statusActive')}</option>
               <option value="DISABLED">{t('admin.developer.resellers.statusDisabled')}</option>
-            </select>
+            </Select>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-reseller-webhook-url">{t('admin.developer.write.webhookUrl')}</Label>

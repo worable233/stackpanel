@@ -22,6 +22,9 @@ model User {
   /// 未启用或第三方登录创建的可为空（不代表已验证）。
   emailVerifiedAt DateTime?
   lastLoginAt  DateTime?
+  /// 头像附件（内核媒体域）。软引用：附件被删除或尚未生成时头像回落到首字母，
+  /// 所以这里不建外键——媒体域自己拥有附件的生命周期（ADR-0014 §2）。
+  avatarAttachmentId String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   identities    UserIdentity[]

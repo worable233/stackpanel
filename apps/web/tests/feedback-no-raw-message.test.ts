@@ -15,6 +15,11 @@ const repoRoot = path.resolve(here, '..', '..', '..');
  * found the leaks; localized action results (`result.message`) remain allowed.
  */
 const RAW_MESSAGE_CALL =
+  // `\b` boundaries on the bare identifiers (`e` / `err` / `cause`) are load
+  // bearing: `state.message` — the localized server-action result — contains the
+  // substring `e.message`, so an unanchored pattern would flag legal action state.
+  // The identifier-aware branch covers `someError.message` / `uploadFailure.message`,
+  // which a plain alternation of exact names misses.
   /(?:toast\.[A-Za-z]+|setError)\s*\([^;\n]*(?:\b(?:e|err|cause)\b|[A-Za-z_$]*(?:[Ee]rr(?:or)?|[Cc]ause|[Ff]ailure|[Ee]xception))\.message\b/;
 
 const SCAN_ROOTS = [

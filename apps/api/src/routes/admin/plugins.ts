@@ -157,7 +157,22 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           signed: existsSync(path.join(pluginPackageDir(p.id), 'signature.json')),
         })),
       );
-      return { plugins };
+      // Records whose package directory is gone. They are invisible to the
+      // runtime, so they must be reported explicitly — otherwise an operator
+      // sees "the provider is installed" in one place and "provider missing"
+      // in another. `stale` is what the uninstall route can now actually clean.
+      const loadedIds = new Set(runtime.list().map((p) => p.id));
+      const stale = rows
+        .filter((row) => !loadedIds.has(row.id))
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          version: row.version,
+          enabled: row.enabled,
+          installedAt: row.installedAt.toISOString(),
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      return { plugins, stale };
     },
   );
 
@@ -416,10 +431,16 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: '该插件随内核分发，不可删除' });
       }
       const removedName = runtime.list().find((p) => p.id === id)?.name ?? id;
-      try {
-        await runtime.unregister(id);
-      } catch (err) {
-        return reply.code(409).send({ error: (err as Error).message });
+      // A stale record (row without a package) is not loaded in the runtime.
+      // Unregistering it threw 409, so such records could never be cleaned up —
+      // the leftover row then kept claiming capabilities that no code provided.
+      const loaded = runtime.list().some((p) => p.id === id);
+      if (loaded) {
+        try {
+          await runtime.unregister(id);
+        } catch (err) {
+          return reply.code(409).send({ error: (err as Error).message });
+        }
       }
       await removePluginFiles(id);
       const prisma = getPrisma();

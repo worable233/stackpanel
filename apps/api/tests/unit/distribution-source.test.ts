@@ -430,6 +430,46 @@ describe('catalog client', () => {
     ).rejects.toThrow(/回放/);
   });
 
+  it('accepts the same sequence again instead of calling it a replay', async () => {
+    // 渠道没推进时 pointer 会一直等于已记录的最高 sequence：这是「没有新发布」，
+    // 不是降级。旧实现把相等也算回放，于是目录不动时每次手动「检查更新」都失败
+    //（更新中心显示「拒绝回放旧目录：sequence 2 ≤ 已见 2」）。
+    const { publicKeyPem, privateKey } = keypair();
+    const keyring: Keyring = {
+      formatVersion: 1,
+      keys: [
+        {
+          keyId: 'catalog-2026',
+          purpose: 'catalog',
+          publicKeyPem,
+          allowedRepositories: ['worable233/stackpanel-market'],
+        },
+      ],
+    };
+    const snapshot = catalogSnapshot();
+    const catalogBody = JSON.stringify(snapshot);
+    const signature = signCatalog(privateKey, new TextEncoder().encode(catalogBody));
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input);
+      if (url === raw('worable233/stackpanel-market', 'catalog-v1/7', 'catalog.json')) {
+        return new Response(catalogBody);
+      }
+      if (url === raw('worable233/stackpanel-market', 'catalog-v1/7', 'catalog.sig')) {
+        return new Response(JSON.stringify(signature));
+      }
+      return new Response('not found', { status: 404 });
+    });
+
+    const resolved = await fetchCatalogSequenced(
+      { repository: 'worable233/stackpanel-market', fetchImpl },
+      new MemorySourceCache(),
+      keyring,
+      7,
+      7,
+    );
+    expect(resolved.sequence).toBe(7);
+  });
+
   it('rejects an expired catalog for new automatic installs', async () => {
     const { publicKeyPem, privateKey } = keypair();
     const keyring: Keyring = {

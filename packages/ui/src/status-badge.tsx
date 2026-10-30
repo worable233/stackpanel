@@ -6,13 +6,13 @@ export interface StatusBadgeProps {
 }
 
 const toneClasses: Record<StatusTone, string> = {
-  ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-  warn: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  error: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  ok: 'bg-success/10 text-success',
+  warn: 'bg-warning/10 text-warning',
+  error: 'bg-destructive/10 text-destructive',
   neutral: 'bg-muted text-muted-foreground',
 };
 
-/** Small status pill. Tailwind + shadcn theme tokens only. */
+/** Small status pill. Colors come from the active theme's semantic tokens. */
 export function StatusBadge({ tone, children }: StatusBadgeProps) {
   return (
     <span
