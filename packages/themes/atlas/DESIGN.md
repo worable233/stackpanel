@@ -76,6 +76,7 @@ PageHeader（页面级 H1）
 - 只保留主标题，不显示 `eyebrow`、`description` 或标题上方的小字。
 - 页面级操作放在 `actions`。
 - 禁止把 `SectionTitle` 当页面标题使用。
+- 列表页保持「PageHeader → 筛选器 → 列表」；不要额外堆大号统计卡、说明面板或多层灰底容器。
 
 ```tsx
 <PageHeader title={t('account.notifications.title')} />
@@ -272,6 +273,12 @@ Atlas 的交互组件优先使用 **Animate UI Base UI** primitives，而不是�
 | 多选筛选 | `ToggleGroup`（多选）/ `Select`（单选） |
 | 单选卡片 | `RadioGroup` |
 
+### 7.2 操作反馈
+
+- 列表行操作、批量操作的成败使用系统 `Toast`，不要往页面或表格上方插入成功/失败提示条。
+- 只有需要用户就地修正字段的校验错误才内联展示。
+- 设置页的保存栏可以保留行内保存状态，因为它与保存按钮属于同一个操作区。
+
 规则：
 
 - 不直接写原生 `<select>`、`<input type="range">`、`<input type="checkbox">`。
@@ -333,6 +340,14 @@ Tooltip 只解释“这个图标是什么”或“这个操作会发生什么”
 - 保存栏固定在内容底部，错误/成功提示与按钮同一行。
 - 没有设置项时显示居中的软灰空状态，不放一大段裸文字。
 - 支付、币种、分发源等表格使用圆角灰底容器，不使用 border/divide-y。
+
+### 更新页
+
+- 首屏只展示当前版本、更新状态、检查更新/立即更新按钮。
+- 版本号使用大字号，可用更新用高对比 Badge。
+- 更新内容只列组件名称、类型、旧版本 → 新版本，不展示 digest、generation、sequence 等内部字段。
+- 内部字段、目录仓状态、自升级和历史记录放进「高级信息」右侧 Sheet。
+- 错误默认显示可理解的提示，技术详情折叠在 `details` 中。
 
 ## 7.5 Sheet / Drawer
 

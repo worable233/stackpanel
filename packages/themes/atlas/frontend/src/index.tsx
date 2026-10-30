@@ -1132,7 +1132,7 @@ const frontend: FrontendPackage = {
       path: '/data',
       component: 'modelData',
       layout: 'theme',
-      data: [{ finder: 'llmGateway.prices', as: 'modelPrices' }],
+      data: [{ finder: 'llm-gateway.prices', as: 'modelPrices' }],
     },
     { path: '/about', component: 'about', layout: 'theme' },
     { path: '/guide', component: 'guide', layout: 'theme' },

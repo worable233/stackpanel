@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "71853de00104",
+  "revision": "1eb6f513232c",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -1547,7 +1547,6 @@
       "console.editInstanceHint": "名称和备注仅在你的账户中显示。",
       "console.remarkPlaceholder": "例如：生产环境、香港节点…",
       "console.systemMaintenance": "系统维护",
-      "console.systemMaintenanceDescription": "重装系统、重置密码等操作会在弹窗中填写参数后执行。",
       "console.renewalPrice": "续费价格",
       "console.months": "{months} 个月",
       "console.show": "显示",
@@ -1564,7 +1563,6 @@
       "console.exitRescue": "退出救援模式",
       "console.hardPowerOff": "强制关机",
       "console.hardReboot": "强制重启",
-      "console.monitoringHint": "选择时间区间，悬停曲线查看具体采样值。",
       "feedback.serviceUpdated": "实例信息已更新。",
       "metrics.range": "时间范围",
       "metrics.start": "开始时间",
@@ -1580,7 +1578,6 @@
       "metrics.min": "最小",
       "metrics.max": "最大",
       "metrics.avg": "平均",
-      "console.renewalHint": "续费从当前到期时间顺延，使用账户余额支付。",
       "service.refundTitle": "退款",
       "service.refundIntro": "提交后实例会立即停用（可恢复）；管理员审核通过后退款进入平台余额，实例随后终止。",
       "service.refundAmount": "可退金额",
@@ -1611,9 +1608,10 @@
       "settings.store.refundWindowDisabled": "一律不可申请",
       "common.enabled": "开启",
       "common.disabled": "关闭",
-      "metrics.zoomHint": "滚轮缩放 · 双击重置",
       "refund.fromService": "实例页申请",
-      "refund.terminateFailed": "退款已完成，但上游停用失败：{reason}（请手工停用）"
+      "refund.terminateFailed": "退款已完成，但上游停用失败：{reason}（请手工停用）",
+      "metrics.custom": "自定义",
+      "console.perMonth": "月"
     },
     "zh-TW": {
       "review.recover": "核驗原賬單並重新送審",
@@ -2100,7 +2098,6 @@
       "console.editInstanceHint": "名稱和備註僅在你的賬戶中顯示。",
       "console.remarkPlaceholder": "例如：生產環境、香港節點…",
       "console.systemMaintenance": "系統維護",
-      "console.systemMaintenanceDescription": "重灌系統、重置密碼等操作會在彈窗中填寫引數後執行。",
       "console.renewalPrice": "續費價格",
       "console.months": "{months} 個月",
       "console.show": "顯示",
@@ -2117,7 +2114,6 @@
       "console.exitRescue": "退出救援模式",
       "console.hardPowerOff": "強制關機",
       "console.hardReboot": "強制重啟",
-      "console.monitoringHint": "選擇時間區間，懸停曲線檢視具體取樣值。",
       "feedback.serviceUpdated": "例項資訊已更新。",
       "metrics.range": "時間範圍",
       "metrics.start": "開始時間",
@@ -2133,7 +2129,6 @@
       "metrics.min": "最小",
       "metrics.max": "最大",
       "metrics.avg": "平均",
-      "console.renewalHint": "續費從當前到期時間順延，使用賬戶餘額支付。",
       "service.refundTitle": "退款",
       "service.refundIntro": "提交後例項會立即停用（可恢復）；管理員稽核通過後退款進入平臺餘額，例項隨後終止。",
       "service.refundAmount": "可退金額",
@@ -2164,9 +2159,10 @@
       "settings.store.refundWindowDisabled": "一律不可申請",
       "common.enabled": "開啟",
       "common.disabled": "關閉",
-      "metrics.zoomHint": "滾輪縮放 · 雙擊重置",
       "refund.fromService": "例項頁申請",
-      "refund.terminateFailed": "退款已完成，但上游停用失敗：{reason}（請手工停用）"
+      "refund.terminateFailed": "退款已完成，但上游停用失敗：{reason}（請手工停用）",
+      "metrics.custom": "自定義",
+      "console.perMonth": "月"
     },
     "zh-HK": {
       "review.recover": "核驗原賬單並重新送審",
@@ -2653,7 +2649,6 @@
       "console.editInstanceHint": "名稱和備註僅在你的賬戶中顯示。",
       "console.remarkPlaceholder": "例如：生產環境、香港節點…",
       "console.systemMaintenance": "系統維護",
-      "console.systemMaintenanceDescription": "重灌系統、重置密碼等操作會在彈窗中填寫引數後執行。",
       "console.renewalPrice": "續費價格",
       "console.months": "{months} 個月",
       "console.show": "顯示",
@@ -2670,7 +2665,6 @@
       "console.exitRescue": "退出救援模式",
       "console.hardPowerOff": "強制關機",
       "console.hardReboot": "強制重啟",
-      "console.monitoringHint": "選擇時間區間，懸停曲線檢視具體取樣值。",
       "feedback.serviceUpdated": "例項資訊已更新。",
       "metrics.range": "時間範圍",
       "metrics.start": "開始時間",
@@ -2686,7 +2680,6 @@
       "metrics.min": "最小",
       "metrics.max": "最大",
       "metrics.avg": "平均",
-      "console.renewalHint": "續費從當前到期時間順延，使用賬戶餘額支付。",
       "service.refundTitle": "退款",
       "service.refundIntro": "提交後例項會立即停用（可恢復）；管理員稽核通過後退款進入平臺餘額，例項隨後終止。",
       "service.refundAmount": "可退金額",
@@ -2717,9 +2710,10 @@
       "settings.store.refundWindowDisabled": "一律不可申請",
       "common.enabled": "開啟",
       "common.disabled": "關閉",
-      "metrics.zoomHint": "滾輪縮放 · 雙擊重置",
       "refund.fromService": "例項頁申請",
-      "refund.terminateFailed": "退款已完成，但上游停用失敗：{reason}（請手工停用）"
+      "refund.terminateFailed": "退款已完成，但上游停用失敗：{reason}（請手工停用）",
+      "metrics.custom": "自定義",
+      "console.perMonth": "月"
     },
     "en-US": {
       "review.recover": "Verify invoices and request approval",
@@ -3206,7 +3200,6 @@
       "console.editInstanceHint": "The name and remark are visible only in your account.",
       "console.remarkPlaceholder": "e.g. Production, Hong Kong…",
       "console.systemMaintenance": "System maintenance",
-      "console.systemMaintenanceDescription": "Reinstall the OS or reset the password from a dialog with the required parameters.",
       "console.renewalPrice": "Renewal price",
       "console.months": "{months} months",
       "console.show": "Show",
@@ -3223,7 +3216,6 @@
       "console.exitRescue": "Exit rescue mode",
       "console.hardPowerOff": "Force power off",
       "console.hardReboot": "Force reboot",
-      "console.monitoringHint": "Pick a time range, then hover a chart to inspect exact samples.",
       "feedback.serviceUpdated": "Instance information updated.",
       "metrics.range": "Time range",
       "metrics.start": "Start",
@@ -3239,7 +3231,6 @@
       "metrics.min": "Min",
       "metrics.max": "Max",
       "metrics.avg": "Avg",
-      "console.renewalHint": "Renewal extends from the current expiry date and is paid from your wallet balance.",
       "service.refundTitle": "Refund",
       "service.refundIntro": "The instance is suspended immediately (reversible). Once an admin approves, the refund goes to your platform balance and the instance is terminated.",
       "service.refundAmount": "Refundable amount",
@@ -3270,9 +3261,10 @@
       "settings.store.refundWindowDisabled": "Never allow",
       "common.enabled": "Enabled",
       "common.disabled": "Disabled",
-      "metrics.zoomHint": "Scroll to zoom · Double-click to reset",
       "refund.fromService": "From instance page",
-      "refund.terminateFailed": "Refunded, but the upstream cancellation failed: {reason} (terminate manually)"
+      "refund.terminateFailed": "Refunded, but the upstream cancellation failed: {reason} (terminate manually)",
+      "metrics.custom": "Custom",
+      "console.perMonth": "month"
     }
   }
 }

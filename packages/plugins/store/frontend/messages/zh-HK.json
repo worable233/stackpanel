@@ -483,7 +483,6 @@
   "console.editInstanceHint": "名稱和備註僅在你的賬戶中顯示。",
   "console.remarkPlaceholder": "例如：生產環境、香港節點…",
   "console.systemMaintenance": "系統維護",
-  "console.systemMaintenanceDescription": "重灌系統、重置密碼等操作會在彈窗中填寫引數後執行。",
   "console.renewalPrice": "續費價格",
   "console.months": "{months} 個月",
   "console.show": "顯示",
@@ -500,7 +499,6 @@
   "console.exitRescue": "退出救援模式",
   "console.hardPowerOff": "強制關機",
   "console.hardReboot": "強制重啟",
-  "console.monitoringHint": "選擇時間區間，懸停曲線檢視具體取樣值。",
   "feedback.serviceUpdated": "例項資訊已更新。",
   "metrics.range": "時間範圍",
   "metrics.start": "開始時間",
@@ -516,7 +514,6 @@
   "metrics.min": "最小",
   "metrics.max": "最大",
   "metrics.avg": "平均",
-  "console.renewalHint": "續費從當前到期時間順延，使用賬戶餘額支付。",
   "service.refundTitle": "退款",
   "service.refundIntro": "提交後例項會立即停用（可恢復）；管理員稽核通過後退款進入平臺餘額，例項隨後終止。",
   "service.refundAmount": "可退金額",
@@ -547,7 +544,8 @@
   "settings.store.refundWindowDisabled": "一律不可申請",
   "common.enabled": "開啟",
   "common.disabled": "關閉",
-  "metrics.zoomHint": "滾輪縮放 · 雙擊重置",
   "refund.fromService": "例項頁申請",
-  "refund.terminateFailed": "退款已完成，但上游停用失敗：{reason}（請手工停用）"
+  "refund.terminateFailed": "退款已完成，但上游停用失敗：{reason}（請手工停用）",
+  "metrics.custom": "自定義",
+  "console.perMonth": "月"
 }

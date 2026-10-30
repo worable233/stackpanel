@@ -483,7 +483,6 @@
   "console.editInstanceHint": "名称和备注仅在你的账户中显示。",
   "console.remarkPlaceholder": "例如：生产环境、香港节点…",
   "console.systemMaintenance": "系统维护",
-  "console.systemMaintenanceDescription": "重装系统、重置密码等操作会在弹窗中填写参数后执行。",
   "console.renewalPrice": "续费价格",
   "console.months": "{months} 个月",
   "console.show": "显示",
@@ -500,7 +499,6 @@
   "console.exitRescue": "退出救援模式",
   "console.hardPowerOff": "强制关机",
   "console.hardReboot": "强制重启",
-  "console.monitoringHint": "选择时间区间，悬停曲线查看具体采样值。",
   "feedback.serviceUpdated": "实例信息已更新。",
   "metrics.range": "时间范围",
   "metrics.start": "开始时间",
@@ -516,7 +514,6 @@
   "metrics.min": "最小",
   "metrics.max": "最大",
   "metrics.avg": "平均",
-  "console.renewalHint": "续费从当前到期时间顺延，使用账户余额支付。",
   "service.refundTitle": "退款",
   "service.refundIntro": "提交后实例会立即停用（可恢复）；管理员审核通过后退款进入平台余额，实例随后终止。",
   "service.refundAmount": "可退金额",
@@ -547,7 +544,8 @@
   "settings.store.refundWindowDisabled": "一律不可申请",
   "common.enabled": "开启",
   "common.disabled": "关闭",
-  "metrics.zoomHint": "滚轮缩放 · 双击重置",
   "refund.fromService": "实例页申请",
-  "refund.terminateFailed": "退款已完成，但上游停用失败：{reason}（请手工停用）"
+  "refund.terminateFailed": "退款已完成，但上游停用失败：{reason}（请手工停用）",
+  "metrics.custom": "自定义",
+  "console.perMonth": "月"
 }

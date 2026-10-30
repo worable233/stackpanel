@@ -3233,6 +3233,19 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
       value: serviceDate(service.expiresAt, props.locale),
       expiry: true,
     },
+    ...(service.renewal
+      ? [
+          {
+            key: 'renewalPrice',
+            label: tr('console.renewalPrice'),
+            value: `${money(service.renewal.price, service.renewal.currency, props.locale)} / ${
+              service.renewal.months === 1
+                ? tr('console.perMonth')
+                : tr('console.months', { months: String(service.renewal.months) })
+            }`,
+          },
+        ]
+      : []),
   ];
   const additionalFields = informationFields.filter(
     (field) =>
@@ -3685,7 +3698,6 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                 <Card className="min-w-0 border-0">
                   <CardHeader>
                     <CardTitle>{tr('console.systemMaintenance')}</CardTitle>
-                    <CardDescription>{tr('console.systemMaintenanceDescription')}</CardDescription>
                   </CardHeader>
                   <CardContent className="grid gap-2 sm:grid-cols-2">
                     {maintenanceActions.map((action) => {
@@ -3708,32 +3720,6 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                         />
                       );
                     })}
-                  </CardContent>
-                </Card>
-              ) : null}
-              {service.renewal ? (
-                <Card className="min-w-0 border-0">
-                  <CardHeader>
-                    <CardTitle>{tr('console.renewal')}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex flex-wrap items-end justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">{tr('console.renewalPrice')}</p>
-                      <p className="mt-1 text-2xl font-semibold tracking-tight">
-                        {money(service.renewal.price, service.renewal.currency, props.locale)}
-                        <span className="ml-1 text-sm font-normal text-muted-foreground">
-                          / {tr('console.months', { months: String(service.renewal.months) })}
-                        </span>
-                      </p>
-                    </div>
-                    {renewable && renewAction ? (
-                      <Button
-                        nativeButton={false}
-                        render={<Link href={`${baseHref}?panel=renew`} />}
-                      >
-                        {tr('console.renewal')}
-                      </Button>
-                    ) : null}
                   </CardContent>
                 </Card>
               ) : null}
@@ -3817,51 +3803,51 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
               ) : null}
             </div>
           </div>
-          <Card id="instance-monitoring" className="min-w-0 border-0">
-            <CardHeader>
-              <CardTitle>{tr('console.realtimeMonitoring')}</CardTitle>
-              <CardDescription>{tr('console.monitoringHint')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {hasMetricData ? (
-                <MetricsExplorer
-                  series={metrics}
-                  locale={props.locale}
-                  labels={{
-                    range: tr('metrics.range'),
-                    start: tr('metrics.start'),
-                    end: tr('metrics.end'),
-                    quick1h: tr('metrics.quick1h'),
-                    quick6h: tr('metrics.quick6h'),
-                    quick12h: tr('metrics.quick12h'),
-                    quick24h: tr('metrics.quick24h'),
-                    all: tr('metrics.all'),
-                    dataRange: tr('metrics.dataRange'),
-                    empty: tr('metrics.empty'),
-                    noData: tr('metrics.noData'),
-                    points: tr('metrics.points'),
-                    latest: tr('metrics.latest'),
-                    min: tr('metrics.min'),
-                    max: tr('metrics.max'),
-                    avg: tr('metrics.avg'),
-                    zoomHint: tr('metrics.zoomHint'),
-                  }}
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-2 rounded-xl bg-muted/25 px-4 py-10 text-center">
-                  <Activity className="size-5 text-muted-foreground" aria-hidden="true" />
-                  <p className="text-sm font-medium">{tr('metrics.empty')}</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <section
+            id="instance-monitoring"
+            className="flex min-w-0 flex-col gap-4"
+            aria-label={tr('console.realtimeMonitoring')}
+          >
+            <h2 className="text-lg font-semibold tracking-tight">
+              {tr('console.realtimeMonitoring')}
+            </h2>
+            {hasMetricData ? (
+              <MetricsExplorer
+                series={metrics}
+                locale={props.locale}
+                labels={{
+                  range: tr('metrics.range'),
+                  start: tr('metrics.start'),
+                  end: tr('metrics.end'),
+                  quick1h: tr('metrics.quick1h'),
+                  quick6h: tr('metrics.quick6h'),
+                  quick12h: tr('metrics.quick12h'),
+                  quick24h: tr('metrics.quick24h'),
+                  all: tr('metrics.all'),
+                  dataRange: tr('metrics.dataRange'),
+                  empty: tr('metrics.empty'),
+                  noData: tr('metrics.noData'),
+                  points: tr('metrics.points'),
+                  latest: tr('metrics.latest'),
+                  min: tr('metrics.min'),
+                  max: tr('metrics.max'),
+                  avg: tr('metrics.avg'),
+                  custom: tr('metrics.custom'),
+                }}
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-2 rounded-xl bg-muted/25 px-4 py-10 text-center">
+                <Activity className="size-5 text-muted-foreground" aria-hidden="true" />
+                <p className="text-sm font-medium">{tr('metrics.empty')}</p>
+              </div>
+            )}
+          </section>
         </div>
       ) : null}
       {panel === 'renew' && renewable && renewAction ? (
         <Card className="w-full max-w-2xl border-0 bg-muted/25">
           <CardHeader>
             <CardTitle>{tr('console.renewal')}</CardTitle>
-            <CardDescription>{tr('console.renewalHint')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {service.renewal ? (
@@ -3870,7 +3856,10 @@ function StoreAccountServiceDetailPage(props: AccountPageComponentProps): ReactE
                 <span className="text-lg font-semibold">
                   {money(service.renewal.price, service.renewal.currency, props.locale)}
                   <span className="ml-1 text-xs font-normal text-muted-foreground">
-                    / {tr('console.months', { months: String(service.renewal.months) })}
+                    /{' '}
+                    {service.renewal.months === 1
+                      ? tr('console.perMonth')
+                      : tr('console.months', { months: String(service.renewal.months) })}
                   </span>
                 </span>
               </div>

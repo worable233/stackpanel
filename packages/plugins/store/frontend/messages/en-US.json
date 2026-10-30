@@ -483,7 +483,6 @@
   "console.editInstanceHint": "The name and remark are visible only in your account.",
   "console.remarkPlaceholder": "e.g. Production, Hong Kong…",
   "console.systemMaintenance": "System maintenance",
-  "console.systemMaintenanceDescription": "Reinstall the OS or reset the password from a dialog with the required parameters.",
   "console.renewalPrice": "Renewal price",
   "console.months": "{months} months",
   "console.show": "Show",
@@ -500,7 +499,6 @@
   "console.exitRescue": "Exit rescue mode",
   "console.hardPowerOff": "Force power off",
   "console.hardReboot": "Force reboot",
-  "console.monitoringHint": "Pick a time range, then hover a chart to inspect exact samples.",
   "feedback.serviceUpdated": "Instance information updated.",
   "metrics.range": "Time range",
   "metrics.start": "Start",
@@ -516,7 +514,6 @@
   "metrics.min": "Min",
   "metrics.max": "Max",
   "metrics.avg": "Avg",
-  "console.renewalHint": "Renewal extends from the current expiry date and is paid from your wallet balance.",
   "service.refundTitle": "Refund",
   "service.refundIntro": "The instance is suspended immediately (reversible). Once an admin approves, the refund goes to your platform balance and the instance is terminated.",
   "service.refundAmount": "Refundable amount",
@@ -547,7 +544,8 @@
   "settings.store.refundWindowDisabled": "Never allow",
   "common.enabled": "Enabled",
   "common.disabled": "Disabled",
-  "metrics.zoomHint": "Scroll to zoom · Double-click to reset",
   "refund.fromService": "From instance page",
-  "refund.terminateFailed": "Refunded, but the upstream cancellation failed: {reason} (terminate manually)"
+  "refund.terminateFailed": "Refunded, but the upstream cancellation failed: {reason} (terminate manually)",
+  "metrics.custom": "Custom",
+  "console.perMonth": "month"
 }
