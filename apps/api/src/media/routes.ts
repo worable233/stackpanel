@@ -31,6 +31,23 @@ import {
 } from './kernel-service.ts';
 import { registerMediaAdminRoutes } from './admin-routes.ts';
 
+/**
+ * Match an `If-None-Match` header against the etag we would send.
+ *
+ * The header is a comma-separated list of validators (or `*`), and a client may
+ * echo our weak validator verbatim or strip the `W/` prefix — both must count as
+ * a match, otherwise a revalidation silently re-sends a multi-megabyte body.
+ */
+function matchesEtag(header: string | string[] | undefined, etag: string): boolean {
+  if (!header) return false;
+  const weak = etag.replace(/^W\//, '');
+  const raw = Array.isArray(header) ? header.join(',') : header;
+  return raw.split(',').some((value) => {
+    const candidate = value.trim();
+    return candidate === '*' || candidate === etag || candidate.replace(/^W\//, '') === weak;
+  });
+}
+
 const uploadQuerySchema = z.object({
   filename: z.string().trim().min(1).max(191).optional(),
   visibility: z.enum(['public', 'private']).default('private'),
@@ -163,7 +180,7 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
       const result = await buildService().readContent(id, await optionalActor(request), variant);
       if (!result)
         return reply.code(404).send({ error: '附件内容不存在', code: 'media.not_found' });
-      const { record } = result;
+      const { record, rev } = result;
       const isInline = record.mime.startsWith('image/') || record.mime === 'application/pdf';
       // Active content (SVG is XML and can carry <script>) must never render
       // inline same-origin: the global CSP includes `script-src 'unsafe-inline'`,
@@ -171,13 +188,31 @@ export async function registerMediaRoutes(app: FastifyInstance): Promise<void> {
       // the browser download it instead of executing it. The global onSend hook
       // owns the CSP header, so this disposition is the effective control.
       const inline = isInline && !isActiveContent(record.mime);
-      reply.header('Content-Type', result.mime);
-      reply.header('Content-Disposition', contentDisposition(record.filename, inline));
+      // Same link, moving bytes: `/media/:id/content` is stable on purpose — every
+      // URL already published keeps resolving after a conversion — so how long a
+      // copy may be cached has to be decided by the content revision, not the path.
+      //
+      // `?v=<rev>` (what the API hands out to clients that opt in) is immutable;
+      // anything else — a link written before the conversion, or with an outdated
+      // `v` — revalidates every time, so an old link is corrected on its next view
+      // instead of showing pre-conversion bytes for a day.
+      const etag = `W/"${rev}"`;
+      const versioned = (request.query as { v?: string }).v === rev;
+      reply.header('ETag', etag);
+      reply.header('X-Content-Type-Options', 'nosniff');
       reply.header(
         'Cache-Control',
-        record.visibility === 'public' ? 'public, max-age=86400' : 'private',
+        record.visibility !== 'public'
+          ? 'private, max-age=0, must-revalidate'
+          : versioned
+            ? 'public, max-age=31536000, immutable'
+            : 'public, max-age=0, must-revalidate',
       );
-      reply.header('X-Content-Type-Options', 'nosniff');
+      if (matchesEtag(request.headers['if-none-match'], etag)) {
+        return reply.code(304).send();
+      }
+      reply.header('Content-Type', result.mime);
+      reply.header('Content-Disposition', contentDisposition(record.filename, inline));
       return reply.send(Buffer.from(result.data));
     } catch (err) {
       return sendMediaError(reply, err);

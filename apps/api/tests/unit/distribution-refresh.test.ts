@@ -6,7 +6,7 @@ import path from 'node:path';
 import { catalogDigest } from '../../src/distribution/signatures.ts';
 import { MemorySourceCache } from '../../src/distribution/github-source.ts';
 import { FileSourceCache, cacheFileName } from '../../src/distribution/source-cache.ts';
-import { FileCatalogStateStore } from '../../src/distribution/catalog-state.ts';
+import { channelBaseline, FileCatalogStateStore } from '../../src/distribution/catalog-state.ts';
 import {
   backoffMs,
   CatalogRefreshService,
@@ -36,13 +36,14 @@ function snapshot(
   sequence: number,
   expiresAt = '2026-10-30T00:00:00.000Z',
   generatedAt = '2026-10-16T00:00:00.000Z',
+  channel: 'stable' | 'beta' = 'stable',
 ): CatalogSnapshot {
   return {
     formatVersion: 1,
     sequence,
     generatedAt,
     expiresAt,
-    channels: [{ channel: 'stable', sequence }],
+    channels: [{ channel, sequence }],
     publishers: [
       {
         publisher: 'stackpanel',
@@ -76,16 +77,24 @@ function keyringFor(publicKeyPem: string): Keyring {
 function fakeGitHub(
   privateKey: ReturnType<typeof keypair>['privateKey'],
   sequence: number,
-  overrides: { channelsSequence?: number; expiresAt?: string; generatedAt?: string } = {},
+  overrides: {
+    channelsSequence?: number;
+    expiresAt?: string;
+    generatedAt?: string;
+    channel?: 'stable' | 'beta';
+  } = {},
 ) {
-  const body = JSON.stringify(snapshot(sequence, overrides.expiresAt, overrides.generatedAt));
+  const channel = overrides.channel ?? 'stable';
+  const body = JSON.stringify(
+    snapshot(sequence, overrides.expiresAt, overrides.generatedAt, channel),
+  );
   const sig = JSON.stringify(signCatalog(privateKey, new TextEncoder().encode(body)));
   return vi.fn(async (input: Parameters<typeof fetch>[0]) => {
     const url = String(input);
     if (url === raw('main', 'channels.json')) {
       return new Response(
         JSON.stringify({
-          channels: [{ channel: 'stable', sequence: overrides.channelsSequence ?? sequence }],
+          channels: [{ channel, sequence: overrides.channelsSequence ?? sequence }],
         }),
       );
     }
@@ -152,6 +161,26 @@ describe('FileCatalogStateStore', () => {
     expect((await new FileCatalogStateStore(file).read()).highestSequence).toBe(7);
   });
 
+  it('tracks the highest sequence per channel and migrates a legacy state file', async () => {
+    const file = path.join(await tempDir(), 'catalog-state.json');
+    const store = new FileCatalogStateStore(file);
+    await store.advance(10, 'beta', new Date('2026-10-16T00:00:00Z'));
+    await store.advance(8, 'stable', new Date('2026-10-16T00:01:00Z'));
+    const state = await store.read();
+    expect(state.channels).toEqual({ beta: 10, stable: 8 });
+    expect(state.highestSequence).toBe(10);
+    expect(channelBaseline(state, 'beta')).toBe(10);
+    expect(channelBaseline(state, 'stable')).toBe(8);
+    expect(channelBaseline(state, 'nightly')).toBe(0);
+
+    // 旧版本写下的文件没有 channels：只把全局最高值归给它记录的渠道。
+    const legacy = path.join(await tempDir(), 'legacy.json');
+    await writeFile(legacy, JSON.stringify({ highestSequence: 7, lastChannel: 'beta' }), 'utf8');
+    const legacyState = await new FileCatalogStateStore(legacy).read();
+    expect(channelBaseline(legacyState, 'beta')).toBe(7);
+    expect(channelBaseline(legacyState, 'stable')).toBe(0);
+  });
+
   it('treats an unreadable state file as empty', async () => {
     const file = path.join(await tempDir(), 'missing.json');
     expect((await new FileCatalogStateStore(file).read()).highestSequence).toBe(0);
@@ -163,9 +192,10 @@ describe('CatalogRefreshService', () => {
     fetchImpl: ReturnType<typeof fakeGitHub>,
     stateFile: string,
     publicKeyPem: string,
+    channel: 'stable' | 'beta' = 'stable',
   ) {
     return new CatalogRefreshService({
-      options: { repository: REPO, channel: 'stable', fetchImpl },
+      options: { repository: REPO, channel, fetchImpl },
       cache: new MemorySourceCache(),
       state: new FileCatalogStateStore(stateFile),
       loadKeyring: async () => keyringFor(publicKeyPem),
@@ -217,6 +247,45 @@ describe('CatalogRefreshService', () => {
     expect(result.failure?.kind).toBe('replay');
     // Replay never advances or resets the guard.
     expect((await new FileCatalogStateStore(stateFile).read()).highestSequence).toBe(9);
+  });
+
+  it('succeeds when the channel still points at the sequence already recorded', async () => {
+    // 回归：更新中心的「检查更新」在目录没有新发布时必须成功，而不是报
+    // 「拒绝回放旧目录：sequence 2 ≤ 已见 2」——那会让手动检查按钮看起来坏掉。
+    const { publicKeyPem, privateKey } = keypair();
+    const stateFile = path.join(await tempDir(), 's.json');
+    const first = await service(fakeGitHub(privateKey, 2), stateFile, publicKeyPem);
+    expect((await first.refresh()).resolved?.sequence).toBe(2);
+
+    // 新进程（内存快照为空）读同一份持久状态，渠道仍指向 2。
+    const second = await service(fakeGitHub(privateKey, 2), stateFile, publicKeyPem);
+    const result = await second.refresh();
+    expect(result.failure).toBeNull();
+    expect(result.resolved?.sequence).toBe(2);
+    expect(second.current()?.sequence).toBe(2);
+    expect((await new FileCatalogStateStore(stateFile).read()).highestSequence).toBe(2);
+  });
+
+  it('keeps the replay baseline per channel, so switching to a lower channel still works', async () => {
+    // beta 已推进到 5，stable 还在 2：切回 stable 是管理员的选择，不是降级攻击。
+    // 旧实现拿跨渠道的全局最高值比较，稳定渠道的正常快照会被判成回放，并被退避 6 小时。
+    const { publicKeyPem, privateKey } = keypair();
+    const stateFile = path.join(await tempDir(), 's.json');
+    const beta = await service(
+      fakeGitHub(privateKey, 5, { channel: 'beta' }),
+      stateFile,
+      publicKeyPem,
+      'beta',
+    );
+    expect((await beta.refresh()).resolved?.sequence).toBe(5);
+
+    const stable = await service(fakeGitHub(privateKey, 2), stateFile, publicKeyPem, 'stable');
+    const result = await stable.refresh();
+    expect(result.failure).toBeNull();
+    expect(result.resolved?.sequence).toBe(2);
+    const persisted = await new FileCatalogStateStore(stateFile).read();
+    expect(persisted.channels).toEqual({ beta: 5, stable: 2 });
+    expect(persisted.highestSequence).toBe(5);
   });
 
   it('classifies a signature failure and backs off without advancing the guard', async () => {

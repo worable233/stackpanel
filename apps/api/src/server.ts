@@ -20,6 +20,14 @@ import path from 'node:path';
 import { BootstrapStateStore, defaultBootstrapStateDir, initialState } from './bootstrap/state.ts';
 
 /**
+ * 隔离插件进程通过 RPC 抛出的异步错误不能带走整个 API。
+ * 记录后继续服务，具体请求由插件边界返回错误。
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error('[api] unhandled rejection (kept alive):', reason);
+});
+
+/**
  * 解析状态根目录与自举状态目录。
  *
  * 必须与 runner / 安装器一致：

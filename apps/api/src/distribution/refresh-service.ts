@@ -17,7 +17,7 @@ import { fetchCatalog, type CatalogFetchOptions, type ResolvedCatalog } from './
 import { CatalogError } from './catalog-client.ts';
 import type { SourceCache } from './github-source.ts';
 import { GitHubSourceError } from './github-source.ts';
-import type { FileCatalogStateStore } from './catalog-state.ts';
+import { channelBaseline, type FileCatalogStateStore } from './catalog-state.ts';
 
 /** 默认后台刷新周期：6 小时，加最多 30 分钟抖动（§10）。 */
 export const DEFAULT_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -195,12 +195,14 @@ export class CatalogRefreshService {
     const state = await this.opts.state.read();
     try {
       const keyring = await this.opts.loadKeyring();
+      // 防回放基线按渠道取：stable 与 beta 的 sequence 各自推进，用跨渠道的最高值
+      // 去比会把「切回序号较低的渠道」误判成回放（并进入最长 6 小时的退避）。
       const resolved = await fetchCatalog(
         this.opts.options,
         this.opts.cache,
         keyring,
         this.opts.options.channel,
-        state.highestSequence,
+        channelBaseline(state, this.opts.options.channel),
         now,
       );
       // 仅在**验证通过**后才推进防回放 sequence；失败绝不推进。

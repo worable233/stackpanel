@@ -6,12 +6,14 @@ import { LocalDiskDriver } from '@stackpanel/db';
 import { AttachmentService, MediaError } from '../../src/media/service.ts';
 import type {
   AttachmentRecord,
+  AttachmentLibraryStats,
   AttachmentRepository,
   AttachmentVariant,
   AttachmentVisibility,
   CreateAttachmentInput,
 } from '../../src/media/attachments.ts';
 import type { ImageTransformer, VariantSpec } from '../../src/media/image.ts';
+import { optimizeTargetForMime } from '../../src/media/image.ts';
 
 function png(width: number, height: number, fill = 0x00): Uint8Array {
   const out = new Uint8Array(64);
@@ -52,12 +54,21 @@ class FakeRepository implements AttachmentRepository {
   }
   async update(
     id: string,
-    patch: { filename?: string | undefined; visibility?: AttachmentVisibility | undefined },
+    patch: {
+      filename?: string | undefined;
+      visibility?: AttachmentVisibility | undefined;
+      key?: string | undefined;
+      mime?: string | undefined;
+      size?: number | undefined;
+    },
   ): Promise<AttachmentRecord | null> {
     const row = this.rows.get(id);
     if (!row) return null;
     if (patch.filename !== undefined) row.filename = patch.filename;
     if (patch.visibility !== undefined) row.visibility = patch.visibility;
+    if (patch.key !== undefined) row.key = patch.key;
+    if (patch.mime !== undefined) row.mime = patch.mime;
+    if (patch.size !== undefined) row.size = patch.size;
     return row;
   }
   async updateVariants(id: string, variants: AttachmentVariant[]): Promise<AttachmentRecord | null> {
@@ -77,6 +88,28 @@ class FakeRepository implements AttachmentRepository {
             (variant.status ?? 'ready') === 'pending' && (variant.attempts ?? 0) < maxAttempts,
         ),
       )
+      .slice(0, limit);
+  }
+  async listForAdmin(): Promise<{ items: AttachmentRecord[]; total: number }> {
+    const items = [...this.rows.values()];
+    return { items, total: items.length };
+  }
+  async stats(): Promise<AttachmentLibraryStats> {
+    const items = [...this.rows.values()];
+    return {
+      total: items.length,
+      bytes: items.reduce((sum, row) => sum + row.size, 0),
+      byVisibility: { public: 0, private: 0 },
+      byKind: { image: 0, document: 0, archive: 0, video: 0, audio: 0, text: 0, other: 0 },
+      variants: { pending: 0, ready: 0, failed: 0 },
+    };
+  }
+  async resetFailedVariants(): Promise<string[]> {
+    return [];
+  }
+  async listOptimizable(limit: number): Promise<AttachmentRecord[]> {
+    return [...this.rows.values()]
+      .filter((row) => ['image/png', 'image/jpeg', 'image/gif'].includes(row.mime))
       .slice(0, limit);
   }
   async delete(id: string): Promise<void> {
@@ -209,3 +242,161 @@ function yearMonth(): string {
   const now = new Date();
   return `${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
+
+/**
+ * WebP delivery encode (ADR-0014 §4 addendum).
+ *
+ * The stand-in encoder returns a 13-byte payload so the byte guard ("only keep
+ * the WebP when it is strictly smaller than the upload") is exercised rather
+ * than bypassed. Real encoder behaviour is covered by the integration suite.
+ */
+const webpTransformer: ImageTransformer = {
+  supports: (mime) => mime.startsWith('image/'),
+  transform: async (_input, _mime, spec) =>
+    new TextEncoder().encode(`${spec.name}:${spec.width}x${spec.height}:${spec.format}`),
+  optimize: async (_input, _mime, target) =>
+    new TextEncoder().encode(target.lossless ? 'webp:lossless' : 'webp:lossy'),
+};
+
+describe('WebP delivery encode', () => {
+  let root: string;
+  let storage: LocalDiskDriver;
+  let repository: FakeRepository;
+  let idCounter = 0;
+  const owner = { userId: 'user_a', canManage: false };
+
+  const withEncoder = (options: { optimize?: boolean; transformer?: ImageTransformer } = {}) =>
+    new AttachmentService({
+      repository,
+      storage,
+      transform: options.transformer ?? webpTransformer,
+      ...(options.optimize === undefined ? {} : { optimize: options.optimize }),
+      generateId: () => `att_${(idCounter += 1)}`,
+      logger: { warn: () => undefined },
+    });
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'sp-media-webp-'));
+    storage = new LocalDiskDriver({ driver: 'local', root, publicBaseUrl: '/storage' });
+    repository = new FakeRepository();
+    idCounter = 0;
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('plans lossless for graphics and quality-82 for photos', () => {
+    expect(optimizeTargetForMime('image/png')).toEqual({ lossless: true });
+    expect(optimizeTargetForMime('image/gif')).toEqual({ lossless: true });
+    expect(optimizeTargetForMime('image/webp')).toEqual({ lossless: true });
+    expect(optimizeTargetForMime('image/jpeg')).toEqual({ lossless: false });
+    // Vector sources keep their XML: rasterising would drop semantics.
+    expect(optimizeTargetForMime('image/svg+xml')).toBeNull();
+    expect(optimizeTargetForMime('application/pdf')).toBeNull();
+  });
+
+  it('stores the WebP bytes as the original and renames the file', async () => {
+    const encoder = withEncoder();
+    const view = await encoder.ingest({ data: png(3000, 1500), filename: 'shot.png' }, owner);
+    const row = repository.rows.get(view.id);
+    expect(row?.mime).toBe('image/webp');
+    expect(row?.key).toBe(`media/${yearMonth()}/${view.id}/original.webp`);
+    expect(row?.filename).toBe('shot.webp');
+    expect(row?.size).toBe('webp:lossless'.length);
+    const stored = await storage.get(row?.key ?? '');
+    expect(new TextDecoder().decode(stored ?? new Uint8Array())).toBe('webp:lossless');
+    // The discarded PNG never reached storage: no orphan, no second copy.
+    expect(await storage.get(`media/${yearMonth()}/${view.id}/original.png`)).toBeNull();
+  });
+
+  it('keeps the original when the WebP did not get smaller', async () => {
+    const inflated: ImageTransformer = {
+      ...webpTransformer,
+      optimize: async () => new Uint8Array(512),
+    };
+    const view = await withEncoder({ transformer: inflated }).ingest(
+      { data: png(3000, 1500), filename: 'tiny.png' },
+      owner,
+    );
+    expect(repository.rows.get(view.id)?.mime).toBe('image/png');
+    expect(await storage.get(`media/${yearMonth()}/${view.id}/original.png`)).not.toBeNull();
+  });
+
+  it('honours the composition-root switch', async () => {
+    const view = await withEncoder({ optimize: false }).ingest(
+      { data: png(3000, 1500), filename: 'raw.png' },
+      owner,
+    );
+    expect(repository.rows.get(view.id)?.mime).toBe('image/png');
+  });
+
+  it('converts stored attachments in place and reports the savings', async () => {
+    const view = await withEncoder({ optimize: false }).ingest(
+      { data: png(3000, 1500), filename: 'old.png' },
+      owner,
+    );
+    // Snapshot the pre-conversion row: the fake repository hands out live rows,
+    // so reading it after the batch would show the converted size.
+    const beforeSize = repository.rows.get(view.id)?.size ?? 0;
+    const beforeKey = repository.rows.get(view.id)?.key ?? '';
+    const result = await withEncoder().optimizeLibrary();
+    expect(result).toMatchObject({ optimized: 1, skipped: 0 });
+    expect(result.savedBytes).toBe(beforeSize - 'webp:lossless'.length);
+    const after = repository.rows.get(view.id);
+    expect(after?.mime).toBe('image/webp');
+    expect(after?.filename).toBe('old.webp');
+    // Old object removed, new key holds the encoded bytes.
+    expect(await storage.get(beforeKey)).toBeNull();
+    const stored = await storage.get(after?.key ?? '');
+    expect(new TextDecoder().decode(stored ?? new Uint8Array())).toBe('webp:lossless');
+  });
+
+  it('skips rows whose bytes are gone', async () => {
+    const view = await withEncoder({ optimize: false }).ingest(
+      { data: png(3000, 1500), filename: 'gone.png' },
+      owner,
+    );
+    await storage.delete(repository.rows.get(view.id)?.key ?? '');
+    const result = await withEncoder().optimizeLibrary();
+    expect(result).toMatchObject({ optimized: 0, skipped: 1 });
+    expect(repository.rows.get(view.id)?.mime).toBe('image/png');
+  });
+
+  it('targets a single attachment when asked', async () => {
+    const convert = withEncoder({ optimize: false });
+    const first = await convert.ingest({ data: png(3000, 1500), filename: 'a.png' }, owner);
+    const second = await convert.ingest({ data: png(3000, 1500), filename: 'b.png' }, owner);
+    const result = await withEncoder().optimizeLibrary(first.id);
+    expect(result.ids).toEqual([first.id]);
+    expect(repository.rows.get(second.id)?.mime).toBe('image/png');
+  });
+
+  it('publishes a revision that moves only when the bytes move', async () => {
+    const encoder = withEncoder({ optimize: false });
+    const view = await encoder.ingest({ data: png(3000, 1500), filename: 'rev.png' }, owner);
+    expect(view.rev).toMatch(/^[0-9a-f]{16}$/);
+    // A variant has its own bytes, so its own revision.
+    expect(view.variants.every((variant) => variant.rev !== view.rev)).toBe(true);
+
+    // Metadata-only edits keep the bytes where they are: the link's copy is still
+    // current, so the revision must not change (otherwise every rename would
+    // bust caches that had nothing wrong with them).
+    const renamed = await encoder.updateMetadata(view.id, { filename: 'other.png' }, owner);
+    expect(renamed.rev).toBe(view.rev);
+
+    // The conversion rewrites the object and its key, so the revision moves —
+    // that is what lets an already-published link notice the new content.
+    const optimizer = withEncoder();
+    const converted = await optimizer.optimizeLibrary(view.id);
+    expect(converted.optimized).toBe(1);
+    const after = await optimizer.get(view.id, owner);
+    expect(after.mime).toBe('image/webp');
+    expect(after.rev).not.toBe(view.rev);
+    // …while the link itself is untouched: identity is the id, not the bytes.
+    expect(after.url).toBe(view.url);
+    expect(after.variants.map((variant) => variant.url)).toEqual(
+      view.variants.map((variant) => variant.url),
+    );
+  });
+});

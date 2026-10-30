@@ -270,13 +270,39 @@ export class PrismaAttachmentRepository implements AttachmentRepository {
     }
   }
 
+  async listOptimizable(limit: number): Promise<AttachmentRecord[]> {
+    try {
+      const capped = Math.max(1, Math.min(limit, 500));
+      const rows = await this.prisma.$queryRaw<AttachmentRow[]>`
+        SELECT * FROM "attachments"
+        WHERE "mime" IN ('image/png', 'image/jpeg', 'image/gif')
+        ORDER BY "createdAt" ASC
+        LIMIT ${capped}
+      `;
+      return rows.map(mapRow);
+    } catch (err) {
+      if (isMissingTable(err)) return [];
+      throw err;
+    }
+  }
+
   async update(
     id: string,
-    patch: { filename?: string | undefined; visibility?: AttachmentVisibility | undefined },
-  ): Promise<AttachmentRecord | null> {    const rows = await this.prisma.$queryRaw<AttachmentRow[]>`
+    patch: {
+      filename?: string | undefined;
+      visibility?: AttachmentVisibility | undefined;
+      key?: string | undefined;
+      mime?: string | undefined;
+      size?: number | undefined;
+    },
+  ): Promise<AttachmentRecord | null> {
+    const rows = await this.prisma.$queryRaw<AttachmentRow[]>`
       UPDATE "attachments"
       SET "filename" = COALESCE(${patch.filename ?? null}, "filename"),
           "visibility" = COALESCE(${patch.visibility ?? null}, "visibility"),
+          "key" = COALESCE(${patch.key ?? null}, "key"),
+          "mime" = COALESCE(${patch.mime ?? null}, "mime"),
+          "size" = COALESCE(${patch.size ?? null}::int, "size"),
           "updatedAt" = CURRENT_TIMESTAMP
       WHERE "id" = ${id}
       RETURNING *

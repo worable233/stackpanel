@@ -11,6 +11,7 @@ import {
   type PlatformInfo,
   type SettlementCurrencyResponse,
   type SigningStatus,
+  type UpdatePolicyView,
 } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { apiAssetUrl, getAuthedApiClient } from '@/lib/api';
@@ -32,6 +33,7 @@ export default async function AdminSettingsPage() {
   let rates: AdminFxRateView[] = [];
   let distribution: DistributionSourceConfig | null = null;
   let distributionDefaults: { repository: string | null; mirror: string | null } | undefined;
+  let updatePolicy: UpdatePolicyView | null = null;
   let salesChannels: AdminSalesChannel[] = [];
   let paymentProviders: NonNullable<AdminSalesChannelListResponse['providers']> = [];
   let error: string | null = null;
@@ -46,6 +48,7 @@ export default async function AdminSettingsPage() {
       rateResult,
       distributionResult,
       salesChannelsResult,
+      updatePolicyResult,
     ] = await Promise.all([
       api.getAdminPlatformInfo(),
       api.getSigningStatus(),
@@ -60,6 +63,8 @@ export default async function AdminSettingsPage() {
         channels: [] as AdminSalesChannel[],
         providers: [] as NonNullable<AdminSalesChannelListResponse['providers']>,
       })),
+      // 更新策略是独立设置项：它失败不能把整个设置页清空（与销售渠道同样的降级策略）。
+      api.getUpdatePolicy().catch(() => null),
     ]);
     platform = platformResult.platform;
     signing = signingResult.signing;
@@ -70,6 +75,7 @@ export default async function AdminSettingsPage() {
     distributionDefaults = distributionResult.defaults;
     salesChannels = salesChannelsResult.channels;
     paymentProviders = salesChannelsResult.providers ?? [];
+    updatePolicy = updatePolicyResult?.policy ?? null;
   } catch (err) {
     error = await apiErrorMessage(err);
   }
@@ -86,9 +92,7 @@ export default async function AdminSettingsPage() {
       <PageHeader title={t('admin.settings.title')} />
       <div className="h-5 lg:h-6" />
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.settings.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.settings.serviceUnavailable')}</p>
       ) : (
         <SettingsManager
           platform={platform}
@@ -98,6 +102,7 @@ export default async function AdminSettingsPage() {
           currencyRates={rates}
           distribution={distribution}
           distributionDefaults={distributionDefaults}
+          updatePolicy={updatePolicy}
           salesChannels={salesChannels}
           paymentProviders={paymentProviders}
           pluginSections={pluginSettings.map((section) => ({

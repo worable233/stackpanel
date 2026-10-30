@@ -10,7 +10,6 @@
 import {
   catalogReleaseTag,
   isCatalogExpired,
-  isNewerSequence,
   validateCatalogSnapshot,
   type CatalogSnapshot,
   type CatalogSignature,
@@ -87,7 +86,10 @@ async function fetchChannelPointer(
 /**
  * 拉取并验证一个固定 sequence 的目录快照。
  *
- * @param highestSequence 已持久化的最高 sequence；低于/等于它一律拒绝（防回放）。
+ * @param highestSequence **该渠道**已持久化的最高 sequence。严格更低的视为回放/降级
+ *   并拒绝；**相等**的不是攻击，而是「渠道没有新发布」：固定 tag 的内容不会变，
+ *   仍按同一套验签流程取回。若把相等也当错误，目录不推进时每次手动「检查更新」
+ *   都会报「拒绝回放旧目录」（多渠道/多进程共享状态时必然遇到）。
  */
 export async function fetchCatalogSequenced(
   options: CatalogFetchOptions,
@@ -97,9 +99,9 @@ export async function fetchCatalogSequenced(
   highestSequence: number,
   now: Date = new Date(),
 ): Promise<ResolvedCatalog> {
-  if (!isNewerSequence(sequence, highestSequence)) {
+  if (sequence < highestSequence) {
     throw new CatalogError(
-      `拒绝回放旧目录：sequence ${sequence} ≤ 已见 ${highestSequence}`,
+      `拒绝回放旧目录：sequence ${sequence} < 已见 ${highestSequence}`,
       'replay',
     );
   }

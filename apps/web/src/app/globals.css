@@ -388,6 +388,14 @@
    plugin pages without rebuilding any of them. */
 /* External plugins still carry utility borders/shadows from older releases.
    In Atlas those resolve to invisible hairlines and soft surfaces instead. */
+/* Admin/account shells manage their own scroll container. Prevent the window
+   from scrolling when a tab, anchor or server action moves focus, which used to
+   clip the fixed sidebar header and leave the page looking stuck at the top. */
+html:has(.backend-shell),
+body:has(.backend-shell) {
+  overflow: hidden;
+}
+
 .plugin-admin .border {
   border-color: transparent;
 }

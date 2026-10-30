@@ -114,12 +114,23 @@ type WorkerErrorPayload = {
  */
 function restoreWorkerError(payload: WorkerErrorPayload | undefined): Error {
   const message = payload?.message ?? 'isolated plugin failed';
-  if (typeof payload?.code === 'string' && typeof payload?.status === 'number') {
-    return new PluginError(payload.code, payload.status, payload.detail ?? message);
+  // A plugin may raise a status without a stable code — a local error class that
+  // only carries `statusCode`, for example. Losing the code must not cost the
+  // status: without the `PluginError` brand the kernel re-renders a deterministic
+  // 409 as "internal server error", which reads like a kernel fault and hides the
+  // refusal reason from the operator. Fall back to a generic code instead.
+  if (typeof payload?.status === 'number') {
+    const code = typeof payload?.code === 'string' ? payload.code : 'plugin.error';
+    const rebuilt = new PluginError(code, payload.status, payload.detail ?? message);
+    // `PluginError.message` defaults to the code. Keep the original text instead:
+    // a raw upstream failure ("/raw boom/") has no meaningful code, and replacing
+    // its message with "plugin.error" would make logs unreadable while adding no
+    // identity. The code stays the machine-facing half, `detail` the operator one.
+    rebuilt.message = message;
+    return rebuilt;
   }
   const failure = new Error(message) as Error & { code?: string; status?: number };
   if (payload?.code !== undefined) failure.code = payload.code;
-  if (payload?.status !== undefined) failure.status = payload.status;
   return failure;
 }
 

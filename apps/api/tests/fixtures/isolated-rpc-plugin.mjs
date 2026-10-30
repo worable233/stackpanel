@@ -42,6 +42,18 @@ export default {
       },
     },
     {
+      // A plugin-local error class may carry only a status (`statusCode`) and no
+      // stable code — the zjmf provider does exactly that. The kernel must still
+      // honour the status; requiring a code demoted this refusal to a 500.
+      method: 'GET',
+      path: '/error-status-only',
+      handler: async () => {
+        const error = new Error('缺少原请求的持久化账单证据，禁止通过人工声明重开');
+        error.status = 409;
+        throw error;
+      },
+    },
+    {
       method: 'GET',
       path: '/services',
       handler: async () => ({

@@ -36,11 +36,16 @@ const policySchema = z.object({
   autoUpdateKernel: z.boolean().optional(),
   excluded: z.array(z.string().min(1).max(128)).max(500).optional(),
   pinned: z.record(z.string().min(1).max(128), z.string().min(1).max(64)).optional(),
+  /**
+   * 维护窗口。显式传 `null` 表示清除限制（表单里把「只在窗口内」取消勾选就是这种情形）；
+   * 不传则保留当前值。没有 `null` 时，一旦设过窗口就再也关不掉。
+   */
   maintenanceWindow: z
     .object({
       startHour: z.number().int().min(0).max(23),
       endHour: z.number().int().min(0).max(23),
     })
+    .nullable()
     .optional(),
   allowPermissionIncrease: z.boolean().optional(),
   allowIrreversibleMigration: z.boolean().optional(),
@@ -92,10 +97,16 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const parsed = policySchema.safeParse(request.body ?? {});
       if (!parsed.success)
-        return reply.code(400).send({ error: '策略字段无效', issues: parsed.error.issues });
+        return reply.code(400).send({
+          code: 'updates.policy.invalid',
+          error: '策略字段无效',
+          issues: parsed.error.issues,
+        });
       const saved = await saveUpdatePolicy(
         prisma(),
-        parsed.data as Partial<UpdatePolicy>,
+        // `maintenanceWindow: null` = 清除窗口；`Partial<UpdatePolicy>` 不容许 null，
+        // 但 `saveUpdatePolicy` 的归一化层把它当作「不设窗口」处理。
+        parsed.data as unknown as Partial<UpdatePolicy>,
         request.user?.id ?? null,
       );
       await writeAudit({
@@ -227,7 +238,7 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       if (entry.expired && !parsed.data.allowExpired) {
         return reply.code(409).send({
           ok: false,
-          code: 'catalog_expired',
+          code: 'updates.catalog_expired',
           catalogExpired: true,
           error: '目录快照已过期：请先「检查更新」，或显式勾选「仍按过期目录投递」',
         });
@@ -235,7 +246,7 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       if (requiresAuthorization(entry.outcome.plan) && !parsed.data.acknowledge) {
         return reply.code(409).send({
           error: '计划包含权限增加或不可逆迁移，需显式确认后提交',
-          code: 'authorization_required',
+          code: 'updates.authorization_required',
           requiresAcknowledge: true,
         });
       }
@@ -402,7 +413,7 @@ function catalogUnavailable(reply: FastifyReply): FastifyReply {
   const unconfigured = catalog.state === 'unconfigured';
   return reply.code(409).send({
     ok: false,
-    code: unconfigured ? 'catalog_unconfigured' : 'catalog_unavailable',
+    code: unconfigured ? 'updates.catalog_unconfigured' : 'updates.catalog_unavailable',
     error: unconfigured
       ? '未配置远程目录（离线模式）：请在「设置 · 应用市场与分发源」启用目录仓'
       : `远程目录暂不可用${catalog.failure ? `（${catalog.failure.message}）` : ''}`,

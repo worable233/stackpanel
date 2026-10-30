@@ -15,7 +15,9 @@ const repoRoot = path.resolve(here, '..', '..', '..');
  * found the leaks; localized action results (`result.message`) remain allowed.
  */
 const RAW_MESSAGE_CALL =
-  /(?:toast\.[A-Za-z]+|setError)\s*\([^;\n]*(?:cause|error|err|failure|exception|e)\.message/;
+  // `\be` 的词边界不能省：`state.message`（server action 的本地化结果）里含
+  // `e.message` 子串，没有边界会把合法的 action state 误判成泄漏。
+  /(?:toast\.[A-Za-z]+|setError)\s*\([^;\n]*(?:cause|error|err|failure|exception|\be)\.message/;
 
 const SCAN_ROOTS = [
   'apps/web/src',

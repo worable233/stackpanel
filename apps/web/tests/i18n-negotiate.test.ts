@@ -47,7 +47,8 @@ describe('negotiateLocale', () => {
   });
 
   it('falls back to the default for unknown languages or empty headers', () => {
-    expect(negotiateLocale('fr-FR,de;q=0.8')).toBe('zh-CN');
+    // fr-FR 现在是受支持的 catalog，所以这里的「未知语言」必须换成真正没翻译的。
+    expect(negotiateLocale('de-DE,es;q=0.8')).toBe('zh-CN');
     expect(negotiateLocale('')).toBe('zh-CN');
     expect(negotiateLocale(null)).toBe('zh-CN');
   });

@@ -23,6 +23,9 @@ export const userResponseSchema = {
     groups: { type: 'array', items: userGroupSchema },
     status: { type: 'string', enum: ['ACTIVE', 'DISABLED'] },
     lastLoginAt: { type: 'string', nullable: true },
+    // Derived media URL; absent on replicas that predate avatars, which is why
+    // no client may treat it as required.
+    avatarUrl: { type: 'string', nullable: true },
     createdAt: { type: 'string' },
     updatedAt: { type: 'string' },
   },

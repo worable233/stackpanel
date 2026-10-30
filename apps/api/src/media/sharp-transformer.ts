@@ -12,7 +12,7 @@
  * `<script>`. It is never rasterised here (see `routes.ts` active-content rule).
  */
 import type sharpFactory from 'sharp';
-import type { ImageTransformer, VariantSpec } from './image.ts';
+import type { ImageTransformer, OptimizeTarget, VariantSpec } from './image.ts';
 
 /** Allow at most 100 MP of decoded input to defuse decompression bombs. */
 const MAX_INPUT_PIXELS = 100_000_000;
@@ -108,6 +108,45 @@ export function createSharpTransformer(
       } catch {
         // Decode/encode failed or the native binary is absent: skip this
         // variant, keep the original. The caller logs it.
+        return null;
+      }
+    },
+
+    /**
+     * Full-size WebP delivery encode (ADR-0014 §4 addendum).
+     *
+     * No resize: this is a *format* change, not a rendition, so the delivered
+     * pixel dimensions stay identical to the upload. GIF goes through the
+     * animated pipeline so frames, delays and looping survive; any failure
+     * returns null and the caller keeps the original bytes.
+     */
+    async optimize(
+      input: Uint8Array,
+      mime: string,
+      target: OptimizeTarget,
+    ): Promise<Uint8Array | null> {
+      let sharp: SharpFactory;
+      try {
+        sharp = await loadSharp();
+      } catch (error) {
+        warnEncoderUnavailable((error as Error).message);
+        return null;
+      }
+      try {
+        const pipeline = sharp(Buffer.from(input), {
+          limitInputPixels: MAX_INPUT_PIXELS,
+          failOn: 'error',
+          ...(mime === 'image/gif' ? { animated: true } : {}),
+        })
+          // Normalise EXIF orientation, then drop all metadata (no withMetadata).
+          .rotate();
+        const encoded = target.lossless
+          ? await pipeline.webp({ lossless: true, effort: 4 }).toBuffer()
+          : await pipeline.webp({ quality: 82, effort: 4 }).toBuffer();
+        return new Uint8Array(encoded);
+      } catch {
+        // Unsupported source, animated-encode failure or a missing binary: keep
+        // the original bytes. The service also rejects any inflation.
         return null;
       }
     },

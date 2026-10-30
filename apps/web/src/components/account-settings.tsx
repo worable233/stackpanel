@@ -1,12 +1,14 @@
 'use client';
 
-import { useActionState, useEffect, useState, useTransition } from 'react';
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bot, Palette, ShieldCheck, UserRound, Plug, ArrowUpRight, Bell } from 'lucide-react';
 import { SectionTitle } from '@stackpanel/ui';
 import type { User } from '@stackpanel/sdk';
 import { toast } from '@/components/ui/toast';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { kernelAssetUrl } from '@/lib/kernel-asset-url';
 import { SettingsSections, SettingsSelect } from '@/components/settings-sections';
 import { useTheme } from '@/components/theme-provider';
 import { NotificationPreferencesSettings } from '@/components/notification-settings';
@@ -108,6 +110,7 @@ function ProfileSettings({ user, emailVerificationRequired }: { user: User; emai
   return (
     <section className="flex flex-col gap-6">
       <Heading>{t('account.settings.sections.profile')}</Heading>
+      <AvatarUpload user={user} />
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="settings-email">
@@ -157,6 +160,110 @@ function ProfileSettings({ user, emailVerificationRequired }: { user: User; emai
         </div>
       </dl>
     </section>
+  );
+}
+
+/**
+ * Avatar upload/replace/remove.
+ *
+ * The picture is posted to the same-origin BFF (`/api/account/avatar`), which
+ * forwards the bytes with the cookie's session token. The API stores it as a
+ * media attachment, so what comes back is a revisioned `/media/:id/content` URL —
+ * re-uploading therefore yields a *different* URL, and no cache keeps showing the
+ * previous face.
+ */
+function AvatarUpload({ user }: { user: User }) {
+  const t = useTranslator();
+  const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const initial = (user.email.charAt(0) || '?').toUpperCase();
+
+  const errorKey = (code: unknown): string => {
+    switch (code) {
+      case 'avatarRoute.imageTooLarge':
+      case 'media.too_large':
+        return 'account.settings.profile.avatarTooLarge';
+      case 'avatarRoute.unsupportedImage':
+      case 'media.unsupported_type':
+        return 'account.settings.profile.avatarUnsupported';
+      default:
+        return 'account.settings.profile.avatarFailed';
+    }
+  };
+
+  const send = async (file?: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = file
+        ? await fetch('/api/account/avatar', {
+            method: 'POST',
+            headers: { 'content-type': file.type },
+            body: file,
+          })
+        : await fetch('/api/account/avatar', { method: 'DELETE' });
+      const data = (await response.json().catch(() => ({}))) as { code?: string };
+      if (!response.ok) {
+        setError(t(errorKey(data.code)));
+        return;
+      }
+      toast.success(
+        file
+          ? t('account.settings.profile.avatarUpdated')
+          : t('account.settings.profile.avatarRemoved'),
+      );
+      router.refresh();
+    } catch {
+      setError(t('account.settings.profile.avatarFailed'));
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Field data-invalid={Boolean(error)}>
+      <FieldLabel>{t('account.settings.profile.avatar')}</FieldLabel>
+      <div className="flex items-center gap-4">
+        <Avatar size="lg">
+          {user.avatarUrl ? <AvatarImage src={kernelAssetUrl(user.avatarUrl)} alt="" /> : null}
+          <AvatarFallback className="bg-muted text-sm font-medium text-foreground">
+            {initial}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex flex-wrap gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void send(file);
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+          >
+            {user.avatarUrl
+              ? t('account.settings.profile.avatarChange')
+              : t('account.settings.profile.avatarUpload')}
+          </Button>
+          {user.avatarUrl ? (
+            <Button type="button" variant="ghost" disabled={busy} onClick={() => void send()}>
+              {t('account.settings.profile.avatarRemove')}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <FieldDescription>{t('account.settings.profile.avatarHint')}</FieldDescription>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </Field>
   );
 }
 

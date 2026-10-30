@@ -248,6 +248,37 @@ describe('isolated worker RPC protocol', () => {
     }
   }, 15_000);
 
+  it('honours a status raised without a plugin error code', async () => {
+    // Real case: a provider's local error class carries `status`/`statusCode` but
+    // no `code`. Reconstructing the error only when *both* were present left the
+    // status stranded on a plain `Error`, so the kernel re-rendered a deliberate
+    // 409 as "internal server error" and the operator saw no reason at all.
+    const id = 'isolated-error-status-only-test';
+    const manifest: PluginManifest = { id, name: 'Error status only test', version: '1.0.0' };
+    const definition = await loadIsolatedPluginDefinition(id, entry, manifest);
+    try {
+      const route = definition.routes?.find((candidate) => candidate.path === '/error-status-only');
+      expect(route).toBeDefined();
+      let failure: unknown = null;
+      try {
+        await route?.handler(
+          { params: {}, query: {}, body: null, headers: {} } as never,
+          { code: () => undefined, send: () => undefined } as never,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as { status?: number }).status).toBe(409);
+      expect((failure as { detail?: string }).detail).toBe(
+        '缺少原请求的持久化账单证据，禁止通过人工声明重开',
+      );
+      expect(isPluginError(failure)).toBe(true);
+    } finally {
+      stopIsolatedPlugin(id);
+    }
+  }, 15_000);
+
   it('rejects an in-flight route when the isolated worker exits', async () => {
     const id = 'isolated-crash-test';
     const manifest: PluginManifest = { id, name: 'Crash test', version: '1.0.0' };

@@ -3,6 +3,7 @@ import { NotificationPolicySettings } from '@/components/notification-settings';
 import { CurrencySettings } from '@/components/currency-settings';
 import { PaymentMethodSettings } from '@/components/payment-method-settings';
 import { DistributionSourceSettings } from '@/components/distribution-source-settings';
+import { UpdatePolicySettings } from '@/components/update-policy-settings';
 import { AgentSettings } from '@/components/agent-settings';
 import { SectionTitle } from '@stackpanel/ui';
 
@@ -19,6 +20,7 @@ import type {
   PlatformInfo,
   SettlementCurrencyResponse,
   SigningStatus,
+  UpdatePolicyView,
 } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +37,7 @@ import {
   Coins,
   CreditCard,
   Download,
+  ArrowUpCircle,
 } from 'lucide-react';
 import {
   clearPlatformBrandAction,
@@ -58,6 +61,7 @@ export function SettingsManager({
   currencyRates = [],
   distribution,
   distributionDefaults,
+  updatePolicy,
   salesChannels = [],
   paymentProviders = [],
   pluginSections = [],
@@ -69,6 +73,7 @@ export function SettingsManager({
   currencyRates?: AdminFxRateView[];
   distribution?: DistributionSourceConfig | null;
   distributionDefaults?: { repository: string | null; mirror: string | null } | undefined;
+  updatePolicy?: UpdatePolicyView | null;
   salesChannels?: AdminSalesChannel[];
   paymentProviders?: NonNullable<AdminSalesChannelListResponse['providers']>;
   pluginSections?: { id: string; title: string; content: ReactNode }[];
@@ -102,6 +107,16 @@ export function SettingsManager({
             content: (
               <DistributionSourceSettings source={distribution} defaults={distributionDefaults} />
             ),
+          },
+        ]
+      : []),
+    ...(updatePolicy
+      ? [
+          {
+            id: 'updates',
+            title: t('admin.settings.updates.title'),
+            Icon: ArrowUpCircle,
+            content: <UpdatePolicySettings policy={updatePolicy} />,
           },
         ]
       : []),

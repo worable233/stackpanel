@@ -2,6 +2,7 @@ import 'server-only';
 import { ApiClient } from '@stackpanel/sdk';
 import { getSessionToken } from './auth';
 import { createResilientFetch, parseResilienceConfig } from './resilience';
+import { kernelAssetUrl } from './kernel-asset-url';
 
 function baseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
@@ -36,8 +37,11 @@ const transport = resilience.enabled
  * The single browser-facing egress into the kernel: the web BFF route
  * `app/api/plugins/[...path]/route.ts` forwards `/api/plugins/<kernel-path>` to
  * `{API_BASE_URL}/<kernel-path>` (same-origin, binary-safe, session-aware).
+ *
+ * Re-exported from a client-safe module so client components can build asset URLs
+ * without importing this server-only file.
  */
-export const KERNEL_BFF_PREFIX = '/api/plugins';
+export { KERNEL_BFF_PREFIX } from './kernel-asset-url';
 
 /**
  * Resolve a kernel-relative resource path (e.g. `/themes/x/assets/logo.svg`) to a
@@ -48,9 +52,7 @@ export const KERNEL_BFF_PREFIX = '/api/plugins';
  * its own machine. The BFF is the only way the browser reaches kernel resources.
  */
 export function apiAssetUrl(assetPath: string): string {
-  if (!assetPath) return '';
-  if (/^https?:\/\//.test(assetPath)) return assetPath;
-  return `${KERNEL_BFF_PREFIX}${assetPath.startsWith('/') ? '' : '/'}${assetPath}`;
+  return kernelAssetUrl(assetPath);
 }
 
 /**

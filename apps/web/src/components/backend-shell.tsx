@@ -7,18 +7,26 @@ import {
   ArrowRightLeft,
   BrainCircuit,
   ChevronRight,
+  CreditCard,
+  FileText,
   Folder,
   Gauge,
   Globe2,
   HelpCircle,
   KeyRound,
+  LifeBuoy,
   LogOut,
+  Megaphone,
   Menu,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   PanelsTopLeft,
+  Plug,
+  Puzzle,
   Server,
   Settings,
+  Store,
   Sun,
   User,
   Users,
@@ -47,7 +55,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { kernelAssetUrl } from '@/lib/kernel-asset-url';
 import { BackendToolbarButton } from '@/components/backend-toolbar-button';
 import { useTheme } from '@/components/theme-provider';
 import { NotificationBell } from '@/components/notification-bell';
@@ -96,12 +105,67 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
   billing: Wallet,
 };
 
+/**
+ * Plugin-contributed groups arrive as *localized labels* (their manifest only
+ * carries a message key), so they cannot share the stable kernel group ids.
+ * Map the labels packages actually ship; without this every plugin group falls
+ * back to the generic folder icon.
+ */
+const GROUP_ICON_ALIASES: Record<string, LucideIcon> = {
+  store: Store,
+  商店: Store,
+  shop: Store,
+  'credit-card': CreditCard,
+  epay: CreditCard,
+  易支付: CreditCard,
+  finance: Wallet,
+  财务: Wallet,
+  財務: Wallet,
+  费用: Wallet,
+  費用: Wallet,
+  facturation: Wallet,
+  請求: Wallet,
+  결제: Wallet,
+  content: FileText,
+  内容: FileText,
+  內容: FileText,
+  support: LifeBuoy,
+  支持: LifeBuoy,
+  支援: LifeBuoy,
+  upstream: Network,
+  上游: Network,
+  'model service': BrainCircuit,
+  'model services': BrainCircuit,
+  模型服务: BrainCircuit,
+  模型服務: BrainCircuit,
+  'モデルサービス': BrainCircuit,
+  '모델 서비스': BrainCircuit,
+  'service de modèles': BrainCircuit,
+  referrals: Megaphone,
+  推广: Megaphone,
+  推廣: Megaphone,
+  apis: Plug,
+  'api': Plug,
+  接口: Plug,
+  介面: Plug,
+  平台: Puzzle,
+  平臺: Puzzle,
+  platform: Puzzle,
+  alipay: Wallet,
+  支付宝: Wallet,
+  支付寶: Wallet,
+  'wechat pay': Wallet,
+  微信支付: Wallet,
+};
+
 
 
 export interface BackendUser {
   email: string;
   role: 'ADMIN' | 'USER';
   status?: 'ACTIVE' | 'DISABLED';
+  /** Kernel-relative avatar path (`/media/:id/content?v=…`) when one is set. */
+  avatarUrl?: string | null;
 }
 
 export interface BackendShellProps {
@@ -145,6 +209,7 @@ function UserDropdown({
         render={
           <BackendToolbarButton aria-label={user.email}>
             <Avatar className="size-9">
+              {user.avatarUrl ? <AvatarImage src={kernelAssetUrl(user.avatarUrl)} alt="" /> : null}
               <AvatarFallback className="bg-muted text-sm font-medium text-foreground">
                 {initial}
               </AvatarFallback>
@@ -398,7 +463,11 @@ export function BackendShell({
     label: groupLabel(group),
     items: groupItems,
     defaultOpen: false,
-    icon: groupIcons?.[group] ?? GROUP_ICONS[group] ?? Folder,
+    icon:
+      groupIcons?.[group] ??
+      GROUP_ICONS[group] ??
+      GROUP_ICON_ALIASES[group.trim().toLowerCase()] ??
+      Folder,
   }));
   const rootLabel =
     rootHref === '/admin' ? t('adminShell.backend') : t('nav.accountOverview');
@@ -545,7 +614,7 @@ export function BackendShell({
         </aside>
 
 
-        <main className="min-h-0 min-w-0 flex-1 p-2 pl-0 md:p-3 md:pl-0">
+        <main className="min-h-0 min-w-0 flex-1 p-2 md:p-3 md:pl-0">
           <div className="h-full overflow-y-auto rounded-[22px] bg-background px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
             <div
               key={pathname}

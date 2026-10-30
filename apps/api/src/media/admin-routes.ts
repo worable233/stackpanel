@@ -35,6 +35,12 @@ const rebuildSchema = z
   })
   .strict();
 
+const optimizeSchema = z
+  .object({
+    attachmentId: z.string().trim().min(1).max(191).optional(),
+  })
+  .strict();
+
 export async function registerMediaAdminRoutes(app: FastifyInstance): Promise<void> {
   const adminOnly = { preHandler: [requireAuth, requireRole('ADMIN')] };
 
@@ -98,6 +104,39 @@ export async function registerMediaAdminRoutes(app: FastifyInstance): Promise<vo
           meta: { requeued: result.requeued },
           ...auditContext(request),
         });
+        return reply.send(result);
+      } catch (err) {
+        return sendMediaError(reply, err);
+      }
+    },
+  );
+
+  /**
+   * Batch WebP conversion for attachments stored before the delivery encode
+   * existed (ADR-0014 §4 addendum). Bounded by the service (50 rows per call), so
+   * a console click never starts an unbounded lossless encode; the response
+   * carries this run's savings, which is the only place that number is reported
+   * (deliberately no extra column and no migration).
+   */
+  app.post(
+    '/media/admin/optimize',
+    { preHandler: [requireAuth, requireRole('ADMIN')], ...rateLimitConfig('upload') },
+    async (request, reply) => {
+      const body = optimizeSchema.safeParse(request.body ?? {});
+      if (!body.success) {
+        return reply.code(400).send({ error: '参数无效', code: 'validation.invalid' });
+      }
+      try {
+        const result = await buildMediaService().optimizeLibrary(body.data.attachmentId);
+        if (result.optimized > 0) {
+          await writeAudit({
+            action: 'media.optimize',
+            resource: 'attachment',
+            ...(body.data.attachmentId ? { resourceId: body.data.attachmentId } : {}),
+            meta: { optimized: result.optimized, savedBytes: result.savedBytes },
+            ...auditContext(request),
+          });
+        }
         return reply.send(result);
       } catch (err) {
         return sendMediaError(reply, err);

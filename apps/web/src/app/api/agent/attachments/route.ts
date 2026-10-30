@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { getSessionToken, getSessionUser } from '@/lib/auth';
+import { isSameOriginRequest } from '@/lib/request-origin';
 export const dynamic = 'force-dynamic';
 const limit = 5 * 1024 * 1024;
 const types = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -8,7 +9,7 @@ export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   const token = await getSessionToken();
   if (!user || !token) return Response.json({ code: 'agentRoute.unauthenticated' }, { status: 401 });
-  if (request.headers.get('origin') !== request.nextUrl.origin) return Response.json({ code: 'agentRoute.badOrigin' }, { status: 403 });
+  if (!isSameOriginRequest(request)) return Response.json({ code: 'agentRoute.badOrigin' }, { status: 403 });
   const type = request.headers.get('content-type') ?? '';
   if (!types.includes(type)) return Response.json({ code: 'agentRoute.unsupportedImage' }, { status: 422 });
   if (Number(request.headers.get('content-length')) > limit) return Response.json({ code: 'agentRoute.imageTooLarge' }, { status: 413 });

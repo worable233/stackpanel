@@ -1,5 +1,5 @@
 import { AdminActionsOverview } from '@/components/admin-actions';
-import type { AdminPlugin } from '@stackpanel/sdk';
+import type { AdminPlugin, StalePluginRecord } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
@@ -11,11 +11,13 @@ import { createTranslator } from '@/i18n/core';
 export default async function AdminPluginsPage() {
   const t = createTranslator(await getLocale());
   let plugins: AdminPlugin[] = [];
+  let stale: StalePluginRecord[] = [];
   let error: string | null = null;
   try {
     const api = await getAuthedApiClient();
     const pluginsResult = await api.getAdminPlugins();
     plugins = pluginsResult.plugins;
+    stale = pluginsResult.stale ?? [];
   } catch (err) {
     error = await apiErrorMessage(err);
   }
@@ -32,7 +34,7 @@ export default async function AdminPluginsPage() {
         </p>
       ) : (
         <div className="space-y-8">
-          <PluginManager plugins={plugins} />
+          <PluginManager plugins={plugins} stale={stale} />
           <AdminActionsOverview />
         </div>
       )}

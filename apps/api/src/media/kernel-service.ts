@@ -43,6 +43,15 @@ export function mediaVariantQueue(): VariantQueue | null {
   return tryBuildVariantQueue();
 }
 
+/**
+ * Full-size WebP delivery encode (ADR-0014 §4 addendum). On by default;
+ * `MEDIA_WEBP_OPTIMIZE=false` stores uploads with their original bytes (rollback
+ * switch for a platform whose consumers still expect PNG/JPEG delivery).
+ */
+export function mediaWebpOptimize(): boolean {
+  return env.MEDIA_WEBP_OPTIMIZE;
+}
+
 export function buildMediaService(): AttachmentService {
   const queue = mediaVariantQueue();
   return new AttachmentService({
@@ -50,6 +59,7 @@ export function buildMediaService(): AttachmentService {
     storage: getStorage(),
     policy: { ...DEFAULT_MEDIA_POLICY, maxBytes: mediaMaxBytes() },
     transform: createSharpTransformer(),
+    optimize: mediaWebpOptimize(),
     ...(queue ? { queue } : {}),
     logger: { warn: (m) => console.warn(m), info: (m) => console.info(m) },
   });

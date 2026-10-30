@@ -220,6 +220,14 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((value) => value === 'true'),
+  // Full-size WebP delivery encode (ADR-0014 §4 addendum). On by default: image
+  // uploads are stored as WebP when that actually saves bytes (lossless for
+  // PNG/GIF/WebP sources, quality-82 for JPEG). `false` keeps the uploaded bytes
+  // as they arrived — the rollback switch for consumers that expect PNG/JPEG.
+  MEDIA_WEBP_OPTIMIZE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
   PACKAGE_SIGNATURE_REQUIRED: z
     .enum(['true', 'false'])
     .default(process.env.NODE_ENV === 'production' ? 'true' : 'false')

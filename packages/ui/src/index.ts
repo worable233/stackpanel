@@ -24,6 +24,29 @@ export {
   DialogTitle,
   DialogDescription,
 } from './dialog.js';
+export {
+  Sheet,
+  SheetPortal,
+  SheetOverlay,
+  SheetTrigger,
+  SheetClose,
+  SheetContent,
+  SheetHeader,
+  SheetBody,
+  SheetFooter,
+  SheetTitle,
+  SheetDescription,
+} from './sheet.js';
+export { CopyButton } from './copy-button.js';
+export type { CopyButtonProps } from './copy-button.js';
+export { SecretValue } from './secret-value.js';
+export type { SecretValueProps } from './secret-value.js';
+export { MetricsExplorer } from './metrics-explorer.js';
+export type {
+  MetricsExplorerLabels,
+  MetricPointLike,
+  MetricSeriesLike,
+} from './metrics-explorer.js';
 export { AnimatedGridPattern } from './magicui/animated-grid-pattern.js';
 export type { AnimatedGridPatternProps } from './magicui/animated-grid-pattern.js';
 export { BorderBeam } from './magicui/border-beam.js';

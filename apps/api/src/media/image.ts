@@ -71,6 +71,46 @@ export interface ImageTransformer {
   supports(mime: string): boolean;
   /** Produce one variant; returns null when the source cannot be decoded. */
   transform(input: Uint8Array, mime: string, spec: VariantSpec): Promise<Uint8Array | null>;
+  /**
+   * Re-encode the uploaded bytes as a full-size WebP delivery file.
+   *
+   * Optional: a transformer that cannot do this leaves uploads untouched, and the
+   * service never depends on it (best-effort, exactly like variants).
+   */
+  optimize?(input: Uint8Array, mime: string, target: OptimizeTarget): Promise<Uint8Array | null>;
+}
+
+/**
+ * Fidelity target for the full-size delivery encode (ADR-0014 §4 addendum).
+ *
+ * Lossless WebP is a clear win for screenshots and flat graphics (PNG/GIF/WebP
+ * sources): every pixel survives and the file still shrinks by 10–30 %. For a
+ * JPEG source it is usually *larger*, because storing already-lossy pixels
+ * losslessly has to keep the noise — those keep the same profile the downscaled
+ * variants use.
+ */
+export interface OptimizeTarget {
+  /** Lossless keeps every pixel; false uses the quality-82 WebP profile. */
+  lossless: boolean;
+}
+
+/**
+ * Delivery-encode plan for one source MIME.
+ *
+ * `null` means "keep the original bytes": SVG is XML, so rasterising it would
+ * drop vector semantics, and it is never a conversion candidate.
+ */
+export function optimizeTargetForMime(mime: string): OptimizeTarget | null {
+  switch (mime) {
+    case 'image/png':
+    case 'image/gif':
+    case 'image/webp':
+      return { lossless: true };
+    case 'image/jpeg':
+      return { lossless: false };
+    default:
+      return null;
+  }
 }
 
 /**

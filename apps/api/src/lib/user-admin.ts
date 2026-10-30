@@ -23,6 +23,20 @@ import type {
 } from '@stackpanel/sdk';
 import { generatePassword } from './generate.ts';
 import { hashPassword } from './password.ts';
+import { avatarContentUrl, avatarContentUrls } from '../auth/avatar.ts';
+
+/**
+ * The avatar pointer is kernel bookkeeping, not part of the admin user contract:
+ * responses publish the derived `avatarUrl` instead. Exposing `avatarAttachmentId`
+ * would invite clients to assemble their own media URLs and bypass the revision
+ * marker that keeps caches honest.
+ */
+function stripAvatarAttachmentId<T extends { avatarAttachmentId?: string | null }>(
+  user: T,
+): Omit<T, 'avatarAttachmentId'> {
+  const { avatarAttachmentId: _avatarAttachmentId, ...rest } = user;
+  return rest;
+}
 import { formatMinorCurrency } from '@stackpanel/sdk';
 import { ADMIN_GROUP_ID, isLastAdmin, toPublicUser } from './user.ts';
 import type { AuditInput } from '../plugins/audit.ts';
@@ -265,6 +279,7 @@ export class UserAdminService {
       createdAt: true,
       updatedAt: true,
       lastLoginAt: true,
+      avatarAttachmentId: true,
       groups: { include: { group: true } },
     } as const;
     const total = await this.db.user.count({ where });
@@ -315,6 +330,12 @@ export class UserAdminService {
       select: { userId: true, balance: true, currency: true },
     });
     const accountByUser = new Map(accounts.map((account) => [account.userId, account]));
+    // One query for the whole page: a face next to every address must not cost an
+    // attachment read per row.
+    const avatarUrls = await avatarContentUrls(
+      this.db,
+      users.map((user) => user.avatarAttachmentId),
+    );
     let serviceCounts: Record<string, number> = {};
     if (this.commerce?.countServicesByUsers && userIds.length > 0) {
       try {
@@ -331,6 +352,7 @@ export class UserAdminService {
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         lastLoginAt: user.lastLoginAt,
+        avatarUrl: avatarUrls.get(user.avatarAttachmentId ?? '') ?? null,
         groups: user.groups.map((g) => ({ id: g.group.id, name: g.group.name })),
         balance: accountByUser.get(user.id)?.balance ?? 0,
         balanceCurrency: accountByUser.get(user.id)?.currency ?? 'CNY',
@@ -363,7 +385,8 @@ export class UserAdminService {
     const orders: CommerceOrder[] = orderPageResult.items;
     return {
       user: {
-        ...toPublicUser(user),
+        ...stripAvatarAttachmentId(toPublicUser(user)),
+        avatarUrl: await avatarContentUrl(this.db, user.avatarAttachmentId),
         groups: user.groups.map((g) => ({ id: g.group.id, name: g.group.name })),
       },
       wallet: wallet ? { balance: wallet.balance, currency: wallet.currency } : null,
@@ -516,7 +539,8 @@ export class UserAdminService {
     }
     return {
       user: {
-        ...toPublicUser(user),
+        ...stripAvatarAttachmentId(toPublicUser(user)),
+        avatarUrl: await avatarContentUrl(this.db, user.avatarAttachmentId),
         groups: user.groups.map((g) => ({ id: g.group.id, name: g.group.name })),
       },
     };

@@ -7,6 +7,7 @@
  * and so the eventual kernel table (a KERNEL-owned migration) only has to
  * satisfy this interface.
  */
+import { createHash } from 'node:crypto';
 import { PluginError } from '@stackpanel/sdk';
 import type { MediaKind } from './mime.ts';
 
@@ -79,10 +80,20 @@ export interface AttachmentRepository {
   findById(id: string): Promise<AttachmentRecord | null>;
   /** Newest-first page of one owner's attachments (attachment picker). */
   listByOwner(ownerId: string, limit?: number): Promise<AttachmentRecord[]>;
-  /** Apply a metadata patch (filename / visibility); returns the fresh row. */
+  /**
+   * Apply a metadata patch (filename / visibility / storage identity); returns
+   * the fresh row. `key`/`mime`/`size` move together when the stored bytes are
+   * re-encoded in place (WebP delivery encode, ADR-0014 §4 addendum).
+   */
   update(
     id: string,
-    patch: { filename?: string | undefined; visibility?: AttachmentVisibility | undefined },
+    patch: {
+      filename?: string | undefined;
+      visibility?: AttachmentVisibility | undefined;
+      key?: string | undefined;
+      mime?: string | undefined;
+      size?: number | undefined;
+    },
   ): Promise<AttachmentRecord | null>;
   /**
    * Replace the full `variants` list (async pipeline: pending -> ready/failed).
@@ -95,6 +106,12 @@ export interface AttachmentRepository {
    * lost to a crash is recovered (ADR-0014 §4).
    */
   listPendingVariantAttachments(limit: number, maxAttempts: number): Promise<AttachmentRecord[]>;
+  /**
+   * Oldest-first image attachments still stored in a convertible format
+   * (PNG/JPEG/GIF), for the WebP backfill batch. Converted rows leave this set
+   * because their `mime` becomes `image/webp`, so repeated runs converge.
+   */
+  listOptimizable(limit: number): Promise<AttachmentRecord[]>;
   /** Delete the row; callers remove the bytes separately. */
   delete(id: string): Promise<void>;
   /**
@@ -150,6 +167,8 @@ export interface AttachmentView {
   visibility: AttachmentVisibility;
   ownerId: string | null;
   url: string;
+  /** Content revision of the stored original; see {@link attachmentRevision}. */
+  rev: string;
   variants: Array<{
     name: string;
     width: number;
@@ -157,8 +176,43 @@ export interface AttachmentView {
     format: string;
     status: VariantStatus;
     url: string;
+    /** Content revision of this variant's bytes. */
+    rev: string;
   }>;
   createdAt: string;
+}
+
+/**
+ * Content revision of one stored object.
+ *
+ * Media URLs are deliberately identity-based (`/media/:id/content`, plus
+ * `?variant=`), and the bytes behind them may change **in place** — an upload is
+ * converted to WebP, a variant is re-encoded. That makes the URL a *mutable*
+ * resource, so every link ever published keeps resolving (never a 404 after a
+ * rewrite) while its content can move forward.
+ *
+ * The revision is what lets a client or a cache tell one version of those bytes
+ * from the next without renaming the link:
+ *
+ * - old links (no `v`, or a stale `v`) keep working and revalidate cheaply;
+ * - clients that want `immutable` caching append `?v=<rev>`;
+ * - a `304 Not Modified` is decided from it without reading the object twice.
+ *
+ * Derived from the stored object's identity (`key` + `size` + `mime`) rather
+ * than a hash of the bytes: those three fields are exactly what a rewrite
+ * changes, they are already persisted, and deriving keeps this free of a schema
+ * change or an extra storage read. It is published as a **weak** validator — a
+ * conversion preserves the pixels, which is precisely what `W/` asserts.
+ */
+export function attachmentRevision(object: {
+  key: string;
+  size: number;
+  mime: string;
+}): string {
+  return createHash('sha256')
+    .update(`${object.key}\u0000${object.size}\u0000${object.mime}`)
+    .digest('hex')
+    .slice(0, 16);
 }
 
 export function toAttachmentView(
@@ -175,6 +229,7 @@ export function toAttachmentView(
     visibility: record.visibility,
     ownerId: record.ownerId,
     url: resolveUrl(record.key),
+    rev: attachmentRevision(record),
     variants: record.variants.map((variant) => ({
       name: variant.name,
       width: variant.width,
@@ -182,6 +237,11 @@ export function toAttachmentView(
       format: variant.format,
       status: variantStatus(variant),
       url: resolveUrl(variant.key),
+      rev: attachmentRevision({
+        key: variant.key,
+        size: variant.size,
+        mime: `image/${variant.format}`,
+      }),
     })),
     createdAt: record.createdAt.toISOString(),
   };

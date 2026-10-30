@@ -3,6 +3,17 @@
  * appends one line to `app.ts` (INTERFACES §6).
  */
 export { registerMediaRoutes } from './routes.ts';
+export { registerMediaAdminRoutes } from './admin-routes.ts';
+export {
+  buildMediaService,
+  mediaMaxBytes,
+  mediaActorFor,
+  isMediaAdmin,
+  mediaVariantQueue,
+  attachmentReferences,
+  optionalMediaActor,
+  sendMediaError,
+} from './kernel-service.ts';
 export { AttachmentService, MediaError, contentDisposition, sanitizeFilename } from './service.ts';
 export type {
   AttachmentServiceDeps,
@@ -22,6 +33,8 @@ export {
   type AttachmentView,
   type AttachmentVisibility,
   type VariantStatus,
+  type AttachmentLibraryQuery,
+  type AttachmentLibraryStats,
 } from './attachments.ts';
 export {
   PrismaAttachmentRepository,
@@ -31,6 +44,9 @@ export {
   sniffMime,
   detectImageDimensions,
   isProbablyText,
+  MEDIA_KIND_MIMES,
+  KNOWN_MEDIA_MIMES,
+  kindOfMime,
   type SniffedMime,
   type MediaKind,
 } from './mime.ts';

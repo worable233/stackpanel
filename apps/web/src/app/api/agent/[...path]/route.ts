@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { getSessionToken, getSessionUser } from '@/lib/auth';
 import { agentProxyTarget } from '@/lib/agent-proxy-path';
+import { isSameOriginRequest } from '@/lib/request-origin';
 export const dynamic = 'force-dynamic';
 
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
@@ -10,7 +11,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const user = await getSessionUser(); const session = await getSessionToken();
   if (!user || !session) return Response.json({ code: 'agentRoute.unauthenticated' }, { status: 401 });
   if (path[0] === 'admin' && user.role !== 'ADMIN') return Response.json({ code: 'agentRoute.adminOnly' }, { status: 403 });
-  if (request.method !== 'GET' && request.headers.get('origin') !== request.nextUrl.origin) return Response.json({ code: 'agentRoute.badOrigin' }, { status: 403 });
+  if (request.method !== 'GET' && !isSameOriginRequest(request)) return Response.json({ code: 'agentRoute.badOrigin' }, { status: 403 });
   const base = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
   const key = request.headers.get('x-agent-key');
   try {

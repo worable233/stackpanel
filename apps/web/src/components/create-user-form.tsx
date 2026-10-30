@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PermissionGroupInfo } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
@@ -17,16 +17,16 @@ import {
 } from '@/components/ui/dialog';
 import { createUserAction, type CreateUserResult } from '@/lib/user-actions';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/ui/toast';
 import { useTranslator } from '@/i18n/provider';
 import { Select } from '@stackpanel/ui';
 
 function StatusMessage({ state }: { state: CreateUserResult | null }) {
-  if (!state) return null;
-  if (state.error) {
+  useEffect(() => {
+    if (state?.ok && state.message) toast.success(state.message);
+  }, [state]);
+  if (state?.error) {
     return <span className="text-sm text-destructive">{state.error}</span>;
-  }
-  if (state.ok) {
-    return <span className="text-sm text-muted-foreground">{state.message}</span>;
   }
   return null;
 }
