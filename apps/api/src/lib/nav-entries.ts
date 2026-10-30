@@ -28,11 +28,18 @@ const KERNEL_NAV: Record<NavSurface, NavItem[]> = {
     { surface: 'admin', label: '系统设置', href: '/admin/settings' },
     { surface: 'admin', label: '插件管理', href: '/admin/plugins' },
     { surface: 'admin', label: '权限模板', href: '/admin/rbac' },
+    // 支付记录是手动收款（银行转账/收款码）的唯一结算入口：没有它，运营者无法把
+    // 一笔已到账的转账变成已付订单，订单永远停在 PENDING。管理端布局还专门为它
+    // 预留了财务分组（`app/(admin)/admin/layout.tsx`），缺了这一项就只剩手输 URL。
+    { surface: 'admin', label: '支付记录', href: '/admin/payments' },
     { surface: 'admin', label: '审计日志', href: '/admin/audit' },
     { surface: 'admin', label: 'SEO 设置', href: '/admin/seo' },
     { surface: 'admin', label: '主题管理', href: '/admin/themes' },
     { surface: 'admin', label: '通知中心', href: '/admin/notifications' },
     { surface: 'admin', label: '菜单设置', href: '/admin/nav' },
+    // 更新中心必须在 API 导航里：管理端布局在 API 可达时用本列表**整体替换**
+    // 前端 fallback，缺了这一项，侧边栏就永远进不去 `/admin/updates`。
+    { surface: 'admin', label: '升级', href: '/admin/updates' },
   ],
 };
 
