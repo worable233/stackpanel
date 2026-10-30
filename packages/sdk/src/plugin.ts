@@ -655,7 +655,17 @@ export interface PaymentProvider {
   readonly mode: 'gateway' | 'manual';
   /** Public callback path handled by the provider plugin, for example `/callbacks/epay`. */
   readonly callbackPath: string;
-  getMethods(): PaymentMethod[];
+  /**
+   * Payment methods this provider offers.
+   *
+   * Must be awaitable: an isolated provider's implementation only exists as an
+   * async RPC proxy on the kernel side, so the host always `await`s the call.
+   * Declaring it as plain `PaymentMethod[]` lied to providers that call another
+   * provider through this interface — `.some(...)` on the returned Promise threw,
+   * which is how every gateway checkout ended up as a 500. In-process providers
+   * may keep returning the array synchronously.
+   */
+  getMethods(): PaymentMethod[] | Promise<PaymentMethod[]>;
   /** Provider-scoped config, e.g. epay merchant keys or manual bank details. */
   createPayment(
     request: ExternalPaymentRequest,
