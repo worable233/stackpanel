@@ -86,6 +86,8 @@ export type {
 } from './notifications.js';
 export { INAPP_CHANNEL_ID } from './notifications.js';
 export type {
+  CaptchaAction,
+  CaptchaPolicy,
   CaptchaProvider,
   CaptchaService,
   CaptchaVerification,
@@ -264,6 +266,7 @@ export type {
   PlatformTokenView,
   PlatformTokenInspection,
   RegisterUserInput,
+  ResetUserPasswordOptions,
   ResolvedPlatformToken,
   SessionCookieConfig,
   SessionResult,
@@ -326,6 +329,13 @@ export { WalletError, isWalletError } from './wallet.js';
 export { EXTENSION_POINTS } from './plugin.js';
 export { REDIS_KEY_PREFIX, redisKey } from './key-prefixes.js';
 export type { RedisKeyNamespace } from './key-prefixes.js';
+export {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  describePasswordPolicy,
+  validatePassword,
+} from './password.js';
+export type { PasswordCheck, PasswordIssueCode } from './password.js';
 export {
   SEO_MAX_PAGE_SIZE,
   SEO_RESERVED_DISALLOW,

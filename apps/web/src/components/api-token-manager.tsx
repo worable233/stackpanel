@@ -17,6 +17,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createApiTokenAction, revokeApiTokenAction } from '@/lib/api-token-actions';
+import { CaptchaField } from '@/components/captcha-field';
+import type { CaptchaActionConfig } from '@/lib/captcha';
 import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatDate as formatLocaleDate, type Translator } from '@/i18n/core';
 import { cn } from '@/lib/utils';
@@ -67,9 +69,16 @@ export function ApiTokenManager({
   tokens,
   scopes,
   prefix,
+  captcha = null,
 }: {
   tokens: ApiTokenView[];
   scopes: ApiTokenScope[];
+  /**
+   * Widget for the `api_token_create` action, or `null` when minting a token is
+   * not guarded (the default). Minting a durable credential is the highest-value
+   * self-service write in the account area, so it is guardable like any other.
+   */
+  captcha?: CaptchaActionConfig | null;
   prefix: string;
 }) {
   const router = useRouter();
@@ -77,6 +86,7 @@ export function ApiTokenManager({
   const locale = useLocale();
   const [pending, startTransition] = useTransition();
   const [createOpen, setCreateOpen] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +140,11 @@ export function ApiTokenManager({
   const submitCreate = () => {
     setError(null);
     startTransition(async () => {
-      const result = await createApiTokenAction({ name, scopes: [...selected] });
+      const result = await createApiTokenAction({
+        name,
+        scopes: [...selected],
+        ...(captchaToken ? { captchaToken } : {}),
+      });
       if (result.error) {
         setError(result.error);
         return;
@@ -302,6 +316,7 @@ export function ApiTokenManager({
               </div>
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={pending}>

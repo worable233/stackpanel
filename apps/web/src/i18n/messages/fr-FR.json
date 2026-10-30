@@ -1646,6 +1646,10 @@
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
       "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+    },
+    "captcha": {
+      "unavailable": "Le widget de vérification humaine n'a pas pu se charger, veuillez réessayer",
+      "retry": "Recharger"
     }
   },
   "backendSearch": {

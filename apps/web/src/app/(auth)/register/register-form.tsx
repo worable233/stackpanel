@@ -1,20 +1,15 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { AuthShell, type AuthProvider } from '@/components/auth-shell';
+import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslator } from '@/i18n/provider';
+import type { CaptchaActionConfig } from '@/lib/captcha';
 import { registerAction, sendRegisterCodeAction } from '@/lib/actions';
-
-export interface RegisterCaptchaConfig {
-  mode: 'off' | 'optional' | 'required';
-  configured: boolean;
-  providerIds: string[];
-  clientConfig: Record<string, unknown> | null;
-}
 
 export function RegisterForm({
   providers = [],
@@ -23,7 +18,8 @@ export function RegisterForm({
   logoSrc,
   affid = null,
   emailVerificationRequired = false,
-  captcha = { mode: 'off', configured: false, providerIds: [], clientConfig: null },
+  captcha = null,
+  sendCodeCaptcha = null,
 }: {
   providers?: AuthProvider[];
   platformName: string;
@@ -33,27 +29,26 @@ export function RegisterForm({
   affid?: string | null;
   /** Whether a verified email code is required before an account is created. */
   emailVerificationRequired?: boolean;
-  /** Deployment captcha policy (kernel-owned) plus provider client config. */
-  captcha?: RegisterCaptchaConfig;
+  /** Widget for the `register` action, or `null` when sign-up is not guarded. */
+  captcha?: CaptchaActionConfig | null;
+  /** Widget for the `register_send_code` action (guardable independently). */
+  sendCodeCaptcha?: CaptchaActionConfig | null;
 }) {
   const [state, action, pending] = useActionState(registerAction, {});
   const [codeState, sendCodeAction, sendingCode] = useActionState(sendRegisterCodeAction, {});
   const [showPassword, setShowPassword] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const t = useTranslator();
-  const captchaActive = captcha.mode !== 'off' && captcha.configured;
 
-  // The provider widget (when configured) writes its token into a hidden input;
-  // keep the React state in sync so the value is submitted with both actions.
-  useEffect(() => {
-    if (!captchaActive) return;
-    const el = document.querySelector<HTMLInputElement>('input[name="captchaToken"]');
-    if (!el) return;
-    const handler = () => setCaptchaToken(el.value);
-    el.addEventListener('input', handler);
-    return () => el.removeEventListener('input', handler);
-  }, [captchaActive]);
+  /**
+   * One widget serves both submitting actions. The two actions are policy-
+   * independent (a deployment may guard sign-up but not the code request), so
+   * the widget renders whenever *either* is guarded and the same token is
+   * submitted with both — the kernel ignores it for whichever action is `off`.
+   * Register wins when both are on because it is the form's primary action.
+   */
+  const activeCaptcha = captcha ?? sendCodeCaptcha;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     const form = event.currentTarget;
@@ -77,7 +72,7 @@ export function RegisterForm({
     >
       <form action={action} onSubmit={handleSubmit} className="space-y-5">
         {affid ? <input type="hidden" name="affid" value={affid} /> : null}
-        {captchaActive ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
+        {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
         <div className="space-y-2">
           <Label htmlFor="email">{t('auth.register.email')}</Label>
           <Input
@@ -160,6 +155,7 @@ export function RegisterForm({
         </div>
         {confirmError ? <p className="text-sm text-destructive">{confirmError}</p> : null}
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+        <CaptchaField config={activeCaptcha?.clientConfig ?? null} onToken={setCaptchaToken} />
         <Button type="submit" disabled={pending} className="h-10 w-full text-base">
           {pending ? t('auth.register.submitting') : t('auth.register.submit')}
         </Button>

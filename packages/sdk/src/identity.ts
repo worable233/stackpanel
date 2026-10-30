@@ -104,14 +104,44 @@ export interface IdentityChallengeService {
   consume(input: ConsumeIdentityChallengeInput): Promise<void>;
 }
 
+/**
+ * Stable identifiers for the sensitive operations a captcha can guard.
+ *
+ * The set is closed on purpose: the frontend fetches one widget config per
+ * action and operators write policy against these keys, so both need a fixed
+ * vocabulary. Adding an action is a kernel addition, not a plugin choice — a new
+ * sensitive operation ships with its own kernel (or plugin) route anyway.
+ *
+ * {@link CaptchaVerification.action} stays a plain `string` so existing providers
+ * and the isolated-worker RPC keep working unchanged; this union documents the
+ * values the kernel itself sends.
+ */
+export type CaptchaAction =
+  | 'login'
+  | 'register'
+  | 'register_send_code'
+  | 'password_reset'
+  | 'change_password'
+  | 'change_email'
+  | 'api_token_create';
+
 /** One captcha challenge response to verify. */
 export interface CaptchaVerification {
   /** Provider token captured by the frontend widget. */
   token: string;
-  /** Logical action the token was minted for (e.g. `register`). */
+  /**
+   * Logical action the token was minted for. The kernel sends one of
+   * {@link CaptchaAction}; the type stays `string` for compatibility.
+   */
   action?: string;
   /** Client IP, so the provider can scope the verification. */
   remoteIp?: string;
+}
+
+/** Policy a provider can declare for one action. */
+export interface CaptchaPolicy {
+  /** `off` never asks; `optional` verifies a token when present; `required` refuses a token-less request. */
+  mode: 'off' | 'optional' | 'required';
 }
 
 /** Outcome of a captcha verification. */
@@ -133,9 +163,24 @@ export interface CaptchaProvider {
   verify(input: CaptchaVerification): Promise<CaptchaVerifyResult>;
   /**
    * Public configuration the frontend needs to render the widget (site key,
-   * script/iframe URL, theme…). Never a secret. Omit when the widget needs none.
+   * script/iframe URL, theme…). Never a secret. Omit when the widget needs none,
+   * and return `null` when the provider is installed but not yet configured: a
+   * registered-but-unconfigured provider must not advertise a widget the browser
+   * could not render.
    */
-  clientConfig?(): Record<string, unknown>;
+  clientConfig?(): Record<string, unknown> | null;
+  /**
+   * Policy this provider declares for one action.
+   *
+   * Returning `null`/omitting means "no opinion": the kernel falls back to the
+   * global `AUTH_CAPTCHA_MODE`. Declaring `off` explicitly opts an action out
+   * even when another provider wants it.
+   *
+   * Policy lives with the provider (not in a kernel setting) on purpose: an
+   * uninstalled provider takes its policy with it, and the kernel never holds an
+   * operator-owned policy table that only kernel privileges could edit.
+   */
+  policyFor?(action: string): CaptchaPolicy | null;
 }
 
 /** Kernel-owned captcha service (`ctx.captcha`). */
@@ -146,12 +191,22 @@ export interface CaptchaService {
   isConfigured(): boolean;
   /** Ids of the registered providers. */
   providerIds(): string[];
-  /** Verify a token against the registered provider(s). */
+  /**
+   * Verify a token against the registered provider(s).
+   *
+   * When `input.action` is present and at least one provider declares a policy
+   * for it, only those providers are asked; otherwise every provider is tried in
+   * registration order.
+   */
   verify(input: CaptchaVerification): Promise<CaptchaVerifyResult>;
   /**
    * Apply the configured policy to one request and throw a deterministic
    * `PluginError` when it fails. Callers never re-implement `off`/`optional`/
    * `required` semantics — the policy stays kernel-owned.
+   *
+   * The global `AUTH_CAPTCHA_MODE` is a master switch: `off` short-circuits every
+   * action, so an operator can always turn verification off without uninstalling
+   * the provider.
    */
   enforce(input: CaptchaVerification): Promise<void>;
   /**
@@ -159,4 +214,15 @@ export interface CaptchaService {
    * URL, …), or `null` when no provider supplies one. Never contains a secret.
    */
   clientConfig(): Record<string, unknown> | null;
+  /**
+   * Effective policy for one action: the first provider that declares one wins,
+   * otherwise the global `AUTH_CAPTCHA_MODE`.
+   */
+  policyFor(action: string): 'off' | 'optional' | 'required';
+  /**
+   * Widget config for one action, resolved from the providers that claim it.
+   * Falls back to {@link clientConfig} so a provider that ignores actions still
+   * renders everywhere it is asked for.
+   */
+  clientConfigFor(action: string): Record<string, unknown> | null;
 }

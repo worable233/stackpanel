@@ -40,14 +40,123 @@ export interface User {
 /** Public auth policy for the frontend (register form). */
 export interface AuthConfigResponse {
   registrationMethods: Array<'email' | 'phone'>;
+  /**
+   * Whether self-registration is open at all. `false` means an operator closed
+   * the register entry point: the UI hides the link and `POST /register`
+   * refuses with `auth.registration_closed`.
+   */
+  registrationEnabled: boolean;
   emailVerificationSupported: boolean;
   emailVerificationRequired: boolean;
+  /**
+   * Whether self-service password reset can deliver a code (an
+   * `identity.challengeSender` is installed and configured).
+   */
+  passwordResetSupported: boolean;
   captcha: {
     mode: 'off' | 'optional' | 'required';
     configured: boolean;
     providerIds: string[];
     clientConfig: Record<string, unknown> | null;
+    /**
+     * Widget config per guarded action, for the actions this deployment does not
+     * leave at `off`. Public routes only report the non-`off` actions so an
+     * anonymous caller never receives a full policy map.
+     */
+    actions?: Record<
+      string,
+      { policy: 'off' | 'optional' | 'required'; clientConfig: Record<string, unknown> | null }
+    > | undefined;
   };
+}
+
+/**
+ * External origins a captcha widget needs the page's CSP to allow.
+ * Declared by the provider (the kernel knows no vendor), sanitized server-side to
+ * absolute `https:` origins, and consumed by the web layer's per-request policy.
+ * Always normalised to arrays with defaults so consumers never branch on
+ * absence.
+ */
+export interface CaptchaCspSources {
+  script: string[];
+  frame: string[];
+  connect: string[];
+}
+
+/** The two widget protocols a provider may publish. Nothing vendor-specific. */
+export type CaptchaWidgetKind = 'script' | 'element';
+
+/**
+ * `script`: load `script` once, then call `window[globalFn].render(element, …)`.
+ * Covers the whole family of "factory + iframe" widgets (Turnstile, hCaptcha,
+ * reCAPTCHA, Friendly Captcha…).
+ */
+export interface CaptchaScriptWidgetConfig {
+  kind: 'script';
+  /** Absolute URL of the vendor's loader script. */
+  script: string;
+  /** Global factory the script installs (e.g. `turnstile`). */
+  globalFn: string;
+  /** Public site key handed to the factory. Never a secret. */
+  siteKey: string;
+  /** Action forwarded to the vendor, when it supports one. */
+  action?: string;
+  theme?: 'auto' | 'light' | 'dark';
+  locale?: string;
+  /** Extra keys merged verbatim into the render options (vendor-specific). */
+  renderOptions?: Record<string, unknown>;
+  sources?: { script?: string[]; frame?: string[]; connect?: string[] };
+}
+
+/**
+ * `element`: create `tag`, set `attributes`, listen for `event`, then read the
+ * solution out of `tokenAttribute`. Covers custom-element / proof-of-work
+ * widgets that mint their own token in the page (Cap and friends).
+ */
+export interface CaptchaElementWidgetConfig {
+  kind: 'element';
+  /** Custom element tag the vendor's script registers. */
+  tag: string;
+  attributes: Record<string, string>;
+  /** Attribute read back after `event` fires to obtain the token. */
+  tokenAttribute: string;
+  /** Event name signalling a solved challenge. */
+  event: string;
+  /** Event name signalling an expired or withdrawn token. */
+  resetEvent?: string;
+  sources?: { script?: string[]; frame?: string[]; connect?: string[] };
+}
+
+/**
+ * Widget config returned by `CaptchaProvider.clientConfig()`.
+ *
+ * The discriminator is the whole contract: the host renders these two shapes and
+ * nothing else, so a new vendor is a new provider preset rather than a new host
+ * component.
+ */
+export type CaptchaClientConfig = CaptchaScriptWidgetConfig | CaptchaElementWidgetConfig;
+
+/**
+ * One entry of `GET /captcha/policy`, the kernel-owned projection of the
+ * human-verification capability. Consumed instead of `/auth/config` by any page
+ * that is not a login/register flow, so it keeps working when the login plugin
+ * is not installed.
+ */
+export interface CaptchaPolicyResponse {
+  action: string | null;
+  policy: 'off' | 'optional' | 'required';
+  configured: boolean;
+  clientConfig: Record<string, unknown> | null;
+  sources: CaptchaCspSources;
+  /** Only present on the action-less form: every non-`off` guarded action. */
+  actions?: Record<
+    string,
+    {
+      policy: 'off' | 'optional' | 'required';
+      clientConfig: Record<string, unknown> | null;
+      sources: CaptchaCspSources;
+    }
+  > | undefined;
 }
 
 export interface AccountMutationResponse {

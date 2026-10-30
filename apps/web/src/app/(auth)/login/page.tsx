@@ -4,6 +4,7 @@ import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { LoginForm } from './login-form';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
+import { getCaptchaForAction } from '@/lib/captcha';
 import { safeInternalPath } from '@/lib/safe-path';
 
 const postsSchema = z.object({
@@ -35,7 +36,7 @@ export default async function LoginPage({
   // renders login as before.
   const setup = await api.getSetupStatus().catch(() => null);
   if (setup?.required) redirect('/setup');
-  const [providers, platform, brand, posts] = await Promise.all([
+  const [providers, platform, brand, posts, captcha] = await Promise.all([
     api
       .getOAuthProviders()
       .then((result) => result.providers)
@@ -52,6 +53,9 @@ export default async function LoginPage({
       .get('/cms/posts?page=1&pageSize=2', postsSchema)
       .then((result) => result.items)
       .catch(() => []),
+    // Human verification of the sign-in itself. `null` when the deployment does
+    // not guard logins (the default), which renders the form exactly as before.
+    getCaptchaForAction('login'),
   ]);
   return (
     <LoginForm
@@ -61,6 +65,7 @@ export default async function LoginPage({
       platformName={platform.name}
       logoSrc={brand?.logo ? apiAssetUrl(brand.logo) : null}
       posts={posts}
+      captcha={captcha}
     />
   );
 }

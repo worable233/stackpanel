@@ -102,6 +102,8 @@ export interface PluginHost {
 declare module 'fastify' {
   interface FastifyInstance {
     pluginHost: PluginHost;
+    /** Kernel-owned human-verification service (same instance plugins get as `ctx.captcha`). */
+    captcha: KernelCaptchaService;
   }
 }
 

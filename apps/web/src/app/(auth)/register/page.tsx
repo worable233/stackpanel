@@ -5,6 +5,7 @@ import { RegisterForm } from './register-form';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
 import { AFFILIATE_COOKIE, normalizeAffiliateCode } from '@/lib/affiliate';
+import { getCaptchaActions } from '@/lib/captcha';
 
 export default async function RegisterPage({
   searchParams,
@@ -27,7 +28,7 @@ export default async function RegisterPage({
   // to the wizard rather than letting a self-service signup elect an admin.
   const setup = await api.getSetupStatus().catch(() => null);
   if (setup?.required) redirect('/setup');
-  const [providers, platform, brand, authConfig] = await Promise.all([
+  const [providers, platform, brand, authConfig, captcha] = await Promise.all([
     api
       .getOAuthProviders()
       .then((result) => result.providers)
@@ -44,6 +45,9 @@ export default async function RegisterPage({
     // captcha widget config. Never fatal — a missing plugin falls back to the
     // historical mode (no verification).
     api.getAuthConfig().catch(() => null),
+    // Register and send-code are separate guarded actions: a deployment may
+    // challenge sign-up but not the code request, or the reverse.
+    getCaptchaActions(['register', 'register_send_code']),
   ]);
   return (
     <RegisterForm
@@ -53,14 +57,8 @@ export default async function RegisterPage({
       logoSrc={brand?.logo ? apiAssetUrl(brand.logo) : null}
       affid={affid}
       emailVerificationRequired={authConfig?.emailVerificationRequired ?? false}
-      captcha={
-        authConfig?.captcha ?? {
-          mode: 'off',
-          configured: false,
-          providerIds: [],
-          clientConfig: null,
-        }
-      }
+      captcha={captcha.register ?? null}
+      sendCodeCaptcha={captcha.register_send_code ?? null}
     />
   );
 }

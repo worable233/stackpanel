@@ -21,12 +21,18 @@ export interface CreateApiTokenResult extends ApiTokenActionResult {
 export async function createApiTokenAction(input: {
   name: string;
   scopes: string[];
+  /** Human-verification token; the kernel's policy decides whether it is needed. */
+  captchaToken?: string;
 }): Promise<CreateApiTokenResult> {
   const locale = await getLocale();
   if (!input.name?.trim()) return { error: translate(locale, 'action.apiTokenNameRequired') };
   try {
     const api = await getAuthedApiClient();
-    const result = await api.createApiToken({ name: input.name.trim(), scopes: input.scopes });
+    const result = await api.createApiToken({
+      name: input.name.trim(),
+      scopes: input.scopes,
+      ...(input.captchaToken ? { captchaToken: input.captchaToken } : {}),
+    });
     revalidatePath('/account/settings');
     return { ok: true, token: result.token, id: result.apiToken.id };
   } catch (error) {

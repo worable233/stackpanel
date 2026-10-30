@@ -1646,6 +1646,10 @@
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
       "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+    },
+    "captcha": {
+      "unavailable": "사람 확인 위젯을 불러오지 못했습니다. 다시 시도해 주세요",
+      "retry": "다시 불러오기"
     }
   },
   "backendSearch": {

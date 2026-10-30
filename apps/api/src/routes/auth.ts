@@ -7,6 +7,7 @@ import { getSessionStore } from '../auth/session-store.ts';
 import { avatarContentUrl } from '../auth/avatar.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
+import { captchaTokenSchema, guardCaptcha } from '../auth/captcha-guard.ts';
 import { sniffMime } from '../media/mime.ts';
 import {
   attachmentReferences,
@@ -17,11 +18,16 @@ import {
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(256),
+  // The strength rule is the shared policy, not a length here: `assertPassword`
+  // below rejects short/common/identity-matching candidates with a code the UI
+  // can localise. The ceiling only bounds the scrypt input.
+  newPassword: z.string().min(1).max(PASSWORD_MAX_LENGTH),
+  captchaToken: captchaTokenSchema,
 });
 const emailChangeSchema = z.object({
   currentPassword: z.string().min(1),
   email: z.string().email(),
+  captchaToken: captchaTokenSchema,
 });
 
 /**
@@ -92,14 +98,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/password', { preHandler: [requireAuth] }, async (request, reply) => {
     const body = passwordChangeSchema.safeParse(request.body);
     if (!body.success || !request.user) return reply.code(400).send({ error: '请求参数无效' });
+    // Before the password check: a rejected challenge must not also answer
+    // "is this the right current password?".
+    await guardCaptcha(app, request, 'change_password', body.data.captchaToken);
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({ where: { id: request.user.id } });
     if (!user?.passwordHash || !(await verifyPassword(body.data.currentPassword, user.passwordHash))) {
       return reply.code(400).send({ error: '当前密码不正确' });
     }
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash: await hashPassword(body.data.newPassword) },
+    this.data.newPassword),
     });
     await getSessionStore().revokeAll(user.id);
     return { ok: true as const };
@@ -108,6 +115,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/email', { preHandler: [requireAuth] }, async (request, reply) => {
     const body = emailChangeSchema.safeParse(request.body);
     if (!body.success || !request.user) return reply.code(400).send({ error: '请求参数无效' });
+    await guardCaptcha(app, request, 'change_email', body.data.captchaToken);
     const email = body.data.email.toLowerCase();
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({ where: { id: request.user.id } });

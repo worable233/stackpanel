@@ -18,6 +18,8 @@ import { localeOptions } from '@/i18n/core';
 import { setLocaleAction } from '@/i18n/actions';
 import { agentFetch } from '@/components/agent-workspace';
 import { changeEmailAction, changePasswordAction } from '@/lib/actions';
+import type { CaptchaActionConfig } from '@/lib/captcha';
+import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldDescription, FieldGroup, FieldError } from '@/components/ui/field';
@@ -47,12 +49,19 @@ export function AccountSettings({
   identities,
   agentEnabled,
   apiKeys,
+  captcha = {},
 }: {
   user: User;
   emailVerificationRequired: boolean;
   identities: Identity[] | null;
   agentEnabled: boolean;
   apiKeys: React.ReactNode;
+  /**
+   * Widget config per guarded action. Absent keys mean that action is not
+   * guarded, which is the normal case for a deployment without a captcha
+   * provider — every dialog then renders exactly as before.
+   */
+  captcha?: Partial<Record<'change_password' | 'change_email' | 'api_token_create', CaptchaActionConfig>>;
 }) {
   const t = useTranslator();
   const sections = [
@@ -60,7 +69,13 @@ export function AccountSettings({
       id: 'profile',
       title: t('account.settings.sections.profile'),
       Icon: UserRound,
-      content: <ProfileSettings user={user} emailVerificationRequired={emailVerificationRequired} />,
+      content: (
+        <ProfileSettings
+          user={user}
+          emailVerificationRequired={emailVerificationRequired}
+          captcha={captcha}
+        />
+      ),
     },
     {
       id: 'appearance',
@@ -102,7 +117,15 @@ function Heading({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ProfileSettings({ user, emailVerificationRequired }: { user: User; emailVerificationRequired: boolean }) {
+function ProfileSettings({
+  user,
+  emailVerificationRequired,
+  captcha,
+}: {
+  user: User;
+  emailVerificationRequired: boolean;
+  captcha: Partial<Record<'change_password' | 'change_email', CaptchaActionConfig>>;
+}) {
   const t = useTranslator();
   const locale = useLocale();
   const date = (value: string | null) =>
@@ -135,8 +158,11 @@ function ProfileSettings({ user, emailVerificationRequired }: { user: User; emai
         <SectionTitle>{t('account.settings.profile.securityTitle')}</SectionTitle>
         <p className="text-sm text-muted-foreground">{t('account.settings.profile.securityHint')}</p>
         <div className="flex flex-wrap gap-2">
-          <ChangeEmailForm currentEmail={user.email} />
-          <ChangePasswordForm />
+          <ChangeEmailForm
+            currentEmail={user.email}
+            captcha={captcha.change_email ?? null}
+          />
+          <ChangePasswordForm captcha={captcha.change_password ?? null} />
         </div>
       </div>
       <dl className="flex flex-col gap-4 text-sm">
@@ -267,10 +293,17 @@ function AvatarUpload({ user }: { user: User }) {
   );
 }
 
-function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
+function ChangeEmailForm({
+  currentEmail,
+  captcha,
+}: {
+  currentEmail: string;
+  captcha: CaptchaActionConfig | null;
+}) {
   const t = useTranslator();
   const [state, action, pending] = useActionState(changeEmailAction, {});
   const [open, setOpen] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <Button type="button" variant="outline" onClick={() => setOpen(true)}>{t('account.settings.profile.changeEmail')}</Button>
@@ -279,6 +312,8 @@ function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
         <form action={action} className="flex flex-col gap-4">
           <Field><FieldLabel htmlFor="change-email">{t('account.settings.profile.newEmail')}</FieldLabel><Input id="change-email" name="email" type="email" defaultValue={currentEmail} required /></Field>
           <Field><FieldLabel htmlFor="change-email-password">{t('account.settings.profile.currentPassword')}</FieldLabel><Input id="change-email-password" name="currentPassword" type="password" autoComplete="current-password" required /></Field>
+          {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
+          <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           {state.error && <FieldError>{state.error}</FieldError>}
           {state.ok && <p className="text-sm text-muted-foreground">{t('account.settings.profile.saved')}</p>}
           <DialogFooter><Button type="submit" disabled={pending}>{pending ? t('account.settings.saving') : t('account.settings.profile.save')}</Button></DialogFooter>
@@ -288,10 +323,11 @@ function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   );
 }
 
-function ChangePasswordForm() {
+function ChangePasswordForm({ captcha }: { captcha: CaptchaActionConfig | null }) {
   const t = useTranslator();
   const [state, action, pending] = useActionState(changePasswordAction, {});
   const [open, setOpen] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <Button type="button" variant="outline" onClick={() => setOpen(true)}>{t('account.settings.profile.changePassword')}</Button>
@@ -300,6 +336,8 @@ function ChangePasswordForm() {
         <form action={action} className="flex flex-col gap-4">
           <Field><FieldLabel htmlFor="current-password">{t('account.settings.profile.currentPassword')}</FieldLabel><Input id="current-password" name="currentPassword" type="password" autoComplete="current-password" required /></Field>
           <Field><FieldLabel htmlFor="new-password">{t('account.settings.profile.newPassword')}</FieldLabel><Input id="new-password" name="newPassword" type="password" autoComplete="new-password" minLength={8} required /></Field>
+          {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
+          <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           {state.error && <FieldError>{state.error}</FieldError>}
           {state.ok && <p className="text-sm text-muted-foreground">{t('account.settings.profile.passwordSaved')}</p>}
           <DialogFooter><Button type="submit" disabled={pending}>{pending ? t('account.settings.saving') : t('account.settings.profile.save')}</Button></DialogFooter>

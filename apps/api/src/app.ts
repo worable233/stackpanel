@@ -45,6 +45,7 @@ import { adminUpdateRoutes } from './routes/admin/updates.ts';
 import { adminUiRoutes } from './routes/admin/ui.ts';
 import { adminUserRoutes } from './routes/admin/users.ts';
 import { authRoutes } from './routes/auth.ts';
+import { captchaRoutes } from './routes/captcha.ts';
 import { authOAuthRoutes } from './routes/auth-oauth.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { apiTokenRoutes } from './routes/api-tokens.ts';
@@ -358,6 +359,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
   const runtime = host.runtime;
   app.decorate('pluginHost', host);
+  app.decorate('captcha', host.captcha);
   app.decorate('payments', host.payments);
   app.decorate('wallet', host.wallet);
   app.decorate('fx', host.fx);
@@ -379,6 +381,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(healthRoutes);
   void app.register(registerMediaRoutes);
   void app.register(authRoutes);
+  // Public projection of the captcha capability (`GET /captcha/policy`). Kernel-
+  // owned so any guarded route — including third-party plugin routes — can read
+  // its widget config without depending on the login plugin.
+  void app.register(captchaRoutes);
   void app.register(authOAuthRoutes);
   // First-run setup wizard. Registered before the plugin dispatcher catch-alls so
   // its `/setup*` paths are never shadowed by a plugin route.

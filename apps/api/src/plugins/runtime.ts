@@ -221,6 +221,8 @@ const UNAVAILABLE_CAPTCHA: CaptchaService = {
   verify: async () => ({ success: false, reason: 'no_provider' }),
   enforce: async () => undefined,
   clientConfig: () => null,
+  policyFor: () => 'off',
+  clientConfigFor: () => null,
 };
 
 /** Fallback policy service for lifecycle-only unit tests without a host. */

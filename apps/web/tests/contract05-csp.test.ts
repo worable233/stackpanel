@@ -119,3 +119,55 @@ describe('dev CSP keeps the SSR shell interactive', () => {
     }
   });
 });
+
+/**
+ * Captcha widget CSP (spec §5.1).
+ *
+ * A human-verification widget is third-party browser code, so the page policy
+ * has to name its iframe and XHR origins. Those origins come from the installed
+ * provider — the kernel sanitizes them — never from the web layer, which is what
+ * keeps vendor knowledge out of the host.
+ */
+describe('CSP allows a captcha widget without weakening script-src (spec §5.1)', () => {
+  const EMPTY = { script: [], frame: [], connect: [] };
+
+  it('is byte-identical to the pre-captcha policy when no provider is installed', () => {
+    // `frame-src 'self'` is added explicitly and is exactly what the previous
+    // `default-src 'self'` fallback already meant, so behaviour is unchanged.
+    expect(buildCsp('n', false, EMPTY)).toBe(buildCsp('n', false));
+    expect(buildCsp('n', true, EMPTY)).toBe(buildCsp('n', true));
+  });
+
+  it('adds the declared iframe and XHR origins to frame-src and connect-src', () => {
+    const csp = buildCsp('n', false, {
+      script: ['https://challenges.example.test'],
+      frame: ['https://challenges.example.test'],
+      connect: ['https://challenges.example.test'],
+    });
+    const map = directives(csp);
+    expect(map.get('frame-src')).toEqual(["'self'", 'https://challenges.example.test']);
+    expect(map.get('connect-src')).toContain('https://challenges.example.test');
+  });
+
+  it('never widens the production script-src', () => {
+    const csp = buildCsp('n', false, {
+      script: ['https://challenges.example.test'],
+      frame: ['https://challenges.example.test'],
+      connect: [],
+    });
+    const scriptSrc = directives(csp).get('script-src') ?? [];
+    // `'strict-dynamic'` already trusts a script injected by a nonce-bearing
+    // chunk, so naming the host would only dilute the policy.
+    expect(scriptSrc).toEqual(["'self'", "'nonce-n'", "'strict-dynamic'"]);
+    expect(csp).not.toContain("'unsafe-inline'; ");
+  });
+
+  it('names the host in dev, where strict-dynamic is absent', () => {
+    const csp = buildCsp('n', true, {
+      script: ['https://challenges.example.test'],
+      frame: [],
+      connect: [],
+    });
+    expect(directives(csp).get('script-src')).toContain('https://challenges.example.test');
+  });
+});

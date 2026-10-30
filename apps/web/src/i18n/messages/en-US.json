@@ -216,6 +216,10 @@
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
       "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+    },
+    "captcha": {
+      "unavailable": "The human verification widget could not load, please retry",
+      "retry": "Reload"
     }
   },
   "localeSwitcher": {

@@ -129,6 +129,7 @@ import type {
   UpstreamSourceListResponse,
   WalletAdjustResponse,
   AuthConfigResponse,
+  CaptchaPolicyResponse,
   SendRegisterCodeResponse,
 } from './types.js';
 import type { UpstreamProductItem } from './upstream.js';
@@ -163,15 +164,52 @@ export const userSchema = z.object({
 
 export const authConfigResponseSchema = z.object({
   registrationMethods: z.array(z.enum(['email', 'phone'])),
+  // Defaulted so a frontend talking to an older kernel still parses: the
+  // pre-existing behaviour was "registration open, reset unsupported".
+  registrationEnabled: z.boolean().default(true),
   emailVerificationSupported: z.boolean(),
   emailVerificationRequired: z.boolean(),
+  passwordResetSupported: z.boolean().default(false),
   captcha: z.object({
     mode: z.enum(['off', 'optional', 'required']),
     configured: z.boolean(),
     providerIds: z.array(z.string()),
     clientConfig: z.record(z.string(), z.unknown()).nullable(),
+    actions: z
+      .record(
+        z.string(),
+        z.object({
+          policy: z.enum(['off', 'optional', 'required']),
+          clientConfig: z.record(z.string(), z.unknown()).nullable(),
+        }),
+      )
+      .optional(),
   }),
 }) satisfies z.ZodType<AuthConfigResponse>;
+
+/** `GET /captcha/policy` — kernel-owned projection of the captcha capability. */
+const captchaCspSourcesSchema = z.object({
+  script: z.array(z.string()).default([]),
+  frame: z.array(z.string()).default([]),
+  connect: z.array(z.string()).default([]),
+});
+export const captchaPolicyResponseSchema = z.object({
+  action: z.string().nullable(),
+  policy: z.enum(['off', 'optional', 'required']),
+  configured: z.boolean(),
+  clientConfig: z.record(z.string(), z.unknown()).nullable(),
+  sources: captchaCspSourcesSchema,
+  actions: z
+    .record(
+      z.string(),
+      z.object({
+        policy: z.enum(['off', 'optional', 'required']),
+        clientConfig: z.record(z.string(), z.unknown()).nullable(),
+        sources: captchaCspSourcesSchema,
+      }),
+    )
+    .optional(),
+}) satisfies z.ZodType<CaptchaPolicyResponse>;
 
 export const sendRegisterCodeResponseSchema = z.object({
   sent: z.boolean(),
