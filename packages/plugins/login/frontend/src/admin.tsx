@@ -6,22 +6,40 @@ import { useState, type ReactElement } from 'react';
 import { toast } from 'sonner';
 import { t } from './i18n.js';
 
+/**
+ * Registration policy.
+ *
+ * One decision the operator actually makes — **is self-registration open** — and
+ * one refinement: does a new account have to prove its mailbox first.
+ *
+ * The email method is not a checkbox any more. Phone registration has no
+ * implementation behind it, so "email on/off" and "registration on/off" were
+ * always the same switch wearing two labels; the previous form made that worse
+ * by disabling its own save button when email was unchecked, so closing
+ * registration was impossible. Now `open` writes `['email']` or `[]`, and the
+ * server accepts the empty list.
+ */
 export function LoginSettings(props: AdminPageComponentProps): ReactElement {
   const tr = t(props.locale);
   const router = useRouter();
   const config = props.data.config as
     | {
         registrationMethods?: string[];
+        registrationEnabled?: boolean;
         emailVerificationRequired?: boolean;
         emailVerificationSupported?: boolean;
+        emailVerificationBlocked?: boolean;
       }
     | undefined;
-  const [email, setEmail] = useState(config?.registrationMethods?.includes('email') ?? true);
+  const methods = config?.registrationMethods ?? ['email'];
+  const [open, setOpen] = useState(config?.registrationEnabled ?? methods.length > 0);
   const [emailVerification, setEmailVerification] = useState(
     config?.emailVerificationRequired ?? false,
   );
   const supported = config?.emailVerificationSupported ?? false;
+  const blocked = config?.emailVerificationBlocked ?? false;
   const [busy, setBusy] = useState(false);
+
   async function save() {
     setBusy(true);
     try {
@@ -29,11 +47,13 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          registrationMethods: email ? ['email'] : [],
-          emailVerificationRequired: emailVerification,
+          registrationMethods: open ? ['email'] : [],
+          // A requirement without registration is meaningless; keep the stored
+          // value off so re-opening registration cannot resurrect a stale policy.
+          emailVerificationRequired: open ? emailVerification : false,
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? tr('settings.saveFailed'));
+      if (!res.ok) throw new Error(String((await res.json()).error ?? ''));
       toast.success(tr('settings.saved'));
       // 整页 reload 会把刚弹出的 toast 一起销毁（与 smtp 同一类 bug）；
       // `router.refresh()` 只重取 RSC 数据，宿主 `<Toaster />` 不动。
@@ -45,26 +65,25 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
       setBusy(false);
     }
   }
+
   return (
     <main className="w-full space-y-6">
       <PageHeader title={tr('settings.title')} />
+      <p className="text-sm text-muted-foreground">{tr('settings.description')}</p>
       <section className="plugin-section space-y-5">
         <label className="flex items-start gap-3 text-sm">
-          <Checkbox
-            checked={email}
-            onCheckedChange={(checked) => setEmail(checked === true)}
-          />
+          <Checkbox checked={open} onCheckedChange={(checked) => setOpen(checked === true)} />
           <span>
-            <strong className="font-medium">{tr('settings.emailGroup')}</strong>
+            <strong className="font-medium">{tr('settings.registration')}</strong>
             <span className="mt-1 block text-muted-foreground">
-              {tr('settings.emailGroupHint')}
+              {tr('settings.registrationHint')}
             </span>
           </span>
         </label>
         <label className="flex items-start gap-3 text-sm">
           <Checkbox
             checked={emailVerification}
-            disabled={!supported || !email}
+            disabled={!supported || !open}
             onCheckedChange={(checked) => setEmailVerification(checked === true)}
           />
           <span>
@@ -75,6 +94,11 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
             {!supported ? (
               <span className="plugin-warning mt-1 block">
                 {tr('settings.emailVerificationUnavailable')}
+              </span>
+            ) : null}
+            {blocked ? (
+              <span className="plugin-warning mt-1 block">
+                {tr('settings.emailVerificationBlocked')}
               </span>
             ) : null}
           </span>
@@ -88,7 +112,8 @@ export function LoginSettings(props: AdminPageComponentProps): ReactElement {
             </span>
           </span>
         </label>
-        <Button disabled={busy || !email} onClick={() => void save()}>
+        <p className="text-xs text-muted-foreground">{tr('settings.methodLocked')}</p>
+        <Button disabled={busy} onClick={() => void save()}>
           {busy ? tr('settings.saving') : tr('settings.save')}
         </Button>
       </section>

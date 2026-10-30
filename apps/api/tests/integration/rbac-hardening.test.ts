@@ -82,8 +82,10 @@ describe.skipIf(!dbAvailable)('RBAC hardening regression (real DB)', () => {
       url: '/register',
       payload: { email: `it_rbac_short_${Date.now()}@example.com`, password: 'short' },
     });
-    expect(res.statusCode).toBe(422);
-    expect((res.json() as { code: string }).code).toBe('validation.invalid');
+    // The shared password policy owns the floor now, so the rejection carries a
+    // reason the UI can localise instead of the generic `validation.invalid`.
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { code: string }).code).toBe('password.too_short');
   });
 
   it('failed logins are written to the audit log', async () => {

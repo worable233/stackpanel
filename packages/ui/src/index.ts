@@ -49,6 +49,8 @@ export type { CopyButtonProps } from './copy-button.js';
 export { SecretValue } from './secret-value.js';
 export type { SecretValueProps } from './secret-value.js';
 export { MetricsExplorer } from './metrics-explorer.js';
+export { UsageTrendChart } from './usage-trend-chart.js';
+export type { UsageTrendPoint, UsageTrendFormat } from './usage-trend-chart.js';
 export type {
   MetricsExplorerLabels,
   MetricPointLike,

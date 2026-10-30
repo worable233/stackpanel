@@ -1,11 +1,14 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
+import { RegisterClosed } from './register-closed';
 import { RegisterForm } from './register-form';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
 import { AFFILIATE_COOKIE, normalizeAffiliateCode } from '@/lib/affiliate';
 import { getCaptchaActions } from '@/lib/captcha';
+import { translate } from '@/i18n/core';
+import { getLocale } from '@/i18n/locale';
 
 export default async function RegisterPage({
   searchParams,
@@ -49,6 +52,27 @@ export default async function RegisterPage({
     // challenge sign-up but not the code request, or the reverse.
     getCaptchaActions(['register', 'register_send_code']),
   ]);
+  const locale = await getLocale();
+  // Two states make the form pointless, and both are the operator's call rather
+  // than a transient error: sign-ups closed, and "verification required but no
+  // channel" (the kernel refuses registration outright in that case). Rendering
+  // the form anyway would let a visitor fill everything in and then eat a
+  // 403/503.
+  const registrationState = !(authConfig?.registrationEnabled ?? true)
+    ? { titleKey: 'auth.register.closedTitle', bodyKey: 'auth.register.closedBody' }
+    : authConfig?.emailVerificationBlocked === true
+      ? { titleKey: 'auth.register.blockedTitle', bodyKey: 'auth.register.blockedBody' }
+      : null;
+  if (registrationState) {
+    return (
+      <RegisterClosed
+        platformName={platform.name}
+        logoSrc={brand?.logo ? apiAssetUrl(brand.logo) : null}
+        title={translate(locale, registrationState.titleKey)}
+        body={translate(locale, registrationState.bodyKey)}
+      />
+    );
+  }
   return (
     <RegisterForm
       providers={providers}

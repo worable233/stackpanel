@@ -21,9 +21,9 @@ const postsSchema = z.object({
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; reset?: string }>;
 }) {
-  const { next, error } = await searchParams;
+  const { next, error, reset } = await searchParams;
   const safeNext = safeInternalPath(next);
   const session = await getSessionUser();
   if (session) {
@@ -36,7 +36,7 @@ export default async function LoginPage({
   // renders login as before.
   const setup = await api.getSetupStatus().catch(() => null);
   if (setup?.required) redirect('/setup');
-  const [providers, platform, brand, posts, captcha] = await Promise.all([
+  const [providers, platform, brand, posts, captcha, authConfig] = await Promise.all([
     api
       .getOAuthProviders()
       .then((result) => result.providers)
@@ -56,6 +56,9 @@ export default async function LoginPage({
     // Human verification of the sign-in itself. `null` when the deployment does
     // not guard logins (the default), which renders the form exactly as before.
     getCaptchaForAction('login'),
+    // Registration switch and reset availability. Best-effort: an absent login
+    // plugin keeps the historical behaviour (registration offered).
+    api.getAuthConfig().catch(() => null),
   ]);
   return (
     <LoginForm
@@ -66,6 +69,9 @@ export default async function LoginPage({
       logoSrc={brand?.logo ? apiAssetUrl(brand.logo) : null}
       posts={posts}
       captcha={captcha}
+      registrationEnabled={authConfig?.registrationEnabled ?? true}
+      passwordResetSupported={authConfig?.passwordResetSupported ?? false}
+      resetSuccess={reset === '1'}
     />
   );
 }

@@ -23,6 +23,7 @@ import type {
 } from '@stackpanel/sdk';
 import { generatePassword } from './generate.ts';
 import { hashPassword } from './password.ts';
+import { assertPassword } from './password-policy.ts';
 import { avatarContentUrl, avatarContentUrls } from '../auth/avatar.ts';
 
 /**
@@ -415,6 +416,9 @@ export class UserAdminService {
     await this.assertAdminPrivilege(actor, undefined, groupIds);
     const exists = await this.db.user.findUnique({ where: { email: email.toLowerCase() } });
     if (exists) throw new PluginError('user.email_taken', 409, '邮箱已被使用');
+    // An operator-set password obeys the same policy as a self-service one; a
+    // generated one already does (see `generatePassword`).
+    if (password !== undefined) assertPassword(password, email);
     const generatedPassword = password ?? generatePassword();
     const groups = groupIds && groupIds.length > 0 ? groupIds : ['group_user'];
     const groupCount = await this.db.permissionGroup.count({ where: { id: { in: groups } } });
@@ -553,6 +557,9 @@ export class UserAdminService {
     actor: UserAdminActor,
   ) {
     await this.assertAdminPrivilege(actor, id, undefined);
+    const target = await this.db.user.findUnique({ where: { id }, select: { email: true } });
+    if (!target) throw new PluginError('user.not_found', 404, '用户不存在');
+    if (password !== undefined) assertPassword(password, target.email);
     const generatedPassword = password ?? generatePassword();
     const user = await this.db.user.update({
       where: { id },

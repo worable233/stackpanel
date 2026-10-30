@@ -136,10 +136,10 @@ services:
       API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-}
       API_COOKIE_SECURE: ${API_COOKIE_SECURE:-true}
-      # Trust X-Forwarded-For only from the compose network (Caddy reverse proxy
-      # / web BFF). External clients hitting the published API port are not in
-      # this CIDR, so they cannot spoof it. Must match the pinned `stackpanel`
-      # network subnet below.
+      # Trust X-Forwarded-For only from the compose network: the web BFF forwards
+      # the visitor's address, and Caddy may add its own hop. External clients
+      # hitting the published API port are not in this CIDR, so they cannot spoof
+      # it. Must match the pinned `stackpanel` network subnet below.
       API_TRUST_PROXY: ${API_TRUST_PROXY:-172.28.0.0/16}
       DATABASE_URL: postgresql://${POSTGRES_USER:-stackpanel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stackpanel}
       REDIS_URL: redis://redis:6379
@@ -153,6 +153,10 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}
+      # Login plugin attempt ceilings per minute, keyed by client IP *and* by
+      # account. Redis keeps every replica (and restarts) on one shared budget.
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-5}
+      REGISTER_RATE_LIMIT_MAX: ${REGISTER_RATE_LIMIT_MAX:-5}
       STACKPANEL_SETUP_MODE: ${STACKPANEL_SETUP_MODE:-auto}
       STACKPANEL_SETUP_TOKEN: ${STACKPANEL_SETUP_TOKEN:-}
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}

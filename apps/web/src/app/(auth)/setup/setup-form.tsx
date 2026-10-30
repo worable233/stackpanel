@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Eye, EyeOff, Layers, LoaderCircle } from 'lucide-react';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -125,7 +126,8 @@ export function SetupForm({
                         type={showPassword ? 'text' : 'password'}
                         autoComplete="new-password"
                         required
-                        minLength={8}
+                        minLength={PASSWORD_MIN_LENGTH}
+                        maxLength={PASSWORD_MAX_LENGTH}
                         value={password}
                         onChange={(event) => {
                           setPassword(event.target.value);
@@ -147,7 +149,7 @@ export function SetupForm({
                       </InputGroupAddon>
                     </InputGroup>
                     <FieldDescription id="password-hint">
-                      {t('auth.setup.passwordHint')}
+                      {t('auth.setup.passwordHint', { min: PASSWORD_MIN_LENGTH })}
                     </FieldDescription>
                   </Field>
                   <Field data-invalid={mismatch}>
@@ -158,7 +160,8 @@ export function SetupForm({
                         type={showConfirmation ? 'text' : 'password'}
                         autoComplete="new-password"
                         required
-                        minLength={8}
+                        minLength={PASSWORD_MIN_LENGTH}
+                        maxLength={PASSWORD_MAX_LENGTH}
                         value={confirmation}
                         onChange={(event) => {
                           setConfirmation(event.target.value);

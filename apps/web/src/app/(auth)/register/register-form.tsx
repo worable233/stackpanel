@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validatePassword } from '@stackpanel/sdk';
 import { AuthShell, type AuthProvider } from '@/components/auth-shell';
 import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ export function RegisterForm({
   const [codeState, sendCodeAction, sendingCode] = useActionState(sendRegisterCodeAction, {});
   const [showPassword, setShowPassword] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const t = useTranslator();
 
@@ -52,8 +54,19 @@ export function RegisterForm({
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     const form = event.currentTarget;
-    const password = (form.elements.namedItem('password') as HTMLInputElement | null)?.value;
+    const email = (form.elements.namedItem('email') as HTMLInputElement | null)?.value ?? '';
+    const password = (form.elements.namedItem('password') as HTMLInputElement | null)?.value ?? '';
     const confirm = (form.elements.namedItem('confirmPassword') as HTMLInputElement | null)?.value;
+    // Same rule set as the kernel, evaluated in the browser: the visitor gets the
+    // reason immediately (and in their language) instead of after a round trip.
+    const policy = validatePassword(password, { email });
+    if (!policy.ok) {
+      event.preventDefault();
+      setConfirmError(null);
+      setPasswordError(t(`error.${policy.code}`));
+      return;
+    }
+    setPasswordError(null);
     if (password !== confirm) {
       event.preventDefault();
       setConfirmError(t('auth.validation.passwordMismatch'));
@@ -126,7 +139,9 @@ export function RegisterForm({
               type={showPassword ? 'text' : 'password'}
               autoComplete="new-password"
               required
-              minLength={8}
+              minLength={PASSWORD_MIN_LENGTH}
+              maxLength={PASSWORD_MAX_LENGTH}
+              aria-invalid={passwordError ? true : undefined}
               className="py-2.5 pr-9"
             />
             <button
@@ -140,6 +155,10 @@ export function RegisterForm({
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            {t('auth.password.hint', { min: PASSWORD_MIN_LENGTH })}
+          </p>
+          {passwordError ? <p className="text-sm text-destructive">{passwordError}</p> : null}
         </div>
         <div className="space-y-2">
           <Label htmlFor="confirmPassword">{t('auth.register.confirmPassword')}</Label>

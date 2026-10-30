@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bot, Palette, ShieldCheck, UserRound, Plug, ArrowUpRight, Bell } from 'lucide-react';
 import { InlineNotice, SectionTitle } from '@stackpanel/ui';
-import type { User } from '@stackpanel/sdk';
+import { type User, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@stackpanel/sdk';
 import { toast } from '@/components/ui/toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { kernelAssetUrl } from '@/lib/kernel-asset-url';

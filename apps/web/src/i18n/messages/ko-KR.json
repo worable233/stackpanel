@@ -111,7 +111,8 @@
       "orContinueWith": "Or continue with",
       "noAccount": "Don't have an account?",
       "register": "Register",
-      "oauthFailed": "OAuth sign-in failed. Please try again."
+      "oauthFailed": "OAuth sign-in failed. Please try again.",
+      "forgotPassword": "비밀번호를 잊으셨나요?"
     },
     "register": {
       "title": "Create your account",
@@ -129,14 +130,18 @@
       "sendCode": "Send code",
       "sendingCode": "Sending…",
       "codeSent": "A verification code has been sent to your email.",
-      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes."
+      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes.",
+      "closedTitle": "현재 회원가입이 닫혀 있습니다",
+      "closedBody": "이 사이트는 셀프 가입을 받지 않습니다. 관리자에게 문의하세요.",
+      "blockedTitle": "현재 가입할 수 없습니다",
+      "blockedBody": "이메일 인증이 켜져 있지만 지금은 인증 코드를 보낼 수 없습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요."
     },
     "setup": {
       "title": "Initialize your platform",
       "subtitle": "Create the first administrator account to finish deployment.",
       "email": "Admin email",
       "password": "Admin password",
-      "passwordHint": "At least 8 characters",
+      "passwordHint": "{min}자 이상",
       "showPassword": "Show password",
       "hidePassword": "Hide password",
       "token": "Setup token",
@@ -217,18 +222,41 @@
       "emailPasswordRequired": "Please enter your email and password",
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
-      "emailRequired": "Please enter your email"
+      "emailRequired": "Please enter your email",
+      "codeRequired": "이메일 인증 코드를 입력하세요",
+      "passwordRequired": "새 비밀번호를 입력하세요"
     },
     "error": {
       "invalidCredentials": "Incorrect email or password",
       "loginFailed": "Sign-in failed, please try again later",
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
-      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct",
+      "passwordResetFailed": "비밀번호를 재설정하지 못했습니다. 인증 코드를 확인하거나 잠시 후 다시 시도하세요"
     },
     "captcha": {
       "unavailable": "사람 확인 위젯을 불러오지 못했습니다. 다시 시도해 주세요",
       "retry": "다시 불러오기"
+    },
+    "reset": {
+      "title": "비밀번호 재설정",
+      "subtitle": "이메일로 받은 인증 코드로 새 비밀번호를 설정합니다.",
+      "email": "이메일",
+      "code": "인증 코드",
+      "sendCode": "코드 받기",
+      "sendingCode": "전송 중…",
+      "codeSent": "해당 이메일이 등록되어 있다면 인증 코드를 보냈습니다(10분간 유효).",
+      "newPassword": "새 비밀번호",
+      "confirmPassword": "새 비밀번호 확인",
+      "submit": "새 비밀번호 저장",
+      "submitting": "저장 중…",
+      "backToLogin": "로그인으로 돌아가기",
+      "done": "비밀번호가 재설정되었습니다. 새 비밀번호로 로그인하세요.",
+      "unavailableTitle": "직접 재설정을 사용할 수 없습니다",
+      "unavailableBody": "이 사이트에는 메일 발송 수단이 설정되어 있지 않습니다. 관리자에게 비밀번호 재설정을 요청하세요."
+    },
+    "password": {
+      "hint": "{min}자 이상. 흔한 비밀번호나 이메일 주소와 비슷한 문자열은 피하세요."
     }
   },
   "localeSwitcher": {
@@ -1201,7 +1229,11 @@
       "captcha_failed": "Human verification failed, please retry",
       "captcha_unavailable": "Human verification is unavailable",
       "email_registration_disabled": "Email sign-up is closed",
-      "impersonation_credential_forbidden": "That credential cannot be used for impersonation"
+      "impersonation_credential_forbidden": "That credential cannot be used for impersonation",
+      "registration_closed": "현재 회원가입이 닫혀 있습니다",
+      "email_verification_unavailable": "이메일 인증이 켜져 있지만 인증 코드를 보낼 수 없습니다. 관리자에게 문의하세요",
+      "password_reset_unavailable": "메일 발송 수단이 없어 비밀번호를 직접 재설정할 수 없습니다. 관리자에게 문의하세요",
+      "user_not_found": "사용자를 찾을 수 없습니다"
     },
     "setup": {
       "already_completed": "This instance is already initialized. Please sign in.",
@@ -1586,6 +1618,12 @@
       "policy": {
         "invalid": "Invalid policy fields: check the channel, maintenance window, exclusion list and pins"
       }
+    },
+    "password": {
+      "too_short": "비밀번호가 너무 짧습니다. 더 길게 설정하세요",
+      "too_long": "비밀번호가 너무 깁니다. 줄여서 다시 시도하세요",
+      "too_common": "너무 흔한 비밀번호입니다. 다른 비밀번호를 사용하세요",
+      "matches_identity": "비밀번호에 이메일 주소를 포함할 수 없습니다"
     }
   },
   "auditAction": {
@@ -1624,7 +1662,10 @@
     "frontend_admin_route_render": "Render plugin admin",
     "frontend_account_route_render": "Render account page",
     "frontend_action_execute": "Execute front-end action",
-    "bootstrap_create": "Bootstrap administrator"
+    "bootstrap_create": "Bootstrap administrator",
+    "auth_password_changed": "비밀번호 변경",
+    "auth_password_reset": "비밀번호 재설정",
+    "auth_password_reset_requested": "비밀번호 재설정 요청"
   },
   "auditResource": {
     "user": "User",

@@ -32,6 +32,8 @@ import {
   captchaPolicyResponseSchema,
   accountMutationResponseSchema,
   sendRegisterCodeResponseSchema,
+  passwordResetRequestResponseSchema,
+  passwordResetResponseSchema,
   connectedIdentityListResponseSchema,
   currencyDefinitionListResponseSchema,
   currencyDefinitionMutationResponseSchema,
@@ -197,6 +199,8 @@ import type {
   PermissionGroupPatchResponse,
   PermissionGroupUpdateInput,
   PermissionInfoListResponse,
+  PasswordResetRequestResponse,
+  PasswordResetResponse,
   RbacTemplatesResponse,
   SendRegisterCodeResponse,
   SigningResponse,
@@ -654,6 +658,28 @@ export class ApiClient {
       { email, ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}) },
       sendRegisterCodeResponseSchema,
     );
+  }
+
+  /** Request a self-service password reset code (login plugin). */
+  requestPasswordReset(
+    email: string,
+    options: { captchaToken?: string } = {},
+  ): Promise<PasswordResetRequestResponse> {
+    return this.post(
+      '/password/forgot',
+      { email, ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}) },
+      passwordResetRequestResponseSchema,
+    );
+  }
+
+  /**
+   * Complete a self-service password reset with the emailed code.
+   *
+   * On success every session of that account is revoked, so the caller has to
+   * sign in again with the new password — a reset is not a login.
+   */
+  resetPassword(email: string, code: string, password: string): Promise<PasswordResetResponse> {
+    return this.post('/password/reset', { email, code, password }, passwordResetResponseSchema);
   }
 
   /** Read the public authentication policy (login plugin). */

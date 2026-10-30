@@ -12,5 +12,9 @@
   "settings.save": "Save settings",
   "settings.saving": "Saving…",
   "settings.saved": "Sign-in settings saved",
-  "settings.saveFailed": "Could not save"
+  "settings.saveFailed": "Could not save",
+  "settings.registration": "Allow new sign-ups",
+  "settings.registrationHint": "When off, the sign-up entry point is hidden and every registration request is refused. Existing users are unaffected.",
+  "settings.emailVerificationBlocked": "Email verification is on, but no code can be delivered right now: registration will be refused. Install and configure SMTP mail first, or turn this off.",
+  "settings.methodLocked": "Phone sign-up is not available yet, so email is the only registration method."
 }

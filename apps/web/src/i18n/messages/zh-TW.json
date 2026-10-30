@@ -102,7 +102,8 @@
       "orContinueWith": "或使用以下方式繼續",
       "noAccount": "還沒有帳戶？",
       "register": "註冊",
-      "oauthFailed": "OAuth 登入失敗，請重試。"
+      "oauthFailed": "OAuth 登入失敗，請重試。",
+      "forgotPassword": "忘記密碼？"
     },
     "register": {
       "title": "建立你的帳戶",
@@ -120,14 +121,18 @@
       "sendCode": "獲取驗證碼",
       "sendingCode": "傳送中…",
       "codeSent": "驗證碼已傳送，請查收郵箱。",
-      "codeSentTo": "驗證碼已傳送至 {email}，請查收（有效期 10 分鐘）。"
+      "codeSentTo": "驗證碼已傳送至 {email}，請查收（有效期 10 分鐘）。",
+      "closedTitle": "當前已關閉註冊",
+      "closedBody": "本站暫不開放自助註冊。如需賬號，請聯絡站點管理員。",
+      "blockedTitle": "暫時無法註冊",
+      "blockedBody": "本站啟用了郵箱驗證，但當前無法傳送驗證碼。請稍後再試，或聯絡站點管理員。"
     },
     "setup": {
       "title": "初始化你的平臺",
       "subtitle": "建立第一個管理員帳戶以完成部署。",
       "email": "管理員郵箱",
       "password": "管理員密碼",
-      "passwordHint": "至少 8 位",
+      "passwordHint": "至少 {min} 位",
       "showPassword": "顯示密碼",
       "hidePassword": "隱藏密碼",
       "token": "初始化令牌",
@@ -208,18 +213,41 @@
       "emailPasswordRequired": "請輸入郵箱和密碼",
       "passwordMin": "密碼至少需要 8 位",
       "passwordMismatch": "兩次輸入的密碼不一致",
-      "emailRequired": "請輸入郵箱"
+      "emailRequired": "請輸入郵箱",
+      "codeRequired": "請輸入郵箱驗證碼",
+      "passwordRequired": "請輸入新密碼"
     },
     "error": {
       "invalidCredentials": "郵箱或密碼錯誤",
       "loginFailed": "登入失敗，請稍後再試",
       "registerFailed": "註冊失敗，請稍後再試",
       "sendCodeFailed": "驗證碼傳送失敗，請稍後再試",
-      "setupFailed": "初始化失敗：請確認例項尚未初始化，且令牌正確"
+      "setupFailed": "初始化失敗：請確認例項尚未初始化，且令牌正確",
+      "passwordResetFailed": "密碼重置失敗，請檢查驗證碼或稍後再試"
     },
     "captcha": {
       "unavailable": "人機驗證元件載入失敗，請重試",
       "retry": "重試載入"
+    },
+    "reset": {
+      "title": "重置密碼",
+      "subtitle": "使用郵箱驗證碼設定新密碼。",
+      "email": "郵箱",
+      "code": "郵箱驗證碼",
+      "sendCode": "獲取驗證碼",
+      "sendingCode": "傳送中…",
+      "codeSent": "如果該郵箱已註冊，驗證碼已傳送，請查收（有效期 10 分鐘）。",
+      "newPassword": "新密碼",
+      "confirmPassword": "確認新密碼",
+      "submit": "儲存新密碼",
+      "submitting": "儲存中…",
+      "backToLogin": "返回登入",
+      "done": "密碼已重置，請使用新密碼登入。",
+      "unavailableTitle": "暫不支援自助重置密碼",
+      "unavailableBody": "本站尚未配置郵箱傳送通道。請聯絡站點管理員重置密碼。"
+    },
+    "password": {
+      "hint": "至少 {min} 個字元；請勿使用常見密碼或與郵箱相似的內容。"
     }
   },
   "localeSwitcher": {
@@ -1201,7 +1229,11 @@
       "captcha_failed": "人機驗證未通過，請重試",
       "captcha_unavailable": "人機驗證服務不可用",
       "email_registration_disabled": "當前未開放郵箱註冊",
-      "impersonation_credential_forbidden": "該憑據不允許用於身份模擬"
+      "impersonation_credential_forbidden": "該憑據不允許用於身份模擬",
+      "registration_closed": "當前已關閉註冊",
+      "email_verification_unavailable": "註冊郵箱驗證已開啟，但當前無法傳送驗證碼，請聯絡站點管理員",
+      "password_reset_unavailable": "當前沒有可用的郵箱傳送通道，無法自助重置密碼，請聯絡站點管理員",
+      "user_not_found": "使用者不存在"
     },
     "setup": {
       "already_completed": "例項已完成初始化，請直接登入",
@@ -1586,6 +1618,12 @@
       "policy": {
         "invalid": "更新策略欄位無效：請檢查通道、維護視窗、排除與鎖定清單"
       }
+    },
+    "password": {
+      "too_short": "密碼長度不足，請設定更長的密碼",
+      "too_long": "密碼過長，請縮短後重試",
+      "too_common": "該密碼過於常見，請換一個",
+      "matches_identity": "密碼不能與郵箱地址或其中一部分相同"
     }
   },
   "auditAction": {
@@ -1624,7 +1662,10 @@
     "frontend_admin_route_render": "渲染外掛後臺",
     "frontend_account_route_render": "渲染帳戶頁面",
     "frontend_action_execute": "執行前臺操作",
-    "bootstrap_create": "初始化管理員"
+    "bootstrap_create": "初始化管理員",
+    "auth_password_changed": "修改密碼",
+    "auth_password_reset": "重置密碼",
+    "auth_password_reset_requested": "申請重置密碼"
   },
   "auditResource": {
     "user": "使用者",

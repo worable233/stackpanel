@@ -53,6 +53,12 @@ export interface AuthConfigResponse {
    * `identity.challengeSender` is installed and configured).
    */
   passwordResetSupported: boolean;
+  /**
+   * The operator requires verified emails, but nothing can deliver a code right
+   * now. Registration refuses outright in that state, so a form here could never
+   * succeed and the UI must show an explanation instead.
+   */
+  emailVerificationBlocked: boolean;
   captcha: {
     mode: 'off' | 'optional' | 'required';
     configured: boolean;
@@ -169,6 +175,22 @@ export interface SendRegisterCodeResponse {
   email: string;
   expiresAt: string;
   expiresInSeconds: number;
+}
+
+/**
+ * Response of `POST /password/forgot` (login plugin).
+ *
+ * Deliberately carries no account hint: the same `{ sent: true }` is returned
+ * whether or not the address exists, so the endpoint cannot be used to probe
+ * for registered emails.
+ */
+export interface PasswordResetRequestResponse {
+  sent: boolean;
+}
+
+/** Response of `POST /password/reset` (login plugin). */
+export interface PasswordResetResponse {
+  ok: boolean;
 }
 
 /** Standard success envelope. */

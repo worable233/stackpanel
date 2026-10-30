@@ -22,7 +22,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { PluginError } from '@stackpanel/sdk';
+import { PASSWORD_MAX_LENGTH, PluginError } from '@stackpanel/sdk';
 import { capabilitiesFor } from '../lib/capability-registry.ts';
 import { currentUser, requireAuth, requirePermission, requireOpenScope } from '../plugins/auth.ts';
 import { getPlatformInfo, setPlatformInfo } from '../lib/platform-info.ts';
@@ -79,7 +79,8 @@ const userListQuerySchema = z.object({
 
 const createUserSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8).optional(),
+  // Strength is enforced by `UserAdminService` (shared policy, localisable code).
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH).optional(),
   status: z.enum(['ACTIVE', 'DISABLED']).default('ACTIVE'),
   groupIds: z.array(z.string().min(1)).optional(),
 });
@@ -93,7 +94,10 @@ const updateUserSchema = z
     message: '至少需要修改状态或权限组',
   });
 
-const resetPasswordSchema = z.object({ password: z.string().min(8).optional() });
+const resetPasswordSchema = z.object({
+  // Strength is enforced by `UserAdminService` (shared policy, localisable code).
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH).optional(),
+});
 
 const walletAdjustSchema = z.object({
   amount: z

@@ -2,7 +2,12 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import type { PermissionGroupInfo } from '@stackpanel/sdk';
+import {
+  type PermissionGroupInfo,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  validatePassword,
+} from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -65,9 +70,14 @@ export function CreateUserForm({ groups }: { groups: PermissionGroupInfo[] }) {
       setState({ error: t('createUser.emailRequired') });
       return;
     }
-    if (typeof password === 'string' && password.length > 0 && password.length < 8) {
-      setState({ error: t('createUser.passwordTooShort') });
-      return;
+    if (typeof password === 'string' && password.length > 0) {
+      // Same policy as the kernel: an operator-set password is held to the same
+      // bar as a self-chosen one, otherwise the account starts weaker.
+      const policy = validatePassword(password, { email: typeof email === 'string' ? email : '' });
+      if (!policy.ok) {
+        setState({ error: t(`error.${policy.code}`) });
+        return;
+      }
     }
     setState(null);
     startTransition(async () => {
@@ -117,9 +127,12 @@ export function CreateUserForm({ groups }: { groups: PermissionGroupInfo[] }) {
               id="new-user-password"
               name="password"
               type="text"
-              maxLength={72}
+              maxLength={PASSWORD_MAX_LENGTH}
               placeholder={t('createUser.passwordPlaceholder')}
             />
+            <p className="text-xs text-muted-foreground">
+              {t('auth.password.hint', { min: PASSWORD_MIN_LENGTH })}
+            </p>
           </div>
           <div className="flex flex-col gap-1">
             <Label>{t('createUser.groups')}</Label>

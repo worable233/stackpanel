@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { PASSWORD_MAX_LENGTH } from '@stackpanel/sdk';
 import { userListResponseSchema, userResponseSchema } from '../../lib/openapi.ts';
 import { UserAdminService } from '../../lib/user-admin.ts';
 import type { UserAdminActor } from '../../lib/user-admin.ts';
@@ -48,7 +49,8 @@ const listQuerySchema = z.object({
 
 const createUserSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8).optional(),
+  // Strength is enforced by `UserAdminService` (shared policy, localisable code).
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH).optional(),
   status: z.enum(['ACTIVE', 'DISABLED']).default('ACTIVE'),
   /** Permission group ids to assign (defaults to the `user` group). */
   groupIds: z.array(z.string().min(1)).optional(),
@@ -65,7 +67,8 @@ const updateUserSchema = z
   });
 
 const resetPasswordSchema = z.object({
-  password: z.string().min(8).optional(),
+  // Strength is enforced by `UserAdminService` (shared policy, localisable code).
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH).optional(),
 });
 
 const idParamSchema = z.object({ id: z.string().min(1) });

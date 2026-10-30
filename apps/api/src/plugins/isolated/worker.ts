@@ -517,6 +517,7 @@ const context = {
     'issueSession',
     'revokeSession',
     'revokeAllSessions',
+    'resetUserPassword',
     'sessionCookieConfig',
     'hasPermission',
     'listUserGroups',

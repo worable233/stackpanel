@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { PASSWORD_MAX_LENGTH } from '@stackpanel/sdk';
 import { extractSession, requireAuth } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
+import { assertPassword } from '../lib/password-policy.ts';
 import { getSessionStore } from '../auth/session-store.ts';
 import { avatarContentUrl } from '../auth/avatar.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
@@ -18,9 +20,10 @@ import {
 
 const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1),
-  // The ceiling only bounds the scrypt input; strength rules (length/common/
-  // identity-matching) belong to the password policy, not to this schema.
-  newPassword: z.string().min(1).max(1024),
+  // The strength rule is the shared policy, not a length here: `assertPassword`
+  // below rejects short/common/identity-matching candidates with a code the UI
+  // can localise. The ceiling only bounds the scrypt input.
+  newPassword: z.string().min(1).max(PASSWORD_MAX_LENGTH),
   captchaToken: captchaTokenSchema,
 });
 const emailChangeSchema = z.object({
@@ -105,11 +108,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!user?.passwordHash || !(await verifyPassword(body.data.currentPassword, user.passwordHash))) {
       return reply.code(400).send({ error: '当前密码不正确' });
     }
+    // Policy before writing: a change is the one place an account can upgrade
+    // from an old 8-character password, so it enforces today's rule.
+    assertPassword(body.data.newPassword, user.email);
     await prisma.user.update({
       where: { id: user.id },
       data: { passwordHash: await hashPassword(body.data.newPassword) },
     });
     await getSessionStore().revokeAll(user.id);
+    await writeAudit({
+      action: 'auth.password.changed',
+      resource: 'user',
+      resourceId: user.id,
+      ...auditContext(request),
+    });
     return { ok: true as const };
   });
 

@@ -12,5 +12,9 @@
   "settings.save": "保存配置",
   "settings.saving": "保存中…",
   "settings.saved": "登录配置已保存",
-  "settings.saveFailed": "保存失败"
+  "settings.saveFailed": "保存失败",
+  "settings.registration": "允许新用户注册",
+  "settings.registrationHint": "关闭后注册入口隐藏，所有注册请求都会被拒绝；已有用户不受影响。",
+  "settings.emailVerificationBlocked": "已开启邮箱验证，但当前无法发送验证码：注册会被拒绝。请先安装并配置 SMTP 邮件，或关闭此项。",
+  "settings.methodLocked": "手机号注册尚未提供，因此邮箱是当前唯一的注册方式。"
 }

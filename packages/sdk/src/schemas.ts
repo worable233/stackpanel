@@ -136,6 +136,8 @@ import type {
   WalletAdjustResponse,
   AuthConfigResponse,
   CaptchaPolicyResponse,
+  PasswordResetRequestResponse,
+  PasswordResetResponse,
   SendRegisterCodeResponse,
 } from './types.js';
 import type { UpstreamProductItem } from './upstream.js';
@@ -176,6 +178,7 @@ export const authConfigResponseSchema = z.object({
   emailVerificationSupported: z.boolean(),
   emailVerificationRequired: z.boolean(),
   passwordResetSupported: z.boolean().default(false),
+  emailVerificationBlocked: z.boolean().default(false),
   captcha: z.object({
     mode: z.enum(['off', 'optional', 'required']),
     configured: z.boolean(),
@@ -223,6 +226,14 @@ export const sendRegisterCodeResponseSchema = z.object({
   expiresAt: z.string(),
   expiresInSeconds: z.number(),
 }) satisfies z.ZodType<SendRegisterCodeResponse>;
+
+export const passwordResetRequestResponseSchema = z.object({
+  sent: z.boolean(),
+}) satisfies z.ZodType<PasswordResetRequestResponse>;
+
+export const passwordResetResponseSchema = z.object({
+  ok: z.boolean(),
+}) satisfies z.ZodType<PasswordResetResponse>;
 
 export const healthSchema = z.object({
   status: z.literal('ok'),
