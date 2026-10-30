@@ -62,7 +62,8 @@ export function AgentSettings() {
   const t = useTranslator();
   const locale = useLocale();
   const [loaded, setLoaded] = useState(false);
-  const [enabled, setEnabled] = useState(false);  const [model, setModel] = useState<Model>({ baseUrl: '', model: '', apiKeyConfigured: false });
+  const [enabled, setEnabled] = useState(false);
+  const [model, setModel] = useState<Model>({ baseUrl: '', model: '', apiKeyConfigured: false });
   const [catalog, setCatalog] = useState<Catalog>();
   const [secret, setSecret] = useState('');
   const [retention, setRetention] = useState<Retention>();
