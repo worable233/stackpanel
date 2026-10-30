@@ -15,7 +15,7 @@ export function agentProxyTarget(method: string, segments: string[]): string | n
   const user =
     /^(status|models|credential|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:resume|cancel))?)?|approvals(?:\/[A-Za-z0-9_-]+\/decide)?|profiles\/[A-Za-z0-9_-]+|mcp-servers(?:\/[A-Za-z0-9_-]+\/credential)?|oauth\/authorize)$/;
   const admin =
-    /^admin\/(retention(?:\/cleanup)?|model|enabled|runs(?:\/[A-Za-z0-9_-]+)?|profiles\/[A-Za-z0-9_-]+|mcp-servers(?:\/[A-Za-z0-9_-]+(?:\/discover)?)?|oauth-clients(?:\/[A-Za-z0-9_-]+)?|actions(?:\/[A-Za-z0-9_-]+)?)$/;
+    /^admin\/(retention(?:\/cleanup)?|model(?:\/catalog|\/default)?|enabled|runs(?:\/[A-Za-z0-9_-]+)?|profiles\/[A-Za-z0-9_-]+|mcp-servers(?:\/[A-Za-z0-9_-]+(?:\/discover)?)?|oauth-clients(?:\/[A-Za-z0-9_-]+)?|actions(?:\/[A-Za-z0-9_-]+)?)$/;
   if (!['GET', 'POST', 'PUT', 'DELETE'].includes(method)) return null;
   return user.test(path)
     ? `/api/v1/agent/${path}`

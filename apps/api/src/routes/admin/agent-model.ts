@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { isPublicHttpUrl } from '@stackpanel/net-guard';
 import { encryptSecret, isSecretsEnabled } from '../../lib/crypto.ts';
 import { buildProblem } from '../../lib/problem.ts';
-import { LLM_CONFIG_SECRET_KEY, LLM_CONFIG_SETTING_KEY } from '../../lib/llm-provider.ts';
+import {
+  LLM_CONFIG_SECRET_KEY,
+  LLM_CONFIG_SETTING_KEY,
+  LLM_DEFAULT_MODEL_SETTING_KEY,
+  readDefaultModel,
+  resolveLlmProvider,
+} from '../../lib/llm-provider.ts';
 import { SECRETS_DISABLED_CODE, SECRETS_DISABLED_MESSAGE } from '../../lib/secrets-policy.ts';
 import { auditContext, writeAudit } from '../../plugins/audit.ts';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
@@ -46,6 +52,34 @@ interface ModelConfigView {
   apiKeyConfigured: boolean;
 }
 
+/**
+ * What the model picker renders. `provider` is the *resolved* supply (a plugin
+ * extension first, the fallback triple second) so the admin sees the same
+ * provider the Agent loop will actually call — not a guess from settings rows.
+ *
+ * `fallbackConfigured` is reported separately: an active plugin provider means
+ * the fallback triple is unused, but the admin still needs to know whether a
+ * backup endpoint exists for when the plugin is disabled or uninstalled.
+ */
+interface ModelCatalogView {
+  provider: { id: string; name: string } | null;
+  /** `true` when the supply is a plugin extension rather than `agent.llm`. */
+  fromPlugin: boolean;
+  models: Array<{
+    id: string;
+    label: string;
+    supportsTools: boolean;
+    inputPriceMinorPerMillion?: number;
+    outputPriceMinorPerMillion?: number;
+  }>;
+  defaultModel: string | null;
+  fallbackConfigured: boolean;
+}
+
+const setDefaultModelSchema = z
+  .object({ model: z.string().trim().min(1).max(191).nullable() })
+  .strict();
+
 function problemsDisabled(reply: FastifyReply, request: { url: string; id: string }) {
   return reply
     .code(501)
@@ -87,6 +121,54 @@ async function readModelConfigView(): Promise<ModelConfigView> {
     baseUrl: typeof record.baseUrl === 'string' && record.baseUrl.length > 0 ? record.baseUrl : null,
     model: typeof record.model === 'string' && record.model.length > 0 ? record.model : null,
     apiKeyConfigured: typeof secret?.ciphertext === 'string' && secret.ciphertext.length > 0,
+  };
+}
+
+/**
+ * The provider's advertised models, for the admin dropdown.
+ *
+ * This is the join that was missing: llm-gateway (and any future provider
+ * plugin) already knows which models the site may bill for, but the admin UI
+ * only ever offered a free-text model box backed by `agent.llm`. Asking the
+ * provider instead of a settings row means the dropdown can never drift from
+ * what the Agent loop will accept.
+ *
+ * A provider that throws (misconfigured plugin, unreachable registry) is
+ * reported as "no models" rather than as a failed page load: the admin must
+ * still be able to fix the fallback endpoint in that state.
+ */
+async function readModelCatalog(runtime: {
+  getExtensions<T>(pointId: string): T[];
+}): Promise<ModelCatalogView> {
+  const provider = await resolveLlmProvider(runtime);
+  const [defaultModel, fallback] = await Promise.all([
+    readDefaultModel(getPrisma()),
+    readModelConfigView(),
+  ]);
+  let models: ModelCatalogView['models'] = [];
+  if (provider) {
+    try {
+      models = (await provider.listModels()).map((item) => ({
+        id: item.id,
+        label: item.label || item.id,
+        supportsTools: item.supportsTools,
+        ...(item.inputPriceMinorPerMillion === undefined
+          ? {}
+          : { inputPriceMinorPerMillion: item.inputPriceMinorPerMillion }),
+        ...(item.outputPriceMinorPerMillion === undefined
+          ? {}
+          : { outputPriceMinorPerMillion: item.outputPriceMinorPerMillion }),
+      }));
+    } catch {
+      models = [];
+    }
+  }
+  return {
+    provider: provider ? { id: provider.id, name: provider.name } : null,
+    fromPlugin: provider !== null && provider.id !== 'configured',
+    models,
+    defaultModel,
+    fallbackConfigured: fallback.baseUrl !== null && fallback.apiKeyConfigured,
   };
 }
 
@@ -191,5 +273,57 @@ export async function adminAgentModelRoutes(app: FastifyInstance): Promise<void>
     });
 
     return { baseUrl: null, model: null, apiKeyConfigured: false } satisfies ModelConfigView;
+  });
+
+  /**
+   * The model picker's data source: whatever the *active* provider advertises.
+   * Read-only and side-effect free, so it is safe for the settings page to call
+   * on every load.
+   */
+  app.get('/admin/agent/model/catalog', { preHandler: adminOnly }, async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return readModelCatalog(request.server.pluginRuntime);
+  });
+
+  /**
+   * Persist the administrator's default model.
+   *
+   * `null` clears the choice (the Agent loop then falls back to the first model
+   * the provider advertises). The value is not validated against the current
+   * list on purpose: a provider may be temporarily unreachable while the admin
+   * fixes it, and rejecting the write would make the setting un-editable. The
+   * runtime re-checks the id against the live list before every run.
+   */
+  app.put('/admin/agent/model/default', { preHandler: adminOnly }, async (request, reply) => {
+    const parsed = setDefaultModelSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send(
+        buildProblem({
+          status: 400,
+          detail: '默认模型参数无效',
+          instance: request.url,
+          requestId: request.id,
+        }),
+      );
+    }
+    const model = parsed.data.model;
+    const prisma = getPrisma();
+    await prisma.setting.upsert({
+      where: { key: LLM_DEFAULT_MODEL_SETTING_KEY },
+      create: {
+        key: LLM_DEFAULT_MODEL_SETTING_KEY,
+        value: { model },
+        updatedBy: request.user?.id ?? null,
+      },
+      update: { value: { model }, updatedBy: request.user?.id ?? null },
+    });
+    await writeAudit({
+      action: 'agent.model.default.update',
+      resource: 'setting',
+      resourceId: LLM_DEFAULT_MODEL_SETTING_KEY,
+      meta: { model },
+      ...auditContext(request),
+    });
+    return readModelCatalog(request.server.pluginRuntime);
   });
 }

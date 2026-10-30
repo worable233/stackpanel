@@ -916,9 +916,12 @@
   },
   "locale": {
     "zh-CN": "简体中文",
-    "zh-TW": "繁體中文（台灣）",
+    "zh-TW": "繁體中文",
     "zh-HK": "繁體中文（香港）",
-    "en-US": "English"
+    "en-US": "English",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "fr-FR": "Français"
   },
   "action": {
     "feedback": {
@@ -1986,7 +1989,19 @@
       "cleaned": "已清理 {count} 个对话",
       "cleared": "模型配置已清除",
       "processing": "处理中…",
-      "loadFailed": "加载失败"
+      "loadFailed": "加载失败",
+      "defaultModelTitle": "默认模型",
+      "defaultModelHint": "从当前模型提供方已开放的模型中选择一个，Agent 执行任务时默认使用它。",
+      "defaultModelLabel": "模型",
+      "defaultModelAuto": "自动（使用提供方的首个可用模型）",
+      "defaultModelHelp": "已保存的模型若不在提供方列表中会被忽略，运行时会自动回退。",
+      "defaultModelSave": "保存默认模型",
+      "defaultModelSaved": "默认模型已保存",
+      "providerLabel": "提供方",
+      "providerNone": "未检测到模型提供方",
+      "catalogEmpty": "当前提供方没有返回可用模型，请检查提供方配置。",
+      "noToolsModel": "不支持工具调用",
+      "fallbackHintPlugin": "当前由模型提供方插件提供服务，下面的兜底接口仅在插件不可用时生效。"
     },
     "advanced": {
       "title": "高级设置",

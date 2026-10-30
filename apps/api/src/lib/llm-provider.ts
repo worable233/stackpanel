@@ -49,6 +49,28 @@ export const LLM_CONFIG_SETTING_KEY = 'agent.llm';
  */
 export const LLM_CONFIG_SECRET_KEY = 'agent.llm.apiKey';
 
+/**
+ * `Setting` key holding `{ model }`: the administrator's **default model** among
+ * whatever the currently active provider advertises.
+ *
+ * It is deliberately not part of `agent.llm`. That row is the *fallback
+ * endpoint triple* (`baseUrl` + `model` + `apiKey`); a plugin provider such as
+ * llm-gateway has no baseUrl/apiKey to store, but its model list is exactly what
+ * the admin wants to choose from. Keeping the choice in its own row lets the
+ * same selection survive a provider switch: a model id that the active provider
+ * does not advertise is ignored (see `resolveModel` in routes/agent.ts).
+ */
+export const LLM_DEFAULT_MODEL_SETTING_KEY = 'agent.model';
+
+/** Read the stored default model id, or `null` when unset/blank. */
+export async function readDefaultModel(prisma: PrismaClient): Promise<string | null> {
+  const row = await prisma.setting.findUnique({ where: { key: LLM_DEFAULT_MODEL_SETTING_KEY } });
+  const value: unknown = row?.value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const model = (value as Record<string, unknown>).model;
+  return typeof model === 'string' && model.trim() !== '' ? model.trim() : null;
+}
+
 /** Default per-call timeout when `LlmCallOptions.timeoutMs` is absent. */
 export const DEFAULT_LLM_TIMEOUT_MS = 30_000;
 
