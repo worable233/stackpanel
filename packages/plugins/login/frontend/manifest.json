@@ -3,7 +3,9 @@
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
-  "finders": ["login.config"],
+  "finders": [
+    "login.config"
+  ],
   "adminRoutes": [
     {
       "path": "/settings",
@@ -53,7 +55,12 @@
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],
-  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
   "messages": {
     "zh-CN": {
       "admin.systemSettings": "登录与注册",

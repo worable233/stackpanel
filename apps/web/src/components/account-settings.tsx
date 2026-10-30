@@ -19,6 +19,8 @@ import { setLocaleAction } from '@/i18n/actions';
 import { agentFetch } from '@/components/agent-workspace';
 import { changeEmailAction, changePasswordAction } from '@/lib/actions';
 import type { AccountMutationState } from '@/lib/actions';
+import type { CaptchaActionConfig } from '@/lib/captcha';
+import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, FieldDescription, FieldGroup, FieldError } from '@/components/ui/field';
@@ -48,12 +50,19 @@ export function AccountSettings({
   identities,
   agentEnabled,
   apiKeys,
+  captcha = {},
 }: {
   user: User;
   emailVerificationRequired: boolean;
   identities: Identity[] | null;
   agentEnabled: boolean;
   apiKeys: React.ReactNode;
+  /**
+   * Widget config per guarded action. Absent keys mean that action is not
+   * guarded, which is the normal case for a deployment without a captcha
+   * provider — every dialog then renders exactly as before.
+   */
+  captcha?: Partial<Record<'change_password' | 'change_email' | 'api_token_create', CaptchaActionConfig>>;
 }) {
   const t = useTranslator();
   const sections = [
@@ -62,7 +71,11 @@ export function AccountSettings({
       title: t('account.settings.sections.profile'),
       Icon: UserRound,
       content: (
-        <ProfileSettings user={user} emailVerificationRequired={emailVerificationRequired} />
+        <ProfileSettings
+          user={user}
+          emailVerificationRequired={emailVerificationRequired}
+          captcha={captcha}
+        />
       ),
     },
     {
@@ -108,9 +121,11 @@ function Heading({ children }: { children: React.ReactNode }) {
 function ProfileSettings({
   user,
   emailVerificationRequired,
+  captcha,
 }: {
   user: User;
   emailVerificationRequired: boolean;
+  captcha: Partial<Record<'change_password' | 'change_email', CaptchaActionConfig>>;
 }) {
   const t = useTranslator();
   const locale = useLocale();
@@ -148,8 +163,11 @@ function ProfileSettings({
           {t('account.settings.profile.securityHint')}
         </p>
         <div className="flex flex-wrap gap-2">
-          <ChangeEmailForm currentEmail={user.email} />
-          <ChangePasswordForm />
+          <ChangeEmailForm
+            currentEmail={user.email}
+            captcha={captcha.change_email ?? null}
+          />
+          <ChangePasswordForm captcha={captcha.change_password ?? null} />
         </div>
       </div>
       <dl className="flex flex-col gap-4 text-sm">
@@ -280,9 +298,16 @@ function AvatarUpload({ user }: { user: User }) {
   );
 }
 
-function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
+function ChangeEmailForm({
+  currentEmail,
+  captcha,
+}: {
+  currentEmail: string;
+  captcha: CaptchaActionConfig | null;
+}) {
   const t = useTranslator();
   const [open, setOpen] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   // 回执走系统通知（toast），失败仍在对话框里内联；不在 effect 里 setState。
   const [state, action, pending] = useActionState<AccountMutationState, FormData>(
     async (previous, formData) => {
@@ -328,6 +353,8 @@ function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
               required
             />
           </Field>
+          {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
+          <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           {state.error && <FieldError>{state.error}</FieldError>}
           <DialogFooter>
             <Button type="submit" disabled={pending}>
@@ -340,9 +367,10 @@ function ChangeEmailForm({ currentEmail }: { currentEmail: string }) {
   );
 }
 
-function ChangePasswordForm() {
+function ChangePasswordForm({ captcha }: { captcha: CaptchaActionConfig | null }) {
   const t = useTranslator();
   const [open, setOpen] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [state, action, pending] = useActionState<AccountMutationState, FormData>(
     async (previous, formData) => {
       const result = await changePasswordAction(previous, formData);
@@ -390,6 +418,8 @@ function ChangePasswordForm() {
               required
             />
           </Field>
+          {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
+          <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           {state.error && <FieldError>{state.error}</FieldError>}
           <DialogFooter>
             <Button type="submit" disabled={pending}>

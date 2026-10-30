@@ -225,6 +225,10 @@
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
       "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+    },
+    "captcha": {
+      "unavailable": "人間確認ウィジェットを読み込めませんでした。再試行してください",
+      "retry": "再読み込み"
     }
   },
   "localeSwitcher": {

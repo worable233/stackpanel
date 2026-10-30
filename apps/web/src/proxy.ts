@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { AFFILIATE_COOKIE, normalizeAffiliateCode } from './lib/affiliate';
+import { readCaptchaCspSources, type CaptchaCspSources } from './lib/captcha-csp';
 
 const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? 'sp_session';
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
@@ -52,11 +53,21 @@ const API_ORIGIN = apiStyleOrigin();
  * without `'unsafe-hashes'` on every attribute.
  */
 /** Exported for the contract-05 CSP regression test. */
-export function buildCsp(nonce: string, isDev: boolean): string {
+export function buildCsp(
+  nonce: string,
+  isDev: boolean,
+  captcha: CaptchaCspSources = { script: [], frame: [], connect: [] },
+): string {
+  // A challenge widget's own script is loaded by a Next chunk, which carries the
+  // per-request nonce, so `'strict-dynamic'` already trusts the injected
+  // `<script src>` in production — no vendor host belongs in `script-src` there,
+  // and adding one would only dilute the policy (host-sources are ignored once
+  // `'strict-dynamic'` is present). Dev has no `'strict-dynamic'`, so the origin
+  // must be named explicitly or the widget never loads.
   const scriptSrc = isDev
     ? // Dev-only: Next's own inline bootstrap is emitted without the nonce, and
       // `'strict-dynamic'` would additionally drop same-origin chunks.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      `script-src 'self' 'unsafe-inline' 'unsafe-eval'${hosts(captcha.script)}`
     : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
 
   return [
@@ -65,12 +76,23 @@ export function buildCsp(nonce: string, isDev: boolean): string {
     "frame-ancestors 'none'",
     "object-src 'none'",
     "form-action 'self'",
+    // Without an explicit `frame-src` the widget iframe falls back to
+    // `default-src 'self'` and is blocked. Declaring it keeps the fallback for
+    // every other frame while letting the provider name its own origins.
+    `frame-src 'self'${hosts(captcha.frame)}`,
     `img-src 'self' data: blob:${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
     "font-src 'self' data:",
     `style-src 'self' 'unsafe-inline'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
     scriptSrc,
-    `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${isDev ? ' ws: wss:' : ''}`,
+    // The widget's script posts its solution back to the challenge origin.
+    `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${isDev ? ' ws: wss:' : ''}${hosts(captcha.connect)}`,
   ].join('; ');
+}
+
+/** Render origins as CSP host-source values, or nothing when the list is empty. */
+function hosts(origins: readonly string[] | undefined): string {
+  if (!origins || origins.length === 0) return '';
+  return ` ${origins.join(' ')}`;
 }
 
 /**
@@ -87,7 +109,10 @@ export function buildCsp(nonce: string, isDev: boolean): string {
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
-  const csp = buildCsp(nonce, process.env.NODE_ENV === 'development').replace(
+  // Cached inside `readCaptchaCspSources`; empty when no provider is installed,
+  // which makes the policy identical to the pre-captcha implementation.
+  const captchaSources = await readCaptchaCspSources();
+  const csp = buildCsp(nonce, process.env.NODE_ENV === 'development', captchaSources).replace(
     "frame-ancestors 'none'",
     request.nextUrl.pathname === '/preview' ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
   );

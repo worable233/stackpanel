@@ -9,6 +9,7 @@ import { isKnownPlatformScope, mcpGrantableScopes } from '../mcp/index.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { permissionsOf, currentUser, requireAuth, requireRole } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
+import { captchaTokenSchema, guardCaptcha } from '../auth/captcha-guard.ts';
 
 /**
  * Platform API token self-service (`/me/api-tokens`) plus an admin oversight
@@ -55,6 +56,7 @@ const createSchema = z
       .nullable()
       .optional()
       .transform((value) => (value ? new Date(value) : null)),
+    captchaToken: captchaTokenSchema,
   })
   .strict();
 
@@ -179,8 +181,13 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const body = createSchema.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: '参数无效' });
+      // Cheap, purely local validation first: no point burning a captcha
+      // challenge on a request whose key is malformed anyway.
       const keyError = publicKeyRejection(body.data.publicKey);
       if (keyError) return reply.code(400).send({ error: keyError });
+      // Minting a durable credential is the highest-value write in this file, so
+      // the challenge runs before scope resolution and before the row exists.
+      await guardCaptcha(app, request, 'api_token_create', body.data.captchaToken);
       const owned = await permissionsOf(currentUser(request).id);
       const illegal = illegalScopes(body.data.scopes, owned, request.server.pluginRuntime?.scopeGovernance());
       if (illegal.length > 0) {

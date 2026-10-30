@@ -80,7 +80,12 @@
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],
-  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
   "messages": {
     "zh-CN": {
       "status.installed": "已安装",

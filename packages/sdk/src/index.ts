@@ -88,6 +88,8 @@ export type {
 } from './notifications.js';
 export { INAPP_CHANNEL_ID } from './notifications.js';
 export type {
+  CaptchaAction,
+  CaptchaPolicy,
   CaptchaProvider,
   CaptchaService,
   CaptchaVerification,

@@ -556,6 +556,8 @@ const context = {
     'verify',
     'enforce',
     'clientConfig',
+    'policyFor',
+    'clientConfigFor',
   ]),
   secrets: serviceProxy('secrets', ['isAvailable', 'get', 'set', 'remove']),
   // 内核托管读缓存：把「查缓存 / 回源 / 回填」拆成三步 IPC。

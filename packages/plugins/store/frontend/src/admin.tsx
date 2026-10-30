@@ -1813,6 +1813,7 @@ function StoreSettingsPage(props: AdminPageComponentProps) {
           </div>
         </CardContent>
       </Card>
+
       <Button
         disabled={busy || !initial}
         onClick={() =>

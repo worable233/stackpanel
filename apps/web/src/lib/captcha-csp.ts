@@ -1,0 +1,106 @@
+/**
+ * CSP sources for a captcha widget, read from the kernel.
+ *
+ * A challenge widget is third-party browser code: Turnstile renders an iframe
+ * from `challenges.cloudflare.com` and its script talks back to that origin. The
+ * page's policy is `default-src 'self'`, so without these origins the widget is
+ * blocked and the deployment appears to require a challenge nobody can solve.
+ *
+ * The origins cannot be hard-coded — that would put vendor knowledge in the web
+ * layer — so they come from the provider's own `clientConfig.sources`, already
+ * sanitized to absolute `https:` origins by the kernel. This module only reads
+ * and caches them.
+ *
+ * Failure policy is deliberately forgiving: an unreachable API, an uninstalled
+ * plugin, or any malformed payload yields empty sources, which reproduces the
+ * pre-existing policy byte for byte. Human verification must never be able to
+ * take the site down — that is the whole point of shipping it as a plugin.
+ */
+
+export interface CaptchaCspSources {
+  script: string[];
+  frame: string[];
+  connect: string[];
+}
+
+const EMPTY: CaptchaCspSources = { script: [], frame: [], connect: [] };
+
+const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
+
+/**
+ * The policy is static between provider reconfigurations, and the proxy runs on
+ * every page request, so one cached read per window is enough. A short TTL keeps
+ * an admin's "save settings" effective without a restart.
+ */
+const TTL_MS = 30_000;
+
+let cache: { at: number; value: CaptchaCspSources } | null = null;
+/** In-flight read, so a burst of concurrent requests shares one fetch. */
+let inflight: Promise<CaptchaCspSources> | null = null;
+
+/** Only absolute https origins survive, mirroring the kernel's sanitizer. */
+function normalize(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const origins = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol !== 'https:') continue;
+      origins.add(url.origin);
+    } catch {
+      // Not absolute: nothing to allow.
+    }
+  }
+  return [...origins];
+}
+
+function pick(sources: unknown): CaptchaCspSources {
+  if (!sources || typeof sources !== 'object') return EMPTY;
+  const raw = sources as Record<string, unknown>;
+  return {
+    script: normalize(raw['script']),
+    frame: normalize(raw['frame']),
+    connect: normalize(raw['connect']),
+  };
+}
+
+/** Reset the process cache. Test-only. */
+export function resetCaptchaCspCache(): void {
+  cache = null;
+  inflight = null;
+}
+
+/**
+ * Read (and cache) the external origins the installed provider's widget needs.
+ *
+ * Never throws: every failure degrades to "no extra origins".
+ */
+export async function readCaptchaCspSources(): Promise<CaptchaCspSources> {
+  const now = Date.now();
+  if (cache && now - cache.at < TTL_MS) return cache.value;
+  if (inflight) return inflight;
+
+  inflight = (async () => {
+    let value: CaptchaCspSources = EMPTY;
+    try {
+      const response = await fetch(`${API_BASE_URL}/captcha/policy`, {
+        headers: { accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (response.ok) {
+        const body = (await response.json().catch(() => null)) as { sources?: unknown } | null;
+        value = pick(body?.sources);
+      }
+    } catch {
+      value = EMPTY;
+    }
+    // Cache inside the read so the TTL covers the failure case too: a downed API
+    // must not turn every page request into a timeout.
+    cache = { at: Date.now(), value };
+    inflight = null;
+    return value;
+  })();
+
+  return inflight;
+}

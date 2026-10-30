@@ -43,11 +43,11 @@
     "groupSite": "站點",
     "groupSystem": "系統",
     "groupDeveloper": "開發者",
-    "groupAccount": "賬戶",
+    "groupAccount": "帳戶",
     "overview": "概覽",
     "quickLinks": "快捷入口",
     "workspaceAdmin": "管理員工作區",
-    "workspaceAccount": "賬戶工作區",
+    "workspaceAccount": "帳戶工作區",
     "toggleNav": "收起或展開側欄",
     "openNav": "開啟導航",
     "closeNav": "關閉導航",
@@ -69,7 +69,7 @@
     "developer": "開發者控制台",
     "themes": "主題管理",
     "notifications": "通知",
-    "security": "賬戶安全",
+    "security": "帳戶安全",
     "apiKeys": "API 金鑰",
     "shop": "選購產品",
     "services": "服務",
@@ -84,14 +84,14 @@
     "roleUser": "普通用戶",
     "homeAriaLabel": "回到首頁",
     "updates": "升級",
-    "accountOverview": "賬戶概覽",
+    "accountOverview": "帳戶概覽",
     "credentials": "訪問憑證",
     "payments": "支付記錄"
   },
   "auth": {
     "login": {
-      "title": "登錄你的賬戶",
-      "subtitle": "登錄後進入你的賬戶中心。",
+      "title": "登錄你的帳戶",
+      "subtitle": "登錄後進入你的帳戶中心。",
       "email": "郵箱",
       "password": "密碼",
       "submit": "登錄",
@@ -100,12 +100,12 @@
       "hidePassword": "隱藏密碼",
       "continueWith": "使用 {name} 登錄",
       "orContinueWith": "或使用以下方式繼續",
-      "noAccount": "還沒有賬戶？",
+      "noAccount": "還沒有帳戶？",
       "register": "註冊",
       "oauthFailed": "OAuth 登錄失敗，請重試。"
     },
     "register": {
-      "title": "建立你的賬戶",
+      "title": "建立你的帳戶",
       "subtitle": "填寫以下資訊完成註冊。",
       "email": "郵箱",
       "password": "密碼",
@@ -114,7 +114,7 @@
       "submitting": "註冊中…",
       "showPassword": "顯示密碼",
       "hidePassword": "隱藏密碼",
-      "hasAccount": "已有賬戶？",
+      "hasAccount": "已有帳戶？",
       "login": "去登錄",
       "code": "郵箱驗證碼",
       "sendCode": "獲取驗證碼",
@@ -124,7 +124,7 @@
     },
     "setup": {
       "title": "初始化你的平臺",
-      "subtitle": "建立第一個管理員賬戶以完成部署。",
+      "subtitle": "建立第一個管理員帳戶以完成部署。",
       "email": "管理員郵箱",
       "password": "管理員密碼",
       "passwordHint": "至少 8 位",
@@ -216,6 +216,10 @@
       "registerFailed": "註冊失敗，請稍後再試",
       "sendCodeFailed": "驗證碼傳送失敗，請稍後再試",
       "setupFailed": "初始化失敗：請確認例項尚未初始化，且令牌正確"
+    },
+    "captcha": {
+      "unavailable": "人機驗證元件載入失敗，請重試",
+      "retry": "重試載入"
     }
   },
   "localeSwitcher": {
@@ -511,7 +515,7 @@
       "metricHintRevenue": "全部已支付訂單累計營收",
       "metricHintOrders": "本月 {amount}",
       "metricHintUsers": "全部註冊用戶",
-      "metricHintWalletAccounts": "{count} 個錢包賬戶",
+      "metricHintWalletAccounts": "{count} 個錢包帳戶",
       "incomeSources": "熱銷商品",
       "incomeSourceHint": "{name} · {pct}%",
       "tabOverview": "概覽",
@@ -667,7 +671,7 @@
     },
     "users": {
       "title": "用戶管理",
-      "description": "管理用戶賬戶、狀態與許可權組。",
+      "description": "管理用戶帳戶、狀態與許可權組。",
       "searchPlaceholder": "搜尋郵箱…",
       "searchAria": "搜尋郵箱",
       "colUser": "用戶",
@@ -676,7 +680,7 @@
       "colJoined": "註冊時間",
       "colLastLogin": "最近登錄",
       "colServices": "已開通產品",
-      "colBalance": "賬戶餘額",
+      "colBalance": "帳戶餘額",
       "sortLabel": "用戶排序",
       "neverLoggedIn": "從未登錄",
       "sort": {
@@ -998,7 +1002,7 @@
       "historyRecovered": "已回滾到升級前狀態（{detail}）",
       "historyRecovery": "復原",
       "historyTitle": "最近結果",
-      "instance": "實例",
+      "instance": "例項",
       "kernelComponent": "系統核心",
       "lastCheckedAt": "上次檢查：{at}",
       "lastCheckedLabel": "上次檢查",
@@ -1302,7 +1306,7 @@
       "user_not_found": "用戶不存在",
       "not_ready": "錢包服務暫不可用，請稍後重試",
       "account": {
-        "not_found": "錢包賬戶不存在"
+        "not_found": "錢包帳戶不存在"
       }
     },
     "payment": {
@@ -1618,7 +1622,7 @@
     "frontend_permission_denied": "前臺許可權拒絕",
     "frontend_finder_call": "呼叫 Finder",
     "frontend_admin_route_render": "渲染外掛後臺",
-    "frontend_account_route_render": "渲染賬戶頁面",
+    "frontend_account_route_render": "渲染帳戶頁面",
     "frontend_action_execute": "執行前臺操作",
     "bootstrap_create": "初始化管理員"
   },
@@ -1655,7 +1659,7 @@
         "view": "檢視商品",
         "buy": "下單購買",
         "admin": "商店管理",
-        "wallet": "錢包賬戶"
+        "wallet": "錢包帳戶"
       },
       "ticket": {
         "view": "檢視工單",
@@ -1778,11 +1782,11 @@
   },
   "account": {
     "security": {
-      "title": "賬戶安全",
-      "description": "檢視當前登錄賬戶與已繫結的身份。",
-      "loginAccount": "登錄賬戶",
+      "title": "帳戶安全",
+      "description": "檢視當前登錄帳戶與已繫結的身份。",
+      "loginAccount": "登錄帳戶",
       "email": "郵箱",
-      "accountStatus": "賬戶狀態",
+      "accountStatus": "帳戶狀態",
       "statusActive": "正常",
       "boundIdentities": "已繫結身份",
       "boundFallback": "已繫結",
@@ -1793,9 +1797,9 @@
       "greeting": "你好，{email}",
       "roleAdmin": "管理員",
       "roleUser": "用戶",
-      "balance": "賬戶餘額",
+      "balance": "帳戶餘額",
       "activeServices": "已開通服務",
-      "security": "賬戶安全",
+      "security": "帳戶安全",
       "protected": "已保護",
       "pendingOrders": "待付訂單",
       "allOrders": "全部訂單",
@@ -1808,8 +1812,8 @@
       "pendingTickets": "待處理工單",
       "allTickets": "全部工單",
       "newTicket": "提交工單",
-      "securityTitle": "賬戶安全",
-      "accountStatus": "賬戶狀態",
+      "securityTitle": "帳戶安全",
+      "accountStatus": "帳戶狀態",
       "statusActive": "正常",
       "statusRestricted": "受限",
       "linkedIdentities": "已繫結身份",
@@ -1818,9 +1822,9 @@
       "securityCenter": "安全中心",
       "unitOrders": "條"
     },
-    "permission": "賬戶許可權",
+    "permission": "帳戶許可權",
     "page": {
-      "notFound": "未找到這個賬戶頁面。",
+      "notFound": "未找到這個帳戶頁面。",
       "denied": "你沒有訪問此頁面的許可權。"
     },
     "apiKeys": {
@@ -1835,10 +1839,10 @@
       "description": "訂單支付、履約進度和系統公告都會出現在這裡。"
     },
     "settings": {
-      "title": "賬戶設置",
-      "label": "賬戶設置",
+      "title": "帳戶設置",
+      "label": "帳戶設置",
       "sections": {
-        "profile": "賬戶資訊",
+        "profile": "帳戶資訊",
         "appearance": "外觀與語言",
         "access": "訪問憑證",
         "agent": "Agent"
@@ -1860,9 +1864,9 @@
         "save": "儲存",
         "saved": "郵箱已更新，請重新登錄。",
         "passwordSaved": "密碼已更新，請重新登錄。",
-        "accountId": "賬戶 ID",
-        "accountIdHint": "聯絡支援人員時，可提供此 ID 協助定位賬戶。",
-        "status": "賬戶狀態",
+        "accountId": "帳戶 ID",
+        "accountIdHint": "聯絡支援人員時，可提供此 ID 協助定位帳戶。",
+        "status": "帳戶狀態",
         "statusActive": "正常",
         "statusDisabled": "已停用",
         "createdAt": "註冊時間",
@@ -2072,7 +2076,7 @@
       "noMatch": "沒有匹配的對話",
       "emptyList": "暫無對話",
       "loadMore": "載入更多",
-      "savedHere": "對話儲存在當前賬戶中",
+      "savedHere": "對話儲存在當前帳戶中",
       "deleteTitle": "刪除對話",
       "renameTitle": "重新命名對話",
       "deleteDescription": "刪除後無法恢復該對話及訊息記錄。",
@@ -2297,7 +2301,7 @@
     },
     "forbidden": {
       "title": "無權訪問",
-      "description": "你的賬戶沒有訪問這個頁面的許可權。"
+      "description": "你的帳戶沒有訪問這個頁面的許可權。"
     },
     "notFound": {
       "title": "頁面不存在",

@@ -22,6 +22,8 @@ import {
   revokeApiTokenAction,
   updateApiTokenAction,
 } from '@/lib/api-token-actions';
+import { CaptchaField } from '@/components/captcha-field';
+import type { CaptchaActionConfig } from '@/lib/captcha';
 import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatDate as formatLocaleDate, type Translator } from '@/i18n/core';
 import { cn } from '@/lib/utils';
@@ -72,9 +74,16 @@ export function ApiTokenManager({
   tokens,
   scopes,
   prefix,
+  captcha = null,
 }: {
   tokens: ApiTokenView[];
   scopes: ApiTokenScope[];
+  /**
+   * Widget for the `api_token_create` action, or `null` when minting a token is
+   * not guarded (the default). Minting a durable credential is the highest-value
+   * self-service write in the account area, so it is guardable like any other.
+   */
+  captcha?: CaptchaActionConfig | null;
   prefix: string;
 }) {
   const router = useRouter();
@@ -82,6 +91,7 @@ export function ApiTokenManager({
   const locale = useLocale();
   const [pending, startTransition] = useTransition();
   const [createOpen, setCreateOpen] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** Plaintext returned once after creation. */
@@ -141,6 +151,7 @@ export function ApiTokenManager({
         name,
         scopes: [...selected],
         ...(publicKey.trim().length > 0 ? { publicKey: publicKey.trim() } : {}),
+        ...(captchaToken ? { captchaToken } : {}),
       });
       if (result.error) {
         toast.error(result.error);
@@ -370,6 +381,7 @@ export function ApiTokenManager({
                 })}
               </div>
             </div>
+            <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={pending}>

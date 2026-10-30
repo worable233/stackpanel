@@ -23,6 +23,8 @@ export async function createApiTokenAction(input: {
   scopes: string[];
   /** 可选的 Ed25519 公钥（PEM）；非空则该密钥的请求必须带签名。 */
   publicKey?: string | null;
+  /** Human-verification token; the kernel's policy decides whether it is needed. */
+  captchaToken?: string;
 }): Promise<CreateApiTokenResult> {
   const locale = await getLocale();
   if (!input.name?.trim()) return { error: translate(locale, 'action.apiTokenNameRequired') };
@@ -32,6 +34,7 @@ export async function createApiTokenAction(input: {
       name: input.name.trim(),
       scopes: input.scopes,
       ...(input.publicKey ? { publicKey: input.publicKey } : {}),
+      ...(input.captchaToken ? { captchaToken: input.captchaToken } : {}),
     });
     revalidatePath('/account/settings');
     return { ok: true, token: result.token, id: result.apiToken.id };

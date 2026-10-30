@@ -190,6 +190,7 @@ function capturePathParams(pattern: string, path: string): Record<string, string
   return params;
 }
 
+
 async function isAllowed(
   api: Awaited<ReturnType<typeof getAuthedApiClient>>,
   permission: string,

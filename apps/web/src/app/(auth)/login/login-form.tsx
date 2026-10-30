@@ -3,10 +3,12 @@
 import { useActionState, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { AuthShell, type AuthPost, type AuthProvider } from '@/components/auth-shell';
+import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTranslator } from '@/i18n/provider';
+import type { CaptchaActionConfig } from '@/lib/captcha';
 import { loginAction } from '@/lib/actions';
 
 export function LoginForm({
@@ -16,6 +18,7 @@ export function LoginForm({
   platformName,
   logoSrc,
   posts = [],
+  captcha = null,
 }: {
   nextPath?: string;
   /** The OAuth callback redirected back with `?error=oauth`. */
@@ -24,9 +27,12 @@ export function LoginForm({
   platformName: string;
   logoSrc?: string | null;
   posts?: AuthPost[];
+  /** Widget for the `login` action, or `null` when sign-in is not guarded. */
+  captcha?: CaptchaActionConfig | null;
 }) {
   const [state, action, pending] = useActionState(loginAction, {});
   const [showPassword, setShowPassword] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const t = useTranslator();
   const errorMessage = state.error ?? (oauthError ? t('auth.login.oauthFailed') : null);
   return (
@@ -39,6 +45,7 @@ export function LoginForm({
     >
       <form action={action} className="space-y-5">
         <input type="hidden" name="next" value={nextPath ?? ''} />
+        {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
         <div className="space-y-2">
           <Label htmlFor="email">{t('auth.login.email')}</Label>
           <Input
@@ -74,6 +81,7 @@ export function LoginForm({
           </div>
         </div>
         {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+        <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
         <Button type="submit" disabled={pending} className="h-10 w-full text-base">
           {pending ? t('auth.login.submitting') : t('auth.login.submit')}
         </Button>

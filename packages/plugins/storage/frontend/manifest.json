@@ -3,7 +3,9 @@
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
-  "finders": ["storage.adminConfig"],
+  "finders": [
+    "storage.adminConfig"
+  ],
   "adminRoutes": [
     {
       "path": "/storage",
@@ -138,7 +140,12 @@
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],
-  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
   "messages": {
     "zh-CN": {
       "kind.env": "跟随环境变量",

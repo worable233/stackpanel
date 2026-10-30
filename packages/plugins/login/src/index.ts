@@ -27,6 +27,11 @@ export const LOGIN_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  /**
+   * Challenge response for the `login` action. Guarded routes always declare the
+   * field so the policy — not the request shape — decides whether it is required.
+   */
+  captchaToken: z.string().trim().min(1).max(4096).optional(),
 });
 
 /**
@@ -208,6 +213,14 @@ const login = handle(async (req: HttpRequest, reply: HttpReply) => {
   if (!(await allow('user', email.toLowerCase(), rateLimits().login))) {
     throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
   }
+  // Credential stuffing is the reason this action exists, so the challenge is
+  // enforced *before* `verifyPassword`: otherwise every rejected challenge still
+  // answers "was that the right password?".
+  await auth().captcha.enforce({
+    token: parsed.data.captchaToken ?? '',
+    action: 'login',
+    ...(req.ip ? { remoteIp: req.ip } : {}),
+  });
   const user = await auth().auth.verifyPassword(email, password);
   if (!user) {
     await auth().auth.audit({
@@ -385,6 +398,19 @@ const me = handle(async (req: HttpRequest) => {
  */
 const authConfig = handle(async () => {
   const configured = await loginConfig();
+  const captcha = auth().captcha;
+  // Per-action widget configs for the actions this deployment actually guards.
+  // Only non-`off` actions are listed: an anonymous caller needs the widgets it
+  // will render, not a full map of the deployment's policy.
+  const actionConfig = (action: string) => {
+    const config = captcha.clientConfigFor(action);
+    return { policy: captcha.policyFor(action), clientConfig: config };
+  };
+  const actions: Record<string, ReturnType<typeof actionConfig>> = {};
+  for (const action of ['login', 'register', 'register_send_code', 'password_reset'] as const) {
+    if (captcha.policyFor(action) === 'off') continue;
+    actions[action] = actionConfig(action);
+  }
   return {
     registrationMethods: configured.registrationMethods,
     // Public clients receive the effective policy. A saved requirement cannot
@@ -392,10 +418,11 @@ const authConfig = handle(async () => {
     emailVerificationRequired: emailVerificationEnabled(configured),
     emailVerificationSupported: auth().identity.isDeliveryConfigured(),
     captcha: {
-      mode: auth().captcha.mode(),
-      configured: auth().captcha.isConfigured(),
-      providerIds: auth().captcha.providerIds(),
-      clientConfig: auth().captcha.clientConfig(),
+      mode: captcha.mode(),
+      configured: captcha.isConfigured(),
+      providerIds: captcha.providerIds(),
+      clientConfig: captcha.clientConfig(),
+      actions,
     },
   };
 });

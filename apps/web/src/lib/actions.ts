@@ -19,6 +19,18 @@ export interface LoginState {
 
 export interface AccountMutationState { error?: string; ok?: boolean }
 
+/**
+ * Pull the human-verification token out of a submitted form.
+ *
+ * Shared by every guarded action so the optional-vs-required decision stays in
+ * one place: the kernel's policy decides, the web layer only forwards what the
+ * widget produced. Absent field ⇒ no token ⇒ the kernel enforces its own policy.
+ */
+function captchaTokenFrom(formData: FormData): { captchaToken?: string } {
+  const value = formData.get('captchaToken');
+  return typeof value === 'string' && value.trim() ? { captchaToken: value.trim() } : {};
+}
+
 export async function changePasswordAction(
   _prev: AccountMutationState,
   formData: FormData,
@@ -30,7 +42,9 @@ export async function changePasswordAction(
     return { error: translate(locale, 'account.settings.security.passwordInvalid') };
   }
   try {
-    await (await getAuthedApiClient()).changePassword(currentPassword, newPassword);
+    await (await getAuthedApiClient()).changePassword(currentPassword, newPassword, {
+      ...captchaTokenFrom(formData),
+    });
   } catch (error) {
     return {
       error: await apiErrorMessage(
@@ -53,7 +67,9 @@ export async function changeEmailAction(
     return { error: translate(locale, 'account.settings.security.emailInvalid') };
   }
   try {
-    await (await getAuthedApiClient()).changeEmail(currentPassword, email);
+    await (await getAuthedApiClient()).changeEmail(currentPassword, email, {
+      ...captchaTokenFrom(formData),
+    });
   } catch (error) {
     return {
       error: await apiErrorMessage(
@@ -83,7 +99,9 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     return { error: translate(locale, 'auth.validation.emailPasswordRequired') };
   }
   try {
-    const result = await getApiClient().login(email, password);
+    const result = await getApiClient().login(email, password, {
+      ...captchaTokenFrom(formData),
+    });
     const store = await cookies();
     store.set(process.env.SESSION_COOKIE_NAME ?? 'sp_session', result.token, {
       httpOnly: true,

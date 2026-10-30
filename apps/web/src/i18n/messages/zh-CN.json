@@ -216,6 +216,10 @@
       "registerFailed": "注册失败，请稍后再试",
       "sendCodeFailed": "验证码发送失败，请稍后再试",
       "setupFailed": "初始化失败：请确认实例尚未初始化，且令牌正确"
+    },
+    "captcha": {
+      "unavailable": "人机验证组件加载失败，请重试",
+      "retry": "重试加载"
     }
   },
   "localeSwitcher": {

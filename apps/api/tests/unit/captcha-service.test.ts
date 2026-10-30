@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CaptchaProvider } from '@stackpanel/sdk';
 import { isPluginError } from '@stackpanel/sdk';
 import { KernelCaptchaService } from '../../src/auth/captcha-service.ts';
+import { env } from '../../src/config/env.ts';
 
 function provider(overrides: Partial<CaptchaProvider> = {}): CaptchaProvider {
   return {
@@ -101,5 +102,150 @@ describe('KernelCaptchaService', () => {
     } catch (error) {
       expect(isPluginError(error)).toBe(true);
     }
+  });
+});
+
+/**
+ * Per-action policy (spec §3.2/§4.1).
+ *
+ * `env.AUTH_CAPTCHA_MODE` defaults to `off`, which is the master switch, so
+ * these cases flip it for the duration of one test and restore it — letting a
+ * provider ask for `required` while the global switch is `off` is exactly the
+ * interaction worth pinning down.
+ */
+function withMode<T>(mode: 'off' | 'optional' | 'required', run: () => T): T {
+  const previous = env.AUTH_CAPTCHA_MODE;
+  env.AUTH_CAPTCHA_MODE = mode;
+  try {
+    const result = run();
+    if (result instanceof Promise) {
+      return result.finally(() => {
+        env.AUTH_CAPTCHA_MODE = previous;
+      }) as T;
+    }
+    env.AUTH_CAPTCHA_MODE = previous;
+    return result;
+  } catch (error) {
+    env.AUTH_CAPTCHA_MODE = previous;
+    throw error;
+  }
+}
+
+describe('KernelCaptchaService per-action policy', () => {
+  it('falls back to the global mode when no provider declares an action', () => {
+    const service = new KernelCaptchaService({ getProviders: () => [provider()] });
+    expect(withMode('optional', () => service.policyFor('login'))).toBe('optional');
+    expect(service.policyFor('login')).toBe('off');
+  });
+
+  it('lets a provider declare a stricter policy than the global mode', () => {
+    const service = new KernelCaptchaService({
+      getProviders: () => [
+        provider({ policyFor: (action) => (action === 'login' ? { mode: 'required' } : null) }),
+      ],
+    });
+    withMode('optional', () => {
+      expect(service.policyFor('login')).toBe('required');
+      // An action nobody claims keeps the global mode.
+      expect(service.policyFor('register')).toBe('optional');
+    });
+  });
+
+  it('keeps the global off switch as the final veto over provider policy', () => {
+    const service = new KernelCaptchaService({
+      getProviders: () => [provider({ policyFor: () => ({ mode: 'required' }) })],
+    });
+    // Global mode is 'off' (the default), so even a provider demanding
+    // verification is ignored: an operator must be able to disable this with one
+    // env change, without uninstalling the provider.
+    expect(service.policyFor('login')).toBe('off');
+    return expect(service.enforce({ token: '', action: 'login' })).resolves.toBeUndefined();
+  });
+
+  it('only asks the providers that claim the action', async () => {
+    const asked: string[] = [];
+    const service = new KernelCaptchaService({
+      getProviders: () => [
+        provider({
+          id: 'unclaimed',
+          verify: async () => {
+            asked.push('unclaimed');
+            return { success: false };
+          },
+        }),
+        provider({
+          id: 'claimed',
+          policyFor: (action) => (action === 'login' ? { mode: 'optional' } : null),
+          verify: async () => {
+            asked.push('claimed');
+            return { success: true };
+          },
+        }),
+      ],
+    });
+    const result = await service.verify({ token: 'x', action: 'login' });
+    expect(result).toMatchObject({ success: true, providerId: 'claimed' });
+    expect(asked).toEqual(['claimed']);
+  });
+
+  it('never calls a provider that opted the action out', async () => {
+    let called = false;
+    const service = new KernelCaptchaService({
+      getProviders: () => [
+        provider({
+          policyFor: () => ({ mode: 'off' }),
+          verify: async () => {
+            called = true;
+            return { success: true };
+          },
+        }),
+      ],
+    });
+    await withMode('required', () => service.enforce({ token: 'x', action: 'register' }));
+    expect(called).toBe(false);
+  });
+
+  it('refuses a token-less required action before any network call', async () => {
+    let called = false;
+    const service = new KernelCaptchaService({
+      getProviders: () => [
+        provider({
+          policyFor: () => ({ mode: 'required' }),
+          verify: async () => {
+            called = true;
+            return { success: true };
+          },
+        }),
+      ],
+    });
+    await withMode('optional', async () => {
+      await expect(service.enforce({ token: '', action: 'change_password' })).rejects.toSatisfy(
+        (error: unknown) => isPluginError(error) && error.code === 'auth.captcha_required',
+      );
+    });
+    expect(called).toBe(false);
+  });
+
+  it('fails closed when a required action has no provider at all', async () => {
+    const service = new KernelCaptchaService({ getProviders: () => [] });
+    await withMode('required', async () => {
+      await expect(service.enforce({ token: 'x', action: 'login' })).rejects.toSatisfy(
+        (error: unknown) => isPluginError(error) && error.code === 'auth.captcha_unavailable',
+      );
+    });
+  });
+
+  it('resolves widget config per action with a fallback to the default', () => {
+    const service = new KernelCaptchaService({
+      getProviders: () => [
+        provider({
+          policyFor: (action) => (action === 'login' ? { mode: 'required' } : null),
+          clientConfig: () => ({ kind: 'script', siteKey: 'k' }),
+        }),
+      ],
+    });
+    expect(service.clientConfigFor('login')).toEqual({ kind: 'script', siteKey: 'k' });
+    // Nobody claims `register`, so the default provider config still applies.
+    expect(service.clientConfigFor('register')).toEqual({ kind: 'script', siteKey: 'k' });
   });
 });

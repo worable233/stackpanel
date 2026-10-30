@@ -29,6 +29,7 @@ import {
   adminPluginsResponseSchema,
   adminThemesResponseSchema,
   authConfigResponseSchema,
+  captchaPolicyResponseSchema,
   accountMutationResponseSchema,
   sendRegisterCodeResponseSchema,
   connectedIdentityListResponseSchema,
@@ -167,6 +168,7 @@ import type {
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
   AuthConfigResponse,
+  CaptchaPolicyResponse,
   AccountMutationResponse,
   FrontendAuditAction,
   Health,
@@ -548,8 +550,21 @@ export class ApiClient {
     return this.patch('/admin/platform/info', platform, platformInfoResponseSchema);
   }
 
-  login(email: string, password: string): Promise<LoginResponse> {
-    return this.post('/login', { email, password }, loginResponseSchema);
+  /**
+   * Sign in with a password. `captchaToken` is the human-verification token when
+   * the deployment guards the `login` action; the kernel decides whether it is
+   * required, so passing it unconditionally is safe.
+   */
+  login(
+    email: string,
+    password: string,
+    options: { captchaToken?: string } = {},
+  ): Promise<LoginResponse> {
+    return this.post(
+      '/login',
+      { email, password, ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}) },
+      loginResponseSchema,
+    );
   }
 
   /** Read the public first-run setup state (never 401s). */
@@ -646,12 +661,49 @@ export class ApiClient {
     return this.get('/auth/config', authConfigResponseSchema);
   }
 
-  changePassword(currentPassword: string, newPassword: string): Promise<AccountMutationResponse> {
-    return this.post('/auth/password', { currentPassword, newPassword }, accountMutationResponseSchema);
+  /**
+   * Read the kernel's human-verification policy.
+   *
+   * This is the vendor-neutral, plugin-neutral projection: it lives on the kernel
+   * so it answers even when the login plugin is absent, and it never names a
+   * vendor — the widget config is whatever the installed provider published.
+   * Without `action` it also reports every guarded action that is not `off`.
+   */
+  getCaptchaPolicy(action?: string): Promise<CaptchaPolicyResponse> {
+    const query = action ? `?action=${encodeURIComponent(action)}` : '';
+    return this.get(`/captcha/policy${query}`, captchaPolicyResponseSchema);
   }
 
-  changeEmail(currentPassword: string, email: string): Promise<AccountMutationResponse> {
-    return this.post('/auth/email', { currentPassword, email }, accountMutationResponseSchema);
+  changePassword(
+    currentPassword: string,
+    newPassword: string,
+    options: { captchaToken?: string } = {},
+  ): Promise<AccountMutationResponse> {
+    return this.post(
+      '/auth/password',
+      {
+        currentPassword,
+        newPassword,
+        ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}),
+      },
+      accountMutationResponseSchema,
+    );
+  }
+
+  changeEmail(
+    currentPassword: string,
+    email: string,
+    options: { captchaToken?: string } = {},
+  ): Promise<AccountMutationResponse> {
+    return this.post(
+      '/auth/email',
+      {
+        currentPassword,
+        email,
+        ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}),
+      },
+      accountMutationResponseSchema,
+    );
   }
 
   /** Read the authenticated account identity. */
@@ -1047,6 +1099,8 @@ export class ApiClient {
     /** Ed25519 PEM；登记后该密钥的每个请求都必须带请求签名。 */
     publicKey?: string | null;
     expiresAt?: string | null;
+    /** Human-verification token; the kernel decides whether the action needs it. */
+    captchaToken?: string;
   }): Promise<ApiTokenCreateResponse> {
     return this.post('/me/api-tokens', input, apiTokenCreateResponseSchema);
   }

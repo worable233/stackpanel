@@ -3,7 +3,11 @@
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
-  "finders": ["wallet.overview", "wallet.me", "wallet.adminAccounts"],
+  "finders": [
+    "wallet.overview",
+    "wallet.me",
+    "wallet.adminAccounts"
+  ],
   "adminRoutes": [
     {
       "path": "/overview",
@@ -83,7 +87,9 @@
         "labelKey": "nav.overview",
         "groupKey": "nav.groupBilling",
         "order": 0,
-        "activePaths": ["/balance"]
+        "activePaths": [
+          "/balance"
+        ]
       },
       "data": [
         {
@@ -131,7 +137,12 @@
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],
-  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
   "messages": {
     "zh-CN": {
       "nav.overview": "概览",
