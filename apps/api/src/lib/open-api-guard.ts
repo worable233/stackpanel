@@ -13,7 +13,7 @@
  * Both are best-effort on the audit side and fail-closed on the limit side.
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { getStateService } from '../state/index.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { buildProblem } from './problem.ts';
@@ -49,9 +49,9 @@ export async function enforceTokenQuota(
   if (!id) return;
   const state = getStateService();
 
-  if (env.OPEN_API_TOKEN_RPM > 0) {
+  if (getConfig('OPEN_API_TOKEN_RPM') > 0) {
     const hits = await state.incr(`open:rpm:${id}`, RPM_TTL_MS);
-    if (hits > env.OPEN_API_TOKEN_RPM) {
+    if (hits > getConfig('OPEN_API_TOKEN_RPM')) {
       reply.header('retry-after', '60');
       await reply.code(429).send(
         buildProblem({
@@ -66,9 +66,9 @@ export async function enforceTokenQuota(
     }
   }
 
-  if (env.OPEN_API_TOKEN_CONCURRENCY > 0) {
+  if (getConfig('OPEN_API_TOKEN_CONCURRENCY') > 0) {
     const inflight = await state.incr(`open:inflight:${id}`, INFLIGHT_TTL_MS);
-    if (inflight > env.OPEN_API_TOKEN_CONCURRENCY) {
+    if (inflight > getConfig('OPEN_API_TOKEN_CONCURRENCY')) {
       await state.decr(`open:inflight:${id}`);
       reply.header('retry-after', '1');
       await reply.code(429).send(
@@ -90,7 +90,9 @@ export async function enforceTokenQuota(
 /** Release the concurrency slot acquired by {@link enforceTokenQuota}. */
 export async function releaseTokenQuota(request: FastifyRequest): Promise<void> {
   if (!request.openApiCounted || !request.openApiTokenId) return;
-  await getStateService().decr(`open:inflight:${request.openApiTokenId}`).catch(() => 0);
+  await getStateService()
+    .decr(`open:inflight:${request.openApiTokenId}`)
+    .catch(() => 0);
 }
 
 /**

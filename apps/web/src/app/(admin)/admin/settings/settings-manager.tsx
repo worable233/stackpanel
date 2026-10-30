@@ -5,6 +5,7 @@ import { PaymentMethodSettings } from '@/components/payment-method-settings';
 import { DistributionSourceSettings } from '@/components/distribution-source-settings';
 import { UpdatePolicySettings } from '@/components/update-policy-settings';
 import { AgentSettings } from '@/components/agent-settings';
+import { RuntimeConfigSettings } from '@/components/runtime-config-settings';
 import { SectionTitle } from '@stackpanel/ui';
 
 import { useActionState, useTransition, type ReactNode } from 'react';
@@ -14,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import type {
   AdminCurrencyDefinitionView,
   AdminFxRateView,
+  AdminRuntimeConfigEntry,
   AdminSalesChannel,
   AdminSalesChannelListResponse,
   DistributionSourceConfig,
@@ -38,6 +40,7 @@ import {
   CreditCard,
   Download,
   ArrowUpCircle,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   clearPlatformBrandAction,
@@ -64,6 +67,7 @@ export function SettingsManager({
   updatePolicy,
   salesChannels = [],
   paymentProviders = [],
+  runtimeConfig = [],
   pluginSections = [],
 }: {
   platform: PlatformInfo;
@@ -76,6 +80,7 @@ export function SettingsManager({
   updatePolicy?: UpdatePolicyView | null;
   salesChannels?: AdminSalesChannel[];
   paymentProviders?: NonNullable<AdminSalesChannelListResponse['providers']>;
+  runtimeConfig?: AdminRuntimeConfigEntry[];
   pluginSections?: { id: string; title: string; content: ReactNode }[];
 }) {
   const t = useTranslator();
@@ -148,6 +153,16 @@ export function SettingsManager({
       Icon: Bell,
       content: <NotificationPolicySettings />,
     },
+    ...(runtimeConfig.length > 0
+      ? [
+          {
+            id: 'runtime',
+            title: t('admin.settings.runtimeConfig.title'),
+            Icon: SlidersHorizontal,
+            content: <RuntimeConfigSettings entries={runtimeConfig} />,
+          },
+        ]
+      : []),
     ...pluginSections.map((section) => ({ ...section, Icon: Plug })),
     {
       id: 'advanced',

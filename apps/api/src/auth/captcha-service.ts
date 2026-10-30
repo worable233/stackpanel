@@ -6,7 +6,7 @@ import type {
   CaptchaVerifyResult,
 } from '@stackpanel/sdk';
 import { PluginError } from '@stackpanel/sdk';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 
 export type CaptchaMode = 'off' | 'optional' | 'required';
 
@@ -43,7 +43,7 @@ export class KernelCaptchaService implements CaptchaService {
   constructor(private readonly options: CaptchaServiceOptions) {}
 
   mode(): CaptchaMode {
-    return env.AUTH_CAPTCHA_MODE;
+    return getConfig('AUTH_CAPTCHA_MODE');
   }
 
   isConfigured(): boolean {

@@ -34,6 +34,7 @@ import { adminPluginRoutes } from './routes/admin/plugins.ts';
 import { adminAgentModelRoutes } from './routes/admin/agent-model.ts';
 import { adminSecretsRoutes } from './routes/admin/secrets.ts';
 import { adminSettingsRoutes } from './routes/admin/settings.ts';
+import { adminConfigRoutes } from './routes/admin/config.ts';
 import { adminCurrencyRoutes } from './routes/admin/currency-rates.ts';
 import { currencyDefinitionRoutes } from './routes/currency-definitions.ts';
 import { adminPaymentsRoutes } from './routes/admin/payments.ts';
@@ -460,6 +461,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminNotificationRoutes);
   void app.register(adminUpdateRoutes);
   void app.register(adminSettingsRoutes);
+  void app.register(adminConfigRoutes);
   void app.register(adminSecretsRoutes);
   void app.register(adminAgentModelRoutes);
   void app.register(adminSigningRoutes);

@@ -38,6 +38,8 @@ const ACTION_KEYS: Record<string, string> = {
   'theme.delete': 'auditAction.theme_delete',
   'theme.settings.update': 'auditAction.theme_settings_update',
   'setting.set': 'auditAction.setting_set',
+  'config.changed': 'auditAction.config_changed',
+  'config.reverted': 'auditAction.config_reverted',
   'secret.set': 'auditAction.secret_set',
   'signing.key.set': 'auditAction.signing_key_set',
   'signing.key.clear': 'auditAction.signing_key_clear',
@@ -168,9 +170,7 @@ export default async function AdminAuditPage({
       </form>
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.audit.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.audit.serviceUnavailable')}</p>
       ) : null}
       {result ? (
         <div className="overflow-x-auto rounded-lg border">
@@ -201,7 +201,9 @@ export default async function AdminAuditPage({
                       {log.resourceId ? ` / ${log.resourceId.slice(0, 12)}` : ''}
                       {meta ? <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p> : null}
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground">{formatActor(log.actorId, t)}</td>
+                    <td className="px-4 py-2 text-muted-foreground">
+                      {formatActor(log.actorId, t)}
+                    </td>
                     <td className="px-4 py-2 text-muted-foreground">{log.ip ?? '—'}</td>
                   </tr>
                 );

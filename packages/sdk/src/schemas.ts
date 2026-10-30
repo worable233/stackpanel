@@ -101,6 +101,8 @@ import type {
   WebhookDeliveryListResponse,
   WebhookDeliveryView,
   SigningResponse,
+  AdminRuntimeConfigEntry,
+  AdminConfigResponse,
   RbacTemplateEntry,
   RbacTemplatesResponse,
   ThemePreviewMutationResponse,
@@ -1237,9 +1239,7 @@ export const updateStatusResponseSchema = z.object({
       generation: z.number(),
       digest: z.string().nullable(),
       activeTask: z.string().nullable(),
-      recent: z.array(
-        z.object({ idempotencyKey: z.string(), result: updateTaskResultViewSchema }),
-      ),
+      recent: z.array(z.object({ idempotencyKey: z.string(), result: updateTaskResultViewSchema })),
       updatedAt: z.string(),
     })
     .nullable(),
@@ -1358,6 +1358,22 @@ export const pluginToggleResponseSchema = z.object({
   id: z.string(),
   enabled: z.boolean(),
 }) satisfies z.ZodType<PluginToggleResponse>;
+
+/**
+ * 运行期配置（ADR-0026）。`value` 的类型取决于键（数字/布尔/字符串），因此按 unknown
+ * 收下、由使用方按 `name` 解释；`source` 决定后台显示「继承环境变量」还是「已覆盖」。
+ */
+export const adminRuntimeConfigEntrySchema = z.object({
+  name: z.string().min(1),
+  group: z.enum(['auth', 'session', 'media', 'openapi', 'plugins', 'audit', 'agent']),
+  value: z.unknown(),
+  source: z.enum(['stored', 'env', 'default']),
+  envValue: z.unknown(),
+}) satisfies z.ZodType<AdminRuntimeConfigEntry>;
+
+export const adminConfigResponseSchema = z.object({
+  entries: z.array(adminRuntimeConfigEntrySchema),
+}) satisfies z.ZodType<AdminConfigResponse>;
 
 export const signingStatusSchema = z.object({
   source: z.enum(['env', 'stored', 'disabled']),

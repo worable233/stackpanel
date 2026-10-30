@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { z } from 'zod';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 
 const SIGNATURE_FILE = 'signature.json';
 
@@ -23,7 +23,7 @@ export class SignatureError extends Error {
 export function verifyPackageSignature(
   files: Map<string, Uint8Array>,
   publicKey: string | undefined,
-  required = env.PACKAGE_SIGNATURE_REQUIRED,
+  required = getConfig('PACKAGE_SIGNATURE_REQUIRED'),
 ): void {
   if (!publicKey) {
     if (required) {

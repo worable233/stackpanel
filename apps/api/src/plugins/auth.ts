@@ -2,7 +2,7 @@ import { validMcpDispatch } from '../agent/dispatch-proof.ts';
 import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PluginError } from '@stackpanel/sdk';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { looksLikeApiToken, resolveApiTokenWithOwner } from '../lib/api-tokens.ts';
 import { getSessionStore } from '../auth/session-store.ts';
 import { scopeSatisfied, type ScopeGovernance } from '../lib/capability-registry.ts';
@@ -61,7 +61,9 @@ export async function permissionsOf(userId: string): Promise<Set<string>> {
   const rows = await getPrisma().userGroup.findMany({
     // 过期会员不得继续生效：判定在读路径完成，不依赖清扫任务。
     where: { userId, AND: [activeMembershipWhere()] },
-    select: { group: { select: { permissions: { select: { permission: { select: { key: true } } } } } } },
+    select: {
+      group: { select: { permissions: { select: { permission: { select: { key: true } } } } } },
+    },
   });
   const set = new Set<string>();
   for (const row of rows) {
@@ -155,7 +157,11 @@ async function apiTokenUser(
     rejectedTokens.add(cacheKey);
     return null;
   }
-  if (resolved.audience === 'mcp' && (!request || (request.url.split('?')[0] !== '/mcp' && !validMcpDispatch(request)))) return null;
+  if (
+    resolved.audience === 'mcp' &&
+    (!request || (request.url.split('?')[0] !== '/mcp' && !validMcpDispatch(request)))
+  )
+    return null;
   const { owner, scopes } = resolved;
   if (owner.status !== 'ACTIVE') return null;
   // 请求签名（对标 #12.6）：凭证登记了公钥就必须带签名，缺失/篡改/过期/重放
@@ -191,7 +197,7 @@ export async function extractSession(
   _reply?: FastifyReply,
 ): Promise<AuthUser | null> {
   const bearer = bearerToken(request);
-  const cookie = request.cookies?.[env.SESSION_COOKIE_NAME];
+  const cookie = request.cookies?.[getConfig('SESSION_COOKIE_NAME')];
   const token = bearer ?? cookie;
   if (!token) return null;
   const governance = requestScopeGovernance(request);
@@ -349,7 +355,10 @@ export const ROLE_GUARD = Symbol('stackpanel.roleGuard');
 
 /** Whether `guard` came from {@link requireRole}. */
 export function isRoleGuard(guard: unknown): boolean {
-  return typeof guard === 'function' && (guard as unknown as Record<symbol, unknown>)[ROLE_GUARD] === true;
+  return (
+    typeof guard === 'function' &&
+    (guard as unknown as Record<symbol, unknown>)[ROLE_GUARD] === true
+  );
 }
 
 export function requireRole(...roles: readonly string[]) {

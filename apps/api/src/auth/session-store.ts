@@ -17,7 +17,7 @@
 import { randomBytes } from 'node:crypto';
 import { peekRedis } from '@stackpanel/db';
 import { redisKey } from '@stackpanel/sdk';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 
 export interface SessionRecord {
   userId: string;
@@ -53,7 +53,7 @@ export interface SessionStore {
 
 /** Session lifetime in seconds (matches the cookie `maxAge`). */
 function ttlSeconds(): number {
-  return env.SESSION_TTL_SECONDS;
+  return getConfig('SESSION_TTL_SECONDS');
 }
 
 /** Only refresh a session's TTL once per minute, not on every request. */

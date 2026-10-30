@@ -54,6 +54,7 @@ import { registerMediaJobs } from './media/jobs.ts';
 import { AttachmentReferenceService } from './media/references.ts';
 import { getStorage, setStorageRuntime, refreshStorageDriver } from './infra.ts';
 import { NotificationDispatcher } from './notifications/dispatcher.ts';
+import { loadRuntimeConfig } from './config/runtime-config.ts';
 
 export interface PluginHostLogger {
   info: (message: string) => void;
@@ -245,6 +246,9 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       return row?.enabled ?? false;
     },
     onThemeReload: () => options.onThemeReload?.(),
+    // ADR-0026: another replica changed a DB-backed config value; re-read the
+    // snapshot so the next request on this replica uses it without a restart.
+    onConfigReload: () => loadRuntimeConfig(),
     logger: { warn: (message) => logger.warn(message), info: (message) => logger.info(message) },
   });
 
@@ -359,7 +363,9 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
                     `[distribution] 自动更新已投递（${result.idempotencyKey ?? ''}）：${result.reason}`,
                   );
                 } else if (result.reason !== 'auto-disabled') {
-                  logger.info(`[distribution] 自动更新跳过：${result.reason} ${result.detail ?? ''}`);
+                  logger.info(
+                    `[distribution] 自动更新跳过：${result.reason} ${result.detail ?? ''}`,
+                  );
                 }
               },
             }

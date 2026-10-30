@@ -100,6 +100,7 @@ import {
   setupStatusResponseSchema,
   bootstrapProvisionResponseSchema,
   signingResponseSchema,
+  adminConfigResponseSchema,
   platformInfoResponseSchema,
   platformBrandResponseSchema,
   settingsResponseSchema,
@@ -204,6 +205,7 @@ import type {
   RbacTemplatesResponse,
   SendRegisterCodeResponse,
   SigningResponse,
+  AdminConfigResponse,
   Readiness,
   ThemePreviewMutationResponse,
   ThemePreviewResponse,
@@ -377,6 +379,27 @@ export class ApiClient {
   }
 
   /** Read installed themes (public list). */
+  /* --------------------- 运行期配置（ADR-0026） --------------------- */
+
+  /** Read every admin-editable runtime setting (value + where it came from). */
+  getAdminConfig(): Promise<AdminConfigResponse> {
+    return this.get('/admin/config', adminConfigResponseSchema);
+  }
+
+  /** Override one runtime setting in the database (`null` reverts to env). */
+  setAdminConfig(name: string, value: unknown): Promise<AdminConfigResponse> {
+    return this.put(
+      `/admin/config/${encodeURIComponent(name)}`,
+      { value },
+      adminConfigResponseSchema,
+    );
+  }
+
+  /** Drop the database override so the environment variable applies again. */
+  clearAdminConfig(name: string): Promise<AdminConfigResponse> {
+    return this.del(`/admin/config/${encodeURIComponent(name)}`, adminConfigResponseSchema);
+  }
+
   getThemes(): Promise<ThemesResponse> {
     return this.get('/themes', themesResponseSchema);
   }
@@ -471,7 +494,10 @@ export class ApiClient {
 
   /** Read one update task result (phase/checkpoints/recovery) by idempotency key. */
   getUpdateResult(key: string): Promise<{ result: UpdateTaskResultView }> {
-    return this.get(`/admin/updates/results/${encodeURIComponent(key)}`, updateResultResponseSchema);
+    return this.get(
+      `/admin/updates/results/${encodeURIComponent(key)}`,
+      updateResultResponseSchema,
+    );
   }
 
   /** Read the pending updater self-update request (if any). */
@@ -1218,7 +1244,11 @@ export class ApiClient {
   }
 
   /** Update a theme's frontend settings (admin). */
-  updateThemeSettings(id: string, settings: FrontendSettings, expectedVersion?: string): Promise<SettingsResponse> {
+  updateThemeSettings(
+    id: string,
+    settings: FrontendSettings,
+    expectedVersion?: string,
+  ): Promise<SettingsResponse> {
     return this.patch(
       `/admin/themes/${encodeURIComponent(id)}/settings`,
       { settings, ...(expectedVersion ? { expectedVersion } : {}) },

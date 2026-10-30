@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 
 export interface SessionClaims {
   sub: string;
@@ -19,7 +20,7 @@ export async function signSession(claims: SessionClaims): Promise<string> {
     .setSubject(claims.sub)
     .setJti(claims.jti)
     .setIssuedAt()
-    .setExpirationTime(Math.floor(Date.now() / 1000) + env.SESSION_TTL_SECONDS)
+    .setExpirationTime(Math.floor(Date.now() / 1000) + getConfig('SESSION_TTL_SECONDS'))
     .sign(secretKey());
 }
 

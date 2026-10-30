@@ -12,6 +12,7 @@ import { materializeAndPublish } from './frontend-storage.ts';
 import { packageManager } from '../packages/manager.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { verifyPackageSignature } from './signatures.ts';
 import {
   localMarketSourcesAllowed,
@@ -72,7 +73,7 @@ function themeDataDir(id: string): string {
 }
 
 async function verifyMarketPackage(sourceDir: string, kind: 'plugin' | 'theme'): Promise<void> {
-  if (!env.PACKAGE_SIGNATURE_REQUIRED) return;
+  if (!getConfig('PACKAGE_SIGNATURE_REQUIRED')) return;
   const files = new Map<string, Uint8Array>();
   const walk = async (dir: string, prefix = ''): Promise<void> => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -205,9 +206,12 @@ export async function marketPackageView(
     path.join(installedDir, kind === 'plugin' ? 'manifest.json' : 'theme.json'),
   );
   // Theme management is backed by the DB registry, not merely unpacked files.
-  const installed = filesPresent && (kind === 'plugin' || Boolean(
-    await getPrisma().theme.findUnique({ where: { id: source.id }, select: { id: true } }),
-  ));
+  const installed =
+    filesPresent &&
+    (kind === 'plugin' ||
+      Boolean(
+        await getPrisma().theme.findUnique({ where: { id: source.id }, select: { id: true } }),
+      ));
   let installedVersion: string | null = null;
   if (installed) {
     if (kind === 'plugin') {

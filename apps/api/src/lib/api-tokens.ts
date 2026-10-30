@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { PrismaClient } from '@stackpanel/db';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 
 /**
  * 内核平台凭证（ApiToken）：签发、解析、鉴权。
@@ -20,7 +20,7 @@ const LAST_USED_THROTTLE_MS = 5 * 60_000;
 export const LEGACY_GATEWAY_PREFIX = 'sk-sp-';
 
 export function apiTokenPrefix(): string {
-  return env.STACKPANEL_API_TOKEN_PREFIX ?? DEFAULT_API_TOKEN_PREFIX;
+  return getConfig('STACKPANEL_API_TOKEN_PREFIX') ?? DEFAULT_API_TOKEN_PREFIX;
 }
 
 /** 该明文是否长得像一枚平台凭证（默认前缀或历史前缀）。 */
@@ -75,8 +75,14 @@ function ipv6ToBigInt(ip: string): bigint | null {
   let head: string[];
   let tail: string[];
   if (dbl >= 0) {
-    head = text.slice(0, dbl).split(':').filter((s) => s.length > 0);
-    tail = text.slice(dbl + 2).split(':').filter((s) => s.length > 0);
+    head = text
+      .slice(0, dbl)
+      .split(':')
+      .filter((s) => s.length > 0);
+    tail = text
+      .slice(dbl + 2)
+      .split(':')
+      .filter((s) => s.length > 0);
   } else {
     head = text.split(':');
     tail = [];
@@ -117,7 +123,7 @@ function entryMatches(entry: string, ip: string): boolean {
     if (bits < 0 || bits > 128) return false;
     if (bits === 0) return true;
     const shift = 128n - BigInt(bits);
-    return (v6ip >> shift) === (v6 >> shift);
+    return v6ip >> shift === v6 >> shift;
   }
   return false;
 }

@@ -889,6 +889,27 @@
         "windowEnable": "Only run automatically inside the window",
         "windowEnd": "End (hour 0-23)",
         "windowStart": "Start (hour 0-23)"
+      },
+      "runtimeConfig": {
+        "title": "Runtime configuration",
+        "description": "These switches live in the database. Changes apply to every replica immediately (broadcast over Redis) without a restart. Clear a row — or press Revert — to fall back to the environment variable.",
+        "source": {
+          "stored": "Overridden",
+          "env": "Environment",
+          "default": "Default"
+        },
+        "envValue": "Environment value",
+        "revert": "Revert",
+        "revertHint": "Drop the database override and use the environment variable again",
+        "group": {
+          "auth": "Authentication and codes",
+          "session": "Sessions",
+          "media": "Media",
+          "openapi": "Open API",
+          "plugins": "Plugins",
+          "audit": "Audit log",
+          "agent": "Agent"
+        }
       }
     },
     "themes": {
@@ -1180,7 +1201,9 @@
     "updateResultsFailed": "Failed to read update results",
     "updateSelfUpdateCancelFailed": "Failed to cancel the self-upgrade request",
     "updateSelfUpdateSubmitFailed": "Failed to queue the self-upgrade request",
-    "updateSubmitFailed": "Failed to submit the update task"
+    "updateSubmitFailed": "Failed to submit the update task",
+    "runtimeConfigSaved": "Configuration applied",
+    "runtimeConfigReverted": "Reverted to the environment variable"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -1624,6 +1647,10 @@
       "too_long": "That password is too long — please shorten it and try again",
       "too_common": "That password is too common — please choose another one",
       "matches_identity": "The password must not match your email address"
+    },
+    "config": {
+      "unknown_key": "Unknown configuration key",
+      "invalid_value": "Invalid configuration value"
     }
   },
   "auditAction": {
@@ -1665,7 +1692,9 @@
     "bootstrap_create": "Bootstrap administrator",
     "auth_password_changed": "Password changed",
     "auth_password_reset": "Password reset",
-    "auth_password_reset_requested": "Password reset requested"
+    "auth_password_reset_requested": "Password reset requested",
+    "config_changed": "Changed kernel configuration",
+    "config_reverted": "Reverted kernel configuration"
   },
   "auditResource": {
     "user": "User",

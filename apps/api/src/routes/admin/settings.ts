@@ -43,6 +43,11 @@ export async function adminSettingsRoutes(app: FastifyInstance): Promise<void> {
     if (reservedKeys.has(key)) {
       return reply.code(403).send({ error: '该设置由专用接口管理' });
     }
+    // 运行期配置（ADR-0026）走 `/admin/config`：那里用 `envSchema` 同名字段校验取值，
+    // 并在写入后广播失效。通用接口原样落库，写进一个运行期解析不了的值会一直静默失效。
+    if (key.startsWith('config.')) {
+      return reply.code(403).send({ error: '该设置请通过「运行期配置」接口修改' });
+    }
     const prisma = getPrisma();
     const setting = await prisma.setting.upsert({
       where: { key },

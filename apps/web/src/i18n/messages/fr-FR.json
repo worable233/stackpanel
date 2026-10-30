@@ -898,6 +898,27 @@
         "gatewayConfigNote": "This gateway keeps its credentials in its own plugin settings — nothing to enter here.",
         "qrHint": "Same-origin paths and data: URLs are shown inline on the order page. External image URLs are blocked by the security policy and appear as a link instead.",
         "confirmDeleteHint": "This payment method will no longer be available for new orders. Existing orders are unaffected."
+      },
+      "runtimeConfig": {
+        "title": "Configuration d'exécution",
+        "description": "Ces réglages sont stockés en base de données. Les modifications s'appliquent immédiatement à tous les réplicas (diffusion via Redis), sans redémarrage. Videz le champ ou cliquez sur « Rétablir » pour revenir à la variable d'environnement.",
+        "source": {
+          "stored": "Remplacé",
+          "env": "Variable d'environnement",
+          "default": "Valeur par défaut"
+        },
+        "envValue": "Valeur de la variable d'environnement",
+        "revert": "Rétablir",
+        "revertHint": "Supprime la valeur en base et réutilise la variable d'environnement",
+        "group": {
+          "auth": "Authentification et codes",
+          "session": "Sessions",
+          "media": "Médias",
+          "openapi": "API ouverte",
+          "plugins": "Extensions",
+          "audit": "Journal d'audit",
+          "agent": "Agent"
+        }
       }
     },
     "themes": {
@@ -1180,7 +1201,9 @@
     "seoPageDeleted": "Page override deleted",
     "apiTokenSigningSaved": "Signing key saved",
     "apiTokenSigningCleared": "Request signing disabled",
-    "apiTokenRevoked": "API token revoked"
+    "apiTokenRevoked": "API token revoked",
+    "runtimeConfigSaved": "Configuration appliquée",
+    "runtimeConfigReverted": "Rétabli sur la variable d'environnement"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -1624,6 +1647,10 @@
       "too_long": "Mot de passe trop long — raccourcissez-le puis réessayez",
       "too_common": "Ce mot de passe est trop courant — choisissez-en un autre",
       "matches_identity": "Le mot de passe ne doit pas reprendre votre adresse e-mail"
+    },
+    "config": {
+      "unknown_key": "Clé de configuration inconnue",
+      "invalid_value": "Valeur de configuration invalide"
     }
   },
   "auditAction": {
@@ -1665,7 +1692,9 @@
     "bootstrap_create": "Bootstrap administrator",
     "auth_password_changed": "Mot de passe modifié",
     "auth_password_reset": "Mot de passe réinitialisé",
-    "auth_password_reset_requested": "Réinitialisation demandée"
+    "auth_password_reset_requested": "Réinitialisation demandée",
+    "config_changed": "Configuration du noyau modifiée",
+    "config_reverted": "Configuration du noyau rétablie"
   },
   "auditResource": {
     "user": "User",

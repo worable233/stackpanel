@@ -28,6 +28,7 @@ import {
   toStringArray,
 } from '../lib/api-tokens.ts';
 import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { avatarContentUrl } from './avatar.ts';
 import { resolveCookieSecure } from '../lib/cookie-security.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
@@ -214,8 +215,8 @@ export class KernelAuthService implements AuthService {
 
   sessionCookieConfig(): SessionCookieConfig {
     return {
-      name: env.SESSION_COOKIE_NAME,
-      maxAge: env.SESSION_TTL_SECONDS,
+      name: getConfig('SESSION_COOKIE_NAME'),
+      maxAge: getConfig('SESSION_TTL_SECONDS'),
       // Second guard on top of the env default (security audit M-1).
       secure: resolveCookieSecure(env.API_COOKIE_SECURE),
     };
@@ -404,9 +405,7 @@ export class KernelAuthService implements AuthService {
 
   async listPlatformTokensByScope(scope: string): Promise<PlatformTokenView[]> {
     const rows = await this.options.db.apiToken.findMany({ orderBy: { createdAt: 'desc' } });
-    return rows
-      .filter((row) => toStringArray(row.scopes).includes(scope))
-      .map(toPlatformTokenView);
+    return rows.filter((row) => toStringArray(row.scopes).includes(scope)).map(toPlatformTokenView);
   }
 
   async createPlatformToken(input: CreatePlatformTokenInput): Promise<CreatedPlatformToken> {

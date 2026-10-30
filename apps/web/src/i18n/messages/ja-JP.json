@@ -898,6 +898,27 @@
         "gatewayConfigNote": "This gateway keeps its credentials in its own plugin settings — nothing to enter here.",
         "qrHint": "Same-origin paths and data: URLs are shown inline on the order page. External image URLs are blocked by the security policy and appear as a link instead.",
         "confirmDeleteHint": "This payment method will no longer be available for new orders. Existing orders are unaffected."
+      },
+      "runtimeConfig": {
+        "title": "実行時設定",
+        "description": "これらのスイッチはデータベースに保存されます。変更は Redis 経由で全レプリカに即時反映され、再起動は不要です。空欄または「戻す」で環境変数の値に戻ります。",
+        "source": {
+          "stored": "上書き済み",
+          "env": "環境変数",
+          "default": "既定値"
+        },
+        "envValue": "環境変数の値",
+        "revert": "戻す",
+        "revertHint": "データベースの上書きを削除し、環境変数に戻します",
+        "group": {
+          "auth": "認証と認証コード",
+          "session": "セッション",
+          "media": "メディア",
+          "openapi": "オープン API",
+          "plugins": "プラグイン",
+          "audit": "監査ログ",
+          "agent": "エージェント"
+        }
       }
     },
     "themes": {
@@ -1180,7 +1201,9 @@
     "seoPageDeleted": "Page override deleted",
     "apiTokenSigningSaved": "Signing key saved",
     "apiTokenSigningCleared": "Request signing disabled",
-    "apiTokenRevoked": "API token revoked"
+    "apiTokenRevoked": "API token revoked",
+    "runtimeConfigSaved": "設定を反映しました",
+    "runtimeConfigReverted": "環境変数に戻しました"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -1624,6 +1647,10 @@
       "too_long": "パスワードが長すぎます。短くしてお試しください",
       "too_common": "このパスワードはよく使われすぎています。別のものをご利用ください",
       "matches_identity": "パスワードにメールアドレスを含めないでください"
+    },
+    "config": {
+      "unknown_key": "不明な設定キーです",
+      "invalid_value": "設定値が不正です"
     }
   },
   "auditAction": {
@@ -1665,7 +1692,9 @@
     "bootstrap_create": "Bootstrap administrator",
     "auth_password_changed": "パスワード変更",
     "auth_password_reset": "パスワード再設定",
-    "auth_password_reset_requested": "パスワード再設定の申請"
+    "auth_password_reset_requested": "パスワード再設定の申請",
+    "config_changed": "カーネル設定を変更",
+    "config_reverted": "カーネル設定を環境変数に戻す"
   },
   "auditResource": {
     "user": "User",

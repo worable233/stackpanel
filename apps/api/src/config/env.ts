@@ -249,6 +249,13 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+/**
+ * 逐字段 schema（ADR-0026）。运行期配置从数据库读到的值必须走**同一份**字段
+ * schema 解析，否则会出现「后台存得进去、运行期行为不同」的分裂——`coerce`、
+ * `default()`、`transform()` 都在这里，复制一份就一定会漂移。
+ */
+export const envFieldSchemas = envSchema.shape;
+
 /** Known dev-only placeholders that must never run in production. */
 const DEV_PLACEHOLDERS = new Set([
   'change_me_at_least_32_characters_long',

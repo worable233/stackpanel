@@ -29,7 +29,7 @@ export type RuntimeChangeAction = 'activate' | 'deactivate' | 'reload' | 'remove
 /** A runtime cache invalidation broadcast across replicas. */
 export interface RuntimeChange {
   /** Which runtime cache changed. */
-  kind: 'plugin' | 'theme';
+  kind: 'plugin' | 'theme' | 'config';
   /** Plugin id, or theme id for `kind: 'theme'`. */
   id: string;
   action: RuntimeChangeAction;
@@ -41,6 +41,12 @@ export interface RuntimeCoherenceOptions {
   redis: RedisClient | null;
   /** Load a plugin definition from its installed package on disk. */
   loadDefinition: (id: string) => Promise<PluginDefinition>;
+  /**
+   * Re-read the database-backed runtime config snapshot (ADR-0026). Called on
+   * every replica that receives `kind: 'config'`; the reader stays synchronous,
+   * so this is the only place the async hop happens.
+   */
+  onConfigReload?: () => Promise<void> | void;
   /** Whether the plugin is enabled in the database (authoritative). */
   isEnabled: (id: string) => Promise<boolean>;
   /** Invoked when a theme change is broadcast (defaults to a no-op). */
@@ -117,8 +123,16 @@ export class RuntimeCoherence {
     await redis.publish(this.channel(), JSON.stringify(envelope));
   }
 
-  /** Apply a received change: reload the plugin, or refresh theme state. */
+  /**
+   * Apply a received change: reload the plugin, refresh theme state, or re-read
+   * the runtime config snapshot (ADR-0026). The config kind has no per-item id —
+   * the whole snapshot is small and re-read in one query.
+   */
   async apply(change: RuntimeChange): Promise<void> {
+    if (change.kind === 'config') {
+      await this.options.onConfigReload?.();
+      return;
+    }
     if (change.kind === 'theme') {
       await this.options.onThemeReload?.();
       return;
@@ -183,9 +197,16 @@ function safeParse(value: string): RuntimeEnvelope | null {
   try {
     const parsed = JSON.parse(value) as Partial<RuntimeEnvelope>;
     if (typeof parsed.id !== 'string' || typeof parsed.origin !== 'string') return null;
-    if (parsed.kind !== 'plugin' && parsed.kind !== 'theme') return null;
+    if (parsed.kind !== 'plugin' && parsed.kind !== 'theme' && parsed.kind !== 'config') {
+      return null;
+    }
     const action = parsed.action;
-    if (action !== 'activate' && action !== 'deactivate' && action !== 'reload' && action !== 'remove') {
+    if (
+      action !== 'activate' &&
+      action !== 'deactivate' &&
+      action !== 'reload' &&
+      action !== 'remove'
+    ) {
       return null;
     }
     return { kind: parsed.kind, id: parsed.id, action, origin: parsed.origin };

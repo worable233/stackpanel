@@ -69,10 +69,12 @@ export interface AuthConfigResponse {
      * leave at `off`. Public routes only report the non-`off` actions so an
      * anonymous caller never receives a full policy map.
      */
-    actions?: Record<
-      string,
-      { policy: 'off' | 'optional' | 'required'; clientConfig: Record<string, unknown> | null }
-    > | undefined;
+    actions?:
+      | Record<
+          string,
+          { policy: 'off' | 'optional' | 'required'; clientConfig: Record<string, unknown> | null }
+        >
+      | undefined;
   };
 }
 
@@ -155,14 +157,16 @@ export interface CaptchaPolicyResponse {
   clientConfig: Record<string, unknown> | null;
   sources: CaptchaCspSources;
   /** Only present on the action-less form: every non-`off` guarded action. */
-  actions?: Record<
-    string,
-    {
-      policy: 'off' | 'optional' | 'required';
-      clientConfig: Record<string, unknown> | null;
-      sources: CaptchaCspSources;
-    }
-  > | undefined;
+  actions?:
+    | Record<
+        string,
+        {
+          policy: 'off' | 'optional' | 'required';
+          clientConfig: Record<string, unknown> | null;
+          sources: CaptchaCspSources;
+        }
+      >
+    | undefined;
 }
 
 export interface AccountMutationResponse {
@@ -889,7 +893,8 @@ export interface AdminPluginsResponse {
 export type UpdateChannel = 'stable' | 'beta';
 
 /** Update strategy (GET /admin/updates/status · PUT /admin/updates/policy). */
-export interface UpdatePolicyView {  autoUpdate: boolean;
+export interface UpdatePolicyView {
+  autoUpdate: boolean;
   channel: UpdateChannel;
   autoUpdateKernel: boolean;
   excluded: string[];
@@ -1225,6 +1230,27 @@ export interface SigningStatus {
   configured: boolean;
   fingerprint: string | null;
   publicKey: string | null;
+}
+
+/**
+ * 运行期内核配置的一条（ADR-0026）。
+ *
+ * `name` 与 `envSchema` 里的变量名一致，后台界面按它渲染行标题——它是技术标识符，
+ * 不是待翻译文案。`source` 说明当前值来自数据库覆盖、环境变量还是字段默认值。
+ */
+export interface AdminRuntimeConfigEntry {
+  name: string;
+  group: 'auth' | 'session' | 'media' | 'openapi' | 'plugins' | 'audit' | 'agent';
+  /** 当前生效值（已是运行期类型：数字/布尔/字符串）。 */
+  value: unknown;
+  source: 'stored' | 'env' | 'default';
+  /** 环境变量里的值；未设置时为 null。 */
+  envValue: unknown;
+}
+
+/** Response of GET /admin/config and of every write to it. */
+export interface AdminConfigResponse {
+  entries: AdminRuntimeConfigEntry[];
 }
 
 /** Response of GET/PATCH /admin/signing. */
