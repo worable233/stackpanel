@@ -208,12 +208,71 @@ export type ExternalTopUpCancelResult =
   | { cancelled: true }
   | { cancelled: false; reason: 'NOT_CANCELLABLE' | 'UNSUPPORTED' | 'STILL_PROCESSING' };
 
+/** How a provider collects money (mirrors the provider contract). */
+export type AdminPaymentProviderMode = 'gateway' | 'manual';
+
+/**
+ * A payment record as an operator sees it.
+ *
+ * A manual provider (bank transfer / QR) never redirects the buyer anywhere, so
+ * "confirm receipt" *is* the settlement step. That makes the record itself the
+ * working surface: the row has to carry the buyer, the collection method and the
+ * order link, otherwise an operator cannot tell one transfer from another.
+ */
+export interface AdminPaymentRecord {
+  id: string;
+  purpose: PaymentPurpose;
+  status: string;
+  /** Settlement amount (what the provider actually receives). */
+  amount: number;
+  currency: string;
+  /** Order-currency amount when it differs from the settlement currency. */
+  orderAmount: number | null;
+  orderCurrency: string | null;
+  providerId: string | null;
+  providerMode: AdminPaymentProviderMode | null;
+  /** Provider-specific collection code, e.g. `bank_transfer`. */
+  paymentMethod: string | null;
+  /** Display name of the configured `payment_methods` row, when bound. */
+  methodName: string | null;
+  orderId: string | null;
+  buyerId: string;
+  buyerEmail: string | null;
+  externalId: string | null;
+  paymentUrl: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+/** Filters for the admin payment list. */
+export interface AdminPaymentListQuery {
+  status?: string;
+  mode?: AdminPaymentProviderMode;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AdminPaymentListResponse {
+  payments: AdminPaymentRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 /**
  * Kernel payment orchestration exposed to plugins via `ctx.payments`.
  */
 export interface PaymentService {
   /** List wallet + active external providers for checkout UI. */
   listPaymentMethods(): PaymentMethodListing;
+  /**
+   * Provider id → collection mode.
+   *
+   * The mode is part of the provider contract, not of the stored record, so
+   * admin tooling cannot label a row "needs manual confirmation" without asking
+   * the registry. Exposing it here keeps provider ids out of calling code.
+   */
+  providerModes(): Record<string, AdminPaymentProviderMode>;
   /** Same shape, filtered to methods that are actually configured. */
   listAvailablePaymentMethods(): Promise<PaymentMethodListing>;
   /**

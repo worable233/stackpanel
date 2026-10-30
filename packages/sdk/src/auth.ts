@@ -71,6 +71,8 @@ export interface AuthUser {
    * existed and password-less third-party identities.
    */
   emailVerifiedAt?: string | null;
+  /** Delivery URL of the account avatar, or `null` when none is set. */
+  avatarUrl?: string | null;
 }
 
 /** Result of a login attempt. */

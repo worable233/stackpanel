@@ -29,6 +29,12 @@ export interface User {
   lastLoginAt: string | null;
   /** When email ownership was verified, or `null`. */
   emailVerifiedAt: string | null;
+  /**
+   * Delivery URL of the account avatar (a kernel media route, carrying a content
+   * revision), or `null`/absent when no avatar is set. Optional so a BFF can
+   * still parse a reply minted by an API that predates avatars.
+   */
+  avatarUrl?: string | null;
 }
 
 /** Public auth policy for the frontend (register form). */
@@ -186,6 +192,8 @@ export interface AdminUser {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  /** Derived avatar URL (kernel media content route), or null when unset. */
+  avatarUrl?: string | null | undefined;
   /** Spendable wallet balance in the currency's minor unit. */
   balance?: number | undefined;
   balanceCurrency?: string | undefined;
@@ -639,9 +647,29 @@ export interface PermissionCheckResponse {
   allowed: boolean;
 }
 
+/**
+ * A plugin row that survived its package.
+ *
+ * Uninstalling a plugin is normally what deletes its database row, so a plugin
+ * whose directory was removed by hand (or by a failed upgrade) leaves a record
+ * behind: the runtime no longer knows it, `/admin/plugins` cannot list it, and
+ * the operator still sees its capabilities "installed" in the database. Surfacing
+ * these is what turns "the provider plugin is disabled" into an actionable
+ * cleanup.
+ */
+export interface StalePluginRecord {
+  id: string;
+  name: string;
+  version: string;
+  enabled: boolean;
+  installedAt: string;
+}
+
 /** Response of GET /admin/plugins. */
 export interface AdminPluginsResponse {
   plugins: AdminPlugin[];
+  /** Records left behind after the package directory disappeared. */
+  stale: StalePluginRecord[];
 }
 
 /** Update channel. */
@@ -659,6 +687,15 @@ export interface UpdatePolicyView {  autoUpdate: boolean;
   updatedAt?: string;
   updatedBy?: string | null;
 }
+
+/**
+ * `PUT /admin/updates/policy` 的请求体。
+ *
+ * 未给出的字段保持原值；`maintenanceWindow: null` 表示清除窗口限制（否则设过就关不掉）。
+ */
+export type UpdatePolicyPatch = Omit<Partial<UpdatePolicyView>, 'maintenanceWindow'> & {
+  maintenanceWindow?: { startHour: number; endHour: number } | null;
+};
 
 /** Block reason returned when a deployment plan cannot be solved. */
 export interface UpdateBlockReason {

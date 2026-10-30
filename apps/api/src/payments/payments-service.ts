@@ -816,6 +816,20 @@ export class PaymentsService implements PaymentServiceContract {
   // Manual payments (admin confirmation)
   // ---------------------------------------------------------------------------
 
+  /**
+   * Provider id → collection mode.
+   *
+   * Admin tooling has to label a record as "needs manual confirmation" or
+   * "settles itself", but the mode lives in the provider contract, not in the
+   * `payments` row. Exposing it here keeps that single source of truth instead
+   * of hard-coding provider ids in a route.
+   */
+  providerModes(): Record<string, 'gateway' | 'manual'> {
+    const modes: Record<string, 'gateway' | 'manual'> = {};
+    for (const provider of this.providers()) modes[provider.id] = provider.mode;
+    return modes;
+  }
+
   private manualProviders(): PaymentProvider[] {
     return this.providers().filter((candidate) => candidate.mode === 'manual');
   }

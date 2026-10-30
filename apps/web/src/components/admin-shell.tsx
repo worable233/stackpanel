@@ -2,6 +2,7 @@
 
 import type { LucideIcon } from 'lucide-react';
 import {
+  ArrowUpCircle,
   Bell,
   Blocks,
   Box,
@@ -11,6 +12,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  Wallet,
 } from 'lucide-react';
 import {
   BackendShell,
@@ -24,9 +26,11 @@ const NAVIGATION_ICONS: Record<string, LucideIcon> = {
   '/admin/settings': Settings,
   '/admin/plugins': Blocks,
   '/admin/rbac': ShieldCheck,
+  '/admin/payments': Wallet,
   '/admin/audit': ScrollText,
   '/admin/themes': Palette,
   '/admin/notifications': Bell,
+  '/admin/updates': ArrowUpCircle,
 };
 
 export interface AdminShellProps {

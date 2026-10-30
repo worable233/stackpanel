@@ -21,6 +21,9 @@ const KERNEL_NAV: Record<'public' | 'account' | 'admin', NavItem[]> = {
     { surface: 'admin', label: '系统设置', href: '/admin/settings' },
     { surface: 'admin', label: '插件管理', href: '/admin/plugins' },
     { surface: 'admin', label: '权限模板', href: '/admin/rbac' },
+    // 支付记录是手动收款（银行转账/收款码）的唯一结算入口：没有它，运营者无法把
+    // 一笔已到账的转账变成已付订单，订单永远停在 PENDING。
+    { surface: 'admin', label: '支付记录', href: '/admin/payments' },
     { surface: 'admin', label: '审计日志', href: '/admin/audit' },
     { surface: 'admin', label: '主题管理', href: '/admin/themes' },
     { surface: 'admin', label: '通知中心', href: '/admin/notifications' },
