@@ -154,6 +154,15 @@ export interface CaptchaVerifyResult {
 }
 
 /**
+ * A value a plugin may produce synchronously or over the isolated RPC boundary.
+ *
+ * The kernel always awaits: an out-of-process plugin answers asynchronously, and
+ * a synchronous return type there silently becomes a pending promise — which in
+ * JSON is `{}`, i.e. a widget config with no keys and a policy with no value.
+ */
+export type MaybePromise<T> = T | Promise<T>;
+
+/**
  * A human-verification provider the kernel invokes via
  * {@link CaptchaService}. Registered to the `captcha.provider` extension point.
  */
@@ -167,8 +176,13 @@ export interface CaptchaProvider {
    * and return `null` when the provider is installed but not yet configured: a
    * registered-but-unconfigured provider must not advertise a widget the browser
    * could not render.
+   *
+   * May return a promise: a plugin running out-of-process answers over RPC, and a
+   * kernel that cannot await would treat the pending promise as a result (it
+   * serialises to `{}` and the browser renders nothing). The kernel always
+   * awaits, so an in-process provider may stay synchronous.
    */
-  clientConfig?(): Record<string, unknown> | null;
+  clientConfig?(): MaybePromise<Record<string, unknown> | null>;
   /**
    * Policy this provider declares for one action.
    *
@@ -179,8 +193,10 @@ export interface CaptchaProvider {
    * Policy lives with the provider (not in a kernel setting) on purpose: an
    * uninstalled provider takes its policy with it, and the kernel never holds an
    * operator-owned policy table that only kernel privileges could edit.
+   *
+   * May return a promise, for the same reason as {@link clientConfig}.
    */
-  policyFor?(action: string): CaptchaPolicy | null;
+  policyFor?(action: string): MaybePromise<CaptchaPolicy | null>;
 }
 
 /** Kernel-owned captcha service (`ctx.captcha`). */
@@ -213,16 +229,16 @@ export interface CaptchaService {
    * Provider-supplied client config for the frontend widget (site key, script
    * URL, …), or `null` when no provider supplies one. Never contains a secret.
    */
-  clientConfig(): Record<string, unknown> | null;
+  clientConfig(): Promise<Record<string, unknown> | null>;
   /**
    * Effective policy for one action: the first provider that declares one wins,
    * otherwise the global `AUTH_CAPTCHA_MODE`.
    */
-  policyFor(action: string): 'off' | 'optional' | 'required';
+  policyFor(action: string): Promise<'off' | 'optional' | 'required'>;
   /**
    * Widget config for one action, resolved from the providers that claim it.
    * Falls back to {@link clientConfig} so a provider that ignores actions still
    * renders everywhere it is asked for.
    */
-  clientConfigFor(action: string): Record<string, unknown> | null;
+  clientConfigFor(action: string): Promise<Record<string, unknown> | null>;
 }

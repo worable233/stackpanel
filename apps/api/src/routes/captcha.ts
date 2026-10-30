@@ -29,8 +29,12 @@ const actionSchema = z.object({
 /** CSP-relevant external origins a widget needs, extracted from its config. */
 export interface CaptchaCspSources {
   script?: string[];
+  /** Stylesheets the widget injects (a theme CSS usually lives on its own origin). */
+  style?: string[];
   frame?: string[];
   connect?: string[];
+  /** Origins a `Blob`/URL worker is created from (proof-of-work widgets). */
+  worker?: string[];
 }
 
 /**
@@ -65,12 +69,16 @@ export function captchaCspSources(config: Record<string, unknown> | null): Captc
   if (!sources || typeof sources !== 'object' || Array.isArray(sources)) return {};
   const raw = sources as Record<string, unknown>;
   const script = sanitizeCspOrigins(raw['script']);
+  const style = sanitizeCspOrigins(raw['style']);
   const frame = sanitizeCspOrigins(raw['frame']);
   const connect = sanitizeCspOrigins(raw['connect']);
+  const worker = sanitizeCspOrigins(raw['worker']);
   return {
     ...(script.length > 0 ? { script } : {}),
+    ...(style.length > 0 ? { style } : {}),
     ...(frame.length > 0 ? { frame } : {}),
     ...(connect.length > 0 ? { connect } : {}),
+    ...(worker.length > 0 ? { worker } : {}),
   };
 }
 
@@ -102,46 +110,42 @@ export async function captchaRoutes(app: FastifyInstance): Promise<void> {
    * configs they will actually need to render, never a full policy map of the
    * deployment.
    */
-  app.get(
-    '/captcha/policy',
-    { ...rateLimitConfig('publicRead') },
-    async (request, reply) => {
-      const query = actionSchema.safeParse(request.query);
-      if (!query.success) return reply.code(400).send({ error: '请求参数无效' });
-      const captcha = app.captcha;
-      const action = query.data.action;
+  app.get('/captcha/policy', { ...rateLimitConfig('publicRead') }, async (request, reply) => {
+    const query = actionSchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: '请求参数无效' });
+    const captcha = app.captcha;
+    const action = query.data.action;
 
-      if (action) {
-        const config = captcha.clientConfigFor(action);
-        return {
-          action,
-          policy: captcha.policyFor(action),
-          configured: captcha.isConfigured(),
-          clientConfig: config,
-          sources: captchaCspSources(config),
-        };
-      }
-
-      const config = captcha.clientConfig();
-      const actions: Record<string, unknown> = {};
-      for (const id of KERNEL_CAPTCHA_ACTIONS) {
-        const policy = captcha.policyFor(id);
-        if (policy === 'off') continue;
-        const actionConfig = captcha.clientConfigFor(id);
-        actions[id] = {
-          policy,
-          clientConfig: actionConfig,
-          sources: captchaCspSources(actionConfig),
-        };
-      }
+    if (action) {
+      const config = await captcha.clientConfigFor(action);
       return {
-        action: null,
-        policy: captcha.mode(),
+        action,
+        policy: await captcha.policyFor(action),
         configured: captcha.isConfigured(),
         clientConfig: config,
         sources: captchaCspSources(config),
-        actions,
       };
-    },
-  );
+    }
+
+    const config = await captcha.clientConfig();
+    const actions: Record<string, unknown> = {};
+    for (const id of KERNEL_CAPTCHA_ACTIONS) {
+      const policy = await captcha.policyFor(id);
+      if (policy === 'off') continue;
+      const actionConfig = await captcha.clientConfigFor(id);
+      actions[id] = {
+        policy,
+        clientConfig: actionConfig,
+        sources: captchaCspSources(actionConfig),
+      };
+    }
+    return {
+      action: null,
+      policy: captcha.mode(),
+      configured: captcha.isConfigured(),
+      clientConfig: config,
+      sources: captchaCspSources(config),
+      actions,
+    };
+  });
 }

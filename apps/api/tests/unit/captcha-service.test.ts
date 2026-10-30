@@ -14,10 +14,10 @@ function provider(overrides: Partial<CaptchaProvider> = {}): CaptchaProvider {
 }
 
 describe('KernelCaptchaService', () => {
-  it('reports not configured when no provider is registered', () => {
+  it('reports not configured when no provider is registered', async () => {
     const service = new KernelCaptchaService({ getProviders: () => [] });
     expect(service.isConfigured()).toBe(false);
-    expect(service.clientConfig()).toBeNull();
+    expect(await service.clientConfig()).toBeNull();
   });
 
   it('passes verification through to the provider', async () => {
@@ -75,11 +75,11 @@ describe('KernelCaptchaService', () => {
     await expect(service.enforce({ token: '' })).resolves.toBeUndefined();
   });
 
-  it('returns the provider client config without exposing it as a secret', () => {
+  it('returns the provider client config without exposing it as a secret', async () => {
     const service = new KernelCaptchaService({
       getProviders: () => [provider({ clientConfig: () => ({ siteKey: 'public' }) })],
     });
-    expect(service.clientConfig()).toEqual({ siteKey: 'public' });
+    expect(await service.clientConfig()).toEqual({ siteKey: 'public' });
   });
 
   it('falls through to a second provider when the first rejects', async () => {
@@ -132,33 +132,33 @@ function withMode<T>(mode: 'off' | 'optional' | 'required', run: () => T): T {
 }
 
 describe('KernelCaptchaService per-action policy', () => {
-  it('falls back to the global mode when no provider declares an action', () => {
+  it('falls back to the global mode when no provider declares an action', async () => {
     const service = new KernelCaptchaService({ getProviders: () => [provider()] });
-    expect(withMode('optional', () => service.policyFor('login'))).toBe('optional');
-    expect(service.policyFor('login')).toBe('off');
+    expect(await withMode('optional', () => service.policyFor('login'))).toBe('optional');
+    expect(await service.policyFor('login')).toBe('off');
   });
 
-  it('lets a provider declare a stricter policy than the global mode', () => {
+  it('lets a provider declare a stricter policy than the global mode', async () => {
     const service = new KernelCaptchaService({
       getProviders: () => [
         provider({ policyFor: (action) => (action === 'login' ? { mode: 'required' } : null) }),
       ],
     });
-    withMode('optional', () => {
-      expect(service.policyFor('login')).toBe('required');
+    await withMode('optional', async () => {
+      expect(await service.policyFor('login')).toBe('required');
       // An action nobody claims keeps the global mode.
-      expect(service.policyFor('register')).toBe('optional');
+      expect(await service.policyFor('register')).toBe('optional');
     });
   });
 
-  it('keeps the global off switch as the final veto over provider policy', () => {
+  it('keeps the global off switch as the final veto over provider policy', async () => {
     const service = new KernelCaptchaService({
       getProviders: () => [provider({ policyFor: () => ({ mode: 'required' }) })],
     });
     // Global mode is 'off' (the default), so even a provider demanding
     // verification is ignored: an operator must be able to disable this with one
     // env change, without uninstalling the provider.
-    expect(service.policyFor('login')).toBe('off');
+    expect(await service.policyFor('login')).toBe('off');
     return expect(service.enforce({ token: '', action: 'login' })).resolves.toBeUndefined();
   });
 
@@ -235,7 +235,7 @@ describe('KernelCaptchaService per-action policy', () => {
     });
   });
 
-  it('resolves widget config per action with a fallback to the default', () => {
+  it('resolves widget config per action with a fallback to the default', async () => {
     const service = new KernelCaptchaService({
       getProviders: () => [
         provider({
@@ -244,8 +244,8 @@ describe('KernelCaptchaService per-action policy', () => {
         }),
       ],
     });
-    expect(service.clientConfigFor('login')).toEqual({ kind: 'script', siteKey: 'k' });
+    expect(await service.clientConfigFor('login')).toEqual({ kind: 'script', siteKey: 'k' });
     // Nobody claims `register`, so the default provider config still applies.
-    expect(service.clientConfigFor('register')).toEqual({ kind: 'script', siteKey: 'k' });
+    expect(await service.clientConfigFor('register')).toEqual({ kind: 'script', siteKey: 'k' });
   });
 });

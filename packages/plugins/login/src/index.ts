@@ -402,14 +402,14 @@ const authConfig = handle(async () => {
   // Per-action widget configs for the actions this deployment actually guards.
   // Only non-`off` actions are listed: an anonymous caller needs the widgets it
   // will render, not a full map of the deployment's policy.
-  const actionConfig = (action: string) => {
-    const config = captcha.clientConfigFor(action);
-    return { policy: captcha.policyFor(action), clientConfig: config };
+  const actionConfig = async (action: string) => {
+    const config = await captcha.clientConfigFor(action);
+    return { policy: await captcha.policyFor(action), clientConfig: config };
   };
-  const actions: Record<string, ReturnType<typeof actionConfig>> = {};
+  const actions: Record<string, Awaited<ReturnType<typeof actionConfig>>> = {};
   for (const action of ['login', 'register', 'register_send_code', 'password_reset'] as const) {
-    if (captcha.policyFor(action) === 'off') continue;
-    actions[action] = actionConfig(action);
+    if ((await captcha.policyFor(action)) === 'off') continue;
+    actions[action] = await actionConfig(action);
   }
   return {
     registrationMethods: configured.registrationMethods,
@@ -421,7 +421,7 @@ const authConfig = handle(async () => {
       mode: captcha.mode(),
       configured: captcha.isConfigured(),
       providerIds: captcha.providerIds(),
-      clientConfig: captcha.clientConfig(),
+      clientConfig: await captcha.clientConfig(),
       actions,
     },
   };

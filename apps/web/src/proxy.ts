@@ -56,8 +56,17 @@ const API_ORIGIN = apiStyleOrigin();
 export function buildCsp(
   nonce: string,
   isDev: boolean,
-  captcha: CaptchaCspSources = { script: [], frame: [], connect: [] },
+  captcha: Partial<CaptchaCspSources> = {},
 ): string {
+  // Sources arrive from the kernel over HTTP, so a partially-shaped payload must
+  // degrade to the pre-captcha policy instead of throwing inside the proxy.
+  const sources: CaptchaCspSources = {
+    script: captcha.script ?? [],
+    style: captcha.style ?? [],
+    frame: captcha.frame ?? [],
+    connect: captcha.connect ?? [],
+    worker: captcha.worker ?? [],
+  };
   // A challenge widget's own script is loaded by a Next chunk, which carries the
   // per-request nonce, so `'strict-dynamic'` already trusts the injected
   // `<script src>` in production — no vendor host belongs in `script-src` there,
@@ -67,7 +76,7 @@ export function buildCsp(
   const scriptSrc = isDev
     ? // Dev-only: Next's own inline bootstrap is emitted without the nonce, and
       // `'strict-dynamic'` would additionally drop same-origin chunks.
-      `script-src 'self' 'unsafe-inline' 'unsafe-eval'${hosts(captcha.script)}`
+      `script-src 'self' 'unsafe-inline' 'unsafe-eval'${hosts(sources.script)}`
     : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
 
   return [
@@ -79,13 +88,21 @@ export function buildCsp(
     // Without an explicit `frame-src` the widget iframe falls back to
     // `default-src 'self'` and is blocked. Declaring it keeps the fallback for
     // every other frame while letting the provider name its own origins.
-    `frame-src 'self'${hosts(captcha.frame)}`,
+    `frame-src 'self'${hosts(sources.frame)}`,
     `img-src 'self' data: blob:${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
     "font-src 'self' data:",
-    `style-src 'self' 'unsafe-inline'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}`,
+    // A widget may inject its own theme stylesheet; without the origin the control
+    // renders unstyled (or invisible) while the challenge itself still works.
+    `style-src 'self' 'unsafe-inline'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${hosts(sources.style)}`,
+    // Proof-of-work widgets (`new Worker(URL.createObjectURL(blob))`) need a blob
+    // worker. `blob:` is declared only when a provider actually asks for a worker
+    // source, so a deployment with no captcha keeps its previous policy exactly.
+    ...(sources.worker.length > 0 || sources.script.length > 0
+      ? [`worker-src 'self' blob:${hosts(sources.worker)}`]
+      : []),
     scriptSrc,
     // The widget's script posts its solution back to the challenge origin.
-    `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${isDev ? ' ws: wss:' : ''}${hosts(captcha.connect)}`,
+    `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${isDev ? ' ws: wss:' : ''}${hosts(sources.connect)}`,
   ].join('; ');
 }
 

@@ -220,9 +220,12 @@ const UNAVAILABLE_CAPTCHA: CaptchaService = {
   providerIds: () => [],
   verify: async () => ({ success: false, reason: 'no_provider' }),
   enforce: async () => undefined,
-  clientConfig: () => null,
-  policyFor: () => 'off',
-  clientConfigFor: () => null,
+  // Async to match the interface: the kernel awaits every provider-facing read so
+  // an out-of-process plugin cannot return a pending promise where a value is
+  // expected.
+  clientConfig: async () => null,
+  policyFor: async () => 'off',
+  clientConfigFor: async () => null,
 };
 
 /** Fallback policy service for lifecycle-only unit tests without a host. */
@@ -913,67 +916,65 @@ export class PluginRuntime {
         const outer = txContext.getStore();
         if (outer) return fn(outer);
         const prisma = this.options.db as PrismaClient;
-        return (
-          prisma
-            .$transaction(async (trx) => {
-              const wallet: ExtensionTransaction['wallet'] = {
-                debit: (userId, amount, currency, ref) =>
-                  this.options.wallet.debit(userId, amount, currency, ref, trx),
-                credit: (userId, amount, currency, ref) =>
-                  this.options.wallet.credit(userId, amount, currency, ref, trx),
-                hold: (userId, amount, currency, ref, options) =>
-                  this.options.wallet.hold(userId, amount, currency, ref, {
-                    ...(options ?? {}),
-                    tx: trx,
-                  }),
-                settleHold: (holdId, settledAmount, ref) =>
-                  this.options.wallet.settleHold(holdId, settledAmount, ref, trx),
-                releaseHold: (holdId) => this.options.wallet.releaseHold(holdId, trx),
-              };
-              const payments: ExtensionTransaction['payments'] = {
-                createRecord: (input) => this.options.payments.createRecord(input, trx),
-              };
-              // W1: buffer events registered via `tx.publish` and flush them into
-              // the outbox on the SAME `trx` after `fn` resolves (before commit).
-              // A rollback discards the buffer, so no orphan event row survives.
-              const pending: Array<{ topic: string; body: string }> = [];
-              const tx: ExtensionTransaction = {
-                extensions: this.options.extensions.clientWith(
-                  trx as unknown as RawDatabase,
-                  pluginId,
-                  null,
-                ),
-                wallet,
-                payments,
-                publish: (topic, payload) => {
-                  pending.push({
-                    topic,
-                    body: serializeOutboxBody(topic, payload, outboxOrigin()),
-                  });
-                },
-              };
-              const result = await txContext.run(tx, () => fn(tx));
-              for (const event of pending) {
-                await trx.outboxEvent.create({
-                  data: {
-                    topic: event.topic,
-                    payload: { body: event.body },
-                    origin: outboxOrigin(),
-                  },
+        return prisma
+          .$transaction(async (trx) => {
+            const wallet: ExtensionTransaction['wallet'] = {
+              debit: (userId, amount, currency, ref) =>
+                this.options.wallet.debit(userId, amount, currency, ref, trx),
+              credit: (userId, amount, currency, ref) =>
+                this.options.wallet.credit(userId, amount, currency, ref, trx),
+              hold: (userId, amount, currency, ref, options) =>
+                this.options.wallet.hold(userId, amount, currency, ref, {
+                  ...(options ?? {}),
+                  tx: trx,
+                }),
+              settleHold: (holdId, settledAmount, ref) =>
+                this.options.wallet.settleHold(holdId, settledAmount, ref, trx),
+              releaseHold: (holdId) => this.options.wallet.releaseHold(holdId, trx),
+            };
+            const payments: ExtensionTransaction['payments'] = {
+              createRecord: (input) => this.options.payments.createRecord(input, trx),
+            };
+            // W1: buffer events registered via `tx.publish` and flush them into
+            // the outbox on the SAME `trx` after `fn` resolves (before commit).
+            // A rollback discards the buffer, so no orphan event row survives.
+            const pending: Array<{ topic: string; body: string }> = [];
+            const tx: ExtensionTransaction = {
+              extensions: this.options.extensions.clientWith(
+                trx as unknown as RawDatabase,
+                pluginId,
+                null,
+              ),
+              wallet,
+              payments,
+              publish: (topic, payload) => {
+                pending.push({
+                  topic,
+                  body: serializeOutboxBody(topic, payload, outboxOrigin()),
                 });
-              }
-              return result;
-            })
-            .then((result) => {
-              // Commit succeeded: nudge the relay so latency does not depend on
-              // the poll interval. Delivery itself stays relay-owned (no inline
-              // local deliver) to preserve the single-delivery guarantee.
-              if (isOutboxBus(this.options.events)) {
-                this.options.events.nudgeRelay();
-              }
-              return result;
-            })
-        );
+              },
+            };
+            const result = await txContext.run(tx, () => fn(tx));
+            for (const event of pending) {
+              await trx.outboxEvent.create({
+                data: {
+                  topic: event.topic,
+                  payload: { body: event.body },
+                  origin: outboxOrigin(),
+                },
+              });
+            }
+            return result;
+          })
+          .then((result) => {
+            // Commit succeeded: nudge the relay so latency does not depend on
+            // the poll interval. Delivery itself stays relay-owned (no inline
+            // local deliver) to preserve the single-delivery guarantee.
+            if (isOutboxBus(this.options.events)) {
+              this.options.events.nudgeRelay();
+            }
+            return result;
+          });
       },
       payments: this.options.payments,
       wallet: this.options.wallet,

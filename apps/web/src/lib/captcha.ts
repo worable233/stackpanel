@@ -25,12 +25,20 @@ export interface CaptchaActionConfig {
 function asClientConfig(value: unknown): CaptchaClientConfig | null {
   if (!value || typeof value !== 'object') return null;
   const config = value as Record<string, unknown>;
-  // Only the two published protocols are renderable; anything else means a
-  // provider is newer than this host, so render nothing rather than guess.
+  // Only the protocols this host can actually render are accepted; a provider
+  // newer than the host means render nothing rather than guess at its shape.
   if (config['kind'] === 'script' && typeof config['script'] === 'string') {
     return config as unknown as CaptchaClientConfig;
   }
   if (config['kind'] === 'element' && typeof config['tag'] === 'string') {
+    return config as unknown as CaptchaClientConfig;
+  }
+  if (
+    config['kind'] === 'container' &&
+    typeof config['script'] === 'string' &&
+    typeof config['containerClass'] === 'string' &&
+    typeof config['hiddenField'] === 'string'
+  ) {
     return config as unknown as CaptchaClientConfig;
   }
   return null;

@@ -1,12 +1,11 @@
 import type {
-  CaptchaPolicy,
   CaptchaProvider,
   CaptchaService,
   CaptchaVerification,
   CaptchaVerifyResult,
 } from '@stackpanel/sdk';
 import { PluginError } from '@stackpanel/sdk';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 
 export type CaptchaMode = 'off' | 'optional' | 'required';
 
@@ -43,9 +42,15 @@ export class KernelCaptchaService implements CaptchaService {
   constructor(private readonly options: CaptchaServiceOptions) {}
 
   mode(): CaptchaMode {
-    return env.AUTH_CAPTCHA_MODE;
+    return getConfig('AUTH_CAPTCHA_MODE');
   }
 
+  /**
+   * Whether any provider is registered.
+   *
+   * Deliberately synchronous: it only counts registrations, and a boolean that
+   * arrives as a pending promise is the kind of "true" nobody can debug.
+   */
   isConfigured(): boolean {
     return this.options.getProviders().length > 0;
   }
@@ -54,17 +59,17 @@ export class KernelCaptchaService implements CaptchaService {
     return this.options.getProviders().map((provider) => provider.id);
   }
 
-  clientConfig(): Record<string, unknown> | null {
+  async clientConfig(): Promise<Record<string, unknown> | null> {
     for (const provider of this.options.getProviders()) {
-      const config = provider.clientConfig?.();
+      const config = await provider.clientConfig?.();
       if (config) return config;
     }
     return null;
   }
 
-  clientConfigFor(action: string): Record<string, unknown> | null {
-    for (const provider of this.providersForAction(action)) {
-      const config = provider.clientConfig?.();
+  async clientConfigFor(action: string): Promise<Record<string, unknown> | null> {
+    for (const provider of await this.providersForAction(action)) {
+      const config = await provider.clientConfig?.();
       if (config) return config;
     }
     // A provider that ignores actions entirely still renders wherever it is
@@ -78,17 +83,17 @@ export class KernelCaptchaService implements CaptchaService {
    * Returns `off` when the global master switch is off — regardless of what a
    * provider declared — because an operator's env-level `off` is the final veto.
    */
-  policyFor(action: string): CaptchaMode {
+  async policyFor(action: string): Promise<CaptchaMode> {
     if (this.mode() === 'off') return 'off';
     for (const provider of this.options.getProviders()) {
-      const policy: CaptchaPolicy | null = provider.policyFor?.(action) ?? null;
+      const policy = (await provider.policyFor?.(action)) ?? null;
       if (policy) return policy.mode;
     }
     return this.mode();
   }
 
   async verify(input: CaptchaVerification): Promise<CaptchaVerifyResult> {
-    const providers = this.providersForAction(input.action);
+    const providers = await this.providersForAction(input.action);
     if (providers.length === 0) {
       return { success: false, reason: 'no_provider' };
     }
@@ -120,10 +125,10 @@ export class KernelCaptchaService implements CaptchaService {
     // so disabling verification is one restart away in an emergency.
     if (this.mode() === 'off') return;
 
-    const policy = input.action ? this.policyFor(input.action) : this.mode();
+    const policy = input.action ? await this.policyFor(input.action) : this.mode();
     if (policy === 'off') return;
 
-    const providers = this.providersForAction(input.action);
+    const providers = await this.providersForAction(input.action);
     const hasToken = typeof input.token === 'string' && input.token.trim().length > 0;
     if (providers.length === 0) {
       // `required` with no provider must fail closed; `optional` keeps a
@@ -153,10 +158,13 @@ export class KernelCaptchaService implements CaptchaService {
    * declares one, all providers stay eligible so a single-provider install that
    * never declares actions still works.
    */
-  private providersForAction(action?: string): CaptchaProvider[] {
+  private async providersForAction(action?: string): Promise<CaptchaProvider[]> {
     const providers = this.options.getProviders();
     if (!action) return providers;
-    const claiming = providers.filter((provider) => provider.policyFor?.(action) != null);
-    return claiming.length > 0 ? claiming : providers;
+    const claimed: CaptchaProvider[] = [];
+    for (const provider of providers) {
+      if ((await provider.policyFor?.(action)) != null) claimed.push(provider);
+    }
+    return claimed.length > 0 ? claimed : providers;
   }
 }

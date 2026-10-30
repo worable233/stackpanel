@@ -141,12 +141,19 @@ describe('CSP allows a captcha widget without weakening script-src (spec §5.1)'
   it('adds the declared iframe and XHR origins to frame-src and connect-src', () => {
     const csp = buildCsp('n', false, {
       script: ['https://challenges.example.test'],
+      style: ['https://challenges.example.test'],
       frame: ['https://challenges.example.test'],
       connect: ['https://challenges.example.test'],
+      worker: ['https://challenges.example.test'],
     });
     const map = directives(csp);
     expect(map.get('frame-src')).toEqual(["'self'", 'https://challenges.example.test']);
     expect(map.get('connect-src')).toContain('https://challenges.example.test');
+    // A proof-of-work widget injects its own stylesheet and spawns a blob worker;
+    // without these two directives it renders unstyled and never solves, which on
+    // `required` is indistinguishable from a broken login form.
+    expect(map.get('style-src')).toContain('https://challenges.example.test');
+    expect(map.get('worker-src')).toEqual(['\'self\'', 'blob:', 'https://challenges.example.test']);
   });
 
   it('never widens the production script-src', () => {

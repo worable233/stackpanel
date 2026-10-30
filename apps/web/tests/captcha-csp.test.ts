@@ -34,15 +34,19 @@ describe('readCaptchaCspSources', () => {
       json({
         sources: {
           script: ['https://challenges.example.test'],
+          style: ['https://challenges.example.test'],
           frame: ['https://challenges.example.test'],
           connect: ['https://api.example.test'],
+          worker: ['https://challenges.example.test'],
         },
       }),
     );
     await expect(readCaptchaCspSources()).resolves.toEqual({
       script: ['https://challenges.example.test'],
+      style: ['https://challenges.example.test'],
       frame: ['https://challenges.example.test'],
       connect: ['https://api.example.test'],
+      worker: ['https://challenges.example.test'],
     });
   });
 
@@ -67,8 +71,10 @@ describe('readCaptchaCspSources', () => {
     mockFetch(() => json({ configured: false, sources: {} }));
     await expect(readCaptchaCspSources()).resolves.toEqual({
       script: [],
+      style: [],
       frame: [],
       connect: [],
+      worker: [],
     });
   });
 
@@ -79,8 +85,10 @@ describe('readCaptchaCspSources', () => {
     );
     await expect(readCaptchaCspSources()).resolves.toEqual({
       script: [],
+      style: [],
       frame: [],
       connect: [],
+      worker: [],
     });
   });
 
