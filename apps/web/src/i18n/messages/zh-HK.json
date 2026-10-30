@@ -878,7 +878,10 @@
     "zh-CN": "简体中文",
     "zh-TW": "繁體中文（台灣）",
     "zh-HK": "繁體中文（香港）",
-    "en-US": "English"
+    "en-US": "English",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "fr-FR": "Français"
   },
   "action": {
     "feedback": {
@@ -1964,7 +1967,19 @@
       "cleaned": "已清理 {count} 個對話",
       "cleared": "模型配置已清除",
       "processing": "處理中…",
-      "loadFailed": "載入失敗"
+      "loadFailed": "載入失敗",
+      "defaultModelTitle": "默認模型",
+      "defaultModelHint": "從當前模型提供方已開放的模型中選擇一個，Agent 執行任務時默認使用它。",
+      "defaultModelLabel": "模型",
+      "defaultModelAuto": "自動（使用提供方的首個可用模型）",
+      "defaultModelHelp": "已儲存的模型若不在提供方列表中會被忽略，執行時會自動回退。",
+      "defaultModelSave": "儲存默認模型",
+      "defaultModelSaved": "默認模型已儲存",
+      "providerLabel": "提供方",
+      "providerNone": "未檢測到模型提供方",
+      "catalogEmpty": "當前提供方沒有返回可用模型，請檢查提供方配置。",
+      "noToolsModel": "不支援工具呼叫",
+      "fallbackHintPlugin": "當前由模型提供方外掛提供服務，下面的兜底介面僅在外掛不可用時生效。"
     },
     "advanced": {
       "title": "進階設置",

@@ -876,9 +876,12 @@
   },
   "locale": {
     "zh-CN": "简体中文",
-    "zh-TW": "繁體中文（台灣）",
+    "zh-TW": "繁體中文",
     "zh-HK": "繁體中文（香港）",
-    "en-US": "English"
+    "en-US": "English",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "fr-FR": "Français"
   },
   "action": {
     "feedback": {
@@ -1964,7 +1967,19 @@
       "cleaned": "Cleaned {count} conversations",
       "cleared": "Model settings cleared",
       "processing": "Working…",
-      "loadFailed": "Failed to load"
+      "loadFailed": "Failed to load",
+      "defaultModelTitle": "Default model",
+      "defaultModelHint": "Pick one of the models the current provider offers; Agent runs use it by default.",
+      "defaultModelLabel": "Model",
+      "defaultModelAuto": "Automatic (the provider’s first available model)",
+      "defaultModelHelp": "A saved model that the provider no longer lists is ignored and the run falls back automatically.",
+      "defaultModelSave": "Save default model",
+      "defaultModelSaved": "Default model saved",
+      "providerLabel": "Provider",
+      "providerNone": "No model provider detected",
+      "catalogEmpty": "The current provider returned no models. Check its configuration.",
+      "noToolsModel": "No tool calling",
+      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable."
     },
     "advanced": {
       "title": "Advanced settings",
