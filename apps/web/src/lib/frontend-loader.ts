@@ -106,12 +106,69 @@ export function absorbedStem(specifier: string): string | null {
 
 const cache = new Map<string, string>();
 
+/**
+ * `next/navigation` hooks that only exist in the **client** build.
+ *
+ * The host imports `next/navigation` inside its RSC graph, where the module is the
+ * `react-server` build: `useRouter` (and friends) are not exported there. The shim
+ * below re-exports exactly the names of that namespace, so a runtime-loaded package
+ * writing `import { useRouter } from 'next/navigation'` failed to *link* —
+ * "does not provide an export named 'useRouter'" — and the whole admin entry failed
+ * to load, turning every plugin admin page into "not found" (altcha, smtp, notice).
+ *
+ * The browser path never had this problem: the frontend build rewrites the import to
+ * `/api/frontend-abi/next/navigation?names=…`, which reads the **client** ABI, where
+ * these hooks are real. So the server side only needs the names to exist for linking;
+ * it must never execute them — a client hook in the RSC graph is a bug, and a silent
+ * no-op would hide it. They throw instead.
+ */
+const CLIENT_ONLY_NAVIGATION_HOOKS = [
+  'useRouter',
+  'usePathname',
+  'useSearchParams',
+  'useParams',
+  'useSelectedLayoutSegment',
+  'useSelectedLayoutSegments',
+] as const;
+
+/**
+ * Extend the host's `next/navigation` namespace with link-only stubs for the
+ * client-only hooks, keeping every real export untouched.
+ */
+export function navigationServerAbi(navigation: Record<string, unknown>): Record<string, unknown> {
+  const abi: Record<string, unknown> = { ...navigation };
+  for (const hook of CLIENT_ONLY_NAVIGATION_HOOKS) {
+    if (hook in abi) continue;
+    abi[hook] = (): never => {
+      throw new Error(
+        `[frontend-runtime] ${hook}() from 'next/navigation' is client-only. A runtime-loaded package may import it, but it only runs in the browser (the frontend build rewrites the import to /api/frontend-abi/next/navigation). Reaching this on the server means the component was executed in the RSC graph.`,
+      );
+    };
+  }
+  return abi;
+}
+
+/**
+ * Names a shim can re-export as a `const` binding: everything except `default`
+ * (re-exported separately) and anything that is not a plain identifier.
+ *
+ * The identifier test is not cosmetic. Next's `react-server` build hands back the
+ * CommonJS namespace, which carries a literal `"module.exports"` key; rendering it
+ * as `export const module.exports = …` produced a shim with a syntax error, and the
+ * failure surfaced as the misleading "module 'react' does not provide an export
+ * named 'useState'" — every plugin admin page that imported a React hook from a
+ * runtime-loaded package crashed with the red Next.js overlay. Such a key can never
+ * be imported as a binding (`import { module.exports }` is invalid syntax), so
+ * dropping it costs nothing.
+ */
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
 /** 合成一个 ESM shim（data: URL），逐名重导宿主命名空间。 */
 function shimUrl(ns: Record<string, unknown>, key: string): string {
-  const cacheKey = `${key}:${Object.keys(ns).sort().join(',')}`;
+  const names = Object.keys(ns).filter((name) => name !== 'default' && IDENTIFIER.test(name));
+  const cacheKey = `${key}:${names.slice().sort().join(',')}`;
   const cached = cache.get(cacheKey);
   if (cached) return cached;
-  const names = Object.keys(ns).filter((name) => name !== 'default');
   const global = key.startsWith('absorbed:')
     ? `globalThis.__STACKPANEL_ABSORBED_CLIENT__[${JSON.stringify(key.slice('absorbed:'.length))}]`
     : `globalThis.__STACKPANEL_SERVER_ABI__[${JSON.stringify(key)}]`;

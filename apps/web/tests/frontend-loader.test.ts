@@ -45,6 +45,25 @@ describe('resolveFrontendSpecifier (stage 4 runtime bridge)', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  /**
+   * Regression: the shim used to re-export every key of the host namespace as a
+   * `const` binding. Next's `react-server` build hands back the CommonJS
+   * namespace, which carries a literal `"module.exports"` key, so the generated
+   * module was `export const module.exports = …` — a syntax error. It surfaced as
+   * the thoroughly misleading "module 'react' does not provide an export named
+   * 'useState'", and it took down the home page plus every plugin admin page
+   * that imported a React hook.
+   */
+  it('skips namespace keys that are not identifiers (module.exports)', () => {
+    g.__STACKPANEL_SERVER_ABI__ = {
+      react: { useState: 'HOST_USE_STATE', 'module.exports': { useState: 'HOST_USE_STATE' } },
+    };
+    const result = resolveFrontendSpecifier('react', context, next);
+    const source = decode(result.url);
+    expect(source).toContain('export const useState = ns["useState"];');
+    expect(source).not.toContain('module.exports');
+  });
+
   it('redirects the SSR form auto-submit capability to the host client reference', () => {
     g.__STACKPANEL_ABSORBED_CLIENT__ = { 'auto-submit': { AutoSubmitForm: 'HOST_AUTO_SUBMIT' } };
     const result = resolveFrontendSpecifier('./auto-submit.js', context, next);
