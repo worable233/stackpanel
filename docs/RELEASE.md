@@ -284,7 +284,7 @@ node scripts/release/build-catalog.mjs \
   --key-file /tmp/test-key.pem --out /tmp/catalog-out --key-id catalog-2026
 ```
 
-用临时私钥即可，目的是让条目过一遍契约校验（`entries: 22` 之类的输出就是通过），
+用临时私钥即可，目的是让条目过一遍契约校验（`entries: <N>` 且与 `catalog/entries/` 文件数一致即通过），
 产物不要发布。
 
 ### 8.6 主题（同一套分发链，另一种包布局）
