@@ -182,7 +182,9 @@ export async function sendRegisterCodeAction(
 ): Promise<LoginState> {
   const locale = await getLocale();
   const email = formData.get('email');
-  const captchaToken = formData.get('captchaToken');
+  // The code request has its own guarded action, so it carries its own token;
+  // fall back to the sign-up field for forms that still render a single widget.
+  const captchaToken = formData.get('sendCodeCaptchaToken') ?? formData.get('captchaToken');
   if (typeof email !== 'string' || !email.trim()) {
     return { error: translate(locale, 'auth.validation.emailRequired') };
   }

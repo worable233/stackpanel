@@ -1450,6 +1450,7 @@ process.on('message', async (raw: unknown) => {
     let status: number | undefined;
     let sent = false;
     let payload: unknown;
+    const headers: Array<[string, string | string[]]> = [];
     // `HttpReply.code` is chainable per the SDK contract: plugins write
     // `reply.code(201).send(body)`. Returning `undefined` here made that chain
     // throw "Cannot read properties of undefined (reading 'send')", which killed
@@ -1457,6 +1458,14 @@ process.on('message', async (raw: unknown) => {
     const replyView: Record<string, unknown> = {
       code: (next: number) => {
         status = next;
+        return replyView;
+      },
+      // `header` used to be absent here (the in-process path got Fastify's
+      // reply), so a plugin that set `content-type` silently lost it. The
+      // CAPTCHA widget is served by a handler route: text/plain + nosniff made
+      // the browser refuse it, and human verification never appeared.
+      header: (name: string, value: string | string[]) => {
+        headers.push([name, value]);
         return replyView;
       },
       send: (next: unknown) => {
@@ -1473,7 +1482,11 @@ process.on('message', async (raw: unknown) => {
       value: sent ? undefined : value,
       ...(sent || status !== undefined
         ? {
-            response: { ...(status !== undefined ? { status } : {}), ...(sent ? { payload } : {}) },
+            response: {
+              ...(status !== undefined ? { status } : {}),
+              ...(sent ? { payload } : {}),
+              ...(headers.length > 0 ? { headers } : {}),
+            },
           }
         : {}),
     });

@@ -147,15 +147,21 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
   try {
     let apiToken: string | null = null;
     if (!publicAsset) {
-      const api = await getBffPluginClient();
-      apiToken = api.token ?? null;
+      // Anonymous visitors still need a few plugin routes: a self-hosted captcha
+      // widget (`/altcha/widget.js`) and its challenge endpoint sit on the
+      // sign-in and sign-up pages, which by definition have no session. The
+      // kernel therefore answers the route-table query without a token, listing
+      // only the routes the plugin itself declared `auth: 'public'`; anything
+      // else stays invisible to this BFF for anonymous callers.
+      const api = await getBffPluginClient().catch(() => null);
+      apiToken = api?.token ?? null;
       // Resolve the namespace against the kernel's active route table before
       // forwarding. The BFF must never become a generic same-origin proxy.
       const routeResponse = await fetch(
         `${process.env.API_BASE_URL ?? 'http://127.0.0.1:3001'}/plugins/${encodeURIComponent(segments[0] ?? '')}/action-targets`,
         {
           method: 'GET',
-          headers: api.token ? { authorization: `Bearer ${api.token}` } : undefined,
+          headers: apiToken ? { authorization: `Bearer ${apiToken}` } : undefined,
           cache: 'no-store',
           signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
         },

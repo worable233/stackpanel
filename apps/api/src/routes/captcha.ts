@@ -31,7 +31,19 @@ export interface CaptchaCspSources {
   script?: string[];
   frame?: string[];
   connect?: string[];
+  /**
+   * `worker-src` values.
+   *
+   * A proof-of-work widget runs its solver in a worker built from a `blob:` URL.
+   * `blob:` is not an origin, so it goes through its own narrow check: the
+   * literal scheme only, never `blob:https://…` prefixes that would smuggle
+   * anything else in.
+   */
+  worker?: string[];
 }
+
+/** Worker sources a provider may request: the `blob:` scheme, nothing broader. */
+const ALLOWED_WORKER_SOURCES = new Set(['blob:']);
 
 /**
  * Narrow one declared source to an https origin.
@@ -59,6 +71,18 @@ export function sanitizeCspOrigins(values: unknown): string[] {
   return [...origins];
 }
 
+/** Sanitize the `worker-src` entries: only the literal `blob:` scheme survives. */
+export function sanitizeWorkerSources(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const allowed = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim().toLowerCase();
+    if (ALLOWED_WORKER_SOURCES.has(normalized)) allowed.add(normalized);
+  }
+  return [...allowed];
+}
+
 /** Extract and sanitize the `sources` block of a provider's client config. */
 export function captchaCspSources(config: Record<string, unknown> | null): CaptchaCspSources {
   const sources = config?.['sources'];
@@ -67,10 +91,12 @@ export function captchaCspSources(config: Record<string, unknown> | null): Captc
   const script = sanitizeCspOrigins(raw['script']);
   const frame = sanitizeCspOrigins(raw['frame']);
   const connect = sanitizeCspOrigins(raw['connect']);
+  const worker = sanitizeWorkerSources(raw['worker']);
   return {
     ...(script.length > 0 ? { script } : {}),
     ...(frame.length > 0 ? { frame } : {}),
     ...(connect.length > 0 ? { connect } : {}),
+    ...(worker.length > 0 ? { worker } : {}),
   };
 }
 
@@ -102,46 +128,42 @@ export async function captchaRoutes(app: FastifyInstance): Promise<void> {
    * configs they will actually need to render, never a full policy map of the
    * deployment.
    */
-  app.get(
-    '/captcha/policy',
-    { ...rateLimitConfig('publicRead') },
-    async (request, reply) => {
-      const query = actionSchema.safeParse(request.query);
-      if (!query.success) return reply.code(400).send({ error: '请求参数无效' });
-      const captcha = app.captcha;
-      const action = query.data.action;
+  app.get('/captcha/policy', { ...rateLimitConfig('publicRead') }, async (request, reply) => {
+    const query = actionSchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: '请求参数无效' });
+    const captcha = app.captcha;
+    const action = query.data.action;
 
-      if (action) {
-        const config = await captcha.clientConfigFor(action);
-        return {
-          action,
-          policy: await captcha.policyFor(action),
-          configured: captcha.isConfigured(),
-          clientConfig: config,
-          sources: captchaCspSources(config),
-        };
-      }
-
-      const config = await captcha.clientConfig();
-      const actions: Record<string, unknown> = {};
-      for (const id of KERNEL_CAPTCHA_ACTIONS) {
-        const policy = await captcha.policyFor(id);
-        if (policy === 'off') continue;
-        const actionConfig = await captcha.clientConfigFor(id);
-        actions[id] = {
-          policy,
-          clientConfig: actionConfig,
-          sources: captchaCspSources(actionConfig),
-        };
-      }
+    if (action) {
+      const config = await captcha.clientConfigFor(action);
       return {
-        action: null,
-        policy: captcha.mode(),
+        action,
+        policy: await captcha.policyFor(action),
         configured: captcha.isConfigured(),
         clientConfig: config,
         sources: captchaCspSources(config),
-        actions,
       };
-    },
-  );
+    }
+
+    const config = await captcha.clientConfig();
+    const actions: Record<string, unknown> = {};
+    for (const id of KERNEL_CAPTCHA_ACTIONS) {
+      const policy = await captcha.policyFor(id);
+      if (policy === 'off') continue;
+      const actionConfig = await captcha.clientConfigFor(id);
+      actions[id] = {
+        policy,
+        clientConfig: actionConfig,
+        sources: captchaCspSources(actionConfig),
+      };
+    }
+    return {
+      action: null,
+      policy: captcha.mode(),
+      configured: captcha.isConfigured(),
+      clientConfig: config,
+      sources: captchaCspSources(config),
+      actions,
+    };
+  });
 }

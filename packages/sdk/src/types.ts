@@ -125,9 +125,24 @@ export interface CaptchaElementWidgetConfig {
   kind: 'element';
   /** Custom element tag the vendor's script registers. */
   tag: string;
+  /**
+   * URL of the script that **defines** the custom element.
+   *
+   * Element widgets need their own loader just like script widgets do: without
+   * it `document.createElement(tag)` yields an unknown element that renders
+   * nothing, so the verification UI never appears and the guarded form can never
+   * be submitted.
+   */
+  script?: string;
   attributes: Record<string, string>;
-  /** Attribute read back after `event` fires to obtain the token. */
-  tokenAttribute: string;
+  /**
+   * Attribute holding the solution once `event` fires.
+   *
+   * Optional: widgets that report the token through the event's `detail`
+   * (`statechange` → `{ payload }`) publish no attribute at all, and the host
+   * reads `detail.payload` first.
+   */
+  tokenAttribute?: string;
   /** Event name signalling a solved challenge. */
   event: string;
   /** Event name signalling an expired or withdrawn token. */

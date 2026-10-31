@@ -44,7 +44,13 @@ describe('CSP allows package stylesheets (contract 05 §5)', () => {
           revision: 'abc123def456',
         },
       },
-      [{ id: 'store', manifest: { styles: ['frontend/dist/store.css'] }, revision: 'f00dbabe1234' }],
+      [
+        {
+          id: 'store',
+          manifest: { styles: ['frontend/dist/store.css'] },
+          revision: 'f00dbabe1234',
+        },
+      ],
     );
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {
@@ -169,5 +175,26 @@ describe('CSP allows a captcha widget without weakening script-src (spec §5.1)'
       connect: [],
     });
     expect(directives(csp).get('script-src')).toContain('https://challenges.example.test');
+  });
+});
+
+describe('captcha worker sources', () => {
+  it('allows the blob: worker a proof-of-work widget needs', () => {
+    // Without an explicit `worker-src`, the solver worker inherits
+    // `default-src 'self'`, refuses to start from a blob: URL, and the widget
+    // reports "verification failed" while looking perfectly installed.
+    const csp = buildCsp('nonce', false, {
+      script: [],
+      frame: [],
+      connect: [],
+      worker: ['blob:'],
+    });
+    expect(csp).toContain("worker-src 'self' blob:");
+  });
+
+  it('keeps worker-src at self when no provider asks for more', () => {
+    const csp = buildCsp('nonce', false, { script: [], frame: [], connect: [], worker: [] });
+    expect(csp).toContain("worker-src 'self'");
+    expect(csp).not.toContain('blob:;');
   });
 });

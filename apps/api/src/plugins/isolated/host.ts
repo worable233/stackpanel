@@ -78,7 +78,11 @@ type Result = {
   type: 'result';
   id: string;
   value?: unknown;
-  response?: { status?: number; payload?: unknown };
+  response?: {
+    status?: number;
+    payload?: unknown;
+    headers?: Array<[string, string | string[]]>;
+  };
   error?: { message: string; code?: string; status?: number; details?: unknown; sdkError?: string };
 };
 type Capability = {
@@ -1439,6 +1443,12 @@ export async function loadIsolatedPluginDefinition(
       ...route,
       handler: async (request: HttpRequest, _reply: HttpReply) => {
         const result = await invoke(id, String(route.method), String(route.path), request);
+        // Headers first: Fastify infers a content-type from the payload, and the
+        // plugin's explicit one must win (a widget script served as text/plain is
+        // blocked by nosniff).
+        for (const entry of result.response?.headers ?? []) {
+          _reply.header?.(entry[0], entry[1]);
+        }
         if (result.response?.status !== undefined) _reply.code(result.response.status);
         if (result.response?.payload !== undefined) _reply.send(result.response.payload);
         return result.value;

@@ -44,6 +44,8 @@ export function RegisterForm({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  /** Token of the `register_send_code` widget; the two actions are guarded separately. */
+  const [sendCodeToken, setSendCodeToken] = useState<string | null>(null);
   /**
    * Client-side echo of the kernel's per-recipient cooldown
    * (`AUTH_CODE_SEND_COOLDOWN_SECONDS`, 60s by default). The server is the
@@ -63,15 +65,6 @@ export function RegisterForm({
     if (codeState.notice || codeState.error) setCooldown(SEND_CODE_COOLDOWN_SECONDS);
   }, [codeState]);
   const t = useTranslator();
-
-  /**
-   * One widget serves both submitting actions. The two actions are policy-
-   * independent (a deployment may guard sign-up but not the code request), so
-   * the widget renders whenever *either* is guarded and the same token is
-   * submitted with both — the kernel ignores it for whichever action is `off`.
-   * Register wins when both are on because it is the form's primary action.
-   */
-  const activeCaptcha = captcha ?? sendCodeCaptcha;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     // "获取验证码" is a second submit button on the same form, and it only sends an
@@ -166,6 +159,18 @@ export function RegisterForm({
               </p>
             ) : null}
             {codeState.error ? <p className="text-sm text-destructive">{codeState.error}</p> : null}
+            {sendCodeToken ? (
+              <input type="hidden" name="sendCodeCaptchaToken" value={sendCodeToken} />
+            ) : null}
+            {/*
+              Its own widget, bound to `register_send_code`: a CAPTCHA token is
+              minted for one action only, so reusing the sign-up widget's token
+              here made the kernel reject a legitimately solved code request.
+            */}
+            <CaptchaField
+              config={sendCodeCaptcha?.clientConfig ?? null}
+              onToken={setSendCodeToken}
+            />
           </div>
         ) : null}
         <div className="space-y-2">
@@ -212,7 +217,7 @@ export function RegisterForm({
         </div>
         {confirmError ? <p className="text-sm text-destructive">{confirmError}</p> : null}
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        <CaptchaField config={activeCaptcha?.clientConfig ?? null} onToken={setCaptchaToken} />
+        <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
         <Button type="submit" disabled={pending} className="h-10 w-full text-base">
           {pending ? t('auth.register.submitting') : t('auth.register.submit')}
         </Button>

@@ -301,10 +301,7 @@ export interface EventMeta {
 }
 
 /** A subscriber may ignore the metadata argument; existing handlers still type-check. */
-export type EventHandler<K extends string> = (
-  payload: EventPayload<K>,
-  meta?: EventMeta,
-) => void;
+export type EventHandler<K extends string> = (payload: EventPayload<K>, meta?: EventMeta) => void;
 
 /** Event bus contract shared by the kernel and plugins. */
 export interface EventBus {
@@ -380,6 +377,15 @@ export interface HttpRequest {
 /** Framework-agnostic reply view handed to plugin route handlers. */
 export interface HttpReply {
   code(status: number): HttpReply;
+  /**
+   * Set a response header.
+   *
+   * Needed by any plugin that serves bytes rather than JSON: a CAPTCHA widget
+   * served as `text/plain` is refused by the browser under `nosniff`, so the
+   * verification UI silently never appears. In-process handlers already got
+   * Fastify's `header()`; isolated ones did not, which made the call a no-op.
+   */
+  header?(name: string, value: string | string[]): HttpReply;
   send(payload?: unknown): void;
   /** Set a response cookie (implemented by the kernel adapter; login plugins use this). */
   setCookie?(name: string, value: string, options?: Record<string, unknown>): void;

@@ -57,7 +57,7 @@ const API_ORIGIN = apiStyleOrigin();
 export function buildCsp(
   nonce: string,
   isDev: boolean,
-  captcha: CaptchaCspSources = { script: [], frame: [], connect: [] },
+  captcha: CaptchaCspSources = { script: [], frame: [], connect: [], worker: [] },
 ): string {
   // A challenge widget's own script is loaded by a Next chunk, which carries the
   // per-request nonce, so `'strict-dynamic'` already trusts the injected
@@ -87,6 +87,11 @@ export function buildCsp(
     scriptSrc,
     // The widget's script posts its solution back to the challenge origin.
     `connect-src 'self'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${isDev ? ' ws: wss:' : ''}${hosts(captcha.connect)}`,
+    // A proof-of-work widget builds its solver worker from a `blob:` URL;
+    // without this directive it inherits `default-src 'self'`, the worker fails
+    // to start, and the challenge errors out with "verification failed" while
+    // the widget still looks installed.
+    `worker-src 'self'${hosts(captcha.worker)}`,
   ].join('; ');
 }
 

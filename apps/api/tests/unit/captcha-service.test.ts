@@ -1,3 +1,4 @@
+import { captchaCspSources } from '../../src/routes/captcha.ts';
 import { describe, expect, it } from 'vitest';
 import type { CaptchaProvider } from '@stackpanel/sdk';
 import { isPluginError } from '@stackpanel/sdk';
@@ -282,5 +283,23 @@ describe('KernelCaptchaService per-action policy', () => {
     expect(await service.clientConfigFor('login')).toEqual({ kind: 'script', siteKey: 'k' });
     // Nobody claims `register`, so the default provider config still applies.
     expect(await service.clientConfigFor('register')).toEqual({ kind: 'script', siteKey: 'k' });
+  });
+});
+
+describe('captchaCspSources', () => {
+  it('passes the blob: worker source through untouched', () => {
+    // A proof-of-work widget builds its solver from a blob: URL. It is a scheme,
+    // not an https origin, so the origin sanitizer must not eat it — dropping it
+    // leaves the widget installed but permanently unsolvable (CSP blocks the
+    // worker and the browser only logs the reason).
+    expect(captchaCspSources({ sources: { worker: ['blob:'] } })).toEqual({ worker: ['blob:'] });
+  });
+
+  it('refuses any other worker source', () => {
+    expect(
+      captchaCspSources({
+        sources: { worker: ['blob:https://evil.test', 'data:', 'https://ok.test'] },
+      }),
+    ).toEqual({});
   });
 });

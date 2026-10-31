@@ -21,9 +21,11 @@ export interface CaptchaCspSources {
   script: string[];
   frame: string[];
   connect: string[];
+  /** `worker-src` values a proof-of-work widget needs (currently only `blob:`). */
+  worker: string[];
 }
 
-const EMPTY: CaptchaCspSources = { script: [], frame: [], connect: [] };
+const EMPTY: CaptchaCspSources = { script: [], frame: [], connect: [], worker: [] };
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
 
@@ -55,6 +57,20 @@ function normalize(values: unknown): string[] {
   return [...origins];
 }
 
+/** `worker-src` values: `blob:` is a scheme, not an origin, so it needs its own check. */
+const ALLOWED_WORKER_SOURCES = new Set(['blob:']);
+
+function normalizeWorkers(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const allowed = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim().toLowerCase();
+    if (ALLOWED_WORKER_SOURCES.has(normalized)) allowed.add(normalized);
+  }
+  return [...allowed];
+}
+
 function pick(sources: unknown): CaptchaCspSources {
   if (!sources || typeof sources !== 'object') return EMPTY;
   const raw = sources as Record<string, unknown>;
@@ -62,6 +78,7 @@ function pick(sources: unknown): CaptchaCspSources {
     script: normalize(raw['script']),
     frame: normalize(raw['frame']),
     connect: normalize(raw['connect']),
+    worker: normalizeWorkers(raw['worker']),
   };
 }
 

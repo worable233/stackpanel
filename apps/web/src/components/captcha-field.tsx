@@ -58,7 +58,10 @@ interface RenderHandle {
 }
 
 interface WidgetFactory {
-  render: (element: HTMLElement, options: Record<string, unknown>) => RenderHandle | string | undefined;
+  render: (
+    element: HTMLElement,
+    options: Record<string, unknown>,
+  ) => RenderHandle | string | undefined;
   /**
    * Tear down a widget. Vendors disagree on the argument: some take the id the
    * `render` call returned, some take the container element. Both are covered by
@@ -117,21 +120,36 @@ function elementWidget(
   config: CaptchaElementWidgetConfig,
   container: HTMLElement,
   onToken: (token: string | null) => void,
+  onError: () => void,
 ): () => void {
+  let cancelled = false;
   const element = document.createElement(config.tag);
   for (const [name, value] of Object.entries(config.attributes)) {
     element.setAttribute(name, value);
   }
-  const read = (): void => {
-    // The protocol names the attribute the widget writes its solution into; the
-    // host never learns what the value means.
-    const value = element.getAttribute(config.tokenAttribute);
-    onToken(value && value.trim().length > 0 ? value : null);
+  const read = (event: Event): void => {
+    // Two published shapes: the solution arrives either in the event's `detail`
+    // (`statechange` → `{ payload }`) or in the attribute the provider named.
+    // The host knows neither the vendor nor what the value means.
+    const detail = (event as CustomEvent<{ payload?: unknown }>).detail;
+    const fromEvent = typeof detail?.payload === 'string' ? detail.payload.trim() : '';
+    const attribute = config.tokenAttribute ? element.getAttribute(config.tokenAttribute) : null;
+    const token = fromEvent || (attribute ? attribute.trim() : '');
+    onToken(token.length > 0 ? token : null);
   };
   element.addEventListener(config.event, read);
   if (config.resetEvent) element.addEventListener(config.resetEvent, () => onToken(null));
   container.appendChild(element);
+  // The custom element only upgrades (and therefore only renders) once the
+  // script that declares it has run. Skipping this left a blank slot with no
+  // challenge to solve while the kernel still demanded one.
+  if (config.script) {
+    void loadScript(config.script).catch(() => {
+      if (!cancelled) onError();
+    });
+  }
   return () => {
+    cancelled = true;
     onToken(null);
     element.remove();
   };
@@ -171,7 +189,7 @@ export function CaptchaField({
     const cleanup =
       config.kind === 'script'
         ? scriptWidget(config, container, report, () => setFailed(true))
-        : elementWidget(config, container, report);
+        : elementWidget(config, container, report, () => setFailed(true));
     return () => {
       cleanup();
       container.replaceChildren();
