@@ -1,5 +1,6 @@
 import type { Prisma } from '@stackpanel/db';
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { PluginError, type McpCapability } from '@stackpanel/sdk';
@@ -37,6 +38,35 @@ export async function actionCapabilities(request: FastifyRequest): Promise<McpCa
   }));
 }
 
+/**
+ * Accumulates a byte stream into a string, decoding across chunk boundaries.
+ *
+ * Decoding each chunk with `chunk.toString()` corrupts any multi-byte character
+ * that straddles a boundary — both halves become U+FFFD, so Chinese output from
+ * a sandboxed action arrives in the run record as mojibake. A persistent
+ * `StringDecoder` holds the incomplete tail until the next chunk completes it.
+ * The budget is charged on raw bytes, not decoded length, so a chatty stream
+ * cannot grow the record past the limit.
+ */
+export function createTextSink(limitBytes: number): {
+  push(chunk: Buffer): boolean;
+  finish(): string;
+} {
+  const decoder = new StringDecoder('utf8');
+  let text = '';
+  let bytes = 0;
+  return {
+    /** Appends `chunk`; returns `false` once the byte budget is exceeded. */
+    push(chunk: Buffer): boolean {
+      bytes += chunk.length;
+      if (bytes > limitBytes) return false;
+      text += decoder.write(chunk);
+      return true;
+    },
+    finish: () => text + decoder.end(),
+  };
+}
+
 /** No shell, host mounts, socket, network or local image builds. Unknown outcomes never rerun. */
 export async function runSandbox(config: z.infer<typeof actionSchema>, input: unknown): Promise<{ stdout: string; stderr: string }> {
   const name = `sp-agent-${randomUUID()}`;
@@ -46,16 +76,19 @@ export async function runSandbox(config: z.infer<typeof actionSchema>, input: un
   try {
     return await new Promise((resolve, reject) => {
       const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'], shell: false });
-      let stdout = '', stderr = '', bytes = 0;
+      const outSink = createTextSink(256 * 1024);
+      const errSink = createTextSink(256 * 1024);
+      let bytes = 0;
       const deadline = setTimeout(() => { child.kill('SIGKILL'); reject(new PluginError('agent.action_timeout', 504, '隔离动作已超时，结果请核对执行记录')); }, config.timeoutSeconds * 1000);
       const append = (chunk: Buffer, error: boolean) => {
+        // The limit covers stdout and stderr together.
+        if (bytes + chunk.length > 256 * 1024) { bytes += chunk.length; child.kill('SIGKILL'); reject(new PluginError('agent.action_output_large', 502, '动作输出超出限制')); return; }
         bytes += chunk.length;
-        if (bytes > 256 * 1024) { child.kill('SIGKILL'); reject(new PluginError('agent.action_output_large', 502, '动作输出超出限制')); }
-        else if (error) stderr += chunk.toString(); else stdout += chunk.toString();
+        (error ? errSink : outSink).push(chunk);
       };
       child.stdout.on('data', (chunk: Buffer) => append(chunk, false)); child.stderr.on('data', (chunk: Buffer) => append(chunk, true));
       child.once('error', () => { clearTimeout(deadline); reject(new PluginError('agent.sandbox_unavailable', 503, 'Docker 隔离运行时不可用')); });
-      child.once('close', (code) => { clearTimeout(deadline); if (code === 0) resolve({ stdout, stderr }); else reject(new PluginError('agent.action_failed', 502, '隔离动作未成功完成，请由管理员核对运行时和执行记录')); });
+      child.once('close', (code) => { clearTimeout(deadline); const stdout = outSink.finish(), stderr = errSink.finish(); if (code === 0) resolve({ stdout, stderr }); else reject(new PluginError('agent.action_failed', 502, '隔离动作未成功完成，请由管理员核对运行时和执行记录')); });
       child.stdin.on('error', () => undefined); child.stdin.end(JSON.stringify(input));
     });
   } finally {
