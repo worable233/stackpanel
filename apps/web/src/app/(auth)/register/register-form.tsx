@@ -210,6 +210,7 @@ export function RegisterForm({
             <CaptchaField
               config={sendCodeCaptcha?.clientConfig ?? null}
               onToken={setSendCodeToken}
+              fieldName="altcha_send_code"
             />
           </div>
         ) : null}

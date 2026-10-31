@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import type {
   CaptchaClientConfig,
@@ -8,6 +8,7 @@ import type {
   CaptchaElementWidgetConfig,
   CaptchaScriptWidgetConfig,
 } from '@stackpanel/sdk';
+import { InlineError } from '@stackpanel/ui';
 import { useTranslator } from '@/i18n/provider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -346,12 +347,28 @@ export function CaptchaField({
   config,
   onToken,
   className,
+  fieldName,
 }: {
   /** Widget config for the guarded action, or `null` when nothing guards it. */
   config: CaptchaClientConfig | null | undefined;
   /** Called with the token, or `null` when the widget has not solved / expired. */
   onToken: (token: string | null) => void;
   className?: string;
+  /**
+   * Namespace for the *vendor's* token field.
+   *
+   * A single form may guard two actions at once — the register page asks for a
+   * code (`register_send_code`) and then creates the account (`register`), so it
+   * renders two widgets. Both vendors name their hidden input after the provider's
+   * `name` attribute, so without a namespace each widget polls the *same*
+   * `input[name="altcha"]`: solving the first makes the second look solved, and the
+   * kernel then rejects a solution minted for a different action (`captcha_failed`)
+   * with no way for the visitor to tell which box was wrong.
+   *
+   * Only the vendor's field is namespaced; the value still reaches the form through
+   * the host's own `captchaToken` input, so the protocol never changes.
+   */
+  fieldName?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -363,31 +380,47 @@ export function CaptchaField({
   const reportRef = useRef(onToken);
   reportRef.current = onToken;
 
-  const kind = config?.kind;
-  const scriptSrc = config && config.kind === 'script' ? config.script : null;
+  // Rename the vendor's own field when the page hosts more than one widget.
+  // Memoised on purpose: a fresh object every render would re-run the mount effect
+  // (its dependency is `resolved`), and each re-run empties the container — the
+  // widget would be torn down and recreated on every keystroke, losing the solution.
+  const resolved = useMemo(
+    () =>
+      config && fieldName && (config.kind === 'element' || config.kind === 'container')
+        ? ({
+            ...config,
+            attributes: { ...(config.attributes ?? {}), name: fieldName },
+            hiddenField: fieldName,
+          } as CaptchaClientConfig)
+        : config,
+    [config, fieldName],
+  );
+
+  const kind = resolved?.kind;
+  const scriptSrc = resolved && resolved.kind === 'script' ? resolved.script : null;
 
   useEffect(() => {
-    if (!config) return;
+    if (!resolved) return;
     const container = containerRef.current;
     if (!container) return;
     setFailed(false);
     container.replaceChildren();
     const report = (token: string | null): void => reportRef.current(token);
     const cleanup =
-      config.kind === 'script'
-        ? scriptWidget(config, container, report, () => setFailed(true))
-        : config.kind === 'element'
-          ? elementWidget(config, container, report, () => setFailed(true))
-          : containerWidget(config, container, report, () => setFailed(true));
+      resolved.kind === 'script'
+        ? scriptWidget(resolved, container, report, () => setFailed(true))
+        : resolved.kind === 'element'
+          ? elementWidget(resolved, container, report, () => setFailed(true))
+          : containerWidget(resolved, container, report, () => setFailed(true));
     return () => {
       cleanup();
       container.replaceChildren();
     };
-    // `config` is a server-rendered literal; comparing by kind + script is enough
+    // `resolved` is a server-rendered literal; comparing by kind + script is enough
     // to avoid re-mounting on every parent render.
-  }, [config, kind, scriptSrc, attempt]);
+  }, [resolved, kind, scriptSrc, attempt]);
 
-  if (!config) return null;
+  if (!resolved) return null;
 
   return (
     <div
@@ -416,14 +449,11 @@ export function CaptchaField({
     >
       <div ref={containerRef} />
       {failed ? (
-        <div
-          role="alert"
-          className="flex flex-col gap-2 rounded-xl bg-destructive/8 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
-        >
-          <p className="flex items-start gap-2">
+        <div className="flex flex-col gap-2 rounded-xl bg-destructive/8 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+          <InlineError className="flex items-start gap-2">
             <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>{t('auth.captcha.unavailable')}</span>
-          </p>
+          </InlineError>
           <Button
             type="button"
             variant="ghost"
