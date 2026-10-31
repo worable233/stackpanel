@@ -3,7 +3,8 @@
  * 构建并签名一份市场目录快照（PLAN-github-distribution-and-updates §2、§3.3、§12）。
  *
  * 输入：一组已校验的包清单 JSON（`--entries <dir>`）与发布者/渠道配置
- * （`--config <catalog.config.json>`）。输出：`catalog.json` + `catalog.sig`
+ * （`--config <catalog.config.json>`）。条目文件名必须为 `<kind>-<id>.json`：
+ * 插件与主题允许同 id，名字自由会让「拷错覆盖」静默发生。输出：`catalog.json` + `catalog.sig`
  * （逐字规范化字节）与渠道指针 `channels.json`。
  *
  * 生产用法：私钥经受保护环境注入（`--key-file`），目录以
@@ -62,6 +63,12 @@ async function main() {
   for (const name of files) {
     const manifest = await readPackageManifest(path.join(entriesDir, name));
     if (manifest.channel === 'beta' && !(config.channels ?? []).includes('beta')) continue;
+    // 文件名必须就是 `<kind>-<id>.json`：目录只 glob `*.json`，名字自由意味着
+    // 「拷错一个文件覆盖掉另一个」不会有任何信号（插件与主题同 id 时踩过一次）。
+    const expectedName = `${manifest.kind}-${manifest.id}.json`;
+    if (name !== expectedName) {
+      throw new Error(`目录条目文件名必须是 ${expectedName}，实际是 ${name}`);
+    }
     const key = `${manifest.kind}:${manifest.id}`;
     const previous = seen.get(key);
     if (previous) {
