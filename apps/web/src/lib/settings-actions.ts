@@ -48,12 +48,18 @@ export async function savePlatformInfoAction(
   const name = formData.get('name');
   const description = formData.get('description');
   const url = formData.get('url');
-  if (typeof name !== 'string' || typeof description !== 'string' || typeof url !== 'string') {
+  const brandDisplay = formData.get('brandDisplay');
+  if (
+    typeof name !== 'string' ||
+    typeof description !== 'string' ||
+    typeof url !== 'string' ||
+    (brandDisplay !== 'icon' && brandDisplay !== 'name' && brandDisplay !== 'both')
+  ) {
     return { error: translate(locale, 'action.platformInfoRequired') };
   }
   try {
     const api = await getAuthedApiClient();
-    await api.updatePlatformInfo({ name, description, url: url || null });
+    await api.updatePlatformInfo({ name, description, url: url || null, brandDisplay });
     revalidatePath('/', 'layout');
     return { ok: true, message: translate(locale, 'action.platformInfoSaved') };
   } catch (err) {

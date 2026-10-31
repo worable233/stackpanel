@@ -80,14 +80,26 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     ...pluginMenus.map((item) => ({ ...item, group: item.group ?? item.pluginId })),
   ];
 
-  const brand = await getApiClient()
-    .getPlatformBrand()
-    .then((result) => result.brand)
-    .catch(() => null);
+  const [brand, platformInfo] = await Promise.all([
+    getApiClient()
+      .getPlatformBrand()
+      .then((result) => result.brand)
+      .catch(() => null),
+    getApiClient()
+      .getPlatformInfo()
+      .then((result) => result.platform)
+      .catch(() => null),
+  ]);
   const brandLogoUrl = brand?.logo ? apiAssetUrl(brand.logo) : null;
 
   return (
-    <AdminShell user={user} items={navigationItems} brandLogoUrl={brandLogoUrl}>
+    <AdminShell
+      user={user}
+      items={navigationItems}
+      brandLogoUrl={brandLogoUrl}
+      brandName={platformInfo?.name}
+      brandDisplay={platformInfo?.brandDisplay ?? 'both'}
+    >
       {children}
     </AdminShell>
   );

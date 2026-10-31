@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { ApiError } from '@stackpanel/sdk';
 import { getBffPluginClient } from '@/lib/plugins-bff';
-import { decodeSegmentsSafely, isPublicAssetRequest } from '@/lib/plugin-proxy-path';
+import { decodeSegmentsSafely, isPublicAssetRequest, routeTableFor } from '@/lib/plugin-proxy-path';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 
@@ -99,6 +99,30 @@ function routeMatches(pattern: string, pathname: string): boolean {
   return expected.every((segment, index) => segment.startsWith(':') || segment === actual[index]);
 }
 
+/**
+ * Fetch one of the kernel's route tables for a plugin namespace.
+ *
+ * Never throws: a lookup failure is reported as `null` so the caller can answer
+ * 502 instead of either proxying blind or surfacing a healthy plugin as broken.
+ */
+async function fetchRouteTable(
+  namespace: string,
+  table: 'action-targets' | 'public-routes',
+  token: string | null,
+): Promise<Response | null> {
+  const base = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
+  try {
+    return await fetch(`${base}/plugins/${encodeURIComponent(namespace)}/${table}`, {
+      method: 'GET',
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function proxy(request: NextRequest, context: RouteContext): Promise<Response> {
   const t = createTranslator(await getLocale());
   const { path: rawSegments } = await context.params;
@@ -151,15 +175,27 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
       apiToken = api.token ?? null;
       // Resolve the namespace against the kernel's active route table before
       // forwarding. The BFF must never become a generic same-origin proxy.
-      const routeResponse = await fetch(
-        `${process.env.API_BASE_URL ?? 'http://127.0.0.1:3001'}/plugins/${encodeURIComponent(segments[0] ?? '')}/action-targets`,
-        {
-          method: 'GET',
-          headers: api.token ? { authorization: `Bearer ${api.token}` } : undefined,
-          cache: 'no-store',
-          signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-        },
-      );
+      //
+      // Two tables exist: `action-targets` (needs a session) and `public-routes`
+      // (the subset the plugin itself declared anonymous). An anonymous visitor —
+      // the login-page captcha widget is the canonical case — must use the public
+      // one, otherwise the widget 401s before the visitor can even sign in.
+      let table = routeTableFor(apiToken);
+      let routeResponse = await fetchRouteTable(segments[0] ?? '', table, apiToken);
+      // A dead session (expired cookie from a previous browser tab) must degrade
+      // to the public subset and be forwarded anonymously, not fail the asset.
+      if (apiToken && routeResponse && (routeResponse.status === 401 || routeResponse.status === 403)) {
+        apiToken = null;
+        table = 'public-routes';
+        routeResponse = await fetchRouteTable(segments[0] ?? '', table, null);
+      }
+      if (!routeResponse) {
+        // The table lookup itself failed; refuse rather than proxy blind.
+        return NextResponse.json(
+          { error: t('api.notificationsUnavailable') },
+          { status: 502 },
+        );
+      }
       if (!routeResponse.ok) {
         return NextResponse.json(
           { error: t('api.invalidParams') },

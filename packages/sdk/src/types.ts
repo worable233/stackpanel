@@ -1321,11 +1321,15 @@ export interface AdminRuntimeConfigEntry {
 /** How the platform brand lockup is rendered in navigation and headers. */
 /** How the platform brand lockup is rendered in navigation and headers. */
 /** How the platform brand lockup is rendered in navigation and headers. */
+/** How the platform brand lockup is rendered in navigation and headers. */
+export type PlatformBrandDisplay = 'icon' | 'name' | 'both';
+
 /** Public, non-secret platform identity managed by administrators. */
 export interface PlatformInfo {
   name: string;
   description: string;
   url: string | null;
+  brandDisplay: PlatformBrandDisplay;
 }
 
 export interface PlatformInfoResponse {
@@ -1336,6 +1340,7 @@ export const DEFAULT_PLATFORM_INFO: PlatformInfo = {
   name: 'StackPanel',
   description: 'API 优先的微内核插件式数字商品与托管业务管理系统。',
   url: null,
+  brandDisplay: 'both',
 };
 
 /** Platform-level brand identity, exposed as API-relative asset URLs. */

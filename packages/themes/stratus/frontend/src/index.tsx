@@ -487,6 +487,10 @@ function StratusLayout({
   locale,
 }: FrontendLayoutProps): ReactElement {
   const tr = t(locale);
+  const platformName = platform.name || 'StackPanel';
+  const brandDisplay = platform.brandDisplay ?? 'both';
+  const showBrandIcon = brandDisplay !== 'name';
+  const showBrandName = brandDisplay !== 'icon';
   const primaryNav = [
     { label: tr('nav.home'), href: '/' },
     ...navigation,
@@ -544,9 +548,13 @@ function StratusLayout({
       {/* Main header: logo + search + actions */}
       <header className="sticky top-0 z-50 border-b border-border bg-card">
         <div className="mx-auto flex h-[64px] w-full max-w-[1680px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-12">
-          <a href="/" className="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
-            <BrandLogo brand={brand} />
-            <span className="text-[15px] text-ink">{platform.name}</span>
+          <a
+            href="/"
+            className="flex shrink-0 items-center gap-2 font-semibold tracking-tight"
+            aria-label={platformName}
+          >
+            {showBrandIcon ? <BrandLogo brand={brand} /> : null}
+            {showBrandName ? <span className="text-[15px] text-ink">{platformName}</span> : null}
           </a>
 
           <form
@@ -742,9 +750,13 @@ function StratusLayout({
         <div className="mx-auto w-full max-w-[1680px] px-4 py-14 sm:px-6 lg:px-12">
           <div className="grid gap-10 lg:grid-cols-[1.2fr_2fr_1fr]">
             <div className="max-w-sm">
-              <a href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-                <BrandLogo brand={brand} size="lg" />
-                <span className="text-ink">{platform.name}</span>
+              <a
+                href="/"
+                className="flex items-center gap-2.5 font-semibold tracking-tight"
+                aria-label={platformName}
+              >
+                {showBrandIcon ? <BrandLogo brand={brand} size="lg" /> : null}
+                {showBrandName ? <span className="text-ink">{platformName}</span> : null}
               </a>
               <p className="mt-4 text-sm leading-6 text-ink-soft">{tr('footer.description')}</p>
               <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs text-ink-soft">

@@ -243,6 +243,7 @@ function AtlasLayout({
   children,
   navigation,
   isAuthenticated,
+  platform,
   brand,
   assetsBaseUrl,
   locale,
@@ -251,6 +252,10 @@ function AtlasLayout({
 }: FrontendLayoutProps): ReactElement {
   const tr = t(locale);
   const logoUrl = brand?.logoUrl ?? (assetsBaseUrl ? `${assetsBaseUrl}/logo.svg` : undefined);
+  const platformName = platform.name || tr('brand.name');
+  const brandDisplay = platform.brandDisplay ?? 'both';
+  const showBrandIcon = brandDisplay !== 'name';
+  const showBrandName = brandDisplay !== 'icon';
   const atlasNav = [
     { label: tr('nav.home'), href: '/' },
     { label: tr('nav.catalog'), href: '/shop' },
@@ -296,13 +301,17 @@ function AtlasLayout({
 
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-20 w-full max-w-6xl items-center gap-3 px-4 sm:px-6">
-          <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label={tr('brand.name')}>
-            {logoUrl ? (
-              <img src={logoUrl} alt="" className="size-8 rounded-[10px]" />
-            ) : (
-              <BrandMark />
-            )}
-            <span className="text-[15px] font-medium tracking-tight">{tr('brand.name')}</span>
+          <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label={platformName}>
+            {showBrandIcon ? (
+              logoUrl ? (
+                <img src={logoUrl} alt="" className="size-8 rounded-[10px]" />
+              ) : (
+                <BrandMark />
+              )
+            ) : null}
+            {showBrandName ? (
+              <span className="text-[15px] font-medium tracking-tight">{platformName}</span>
+            ) : null}
           </a>
 
           <nav
@@ -364,13 +373,17 @@ function AtlasLayout({
         <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
           <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
             <div>
-              <a href="/" className="flex items-center gap-2.5">
-                {logoUrl ? (
-                  <img src={logoUrl} alt="" className="size-8 rounded-[10px]" />
-                ) : (
-                  <BrandMark />
-                )}
-                <span className="text-[15px] font-medium tracking-tight">{tr('brand.name')}</span>
+              <a href="/" className="flex items-center gap-2.5" aria-label={platformName}>
+                {showBrandIcon ? (
+                  logoUrl ? (
+                    <img src={logoUrl} alt="" className="size-8 rounded-[10px]" />
+                  ) : (
+                    <BrandMark />
+                  )
+                ) : null}
+                {showBrandName ? (
+                  <span className="text-[15px] font-medium tracking-tight">{platformName}</span>
+                ) : null}
               </a>
               <p className="mt-4 max-w-xs text-sm leading-6 text-muted-foreground">
                 {tr('layout.footerTagline')}

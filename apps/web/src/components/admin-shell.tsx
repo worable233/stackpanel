@@ -1,6 +1,7 @@
 'use client';
 
 import type { LucideIcon } from 'lucide-react';
+import type { PlatformBrandDisplay } from '@stackpanel/sdk';
 import {
   ArrowUpCircle,
   Bell,
@@ -38,9 +39,18 @@ export interface AdminShellProps {
   items: BackendNavigationItem[];
   children: React.ReactNode;
   brandLogoUrl?: string | null;
+  brandName?: string;
+  brandDisplay?: PlatformBrandDisplay;
 }
 
-export function AdminShell({ user, items, children, brandLogoUrl }: AdminShellProps) {
+export function AdminShell({
+  user,
+  items,
+  children,
+  brandLogoUrl,
+  brandName,
+  brandDisplay,
+}: AdminShellProps) {
   return (
     <BackendShell
       user={user}
@@ -51,6 +61,8 @@ export function AdminShell({ user, items, children, brandLogoUrl }: AdminShellPr
       contentMaxWidth="max-w-[1440px]"
       backLink={{ label: '', href: '/', messageKey: 'nav.backToSite' }}
       brandLogoUrl={brandLogoUrl}
+      brandName={brandName}
+      brandDisplay={brandDisplay}
     >
       {children}
     </BackendShell>

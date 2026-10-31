@@ -8,7 +8,7 @@ import { AgentSettings } from '@/components/agent-settings';
 import { RuntimeConfigSettings } from '@/components/runtime-config-settings';
 import { SectionTitle } from '@stackpanel/ui';
 
-import { useActionState, useTransition, type ReactNode } from 'react';
+import { useActionState, useId, useState, useTransition, type ReactNode } from 'react';
 import { SettingsSections } from '@/components/settings-sections';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,6 +19,7 @@ import type {
   AdminSalesChannel,
   AdminSalesChannelListResponse,
   DistributionSourceConfig,
+  PlatformBrandDisplay,
   PlatformInfo,
   SettlementCurrencyResponse,
   SigningStatus,
@@ -27,6 +28,7 @@ import type {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Settings,
   Palette,
@@ -41,6 +43,7 @@ import {
   Download,
   ArrowUpCircle,
   SlidersHorizontal,
+  PanelsTopLeft,
 } from 'lucide-react';
 import {
   clearPlatformBrandAction,
@@ -89,7 +92,7 @@ export function SettingsManager({
       id: 'platform',
       title: t('admin.settings.platform.title'),
       Icon: Settings,
-      content: <PlatformInfoSettings platform={platform} />,
+      content: <PlatformInfoSettings platform={platform} brand={brand} />,
     },
     {
       id: 'brand',
@@ -175,14 +178,42 @@ export function SettingsManager({
   return <SettingsSections sections={sections} label={t('admin.settings.title')} />;
 }
 
-function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {
+function PlatformInfoSettings({
+  platform,
+  brand,
+}: {
+  platform: PlatformInfo;
+  brand: BrandAssets | null;
+}) {
   const router = useRouter();
   const t = useTranslator();
+  const id = useId();
   const [state, action, pending] = useActionState<SettingsActionState, FormData>(
     savePlatformInfoAction,
     {},
   );
   const [isMutating, startTransition] = useTransition();
+  const [name, setName] = useState(platform.name);
+  const [brandDisplay, setBrandDisplay] = useState<PlatformBrandDisplay>(
+    platform.brandDisplay ?? 'both',
+  );
+  const brandOptions: { value: PlatformBrandDisplay; label: string; hint: string }[] = [
+    {
+      value: 'icon',
+      label: t('admin.settings.platform.brandDisplayIcon'),
+      hint: t('admin.settings.platform.brandDisplayIconHint'),
+    },
+    {
+      value: 'name',
+      label: t('admin.settings.platform.brandDisplayName'),
+      hint: t('admin.settings.platform.brandDisplayNameHint'),
+    },
+    {
+      value: 'both',
+      label: t('admin.settings.platform.brandDisplayBoth'),
+      hint: t('admin.settings.platform.brandDisplayBothHint'),
+    },
+  ];
 
   return (
     <section className="flex flex-col gap-6">
@@ -201,7 +232,14 @@ function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {
       >
         <div className="flex flex-col gap-2">
           <Label htmlFor="name">{t('admin.settings.platform.name')}</Label>
-          <Input id="name" name="name" defaultValue={platform.name} maxLength={80} required />
+          <Input
+            id="name"
+            name="name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={80}
+            required
+          />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="description">{t('admin.settings.platform.intro')}</Label>
@@ -222,6 +260,70 @@ function PlatformInfoSettings({ platform }: { platform: PlatformInfo }) {
             defaultValue={platform.url ?? ''}
             placeholder="https://example.com"
           />
+        </div>
+        <div className="flex flex-col gap-2">
+          <span id={`${id}-brand-display`} className="text-sm font-medium">
+            {t('admin.settings.platform.brandDisplay')}
+          </span>
+          <p className="text-sm text-muted-foreground">
+            {t('admin.settings.platform.brandDisplayDescription')}
+          </p>
+          <input type="hidden" name="brandDisplay" value={brandDisplay} />
+          <div className="mt-2 rounded-2xl bg-muted/35 p-3.5">
+            <div className="flex items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
+              <span>{t('admin.settings.platform.brandPreview')}</span>
+              <span className="truncate">{t('admin.settings.platform.brandPreviewHint')}</span>
+            </div>
+            <div className="mt-2.5 flex min-h-16 items-center rounded-xl bg-background px-4 py-3">
+              <span className="flex min-w-0 items-center gap-2.5">
+                {brandDisplay !== 'name' ? (
+                  brand?.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={brand.logoUrl}
+                      alt=""
+                      className="size-8 shrink-0 rounded-lg object-contain"
+                    />
+                  ) : (
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+                      <PanelsTopLeft className="size-4" aria-hidden="true" />
+                    </span>
+                  )
+                ) : null}
+                {brandDisplay !== 'icon' ? (
+                  <span className="truncate text-lg font-medium tracking-tight">
+                    {name.trim() || platform.name}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          </div>
+          <RadioGroup
+            value={brandDisplay}
+            onValueChange={(value) => setBrandDisplay(value as PlatformBrandDisplay)}
+            aria-labelledby={`${id}-brand-display`}
+            className="mt-1 grid gap-2 sm:grid-cols-3"
+          >
+            {brandOptions.map((option) => (
+              <label
+                key={option.value}
+                htmlFor={`${id}-${option.value}`}
+                className={
+                  brandDisplay === option.value
+                    ? 'flex cursor-pointer flex-col gap-1 rounded-xl bg-muted/60 p-4 transition-colors'
+                    : 'flex cursor-pointer flex-col gap-1 rounded-xl bg-muted/30 p-4 transition-colors hover:bg-muted/45'
+                }
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <RadioGroupItem id={`${id}-${option.value}`} value={option.value} />
+                  {option.label}
+                </span>
+                <span className="pl-6 text-xs leading-5 text-muted-foreground">
+                  {option.hint}
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
         </div>
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
         {state.ok && state.message ? (

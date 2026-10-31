@@ -739,6 +739,16 @@
         "name": "平臺名稱",
         "intro": "平臺簡介",
         "url": "站點地址",
+        "brandDisplay": "品牌展示",
+        "brandDisplayDescription": "設置後臺頂部欄與前臺主題中的平臺標識樣式，儲存後全站統一生效。",
+        "brandPreview": "預覽",
+        "brandPreviewHint": "後臺頂部欄與前臺主題統一使用此樣式",
+        "brandDisplayIcon": "只顯示平臺圖示",
+        "brandDisplayIconHint": "僅展示已上傳的平臺 Logo。",
+        "brandDisplayName": "只顯示平臺名稱",
+        "brandDisplayNameHint": "僅展示平臺名稱，不顯示圖示。",
+        "brandDisplayBoth": "圖示 + 名稱",
+        "brandDisplayBothHint": "同時展示平臺 Logo 與名稱。",
         "submit": "儲存平臺資訊"
       },
       "saving": "儲存中…",
@@ -1695,7 +1705,7 @@
     "auth_password_reset_requested": "申請重置密碼",
     "config_changed": "修改核心配置",
     "config_reverted": "回退核心配置",
-    "auth_email_changed": "修改電郵"
+    "auth_email_changed": "修改郵箱"
   },
   "auditResource": {
     "user": "用戶",

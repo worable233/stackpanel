@@ -257,8 +257,20 @@ function Icon({ name }: { name: string }): ReactElement {
   );
 }
 
-function BrandMark({ size = 'md' }: { size?: 'md' | 'lg' }): ReactElement {
+function BrandMark({
+  brand,
+  size = 'md',
+}: {
+  brand?: FrontendLayoutProps['brand'];
+  size?: 'md' | 'lg';
+}): ReactElement {
   const box = size === 'lg' ? 'size-10 rounded-2xl' : 'size-9 rounded-xl';
+  if (brand?.logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={brand.logoUrl} alt="" className={`${box} shrink-0 object-contain`} />
+    );
+  }
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center ${box} bg-gradient-to-br from-cyan-400 via-sky-500 to-violet-500 text-sm font-black text-white shadow-lg shadow-sky-500/25 ring-1 ring-white/20`}
@@ -287,10 +299,15 @@ function AuroraLayout({
   navigation,
   isAuthenticated,
   platform,
+  brand,
   categories = [],
   locale,
 }: FrontendLayoutProps): ReactElement {
   const tr = t(locale);
+  const platformName = platform.name || 'StackPanel';
+  const brandDisplay = platform.brandDisplay ?? 'both';
+  const showBrandIcon = brandDisplay !== 'name';
+  const showBrandName = brandDisplay !== 'icon';
   const navItems = [
     { label: tr('nav.home'), href: '/' },
     ...navigation,
@@ -300,11 +317,17 @@ function AuroraLayout({
     <div className="flex min-h-full flex-1 flex-col bg-background" data-theme-layout="aurora">
       <header className="sticky top-0 z-50 border-b border-white/10 bg-background/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <a href="/" className="group flex items-center gap-2.5 font-semibold tracking-tight">
-            <BrandMark />
-            <span className="text-[15px] transition-colors group-hover:text-primary">
-              {platform.name}
-            </span>
+          <a
+            href="/"
+            className="group flex items-center gap-2.5 font-semibold tracking-tight"
+            aria-label={platformName}
+          >
+            {showBrandIcon ? <BrandMark brand={brand} /> : null}
+            {showBrandName ? (
+              <span className="text-[15px] transition-colors group-hover:text-primary">
+                {platformName}
+              </span>
+            ) : null}
           </a>
 
           <nav className="hidden items-center gap-0.5 lg:flex" aria-label={tr('nav.mainAria')}>
@@ -491,9 +514,13 @@ function AuroraLayout({
         <div className="relative mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="grid gap-10 md:grid-cols-[1.6fr_1fr_1fr_1.2fr]">
             <div>
-              <a href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-                <BrandMark size="lg" />
-                <span>{platform.name}</span>
+              <a
+                href="/"
+                className="flex items-center gap-2.5 font-semibold tracking-tight"
+                aria-label={platformName}
+              >
+                {showBrandIcon ? <BrandMark brand={brand} size="lg" /> : null}
+                {showBrandName ? <span>{platformName}</span> : null}
               </a>
               <p className="mt-4 max-w-sm text-sm leading-6 text-muted-foreground">
                 {tr('footer.tagline')}

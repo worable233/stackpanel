@@ -89,15 +89,22 @@ describe.skipIf(!dbAvailable)('platform information integration (real DB)', () =
         name: 'Example Panel',
         description: 'A validated platform identity.',
         url: 'https://example.com',
+        brandDisplay: 'name',
       },
     });
     expect(saved.statusCode).toBe(200);
     expect((saved.json() as { platform: { name: string } }).platform.name).toBe('Example Panel');
+    expect((saved.json() as { platform: { brandDisplay: string } }).platform.brandDisplay).toBe(
+      'name',
+    );
 
     const publicRead = await app.inject({ method: 'GET', url: '/platform/info' });
     expect((publicRead.json() as { platform: { url: string | null } }).platform.url).toBe(
       'https://example.com',
     );
+    expect(
+      (publicRead.json() as { platform: { brandDisplay: string } }).platform.brandDisplay,
+    ).toBe('name');
 
     const bypass = await app.inject({
       method: 'PUT',

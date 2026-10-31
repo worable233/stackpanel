@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { PlatformBrandDisplay } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
 import {
   SidebarMenu,
@@ -182,6 +183,10 @@ export interface BackendShellProps {
   backLink?: { label: string; href: string; messageKey?: string };
   /** Absolute URL to the active theme's brand logo, when the platform provides one. */
   brandLogoUrl?: string | null;
+  /** Platform name shown next to or instead of the logo. */
+  brandName?: string;
+  /** Admin-controlled brand lockup style shared with storefront themes. */
+  brandDisplay?: PlatformBrandDisplay;
   children: React.ReactNode;
 }
 
@@ -437,6 +442,8 @@ export function BackendShell({
   contentMaxWidth = 'max-w-[1440px]',
   backLink,
   brandLogoUrl,
+  brandName,
+  brandDisplay = 'both',
   children,
 }: BackendShellProps) {
   const [agentOpen, setAgentOpen] = useState(false);
@@ -499,15 +506,26 @@ export function BackendShell({
 
         <Link
           href={rootHref}
-          className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg"
-          aria-label={t('nav.homeAriaLabel')}
+          className={
+            brandDisplay === 'icon'
+              ? 'flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg'
+              : 'flex h-9 min-w-0 shrink-0 items-center gap-2 overflow-hidden rounded-lg pr-1'
+          }
+          aria-label={brandName?.trim() || t('nav.homeAriaLabel')}
         >
-          {brandLogoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={brandLogoUrl} alt="" className="size-8 object-contain" />
-          ) : (
-            <PanelsTopLeft className="size-4" />
-          )}
+          {brandDisplay !== 'name' ? (
+            brandLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={brandLogoUrl} alt="" className="size-8 shrink-0 object-contain" />
+            ) : (
+              <PanelsTopLeft className="size-4 shrink-0" />
+            )
+          ) : null}
+          {brandDisplay !== 'icon' && brandName?.trim() ? (
+            <span className="max-w-[9rem] truncate text-sm font-medium text-foreground">
+              {brandName}
+            </span>
+          ) : null}
         </Link>
 
         <nav

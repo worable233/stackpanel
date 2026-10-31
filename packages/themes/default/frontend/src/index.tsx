@@ -658,10 +658,16 @@ function Pricing({ settings, tr }: { settings?: FrontendSettings; tr: Translator
 function Footer({
   settings,
   brandName,
+  brandLogoUrl,
+  showBrandIcon,
+  showBrandName,
   tr,
 }: {
   settings?: FrontendSettings;
   brandName: string;
+  brandLogoUrl: string | null;
+  showBrandIcon: boolean;
+  showBrandName: boolean;
   tr: Translator;
 }) {
   const { groups, socialLinks } = resolveFooter(settings);
@@ -693,9 +699,20 @@ function Footer({
       <div className="relative mx-auto max-w-7xl px-6 pb-12 pt-12 md:px-12 lg:pt-16 2xl:px-8">
         <div className="flex flex-col gap-12 lg:flex-row lg:gap-16">
           <Reveal className="flex flex-col items-center gap-4 lg:items-start xl:min-w-80">
-            <Link href="/" className="flex h-10 items-center gap-2 text-2xl font-semibold">
-              <Layers3 className="size-10 text-primary" />
-              {brandName}
+            <Link
+              href="/"
+              className="flex h-10 items-center gap-2 text-2xl font-semibold"
+              aria-label={brandName}
+            >
+              {showBrandIcon ? (
+                brandLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={brandLogoUrl} alt="" className="size-10 rounded-lg object-contain" />
+                ) : (
+                  <Layers3 className="size-10 text-primary" />
+                )
+              ) : null}
+              {showBrandName ? brandName : null}
             </Link>
             <p className="max-w-xs text-center text-sm leading-relaxed text-muted-foreground md:text-base lg:text-left">
               {setting(settings, 'footer', 'description', tr('content.footer.description'))}
@@ -804,10 +821,15 @@ function DefaultLayout({
   navigation,
   isAuthenticated,
   platform,
+  brand,
   settings = {},
   locale,
 }: FrontendLayoutProps): ReactElement {
   const tr = t(locale);
+  const platformName = platform.name || 'StackPanel';
+  const brandDisplay = platform.brandDisplay ?? 'both';
+  const showBrandIcon = brandDisplay !== 'name';
+  const showBrandName = brandDisplay !== 'icon';
   const links = settingLinks(settings, 'navigation', 'links', [
     [tr('content.navigation.links.0.label'), '/#features'],
     [tr('content.navigation.links.1.label'), '/#capabilities'],
@@ -837,9 +859,20 @@ function DefaultLayout({
           close: tr('theme.nav.closeMenu'),
         }}
         brand={
-          <Link href="/" className="flex items-center gap-2 text-base font-semibold sm:text-xl">
-            <Layers3 className="size-7 text-primary" />
-            {platform.name || 'StackPanel'}
+          <Link
+            href="/"
+            className="flex items-center gap-2 text-base font-semibold sm:text-xl"
+            aria-label={platformName}
+          >
+            {showBrandIcon ? (
+              brand?.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={brand.logoUrl} alt="" className="size-7 rounded-md object-contain" />
+              ) : (
+                <Layers3 className="size-7 text-primary" />
+              )
+            ) : null}
+            {showBrandName ? platformName : null}
           </Link>
         }
         actions={
@@ -893,7 +926,14 @@ function DefaultLayout({
       <div id="clarity-page-content" className="flex-1">
         {children}
       </div>
-      <Footer settings={settings} brandName={platform.name || 'StackPanel'} tr={tr} />
+      <Footer
+        settings={settings}
+        brandName={platformName}
+        brandLogoUrl={brand?.logoUrl ?? null}
+        showBrandIcon={showBrandIcon}
+        showBrandName={showBrandName}
+        tr={tr}
+      />
       <DocumentScrollbar
         labels={{
           track: tr('theme.scrollbar.trackAria'),

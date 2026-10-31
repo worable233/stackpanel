@@ -46,7 +46,13 @@ function parsePlatformInfo(value: unknown): PlatformInfo {
   ) {
     return DEFAULT_PLATFORM_INFO;
   }
-  return { name, description, url: url || null };
+  const brandDisplay =
+    candidate.brandDisplay === 'icon' ||
+    candidate.brandDisplay === 'name' ||
+    candidate.brandDisplay === 'both'
+      ? candidate.brandDisplay
+      : 'both';
+  return { name, description, url: url || null, brandDisplay };
 }
 
 function isPublicHttpUrl(value: string): boolean {

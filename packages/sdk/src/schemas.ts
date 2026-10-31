@@ -1389,10 +1389,13 @@ export const signingResponseSchema = z.object({
 }) satisfies z.ZodType<SigningResponse>;
 
 
+export const platformBrandDisplaySchema = z.enum(['icon', 'name', 'both']);
+
 export const platformInfoSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().min(1).max(280),
   url: z.string().url().nullable(),
+  brandDisplay: platformBrandDisplaySchema.default('both'),
 });
 
 export const platformInfoResponseSchema = z.object({
