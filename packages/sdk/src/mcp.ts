@@ -96,10 +96,39 @@ export function mcpToolName(capabilityId: string): string {
   return capabilityId.replace(/[^A-Za-z0-9_-]+/g, '_');
 }
 
+/**
+ * Assign each capability a **unique** tool name.
+ *
+ * {@link mcpToolName} is lossy — `.`, `:`, `/` and `_` all normalise to `_` — so
+ * two distinct capability ids can collapse onto one tool name. Keying a `Map`
+ * by that name alone (`capabilitiesByName` in the MCP server, `descriptorByName`
+ * in the agent loop) then keeps only the last entry and silently routes a call
+ * for the first capability to the second. Collisions are resolved
+ * deterministically: the first capability in the credential's list keeps the
+ * plain name, later ones get a `__2`, `__3`, … suffix that no id can produce.
+ */
+export function uniqueMcpToolNames(
+  capabilities: readonly McpCapability[],
+): Map<string, string> {
+  const taken = new Set<string>();
+  const byId = new Map<string, string>();
+  for (const capability of capabilities) {
+    const base = mcpToolName(capability.id);
+    let name = base;
+    for (let suffix = 2; taken.has(name); suffix += 1) name = `${base}__${suffix}`;
+    taken.add(name);
+    byId.set(capability.id, name);
+  }
+  return byId;
+}
+
 /** Build the tool descriptor for one capability. */
-export function buildMcpTool(capability: McpCapability): McpToolDescriptor {
+export function buildMcpTool(
+  capability: McpCapability,
+  name = mcpToolName(capability.id),
+): McpToolDescriptor {
   return {
-    name: mcpToolName(capability.id),
+    name,
     description: [
       capability.summary,
       `(${capability.method} ${capability.path})`,
@@ -175,15 +204,22 @@ export function isMcpWriteAuthorized(
  * Read tools are exposed for every capability the credential already holds
  * (the registry has already intersected scope with the owner's permissions).
  * Mutating tools are only exposed when {@link isMcpWriteAuthorized}.
+ *
+ * Names are de-duplicated through {@link uniqueMcpToolNames} so the returned list
+ * never contains two entries a name-keyed lookup would confuse.
  */
 export function buildMcpTools(
   capabilities: readonly McpCapability[],
   grantedScopes: ReadonlySet<string> | null,
 ): McpToolDescriptor[] {
   const writesAllowed = isMcpWriteAuthorized(grantedScopes);
-  return capabilities
-    .filter((capability) => !capability.mutating || writesAllowed)
-    .map((capability) => buildMcpTool(capability));
+  const visible = capabilities.filter(
+    (capability) => !capability.mutating || writesAllowed,
+  );
+  const names = uniqueMcpToolNames(visible);
+  return visible.map((capability) =>
+    buildMcpTool(capability, names.get(capability.id) ?? mcpToolName(capability.id)),
+  );
 }
 
 /** Arguments a client may pass to `tools/call`. */
@@ -253,12 +289,13 @@ export function buildMcpApiCall(
   capability: McpCapability,
   args: McpToolArguments = {},
 ): McpApiCall {
-  let path = capability.path;
-  for (const [key, value] of Object.entries(args.params ?? {})) {
-    const token = `:${key}`;
-    if (!path.includes(token)) continue;
-    path = path.replace(token, encodeURIComponent(String(value)));
-  }
+  const supplied = args.params ?? {};
+  // Replace whole placeholder names only. A substring replace lets one key
+  // corrupt another whose name merely starts with it (`:i` → `:id` yields
+  // `:Xd`), which silently builds a request for a different route.
+  const path = capability.path.replace(/:([A-Za-z0-9_]+)/g, (placeholder, name: string) =>
+    Object.hasOwn(supplied, name) ? encodeURIComponent(String(supplied[name])) : placeholder,
+  );
   const missing = path.match(/:[A-Za-z0-9_]+/g);
   if (missing) {
     throw new McpToolInputError(`缺少路径参数：${missing.join(', ')}`);

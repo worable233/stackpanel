@@ -16,7 +16,6 @@ import {
   isMcpWriteAuthorized,
   McpServer,
   McpToolInputError,
-  mcpToolName,
   type McpApiCall,
   type McpCapability,
   type McpToolResult,
@@ -45,19 +44,23 @@ export interface McpToolRuntime {
 /** Build a JSON-RPC MCP server over a credential-scoped tool runtime. */
 export function createMcpServer(runtime: McpToolRuntime): McpServer {
   const writesAllowed = isMcpWriteAuthorized(runtime.grantedScopes);
-  const visibleCapabilities = runtime.capabilities.filter(
-    (capability) => !capability.mutating || writesAllowed,
-  );
   const tools = buildMcpTools(runtime.capabilities, runtime.grantedScopes);
+  // Look tools up by the *de-duplicated* name `buildMcpTools` actually advertises,
+  // otherwise two capabilities that normalise to the same name would make a call
+  // for the first execute the second.
   const capabilitiesByName = new Map(
-    visibleCapabilities.map((capability) => [mcpToolName(capability.id), capability]),
+    tools.map((tool) => [tool.name, tool.capabilityId]),
   );
 
   return new McpServer({
     serverInfo: MCP_SERVER_INFO,
     listTools: () => tools,
     callTool: async (name, args) => {
-      const capability = capabilitiesByName.get(name);
+      const capabilityId = capabilitiesByName.get(name);
+      const capability =
+        capabilityId === undefined
+          ? undefined
+          : runtime.capabilities.find((item) => item.id === capabilityId);
       if (!capability) throw new McpToolInputError(`Unknown tool: ${name}`);
 
       let call: McpApiCall;
