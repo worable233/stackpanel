@@ -181,6 +181,14 @@ export interface CaptchaProvider {
    * operator-owned policy table that only kernel privileges could edit.
    */
   policyFor?(action: string): CaptchaPolicy | null;
+  /**
+   * Widget config for one action when it differs from {@link clientConfig} —
+   * e.g. a challenge URL that must carry the action, so a token minted for the
+   * login form cannot be replayed on the send-code form.
+   *
+   * The kernel prefers this over `clientConfig` for claiming providers.
+   */
+  clientConfigFor?(action: string): Record<string, unknown> | null;
 }
 
 /** Kernel-owned captcha service (`ctx.captcha`). */
@@ -213,16 +221,22 @@ export interface CaptchaService {
    * Provider-supplied client config for the frontend widget (site key, script
    * URL, …), or `null` when no provider supplies one. Never contains a secret.
    */
-  clientConfig(): Record<string, unknown> | null;
+  clientConfig(): Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
   /**
    * Effective policy for one action: the first provider that declares one wins,
    * otherwise the global `AUTH_CAPTCHA_MODE`.
+   *
+   * The result may be a Promise because providers are reached through the
+   * isolated-plugin proxy. Always `await` it: a Promise is neither `'off'` nor
+   * `'required'`, so comparing it directly silently disables the policy.
    */
-  policyFor(action: string): 'off' | 'optional' | 'required';
+  policyFor(action: string): 'off' | 'optional' | 'required' | Promise<'off' | 'optional' | 'required'>;
   /**
    * Widget config for one action, resolved from the providers that claim it.
    * Falls back to {@link clientConfig} so a provider that ignores actions still
    * renders everywhere it is asked for.
    */
-  clientConfigFor(action: string): Record<string, unknown> | null;
+  clientConfigFor(
+    action: string,
+  ): Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validatePassword } from '@stackpanel/sdk';
 import { AuthShell, type AuthProvider } from '@/components/auth-shell';
@@ -11,6 +11,9 @@ import { Label } from '@/components/ui/label';
 import { useTranslator } from '@/i18n/provider';
 import type { CaptchaActionConfig } from '@/lib/captcha';
 import { registerAction, sendRegisterCodeAction } from '@/lib/actions';
+
+/** Mirrors the kernel default for `AUTH_CODE_SEND_COOLDOWN_SECONDS`. */
+const SEND_CODE_COOLDOWN_SECONDS = 60;
 
 export function RegisterForm({
   providers = [],
@@ -41,6 +44,24 @@ export function RegisterForm({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  /**
+   * Client-side echo of the kernel's per-recipient cooldown
+   * (`AUTH_CODE_SEND_COOLDOWN_SECONDS`, 60s by default). The server is the
+   * authority; this only stops the visitor from discovering the limit by
+   * hammering the button — and shows how long the wait is.
+   */
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  useEffect(() => {
+    // A new send result (success *or* 429) restarts the local countdown.
+    if (codeState.notice || codeState.error) setCooldown(SEND_CODE_COOLDOWN_SECONDS);
+  }, [codeState]);
   const t = useTranslator();
 
   /**
@@ -53,6 +74,17 @@ export function RegisterForm({
   const activeCaptcha = captcha ?? sendCodeCaptcha;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    // "获取验证码" is a second submit button on the same form, and it only sends an
+    // email — it never creates the account. Running the password rules for it made
+    // the button do nothing at all while the password fields were still empty
+    // (native `required` on code/password + this handler), so a visitor who asked
+    // for the code first could not get one.
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLElement | null;
+    if (submitter?.dataset.sendCode === 'true') {
+      setPasswordError(null);
+      setConfirmError(null);
+      return;
+    }
     const form = event.currentTarget;
     const email = (form.elements.namedItem('email') as HTMLInputElement | null)?.value ?? '';
     const password = (form.elements.namedItem('password') as HTMLInputElement | null)?.value ?? '';
@@ -113,11 +145,17 @@ export function RegisterForm({
               <Button
                 type="submit"
                 formAction={sendCodeAction}
-                disabled={sendingCode}
+                formNoValidate
+                data-send-code="true"
+                disabled={sendingCode || cooldown > 0}
                 variant="outline"
                 className="h-auto shrink-0 whitespace-nowrap"
               >
-                {sendingCode ? t('auth.register.sendingCode') : t('auth.register.sendCode')}
+                {sendingCode
+                  ? t('auth.register.sendingCode')
+                  : cooldown > 0
+                    ? t('auth.register.resendIn', { seconds: cooldown })
+                    : t('auth.register.sendCode')}
               </Button>
             </div>
             {codeState.notice ? (

@@ -129,6 +129,7 @@
       "code": "Email verification code",
       "sendCode": "Send code",
       "sendingCode": "Sending…",
+      "resendIn": "再送信（{seconds}秒）",
       "codeSent": "A verification code has been sent to your email.",
       "codeSentTo": "A code was sent to {email}. It expires in 10 minutes.",
       "closedTitle": "新規登録は停止しています",

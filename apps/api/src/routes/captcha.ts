@@ -112,22 +112,22 @@ export async function captchaRoutes(app: FastifyInstance): Promise<void> {
       const action = query.data.action;
 
       if (action) {
-        const config = captcha.clientConfigFor(action);
+        const config = await captcha.clientConfigFor(action);
         return {
           action,
-          policy: captcha.policyFor(action),
+          policy: await captcha.policyFor(action),
           configured: captcha.isConfigured(),
           clientConfig: config,
           sources: captchaCspSources(config),
         };
       }
 
-      const config = captcha.clientConfig();
+      const config = await captcha.clientConfig();
       const actions: Record<string, unknown> = {};
       for (const id of KERNEL_CAPTCHA_ACTIONS) {
-        const policy = captcha.policyFor(id);
+        const policy = await captcha.policyFor(id);
         if (policy === 'off') continue;
-        const actionConfig = captcha.clientConfigFor(id);
+        const actionConfig = await captcha.clientConfigFor(id);
         actions[id] = {
           policy,
           clientConfig: actionConfig,

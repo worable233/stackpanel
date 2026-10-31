@@ -14,6 +14,9 @@ process.env.AUTH_EMAIL_VERIFICATION ??= 'required';
 process.env.AUTH_CAPTCHA_MODE ??= 'off';
 process.env.AUTH_CODE_SEND_PER_HOUR ??= '0';
 process.env.AUTH_CODE_SEND_PER_HOUR_PER_IP ??= '0';
+// Off by default so unrelated suites can re-request a code; the cooldown has its
+// own suite (`register-code-cooldown.test.ts`) that turns it on.
+process.env.AUTH_CODE_SEND_COOLDOWN_SECONDS ??= '0';
 // Integration tests log in repeatedly from the same loopback IP; the login
 // plugin's default 5/min would trip them. Tests disable the limiter.
 process.env.LOGIN_RATE_LIMIT_MAX ??= '0';

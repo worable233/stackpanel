@@ -120,6 +120,7 @@
       "code": "Email verification code",
       "sendCode": "Send code",
       "sendingCode": "Sending…",
+      "resendIn": "Resend ({seconds}s)",
       "codeSent": "A verification code has been sent to your email.",
       "codeSentTo": "A code was sent to {email}. It expires in 10 minutes.",
       "closedTitle": "Sign-ups are closed",

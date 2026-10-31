@@ -42,6 +42,7 @@ export type RuntimeConfigName =
   | 'AUTH_CODE_MAX_ATTEMPTS'
   | 'AUTH_CODE_SEND_PER_HOUR'
   | 'AUTH_CODE_SEND_PER_HOUR_PER_IP'
+  | 'AUTH_CODE_SEND_COOLDOWN_SECONDS'
   | 'SESSION_COOKIE_NAME'
   | 'SESSION_TTL_SECONDS'
   | 'MEDIA_MAX_UPLOAD_BYTES'
@@ -80,6 +81,7 @@ export const RUNTIME_CONFIG_SPECS: readonly RuntimeConfigSpec[] = Object.freeze(
   { name: 'AUTH_CODE_MAX_ATTEMPTS', group: 'auth' },
   { name: 'AUTH_CODE_SEND_PER_HOUR', group: 'auth' },
   { name: 'AUTH_CODE_SEND_PER_HOUR_PER_IP', group: 'auth' },
+  { name: 'AUTH_CODE_SEND_COOLDOWN_SECONDS', group: 'auth' },
   { name: 'MEDIA_MAX_UPLOAD_BYTES', group: 'media' },
   { name: 'MEDIA_VARIANTS_ASYNC', group: 'media' },
   { name: 'OPEN_API_TOKEN_RPM', group: 'openapi' },
