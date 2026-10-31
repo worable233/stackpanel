@@ -73,8 +73,31 @@ export interface FrontendLayoutProps {
   plugins?: string[];
 }
 
+/**
+ * Outcome of one declared plugin action.
+ *
+ * The kernel resolves this value for **both** success and domain failure, so a
+ * package can render the precise reason inline instead of guessing from a
+ * rejected promise. Only control-flow navigation (`action.redirect`, expired
+ * session) and genuine transport faults still reject.
+ */
+export interface PluginActionResult {
+  ok: boolean;
+  /** Localized success receipt declared through `successFeedback`. */
+  message?: string;
+  /** Localized, user-facing failure reason (stable, already translated). */
+  error?: string;
+  /**
+   * Kernel request id of the failing call, when the failure came from the API.
+   *
+   * ADR-0012 keeps the server's `detail` out of the UI, so this id is the only
+   * bridge between 「安装失败」 on screen and the exact reason in the server log.
+   */
+  requestId?: string;
+}
+
 /** One server-side action executor bound to a declared plugin action. */
-export type FrontendActionExecutor = (formData: FormData) => Promise<void>;
+export type FrontendActionExecutor = (formData: FormData) => Promise<PluginActionResult>;
 
 /** Actions made available to a rendered plugin page. */
 export type FrontendActionExecutors = Record<string, FrontendActionExecutor>;

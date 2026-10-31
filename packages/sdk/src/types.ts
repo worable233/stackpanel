@@ -1375,6 +1375,15 @@ export interface MarketPackage {
   current: boolean;
   /** Whether the package is a built-in shipped with the kernel. */
   builtin: boolean;
+  /**
+   * Where installing this entry would read from: `local` = the package shipped
+   * with the kernel/data directory, `catalog` = the signed remote catalog.
+   *
+   * The merge in the kernel prefers local sources, so the same id can appear as
+   * both; without this field an operator cannot tell whether an install will be
+   * signature-verified or copied from the repository checkout.
+   */
+  source?: 'local' | 'catalog';
   /** Frontend availability summary (pages/finders) when the package ships UI. */
   frontend?: {
     available: boolean;

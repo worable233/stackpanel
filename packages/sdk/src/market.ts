@@ -55,6 +55,8 @@ export interface MarketStatus {
     available: boolean;
     sequence?: number;
     expired?: boolean;
+    /** 快照过期时间（ISO 8601）；过期后仅可展示缓存，禁止自动安装。 */
+    expiresAt?: string;
     /** 最近一次刷新失败原因（成功后清空）。 */
     failure?: { kind: string; message: string; retryAt?: string | undefined };
   };

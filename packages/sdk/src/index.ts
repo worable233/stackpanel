@@ -141,6 +141,7 @@ export type {
   FrontendNavigationItem,
   FrontendActionExecutor,
   FrontendActionExecutors,
+  PluginActionResult,
   FrontendPageComponent,
   FrontendDataFetch,
   FrontendPageDataRequirement,
