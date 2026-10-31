@@ -22,6 +22,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import {
   checkPackageCompatibility,
   selectTargetVersion,
+  DistributionSignatureError,
   type BlockReasonLike,
   type CatalogEntry,
   type CatalogSnapshot,
@@ -29,20 +30,113 @@ import {
   type Keyring,
   type KernelCapabilities,
 } from '@stackpanel/spec';
+import { PluginError } from '@stackpanel/sdk';
 import { catalogCandidateSources, fetchCatalogPackage } from '../distribution/catalog-consumer.ts';
+import { KeyringError } from '../distribution/keyring.ts';
 import type { SourceCache } from '../distribution/index.ts';
 import { packageManager, packageDir, type StageHandle } from '../packages/index.ts';
 import { kernelCapabilities } from '../distribution/kernel-capabilities.ts';
 import { assemblePluginFiles, type PluginManifestFile } from './plugins.ts';
 import { assembleThemeFiles, type ThemeManifest } from './themes.ts';
 
+/**
+ * 目录安装失败的类型。
+ *
+ * 安装失败必须能区分「谁该动手」：目录里没这个包（运维看错）、兼容门禁挡住
+ * （需要升内核/降版本）、下载不到（网络/加速）、限流（等一会儿）、验签不过（发布
+ * 端或信任根）。以前全部压成一句「安装失败」+ 英文 detail，界面无话可说。
+ */
+export type CatalogMarketFailure =
+  | 'not_found'
+  | 'blocked'
+  | 'fetch'
+  | 'mismatch';
+
 export class CatalogMarketError extends Error {
   constructor(
     message: string,
     readonly blocks: BlockReasonLike[] = [],
+    readonly failure: CatalogMarketFailure = 'fetch',
+    /** 原始错误（`GitHubSourceError` / `PackageFetchError` / …），用于细分错误码。 */
+    override readonly cause?: unknown,
   ) {
     super(message);
   }
+}
+
+/**
+ * 把目录安装异常翻译成**带稳定错误码的插件错误**（ADR-0012 §4、ADR-0016 §3）。
+ *
+ * 错误码按「操作者下一步该做什么」划分，而不是按实现细节：
+ * - `market.notInCatalog` 404：目录里没这个条目（拼错 id / 渠道不含此版本）
+ * - `market.packageBlocked` 422：兼容/权限/迁移门禁挡住
+ * - `market.signatureInvalid` 502：验签、摘要、发布者或信任根不匹配
+ * - `market.packageTooLarge` 413：包体超限
+ * - `market.sourceRateLimited` 503：GitHub 限流（带 retryAfterSeconds）
+ * - `market.sourceUnavailable` 502：下载不到（网络/HTTP/重定向）
+ * - `market.packageInvalid` 502：包体结构非法或与目录条目不一致
+ *
+ * `detail` 保留原始原因（只进日志与 ProblemDetails，不上屏）。
+ */
+export function mapCatalogInstallError(error: unknown): PluginError | null {
+  if (!(error instanceof CatalogMarketError)) return null;
+  const detail = error.message;
+  if (error.failure === 'not_found') {
+    return new PluginError('market.notInCatalog', 404, detail);
+  }
+  if (error.failure === 'blocked') {
+    const reasons = error.blocks.map((block) => `${block.code}: ${block.detail}`).join('; ');
+    return new PluginError('market.packageBlocked', 422, reasons || detail);
+  }
+  if (error.failure === 'mismatch') {
+    return new PluginError('market.packageInvalid', 502, detail);
+  }
+  const cause = error.cause;
+  const kind = fetchFailureKind(cause);
+  if (kind === 'too_large') {
+    return new PluginError('market.packageTooLarge', 413, detail);
+  }
+  if (kind === 'rate_limited') {
+    const retryAfterSeconds = rateLimitRetrySeconds(cause);
+    return new PluginError(
+      'market.sourceRateLimited',
+      503,
+      detail,
+      undefined,
+      retryAfterSeconds === undefined ? undefined : { retryAfterSeconds },
+    );
+  }
+  if (kind === 'signature') {
+    return new PluginError('market.signatureInvalid', 502, detail);
+  }
+  if (kind === 'invalid') {
+    return new PluginError('market.packageInvalid', 502, detail);
+  }
+  return new PluginError('market.sourceUnavailable', 502, detail);
+}
+
+/** 从各类分发异常里提取一个统一的失败类别（未知一律按「下载不到」）。 */
+function fetchFailureKind(cause: unknown): string | null {
+  if (!cause || typeof cause !== 'object') return null;
+  const kind = (cause as { kind?: unknown }).kind;
+  if (typeof kind !== 'string') return null;
+  if (kind === 'too_large') return 'too_large';
+  if (kind === 'rate_limited') return 'rate_limited';
+  if (kind === 'invalid_archive') return 'invalid';
+  if (kind === 'digest_mismatch' || kind === 'signature') return 'signature';
+  if (kind === 'unknown_publisher' || kind === 'repository_not_allowed' || kind === 'missing_key') {
+    return 'signature';
+  }
+  if (cause instanceof DistributionSignatureError) return 'signature';
+  if (cause instanceof KeyringError) return 'signature';
+  return null;
+}
+
+/** `Retry-After` 建议的等待秒数（向上取整；没有就交给调用方兜底）。 */
+function rateLimitRetrySeconds(cause: unknown): number | undefined {
+  const ms = (cause as { retryAfterMs?: unknown } | null)?.retryAfterMs;
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return undefined;
+  return Math.max(1, Math.ceil(ms / 1000));
 }
 
 /** 远程目录安装所需的、可注入的依赖集合。 */
@@ -149,7 +243,11 @@ export async function prepareCatalogInstall(
 ): Promise<PreparedCatalogInstall> {
   const entries = catalogEntriesFor(deps.catalog, kind, id);
   if (entries.length === 0) {
-    throw new CatalogMarketError(`${kind === 'plugin' ? '插件' : '主题'} ${id} 不在目录中`);
+    throw new CatalogMarketError(
+      `${kind === 'plugin' ? '插件' : '主题'} ${id} 不在目录中`,
+      [],
+      'not_found',
+    );
   }
   const currentVersion = await catalogInstalledVersion(kind, id);
   const installed: InstalledComponent | undefined =
@@ -166,6 +264,7 @@ export async function prepareCatalogInstall(
     throw new CatalogMarketError(
       `${id} 没有可用版本：${selection.blocks.map((block) => block.detail).join('；')}`,
       selection.blocks,
+      'blocked',
     );
   }
   const entry =
@@ -186,9 +285,15 @@ export async function prepareCatalogInstall(
     });
   } catch (error) {
     // 信任归属/验签失败（CatalogConsumerError / PackageFetchError）不得降级为放行：
-    // 统一转成市场可展示的拒绝，且**不**触碰活动目录。
+    // 统一转成市场可展示的拒绝，且**不**触碰活动目录。原始错误挂到 cause 上，
+    // 让 `mapCatalogInstallError` 能细分错误码（限流/超限/验签/网络）。
     if (error instanceof CatalogMarketError) throw error;
-    throw new CatalogMarketError(error instanceof Error ? error.message : String(error));
+    throw new CatalogMarketError(
+      error instanceof Error ? error.message : String(error),
+      [],
+      'fetch',
+      error,
+    );
   }
 
   const entriesRecord: Record<string, Uint8Array> = {};
@@ -239,6 +344,8 @@ function assertManifestMatches(
   if (actualId !== expectedId || actualVersion !== expectedVersion) {
     throw new CatalogMarketError(
       `包体清单与目录不一致：目录 ${expectedId}@${expectedVersion}，包体 ${actualId}@${actualVersion}`,
+      [],
+      'mismatch',
     );
   }
 }

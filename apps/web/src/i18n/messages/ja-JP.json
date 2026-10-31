@@ -1593,7 +1593,17 @@
     "market": {
       "installFailed": "Installation failed; try again later",
       "serviceMissing": "The market service is missing",
-      "unavailable": "The market is unavailable right now"
+      "unavailable": "The market is unavailable right now",
+      "notInCatalog": "カタログにこの項目がありません。ID とリリースチャネルを確認してください。",
+      "packageBlocked": "カタログがインストールを拒否しました。このカーネルバージョンまたは権限では要件を満たしません（サーバーログを参照）。",
+      "signatureInvalid": "カタログパッケージの署名検証に失敗しました。署名・ダイジェスト・発行者が信頼の起点と一致しないため、インストールを中止しました。",
+      "packageTooLarge": "カタログパッケージがサイズ上限を超えているため、インストールを中止しました。",
+      "sourceRateLimited": "カタログ配布元がレート制限中です。しばらくしてから再試行してください。",
+      "sourceUnavailable": "カタログパッケージを取得できません。ネットワークまたはミラーが利用できないため、接続を確認して再試行してください。",
+      "packageInvalid": "カタログパッケージが項目と一致しないか形式が不正なため、インストールを中止しました。",
+      "catalogOffline": "リモートカタログが未設定で、ローカル配布元も利用できないためインストールできません。",
+      "refreshThrottled": "先ほどカタログを確認しました。しばらくしてから再試行してください。",
+      "refreshUnavailable": "このカーネルはカタログ更新機能を提供していません。"
     },
     "mcp": {
       "sse_unsupported": "MCP over SSE is not supported yet"

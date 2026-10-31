@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PluginError } from '@stackpanel/sdk';
 import type { MarketPackage, PluginDefinition } from '@stackpanel/sdk';
 import { MarketService } from '../../src/market/service.ts';
 import { CatalogMarketError } from '../../src/lib/market-catalog.ts';
@@ -11,7 +12,7 @@ import type { MarketSourcePackage } from '../../src/lib/market.ts';
  * 验证三件关键语义：
  *   1. 本地来源优先，同名远程条目被忽略（内置包不能被远程覆盖）；
  *   2. 未配置远程目录时完全离线（不假装有远程条目）；
- *   3. 远程安装失败时不触碰活动目录、错误原样上抛。
+ *   3. 远程安装失败时不触碰活动目录，并把分发异常收敛成稳定错误码。
  */
 
 function localPackage(id: string, version = '1.0.0'): MarketSourcePackage {
@@ -57,7 +58,7 @@ function harness(
     /** 激活新定义时抛错（模拟升级失败）。 */
     activateError?: Error;
     /** 注入一份目录刷新服务（status() 读它的 current()/lastFailureInfo()）。 */
-    refresh?: unknown;
+    refresh?: Record<string, unknown>;
   } = {},
 ): Harness {
   const installed: Array<{ kind: string; id: string }> = [];
@@ -115,7 +116,15 @@ function harness(
       return { manifest: { id, name: id, version: '1.0.0' } };
     },
     localSources: () => options.localSources ?? { enabled: true },
-    catalogRefresh: () => (options.refresh as never) ?? null,
+    catalogRefresh: () =>
+      options.refresh
+        ? ({
+            lastCheckedAt: () => null,
+            cooldownRemainingMs: () => 0,
+            refresh: async () => ({ resolved: null, failure: null }),
+            ...options.refresh,
+          } as never)
+        : null,
     notifyChange: async (change) => {
       notified.push(change);
     },
@@ -249,19 +258,121 @@ describe('MarketService（内核保留的分发安全原语）', () => {
     expect(h.installed).toEqual([{ kind: 'plugin', id: 'store-product-card' }]);
   });
 
-  it('远程安装失败时把错误原样上抛（不假装成功）', async () => {
+  it('远程安装失败时把分发异常收敛成稳定错误码，原因只留在 detail', async () => {
     const h = harness({
       catalogConfigured: true,
       installError: new CatalogMarketError('包签名校验失败'),
     });
-    await expect(h.service.install('plugin', 'analytics')).rejects.toThrow('包签名校验失败');
+    const error = await h.service.install('plugin', 'analytics').then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    // ADR-0012：上屏的是码对应的文案，英文 detail 只进日志。
+    expect(error).toBeInstanceOf(PluginError);
+    expect((error as PluginError).code).toBe('market.sourceUnavailable');
+    expect((error as PluginError).status).toBe(502);
+    expect((error as PluginError).detail).toContain('包签名校验失败');
+  });
+
+  it('条目不在目录 / 兼容门禁 / 限流各自可辨认（运维下一步不同）', async () => {
+    const missing = harness({
+      catalogConfigured: true,
+      installError: new CatalogMarketError('analytics 不在目录中', [], 'not_found'),
+    });
+    const missingError = await missing.service.install('plugin', 'analytics').then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect((missingError as PluginError).code).toBe('market.notInCatalog');
+    expect((missingError as PluginError).status).toBe(404);
+
+    const blocked = harness({
+      catalogConfigured: true,
+      installError: new CatalogMarketError(
+        '不兼容',
+        [{ code: 'incompatible_kernel', detail: '需要内核 >= 0.2.0' }],
+        'blocked',
+      ),
+    });
+    const blockedError = await blocked.service.install('plugin', 'analytics').then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect((blockedError as PluginError).code).toBe('market.packageBlocked');
+    expect((blockedError as PluginError).status).toBe(422);
+    expect((blockedError as PluginError).detail).toContain('incompatible_kernel');
+
+    const limited = harness({
+      catalogConfigured: true,
+      installError: new CatalogMarketError('GitHub 429', [], 'fetch', {
+        kind: 'rate_limited',
+        retryAfterMs: 8000,
+      }),
+    });
+    const limitedError = await limited.service.install('plugin', 'analytics').then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    // 限流要能被界面做成倒计时（ADR-0028），而不是「安装失败请重试」。
+    expect((limitedError as PluginError).code).toBe('market.sourceRateLimited');
+    expect((limitedError as PluginError).status).toBe(503);
+    expect((limitedError as PluginError).retryAfterSeconds).toBe(8);
   });
 
   it('未配置目录时安装远程条目给出明确拒绝', async () => {
     const h = harness({ catalogConfigured: false });
-    await expect(h.service.install('plugin', 'analytics')).rejects.toBeInstanceOf(
-      CatalogMarketError,
+    const error = await h.service.install('plugin', 'analytics').then(
+      () => null,
+      (caught: unknown) => caught,
     );
+    // 以前这里是普通 Error → 500。现在给稳定码，界面才能说「去配置分发源」。
+    expect(error).toBeInstanceOf(PluginError);
+    expect((error as PluginError).code).toBe('market.catalogOffline');
+    expect((error as PluginError).status).toBe(409);
+  });
+
+  it('刷新目录在冷却期内不发请求，并把剩余等待时间带回界面', async () => {
+    let refreshed = 0;
+    const throttled = harness({
+      refresh: {
+        repository: 'acme/catalog',
+        channel: 'stable',
+        cooldownRemainingMs: () => 4200,
+        current: () => ({ snapshot: { expiresAt: '2026-12-01T00:00:00.000Z' }, sequence: 6 }),
+        lastFailureInfo: () => null,
+        refresh: async () => {
+          refreshed += 1;
+          return { resolved: null, failure: null };
+        },
+      },
+    });
+    const result = await throttled.service.refreshCatalog?.();
+    expect(result).toMatchObject({ configured: true, throttled: true, retryAtMs: 4200, sequence: 6 });
+    // 冷却期就是限流边界：多一个入口就多一条 GitHub 请求路径。
+    expect(refreshed).toBe(0);
+  });
+
+  it('刷新目录成功后带回收到的序列', async () => {
+    const h = harness({
+      refresh: {
+        repository: 'acme/catalog',
+        channel: 'stable',
+        current: () => null,
+        lastFailureInfo: () => null,
+        refresh: async () => ({
+          resolved: { snapshot: { sequence: 7, expiresAt: '2026-12-08T00:00:00.000Z' } },
+          failure: null,
+        }),
+      },
+    });
+    const result = await h.service.refreshCatalog?.();
+    expect(result).toMatchObject({ configured: true, throttled: false, sequence: 7 });
+  });
+
+  it('未配置远程目录时刷新是空操作（不假装已刷新）', async () => {
+    const h = harness({ catalogConfigured: false });
+    const result = await h.service.refreshCatalog?.();
+    expect(result).toMatchObject({ configured: false, available: false });
   });
 
   it('本地主题安装会写主题表，并把首次安装与升级区分开', async () => {

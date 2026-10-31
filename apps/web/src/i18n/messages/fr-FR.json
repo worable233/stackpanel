@@ -1593,7 +1593,17 @@
     "market": {
       "installFailed": "Installation failed; try again later",
       "serviceMissing": "The market service is missing",
-      "unavailable": "The market is unavailable right now"
+      "unavailable": "The market is unavailable right now",
+      "notInCatalog": "Absent du catalogue : vérifiez l’ID et le canal de publication.",
+      "packageBlocked": "Installation refusée : cette version du noyau ou ces permissions ne satisfont pas les exigences du paquet (voir le journal serveur).",
+      "signatureInvalid": "La vérification de signature du paquet a échoué : signature, empreinte ou éditeur ne correspond pas à la racine de confiance. Installation refusée.",
+      "packageTooLarge": "Le paquet dépasse la taille maximale. Installation refusée.",
+      "sourceRateLimited": "La source du catalogue est limitée en débit : réessayez plus tard.",
+      "sourceUnavailable": "Impossible de récupérer le paquet du catalogue : réseau ou miroir indisponible. Vérifiez la connexion puis réessayez.",
+      "packageInvalid": "Le paquet ne correspond pas à son entrée ou est mal formé. Installation refusée.",
+      "catalogOffline": "Aucun catalogue distant n’est configuré et les sources locales sont indisponibles : installation impossible.",
+      "refreshThrottled": "Le catalogue vient d’être vérifié : réessayez dans un instant.",
+      "refreshUnavailable": "Ce noyau n’expose pas l’actualisation du catalogue."
     },
     "mcp": {
       "sse_unsupported": "MCP over SSE is not supported yet"

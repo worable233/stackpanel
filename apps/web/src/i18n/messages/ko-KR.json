@@ -1593,7 +1593,17 @@
     "market": {
       "installFailed": "Installation failed; try again later",
       "serviceMissing": "The market service is missing",
-      "unavailable": "The market is unavailable right now"
+      "unavailable": "The market is unavailable right now",
+      "notInCatalog": "카탈로그에 이 항목이 없습니다. ID와 릴리스 채널을 확인하세요.",
+      "packageBlocked": "카탈로그가 설치를 거부했습니다. 현재 커널 버전 또는 권한이 이 버전의 요구 사항을 충족하지 않습니다(서버 로그 참조).",
+      "signatureInvalid": "카탈로그 패키지 서명 검증에 실패했습니다. 서명·다이제스트·발행자가 신뢰 루트와 일치하지 않아 설치를 중단했습니다.",
+      "packageTooLarge": "카탈로그 패키지가 크기 한도를 초과하여 설치를 중단했습니다.",
+      "sourceRateLimited": "카탈로그 소스가 속도 제한 중입니다. 잠시 후 다시 시도하세요.",
+      "sourceUnavailable": "카탈로그 패키지를 가져올 수 없습니다. 네트워크 또는 미러를 사용할 수 없으니 연결을 확인한 뒤 다시 시도하세요.",
+      "packageInvalid": "카탈로그 패키지가 항목과 일치하지 않거나 형식이 올바르지 않아 설치를 중단했습니다.",
+      "catalogOffline": "원격 카탈로그가 설정되지 않았고 로컬 소스도 사용할 수 없어 설치할 수 없습니다.",
+      "refreshThrottled": "방금 카탈로그를 확인했습니다. 잠시 후 다시 시도하세요.",
+      "refreshUnavailable": "이 커널은 카탈로그 새로 고침을 제공하지 않습니다."
     },
     "mcp": {
       "sse_unsupported": "MCP over SSE is not supported yet"

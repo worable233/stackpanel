@@ -36,6 +36,13 @@ export interface MarketService {
   install(kind: 'plugin' | 'theme', id: string): Promise<MarketInstallResult>;
   /** 来源健康度（本地来源是否可用、远程目录状态与失败原因）；不发网络请求。 */
   status?(): Promise<MarketStatus>;
+  /**
+   * 手动刷新目录快照（后台「刷新目录」）。
+   *
+   * 共享刷新协调器的冷却/退避：冷却期内返回 `throttled` 且**不发网络请求**，
+   * 免得后台把 GitHub 当免费刷新按钮。未配置目录时返回 `configured: false`。
+   */
+  refreshCatalog?(): Promise<DistributionRefreshResult>;
 }
 
 /** 市场来源健康度。 */
@@ -59,6 +66,8 @@ export interface MarketStatus {
     expiresAt?: string;
     /** 最近一次刷新失败原因（成功后清空）。 */
     failure?: { kind: string; message: string; retryAt?: string | undefined };
+    /** 最近一次**真的**发起过刷新检查的时间（ISO 8601）；从未检查过则缺省。 */
+    checkedAt?: string;
   };
 }
 

@@ -66,7 +66,7 @@ function catalogSnapshot(): CatalogSnapshot {
         },
         artifact: { sha256: 'a'.repeat(64), size: 100 },
         compatibility: {
-          kernel: '>=0.2.0 <0.3.0',
+          kernel: '>=0.1.0 <0.3.0',
           kernelApi: '^0.4.0',
           frontendAbi: '^1.0.0',
           packageFormat: 1,
@@ -80,6 +80,35 @@ function catalogSnapshot(): CatalogSnapshot {
         publisher: 'stackpanel',
         name: 'Remote Analytics',
         description: '从 Release 安装的分析插件',
+      },
+      {
+        // 目录里有它、但要求的内核版本比当前跑的高：安装必须被兼容门禁挡住，
+        // 且要给出可辨认的错误码（而不是一句「安装失败」）。
+        formatVersion: 1,
+        kind: 'plugin',
+        id: 'remote-needs-newer-kernel',
+        version: '2.0.0',
+        channel: 'stable',
+        source: {
+          repository: 'worable233/stackpanel-plugins',
+          tag: 'remote-needs-newer-kernel-v2.0.0',
+          asset: 'remote-needs-newer-kernel-2.0.0.zip',
+        },
+        artifact: { sha256: 'b'.repeat(64), size: 100 },
+        compatibility: {
+          kernel: '>=0.2.0 <0.3.0',
+          kernelApi: '^0.4.0',
+          frontendAbi: '^1.0.0',
+          packageFormat: 1,
+        },
+        requires: [],
+        conflicts: [],
+        permissions: [],
+        frontendModes: ['M2'],
+        migration: { mode: 'none', rollback: 'code-compatible' },
+        automatic: { eligible: true },
+        publisher: 'stackpanel',
+        name: 'Remote Needs Newer Kernel',
       },
     ],
   };
@@ -177,17 +206,54 @@ describe.skipIf(!dbAvailable)('admin market with a signed remote catalog', () =>
 
   it('reports a clear error when the remote package cannot be fetched', async () => {
     // remote-analytics is in the catalog but its Release asset is not served by
-    // the fake GitHub, so verification/fetch fails and nothing is installed.
+    // the fake GitHub, so fetch fails and nothing is installed. The failure must
+    // carry a stable code the UI can translate (ADR-0012 §4), not a bare 500.
     const res = await app.inject({
       method: 'POST',
       url: '/market/admin/plugins/remote-analytics/install',
       headers: { authorization: `Bearer ${adminToken}` },
       payload: {},
     });
-    expect(res.statusCode).toBe(409);
+    expect(res.statusCode).toBe(502);
     const body = res.json() as Record<string, unknown>;
     expect(body.installed).toBeUndefined();
+    expect(body.code).toBe('market.sourceUnavailable');
     expect(typeof body.detail).toBe('string');
     expect(String(body.detail)).toContain('remote-analytics');
+  });
+
+  it('exposes a manual catalog refresh for the cold-start case', async () => {
+    // 进程重启后内存里没有快照；渲染路径不出网（ADR-0027），所以后台必须有显式
+    // 刷新入口，否则市场页会永远停在「等待首次刷新」。
+    const res = await app.inject({
+      method: 'POST',
+      url: '/market/admin/refresh',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {},
+    });
+    // 冷却期内是 429（带 retry-after），真的刷新成功是 200 + 序列。
+    expect([200, 429]).toContain(res.statusCode);
+    const body = res.json() as Record<string, unknown>;
+    if (res.statusCode === 200) {
+      expect(body.refreshed).toBe(true);
+      expect(body.sequence).toBe(4);
+    } else {
+      expect(body.code).toBe('market.refreshThrottled');
+      expect(res.headers['retry-after']).toBeDefined();
+    }
+  });
+
+  it('rejects a catalog entry the running kernel cannot satisfy, with its own code', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/market/admin/plugins/remote-needs-newer-kernel/install',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {},
+    });
+    // 兼容门禁与「下载不到」是两件事：前者升内核或换版本，后者查网络。
+    expect(res.statusCode).toBe(422);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.code).toBe('market.packageBlocked');
+    expect(body.installed).toBeUndefined();
   });
 });

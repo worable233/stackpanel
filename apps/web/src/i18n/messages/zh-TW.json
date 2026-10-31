@@ -1593,7 +1593,17 @@
     "market": {
       "installFailed": "安裝失敗，請稍後再試",
       "serviceMissing": "缺少市場服務",
-      "unavailable": "市場暫時不可用"
+      "unavailable": "市場暫時不可用",
+      "notInCatalog": "目錄裡沒有這個項目：請確認 ID 拼寫與發佈通道。",
+      "packageBlocked": "目錄拒絕安裝：目前核心版本或權限不滿足該版本要求（詳見伺服器日誌）。",
+      "signatureInvalid": "目錄套件驗簽失敗：簽章、摘要或發佈者與信任根不符，已拒絕安裝。",
+      "packageTooLarge": "目錄套件超過大小上限，已拒絕安裝。",
+      "sourceRateLimited": "目錄來源限流：請稍後重試。",
+      "sourceUnavailable": "取不到目錄套件：網路或鏡像無法使用，請檢查網路後重試。",
+      "packageInvalid": "目錄套件與項目不符或結構不合法，已拒絕安裝。",
+      "catalogOffline": "未設定遠端目錄，本機來源也不可用，無法安裝。",
+      "refreshThrottled": "剛檢查過目錄，請稍後再試。",
+      "refreshUnavailable": "核心未提供目錄重新整理能力。"
     },
     "mcp": {
       "sse_unsupported": "暫不支援 MCP 的 SSE 連線方式"

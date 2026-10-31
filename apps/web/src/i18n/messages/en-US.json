@@ -1593,7 +1593,17 @@
     "market": {
       "installFailed": "Installation failed; try again later",
       "serviceMissing": "The market service is missing",
-      "unavailable": "The market is unavailable right now"
+      "unavailable": "The market is unavailable right now",
+      "notInCatalog": "Not in the catalog: check the ID and release channel.",
+      "packageBlocked": "Install rejected: this kernel version or permission set does not satisfy the package (see server log).",
+      "signatureInvalid": "Catalog package failed signature verification: signature, digest or publisher does not match the trust root. Install rejected.",
+      "packageTooLarge": "Catalog package exceeds the size limit. Install rejected.",
+      "sourceRateLimited": "Catalog source is rate limited: try again later.",
+      "sourceUnavailable": "Cannot fetch the catalog package: network or mirror unavailable. Check connectivity and retry.",
+      "packageInvalid": "Catalog package does not match its entry or is malformed. Install rejected.",
+      "catalogOffline": "No remote catalog configured and local sources are unavailable, so nothing can be installed.",
+      "refreshThrottled": "Checked the catalog a moment ago: try again shortly.",
+      "refreshUnavailable": "This kernel does not expose catalog refresh."
     },
     "mcp": {
       "sse_unsupported": "MCP over SSE is not supported yet"

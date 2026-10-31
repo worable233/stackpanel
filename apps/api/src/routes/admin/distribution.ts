@@ -23,7 +23,7 @@ import {
   saveCatalogToken,
   toCatalogSourceView,
 } from '../../distribution/source-config.ts';
-import { getCatalogRefresh } from '../../distribution/runtime.ts';
+import { getCatalogRefresh, refreshCatalogNow } from '../../distribution/runtime.ts';
 import { env } from '../../config/env.ts';
 import { isValidSigningPublicKey } from '../../lib/signing-settings.ts';
 import { isSecretsEnabled } from '../../lib/crypto.ts';
@@ -166,34 +166,9 @@ export async function adminDistributionRoutes(app: FastifyInstance): Promise<voi
   app.post(
     '/admin/distribution/refresh',
     { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
-    async () => {
-      const service = getCatalogRefresh();
-      if (!service) {
-        return { configured: false, available: false, throttled: false, failure: null };
-      }
-      // 与 `POST /admin/updates/check` 共用同一套冷却：两个入口都不能把 GitHub 当免费刷新。
-      const cooldownMs = service.cooldownRemainingMs();
-      if (cooldownMs > 0) {
-        return {
-          configured: true,
-          available: service.current() !== null,
-          throttled: true,
-          retryAtMs: cooldownMs,
-          failure: service.lastFailureInfo(),
-          sequence: service.current()?.sequence ?? null,
-          expired: service.current()?.expired ?? null,
-        };
-      }
-      const result = await service.refresh();
-      return {
-        configured: true,
-        available: result.resolved !== null,
-        throttled: false,
-        failure: result.failure,
-        sequence: result.resolved?.snapshot.sequence ?? null,
-        expired: result.resolved?.expired ?? null,
-      };
-    },
+    // 逻辑在 `refreshCatalogNow()` 里：市场页「刷新目录」走同一个函数，
+    // 否则多一个入口就多一条不受冷却约束的 GitHub 请求路径。
+    async () => refreshCatalogNow(),
   );
 
   /** 重新从数据库读取配置（多副本场景下让本副本跟上）。 */

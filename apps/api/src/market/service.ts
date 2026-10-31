@@ -13,11 +13,14 @@
 
 import type { PrismaClient } from '@stackpanel/db';
 import type {
+  DistributionRefreshResult,
   MarketInstallResult,
   MarketPackage,
   MarketService as MarketServiceContract,
+  MarketStatus,
   PluginDefinition,
 } from '@stackpanel/sdk';
+import { PluginError } from '@stackpanel/sdk';
 import type { CatalogInstallContext } from '../distribution/runtime.ts';
 import type { CatalogRefreshService } from '../distribution/refresh-service.ts';
 import type { PluginRuntime } from '../plugins/runtime.ts';
@@ -31,39 +34,26 @@ import {
   type MarketSourcePackage,
 } from '../lib/market.ts';
 import {
-  CatalogMarketError,
   listCatalogMarketEntries,
+  mapCatalogInstallError,
   prepareCatalogInstall,
   type CatalogKind,
 } from '../lib/market-catalog.ts';
 import { loadPluginDefinition } from '../lib/plugins.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { publishRuntimeChange, type RuntimeChange } from '../runtime/coherence.ts';
-import { getCatalogRefresh, resolveCatalogInstallContext } from '../distribution/runtime.ts';
+import { getCatalogRefresh, refreshCatalogWithCooldown, resolveCatalogInstallContext } from '../distribution/runtime.ts';
 import {
   localMarketSourcesAllowed,
   localSourcesDisabledReason,
 } from '../distribution/runtime-env.ts';
-
-/** 市场来源健康度（供后台展示「为什么没有条目」）。 */
-export interface MarketStatus {
-  localSources: {
-    enabled: boolean;
-    reason?: string;
-  };
-  catalog: {
-    /** 是否配置了远程目录（默认源也算配置）。 */
-    configured: boolean;
-    repository: string | null;
-    channel: string | null;
-    /** 是否已拿到一份可用快照。 */
-    available: boolean;
-    sequence?: number;
-    expired?: boolean;
-    /** 最近一次刷新失败原因（成功后清空）。 */
-    failure?: { kind: string; message: string; retryAt?: string };
-  };
-}
+/**
+ * 市场来源健康度（供后台展示「为什么没有条目」）。
+ *
+ * 类型单一来源在 `@stackpanel/sdk`（ADR-0016 §5）：内核与插件共用一份声明，
+ * 否则内核加一个字段（如 `expiresAt`）插件侧看不到，页面只能靠断言。
+ */
+export type { MarketStatus } from '@stackpanel/sdk';
 
 /** 市场服务依赖（可注入，便于单元测试）。 */
 export interface MarketServiceDeps {
@@ -154,6 +144,7 @@ export class MarketService implements MarketServiceContract {
     const service = this.catalogRefresh();
     const current = service?.current() ?? null;
     const failure = service?.lastFailureInfo() ?? null;
+    const checkedAt = service?.lastCheckedAt() ?? null;
     return {
       localSources: local,
       catalog: {
@@ -169,8 +160,23 @@ export class MarketService implements MarketServiceContract {
             }
           : {}),
         ...(failure ? { failure } : {}),
+        ...(checkedAt ? { checkedAt } : {}),
       },
     };
+  }
+
+  /**
+   * 手动刷新目录快照（后台「刷新目录」）。
+   *
+   * 与 `POST /admin/distribution/refresh` 共用同一套冷却：手动入口不是免费刷新按钮，
+   * 冷却期内直接返回 `throttled` 而不是打一次 GitHub。
+   */
+  async refreshCatalog(): Promise<DistributionRefreshResult> {
+    const service = this.catalogRefresh();
+    if (!service) {
+      return { configured: false, available: false, throttled: false, failure: null };
+    }
+    return refreshCatalogWithCooldown(service);
   }
 
   /**
@@ -181,11 +187,24 @@ export class MarketService implements MarketServiceContract {
     const local = (await this.listLocal(kind)).find((source) => source.id === id);
     if (local) return this.installFromLocal(kind, id);
 
-    const context = await this.catalog();
-    if (!context) {
-      throw new CatalogMarketError(`未配置远程目录，无法从目录安装${LOCAL_LABEL[kind]}：${id}`);
+    try {
+      const context = await this.catalog();
+      if (!context) {
+        // 本地来源被禁用 + 未配置远程目录 = 无路可走。给出稳定错误码，
+        // 界面才能说「去后台配置分发源」，而不是一句通用的「安装失败」。
+        throw new PluginError(
+          'market.catalogOffline',
+          409,
+          `未配置远程目录，无法从目录安装${LOCAL_LABEL[kind]}：${id}`,
+        );
+      }
+      return await this.installFromCatalog(context, kind, id);
+    } catch (error) {
+      // 把分发异常收敛成带稳定错误码的插件错误（ADR-0012 §4）：限流 / 超限 /
+      // 验签不过 / 条目不在目录各自可辨认，原重保留在 detail 里只进日志。
+      // 上下文解析失败（快照缺失/过期）也走同一条映射。
+      throw mapCatalogInstallError(error) ?? error;
     }
-    return this.installFromCatalog(context, kind, id);
   }
 
   private async installFromLocal(

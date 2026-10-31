@@ -12,6 +12,7 @@
 
 import path from 'node:path';
 import type { CatalogSnapshot, Keyring } from '@stackpanel/spec';
+import type { DistributionRefreshResult } from '@stackpanel/sdk';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { loadKeyring } from './keyring.ts';
 import { FileSourceCache } from './source-cache.ts';
@@ -96,6 +97,47 @@ export function setCatalogRefreshForTest(service: CatalogRefreshService | null):
   singleton = service;
   singletonKey = null;
   singletonPinned = true;
+}
+
+/**
+ * 带冷却的目录刷新。
+ *
+ * 后台的三个入口（`POST /admin/distribution/refresh`、`POST /admin/updates/check`、
+ * 市场页「刷新目录」）都必须共享同一套冷却：否则每个入口都能触发一次 GitHub 请求，
+ * 限流边界就形同虚设。冷却期内**不发请求**，直接返回当前快照与建议重试等待。
+ */
+export async function refreshCatalogWithCooldown(
+  service: CatalogRefreshService,
+): Promise<DistributionRefreshResult> {
+  const cooldownMs = service.cooldownRemainingMs();
+  const current = service.current();
+  if (cooldownMs > 0) {
+    return {
+      configured: true,
+      available: current !== null,
+      throttled: true,
+      retryAtMs: cooldownMs,
+      failure: service.lastFailureInfo(),
+      sequence: current?.sequence ?? null,
+      expired: current?.expired ?? null,
+    };
+  }
+  const result = await service.refresh();
+  return {
+    configured: true,
+    available: result.resolved !== null,
+    throttled: false,
+    failure: result.failure,
+    sequence: result.resolved?.snapshot.sequence ?? null,
+    expired: result.resolved?.expired ?? null,
+  };
+}
+
+/** 进程单例版本的 {@link refreshCatalogWithCooldown}；未配置目录时返回 `configured: false`。 */
+export async function refreshCatalogNow(): Promise<DistributionRefreshResult> {
+  const service = getCatalogRefresh();
+  if (!service) return { configured: false, available: false, throttled: false, failure: null };
+  return refreshCatalogWithCooldown(service);
 }
 
 /**
