@@ -124,7 +124,13 @@ const envSchema = z.object({
   // Captcha policy: `off` never asks; `optional` verifies a token when the
   // client sends one but admits requests without it; `required` rejects any
   // request lacking a valid token (and rejects when no provider is configured).
-  AUTH_CAPTCHA_MODE: z.enum(['off', 'optional', 'required']).default('off'),
+  // Master switch for human verification. `off` is a hard kill switch;
+  // `optional` (default) lets an installed provider decide per action, which is
+  // what makes "install the plugin and it works" true; `required` forces a token
+  // on every guarded action. Unset behaves as `optional` because a deployment
+  // with no provider installed renders no widget and therefore needs no token,
+  // so the default changes nothing until an operator installs one.
+  AUTH_CAPTCHA_MODE: z.enum(['off', 'optional', 'required']).default('optional'),
   // Verification-code lifetime and throttling.
   AUTH_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
   AUTH_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
@@ -248,6 +254,14 @@ const envSchema = z.object({
 });
 
 export type Env = z.infer<typeof envSchema>;
+
+/**
+ * 字段级 schema（变量名 → 该变量的 Zod 校验器）。
+ *
+ * 后台可编辑的运行期配置存在 Setting 表里（ADR-0026），写库前要用**同一份**
+ * schema 校验，否则会出现「后台存得进去、运行期解析不了」的分裂。
+ */
+export const envFieldSchemas = envSchema.shape;
 
 /** Known dev-only placeholders that must never run in production. */
 const DEV_PLACEHOLDERS = new Set([

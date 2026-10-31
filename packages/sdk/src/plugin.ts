@@ -369,6 +369,13 @@ export interface HttpRequest {
 /** Framework-agnostic reply view handed to plugin route handlers. */
 export interface HttpReply {
   code(status: number): HttpReply;
+  /**
+   * Set a response header. Present on handler routes (the kernel adapter is
+   * Fastify); a route that serves something other than JSON — a widget script,
+   * an image — needs it to set `content-type`, since a script served as
+   * `application/json` is blocked by the browser's MIME check.
+   */
+  header?(name: string, value: string): HttpReply;
   send(payload?: unknown): void;
   /** Set a response cookie (implemented by the kernel adapter; login plugins use this). */
   setCookie?(name: string, value: string, options?: Record<string, unknown>): void;

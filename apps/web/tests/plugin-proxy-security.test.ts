@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeSegmentsSafely, isPublicAssetRequest } from '@/lib/plugin-proxy-path';
+import { decodeSegmentsSafely, isPublicAssetRequest, routeTableFor } from '@/lib/plugin-proxy-path';
 import { safeInternalPath } from '@/lib/safe-path';
 
 /**
@@ -111,5 +111,14 @@ describe('safeInternalPath (open redirect, D-2)', () => {
     expect(safeInternalPath(undefined)).toBeNull();
     expect(safeInternalPath(42)).toBeNull();
     expect(safeInternalPath('')).toBeNull();
+  });
+});
+
+describe('routeTableFor (anonymous plugin bootstrap)', () => {
+  it('sends a session to the authenticated table and an anonymous visitor to the public one', () => {
+    expect(routeTableFor('sess_abc')).toBe('action-targets');
+    // Regression: routing an anonymous request to `action-targets` answered 401, so
+    // the login page's captcha widget could not fetch its script or challenge.
+    expect(routeTableFor(null)).toBe('public-routes');
   });
 });

@@ -5,8 +5,10 @@ import { readCaptchaCspSources, resetCaptchaCspCache } from '@/lib/captcha-csp';
  * Captcha CSP sources (spec §5.1).
  *
  * The proxy runs on every page request, so this reader must be cheap, must cache
- * failures as well as successes, and must never throw: a missing or broken
- * captcha provider may degrade the widget, never the site.
+ * successes, and must never throw: a missing or broken captcha provider may
+ * degrade the widget, never the site. A failure is cached only briefly — the
+ * proxy derives `worker-src` from this answer, so a failure held for the full
+ * success window would block a proof-of-work widget for that whole window.
  */
 
 function mockFetch(handler: () => Promise<Response> | Response): void {
@@ -67,6 +69,23 @@ describe('readCaptchaCspSources', () => {
     expect(sources.frame).toEqual(['https://ok.test']);
   });
 
+  it('relays the blob: worker scheme a proof-of-work widget needs', async () => {
+    mockFetch(() => json({ sources: { worker: ['blob:'] } }));
+    await expect(readCaptchaCspSources()).resolves.toEqual({
+      script: [],
+      style: [],
+      frame: [],
+      connect: [],
+      worker: ['blob:'],
+    });
+  });
+
+  it('drops data: even though it would also parse as a scheme source', async () => {
+    mockFetch(() => json({ sources: { worker: ['data:text/javascript,1', 'blob:'] } }));
+    const sources = await readCaptchaCspSources();
+    expect(sources.worker).toEqual(['blob:']);
+  });
+
   it('returns empty sources when no provider is installed', async () => {
     mockFetch(() => json({ configured: false, sources: {} }));
     await expect(readCaptchaCspSources()).resolves.toEqual({
@@ -98,6 +117,33 @@ describe('readCaptchaCspSources', () => {
     await readCaptchaCspSources();
     await readCaptchaCspSources();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed read long before the success TTL expires', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(json({ error: 'down' }, 503))
+        .mockResolvedValue(json({ sources: { worker: ['blob:'] } }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const first = await readCaptchaCspSources();
+      expect(first.worker).toEqual([]);
+
+      // A burst of requests collapses onto the cached failure ...
+      await readCaptchaCspSources();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // ... but recovery is seconds away, not the full success window: an API
+      // restart must not leave every page without `worker-src`.
+      vi.setSystemTime(Date.now() + 3_000);
+      const third = await readCaptchaCspSources();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(third.worker).toEqual(['blob:']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shares one in-flight request between concurrent callers', async () => {

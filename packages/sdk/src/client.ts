@@ -30,6 +30,8 @@ import {
   captchaPolicyResponseSchema,
   accountMutationResponseSchema,
   sendRegisterCodeResponseSchema,
+  passwordResetRequestResponseSchema,
+  passwordResetResponseSchema,
   connectedIdentityListResponseSchema,
   currencyDefinitionListResponseSchema,
   currencyDefinitionMutationResponseSchema,
@@ -94,6 +96,8 @@ import {
   setupStatusResponseSchema,
   bootstrapProvisionResponseSchema,
   signingResponseSchema,
+  adminConfigResponseSchema,
+  adminFrontendExecResponseSchema,
   platformInfoResponseSchema,
   platformBrandResponseSchema,
   settingsResponseSchema,
@@ -187,9 +191,14 @@ import type {
   PermissionGroupPatchResponse,
   PermissionGroupUpdateInput,
   PermissionInfoListResponse,
+  PasswordResetRequestResponse,
+  PasswordResetResponse,
   RbacTemplatesResponse,
   SendRegisterCodeResponse,
   SigningResponse,
+  AdminConfigResponse,
+  AdminFrontendExecResponse,
+  AdminFrontendExecPolicy,
   Readiness,
   ThemePreviewMutationResponse,
   ThemePreviewResponse,
@@ -457,7 +466,10 @@ export class ApiClient {
 
   /** Read one update task result (phase/checkpoints/recovery) by idempotency key. */
   getUpdateResult(key: string): Promise<{ result: UpdateTaskResultView }> {
-    return this.get(`/admin/updates/results/${encodeURIComponent(key)}`, updateResultResponseSchema);
+    return this.get(
+      `/admin/updates/results/${encodeURIComponent(key)}`,
+      updateResultResponseSchema,
+    );
   }
 
   /** Read the pending updater self-update request (if any). */
@@ -644,6 +656,28 @@ export class ApiClient {
       { email, ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}) },
       sendRegisterCodeResponseSchema,
     );
+  }
+
+  /** Request a self-service password reset code (login plugin). */
+  requestPasswordReset(
+    email: string,
+    options: { captchaToken?: string } = {},
+  ): Promise<PasswordResetRequestResponse> {
+    return this.post(
+      '/password/forgot',
+      { email, ...(options.captchaToken ? { captchaToken: options.captchaToken } : {}) },
+      passwordResetRequestResponseSchema,
+    );
+  }
+
+  /**
+   * Complete a self-service password reset with the emailed code.
+   *
+   * On success every session of that account is revoked, so the caller has to
+   * sign in again with the new password — a reset is not a login.
+   */
+  resetPassword(email: string, code: string, password: string): Promise<PasswordResetResponse> {
+    return this.post('/password/reset', { email, code, password }, passwordResetResponseSchema);
   }
 
   /** Read the public authentication policy (login plugin). */
@@ -1132,7 +1166,11 @@ export class ApiClient {
   }
 
   /** Update a theme's frontend settings (admin). */
-  updateThemeSettings(id: string, settings: FrontendSettings, expectedVersion?: string): Promise<SettingsResponse> {
+  updateThemeSettings(
+    id: string,
+    settings: FrontendSettings,
+    expectedVersion?: string,
+  ): Promise<SettingsResponse> {
     return this.patch(
       `/admin/themes/${encodeURIComponent(id)}/settings`,
       { settings, ...(expectedVersion ? { expectedVersion } : {}) },
@@ -1209,6 +1247,54 @@ export class ApiClient {
   /** Set or clear the stored package signing public key (empty clears). */
   setSigningPublicKey(publicKey: string): Promise<SigningResponse> {
     return this.patch('/admin/signing', { publicKey }, signingResponseSchema);
+  }
+
+  /* --------------------- 运行期配置（ADR-0026） --------------------- */
+
+  /** Read every admin-editable runtime setting plus the frontend exec policy. */
+  getAdminConfig(): Promise<AdminConfigResponse> {
+    return this.get('/admin/config', adminConfigResponseSchema);
+  }
+
+  /** Override one runtime setting in the database (`null` reverts to env). */
+  setAdminConfig(name: string, value: unknown): Promise<AdminConfigResponse> {
+    return this.put(
+      `/admin/config/${encodeURIComponent(name)}`,
+      { value },
+      adminConfigResponseSchema,
+    );
+  }
+
+  /** Drop the database override so the environment variable applies again. */
+  clearAdminConfig(name: string): Promise<AdminConfigResponse> {
+    return this.del(`/admin/config/${encodeURIComponent(name)}`, adminConfigResponseSchema);
+  }
+
+  /** Read the current frontend server-execution policy (allow/deny/admitAll). */
+  getAdminFrontendExec(): Promise<AdminFrontendExecResponse> {
+    return this.get('/admin/frontend-exec', adminFrontendExecResponseSchema);
+  }
+
+  /**
+   * Grant or revoke server-side execution for ONE plugin.
+   *
+   * The single-plugin form exists so two operators (or two tabs) cannot clobber
+   * each other by read-modify-writing the whole list — the kernel applies the
+   * delta. Revoking always wins over admission, matching the deny-first order.
+   */
+  setAdminFrontendExecPlugin(id: string, allowed: boolean): Promise<AdminFrontendExecResponse> {
+    return this.put(
+      `/admin/frontend-exec/plugins/${encodeURIComponent(id)}`,
+      { allowed },
+      adminFrontendExecResponseSchema,
+    );
+  }
+
+  /** Replace the frontend server-execution allow/deny lists. */
+  setAdminFrontendExec(
+    policy: Pick<AdminFrontendExecPolicy, 'allow' | 'deny' | 'admitAll'>,
+  ): Promise<AdminFrontendExecResponse> {
+    return this.put('/admin/frontend-exec', policy, adminFrontendExecResponseSchema);
   }
 
   /* ------------------------- 币种治理 ------------------------- */

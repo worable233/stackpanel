@@ -249,7 +249,10 @@
     "updateResultsFailed": "Failed to read update results",
     "updateSelfUpdateSubmitFailed": "Failed to queue the self-upgrade request",
     "updateSelfUpdateCancelFailed": "Failed to cancel the self-upgrade request",
-    "updateCheckFailed": "Failed to check for updates"
+    "updateCheckFailed": "Failed to check for updates",
+    "runtimeConfigSaved": "설정이 적용되었습니다",
+    "runtimeConfigReverted": "환경 변수로 되돌렸습니다",
+    "frontendExecSaved": "허용 목록을 업데이트했습니다"
   },
   "admin": {
     "recentTickets": "Recent tickets",
@@ -664,6 +667,18 @@
         "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
         "body": "The package files are missing, so the runtime never loaded this plugin.",
         "cleanup": "Remove record"
+      },
+      "serverExec": {
+        "label": "서버 실행",
+        "allowed": "허용됨",
+        "denied": "허용되지 않음",
+        "grant": "실행 허용",
+        "revoke": "실행 취소",
+        "saved": "서버 실행 허용이 업데이트되었습니다",
+        "reasonBuiltin": "내장 플러그인은 항상 허용",
+        "reasonDeny": "거부 목록에 의해 차단됨",
+        "reasonAdmitAll": "긴급 전체 허용 중",
+        "admitAllActive": "긴급 전체 허용이 켜져 있습니다. 모든 플러그인이 웹 프로세스에서 실행될 수 있습니다. 점검이 끝나면 끄세요."
       }
     },
     "users": {
@@ -858,6 +873,37 @@
         "gatewayConfigNote": "This gateway keeps its credentials in its own plugin settings — nothing to enter here.",
         "qrHint": "Same-origin paths and data: URLs are shown inline on the order page. External image URLs are blocked by the security policy and appear as a link instead.",
         "confirmDeleteHint": "This payment method will no longer be available for new orders. Existing orders are unaffected."
+      },
+      "runtimeConfig": {
+        "title": "런타임 설정",
+        "description": "이 스위치는 데이터베이스에 저장됩니다. 변경 사항은 Redis를 통해 모든 복제본에 즉시 적용되며 재시작이 필요하지 않습니다. 비워 두거나 \"되돌리기\"를 누르면 환경 변수 값으로 돌아갑니다.",
+        "source": {
+          "stored": "덮어씀",
+          "env": "환경 변수",
+          "default": "기본값"
+        },
+        "envValue": "환경 변수 값",
+        "revert": "되돌리기",
+        "revertHint": "데이터베이스 덮어쓰기를 삭제하고 환경 변수를 사용합니다",
+        "group": {
+          "auth": "인증 및 인증 코드",
+          "session": "세션",
+          "media": "미디어",
+          "openapi": "오픈 API",
+          "plugins": "플러그인",
+          "audit": "감사 로그",
+          "agent": "에이전트"
+        },
+        "frontendExec": {
+          "title": "플러그인 서버 측 실행",
+          "description": "어떤 플러그인의 서버 측 코드(finder, 페이지 데이터)를 웹 프로세스에서 실행할 수 있는지 결정합니다. 내장 플러그인은 항상 허용되며, 그 외에는 허용 목록에 있는 ID만 실행할 수 있습니다. 허용되지 않은 플러그인도 설치·활성화·화면 표시는 되지만 선언한 데이터는 받지 못합니다.",
+          "allow": "허용 목록",
+          "deny": "거부 목록",
+          "allowHint": "쉼표 또는 공백으로 구분된 플러그인 ID",
+          "denyHint": "내장 여부와 허용 목록보다 우선합니다",
+          "admitAll": "모두 허용(긴급)",
+          "admitAllHint": "准入 판정을 무시하고 모든 플러그인을 웹 프로세스에서 실행합니다. 잘못 분류된 패키지를 임시로 점검할 때만 사용하고, 끝나면 반드시 끄십시오."
+        }
       }
     },
     "themes": {
@@ -1131,7 +1177,7 @@
       "keyHint": "Kept in this page's memory only; re-enter it after navigating away. Model keys are managed by the site owner.",
       "subObjectiveLabel": "Subtask objective",
       "objectiveLabel": "Objective",
-      "modelLabel": "Model (leave blank for the default)",
+      "modelLabel": "모델",
       "executionLabel": "Execution mode",
       "executionRequest": "Advance with this request",
       "executionBackground": "Authorize background execution (one hour)",
@@ -1165,7 +1211,27 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key"
+      "keyRequired": "Enter your own permission API key",
+      "subtitle": "권한 범위 안에서 Agent가 작업합니다. 위험한 쓰기는 항상 확인을 요청합니다.",
+      "advanced": "고급 설정",
+      "advancedHint": "위험한 쓰기는 확인할 때까지 일시 중지됩니다.",
+      "usageTitle": "사용 방법",
+      "usageKey": "권한 API 키를 입력하세요. 이 페이지의 메모리에만 보관됩니다.",
+      "usageObjective": "목표, 범위, 기대 결과를 구체적으로 설명할수록 안정적입니다.",
+      "usageApprove": "위험한 쓰기가 발생하면 Agent가 멈추고 확인을 기다립니다.",
+      "configure": "설정",
+      "defaultModel": "기본값 사용",
+      "objectivePlaceholder": "Agent가 수행할 작업을 설명하세요…",
+      "pendingCount": "{count}개 확인 대기",
+      "statusQueued": "대기 중",
+      "statusRunning": "실행 중",
+      "statusWaiting": "확인 대기",
+      "statusSucceeded": "완료",
+      "statusFailed": "실패",
+      "statusCancelled": "취소됨",
+      "replayEmpty": "실행 단계가 없습니다",
+      "subtasksTitle": "하위 작업",
+      "runMeta": "{model} · {steps}단계"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -1508,7 +1574,13 @@
     "frontend_admin_route_render": "Render plugin admin",
     "frontend_account_route_render": "Render account page",
     "frontend_action_execute": "Execute front-end action",
-    "bootstrap_create": "Bootstrap administrator"
+    "bootstrap_create": "Bootstrap administrator",
+    "auth_password_changed": "비밀번호 변경",
+    "auth_password_reset": "비밀번호 재설정",
+    "auth_password_reset_requested": "비밀번호 재설정 요청",
+    "config_changed": "커널 설정 변경",
+    "config_reverted": "커널 설정 되돌리기",
+    "config_frontend_exec_changed": "플러그인 실행 승인 변경"
   },
   "auditResource": {
     "user": "User",
@@ -1532,7 +1604,8 @@
       "orContinueWith": "Or continue with",
       "noAccount": "Don't have an account?",
       "register": "Register",
-      "oauthFailed": "OAuth sign-in failed. Please try again."
+      "oauthFailed": "OAuth sign-in failed. Please try again.",
+      "forgotPassword": "비밀번호를 잊으셨나요?"
     },
     "register": {
       "title": "Create your account",
@@ -1550,14 +1623,18 @@
       "sendCode": "Send code",
       "sendingCode": "Sending…",
       "codeSent": "A verification code has been sent to your email.",
-      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes."
+      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes.",
+      "closedTitle": "현재 회원가입이 닫혀 있습니다",
+      "closedBody": "이 사이트는 셀프 가입을 받지 않습니다. 관리자에게 문의하세요.",
+      "blockedTitle": "현재 가입할 수 없습니다",
+      "blockedBody": "이메일 인증이 켜져 있지만 지금은 인증 코드를 보낼 수 없습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요."
     },
     "setup": {
       "title": "Initialize your platform",
       "subtitle": "Create the first administrator account to finish deployment.",
       "email": "Admin email",
       "password": "Admin password",
-      "passwordHint": "At least 8 characters",
+      "passwordHint": "{min}자 이상",
       "showPassword": "Show password",
       "hidePassword": "Hide password",
       "token": "Setup token",
@@ -1638,18 +1715,41 @@
       "emailPasswordRequired": "Please enter your email and password",
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
-      "emailRequired": "Please enter your email"
+      "emailRequired": "Please enter your email",
+      "codeRequired": "이메일 인증 코드를 입력하세요",
+      "passwordRequired": "새 비밀번호를 입력하세요"
     },
     "error": {
       "invalidCredentials": "Incorrect email or password",
       "loginFailed": "Sign-in failed, please try again later",
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
-      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct",
+      "passwordResetFailed": "비밀번호를 재설정하지 못했습니다. 인증 코드를 확인하거나 잠시 후 다시 시도하세요"
     },
     "captcha": {
       "unavailable": "사람 확인 위젯을 불러오지 못했습니다. 다시 시도해 주세요",
       "retry": "다시 불러오기"
+    },
+    "reset": {
+      "title": "비밀번호 재설정",
+      "subtitle": "이메일로 받은 인증 코드로 새 비밀번호를 설정합니다.",
+      "email": "이메일",
+      "code": "인증 코드",
+      "sendCode": "코드 받기",
+      "sendingCode": "전송 중…",
+      "codeSent": "해당 이메일이 등록되어 있다면 인증 코드를 보냈습니다(10분간 유효).",
+      "newPassword": "새 비밀번호",
+      "confirmPassword": "새 비밀번호 확인",
+      "submit": "새 비밀번호 저장",
+      "submitting": "저장 중…",
+      "backToLogin": "로그인으로 돌아가기",
+      "done": "비밀번호가 재설정되었습니다. 새 비밀번호로 로그인하세요.",
+      "unavailableTitle": "직접 재설정을 사용할 수 없습니다",
+      "unavailableBody": "이 사이트에는 메일 발송 수단이 설정되어 있지 않습니다. 관리자에게 비밀번호 재설정을 요청하세요."
+    },
+    "password": {
+      "hint": "{min}자 이상. 흔한 비밀번호나 이메일 주소와 비슷한 문자열은 피하세요."
     }
   },
   "backendSearch": {
@@ -1763,7 +1863,11 @@
       "captcha_failed": "Human verification failed, please retry",
       "captcha_unavailable": "Human verification is unavailable",
       "email_registration_disabled": "Email sign-up is closed",
-      "impersonation_credential_forbidden": "That credential cannot be used for impersonation"
+      "impersonation_credential_forbidden": "That credential cannot be used for impersonation",
+      "registration_closed": "현재 회원가입이 닫혀 있습니다",
+      "email_verification_unavailable": "이메일 인증이 켜져 있지만 인증 코드를 보낼 수 없습니다. 관리자에게 문의하세요",
+      "password_reset_unavailable": "메일 발송 수단이 없어 비밀번호를 직접 재설정할 수 없습니다. 관리자에게 문의하세요",
+      "user_not_found": "사용자를 찾을 수 없습니다"
     },
     "setup": {
       "already_completed": "This instance is already initialized. Please sign in.",
@@ -2148,6 +2252,16 @@
       "policy": {
         "invalid": "Invalid policy fields: check the channel, maintenance window, exclusion list and pins"
       }
+    },
+    "password": {
+      "too_short": "비밀번호가 너무 짧습니다. 더 길게 설정하세요",
+      "too_long": "비밀번호가 너무 깁니다. 줄여서 다시 시도하세요",
+      "too_common": "너무 흔한 비밀번호입니다. 다른 비밀번호를 사용하세요",
+      "matches_identity": "비밀번호에 이메일 주소를 포함할 수 없습니다"
+    },
+    "config": {
+      "unknown_key": "알 수 없는 설정 키입니다",
+      "invalid_value": "설정 값이 올바르지 않습니다"
     }
   },
   "errorPage": {
@@ -2177,7 +2291,17 @@
   "frontend": {
     "pageNotFound": "Page not found",
     "backHome": "Back to home",
-    "renderFailed": "This content could not be displayed. Please refresh and try again."
+    "renderFailed": "This content could not be displayed. Please refresh and try again.",
+    "dataNotice": {
+      "title": "이 페이지의 일부 데이터를 불러오지 못했습니다",
+      "hint": "페이지가 불완전할 수 있습니다. 관리자에게는 아래에 이유가 표시됩니다.",
+      "notAdmittedHint": "이 패키지는 자체 서버 코드가 필요한 데이터를 선언했지만 커널이 웹 프로세스 실행을 허용하지 않았습니다. 설정 → 런타임 구성 → 플러그인 서버 실행에서 허용하세요.",
+      "notAdmitted": "서버 실행이 허용되지 않음",
+      "finderMissing": "데이터 제공자가 등록되지 않음",
+      "permission": "필요한 권한 없음",
+      "failed": "가져오기 실패",
+      "invalidPath": "데이터 요청 경로가 잘못됨"
+    }
   },
   "frontendError": {
     "title": "This page could not be displayed",
@@ -2192,13 +2316,6 @@
     "ko-KR": "한국어",
     "fr-FR": "Français"
   },
-  "locale.en-US": "English",
-  "locale.fr-FR": "Français",
-  "locale.ja-JP": "日本語",
-  "locale.ko-KR": "한국어",
-  "locale.zh-CN": "简体中文",
-  "locale.zh-HK": "繁體中文（香港）",
-  "locale.zh-TW": "繁體中文",
   "localeSwitcher": {
     "label": "Language",
     "ariaLabel": "Switch interface language"
@@ -2305,7 +2422,9 @@
     "zipTooLarge": "ZIP must be smaller than 2MB",
     "uploadFailed": "Upload failed",
     "uploadFailedStatus": "Upload failed ({status})",
-    "installed": "Plugin installed."
+    "installed": "Plugin installed.",
+    "installedWithServerExec": "설치하고 서버 실행을 허용했습니다: {id}",
+    "installedServerExecFailed": "설치는 되었지만 서버 실행 허용에 실패했습니다. 플러그인 목록에서 직접 켜세요."
   },
   "pluginPage": {
     "notFound": "Plugin admin page not found.",
@@ -2377,7 +2496,9 @@
     "themeTitle": "Upload theme",
     "themeDescription": "Upload a theme ZIP to install; activate or preview it afterward.",
     "themeFile": "Theme ZIP file",
-    "themeInstalled": "Theme installed."
+    "themeInstalled": "Theme installed.",
+    "grantServerExec": "이 플러그인이 웹 프로세스에서 서버 코드를 실행하도록 허용",
+    "grantServerExecHint": "설정 화면과 페이지 데이터가 보통 이를 필요로 합니다. 플러그인 목록에서 언제든지 취소할 수 있습니다."
   },
   "user": {
     "emailRequired": "Please enter an email",

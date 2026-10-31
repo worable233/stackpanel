@@ -96,9 +96,10 @@ export function buildCsp(
     `style-src 'self' 'unsafe-inline'${API_ORIGIN ? ` ${API_ORIGIN}` : ''}${hosts(sources.style)}`,
     // Proof-of-work widgets (`new Worker(URL.createObjectURL(blob))`) need a blob
     // worker. `blob:` is declared only when a provider actually asks for a worker
-    // source, so a deployment with no captcha keeps its previous policy exactly.
+    // or script source, so a deployment with no captcha keeps its previous policy
+    // exactly. Deduplicated because a provider may name `blob:` itself.
     ...(sources.worker.length > 0 || sources.script.length > 0
-      ? [`worker-src 'self' blob:${hosts(sources.worker)}`]
+      ? [`worker-src ${['\'self\'', ...new Set(['blob:', ...sources.worker])].join(' ')}`]
       : []),
     scriptSrc,
     // The widget's script posts its solution back to the challenge origin.

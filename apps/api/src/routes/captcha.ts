@@ -52,8 +52,18 @@ export function sanitizeCspOrigins(values: unknown): string[] {
   const origins = new Set<string>();
   for (const value of values) {
     if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    // `blob:` is a scheme source, not an origin: a proof-of-work widget runs its
+    // solver in `new Worker(URL.createObjectURL(blob))`. It is relayed verbatim
+    // because `new URL('blob:')` throws and it can never widen to a host.
+    // `data:` is deliberately not relayed — it turns any HTML injection into
+    // script execution, and no widget needs it.
+    if (trimmed === 'blob:') {
+      origins.add(trimmed);
+      continue;
+    }
     try {
-      const url = new URL(value.trim());
+      const url = new URL(trimmed);
       if (url.protocol !== 'https:') continue;
       origins.add(url.origin);
     } catch {

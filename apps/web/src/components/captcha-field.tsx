@@ -118,23 +118,77 @@ function elementWidget(
   config: CaptchaElementWidgetConfig,
   container: HTMLElement,
   onToken: (token: string | null) => void,
+  onError: () => void,
 ): () => void {
-  const element = document.createElement(config.tag);
-  for (const [name, value] of Object.entries(config.attributes)) {
-    element.setAttribute(name, value);
-  }
-  const read = (): void => {
-    // The protocol names the attribute the widget writes its solution into; the
-    // host never learns what the value means.
-    const value = element.getAttribute(config.tokenAttribute);
-    onToken(value && value.trim().length > 0 ? value : null);
+  let cancelled = false;
+  let poll: ReturnType<typeof setInterval> | undefined;
+  let grace: ReturnType<typeof setTimeout> | undefined;
+  let element: HTMLElement | null = null;
+  let last: string | null = null;
+
+  const mount = (): void => {
+    const node = document.createElement(config.tag);
+    for (const [name, value] of Object.entries(config.attributes)) {
+      node.setAttribute(name, value);
+    }
+    element = node;
+
+    if (config.hiddenField) {
+      // The widget drops its solution into a hidden input inside the surrounding
+      // form — the same field a plain HTML post would send. Property assignment
+      // fires no event, so the field is polled, exactly as in `containerWidget`.
+      const name = config.hiddenField;
+      const scope: ParentNode = container.closest('form') ?? container;
+      const selector = `input[name="${CSS.escape(name)}"]`;
+      const read = (): void => {
+        const value = scope.querySelector<HTMLInputElement>(selector)?.value?.trim() ?? '';
+        const next = value.length > 0 ? value : null;
+        if (next === last) return;
+        last = next;
+        onToken(next);
+      };
+      container.appendChild(node);
+      poll = setInterval(read, TOKEN_POLL_MS);
+      // Silence is the only symptom of a script that failed to load or of an
+      // element that never upgraded; a form nobody can submit must say so.
+      grace = setTimeout(() => {
+        if (!cancelled && !scope.querySelector(selector)) onError();
+      }, MOUNT_GRACE_MS);
+      return;
+    }
+
+    const attribute = config.tokenAttribute;
+    const read = (): void => {
+      // The protocol names the attribute the widget writes its solution into; the
+      // host never learns what the value means.
+      const value = attribute ? node.getAttribute(attribute) : null;
+      onToken(value && value.trim().length > 0 ? value : null);
+    };
+    node.addEventListener(config.event, read);
+    if (config.resetEvent) node.addEventListener(config.resetEvent, () => onToken(null));
+    container.appendChild(node);
   };
-  element.addEventListener(config.event, read);
-  if (config.resetEvent) element.addEventListener(config.resetEvent, () => onToken(null));
-  container.appendChild(element);
+
+  if (config.script) {
+    // A custom element renders nothing until its defining script has run, so the
+    // element is created only after the load settles (or the failure is shown).
+    void loadScript(config.script)
+      .then(() => {
+        if (!cancelled) mount();
+      })
+      .catch(() => {
+        if (!cancelled) onError();
+      });
+  } else {
+    mount();
+  }
+
   return () => {
+    cancelled = true;
+    if (poll) clearInterval(poll);
+    if (grace) clearTimeout(grace);
     onToken(null);
-    element.remove();
+    element?.remove();
   };
 }
 
@@ -272,7 +326,7 @@ export function CaptchaField({
       config.kind === 'script'
         ? scriptWidget(config, container, report, () => setFailed(true))
         : config.kind === 'element'
-          ? elementWidget(config, container, report)
+          ? elementWidget(config, container, report, () => setFailed(true))
           : containerWidget(config, container, report, () => setFailed(true));
     return () => {
       cleanup();

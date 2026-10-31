@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { frontendFetchPathProblem } from './frontend.js';
 import type {
   AdminActionDefinition,
   AdminRouteDefinition,
@@ -6,6 +7,7 @@ import type {
   AccountWidgetDefinition,
   PluginActionDefinition,
   FrontendDescriptor,
+  FrontendPageDataRequirement,
   FrontendPageDefinition,
   FrontendPageManifestEntry,
   FrontendSettings,
@@ -130,7 +132,13 @@ import type {
   WalletAdjustResponse,
   AuthConfigResponse,
   CaptchaPolicyResponse,
+  PasswordResetRequestResponse,
+  PasswordResetResponse,
   SendRegisterCodeResponse,
+  AdminRuntimeConfigEntry,
+  AdminFrontendExecPolicy,
+  AdminConfigResponse,
+  AdminFrontendExecResponse,
 } from './types.js';
 import type { UpstreamProductItem } from './upstream.js';
 import type { AdminPaymentRecord } from './payments.js';
@@ -170,6 +178,7 @@ export const authConfigResponseSchema = z.object({
   emailVerificationSupported: z.boolean(),
   emailVerificationRequired: z.boolean(),
   passwordResetSupported: z.boolean().default(false),
+  emailVerificationBlocked: z.boolean().default(false),
   captcha: z.object({
     mode: z.enum(['off', 'optional', 'required']),
     configured: z.boolean(),
@@ -190,8 +199,10 @@ export const authConfigResponseSchema = z.object({
 /** `GET /captcha/policy` — kernel-owned projection of the captcha capability. */
 const captchaCspSourcesSchema = z.object({
   script: z.array(z.string()).default([]),
+  style: z.array(z.string()).default([]),
   frame: z.array(z.string()).default([]),
   connect: z.array(z.string()).default([]),
+  worker: z.array(z.string()).default([]),
 });
 export const captchaPolicyResponseSchema = z.object({
   action: z.string().nullable(),
@@ -217,6 +228,14 @@ export const sendRegisterCodeResponseSchema = z.object({
   expiresAt: z.string(),
   expiresInSeconds: z.number(),
 }) satisfies z.ZodType<SendRegisterCodeResponse>;
+
+export const passwordResetRequestResponseSchema = z.object({
+  sent: z.boolean(),
+}) satisfies z.ZodType<PasswordResetRequestResponse>;
+
+export const passwordResetResponseSchema = z.object({
+  ok: z.boolean(),
+}) satisfies z.ZodType<PasswordResetResponse>;
 
 export const healthSchema = z.object({
   status: z.literal('ok'),
@@ -773,12 +792,44 @@ export const frontendSettingsSchema = z.object({
   groups: z.array(frontendSettingsGroupSchema),
 });
 
-export const frontendPageDataRequirementSchema = z.object({
-  finder: z.string().min(1),
-  as: z.string().min(1),
-  input: z.record(z.string(), z.unknown()).optional(),
-  permission: z.string().optional(),
-});
+/**
+ * Page-data requirement: a finder call *or* a declarative host GET, never both
+ * (ADR-0027). A package that needs plugin code must go through the finder form and
+ * therefore through the server-execution admission gate.
+ */
+export const frontendPageDataRequirementSchema = z.union([
+  z
+    .object({
+      finder: z.string().min(1),
+      as: z.string().min(1),
+      input: z.record(z.string(), z.unknown()).optional(),
+      permission: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      fetch: z
+        .object({
+          path: z.string().min(1),
+          method: z.literal('GET').optional(),
+          select: z.string().min(1).optional(),
+        })
+        .strict(),
+      as: z.string().min(1),
+      permission: z.string().optional(),
+    })
+    .strict()
+    .superRefine((value, ctx) => {
+      const problem = frontendFetchPathProblem(value.fetch.path);
+      if (problem) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['fetch', 'path'],
+          message: `fetch.path rejected (${problem}): must be a kernel-relative path`,
+        });
+      }
+    }),
+]) as unknown as z.ZodType<FrontendPageDataRequirement>;
 
 export const frontendPageSchema = z.object({
   path: z.string().min(1),
@@ -1128,9 +1179,7 @@ export const updateStatusResponseSchema = z.object({
       generation: z.number(),
       digest: z.string().nullable(),
       activeTask: z.string().nullable(),
-      recent: z.array(
-        z.object({ idempotencyKey: z.string(), result: updateTaskResultViewSchema }),
-      ),
+      recent: z.array(z.object({ idempotencyKey: z.string(), result: updateTaskResultViewSchema })),
       updatedAt: z.string(),
     })
     .nullable(),
@@ -1260,6 +1309,34 @@ export const signingStatusSchema = z.object({
 export const signingResponseSchema = z.object({
   signing: signingStatusSchema,
 }) satisfies z.ZodType<SigningResponse>;
+
+/**
+ * 运行期配置（ADR-0026）。`value` 的类型取决于键（数字/布尔/字符串），因此按 unknown
+ * 收下、由使用方按 `name` 解释；`source` 决定后台显示「继承环境变量」还是「已覆盖」。
+ */
+export const adminRuntimeConfigEntrySchema = z.object({
+  name: z.string().min(1),
+  group: z.enum(['auth', 'session', 'media', 'openapi', 'plugins', 'audit', 'agent']),
+  value: z.unknown(),
+  source: z.enum(['stored', 'env', 'default']),
+  envValue: z.unknown(),
+}) satisfies z.ZodType<AdminRuntimeConfigEntry>;
+
+export const adminFrontendExecPolicySchema = z.object({
+  allow: z.array(z.string()),
+  deny: z.array(z.string()),
+  admitAll: z.boolean(),
+  source: z.enum(['stored', 'env']),
+}) satisfies z.ZodType<AdminFrontendExecPolicy>;
+
+export const adminConfigResponseSchema = z.object({
+  entries: z.array(adminRuntimeConfigEntrySchema),
+  frontendExec: adminFrontendExecPolicySchema,
+}) satisfies z.ZodType<AdminConfigResponse>;
+
+export const adminFrontendExecResponseSchema = z.object({
+  frontendExec: adminFrontendExecPolicySchema,
+}) satisfies z.ZodType<AdminFrontendExecResponse>;
 
 export const platformInfoSchema = z.object({
   name: z.string().min(1).max(80),

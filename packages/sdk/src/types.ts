@@ -1,13 +1,8 @@
 import type {
   AdminDashboardWidgetMeta,
   AdminActionDefinition,
-  AdminRouteDefinition,
-  AccountRouteDefinition,
-  AccountWidgetDefinition,
-  PluginActionDefinition,
   FrontendManifest,
-  FrontendPageManifestEntry,
-  FrontendSettingsSchema,
+  FrontendSummary,
 } from './frontend.js';
 import type { PluginDependency, PluginExtensionConsumer, PluginRoleTemplate } from './plugin.js';
 import type { NotificationView } from './notifications.js';
@@ -53,6 +48,12 @@ export interface AuthConfigResponse {
    * `identity.challengeSender` is installed and configured).
    */
   passwordResetSupported: boolean;
+  /**
+   * The operator requires verified emails, but nothing can deliver a code right
+   * now. Registration refuses outright in that state, so a form here could never
+   * succeed and the UI must show an explanation instead.
+   */
+  emailVerificationBlocked: boolean;
   captcha: {
     mode: 'off' | 'optional' | 'required';
     configured: boolean;
@@ -63,10 +64,12 @@ export interface AuthConfigResponse {
      * leave at `off`. Public routes only report the non-`off` actions so an
      * anonymous caller never receives a full policy map.
      */
-    actions?: Record<
-      string,
-      { policy: 'off' | 'optional' | 'required'; clientConfig: Record<string, unknown> | null }
-    > | undefined;
+    actions?:
+      | Record<
+          string,
+          { policy: 'off' | 'optional' | 'required'; clientConfig: Record<string, unknown> | null }
+        >
+      | undefined;
   };
 }
 
@@ -79,12 +82,16 @@ export interface AuthConfigResponse {
  */
 export interface CaptchaCspSources {
   script: string[];
+  /** Stylesheets the widget injects (some vendors ship a theme CSS). */
+  style: string[];
   frame: string[];
   connect: string[];
+  /** Origins a `Blob`/URL worker is created from, beyond `blob:` itself. */
+  worker: string[];
 }
 
 /** The two widget protocols a provider may publish. Nothing vendor-specific. */
-export type CaptchaWidgetKind = 'script' | 'element';
+export type CaptchaWidgetKind = 'script' | 'element' | 'container';
 
 /**
  * `script`: load `script` once, then call `window[globalFn].render(element, …)`.
@@ -105,7 +112,7 @@ export interface CaptchaScriptWidgetConfig {
   locale?: string;
   /** Extra keys merged verbatim into the render options (vendor-specific). */
   renderOptions?: Record<string, unknown>;
-  sources?: { script?: string[]; frame?: string[]; connect?: string[] };
+  sources?: CaptchaCspSources | undefined;
 }
 
 /**
@@ -117,24 +124,78 @@ export interface CaptchaElementWidgetConfig {
   kind: 'element';
   /** Custom element tag the vendor's script registers. */
   tag: string;
+  /**
+   * Script that defines the custom element. Omitted when the host page already
+   * loaded it; otherwise the host loads it before creating the element, because
+   * an undefined custom tag renders nothing and reports nothing.
+   */
+  script?: string;
   attributes: Record<string, string>;
-  /** Attribute read back after `event` fires to obtain the token. */
-  tokenAttribute: string;
+  /**
+   * Attribute read back after `event` fires to obtain the token. Exactly one of
+   * `tokenAttribute` / `hiddenField` is used.
+   */
+  tokenAttribute?: string;
+  /**
+   * Name of a hidden input the widget injects into the surrounding form and
+   * fills with the solution. Read instead of `tokenAttribute` when present —
+   * this is how the same widget works with a plain HTML form post.
+   */
+  hiddenField?: string;
   /** Event name signalling a solved challenge. */
   event: string;
   /** Event name signalling an expired or withdrawn token. */
   resetEvent?: string;
-  sources?: { script?: string[]; frame?: string[]; connect?: string[] };
+  sources?: CaptchaCspSources | undefined;
+}
+
+/**
+ * `container`: the vendor's script scans for `.<containerClass>` elements it finds
+ * in the DOM and renders itself inside, writing the solution into a hidden form
+ * field it injects.
+ *
+ * This is a third protocol, not a variation on the other two, and it exists
+ * because a real provider needed it: a script that owns its own mounting cannot
+ * be driven by a factory call (`script`) and does not expose the token as an
+ * attribute (`element`) — the only way in or out is the hidden input, which is
+ * exactly what an HTML form posts.
+ *
+ * Two consequences the host must honour:
+ *  - the container has to live **inside** the `<form>`, because the injected
+ *    input only joins that form's submission;
+ *  - a script that scans the DOM on load cannot see a container React inserts
+ *    later, so it exposes a re-scan hook the host calls after mounting.
+ */
+export interface CaptchaContainerWidgetConfig {
+  kind: 'container';
+  /** Absolute URL of the vendor's loader script. */
+  script: string;
+  /** Class name the loader scans for. */
+  containerClass: string;
+  /** Public site key written onto the container. Never a secret. */
+  siteKey: string;
+  /** Extra `data-*` attributes for the container (theme, layout, field name…). */
+  attributes?: Record<string, string> | undefined;
+  /** Name of the hidden input the script injects to carry the token. */
+  hiddenField: string;
+  /**
+   * Dotted path of the global re-scan hook (e.g. `capCaptcha.mount`). Called
+   * once after the container is inserted; without it the widget never binds on a
+   * client-side navigation.
+   */
+  remount?: string | undefined;
+  sources?: CaptchaCspSources | undefined;
 }
 
 /**
  * Widget config returned by `CaptchaProvider.clientConfig()`.
  *
- * The discriminator is the whole contract: the host renders these two shapes and
- * nothing else, so a new vendor is a new provider preset rather than a new host
- * component.
+ * The discriminator is the whole contract: the host renders these three shapes
+ * and nothing else, so a new vendor is a new provider preset rather than a new
+ * host component.
  */
-export type CaptchaClientConfig = CaptchaScriptWidgetConfig | CaptchaElementWidgetConfig;
+export type CaptchaClientConfig =
+  CaptchaScriptWidgetConfig | CaptchaElementWidgetConfig | CaptchaContainerWidgetConfig;
 
 /**
  * One entry of `GET /captcha/policy`, the kernel-owned projection of the
@@ -149,14 +210,16 @@ export interface CaptchaPolicyResponse {
   clientConfig: Record<string, unknown> | null;
   sources: CaptchaCspSources;
   /** Only present on the action-less form: every non-`off` guarded action. */
-  actions?: Record<
-    string,
-    {
-      policy: 'off' | 'optional' | 'required';
-      clientConfig: Record<string, unknown> | null;
-      sources: CaptchaCspSources;
-    }
-  > | undefined;
+  actions?:
+    | Record<
+        string,
+        {
+          policy: 'off' | 'optional' | 'required';
+          clientConfig: Record<string, unknown> | null;
+          sources: CaptchaCspSources;
+        }
+      >
+    | undefined;
 }
 
 export interface AccountMutationResponse {
@@ -169,6 +232,22 @@ export interface SendRegisterCodeResponse {
   email: string;
   expiresAt: string;
   expiresInSeconds: number;
+}
+
+/**
+ * Response of `POST /password/forgot` (login plugin).
+ *
+ * Deliberately carries no account hint: the same `{ sent: true }` is returned
+ * whether or not the address exists, so the endpoint cannot be used to probe
+ * for registered emails.
+ */
+export interface PasswordResetRequestResponse {
+  sent: boolean;
+}
+
+/** Response of `POST /password/reset` (login plugin). */
+export interface PasswordResetResponse {
+  ok: boolean;
 }
 
 /** Standard success envelope. */
@@ -680,21 +759,12 @@ export type FrontendAuditAction =
   | 'frontend.account.route.render'
   | 'frontend.action.execute';
 
-/** Summary of a theme/plugin frontend package for admin lists. */
-export interface FrontendSummary {
-  available: boolean;
-  pages: FrontendPageManifestEntry[];
-  finders: string[];
-  adminRoutes: AdminRouteDefinition[];
-  adminActions: AdminActionDefinition[];
-  actions: PluginActionDefinition[];
-  accountRoutes: AccountRouteDefinition[];
-  accountWidgets: AccountWidgetDefinition[];
-  revision: string | null;
-  settingsSchema: FrontendSettingsSchema | null;
-  /** Interface locales this package ships messages for (ADR-0016 §5). */
-  locales: string[];
-}
+/**
+ * Summary of a theme/plugin frontend package for admin lists.
+ * Canonical definition lives in `frontend.ts` (the manifest contract); this used
+ * to be a second, drifting copy.
+ */
+export type { FrontendSummary } from './frontend.js';
 
 /** Admin action contributed by an active plugin frontend package. */
 export interface AdminAction extends AdminActionDefinition {
@@ -785,7 +855,8 @@ export interface AdminPluginsResponse {
 export type UpdateChannel = 'stable' | 'beta';
 
 /** Update strategy (GET /admin/updates/status · PUT /admin/updates/policy). */
-export interface UpdatePolicyView {  autoUpdate: boolean;
+export interface UpdatePolicyView {
+  autoUpdate: boolean;
   channel: UpdateChannel;
   autoUpdateKernel: boolean;
   excluded: string[];
@@ -1126,6 +1197,46 @@ export interface SigningStatus {
 /** Response of GET/PATCH /admin/signing. */
 export interface SigningResponse {
   signing: SigningStatus;
+}
+
+/**
+ * 运行期内核配置的一条（ADR-0026）。
+ *
+ * `name` 与 `envSchema` 里的变量名一致，后台界面按它渲染行标题——它是技术标识符，
+ * 不是待翻译文案。`source` 说明当前值来自数据库覆盖、环境变量还是字段默认值。
+ */
+export interface AdminRuntimeConfigEntry {
+  name: string;
+  group: 'auth' | 'session' | 'media' | 'openapi' | 'plugins' | 'audit' | 'agent';
+  /** 当前生效值（已是运行期类型：数字/布尔/字符串）。 */
+  value: unknown;
+  source: 'stored' | 'env' | 'default';
+  /** 环境变量里的值；未设置时为 null。 */
+  envValue: unknown;
+}
+
+/**
+ * 前端服务端执行准入（契约 03 §3.1）。
+ *
+ * `allow` 显式授权，`deny` 一票否决（连 builtin 也不例外），`admitAll` 是误分类时的
+ * 紧急放行开关。`source` 说明名单来自数据库还是环境变量兜底。
+ */
+export interface AdminFrontendExecPolicy {
+  allow: string[];
+  deny: string[];
+  admitAll: boolean;
+  source: 'stored' | 'env';
+}
+
+/** Response of GET /admin/config and of every write to it. */
+export interface AdminConfigResponse {
+  entries: AdminRuntimeConfigEntry[];
+  frontendExec: AdminFrontendExecPolicy;
+}
+
+/** Response of PUT /admin/frontend-exec. */
+export interface AdminFrontendExecResponse {
+  frontendExec: AdminFrontendExecPolicy;
 }
 
 /** Public, non-secret platform identity managed by administrators. */

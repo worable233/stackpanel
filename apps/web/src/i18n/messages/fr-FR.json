@@ -249,7 +249,10 @@
     "updateResultsFailed": "Failed to read update results",
     "updateSelfUpdateSubmitFailed": "Failed to queue the self-upgrade request",
     "updateSelfUpdateCancelFailed": "Failed to cancel the self-upgrade request",
-    "updateCheckFailed": "Failed to check for updates"
+    "updateCheckFailed": "Failed to check for updates",
+    "runtimeConfigSaved": "Configuration appliquée",
+    "runtimeConfigReverted": "Rétabli sur la variable d'environnement",
+    "frontendExecSaved": "Listes d'admission mises à jour"
   },
   "admin": {
     "recentTickets": "Recent tickets",
@@ -664,6 +667,18 @@
         "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
         "body": "The package files are missing, so the runtime never loaded this plugin.",
         "cleanup": "Remove record"
+      },
+      "serverExec": {
+        "label": "Exécution serveur",
+        "allowed": "Autorisée",
+        "denied": "Non autorisée",
+        "grant": "Autoriser l'exécution",
+        "revoke": "Révoquer l'exécution",
+        "saved": "Autorisation d'exécution serveur mise à jour",
+        "reasonBuiltin": "les paquets intégrés sont toujours autorisés",
+        "reasonDeny": "bloqué par la liste de refus",
+        "reasonAdmitAll": "autorisation d'urgence active",
+        "admitAllActive": "L'autorisation d'urgence est active : tous les plugins peuvent s'exécuter dans le processus web. Désactivez-la une fois le diagnostic terminé."
       }
     },
     "users": {
@@ -858,6 +873,37 @@
         "gatewayConfigNote": "This gateway keeps its credentials in its own plugin settings — nothing to enter here.",
         "qrHint": "Same-origin paths and data: URLs are shown inline on the order page. External image URLs are blocked by the security policy and appear as a link instead.",
         "confirmDeleteHint": "This payment method will no longer be available for new orders. Existing orders are unaffected."
+      },
+      "runtimeConfig": {
+        "title": "Configuration d'exécution",
+        "description": "Ces réglages sont stockés en base de données. Les modifications s'appliquent immédiatement à tous les réplicas (diffusion via Redis), sans redémarrage. Videz le champ ou cliquez sur « Rétablir » pour revenir à la variable d'environnement.",
+        "source": {
+          "stored": "Remplacé",
+          "env": "Variable d'environnement",
+          "default": "Valeur par défaut"
+        },
+        "envValue": "Valeur de la variable d'environnement",
+        "revert": "Rétablir",
+        "revertHint": "Supprime la valeur en base et réutilise la variable d'environnement",
+        "group": {
+          "auth": "Authentification et codes",
+          "session": "Sessions",
+          "media": "Médias",
+          "openapi": "API ouverte",
+          "plugins": "Extensions",
+          "audit": "Journal d'audit",
+          "agent": "Agent"
+        },
+        "frontendExec": {
+          "title": "Exécution serveur des extensions",
+          "description": "Détermine quelles extensions peuvent exécuter du code serveur (finders, données de page) dans le processus web. Les extensions intégrées sont toujours autorisées ; pour les autres, seuls les identifiants de la liste d'autorisation peuvent s'exécuter. Une extension non autorisée s'installe, s'active et s'affiche normalement, mais ne reçoit aucune des données qu'elle déclare.",
+          "allow": "Liste d'autorisation",
+          "deny": "Liste de refus",
+          "allowHint": "Identifiants d'extension séparés par des virgules ou des espaces",
+          "denyHint": "Prioritaire sur le statut intégré et sur la liste d'autorisation",
+          "admitAll": "Tout autoriser (urgence)",
+          "admitAllHint": "Ignore la décision d'admission et exécute toutes les extensions dans le processus web. À utiliser uniquement pour diagnostiquer une extension mal classée, puis à désactiver."
+        }
       }
     },
     "themes": {
@@ -1131,7 +1177,7 @@
       "keyHint": "Kept in this page's memory only; re-enter it after navigating away. Model keys are managed by the site owner.",
       "subObjectiveLabel": "Subtask objective",
       "objectiveLabel": "Objective",
-      "modelLabel": "Model (leave blank for the default)",
+      "modelLabel": "Modèle",
       "executionLabel": "Execution mode",
       "executionRequest": "Advance with this request",
       "executionBackground": "Authorize background execution (one hour)",
@@ -1165,7 +1211,27 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key"
+      "keyRequired": "Enter your own permission API key",
+      "subtitle": "Laissez l’agent agir dans les limites de vos permissions. Les écritures risquées demandent toujours votre confirmation.",
+      "advanced": "Paramètres avancés",
+      "advancedHint": "Les écritures risquées sont suspendues jusqu’à votre confirmation.",
+      "usageTitle": "Fonctionnement",
+      "usageKey": "Saisissez une clé API de permission. Elle reste uniquement en mémoire sur cette page.",
+      "usageObjective": "Décrivez l’objectif, le périmètre et le résultat attendu. Une demande précise est plus fiable.",
+      "usageApprove": "Lorsqu’une écriture risquée apparaît, l’agent s’arrête et attend votre confirmation.",
+      "configure": "Configurer",
+      "defaultModel": "Utiliser par défaut",
+      "objectivePlaceholder": "Décrivez ce que l’agent doit faire…",
+      "pendingCount": "{count} en attente",
+      "statusQueued": "En file",
+      "statusRunning": "En cours",
+      "statusWaiting": "En attente d’approbation",
+      "statusSucceeded": "Terminé",
+      "statusFailed": "Échec",
+      "statusCancelled": "Annulé",
+      "replayEmpty": "Aucune étape pour le moment",
+      "subtasksTitle": "Sous-tâches",
+      "runMeta": "{model} · {steps} étapes"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -1508,7 +1574,13 @@
     "frontend_admin_route_render": "Render plugin admin",
     "frontend_account_route_render": "Render account page",
     "frontend_action_execute": "Execute front-end action",
-    "bootstrap_create": "Bootstrap administrator"
+    "bootstrap_create": "Bootstrap administrator",
+    "auth_password_changed": "Mot de passe modifié",
+    "auth_password_reset": "Mot de passe réinitialisé",
+    "auth_password_reset_requested": "Réinitialisation demandée",
+    "config_changed": "Configuration du noyau modifiée",
+    "config_reverted": "Configuration du noyau rétablie",
+    "config_frontend_exec_changed": "Admission d'exécution des extensions modifiée"
   },
   "auditResource": {
     "user": "User",
@@ -1532,7 +1604,8 @@
       "orContinueWith": "Or continue with",
       "noAccount": "Don't have an account?",
       "register": "Register",
-      "oauthFailed": "OAuth sign-in failed. Please try again."
+      "oauthFailed": "OAuth sign-in failed. Please try again.",
+      "forgotPassword": "Mot de passe oublié ?"
     },
     "register": {
       "title": "Create your account",
@@ -1550,14 +1623,18 @@
       "sendCode": "Send code",
       "sendingCode": "Sending…",
       "codeSent": "A verification code has been sent to your email.",
-      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes."
+      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes.",
+      "closedTitle": "Les inscriptions sont fermées",
+      "closedBody": "Ce site n’accepte pas de nouveaux comptes. Contactez l’administrateur.",
+      "blockedTitle": "Les inscriptions sont momentanément indisponibles",
+      "blockedBody": "La vérification par e-mail est activée mais aucun code ne peut être envoyé. Réessayez plus tard ou contactez l’administrateur."
     },
     "setup": {
       "title": "Initialize your platform",
       "subtitle": "Create the first administrator account to finish deployment.",
       "email": "Admin email",
       "password": "Admin password",
-      "passwordHint": "At least 8 characters",
+      "passwordHint": "Au moins {min} caractères",
       "showPassword": "Show password",
       "hidePassword": "Hide password",
       "token": "Setup token",
@@ -1638,18 +1715,41 @@
       "emailPasswordRequired": "Please enter your email and password",
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
-      "emailRequired": "Please enter your email"
+      "emailRequired": "Please enter your email",
+      "codeRequired": "Saisissez le code reçu par e-mail",
+      "passwordRequired": "Saisissez un nouveau mot de passe"
     },
     "error": {
       "invalidCredentials": "Incorrect email or password",
       "loginFailed": "Sign-in failed, please try again later",
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
-      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct",
+      "passwordResetFailed": "Impossible de réinitialiser le mot de passe — vérifiez le code ou réessayez plus tard"
     },
     "captcha": {
       "unavailable": "Le widget de vérification humaine n'a pas pu se charger, veuillez réessayer",
       "retry": "Recharger"
+    },
+    "reset": {
+      "title": "Réinitialiser le mot de passe",
+      "subtitle": "Nous vous envoyons un code par e-mail pour définir un nouveau mot de passe.",
+      "email": "E-mail",
+      "code": "Code de vérification",
+      "sendCode": "Envoyer le code",
+      "sendingCode": "Envoi…",
+      "codeSent": "Si cette adresse possède un compte, un code vient d’être envoyé (valable 10 minutes).",
+      "newPassword": "Nouveau mot de passe",
+      "confirmPassword": "Confirmer le mot de passe",
+      "submit": "Enregistrer le mot de passe",
+      "submitting": "Enregistrement…",
+      "backToLogin": "Retour à la connexion",
+      "done": "Mot de passe réinitialisé. Connectez-vous avec le nouveau mot de passe.",
+      "unavailableTitle": "La réinitialisation libre-service est indisponible",
+      "unavailableBody": "Aucun canal e-mail n’est configuré sur ce site. Demandez à l’administrateur de réinitialiser votre mot de passe."
+    },
+    "password": {
+      "hint": "Au moins {min} caractères. Évitez les mots de passe courants et votre adresse e-mail."
     }
   },
   "backendSearch": {
@@ -1763,7 +1863,11 @@
       "captcha_failed": "Human verification failed, please retry",
       "captcha_unavailable": "Human verification is unavailable",
       "email_registration_disabled": "Email sign-up is closed",
-      "impersonation_credential_forbidden": "That credential cannot be used for impersonation"
+      "impersonation_credential_forbidden": "That credential cannot be used for impersonation",
+      "registration_closed": "Les inscriptions sont fermées",
+      "email_verification_unavailable": "La vérification par e-mail est activée mais aucun code ne peut être envoyé. Contactez l’administrateur",
+      "password_reset_unavailable": "Aucun canal e-mail n’est configuré : la réinitialisation libre-service est indisponible. Contactez l’administrateur",
+      "user_not_found": "Utilisateur introuvable"
     },
     "setup": {
       "already_completed": "This instance is already initialized. Please sign in.",
@@ -2148,6 +2252,16 @@
       "policy": {
         "invalid": "Invalid policy fields: check the channel, maintenance window, exclusion list and pins"
       }
+    },
+    "password": {
+      "too_short": "Mot de passe trop court — choisissez-en un plus long",
+      "too_long": "Mot de passe trop long — raccourcissez-le puis réessayez",
+      "too_common": "Ce mot de passe est trop courant — choisissez-en un autre",
+      "matches_identity": "Le mot de passe ne doit pas reprendre votre adresse e-mail"
+    },
+    "config": {
+      "unknown_key": "Clé de configuration inconnue",
+      "invalid_value": "Valeur de configuration invalide"
     }
   },
   "errorPage": {
@@ -2177,7 +2291,17 @@
   "frontend": {
     "pageNotFound": "Page not found",
     "backHome": "Back to home",
-    "renderFailed": "This content could not be displayed. Please refresh and try again."
+    "renderFailed": "This content could not be displayed. Please refresh and try again.",
+    "dataNotice": {
+      "title": "Certaines données de cette page n'ont pas pu être chargées",
+      "hint": "La page peut être incomplète. Les administrateurs voient les raisons ci-dessous.",
+      "notAdmittedHint": "Ce paquet déclare des données nécessitant son propre code serveur, mais le noyau n'autorise pas son exécution dans le processus web. Autorisez-le dans Réglages → Configuration d'exécution → Exécution serveur des plugins.",
+      "notAdmitted": "paquet non autorisé à s'exécuter côté serveur",
+      "finderMissing": "fournisseur de données non enregistré",
+      "permission": "permission requise manquante",
+      "failed": "échec de la requête",
+      "invalidPath": "chemin de requête invalide"
+    }
   },
   "frontendError": {
     "title": "This page could not be displayed",
@@ -2192,13 +2316,6 @@
     "ko-KR": "한국어",
     "fr-FR": "Français"
   },
-  "locale.en-US": "English",
-  "locale.fr-FR": "Français",
-  "locale.ja-JP": "日本語",
-  "locale.ko-KR": "한국어",
-  "locale.zh-CN": "简体中文",
-  "locale.zh-HK": "繁體中文（香港）",
-  "locale.zh-TW": "繁體中文",
   "localeSwitcher": {
     "label": "Language",
     "ariaLabel": "Switch interface language"
@@ -2305,7 +2422,9 @@
     "zipTooLarge": "ZIP must be smaller than 2MB",
     "uploadFailed": "Upload failed",
     "uploadFailedStatus": "Upload failed ({status})",
-    "installed": "Plugin installed."
+    "installed": "Plugin installed.",
+    "installedWithServerExec": "Installé et exécution serveur autorisée : {id}",
+    "installedServerExecFailed": "Installé, mais l'autorisation d'exécution serveur a échoué ; activez-la depuis la liste des plugins."
   },
   "pluginPage": {
     "notFound": "Plugin admin page not found.",
@@ -2377,7 +2496,9 @@
     "themeTitle": "Upload theme",
     "themeDescription": "Upload a theme ZIP to install; activate or preview it afterward.",
     "themeFile": "Theme ZIP file",
-    "themeInstalled": "Theme installed."
+    "themeInstalled": "Theme installed.",
+    "grantServerExec": "Autoriser ce plugin à exécuter du code serveur dans le processus web",
+    "grantServerExecHint": "Ses écrans de réglages et ses données de page en dépendent généralement. Révocable à tout moment depuis la liste des plugins."
   },
   "user": {
     "emailRequired": "Please enter an email",

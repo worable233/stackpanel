@@ -33,6 +33,7 @@ import { adminPluginRoutes } from './routes/admin/plugins.ts';
 import { adminAgentModelRoutes } from './routes/admin/agent-model.ts';
 import { adminSecretsRoutes } from './routes/admin/secrets.ts';
 import { adminSettingsRoutes } from './routes/admin/settings.ts';
+import { adminConfigRoutes } from './routes/admin/config.ts';
 import { adminCurrencyRoutes } from './routes/admin/currency-rates.ts';
 import { currencyDefinitionRoutes } from './routes/currency-definitions.ts';
 import { adminPaymentsRoutes } from './routes/admin/payments.ts';
@@ -71,14 +72,22 @@ export interface BuildAppOptions {
 }
 
 /**
- * Translate `API_TRUST_PROXY` into Fastify's `trustProxy` option. Empty or
- * `false` trusts nothing; `true` trusts the immediate peer; anything else is a
- * comma-separated list of trusted proxy addresses/CIDRs.
+ * Translate `API_TRUST_PROXY` into Fastify's `trustProxy` option.
+ *
+ * Unset means **loopback**: the web BFF (and any same-host reverse proxy) talks to
+ * the kernel from `127.0.0.1`, and only local processes can reach that peer, so
+ * trusting it cannot be spoofed from the network. The previous default (`false`)
+ * discarded the address the BFF forwards, which made every visitor share one
+ * rate-limit bucket (audit M-4).
+ *
+ * `true` trusts the immediate peer; a comma-separated list of addresses/CIDRs (or
+ * the `loopback` / `linklocal` / `uniquelocal` presets) selects explicitly.
  */
-function trustProxyOption(): boolean | string[] {
+function trustProxyOption(): boolean | string | string[] {
   const raw = env.API_TRUST_PROXY?.trim();
-  if (!raw || raw === 'false') return false;
+  if (!raw) return 'loopback';
   if (raw === 'true') return true;
+  if (raw === 'false') return false;
   return raw
     .split(',')
     .map((entry) => entry.trim())
@@ -426,6 +435,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminNotificationRoutes);
   void app.register(adminUpdateRoutes);
   void app.register(adminSettingsRoutes);
+  void app.register(adminConfigRoutes);
   void app.register(adminSecretsRoutes);
   void app.register(adminAgentModelRoutes);
   void app.register(adminSigningRoutes);

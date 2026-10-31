@@ -1,5 +1,5 @@
 'use server';
-import { ApiError } from '@stackpanel/sdk';
+import { ApiError, validatePassword } from '@stackpanel/sdk';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getLocale } from '@/i18n/locale';
@@ -17,7 +17,10 @@ export interface LoginState {
   codeExpiresInSeconds?: number;
 }
 
-export interface AccountMutationState { error?: string; ok?: boolean }
+export interface AccountMutationState {
+  error?: string;
+  ok?: boolean;
+}
 
 /**
  * Pull the human-verification token out of a submitted form.
@@ -38,11 +41,18 @@ export async function changePasswordAction(
   const locale = await getLocale();
   const currentPassword = formData.get('currentPassword');
   const newPassword = formData.get('newPassword');
-  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 8) {
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
     return { error: translate(locale, 'account.settings.security.passwordInvalid') };
   }
+  // Local pre-check with the same policy the kernel enforces: it answers in the
+  // user's language instead of costing a round trip, and it cannot drift because
+  // the rule set lives in the SDK.
+  const policy = validatePassword(newPassword);
+  if (!policy.ok) return { error: translate(locale, `error.${policy.code}`) };
   try {
-    await (await getAuthedApiClient()).changePassword(currentPassword, newPassword, {
+    await (
+      await getAuthedApiClient()
+    ).changePassword(currentPassword, newPassword, {
       ...captchaTokenFrom(formData),
     });
   } catch (error) {
@@ -67,7 +77,9 @@ export async function changeEmailAction(
     return { error: translate(locale, 'account.settings.security.emailInvalid') };
   }
   try {
-    await (await getAuthedApiClient()).changeEmail(currentPassword, email, {
+    await (
+      await getAuthedApiClient()
+    ).changeEmail(currentPassword, email, {
       ...captchaTokenFrom(formData),
     });
   } catch (error) {
@@ -112,7 +124,9 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     });
     destination = nextPath ?? (result.user.role === 'ADMIN' ? '/admin' : '/account');
   } catch (error) {
-    return { error: await apiErrorMessage(error, translate(locale, 'auth.error.invalidCredentials')) };
+    return {
+      error: await apiErrorMessage(error, translate(locale, 'auth.error.invalidCredentials')),
+    };
   }
   redirect(destination);
 }
@@ -131,27 +145,21 @@ export async function logoutAction(): Promise<void> {
 
 /** Read the referral code the visitor arrived with: cookie first, then form. */
 async function readAffiliateCode(formData: FormData): Promise<string | null> {
-  const fromCookie = normalizeAffiliateCode(
-    (await cookies()).get(AFFILIATE_COOKIE)?.value,
-  );
+  const fromCookie = normalizeAffiliateCode((await cookies()).get(AFFILIATE_COOKIE)?.value);
   if (fromCookie) return fromCookie;
   return normalizeAffiliateCode(formData.get('affid') as string | null);
 }
 
 /** Server action: register a new local account, then route to the workspace. */
-export async function registerAction(
-  _prev: LoginState,
-  formData: FormData,
-): Promise<LoginState> {
+export async function registerAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const locale = await getLocale();
   const email = formData.get('email');
   const password = formData.get('password');
   if (typeof email !== 'string' || typeof password !== 'string') {
     return { error: translate(locale, 'auth.validation.emailPasswordRequired') };
   }
-  if (password.length < 8) {
-    return { error: translate(locale, 'auth.validation.passwordMin') };
-  }
+  const policy = validatePassword(password, { email });
+  if (!policy.ok) return { error: translate(locale, `error.${policy.code}`) };
   const code = formData.get('code');
   const captchaToken = formData.get('captchaToken');
   try {
@@ -206,6 +214,70 @@ export async function sendRegisterCodeAction(
   } catch (error) {
     return { error: await apiErrorMessage(error, translate(locale, 'auth.error.sendCodeFailed')) };
   }
+}
+
+/** Server action: request a self-service password reset code. */
+export async function requestPasswordResetAction(
+  _prev: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const locale = await getLocale();
+  const email = formData.get('email');
+  const captchaToken = formData.get('captchaToken');
+  if (typeof email !== 'string' || !email.trim()) {
+    return { error: translate(locale, 'auth.validation.emailRequired') };
+  }
+  try {
+    await getApiClient().requestPasswordReset(email.trim(), {
+      ...(typeof captchaToken === 'string' && captchaToken.trim()
+        ? { captchaToken: captchaToken.trim() }
+        : {}),
+    });
+    return { notice: translate(locale, 'auth.reset.codeSent'), codeSentTo: email.trim() };
+  } catch (error) {
+    return {
+      error: await apiErrorMessage(error, translate(locale, 'auth.error.sendCodeFailed')),
+    };
+  }
+}
+
+/**
+ * Server action: consume the emailed code and set a new password.
+ *
+ * A successful reset revokes every session of the account, so the visitor is sent
+ * to the sign-in page: a reset is proof of mailbox control, not a login.
+ */
+export async function resetPasswordAction(
+  _prev: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const locale = await getLocale();
+  const email = formData.get('email');
+  const code = formData.get('code');
+  const password = formData.get('password');
+  const confirmPassword = formData.get('confirmPassword');
+  if (typeof email !== 'string' || !email.trim()) {
+    return { error: translate(locale, 'auth.validation.emailRequired') };
+  }
+  if (typeof code !== 'string' || !code.trim()) {
+    return { error: translate(locale, 'auth.validation.codeRequired') };
+  }
+  if (typeof password !== 'string' || !password) {
+    return { error: translate(locale, 'auth.validation.passwordRequired') };
+  }
+  if (password !== confirmPassword) {
+    return { error: translate(locale, 'auth.validation.passwordMismatch') };
+  }
+  const policy = validatePassword(password, { email });
+  if (!policy.ok) return { error: translate(locale, `error.${policy.code}`) };
+  try {
+    await getApiClient().resetPassword(email.trim(), code.trim(), password);
+  } catch (error) {
+    return {
+      error: await apiErrorMessage(error, translate(locale, 'auth.error.passwordResetFailed')),
+    };
+  }
+  redirect('/login?reset=1');
 }
 
 /**
@@ -285,9 +357,8 @@ export async function setupAction(_prev: LoginState, formData: FormData): Promis
   if (typeof email !== 'string' || typeof password !== 'string') {
     return { error: translate(locale, 'auth.validation.emailPasswordRequired') };
   }
-  if (password.length < 8) {
-    return { error: translate(locale, 'auth.validation.passwordMin') };
-  }
+  const policy = validatePassword(password, { email });
+  if (!policy.ok) return { error: translate(locale, `error.${policy.code}`) };
   try {
     const result = await getApiClient().completeSetup({
       email: email.trim(),
@@ -305,7 +376,10 @@ export async function setupAction(_prev: LoginState, formData: FormData): Promis
       maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
     });
   } catch (error) {
-    if (error instanceof ApiError && ['setup.already_completed', 'setup.disabled'].includes(error.code ?? '')) {
+    if (
+      error instanceof ApiError &&
+      ['setup.already_completed', 'setup.disabled'].includes(error.code ?? '')
+    ) {
       redirect('/login');
     }
     // The API may have committed the first-admin transaction even if its
@@ -313,7 +387,9 @@ export async function setupAction(_prev: LoginState, formData: FormData): Promis
     // Re-check the authoritative state before showing a misleading network
     // error on a setup form that can no longer be submitted.
     if (error instanceof ApiError && error.status === 0) {
-      const setup = await getApiClient().getSetupStatus().catch(() => null);
+      const setup = await getApiClient()
+        .getSetupStatus()
+        .catch(() => null);
       if (setup && !setup.required) redirect('/login');
     }
     return { error: await apiErrorMessage(error, translate(locale, 'auth.error.setupFailed')) };

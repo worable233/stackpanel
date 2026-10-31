@@ -249,7 +249,10 @@
     "updateResultsFailed": "Failed to read update results",
     "updateSelfUpdateSubmitFailed": "Failed to queue the self-upgrade request",
     "updateSelfUpdateCancelFailed": "Failed to cancel the self-upgrade request",
-    "updateCheckFailed": "Failed to check for updates"
+    "updateCheckFailed": "Failed to check for updates",
+    "runtimeConfigSaved": "設定を反映しました",
+    "runtimeConfigReverted": "環境変数に戻しました",
+    "frontendExecSaved": "許可リストを更新しました"
   },
   "admin": {
     "recentTickets": "Recent tickets",
@@ -664,6 +667,18 @@
         "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
         "body": "The package files are missing, so the runtime never loaded this plugin.",
         "cleanup": "Remove record"
+      },
+      "serverExec": {
+        "label": "サーバー実行",
+        "allowed": "許可済み",
+        "denied": "未許可",
+        "grant": "実行を許可",
+        "revoke": "実行を取消",
+        "saved": "サーバー実行の許可を更新しました",
+        "reasonBuiltin": "組み込みは常に許可",
+        "reasonDeny": "拒否リストによりブロック",
+        "reasonAdmitAll": "緊急許可が有効",
+        "admitAllActive": "緊急許可が有効です。すべてのプラグインが Web プロセスで実行できます。調査が終わったら無効にしてください。"
       }
     },
     "users": {
@@ -858,6 +873,37 @@
         "gatewayConfigNote": "This gateway keeps its credentials in its own plugin settings — nothing to enter here.",
         "qrHint": "Same-origin paths and data: URLs are shown inline on the order page. External image URLs are blocked by the security policy and appear as a link instead.",
         "confirmDeleteHint": "This payment method will no longer be available for new orders. Existing orders are unaffected."
+      },
+      "runtimeConfig": {
+        "title": "実行時設定",
+        "description": "これらのスイッチはデータベースに保存されます。変更は Redis 経由で全レプリカに即時反映され、再起動は不要です。空欄または「戻す」で環境変数の値に戻ります。",
+        "source": {
+          "stored": "上書き済み",
+          "env": "環境変数",
+          "default": "既定値"
+        },
+        "envValue": "環境変数の値",
+        "revert": "戻す",
+        "revertHint": "データベースの上書きを削除し、環境変数に戻します",
+        "group": {
+          "auth": "認証と認証コード",
+          "session": "セッション",
+          "media": "メディア",
+          "openapi": "オープン API",
+          "plugins": "プラグイン",
+          "audit": "監査ログ",
+          "agent": "エージェント"
+        },
+        "frontendExec": {
+          "title": "プラグインのサーバー側実行",
+          "description": "どのプラグインのサーバー側コード（finder、ページデータ）を Web プロセス内で実行できるかを決めます。組み込みプラグインは常に許可され、それ以外は許可リストにある ID のみ実行できます。許可されていないプラグインもインストール・有効化・画面表示はできますが、宣言したデータは受け取れません。",
+          "allow": "許可リスト",
+          "deny": "拒否リスト",
+          "allowHint": "カンマまたは空白区切りのプラグイン ID",
+          "denyHint": "組み込みや許可リストより優先されます",
+          "admitAll": "すべて許可（緊急時）",
+          "admitAllHint": "准入判定を無視し、すべてのプラグインを Web プロセスで実行します。誤分類の一時的な調査用です。終わったら必ずオフに戻してください。"
+        }
       }
     },
     "themes": {
@@ -1131,7 +1177,7 @@
       "keyHint": "Kept in this page's memory only; re-enter it after navigating away. Model keys are managed by the site owner.",
       "subObjectiveLabel": "Subtask objective",
       "objectiveLabel": "Objective",
-      "modelLabel": "Model (leave blank for the default)",
+      "modelLabel": "モデル",
       "executionLabel": "Execution mode",
       "executionRequest": "Advance with this request",
       "executionBackground": "Authorize background execution (one hour)",
@@ -1165,7 +1211,27 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key"
+      "keyRequired": "Enter your own permission API key",
+      "subtitle": "Agent を権限の範囲内で実行します。危険な書き込みは必ず確認を求めます。",
+      "advanced": "詳細設定",
+      "advancedHint": "危険な書き込みは確認するまで停止します。",
+      "usageTitle": "使い方",
+      "usageKey": "権限 API キーを入力してください。このページのメモリ内にのみ保持されます。",
+      "usageObjective": "目的・範囲・期待する結果を具体的に書くほど安定します。",
+      "usageApprove": "危険な書き込みがあると、Agent は停止して確認を待ちます。",
+      "configure": "設定",
+      "defaultModel": "デフォルトを使用",
+      "objectivePlaceholder": "Agent に実行してほしいことを入力…",
+      "pendingCount": "{count} 件の確認待ち",
+      "statusQueued": "待機中",
+      "statusRunning": "実行中",
+      "statusWaiting": "確認待ち",
+      "statusSucceeded": "完了",
+      "statusFailed": "失敗",
+      "statusCancelled": "キャンセル済み",
+      "replayEmpty": "実行ステップはまだありません",
+      "subtasksTitle": "サブタスク",
+      "runMeta": "{model} · {steps} ステップ"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -1508,7 +1574,13 @@
     "frontend_admin_route_render": "Render plugin admin",
     "frontend_account_route_render": "Render account page",
     "frontend_action_execute": "Execute front-end action",
-    "bootstrap_create": "Bootstrap administrator"
+    "bootstrap_create": "Bootstrap administrator",
+    "auth_password_changed": "パスワード変更",
+    "auth_password_reset": "パスワード再設定",
+    "auth_password_reset_requested": "パスワード再設定の申請",
+    "config_changed": "カーネル設定を変更",
+    "config_reverted": "カーネル設定を環境変数に戻す",
+    "config_frontend_exec_changed": "プラグイン実行准入を変更"
   },
   "auditResource": {
     "user": "User",
@@ -1532,7 +1604,8 @@
       "orContinueWith": "Or continue with",
       "noAccount": "Don't have an account?",
       "register": "Register",
-      "oauthFailed": "OAuth sign-in failed. Please try again."
+      "oauthFailed": "OAuth sign-in failed. Please try again.",
+      "forgotPassword": "パスワードをお忘れですか？"
     },
     "register": {
       "title": "Create your account",
@@ -1550,14 +1623,18 @@
       "sendCode": "Send code",
       "sendingCode": "Sending…",
       "codeSent": "A verification code has been sent to your email.",
-      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes."
+      "codeSentTo": "A code was sent to {email}. It expires in 10 minutes.",
+      "closedTitle": "新規登録は停止しています",
+      "closedBody": "このサイトは現在、セルフサインアップを受け付けていません。管理者にお問い合わせください。",
+      "blockedTitle": "現在、登録を受け付けられません",
+      "blockedBody": "メール認証が有効ですが、確認コードを送信できません。しばらくしてから再度お試しいただくか、管理者にお問い合わせください。"
     },
     "setup": {
       "title": "Initialize your platform",
       "subtitle": "Create the first administrator account to finish deployment.",
       "email": "Admin email",
       "password": "Admin password",
-      "passwordHint": "At least 8 characters",
+      "passwordHint": "{min} 文字以上",
       "showPassword": "Show password",
       "hidePassword": "Hide password",
       "token": "Setup token",
@@ -1638,18 +1715,41 @@
       "emailPasswordRequired": "Please enter your email and password",
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
-      "emailRequired": "Please enter your email"
+      "emailRequired": "Please enter your email",
+      "codeRequired": "メールの確認コードを入力してください",
+      "passwordRequired": "新しいパスワードを入力してください"
     },
     "error": {
       "invalidCredentials": "Incorrect email or password",
       "loginFailed": "Sign-in failed, please try again later",
       "registerFailed": "Registration failed, please try again later",
       "sendCodeFailed": "Could not send the verification code, please try again later",
-      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct"
+      "setupFailed": "Initialization failed: confirm the instance is uninitialized and the token is correct",
+      "passwordResetFailed": "パスワードを再設定できませんでした。確認コードをご確認いただくか、しばらくしてからお試しください"
     },
     "captcha": {
       "unavailable": "人間確認ウィジェットを読み込めませんでした。再試行してください",
       "retry": "再読み込み"
+    },
+    "reset": {
+      "title": "パスワードを再設定",
+      "subtitle": "メールで届く確認コードで新しいパスワードを設定します。",
+      "email": "メールアドレス",
+      "code": "確認コード",
+      "sendCode": "コードを送信",
+      "sendingCode": "送信中…",
+      "codeSent": "このメールアドレスが登録済みの場合、確認コードを送信しました（有効期限 10 分）。",
+      "newPassword": "新しいパスワード",
+      "confirmPassword": "新しいパスワード（確認）",
+      "submit": "新しいパスワードを保存",
+      "submitting": "保存中…",
+      "backToLogin": "ログインに戻る",
+      "done": "パスワードを再設定しました。新しいパスワードでログインしてください。",
+      "unavailableTitle": "セルフでの再設定は利用できません",
+      "unavailableBody": "このサイトにはメール送信の設定がありません。管理者にパスワードの再設定をご依頼ください。"
+    },
+    "password": {
+      "hint": "{min} 文字以上。よく使われるパスワードやメールアドレスに似た文字列は避けてください。"
     }
   },
   "backendSearch": {
@@ -1763,7 +1863,11 @@
       "captcha_failed": "Human verification failed, please retry",
       "captcha_unavailable": "Human verification is unavailable",
       "email_registration_disabled": "Email sign-up is closed",
-      "impersonation_credential_forbidden": "That credential cannot be used for impersonation"
+      "impersonation_credential_forbidden": "That credential cannot be used for impersonation",
+      "registration_closed": "現在、新規登録は停止しています",
+      "email_verification_unavailable": "メール認証が有効ですが、確認コードを送信できません。管理者にお問い合わせください",
+      "password_reset_unavailable": "メール送信の手段が設定されていないため、パスワードの再設定はできません。管理者にお問い合わせください",
+      "user_not_found": "ユーザーが見つかりません"
     },
     "setup": {
       "already_completed": "This instance is already initialized. Please sign in.",
@@ -2148,6 +2252,16 @@
       "policy": {
         "invalid": "Invalid policy fields: check the channel, maintenance window, exclusion list and pins"
       }
+    },
+    "password": {
+      "too_short": "パスワードが短すぎます。より長いパスワードを設定してください",
+      "too_long": "パスワードが長すぎます。短くしてお試しください",
+      "too_common": "このパスワードはよく使われすぎています。別のものをご利用ください",
+      "matches_identity": "パスワードにメールアドレスを含めないでください"
+    },
+    "config": {
+      "unknown_key": "不明な設定キーです",
+      "invalid_value": "設定値が不正です"
     }
   },
   "errorPage": {
@@ -2177,7 +2291,17 @@
   "frontend": {
     "pageNotFound": "Page not found",
     "backHome": "Back to home",
-    "renderFailed": "This content could not be displayed. Please refresh and try again."
+    "renderFailed": "This content could not be displayed. Please refresh and try again.",
+    "dataNotice": {
+      "title": "このページの一部データを読み込めませんでした",
+      "hint": "ページが不完全な可能性があります。理由は管理者に表示されます。",
+      "notAdmittedHint": "このパッケージはサーバー側コードを必要とするデータを宣言していますが、カーネルは Web プロセスでの実行を許可していません。「設定 → 実行時設定 → プラグインのサーバー実行」から許可してください。",
+      "notAdmitted": "サーバー実行が許可されていません",
+      "finderMissing": "データ提供者が登録されていません",
+      "permission": "必要な権限がありません",
+      "failed": "取得に失敗しました",
+      "invalidPath": "データ要求パスが不正です"
+    }
   },
   "frontendError": {
     "title": "This page could not be displayed",
@@ -2192,13 +2316,6 @@
     "ko-KR": "한국어",
     "fr-FR": "Français"
   },
-  "locale.en-US": "English",
-  "locale.fr-FR": "Français",
-  "locale.ja-JP": "日本語",
-  "locale.ko-KR": "한국어",
-  "locale.zh-CN": "简体中文",
-  "locale.zh-HK": "繁體中文（香港）",
-  "locale.zh-TW": "繁體中文",
   "localeSwitcher": {
     "label": "Language",
     "ariaLabel": "Switch interface language"
@@ -2305,7 +2422,9 @@
     "zipTooLarge": "ZIP must be smaller than 2MB",
     "uploadFailed": "Upload failed",
     "uploadFailedStatus": "Upload failed ({status})",
-    "installed": "Plugin installed."
+    "installed": "Plugin installed.",
+    "installedWithServerExec": "インストールし、サーバー実行を許可しました：{id}",
+    "installedServerExecFailed": "インストールしましたが、サーバー実行の許可に失敗しました。プラグイン一覧から有効にしてください。"
   },
   "pluginPage": {
     "notFound": "Plugin admin page not found.",
@@ -2377,7 +2496,9 @@
     "themeTitle": "Upload theme",
     "themeDescription": "Upload a theme ZIP to install; activate or preview it afterward.",
     "themeFile": "Theme ZIP file",
-    "themeInstalled": "Theme installed."
+    "themeInstalled": "Theme installed.",
+    "grantServerExec": "このプラグインに Web プロセスでのサーバー側コード実行を許可する",
+    "grantServerExecHint": "設定画面やページデータは通常これに依存します。プラグイン一覧からいつでも取消できます。"
   },
   "user": {
     "emailRequired": "Please enter an email",

@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { PASSWORD_MAX_LENGTH } from '@stackpanel/sdk';
 import { extractSession, requireAuth } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
+import { assertPassword } from '../lib/password-policy.ts';
 import { getSessionStore } from '../auth/session-store.ts';
 import { avatarContentUrl } from '../auth/avatar.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
@@ -41,7 +43,12 @@ const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
  * content route deliberately serves it as a download, so it can never be an
  * avatar, and accepting it would only create a stored-XSS shaped footgun.
  */
-const AVATAR_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);/** Reference key under which a user's avatar attachment is registered. */
+const AVATAR_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]); /** Reference key under which a user's avatar attachment is registered. */
 const AVATAR_REFERENCE = { resourceType: 'user', field: 'avatar' } as const;
 
 /**
@@ -103,12 +110,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     await guardCaptcha(app, request, 'change_password', body.data.captchaToken);
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-    if (!user?.passwordHash || !(await verifyPassword(body.data.currentPassword, user.passwordHash))) {
+    if (
+      !user?.passwordHash ||
+      !(await verifyPassword(body.data.currentPassword, user.passwordHash))
+    ) {
       return reply.code(400).send({ error: '当前密码不正确' });
     }
-    this.data.newPassword),
+    // Policy before writing: a change is the one place an account can upgrade
+    // from an old 8-character password, so it enforces today's rule.
+    assertPassword(body.data.newPassword, user.email);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await hashPassword(body.data.newPassword) },
     });
     await getSessionStore().revokeAll(user.id);
+    await writeAudit({
+      action: 'auth.password.changed',
+      resource: 'user',
+      resourceId: user.id,
+      ...auditContext(request),
+    });
     return { ok: true as const };
   });
 
@@ -119,7 +140,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const email = body.data.email.toLowerCase();
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({ where: { id: request.user.id } });
-    if (!user?.passwordHash || !(await verifyPassword(body.data.currentPassword, user.passwordHash))) {
+    if (
+      !user?.passwordHash ||
+      !(await verifyPassword(body.data.currentPassword, user.passwordHash))
+    ) {
       return reply.code(400).send({ error: '当前密码不正确' });
     }
     const exists = await prisma.user.findFirst({ where: { email, NOT: { id: user.id } } });
@@ -146,11 +170,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       if (!user) return reply.code(401).send({ error: '未登录或会话已过期' });
       const body = request.body;
       const data =
-        body instanceof Uint8Array
-          ? body
-          : Buffer.isBuffer(body)
-            ? new Uint8Array(body)
-            : null;
+        body instanceof Uint8Array ? body : Buffer.isBuffer(body) ? new Uint8Array(body) : null;
       if (!data || data.byteLength === 0) {
         return reply.code(400).send({ error: '缺少图片内容', code: 'media.no_content' });
       }
@@ -159,9 +179,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       }
       const sniffed = sniffMime(data);
       if (!sniffed || !AVATAR_MIMES.has(sniffed.mime)) {
-        return reply
-          .code(415)
-          .send({ error: '头像必须是 PNG / JPEG / GIF / WebP 图片', code: 'media.unsupported_type' });
+        return reply.code(415).send({
+          error: '头像必须是 PNG / JPEG / GIF / WebP 图片',
+          code: 'media.unsupported_type',
+        });
       }
       const actor = mediaActorFor(user);
       const prisma = getPrisma();
@@ -200,7 +221,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
               resourceId: user.id,
             })
             .catch(() => undefined);
-          await buildMediaService().remove(previous.avatarAttachmentId, actor).catch(() => undefined);
+          await buildMediaService()
+            .remove(previous.avatarAttachmentId, actor)
+            .catch(() => undefined);
         }
         await writeAudit({
           action: 'user_update',
@@ -233,7 +256,9 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     await attachmentReferences()
       .unregister({ attachmentId, ...AVATAR_REFERENCE, resourceId: user.id })
       .catch(() => undefined);
-    await buildMediaService().remove(attachmentId, mediaActorFor(user)).catch(() => undefined);
+    await buildMediaService()
+      .remove(attachmentId, mediaActorFor(user))
+      .catch(() => undefined);
     await writeAudit({
       action: 'user_update',
       resource: 'user',

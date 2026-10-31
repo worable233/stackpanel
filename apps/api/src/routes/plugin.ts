@@ -13,6 +13,7 @@ import {
 import { readFrontendManifest } from '../lib/frontend.ts';
 import { ensureRuntimeAdminBundle } from '../lib/frontend-runtime-bundle.ts';
 import { pluginPackageDir } from '../lib/plugins.ts';
+import { resolveFrontendExecution } from '../lib/frontend-exec-policy.ts';
 import {
   isRevisionName,
   readCurrentRevision,
@@ -60,12 +61,12 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
       const manifest = await readFrontendManifest(packageDir);
       if (!manifest) continue;
       // Admission decision for server-side execution in the web process
-      // (contract 03 §3.1): built-in OR an explicit `frontendExecutions:
-      // 'server'` grant. Default is `declarative` (never execute). This is
-      // derived from the SAME builtin flag the backend's execution decision
-      // uses, so the web layer never has to infer trust.
+      // (contract 03 §3.1). Computed per request from the kernel-owned policy so
+      // an operator change (database `frontend.serverExec`) takes effect without
+      // reloading plugin definitions: `builtin` OR allowlist grants it, the deny
+      // list vetoes even builtin. The installed manifest can never self-grant.
       const serverExecution =
-        plugin.builtin || plugin.frontendExecutions === 'server'
+        resolveFrontendExecution(plugin.id, plugin.builtin) === 'server'
           ? ('allowed' as const)
           : ('declarative' as const);
       const pointer = await readCurrentRevision(packageDir);
@@ -176,6 +177,42 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
       }));
     return { routes };
   });
+
+  /**
+   * The subset of an active plugin's route table that an **anonymous** browser
+   * may call.
+   *
+   * The same-origin BFF (`apps/web/src/app/api/plugins/[...path]`) forwards a
+   * browser request only after resolving the plugin namespace against this
+   * kernel-owned table, and `/action-targets` deliberately requires a session
+   * because it also lists everything the caller may *not* use. That leaves one
+   * case unserved: a widget that bootstraps before login — a captcha challenge,
+   * a price preview — has to reach a route the plugin declared public, and the
+   * browser has no session yet.
+   *
+   * This lists exactly those routes (`auth: 'public'`, no `permission`), which
+   * is metadata an anonymous caller can discover by simply calling them. The
+   * dispatcher still re-checks `auth` on the forwarded request, so this table is
+   * not the admission decision — it only stops the BFF from becoming a generic
+   * same-origin proxy.
+   */
+  app.get(
+    '/plugins/:id/public-routes',
+    { ...rateLimitConfig('publicRead') },
+    async (request, reply) => {
+      const params = pluginIdSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: '插件 ID 无效' });
+      const { id } = params.data;
+      if (!app.pluginRuntime.isActive(id)) {
+        return reply.code(404).send({ error: '插件不存在' });
+      }
+      const routes = app.pluginDispatcher
+        .list()
+        .filter((route) => route.pluginId === id && route.auth === 'public' && !route.permission)
+        .map((route) => ({ method: route.method, path: route.path }));
+      return { routes };
+    },
+  );
 
   app.get(
     '/plugins/:id/frontend/*',

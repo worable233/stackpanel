@@ -36,6 +36,7 @@ import * as sonner from 'sonner';
 // way `frontend-abi-bridge.tsx` publishes the rest of the client ABI.
 import { AutoSubmitForm, CopyLinkButton, RouteProgress } from '@/components/frontend-absorbed-clients';
 import { CartCheckout } from '@/components/cart-checkout';
+import { navigationServerAbi } from './frontend-loader';
 
 /**
  * Host-absorbed client capabilities, keyed by the **dist file stem** of the client
@@ -60,29 +61,33 @@ const ABSORBED_CLIENT_CAPABILITIES: Record<string, unknown> = {
 export type HostServerAbi = Record<string, unknown>;
 
 /**
- * Publish (idempotently) the host RSC ABI on `globalThis` and return it. Must run
- * before any runtime `import()` of a frontend package so the resolve hook can see
- * it.
+ * Publish the host RSC ABI on `globalThis` and return it. Must run before any
+ * runtime `import()` of a frontend package so the resolve hook can see it.
+ *
+ * Assigned on every call rather than once: the value is a cheap object over
+ * module-level imports, and a stale snapshot is a trap — a long-running dev server
+ * kept publishing the ABI captured at boot, so a fix to what a slot exports (see
+ * `navigationServerAbi`) never took effect until the process restarted. The shim
+ * reads the global lazily, so swapping the object is safe.
  */
 export function publishHostServerAbi(): HostServerAbi {
   const g = globalThis as unknown as {
     __STACKPANEL_SERVER_ABI__?: HostServerAbi;
     __STACKPANEL_ABSORBED_CLIENT__?: Record<string, unknown>;
   };
-  if (!g.__STACKPANEL_SERVER_ABI__) {
-    g.__STACKPANEL_SERVER_ABI__ = {
-      react,
-      'react/jsx-runtime': jsxRuntime,
-      'next/link': link,
-      'next/form': form,
-      'next/navigation': navigation,
-      '@stackpanel/ui': ui,
-      '@stackpanel/sdk': sdk,
-      'lucide-react': lucide,
-      sonner,
-    };
-  }
-  // Refresh client references after development hot reload as new capabilities are added.
+  g.__STACKPANEL_SERVER_ABI__ = {
+    react,
+    'react/jsx-runtime': jsxRuntime,
+    'next/link': link,
+    'next/form': form,
+    'next/navigation': navigationServerAbi(navigation as unknown as Record<string, unknown>),
+    '@stackpanel/ui': ui,
+    '@stackpanel/sdk': sdk,
+    'lucide-react': lucide,
+    sonner,
+  };
+  // Client references are refreshed too, so development hot reload picks up new
+  // absorbed capabilities.
   g.__STACKPANEL_ABSORBED_CLIENT__ = ABSORBED_CLIENT_CAPABILITIES;
   return g.__STACKPANEL_SERVER_ABI__;
 }

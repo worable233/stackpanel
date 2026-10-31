@@ -89,3 +89,18 @@ function isAssetTail(segments: string[], from: number): boolean {
   const tail = segments.slice(from);
   return tail.length > 0 && !tail.some((part) => part === '..' || part === '');
 }
+
+/**
+ * Which kernel table authorises a plugin BFF request.
+ *
+ * `action-targets` requires a session because it also enumerates the routes the
+ * caller may *not* use. An anonymous visitor — a login-page captcha widget is the
+ * canonical case — must use the subset the plugin itself declared public
+ * (`public-routes`), otherwise the widget 401s before the visitor can sign in.
+ *
+ * Extracted because getting it wrong is silent: an unauthenticated request sent to
+ * the authenticated table just looks like "the widget is broken".
+ */
+export function routeTableFor(token: string | null): 'action-targets' | 'public-routes' {
+  return token ? 'action-targets' : 'public-routes';
+}
