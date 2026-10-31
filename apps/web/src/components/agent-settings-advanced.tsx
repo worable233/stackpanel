@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { SectionTitle } from '@stackpanel/ui';
-import { toast } from '@/components/ui/toast';
+import { InlineError, SectionTitle } from '@stackpanel/ui';
+import { toast } from 'sonner';
 import { agentFetch } from './agent-workspace';
 import { agentErrorText } from '@/lib/agent-errors';
 import { Button } from '@/components/ui/button';
@@ -520,9 +520,7 @@ function ConfigForm({ definition: d }: { definition: Definition }) {
         <p className="text-sm text-muted-foreground">{t('agent.advanced.actionsHint')}</p>
       )}
       {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <InlineError>{error}</InlineError>
       )}
       <div className="flex gap-2">
         <Button disabled={busy || !id}>

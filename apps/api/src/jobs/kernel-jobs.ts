@@ -114,9 +114,12 @@ class CanonicalJobRuntime implements JobRuntime {
 
   /**
    * Which job backend is active (`bullmq`/`memory`), or `null` before
-   * `initJobs()`. Surfaced by `/ready` so a deployment that lost Redis (and thus
-   * silently fell back to the single-process timer) is visible to operators
-   * instead of quietly dropping cron work (audit E-10).
+   * `initJobs()`.
+   *
+   * NOTE: nothing surfaces this yet — `/ready` reports only a flat
+   * `ok|unreachable|disabled` check map, so a deployment that lost Redis is
+   * visible solely through the startup warning in `initJobs()`. Wiring this into
+   * a status endpoint (or an admin diagnostics view) is still owed (audit E-10).
    */
   backendKind(): 'bullmq' | 'memory' | null {
     return this.backend?.kind ?? null;
@@ -179,4 +182,6 @@ export const KERNEL_JOBS = {
   autoUpdate: 'distribution.auto-update',
   /** 会员权益到期清理（限时权限组成员关系）。 */
   membershipSweep: 'membership.sweep-expired',
+  /** 存储可用性巡检 → 连续失败后告警管理员（对标 #12.5 `ossExceptionNotice`）。 */
+  storageWatch: 'storage.watch',
 } as const;

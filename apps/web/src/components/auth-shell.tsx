@@ -20,14 +20,20 @@ export interface AuthPost {
 }
 
 export interface AuthShellProps {
-  mode: 'login' | 'register' | 'setup';
+  mode: 'login' | 'register' | 'setup' | 'reset';
   platformName: string;
   platformDescription?: string;
   logoSrc?: string | null;
   /** Third-party login providers; the block is hidden when the list is empty. */
   providers?: AuthProvider[];
   posts?: AuthPost[];
-  children: React.ReactNode;
+  /**
+   * Whether self-registration is offered. On the sign-in page this hides the
+   * "no account yet? register" link when the deployment closed registration —
+   * pointing at a page that refuses the request is worse than saying nothing.
+   */
+  registrationEnabled?: boolean;
+  children?: React.ReactNode;
 }
 
 /** Standalone authentication: centered form and inset brand panel. */
@@ -37,21 +43,42 @@ export function AuthShell({
   logoSrc,
   providers = [],
   posts = [],
+  registrationEnabled = true,
   children,
 }: AuthShellProps) {
   const locale = useLocale();
   const t = useTranslator();
   const isLogin = mode === 'login';
   const isSetup = mode === 'setup';
+  const isReset = mode === 'reset';
   const title = t(
-    isSetup ? 'auth.setup.title' : isLogin ? 'auth.login.title' : 'auth.register.title',
+    isSetup
+      ? 'auth.setup.title'
+      : isReset
+        ? 'auth.reset.title'
+        : isLogin
+          ? 'auth.login.title'
+          : 'auth.register.title',
   );
   const subtitle = t(
-    isSetup ? 'auth.setup.subtitle' : isLogin ? 'auth.login.subtitle' : 'auth.register.subtitle',
+    isSetup
+      ? 'auth.setup.subtitle'
+      : isReset
+        ? 'auth.reset.subtitle'
+        : isLogin
+          ? 'auth.login.subtitle'
+          : 'auth.register.subtitle',
   );
-  const crossPrompt = t(isLogin ? 'auth.login.noAccount' : 'auth.register.hasAccount');
-  const crossAction = t(isLogin ? 'auth.login.register' : 'auth.register.login');
-  const crossHref = isLogin ? '/register' : '/login';
+  const crossPrompt = isReset
+    ? ''
+    : t(isLogin ? 'auth.login.noAccount' : 'auth.register.hasAccount');
+  const crossAction = t(
+    isReset ? 'auth.reset.backToLogin' : isLogin ? 'auth.login.register' : 'auth.register.login',
+  );
+  const crossHref = isReset || isLogin ? (isReset ? '/login' : '/register') : '/login';
+  // Registering is pointless when the operator closed sign-ups; logging in is
+  // always available, and the reset flow always links back to it.
+  const showCrossLink = !isSetup && (isLogin ? registrationEnabled : true);
 
   const crossLink = (
     <Link
@@ -65,9 +92,10 @@ export function AuthShell({
   return (
     <div className="grid min-h-svh w-full flex-1 p-3 lg:grid-cols-2 lg:gap-3">
       <div className="relative flex h-full flex-col">
-        {!isSetup ? (
+        {showCrossLink ? (
           <div className="absolute right-6 top-5 hidden text-sm text-muted-foreground sm:block">
-            {crossPrompt} {crossLink}
+            {crossPrompt ? `${crossPrompt} ` : null}
+            {crossLink}
           </div>
         ) : null}
 
@@ -107,9 +135,10 @@ export function AuthShell({
 
             {children}
 
-            {!isSetup ? (
+            {showCrossLink ? (
               <p className="mt-6 text-center text-sm text-muted-foreground sm:hidden">
-                {crossPrompt} {crossLink}
+                {crossPrompt ? `${crossPrompt} ` : null}
+                {crossLink}
               </p>
             ) : null}
           </div>

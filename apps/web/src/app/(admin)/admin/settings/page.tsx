@@ -3,6 +3,7 @@ import { getPluginSettingsSections } from '@/lib/admin-frontend';
 import {
   DEFAULT_PLATFORM_INFO,
   type AdminCurrencyDefinitionView,
+  type AdminRuntimeConfigEntry,
   type AdminSalesChannel,
   type AdminSalesChannelListResponse,
   type AdminFxRateView,
@@ -36,6 +37,7 @@ export default async function AdminSettingsPage() {
   let updatePolicy: UpdatePolicyView | null = null;
   let salesChannels: AdminSalesChannel[] = [];
   let paymentProviders: NonNullable<AdminSalesChannelListResponse['providers']> = [];
+  let runtimeConfig: AdminRuntimeConfigEntry[] = [];
   let error: string | null = null;
   try {
     const api = await getAuthedApiClient();
@@ -49,6 +51,7 @@ export default async function AdminSettingsPage() {
       distributionResult,
       salesChannelsResult,
       updatePolicyResult,
+      runtimeConfigResult,
     ] = await Promise.all([
       api.getAdminPlatformInfo(),
       api.getSigningStatus(),
@@ -65,6 +68,9 @@ export default async function AdminSettingsPage() {
       })),
       // 更新策略是独立设置项：它失败不能把整个设置页清空（与销售渠道同样的降级策略）。
       api.getUpdatePolicy().catch(() => null),
+      // 运行期配置（ADR-0026）同样是独立面板：老版本内核没有这个接口，降级成不显示，
+      // 而不是让整个设置页报错。
+      api.getAdminConfig().catch(() => ({ entries: [] as AdminRuntimeConfigEntry[] })),
     ]);
     platform = platformResult.platform;
     signing = signingResult.signing;
@@ -76,6 +82,7 @@ export default async function AdminSettingsPage() {
     salesChannels = salesChannelsResult.channels;
     paymentProviders = salesChannelsResult.providers ?? [];
     updatePolicy = updatePolicyResult?.policy ?? null;
+    runtimeConfig = runtimeConfigResult?.entries ?? [];
   } catch (err) {
     error = await apiErrorMessage(err);
   }
@@ -103,6 +110,7 @@ export default async function AdminSettingsPage() {
           distribution={distribution}
           distributionDefaults={distributionDefaults}
           updatePolicy={updatePolicy}
+          runtimeConfig={runtimeConfig}
           salesChannels={salesChannels}
           paymentProviders={paymentProviders}
           pluginSections={pluginSettings.map((section) => ({

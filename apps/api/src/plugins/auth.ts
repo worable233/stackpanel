@@ -2,10 +2,11 @@ import { validMcpDispatch } from '../agent/dispatch-proof.ts';
 import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PluginError } from '@stackpanel/sdk';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { looksLikeApiToken, resolveApiTokenWithOwner } from '../lib/api-tokens.ts';
 import { getSessionStore } from '../auth/session-store.ts';
 import { scopeSatisfied, type ScopeGovernance } from '../lib/capability-registry.ts';
+import { enforceApiTokenSignature } from '../lib/request-signing.ts';
 import type { FastifyInstance } from 'fastify';
 import { auditContext, writeAudit } from './audit.ts';
 import { getPrisma } from './prisma.ts';
@@ -60,7 +61,9 @@ export async function permissionsOf(userId: string): Promise<Set<string>> {
   const rows = await getPrisma().userGroup.findMany({
     // 过期会员不得继续生效：判定在读路径完成，不依赖清扫任务。
     where: { userId, AND: [activeMembershipWhere()] },
-    select: { group: { select: { permissions: { select: { permission: { select: { key: true } } } } } } },
+    select: {
+      group: { select: { permissions: { select: { permission: { select: { key: true } } } } } },
+    },
   });
   const set = new Set<string>();
   for (const row of rows) {
@@ -154,9 +157,20 @@ async function apiTokenUser(
     rejectedTokens.add(cacheKey);
     return null;
   }
-  if (resolved.audience === 'mcp' && (!request || (request.url.split('?')[0] !== '/mcp' && !validMcpDispatch(request)))) return null;
+  if (
+    resolved.audience === 'mcp' &&
+    (!request || (request.url.split('?')[0] !== '/mcp' && !validMcpDispatch(request)))
+  )
+    return null;
   const { owner, scopes } = resolved;
   if (owner.status !== 'ACTIVE') return null;
+  // 请求签名（对标 #12.6）：凭证登记了公钥就必须带签名，缺失/篡改/过期/重放
+  // 一律 401。放在这里而不是 `/api/v1` 的某个 preHandler 上，是因为 token 能
+  // 摸到的入口不止一条（能力路由、插件别名、MCP、agent）—— choke point 只能一个。
+  if (resolved.publicKey) {
+    if (!request) return null;
+    await enforceApiTokenSignature(request, resolved.tokenId, resolved.publicKey);
+  }
   const owned = owner.permissions;
   const effective = new Set(scopes.filter((scope) => owned.has(scope)));
   return {
@@ -183,7 +197,7 @@ export async function extractSession(
   _reply?: FastifyReply,
 ): Promise<AuthUser | null> {
   const bearer = bearerToken(request);
-  const cookie = request.cookies?.[env.SESSION_COOKIE_NAME];
+  const cookie = request.cookies?.[getConfig('SESSION_COOKIE_NAME')];
   const token = bearer ?? cookie;
   if (!token) return null;
   const governance = requestScopeGovernance(request);
@@ -329,8 +343,26 @@ export function requireOpenScope(scope: string) {
  * group), `USER` maps to no additional permission (any authenticated user).
  * Kept so existing admin route call sites stay unchanged.
  */
+/**
+ * Marks a guard built by {@link requireRole}.
+ *
+ * Consumers that need to *re-derive* an admin route's admission (e.g. the
+ * open-platform alias builder, which replaces the coarse role check with a
+ * refined scope) must be able to identify this kind of guard without comparing
+ * function identity — each `requireRole()` call produces a fresh closure.
+ */
+export const ROLE_GUARD = Symbol('stackpanel.roleGuard');
+
+/** Whether `guard` came from {@link requireRole}. */
+export function isRoleGuard(guard: unknown): boolean {
+  return (
+    typeof guard === 'function' &&
+    (guard as unknown as Record<symbol, unknown>)[ROLE_GUARD] === true
+  );
+}
+
 export function requireRole(...roles: readonly string[]) {
-  return async function roleGuard(
+  const roleGuard = async function roleGuard(
     request: FastifyRequest,
     reply: FastifyReply,
   ): Promise<void> {
@@ -353,4 +385,6 @@ export function requireRole(...roles: readonly string[]) {
       await reply.code(403).send({ error: '没有权限执行此操作' });
     }
   };
+  Object.defineProperty(roleGuard, ROLE_GUARD, { value: true });
+  return roleGuard;
 }

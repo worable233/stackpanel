@@ -517,7 +517,7 @@ describe.skipIf(!dbAvailable)('Extension 引擎（真实库）', () => {
 });
 
 describe.skipIf(!dbAvailable)('Extension 事务（ctx.tx）', () => {
-  it('回滚不落库，且拒绝嵌套', async () => {
+  it('回滚不落库，嵌套按 join 语义加入外层事务', async () => {
     const service = new ExtensionService(getPrisma());
     const events = new EventEmitterEventBus();
     const silentLogger = { info: () => {}, warn: () => {}, error: () => {} };
@@ -564,14 +564,32 @@ describe.skipIf(!dbAvailable)('Extension 事务（ctx.tx）', () => {
       await service.client('e1-tx', null).listAll(txModel),
     ).toHaveLength(0);
 
+    // 嵌套 ctx.tx 采用 join 语义而非报错：outbox relay 会在自己的事务里派发
+    // `order.paid`，订阅方钩子再要事务时必须能加入外层，否则每次派发都要先失败
+    // 一次才成功。代价是内层不再有独立事务边界 —— 内层抛错会让整个外层回滚。
+    await ctx.tx(async () => {
+      await ctx.tx(async (inner) => {
+        await inner.extensions.create(txModel, { name: 'N', slug: 'nested', qty: 1 });
+      });
+    });
+    // 用 listAll 而非 get：`get` 走客户端缓存，事务内写入的可见性取决于缓存键，
+    // 这里要断言的是「内层 join 进外层后确实落库」。
+    expect((await service.client('e1-tx', null).listAll(txModel)).map((r) => r.spec)).toEqual([
+      { name: 'N', slug: 'nested', qty: 1 },
+    ]);
+
     await expect(
       ctx.tx(async () => {
-        await ctx.tx(async () => undefined);
+        await ctx.tx(async (inner) => {
+          await inner.extensions.create(txModel, { name: 'N2', slug: 'nested2', qty: 1 });
+        });
+        throw new Error('outer boom');
       }),
-    ).rejects.toMatchObject({
-      code: 'extension.validation_error',
-      detail: expect.stringContaining('嵌套'),
-    });
+    ).rejects.toThrow('outer boom');
+    // join 语义下内层写入属于外层事务，外层回滚必须一并撤销。
+    expect((await service.client('e1-tx', null).listAll(txModel)).map((r) => r.spec)).toEqual([
+      { name: 'N', slug: 'nested', qty: 1 },
+    ]);
 
     await runtime.unregister('e1-tx');
   });

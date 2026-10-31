@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { frontendFetchPathProblem } from './frontend.js';
 import type {
   AdminActionDefinition,
   AdminRouteDefinition,
@@ -7,7 +6,6 @@ import type {
   AccountWidgetDefinition,
   PluginActionDefinition,
   FrontendDescriptor,
-  FrontendPageDataRequirement,
   FrontendPageDefinition,
   FrontendPageManifestEntry,
   FrontendSettings,
@@ -30,6 +28,9 @@ import type {
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
   ApiTokenView,
+  SeoPageListResponse,
+  SeoPageUpsertResponse,
+  SeoPageView,
   AdminCurrencyDefinitionListResponse,
   AdminCurrencyDefinitionView,
   AdminFxRateListResponse,
@@ -53,6 +54,9 @@ import type {
   MarketThemesResponse,
   NavItem,
   NavListResponse,
+  AdminNavItemView,
+  AdminNavResponse,
+  AdminNavCustomResponse,
   OAuthAuthorizeResponse,
   OAuthProviderListResponse,
   PermissionCheckResponse,
@@ -97,6 +101,8 @@ import type {
   WebhookDeliveryListResponse,
   WebhookDeliveryView,
   SigningResponse,
+  AdminRuntimeConfigEntry,
+  AdminConfigResponse,
   RbacTemplateEntry,
   RbacTemplatesResponse,
   ThemePreviewMutationResponse,
@@ -135,10 +141,6 @@ import type {
   PasswordResetRequestResponse,
   PasswordResetResponse,
   SendRegisterCodeResponse,
-  AdminRuntimeConfigEntry,
-  AdminFrontendExecPolicy,
-  AdminConfigResponse,
-  AdminFrontendExecResponse,
 } from './types.js';
 import type { UpstreamProductItem } from './upstream.js';
 import type { AdminPaymentRecord } from './payments.js';
@@ -597,6 +599,8 @@ export const apiTokenViewSchema = z.object({
   scopes: z.array(z.string()),
   ipAllowlist: z.array(z.string()),
   status: z.string(),
+  publicKey: z.string().nullable().optional(),
+  signingEnabled: z.boolean().optional(),
   expiresAt: z.string().nullable(),
   lastUsedAt: z.string().nullable(),
   lastUsedIp: z.string().nullable(),
@@ -621,6 +625,31 @@ export const apiTokenUpdateResponseSchema = z.object({
   apiToken: apiTokenViewSchema,
 }) satisfies z.ZodType<ApiTokenUpdateResponse>;
 
+/** 一条逐页 SEO 覆写（对标 #12.4）；空字段表示「不干预」，沿用 provider 的值。 */
+export const seoPageViewSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  ogImage: z.string().nullable(),
+  canonical: z.string().nullable(),
+  noindex: z.boolean(),
+  updatedBy: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+}) satisfies z.ZodType<SeoPageView>;
+
+export const seoPageListResponseSchema = z.object({
+  pages: z.array(seoPageViewSchema),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
+}) satisfies z.ZodType<SeoPageListResponse>;
+
+export const seoPageUpsertResponseSchema = z.object({
+  page: seoPageViewSchema,
+}) satisfies z.ZodType<SeoPageUpsertResponse>;
+
 export const okResponseSchema = z.object({ ok: z.boolean() });
 
 export const oauthAuthorizeResponseSchema = z.object({
@@ -641,6 +670,35 @@ export const navItemSchema = z.object({
 export const navListResponseSchema = z.object({
   items: z.array(navItemSchema),
 }) satisfies z.ZodType<NavListResponse>;
+
+export const adminNavItemViewSchema = z.object({
+  surface: z.enum(['public', 'account', 'admin']),
+  label: z.string(),
+  href: z.string(),
+  custom: z.boolean(),
+  hidden: z.boolean(),
+  overrideId: z.string().nullable(),
+  defaultLabel: z.string().nullable(),
+}) satisfies z.ZodType<AdminNavItemView>;
+
+export const adminNavResponseSchema = z.object({
+  surface: z.enum(['public', 'account', 'admin']),
+  items: z.array(adminNavItemViewSchema),
+}) satisfies z.ZodType<AdminNavResponse>;
+
+export const adminNavCustomResponseSchema = z.object({
+  entry: z.object({
+    id: z.string(),
+    surface: z.string(),
+    href: z.string(),
+    label: z.string().nullable(),
+    sortOrder: z.number().nullable(),
+    hidden: z.boolean(),
+    custom: z.boolean(),
+    updatedAt: z.string(),
+  }),
+  items: z.array(adminNavItemViewSchema),
+}) satisfies z.ZodType<AdminNavCustomResponse>;
 
 export const themeInfoSchema = z.object({
   id: z.string(),
@@ -793,43 +851,32 @@ export const frontendSettingsSchema = z.object({
 });
 
 /**
- * Page-data requirement: a finder call *or* a declarative host GET, never both
- * (ADR-0027). A package that needs plugin code must go through the finder form and
- * therefore through the server-execution admission gate.
+ * A page-data requirement is either a declarative `fetch` (host performs the
+ * request; no package code runs) or a named `finder` (runs package code and
+ * therefore needs server-execution admission). Exactly one must be declared —
+ * accepting both would leave "which one wins?" ambiguous, and accepting neither
+ * is a silently dead requirement.
  */
-export const frontendPageDataRequirementSchema = z.union([
-  z
-    .object({
-      finder: z.string().min(1),
-      as: z.string().min(1),
-      input: z.record(z.string(), z.unknown()).optional(),
-      permission: z.string().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      fetch: z
-        .object({
-          path: z.string().min(1),
-          method: z.literal('GET').optional(),
-          select: z.string().min(1).optional(),
-        })
-        .strict(),
-      as: z.string().min(1),
-      permission: z.string().optional(),
-    })
-    .strict()
-    .superRefine((value, ctx) => {
-      const problem = frontendFetchPathProblem(value.fetch.path);
-      if (problem) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['fetch', 'path'],
-          message: `fetch.path rejected (${problem}): must be a kernel-relative path`,
-        });
-      }
-    }),
-]) as unknown as z.ZodType<FrontendPageDataRequirement>;
+export const frontendPageDataRequirementSchema = z
+  .object({
+    finder: z.string().min(1).optional(),
+    fetch: z
+      .object({
+        method: z.literal('GET').optional(),
+        path: z.string().startsWith('/').min(1),
+        select: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+    as: z.string().min(1),
+    input: z.record(z.string(), z.unknown()).optional(),
+    permission: z.string().optional(),
+  })
+  .strict()
+  .refine((value) => (value.finder === undefined) !== (value.fetch === undefined), {
+    message: '数据需求必须且只能声明 finder 或 fetch 之一',
+    path: ['fetch'],
+  });
 
 export const frontendPageSchema = z.object({
   path: z.string().min(1),
@@ -939,7 +986,17 @@ export const accountWidgetSchema = z.object({
 
 export const frontendManifestSchema = z.object({
   version: z.string(),
-  revision: z.string(),
+  /**
+   * Content-addressed digest of the revision's bytes (contract 04 §1.2).
+   *
+   * The **kernel** owns this value: `materializeRevision` hashes the manifest
+   * body plus every shipped file and rewrites the flat manifest with the
+   * result. A source-tree manifest must not carry a guess, because it would be
+   * a digest of gitignored build output — recomputed on every build, tracked
+   * anyway, and overwritten on first read. Empty means "not published yet";
+   * revision-addressed URLs are only served once the kernel has filled it in.
+   */
+  revision: z.string().default(''),
   entry: z.string(),
   pages: z.array(frontendPageSchema).default([]),
   layouts: z.array(z.string()).default([]),
@@ -1085,6 +1142,11 @@ export const adminPluginSchema = z.object({
   state: z.string(),
   enabled: z.boolean(),
   source: z.enum(['builtin', 'dynamic']),
+  /**
+   * Whether an operator may uninstall this plugin. Independent of `source`:
+   * provenance ("ships with the kernel") is not uninstall policy.
+   */
+  removable: z.boolean(),
   hotReload: z.boolean(),
   frontend: frontendSummarySchema,
   requires: z.array(pluginDependencySchema),
@@ -1299,17 +1361,6 @@ export const pluginToggleResponseSchema = z.object({
   enabled: z.boolean(),
 }) satisfies z.ZodType<PluginToggleResponse>;
 
-export const signingStatusSchema = z.object({
-  source: z.enum(['env', 'stored', 'disabled']),
-  configured: z.boolean(),
-  fingerprint: z.string().nullable(),
-  publicKey: z.string().nullable(),
-}) satisfies z.ZodType<SigningResponse['signing']>;
-
-export const signingResponseSchema = z.object({
-  signing: signingStatusSchema,
-}) satisfies z.ZodType<SigningResponse>;
-
 /**
  * 运行期配置（ADR-0026）。`value` 的类型取决于键（数字/布尔/字符串），因此按 unknown
  * 收下、由使用方按 `name` 解释；`source` 决定后台显示「继承环境变量」还是「已覆盖」。
@@ -1322,21 +1373,21 @@ export const adminRuntimeConfigEntrySchema = z.object({
   envValue: z.unknown(),
 }) satisfies z.ZodType<AdminRuntimeConfigEntry>;
 
-export const adminFrontendExecPolicySchema = z.object({
-  allow: z.array(z.string()),
-  deny: z.array(z.string()),
-  admitAll: z.boolean(),
-  source: z.enum(['stored', 'env']),
-}) satisfies z.ZodType<AdminFrontendExecPolicy>;
-
 export const adminConfigResponseSchema = z.object({
   entries: z.array(adminRuntimeConfigEntrySchema),
-  frontendExec: adminFrontendExecPolicySchema,
 }) satisfies z.ZodType<AdminConfigResponse>;
 
-export const adminFrontendExecResponseSchema = z.object({
-  frontendExec: adminFrontendExecPolicySchema,
-}) satisfies z.ZodType<AdminFrontendExecResponse>;
+export const signingStatusSchema = z.object({
+  source: z.enum(['env', 'stored', 'disabled']),
+  configured: z.boolean(),
+  fingerprint: z.string().nullable(),
+  publicKey: z.string().nullable(),
+}) satisfies z.ZodType<SigningResponse['signing']>;
+
+export const signingResponseSchema = z.object({
+  signing: signingStatusSchema,
+}) satisfies z.ZodType<SigningResponse>;
+
 
 export const platformInfoSchema = z.object({
   name: z.string().min(1).max(80),

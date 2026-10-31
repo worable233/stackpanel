@@ -19,6 +19,10 @@ const ACTION_KEYS: Record<string, string> = {
   'auth.oauth.login': 'auditAction.auth_oauth_login',
   'auth.oauth.failed': 'auditAction.auth_oauth_failed',
   'auth.oauth.conflict': 'auditAction.auth_oauth_conflict',
+  'auth.password.changed': 'auditAction.auth_password_changed',
+  'auth.email.changed': 'auditAction.auth_email_changed',
+  'auth.password.reset': 'auditAction.auth_password_reset',
+  'auth.password.reset_requested': 'auditAction.auth_password_reset_requested',
   'user.create': 'auditAction.user_create',
   'user.update': 'auditAction.user_update',
   'user.reset-password': 'auditAction.user_reset-password',
@@ -35,6 +39,8 @@ const ACTION_KEYS: Record<string, string> = {
   'theme.delete': 'auditAction.theme_delete',
   'theme.settings.update': 'auditAction.theme_settings_update',
   'setting.set': 'auditAction.setting_set',
+  'config.changed': 'auditAction.config_changed',
+  'config.reverted': 'auditAction.config_reverted',
   'secret.set': 'auditAction.secret_set',
   'signing.key.set': 'auditAction.signing_key_set',
   'signing.key.clear': 'auditAction.signing_key_clear',
@@ -165,9 +171,7 @@ export default async function AdminAuditPage({
       </form>
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.audit.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.audit.serviceUnavailable')}</p>
       ) : null}
       {result ? (
         <div className="overflow-x-auto rounded-lg border">
@@ -198,7 +202,9 @@ export default async function AdminAuditPage({
                       {log.resourceId ? ` / ${log.resourceId.slice(0, 12)}` : ''}
                       {meta ? <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p> : null}
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground">{formatActor(log.actorId, t)}</td>
+                    <td className="px-4 py-2 text-muted-foreground">
+                      {formatActor(log.actorId, t)}
+                    </td>
                     <td className="px-4 py-2 text-muted-foreground">{log.ip ?? '—'}</td>
                   </tr>
                 );

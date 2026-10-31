@@ -3,6 +3,9 @@ export type { StatusBadgeProps, StatusTone } from './status-badge.js';
 export { PageHeader } from './page-header.js';
 export type { PageHeaderProps } from './page-header.js';
 export { Button, buttonVariants } from './button.js';
+export { ConfirmDialog } from './confirm-dialog.js';
+export type { ConfirmDialogProps } from './confirm-dialog.js';
+export { InlineError, InlineNotice } from './inline-error.js';
 export { Input } from './input.js';
 export { TicketWorkspace } from './ticket-workspace.js';
 export type { TicketWorkspaceLabels } from './ticket-workspace.js';
@@ -10,7 +13,11 @@ export { Label } from './label.js';
 export { Select } from './select.js';
 export { Checkbox } from './checkbox.js';
 export { Slider } from './slider.js';
-export { ConfigurationSlider, ConfigurationQuantity, ConfigurationImages } from './configuration-slider.js';
+export {
+  ConfigurationSlider,
+  ConfigurationQuantity,
+  ConfigurationImages,
+} from './configuration-slider.js';
 export { LocaleSwitcher } from './locale-switcher.js';
 export type { LocaleSwitcherProps, LocaleSwitcherItem } from './locale-switcher.js';
 export {
@@ -42,6 +49,8 @@ export type { CopyButtonProps } from './copy-button.js';
 export { SecretValue } from './secret-value.js';
 export type { SecretValueProps } from './secret-value.js';
 export { MetricsExplorer } from './metrics-explorer.js';
+export { UsageTrendChart } from './usage-trend-chart.js';
+export type { UsageTrendPoint, UsageTrendFormat } from './usage-trend-chart.js';
 export type {
   MetricsExplorerLabels,
   MetricPointLike,

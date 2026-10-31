@@ -20,6 +20,8 @@ vi.mock('@stackpanel/ui', () => ({
   Select: 'select',
   Field: 'div',
   FieldGroup: 'div',
+  // 内联提示统一走 `InlineError`；本套件只调用组件函数、不渲染子组件，所以在元素层面断言。
+  InlineError: 'p',
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('next/link', () => ({ default: 'a' }));
@@ -133,7 +135,9 @@ describe('checkout directly from cart', () => {
     await tree.find((node) => node.type === 'form')!.props.action!(new FormData());
     tree = ui.render();
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(false);
-    expect(tree.some((node) => node.props.role === 'alert')).toBe(true);
+    // 行内提示由 `InlineError` 统一提供 role/样式，且绝不能把异常原文带上屏。
+    expect(tree.filter((node) => node.type === 'p').length).toBeGreaterThan(0);
+    expect(JSON.stringify(tree)).not.toContain('rejected');
   });
   it('starts at review and returns there from payment without submitting an order', () => {
     const ui = setup();

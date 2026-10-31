@@ -19,6 +19,8 @@ import {
   adminSalesChannelListResponseSchema,
   apiTokenCreateResponseSchema,
   apiTokenListResponseSchema,
+  seoPageListResponseSchema,
+  seoPageUpsertResponseSchema,
   apiTokenScopesResponseSchema,
   apiTokenUpdateResponseSchema,
   auditLogResponseSchema,
@@ -58,6 +60,8 @@ import {
   distributionRefreshResultSchema,
   distributionSourceResponseSchema,
   navListResponseSchema,
+  adminNavResponseSchema,
+  adminNavCustomResponseSchema,
   notificationListResponseSchema,
   notificationMarkAllResponseSchema,
   notificationUnreadCountResponseSchema,
@@ -97,7 +101,6 @@ import {
   bootstrapProvisionResponseSchema,
   signingResponseSchema,
   adminConfigResponseSchema,
-  adminFrontendExecResponseSchema,
   platformInfoResponseSchema,
   platformBrandResponseSchema,
   settingsResponseSchema,
@@ -162,6 +165,9 @@ import type {
   BootstrapOperationView,
   ApiTokenCreateResponse,
   ApiTokenListResponse,
+  SeoPageListResponse,
+  SeoPageUpsertInput,
+  SeoPageUpsertResponse,
   ApiTokenScopesResponse,
   ApiTokenUpdateResponse,
   AuthConfigResponse,
@@ -174,6 +180,9 @@ import type {
   MarketPluginsResponse,
   MarketThemesResponse,
   NavListResponse,
+  AdminNavResponse,
+  AdminNavCustomResponse,
+  AdminNavLayoutItemInput,
   NotificationListResponse,
   NotificationMarkAllResponse,
   NotificationUnreadCountResponse,
@@ -197,8 +206,6 @@ import type {
   SendRegisterCodeResponse,
   SigningResponse,
   AdminConfigResponse,
-  AdminFrontendExecResponse,
-  AdminFrontendExecPolicy,
   Readiness,
   ThemePreviewMutationResponse,
   ThemePreviewResponse,
@@ -372,6 +379,27 @@ export class ApiClient {
   }
 
   /** Read installed themes (public list). */
+  /* --------------------- 运行期配置（ADR-0026） --------------------- */
+
+  /** Read every admin-editable runtime setting (value + where it came from). */
+  getAdminConfig(): Promise<AdminConfigResponse> {
+    return this.get('/admin/config', adminConfigResponseSchema);
+  }
+
+  /** Override one runtime setting in the database (`null` reverts to env). */
+  setAdminConfig(name: string, value: unknown): Promise<AdminConfigResponse> {
+    return this.put(
+      `/admin/config/${encodeURIComponent(name)}`,
+      { value },
+      adminConfigResponseSchema,
+    );
+  }
+
+  /** Drop the database override so the environment variable applies again. */
+  clearAdminConfig(name: string): Promise<AdminConfigResponse> {
+    return this.del(`/admin/config/${encodeURIComponent(name)}`, adminConfigResponseSchema);
+  }
+
   getThemes(): Promise<ThemesResponse> {
     return this.get('/themes', themesResponseSchema);
   }
@@ -789,6 +817,31 @@ export class ApiClient {
     return this.get(`/nav/${surface}`, navListResponseSchema);
   }
 
+  /** 后台菜单编辑视图（含隐藏项与来源信息）。 */
+  getAdminNav(surface: 'public' | 'account' | 'admin' = 'admin'): Promise<AdminNavResponse> {
+    return this.get(`/admin/nav?surface=${surface}`, adminNavResponseSchema);
+  }
+
+  /** 保存一次排布：数组顺序即最终顺序，label 为空表示沿用默认文案。 */
+  saveAdminNavLayout(
+    surface: 'public' | 'account' | 'admin',
+    items: AdminNavLayoutItemInput[],
+  ): Promise<AdminNavResponse> {
+    return this.put(`/admin/nav/${surface}`, { items }, adminNavResponseSchema);
+  }
+
+  addAdminNavItem(
+    surface: 'public' | 'account' | 'admin',
+    input: { label: string; href: string },
+  ): Promise<AdminNavCustomResponse> {
+    return this.post(`/admin/nav/${surface}/items`, input, adminNavCustomResponseSchema);
+  }
+
+  /** 删除一条覆写：自定义项消失，默认项恢复原样。 */
+  deleteAdminNavItem(id: string): Promise<{ ok: boolean }> {
+    return this.del(`/admin/nav/items/${id}`, okResponseSchema);
+  }
+
   /** Read the active/installed theme's compiled frontend descriptor. */
   getThemeFrontend(id: string): Promise<FrontendDescriptor> {
     return this.get(`/themes/${encodeURIComponent(id)}/frontend`, frontendDescriptorSchema);
@@ -1095,6 +1148,8 @@ export class ApiClient {
     name: string;
     scopes?: string[];
     ipAllowlist?: string[];
+    /** Ed25519 PEM；登记后该密钥的每个请求都必须带请求签名。 */
+    publicKey?: string | null;
     expiresAt?: string | null;
     /** Human-verification token; the kernel decides whether the action needs it. */
     captchaToken?: string;
@@ -1110,6 +1165,8 @@ export class ApiClient {
       scopes?: string[];
       ipAllowlist?: string[];
       status?: 'ACTIVE' | 'DISABLED';
+      /** `null` 清除公钥，退回只凭 Bearer。 */
+      publicKey?: string | null;
       expiresAt?: string | null;
     },
   ): Promise<ApiTokenUpdateResponse> {
@@ -1118,6 +1175,27 @@ export class ApiClient {
       input,
       apiTokenUpdateResponseSchema,
     );
+  }
+
+  /** 逐页 SEO 覆写列表（后台）。 */
+  listSeoPages(
+    options: { query?: string; page?: number; pageSize?: number } = {},
+  ): Promise<SeoPageListResponse> {
+    const params = new URLSearchParams();
+    if (options.query) params.set('query', options.query);
+    params.set('page', String(options.page ?? 1));
+    params.set('pageSize', String(options.pageSize ?? 50));
+    return this.get(`/admin/seo/pages?${params.toString()}`, seoPageListResponseSchema);
+  }
+
+  /** 保存一条逐页 SEO 覆写（按路径 upsert）。 */
+  upsertSeoPage(input: SeoPageUpsertInput): Promise<SeoPageUpsertResponse> {
+    return this.put('/admin/seo/pages', input, seoPageUpsertResponseSchema);
+  }
+
+  /** 删除一条逐页 SEO 覆写，页面回落到 provider 的元数据。 */
+  deleteSeoPage(id: string): Promise<{ ok: boolean }> {
+    return this.del(`/admin/seo/pages/${encodeURIComponent(id)}`, okResponseSchema);
   }
 
   /** Revoke one of the current user's API tokens. */
@@ -1247,54 +1325,6 @@ export class ApiClient {
   /** Set or clear the stored package signing public key (empty clears). */
   setSigningPublicKey(publicKey: string): Promise<SigningResponse> {
     return this.patch('/admin/signing', { publicKey }, signingResponseSchema);
-  }
-
-  /* --------------------- 运行期配置（ADR-0026） --------------------- */
-
-  /** Read every admin-editable runtime setting plus the frontend exec policy. */
-  getAdminConfig(): Promise<AdminConfigResponse> {
-    return this.get('/admin/config', adminConfigResponseSchema);
-  }
-
-  /** Override one runtime setting in the database (`null` reverts to env). */
-  setAdminConfig(name: string, value: unknown): Promise<AdminConfigResponse> {
-    return this.put(
-      `/admin/config/${encodeURIComponent(name)}`,
-      { value },
-      adminConfigResponseSchema,
-    );
-  }
-
-  /** Drop the database override so the environment variable applies again. */
-  clearAdminConfig(name: string): Promise<AdminConfigResponse> {
-    return this.del(`/admin/config/${encodeURIComponent(name)}`, adminConfigResponseSchema);
-  }
-
-  /** Read the current frontend server-execution policy (allow/deny/admitAll). */
-  getAdminFrontendExec(): Promise<AdminFrontendExecResponse> {
-    return this.get('/admin/frontend-exec', adminFrontendExecResponseSchema);
-  }
-
-  /**
-   * Grant or revoke server-side execution for ONE plugin.
-   *
-   * The single-plugin form exists so two operators (or two tabs) cannot clobber
-   * each other by read-modify-writing the whole list — the kernel applies the
-   * delta. Revoking always wins over admission, matching the deny-first order.
-   */
-  setAdminFrontendExecPlugin(id: string, allowed: boolean): Promise<AdminFrontendExecResponse> {
-    return this.put(
-      `/admin/frontend-exec/plugins/${encodeURIComponent(id)}`,
-      { allowed },
-      adminFrontendExecResponseSchema,
-    );
-  }
-
-  /** Replace the frontend server-execution allow/deny lists. */
-  setAdminFrontendExec(
-    policy: Pick<AdminFrontendExecPolicy, 'allow' | 'deny' | 'admitAll'>,
-  ): Promise<AdminFrontendExecResponse> {
-    return this.put('/admin/frontend-exec', policy, adminFrontendExecResponseSchema);
   }
 
   /* ------------------------- 币种治理 ------------------------- */

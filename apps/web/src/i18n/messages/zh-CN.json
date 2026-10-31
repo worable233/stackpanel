@@ -65,7 +65,6 @@
     "settings": "系统设置",
     "plugins": "插件管理",
     "rbac": "权限模板",
-    "payments": "支付记录",
     "audit": "审计日志",
     "developer": "开发者控制台",
     "themes": "主题管理",
@@ -86,7 +85,8 @@
     "homeAriaLabel": "回到首页",
     "updates": "升级",
     "accountOverview": "账户概览",
-    "credentials": "访问凭证"
+    "credentials": "访问凭证",
+    "payments": "支付记录"
   },
   "auth": {
     "login": {
@@ -695,18 +695,6 @@
         "cleanup": "删除记录",
         "description": "这些记录还在数据库里，但包已经不在了，运行期加载不到。清理会移除它们的能力声明；重新安装插件即可恢复。",
         "title": "残留的插件记录"
-      },
-      "serverExec": {
-        "label": "服务端执行",
-        "allowed": "已允许",
-        "denied": "未允许",
-        "grant": "允许执行",
-        "revoke": "撤销执行",
-        "saved": "已更新服务端执行准入",
-        "reasonBuiltin": "内置插件始终允许",
-        "reasonDeny": "已被否决名单阻止",
-        "reasonAdmitAll": "紧急放行中（全部允许）",
-        "admitAllActive": "紧急放行已开启：所有插件都被允许在网站进程执行。排障结束后请关闭。"
       }
     },
     "users": {
@@ -921,16 +909,6 @@
           "plugins": "插件",
           "audit": "审计日志",
           "agent": "Agent"
-        },
-        "frontendExec": {
-          "title": "插件服务端执行准入",
-          "description": "决定哪些插件的服务端代码（finder、页面数据）可以在 Web 进程内执行。内置插件恒放行；其余只有「允许名单」里的插件才能执行。未获准入的插件照常安装、启用、显示页面，只是拿不到自己声明的数据。",
-          "allow": "允许名单",
-          "deny": "否决名单",
-          "allowHint": "逗号或空格分隔的插件 id",
-          "denyHint": "命中即拒绝，优先级高于内置与允许名单",
-          "admitAll": "紧急放行全部",
-          "admitAllHint": "忽略准入判定，任何插件都在 Web 进程执行。仅用于误分类时临时排障，用完请关闭。"
         }
       }
     },
@@ -1191,6 +1169,23 @@
     "distributionRefreshOffline": "远程目录已关闭，无需刷新。",
     "distributionRefreshOk": "目录刷新成功，当前序号 {sequence}。",
     "distributionRefreshFailed": "目录刷新失败：{message}",
+    "apiTokenSigningFailed": "更新请求签名设置失败",
+    "seoPathRequired": "请填写页面路径",
+    "seoSaveFailed": "保存页面覆写失败",
+    "seoDeleteFailed": "删除页面覆写失败",
+    "navLabelRequired": "请填写菜单名称",
+    "navHrefRequired": "请填写链接",
+    "navSaveFailed": "保存菜单失败",
+    "navAddFailed": "添加菜单项失败",
+    "navDeleteFailed": "删除菜单项失败",
+    "navSaved": "菜单已保存",
+    "navItemAdded": "菜单项已添加",
+    "navItemDeleted": "菜单项已删除",
+    "seoPageSaved": "页面覆写已保存",
+    "seoPageDeleted": "页面覆写已删除",
+    "apiTokenSigningSaved": "请求签名公钥已保存",
+    "apiTokenSigningCleared": "已停用请求签名",
+    "apiTokenRevoked": "API 密钥已撤销",
     "paymentMethodChannelRequired": "请选择销售渠道",
     "paymentMethodProviderRequired": "请填写支付提供方",
     "paymentMethodNameRequired": "请填写名称",
@@ -1208,8 +1203,7 @@
     "updateSelfUpdateSubmitFailed": "提交自升级请求失败",
     "updateSubmitFailed": "提交更新任务失败",
     "runtimeConfigSaved": "配置已生效",
-    "runtimeConfigReverted": "已回退到环境变量",
-    "frontendExecSaved": "准入名单已更新"
+    "runtimeConfigReverted": "已回退到环境变量"
   },
   "user": {
     "emailRequired": "请填写邮箱",
@@ -1701,7 +1695,7 @@
     "auth_password_reset_requested": "申请重置密码",
     "config_changed": "修改内核配置",
     "config_reverted": "回退内核配置",
-    "config_frontend_exec_changed": "修改插件执行准入"
+    "auth_email_changed": "修改邮箱"
   },
   "auditResource": {
     "user": "用户",
@@ -1780,7 +1774,19 @@
     "revokeTitle": "吊销密钥",
     "revokeDescription": "确定吊销「{name}」？使用该密钥的调用将立即失败，且无法恢复。",
     "revoking": "吊销中…",
-    "revokeConfirm": "确认吊销"
+    "revokeConfirm": "确认吊销",
+    "signing": "请求签名",
+    "signingBadge": "签名已启用",
+    "signingTitle": "请求签名（Ed25519）",
+    "signingDescription": "登记公钥后，这枚密钥的每个请求都必须带签名；缺失、被篡改、过期或被重放都会被拒绝。",
+    "signingHint": "粘贴 Ed25519 公钥（PEM）。清空并保存即停用签名，退回只凭密钥本身鉴权。",
+    "signingDisable": "停用签名",
+    "publicKey": "Ed25519 公钥（PEM）",
+    "publicKeyPlaceholder": "-----BEGIN PUBLIC KEY-----",
+    "publicKeyHint": "可选。留空则只凭密钥本身鉴权；填写后该密钥的每个请求都必须携带 X-SP-Signature 等签名头。",
+    "optional": "（可选）",
+    "save": "保存",
+    "saving": "保存中…"
   },
   "createUser": {
     "trigger": "添加用户",
@@ -2011,9 +2017,7 @@
     "themeTitle": "上传主题",
     "themeDescription": "上传主题 ZIP 包即可安装，上传后可启用或预览。",
     "themeFile": "主题 ZIP 文件",
-    "themeInstalled": "主题已安装。",
-    "grantServerExec": "允许该插件在网站进程执行服务端代码",
-    "grantServerExecHint": "插件的设置页与页面数据通常依赖它；之后可在插件列表随时撤销。"
+    "themeInstalled": "主题已安装。"
   },
   "pluginPage": {
     "notFound": "未找到插件管理页面。",
@@ -2027,9 +2031,7 @@
     "zipTooLarge": "ZIP 必须小于 2MB",
     "uploadFailed": "上传失败",
     "uploadFailedStatus": "上传失败（{status}）",
-    "installed": "插件已安装。",
-    "installedWithServerExec": "已安装并授权服务端执行：{id}",
-    "installedServerExecFailed": "已安装，但授权服务端执行失败；请在插件列表中手动开启。"
+    "installed": "插件已安装。"
   },
   "api": {
     "upstreamModelsFailed": "拉取模型失败",
@@ -2043,17 +2045,7 @@
   "frontend": {
     "pageNotFound": "页面不存在",
     "backHome": "返回首页",
-    "renderFailed": "此内容暂时无法显示，请刷新后重试。",
-    "dataNotice": {
-      "title": "此页面的部分数据未能加载",
-      "hint": "页面可能显示不完整。管理员可在下方看到具体原因。",
-      "notAdmittedHint": "该插件声明了需要运行服务端代码的数据，但内核未授权它在网站进程执行。可在「设置 → 运行期配置 → 插件服务端执行准入」中授权。",
-      "notAdmitted": "插件未获服务端执行准入",
-      "finderMissing": "数据提供者未注册",
-      "permission": "没有所需权限",
-      "failed": "获取失败",
-      "invalidPath": "数据请求路径无效"
-    }
+    "renderFailed": "此内容暂时无法显示，请刷新后重试。"
   },
   "statusBadge": {
     "operational": "所有服务正常运行",
@@ -2101,7 +2093,7 @@
       "keyHint": "仅保留在当前页面内存；切换页面后需重新输入。模型密钥由站长管理。",
       "subObjectiveLabel": "子任务目标",
       "objectiveLabel": "任务目标",
-      "modelLabel": "模型",
+      "modelLabel": "模型（留空使用默认）",
       "executionLabel": "执行方式",
       "executionRequest": "本次请求推进",
       "executionBackground": "授权后台持续执行（一小时）",
@@ -2135,27 +2127,7 @@
       "unconfigured": "未配置",
       "saveCredential": "保存凭证",
       "clearCredential": "清除凭证",
-      "keyRequired": "请填写本人的权限 API Key",
-      "subtitle": "让 Agent 在权限边界内执行任务，危险操作会先征求你的确认。",
-      "advanced": "高级设置",
-      "advancedHint": "危险写入会暂停，等待你确认后继续。",
-      "usageTitle": "使用方式",
-      "usageKey": "填入权限 API Key，它只保存在当前页面内存中。",
-      "usageObjective": "描述目标、范围和期望结果，越具体越稳定。",
-      "usageApprove": "遇到危险写入时，Agent 会暂停并等待你确认。",
-      "configure": "配置",
-      "defaultModel": "跟随默认",
-      "objectivePlaceholder": "描述你想让 Agent 完成的事情…",
-      "pendingCount": "{count} 项待确认",
-      "statusQueued": "排队中",
-      "statusRunning": "执行中",
-      "statusWaiting": "等待确认",
-      "statusSucceeded": "已完成",
-      "statusFailed": "失败",
-      "statusCancelled": "已取消",
-      "replayEmpty": "暂无执行步骤",
-      "subtasksTitle": "子任务",
-      "runMeta": "{model} · {steps} 步"
+      "keyRequired": "请填写本人的权限 API Key"
     },
     "chat": {
       "contextDefault": "当前工作区",
@@ -2384,14 +2356,14 @@
     "catalogLocked": "此通知不允许用户修改接收方式。",
     "empty": "暂无可配置通知",
     "loading": "正在加载通知设置",
-    "saving": "正在保存…",
-    "saved": "已保存",
-    "autosave": "更改自动保存。",
     "retry": "重试",
     "failed": "保存失败，请重试。",
     "unavailable": "暂时无法加载通知设置，请稍后重试。",
     "forbidden": "你没有管理通知策略的权限。",
-    "invalidRequest": "请求格式无效。"
+    "invalidRequest": "请求格式无效。",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "autosave": "更改自动保存。"
   },
   "errorPage": {
     "unauthorized": {
@@ -2468,6 +2440,59 @@
     "payInstructions": "付款方式说明",
     "payQrImage": "收款码图片",
     "payQrOpen": "打开收款码图片"
+  },
+  "adminSeo": {
+    "title": "SEO 设置",
+    "description": "逐页覆写标题、描述、分享图与 canonical。内容仍由插件提供，这里只改运营要改的字段；标记 noindex 的页面不会出现在 sitemap。",
+    "new": "新建覆写",
+    "newTitle": "新建页面覆写",
+    "editTitle": "编辑页面覆写",
+    "formHint": "只填写需要覆盖的字段，留空表示沿用插件提供的值。",
+    "edit": "编辑",
+    "delete": "删除",
+    "deleteTitle": "删除这条覆写？",
+    "deleteDescription": "将删除 {path} 的覆写，页面会回到插件提供的元数据。",
+    "path": "页面路径",
+    "pathHint": "以 / 开头，不带查询串或锚点；尾斜杠会被自动收敛。",
+    "titleField": "标题",
+    "descriptionField": "描述",
+    "ogImage": "分享图",
+    "canonical": "canonical",
+    "noindex": "不索引（noindex）",
+    "noindexOn": "不索引",
+    "noindexOff": "可索引",
+    "noindexHint": "标记后该页面不会出现在 sitemap，并输出 noindex 指令。",
+    "search": "搜索",
+    "searchPlaceholder": "按路径或标题搜索",
+    "empty": "还没有任何页面覆写。",
+    "loadFailed": "读取覆写列表失败。",
+    "updated": "更新时间",
+    "pagination": "第 {page} / {total} 页",
+    "prev": "上一页",
+    "next": "下一页",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消"
+  },
+  "adminNav": {
+    "title": "菜单设置",
+    "description": "调整后台菜单的顺序与文案、隐藏暂时不用的入口，也可以添加自定义链接。",
+    "presentationNote": "这里只改「怎么显示」。隐藏一个菜单项不会让对应页面无法访问 —— 权限仍由页面自己的守卫决定。",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "custom": "自定义",
+    "visible": "显示",
+    "delete": "删除",
+    "reset": "恢复默认",
+    "save": "保存排布",
+    "saving": "保存中…",
+    "saveHint": "顺序、文案、显隐改完记得保存。",
+    "addTitle": "添加自定义链接",
+    "name": "名称",
+    "href": "链接",
+    "add": "添加",
+    "hrefHint": "站内页面写路径（以 / 开头），站外写完整的 http(s) 地址。打错链接不会被自动发现，添加后建议点一下确认。",
+    "hrefPlaceholder": "/admin/orders 或 https://docs.example.com"
   },
   "adminPayments": {
     "title": "支付记录",

@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import type { Readable } from 'node:stream';
 import { z } from 'zod';
-import { PluginError } from '@stackpanel/sdk';
 import type {
+  PluginCapability,
   PluginDefinition,
   PluginManifest,
   PluginRoute,
@@ -30,13 +30,13 @@ import {
   RPC_TIMEOUT_MS,
   RAW_CHUNK_BYTES,
   wireError,
+  reviveWireError,
+  parseTransactionCapability,
 } from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
 import {
-  ISOLATED_CONTEXT_SERVICES,
   takeSyncServicePredicateInput,
   takeSyncServiceSnapshot,
-  type IsolatedContextService,
 } from './service-contract.ts';
 import { dispatchCacheCapability } from '../../cache/index.ts';
 
@@ -64,6 +64,16 @@ type Ready = {
   inject?: string[];
   /** 插件定义里声明的扩展点消费，与磁盘 manifest 合并后作为白名单。 */
   consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
+  /**
+   * Open-platform capabilities the plugin declared in its definition.
+   *
+   * The isolated worker is the only party that can read them: the installer's
+   * `manifest.json` carries permissions/execution but not capabilities, so
+   * without this channel every plugin capability would vanish from
+   * `/api/v1/capabilities` and MCP `tools/list` — leaving the Agent unable to
+   * reach any plugin operation even though its alias routes exist.
+   */
+  capabilities?: Array<Record<string, unknown>>;
   unsupported?: string[];
 };
 type Result = {
@@ -74,7 +84,7 @@ type Result = {
   value?: unknown;
   /** `headers` is a list because a header name may legitimately repeat. */
   response?: { status?: number; payload?: unknown; headers?: Array<[string, string]> };
-  error?: { message: string; code?: string; status?: number };
+  error?: { message: string; code?: string; status?: number; details?: unknown; sdkError?: string };
 };
 type Capability = {
   protocol: 1;
@@ -92,48 +102,6 @@ type Lifecycle = {
   phase: 'register' | 'activate' | 'deactivate';
 };
 type Cancel = { protocol: 1; pluginId: string; type: 'cancel'; id: string };
-
-/** Shape a worker reported error as JSON over the RPC channel. */
-type WorkerErrorPayload = {
-  message?: string;
-  code?: string;
-  status?: number;
-  detail?: string;
-};
-
-/**
- * Rebuild an error thrown inside a worker process into one the kernel error
- * boundary recognises.
- *
- * A plain `Error` with `.status` copied onto it is **not** enough: `app.ts`
- * decides between "render the declared problem document" and "generic 500" by
- * {@link isPluginError}, which matches a non-enumerable brand living on
- * `PluginError.prototype`. Errors serialised across the process boundary lose
- * that prototype, so every deterministic 400/403/409/429 raised by an isolated
- * plugin used to surface as a 500. Reconstructing a real `PluginError` restores
- * the brand (and therefore the status code the plugin asked for).
- */
-function restoreWorkerError(payload: WorkerErrorPayload | undefined): Error {
-  const message = payload?.message ?? 'isolated plugin failed';
-  // A plugin may raise a status without a stable code — a local error class that
-  // only carries `statusCode`, for example. Losing the code must not cost the
-  // status: without the `PluginError` brand the kernel re-renders a deterministic
-  // 409 as "internal server error", which reads like a kernel fault and hides the
-  // refusal reason from the operator. Fall back to a generic code instead.
-  if (typeof payload?.status === 'number') {
-    const code = typeof payload?.code === 'string' ? payload.code : 'plugin.error';
-    const rebuilt = new PluginError(code, payload.status, payload.detail ?? message);
-    // `PluginError.message` defaults to the code. Keep the original text instead:
-    // a raw upstream failure ("/raw boom/") has no meaningful code, and replacing
-    // its message with "plugin.error" would make logs unreadable while adding no
-    // identity. The code stays the machine-facing half, `detail` the operator one.
-    rebuilt.message = message;
-    return rebuilt;
-  }
-  const failure = new Error(message) as Error & { code?: string; status?: number };
-  if (payload?.code !== undefined) failure.code = payload.code;
-  return failure;
-}
 
 interface IsolatedWorker {
   child: ChildProcess;
@@ -371,7 +339,7 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
       if (!request) return;
       clearTimeout(request.timer);
       state.pending.delete(message.id);
-      if (message.error) request.reject(restoreWorkerError(message.error));
+      if (message.error) request.reject(reviveWireError(message.error));
       else request.resolve(message);
     });
     child.once('exit', () => {
@@ -445,20 +413,18 @@ async function handleCapability(
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
-  // Method names are camelCase (`settleHold`), so the second group must accept
-  // uppercase letters.
-  //
-  // `tx.extensions.*` deliberately does NOT belong to this branch: extension
-  // writes inside a transaction are dispatched by the dedicated block below,
-  // which is the only place that can route them onto
-  // `transaction.tx.extensions`. Without the negative lookahead this generic
-  // pattern matched first and reported `未知事务操作：extensions.create`, so
-  // every isolated plugin that created a model row inside `ctx.tx()` failed.
-  const transactionMatch = /^tx\.(?!extensions\.)([a-z]+)\.([a-zA-Z]+)$/.exec(message.capability);
+  // `parseTransactionCapability` keeps two subtleties that used to live here:
+  // method names are camelCase (`settleHold`), and `tx.extensions.*` must NOT
+  // match — extension writes inside a transaction are dispatched by the
+  // dedicated block below, the only place that can route them onto
+  // `transaction.tx.extensions`. Without that negative lookahead the generic
+  // pattern wins and reports `未知事务操作：extensions.create`, so every isolated
+  // plugin that created a model row inside `ctx.tx()` failed.
+  const transactionMatch = parseTransactionCapability(message.capability);
   if (transactionMatch) {
     const transaction = state.transactions.get(String(args.txId));
     if (!transaction) throw new Error('事务不存在或已结束');
-    const operation = `${transactionMatch[1]}.${transactionMatch[2]}`;
+    const operation = `${transactionMatch.group}.${transactionMatch.operation}`;
     if (operation === 'wallet.debit') {
       value = await transaction.tx.wallet.debit(
         String(args.userId),
@@ -703,7 +669,24 @@ async function handleCapability(
   const serviceMatch = /^([a-z][a-zA-Z]*)\.([a-zA-Z][a-zA-Z0-9]*)$/.exec(message.capability);
   if (
     serviceMatch &&
-    ISOLATED_CONTEXT_SERVICES.includes(serviceMatch[1] as IsolatedContextService)
+    // Keep this a literal: `tests/unit/isolated-context-surface.test.ts` reads the
+    // dispatcher's service list from this array, and a re-export would make the
+    // contract unverifiable. `ISOLATED_CONTEXT_SERVICES` in
+    // `service-contract.ts` must stay in sync (it drives the sync snapshot).
+    [
+      'state',
+      'auth',
+      'notifications',
+      'notificationPolicy',
+      'identity',
+      'captcha',
+      'secrets',
+      'payments',
+      'wallet',
+      'fx',
+      'currency',
+      'cache',
+    ].includes(serviceMatch[1] ?? '')
   ) {
     const service = ctx[
       serviceMatch[1] as
@@ -718,6 +701,7 @@ async function handleCapability(
         | 'wallet'
         | 'fx'
         | 'cache'
+        | 'currency'
     ] as unknown as Record<string, unknown>;
     const method = service?.[serviceMatch[2] ?? ''];
     if (typeof method !== 'function') throw new Error(`未知插件服务方法：${message.capability}`);
@@ -1271,7 +1255,9 @@ function handleRawFrame(id: string, state: IsolatedWorker, frame: Record<string,
         session.resolve();
         return;
       }
-      session.reject(restoreWorkerError(error));
+      session.reject(
+        reviveWireError({ ...error, message: error?.message ?? 'isolated raw route failed' }),
+      );
       return;
     }
     default:
@@ -1475,7 +1461,15 @@ export async function loadIsolatedPluginDefinition(
     } as PluginRoute;
   });
   return {
-    manifest,
+    // The worker re-reports the capabilities it declared in its definition, so
+    // merge them over the on-disk manifest (which never carries them) — this is
+    // what `mountCapabilities` reads to populate the open-platform surface.
+    manifest: (() => {
+      const declared = Array.isArray(ready.capabilities)
+        ? (ready.capabilities as unknown as PluginCapability[])
+        : [];
+      return { ...manifest, ...(declared.length > 0 ? { capabilities: declared } : {}) };
+    })(),
     routes,
     ...(ready.inject !== undefined ? { inject: ready.inject } : {}),
     ...(customModels.length > 0 ? { customModels } : {}),

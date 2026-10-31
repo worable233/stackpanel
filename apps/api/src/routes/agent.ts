@@ -112,6 +112,11 @@ async function isAgentEnabled(prisma: PrismaClient): Promise<boolean> {
 function makeExecutor(request: FastifyRequest): (call: McpApiCall) => Promise<AgentToolExecution> {
   return async (call) => {
     const headers: Record<string, string> = { accept: 'application/json' };
+    // A JSON body must announce itself. `inject({ payload })` only infers the
+    // header for an object payload; a raw string (a model can still emit one
+    // for an endpoint that takes text) would otherwise reach a strict body
+    // parser with no content-type and be rejected as 415.
+    if (call.body !== undefined) headers['content-type'] = 'application/json';
     const authorization = request.headers.authorization;
     if (typeof authorization === 'string') headers['authorization'] = authorization;
     // Execution always carries the original API token, never a session cookie.

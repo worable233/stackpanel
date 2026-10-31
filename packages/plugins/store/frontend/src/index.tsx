@@ -30,6 +30,8 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
+  InlineError,
+  InlineNotice,
   Sheet,
   SheetBody,
   SheetClose,
@@ -1630,19 +1632,12 @@ const ProductDetailPage = (
               {tr('checkout.calculatePrice')}
             </Button>
           </noscript>
-          <p
-            hidden
-            data-quote-status="product-selection"
-            role="status"
-            className="text-xs text-muted-foreground"
-          >
+          <InlineNotice hidden data-quote-status="product-selection" className="text-xs">
             {tr('configure.updating')}
-          </p>
+          </InlineNotice>
           {!pricePreview ? (
             <div className="hidden flex-col gap-2 lg:flex">
-              <p role="alert" className="text-sm text-destructive">
-                {tr('checkout.priceUnavailable')}
-              </p>
+              <InlineError>{tr('checkout.priceUnavailable')}</InlineError>
               <Button type="submit" form="product-selection" variant="outline">
                 {tr('checkout.calculatePrice')}
               </Button>
@@ -1852,9 +1847,7 @@ function StoreCartPage(props: AccountPageComponentProps): ReactElement {
           result={result}
         />
       ) : !cart ? (
-        <p role="alert" className="text-sm text-destructive">
-          {tr('cart.loadFailed')}
-        </p>
+        <InlineError>{tr('cart.loadFailed')}</InlineError>
       ) : !items.length ? (
         <Empty text={tr('cart.empty')} />
       ) : (
@@ -2147,9 +2140,7 @@ function StoreAccountCatalogPage(props: AccountPageComponentProps): ReactElement
             ) : null}
           </div>
           {!result ? (
-            <p role="alert" className="text-sm text-destructive">
-              {tr('catalog.loadFailed')}
-            </p>
+            <InlineError>{tr('catalog.loadFailed')}</InlineError>
           ) : !result.products.length ? (
             <Empty text={query.q ? tr('catalog.noResults') : tr('catalog.emptyCategory')} />
           ) : (
@@ -4944,8 +4935,9 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-action',
-        // Service actions report their result inline in the console.
-        silent: true,
+        // 运维操作（重装/重置密码/开关机）的最终结果只有上游知道，界面不转述上游文案，
+        // 统一给一条本地化回执；实际变化由实例详情刷新体现。
+        successFeedback: { messageKey: 'feedback.serviceActionSubmitted' },
         method: 'POST',
         path: '/services/:id/actions',
         permission: 'store.view',
@@ -5005,8 +4997,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-resource-create',
-        // Resource mutations refresh their own panel inline.
-        silent: true,
+        // 资源创建同样是异步的：新行出现前先给一条回执。
+        successFeedback: { messageKey: 'feedback.resourceCreated' },
         method: 'POST',
         path: '/services/:id/resources/:kind',
         permission: 'store.buy',
@@ -5019,8 +5011,8 @@ export const frontend: FrontendPackage = {
       },
       {
         id: 'store.service-resource-action',
-        // Resource mutations refresh their own panel inline.
-        silent: true,
+        // 行级操作（解绑 IP、删除快照…）可能没有立即可见的变化，同样需要回执。
+        successFeedback: { messageKey: 'feedback.resourceActionSubmitted' },
         method: 'POST',
         path: '/services/:id/resources/:kind/:resourceId/actions/:actionId',
         permission: 'store.buy',

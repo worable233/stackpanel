@@ -15,9 +15,12 @@ const repoRoot = path.resolve(here, '..', '..', '..');
  * found the leaks; localized action results (`result.message`) remain allowed.
  */
 const RAW_MESSAGE_CALL =
-  // `\be` 的词边界不能省：`state.message`（server action 的本地化结果）里含
-  // `e.message` 子串，没有边界会把合法的 action state 误判成泄漏。
-  /(?:toast\.[A-Za-z]+|setError)\s*\([^;\n]*(?:cause|error|err|failure|exception|\be)\.message/;
+  // `\b` boundaries on the bare identifiers (`e` / `err` / `cause`) are load
+  // bearing: `state.message` — the localized server-action result — contains the
+  // substring `e.message`, so an unanchored pattern would flag legal action state.
+  // The identifier-aware branch covers `someError.message` / `uploadFailure.message`,
+  // which a plain alternation of exact names misses.
+  /(?:toast\.[A-Za-z]+|setError)\s*\([^;\n]*(?:\b(?:e|err|cause)\b|[A-Za-z_$]*(?:[Ee]rr(?:or)?|[Cc]ause|[Ff]ailure|[Ee]xception))\.message\b/;
 
 const SCAN_ROOTS = [
   'apps/web/src',
@@ -53,6 +56,37 @@ function walk(dir: string, out: string[]): void {
     else if (/\.(ts|tsx)$/.test(entry.name)) out.push(relative);
   }
 }
+
+/**
+ * Lock the matcher itself: the previous `(?:cause|error|err|…)` alternation was
+ * case-sensitive and silently missed camelCase bindings (`loadError.message`),
+ * which is exactly the shape external plugins use.
+ */
+const MUST_MATCH = [
+  "setError(cause instanceof Error ? cause.message : tr('x'))",
+  "setError(e instanceof Error ? e.message : tr('x'))",
+  'setError(err.message)',
+  'setError(error.message)',
+  "setError(loadError instanceof Error ? loadError.message : tr('x'))",
+  "setError(saveError instanceof Error ? saveError.message : tr('x'))",
+  "setError(fetchError instanceof Error ? fetchError.message : tr('x'))",
+  'toast.error(failure.message)',
+];
+
+const MUST_NOT_MATCH = [
+  'if (result?.message) toast.success(result.message);',
+  "toast.success(tr('feedback.saved'))",
+];
+
+describe('raw-message matcher catches camelCase bindings', () => {
+  it.each(MUST_MATCH)('matches %s', (line) => {
+    expect(RAW_MESSAGE_CALL.test(line)).toBe(true);
+  });
+
+  it.each(MUST_NOT_MATCH)('allows localized receipts: %s', (line) => {
+    expect(RAW_MESSAGE_CALL.test(line)).toBe(false);
+  });
+});
 
 describe('feedback never renders raw exception messages', () => {
   it('keeps toast/setError calls free of *.message', () => {

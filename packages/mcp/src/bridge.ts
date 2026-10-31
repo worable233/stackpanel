@@ -48,9 +48,17 @@ export interface StdioRunOptions {
   log?: (message: string) => void;
 }
 
+import { StringDecoder } from 'node:string_decoder';
+
 /** Pump newline-delimited messages from `input` through `call` to `output`. */
 export async function runStdio(options: StdioRunOptions): Promise<void> {
   const bridge = createMcpBridge(options.call);
+  // stdin arrives as arbitrary `Buffer` chunks that can split a multi-byte
+  // character. Decoding each chunk on its own replaces both halves with U+FFFD,
+  // which still parses as JSON but silently corrupts every CJK string in the
+  // request — a tool call would then run with mangled arguments. One decoder
+  // carries the incomplete tail over to the next chunk.
+  const decoder = new StringDecoder('utf8');
   let buffer = '';
 
   const flush = async (line: string): Promise<void> => {
@@ -59,7 +67,7 @@ export async function runStdio(options: StdioRunOptions): Promise<void> {
   };
 
   for await (const chunk of options.input) {
-    buffer += chunk.toString();
+    buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
     let index = buffer.indexOf('\n');
     while (index >= 0) {
       const line = buffer.slice(0, index);
@@ -68,6 +76,8 @@ export async function runStdio(options: StdioRunOptions): Promise<void> {
       index = buffer.indexOf('\n');
     }
   }
+  // Fold in any character whose bytes never completed.
+  buffer += decoder.end();
   if (buffer.trim().length > 0) {
     await flush(buffer);
   }

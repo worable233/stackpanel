@@ -28,9 +28,9 @@ export type RuntimeChangeAction = 'activate' | 'deactivate' | 'reload' | 'remove
 
 /** A runtime cache invalidation broadcast across replicas. */
 export interface RuntimeChange {
-  /** Which runtime cache changed. `config` = 运行期配置快照（ADR-0026）。 */
+  /** Which runtime cache changed. */
   kind: 'plugin' | 'theme' | 'config';
-  /** Plugin id, or theme id for `kind: 'theme'`. `config` uses `*`. */
+  /** Plugin id, or theme id for `kind: 'theme'`. */
   id: string;
   action: RuntimeChangeAction;
 }
@@ -41,15 +41,16 @@ export interface RuntimeCoherenceOptions {
   redis: RedisClient | null;
   /** Load a plugin definition from its installed package on disk. */
   loadDefinition: (id: string) => Promise<PluginDefinition>;
+  /**
+   * Re-read the database-backed runtime config snapshot (ADR-0026). Called on
+   * every replica that receives `kind: 'config'`; the reader stays synchronous,
+   * so this is the only place the async hop happens.
+   */
+  onConfigReload?: () => Promise<void> | void;
   /** Whether the plugin is enabled in the database (authoritative). */
   isEnabled: (id: string) => Promise<boolean>;
   /** Invoked when a theme change is broadcast (defaults to a no-op). */
   onThemeReload?: () => void | Promise<void>;
-  /**
-   * Invoked when a runtime-config change is broadcast (ADR-0026): the replica
-   * re-reads its config snapshot so the next `getConfig()` sees the new value.
-   */
-  onConfigReload?: () => void | Promise<void>;
   /**
    * Invoked when in-memory values derived from config or from the plugin
    * topology need re-deriving — currently the isolated-worker service snapshot
@@ -132,7 +133,11 @@ export class RuntimeCoherence {
     await redis.publish(this.channel(), JSON.stringify(envelope));
   }
 
-  /** Apply a received change: reload the plugin, refresh theme state, or reload config. */
+  /**
+   * Apply a received change: reload the plugin, refresh theme state, or re-read
+   * the runtime config snapshot (ADR-0026). The config kind has no per-item id —
+   * the whole snapshot is small and re-read in one query.
+   */
   async apply(change: RuntimeChange): Promise<void> {
     if (change.kind === 'theme') {
       await this.options.onThemeReload?.();
@@ -209,8 +214,9 @@ function safeParse(value: string): RuntimeEnvelope | null {
   try {
     const parsed = JSON.parse(value) as Partial<RuntimeEnvelope>;
     if (typeof parsed.id !== 'string' || typeof parsed.origin !== 'string') return null;
-    if (parsed.kind !== 'plugin' && parsed.kind !== 'theme' && parsed.kind !== 'config')
+    if (parsed.kind !== 'plugin' && parsed.kind !== 'theme' && parsed.kind !== 'config') {
       return null;
+    }
     const action = parsed.action;
     if (
       action !== 'activate' &&

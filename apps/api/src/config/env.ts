@@ -256,10 +256,9 @@ const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 /**
- * 字段级 schema（变量名 → 该变量的 Zod 校验器）。
- *
- * 后台可编辑的运行期配置存在 Setting 表里（ADR-0026），写库前要用**同一份**
- * schema 校验，否则会出现「后台存得进去、运行期解析不了」的分裂。
+ * 逐字段 schema（ADR-0026）。运行期配置从数据库读到的值必须走**同一份**字段
+ * schema 解析，否则会出现「后台存得进去、运行期行为不同」的分裂——`coerce`、
+ * `default()`、`transform()` 都在这里，复制一份就一定会漂移。
  */
 export const envFieldSchemas = envSchema.shape;
 

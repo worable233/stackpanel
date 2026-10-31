@@ -184,3 +184,37 @@ export function isSdkErrorClass(value: unknown, name: string): boolean {
     (value as Record<PropertyKey, unknown>)[SDK_ERROR_BRAND] === name
   );
 }
+
+/**
+ * The SDK error class name a value was minted by, or `undefined`.
+ *
+ * Needed by cross-process boundaries (the isolated plugin RPC): the brand lives
+ * on the prototype and does not survive JSON, so the wire format has to carry
+ * the name explicitly or the receiving process can no longer tell a
+ * `WalletError` from a generic fault. Reuse this instead of string-matching
+ * `error.name`, which any error can spoof.
+ */
+export function sdkErrorClassName(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const brand = (value as Record<PropertyKey, unknown>)[SDK_ERROR_BRAND];
+  return typeof brand === 'string' ? brand : undefined;
+}
+
+/**
+ * Restore the SDK class brand on a value that crossed a process boundary.
+ *
+ * The counterpart to {@link sdkErrorClassName}: after the wire format carries the
+ * class name back, this reattaches it so {@link isSdkErrorClass} /
+ * {@link isWalletError} narrow exactly as they would in-process. Defining the
+ * property on the instance (not the prototype) keeps it local to this one error
+ * and preserves the non-enumerable shape.
+ */
+export function brandSdkErrorValue(value: unknown, name: string): void {
+  if (typeof value !== 'object' || value === null) return;
+  Object.defineProperty(value, SDK_ERROR_BRAND, {
+    value: name,
+    enumerable: false,
+    writable: false,
+    configurable: true,
+  });
+}

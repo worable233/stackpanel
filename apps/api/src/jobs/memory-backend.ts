@@ -1,12 +1,20 @@
 /**
  * In-process job backend for development and tests without Redis (ADR-0013
  * fallback). It preserves the *contract* — namespaced handlers, recurring jobs
- * (including `cron`), bounded retries — but not the cluster guarantee: timers
- * run in whichever process created them, so `everyMs`/`cron` fire once *per
- * process*. Redis (BullMQ) is what makes them fire once across replicas.
+ * (including `cron`), bounded retries — and, when a {@link JobLease} is supplied,
+ * the cluster guarantee too: every replica fires its own timer, but only the
+ * replica that wins the lease actually runs the tick (对标 #12.5).
+ *
+ * Without a lease (`guard` omitted) timers run in whichever process created
+ * them — fine for tests and single-replica development, not for a cluster.
+ *
+ * `cron` runs here as well as `everyMs`: dropping it would make scheduled work
+ * fail silently on a single-node deployment without Redis. Redis governs *how
+ * many replicas* run a tick, never *whether* it can run at all (audit E-10).
  */
 import { randomUUID } from 'node:crypto';
 import type { JobHandler, JobOptions } from '@stackpanel/sdk';
+import { leaseTtlMs, type JobLease } from './lease.ts';
 import {
   DEFAULT_ATTEMPTS,
   DEFAULT_BACKOFF_MS,
@@ -17,6 +25,11 @@ import { nextCronFireMs } from './cron.ts';
 
 export interface MemoryJobBackendOptions {
   logger: { warn: (m: string) => void };
+  /**
+   * 跨副本租约。给了就「一个 tick 只有一个副本执行」；不给则各副本各跑一份
+   * （测试与单副本开发用，集群下会重复执行）。
+   */
+  guard?: JobLease;
 }
 
 export class MemoryJobBackend implements JobBackend {
@@ -45,7 +58,9 @@ export class MemoryJobBackend implements JobBackend {
     await this.unschedule(entry.fullName);
     if ('everyMs' in entry.schedule) {
       const timer = setInterval(() => {
-        void this.run(entry.fullName, entry.payload, entry.options);
+        // Through `tick`, not `run`: the lease is what stops every replica from
+        // executing the same tick, and it must apply to `everyMs` too.
+        void this.tick(entry);
       }, entry.schedule.everyMs);
       timer.unref?.();
       this.schedules.set(entry.fullName, { stop: () => clearInterval(timer), entry });
@@ -73,7 +88,8 @@ export class MemoryJobBackend implements JobBackend {
       timer = setTimeout(() => {
         if (stopped) return;
         arm();
-        void this.run(entry.fullName, entry.payload, entry.options);
+        // Same reason as `everyMs`: cron ticks contend for the lease too.
+        void this.tick(entry);
       }, delayMs);
       timer.unref?.();
     };
@@ -135,6 +151,30 @@ export class MemoryJobBackend implements JobBackend {
     for (const name of [...this.schedules.keys()]) await this.unschedule(name);
     for (const timer of this.timers.keys()) clearTimeout(timer);
     this.timers.clear();
+  }
+
+  /**
+   * 一个定时器 tick：先抢租约，抢到才执行。
+   *
+   * 租约出错按「没抢到」处理 —— 宁可这一轮不跑（下一轮会补），也不能因为
+   * 数据库抖一下就变成多副本重复执行。
+   */
+  private async tick(entry: RegisteredSchedule): Promise<void> {
+    const guard = this.options.guard;
+    if (guard) {
+      let acquired: boolean;
+      try {
+        const everyMs = 'everyMs' in entry.schedule ? entry.schedule.everyMs : 60_000;
+        acquired = await guard.tryAcquire(entry.fullName, leaseTtlMs(everyMs));
+      } catch (error) {
+        this.options.logger.warn(
+          `[jobs] 租约获取失败，跳过本轮 ${entry.fullName}：${String(error)}`,
+        );
+        return;
+      }
+      if (!acquired) return;
+    }
+    await this.run(entry.fullName, entry.payload, entry.options);
   }
 
   /** Attempt `fullName` with bounded retries. Never throws to the timer. */

@@ -69,8 +69,17 @@ export interface PluginManifest {
    * Whether this plugin ships with the kernel distribution. Kernel-derived from
    * the package's `stackpanel.builtin` metadata; plugins never declare it in
    * runtime code (ADR-0008 D9).
+   *
+   * Provenance only: it does **not** decide execution mode, web-process
+   * admission, or whether an operator may uninstall the package. Those are
+   * `execution`, `frontendExecutions` and `removable` respectively.
    */
   builtin?: boolean;
+  /**
+   * Whether an operator may uninstall this plugin. Kernel-derived policy, not
+   * declared by the package.
+   */
+  removable?: boolean;
   /**
    * Operations this plugin exposes on the open `/api/v1` surface. Each entry
    * mirrors one of the plugin's own routes: the kernel derives an authenticated
@@ -84,7 +93,9 @@ export interface PluginManifest {
   /**
    * Platform-admission level for server-side execution in the WEB process
    * (contract 03 §3.1). Default `declarative`; `server` is an explicit grant.
-   * Built-ins are always admitted regardless of this field.
+   * A package may never declare `server` itself — the kernel derives it from
+   * provenance plus the operator allowlist. See `removable` for the third
+   * independent decision, uninstall policy.
    */
   frontendExecutions?: 'declarative' | 'server';
   /**
@@ -651,7 +662,17 @@ export interface PaymentProvider {
   readonly mode: 'gateway' | 'manual';
   /** Public callback path handled by the provider plugin, for example `/callbacks/epay`. */
   readonly callbackPath: string;
-  getMethods(): PaymentMethod[];
+  /**
+   * Payment methods this provider offers.
+   *
+   * Must be awaitable: an isolated provider's implementation only exists as an
+   * async RPC proxy on the kernel side, so the host always `await`s the call.
+   * Declaring it as plain `PaymentMethod[]` lied to providers that call another
+   * provider through this interface — `.some(...)` on the returned Promise threw,
+   * which is how every gateway checkout ended up as a 500. In-process providers
+   * may keep returning the array synchronously.
+   */
+  getMethods(): PaymentMethod[] | Promise<PaymentMethod[]>;
   /** Provider-scoped config, e.g. epay merchant keys or manual bank details. */
   createPayment(
     request: ExternalPaymentRequest,

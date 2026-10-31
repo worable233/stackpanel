@@ -1,10 +1,11 @@
 {
   "version": "0.2.0",
-  "revision": "ccafebd62e74",
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
-  "finders": ["login.config"],
+  "finders": [
+    "login.config"
+  ],
   "adminRoutes": [
     {
       "path": "/settings",
@@ -32,8 +33,8 @@
       "permission": "platform.admin",
       "input": [
         {
-          "name": "registrationMethods",
-          "type": "string",
+          "name": "registrationEnabled",
+          "type": "boolean",
           "required": true
         },
         {
@@ -54,7 +55,12 @@
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],
-  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
   "messages": {
     "zh-CN": {
       "admin.systemSettings": "登录与注册",
@@ -70,7 +76,11 @@
       "settings.save": "保存配置",
       "settings.saving": "保存中…",
       "settings.saved": "登录配置已保存",
-      "settings.saveFailed": "保存失败"
+      "settings.saveFailed": "保存失败",
+      "settings.registration": "允许新用户注册",
+      "settings.registrationHint": "关闭后注册入口隐藏，所有注册请求都会被拒绝；已有用户不受影响。",
+      "settings.emailVerificationBlocked": "已开启邮箱验证，但当前无法发送验证码：注册会被拒绝。请先安装并配置 SMTP 邮件，或关闭此项。",
+      "settings.methodLocked": "手机号注册尚未提供，因此邮箱是当前唯一的注册方式。"
     },
     "zh-TW": {
       "admin.systemSettings": "登入與註冊",
@@ -86,7 +96,11 @@
       "settings.save": "儲存配置",
       "settings.saving": "儲存中…",
       "settings.saved": "登入配置已儲存",
-      "settings.saveFailed": "儲存失敗"
+      "settings.saveFailed": "儲存失敗",
+      "settings.registration": "允許新使用者註冊",
+      "settings.registrationHint": "關閉後註冊入口隱藏，所有註冊請求都會被拒絕；已有使用者不受影響。",
+      "settings.emailVerificationBlocked": "已開啟郵箱驗證，但當前無法傳送驗證碼：註冊會被拒絕。請先安裝並配置 SMTP 郵件，或關閉此項。",
+      "settings.methodLocked": "手機號註冊尚未提供，因此郵箱是當前唯一的註冊方式。"
     },
     "zh-HK": {
       "admin.systemSettings": "登錄與註冊",
@@ -102,7 +116,11 @@
       "settings.save": "儲存配置",
       "settings.saving": "儲存中…",
       "settings.saved": "登錄配置已儲存",
-      "settings.saveFailed": "儲存失敗"
+      "settings.saveFailed": "儲存失敗",
+      "settings.registration": "允許新用戶註冊",
+      "settings.registrationHint": "關閉後註冊入口隱藏，所有註冊請求都會被拒絕；已有用戶不受影響。",
+      "settings.emailVerificationBlocked": "已開啟郵箱驗證，但當前無法傳送驗證碼：註冊會被拒絕。請先安裝並配置 SMTP 郵件，或關閉此項。",
+      "settings.methodLocked": "手機號註冊尚未提供，因此郵箱是當前唯一的註冊方式。"
     },
     "en-US": {
       "admin.systemSettings": "Sign-in & registration",
@@ -118,7 +136,11 @@
       "settings.save": "Save settings",
       "settings.saving": "Saving…",
       "settings.saved": "Sign-in settings saved",
-      "settings.saveFailed": "Could not save"
+      "settings.saveFailed": "Could not save",
+      "settings.registration": "Allow new sign-ups",
+      "settings.registrationHint": "When off, the sign-up entry point is hidden and every registration request is refused. Existing users are unaffected.",
+      "settings.emailVerificationBlocked": "Email verification is on, but no code can be delivered right now: registration will be refused. Install and configure SMTP mail first, or turn this off.",
+      "settings.methodLocked": "Phone sign-up is not available yet, so email is the only registration method."
     }
   }
 }

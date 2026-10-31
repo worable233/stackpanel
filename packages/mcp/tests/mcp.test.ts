@@ -7,6 +7,11 @@ async function* chunks(...values: string[]): AsyncIterable<string> {
   for (const value of values) yield value;
 }
 
+async function* byteAtATime(value: string): AsyncIterable<Buffer> {
+  const bytes = Buffer.from(value, 'utf8');
+  for (let index = 0; index < bytes.length; index += 1) yield bytes.subarray(index, index + 1);
+}
+
 function collector() {
   let output = '';
   return {
@@ -36,6 +41,23 @@ describe('mcp stdio bridge framing', () => {
     });
     expect(call).toHaveBeenCalledTimes(1);
     expect(sink.value.endsWith('\n')).toBe(true);
+  });
+
+  it('decodes multi-byte characters that straddle a byte-chunk boundary', async () => {
+    const call = vi.fn(async (_message: unknown) => ({ jsonrpc: '2.0', id: 1, result: {} }));
+    const sink = collector();
+    const message = `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: '订单查询', arguments: { key: '隔离动作输出' } } })}\n`;
+    // Feed one byte at a time: every CJK character is split mid-sequence.
+    await runStdio({ call, input: byteAtATime(message), output: sink.output });
+    expect(call).toHaveBeenCalledTimes(1);
+    // Arguments must survive byte-for-byte; a per-chunk `toString()` would leave
+    // U+FFFD scattered through the tool name and the argument values.
+    expect(call.mock.calls[0]?.[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: '订单查询', arguments: { key: '隔离动作输出' } },
+    });
   });
 
   it('emits nothing for notifications (null transport response)', async () => {

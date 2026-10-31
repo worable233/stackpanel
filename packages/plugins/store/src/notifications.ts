@@ -60,6 +60,7 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   },
   { type: 'service.renewed', category: 'store', label: '服务续费成功', order: 80 },
   { type: 'service.expiring', category: 'store', label: '服务即将到期', order: 90 },
+  { type: 'service.overdue', category: 'store', label: '服务已到期', order: 95 },
   { type: 'service.suspended', category: 'store', label: '服务已停用', order: 100 },
   { type: 'service.resumed', category: 'store', label: '服务已恢复', order: 105 },
   { type: 'service.terminated', category: 'store', label: '服务已终止', order: 110 },
@@ -80,6 +81,9 @@ export const STORE_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] = [
   },
   { type: 'service.transferred', category: 'store', label: '服务已转移', order: 117 },
   { type: 'order.cancelled', category: 'store', label: '订单已取消', order: 35 },
+  // 未付款订单催付（对标 #12.5）：与「订单待支付」（下单即发）分开，
+  // 用户可以只关掉催付而保留下单回执。
+  { type: 'order.unpaid', category: 'store', label: '订单待支付提醒', order: 36 },
 ];
 
 /** 写入一条 store 业务通知。失败只告警，不抛出。 */

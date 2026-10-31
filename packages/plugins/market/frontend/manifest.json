@@ -1,6 +1,5 @@
 {
   "version": "0.1.0",
-  "revision": "65b993fa5ecd",
   "entry": "frontend/dist/index.js",
   "pages": [],
   "layouts": [],
@@ -81,7 +80,12 @@
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],
-  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
   "messages": {
     "zh-CN": {
       "status.installed": "已安装",

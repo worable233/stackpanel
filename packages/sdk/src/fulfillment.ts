@@ -144,12 +144,21 @@ export interface ServiceAction {
 /**
  * 运维动作的执行结果。多数动作无需返回内容；当动作产生可展示数据（如重置后的
  * 新密码、控制台地址）或需要跳转时，由提供方返回本结构供 store 透传给前端。
+ *
+ * 注意：store 控制台（`store.service-action`）目前**不渲染** `message` / `fields` / `url`，
+ * 成功只给一条由 store 自己 catalog 决定的回执，实际变化由实例详情刷新体现。
+ * 所以这三个字段不要用来承载用户可见文案：界面文案永远归渲染方（ADR-0016 §6），
+ * 后端只描述「发生了什么」，不要描述「该怎么措辞」。
  */
 export interface ServiceActionResult {
+  /**
+   * @deprecated 仅供日志/排障。没有任何前端消费它（控制台不渲染），写在这里的中文
+   * 也不会出现在界面上；需要用户看到的文案请交给渲染方的 catalog。
+   */
   message?: string;
-  /** 执行后返回的展示字段（如新密码、一次性控制台令牌）。 */
+  /** 执行后返回的展示字段（如新密码、一次性控制台令牌）。当前无消费方。 */
   fields?: ServiceDetailField[];
-  /** 需要打开的地址（如 VNC / 控制台 URL）。 */
+  /** 需要打开的地址（如 VNC / 控制台 URL）。当前无消费方。 */
   url?: string;
   /**
    * 需要合并回服务 runtime 的补丁（如重装后的操作系统、电源状态）。

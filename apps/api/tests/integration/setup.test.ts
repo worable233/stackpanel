@@ -31,13 +31,16 @@ describe.skipIf(!dbAvailable)('setup wizard (real DB)', () => {
     expect(res.json()).toEqual({ required: true, tokenRequired: false, phase: 'needs_admin' });
   });
 
-  it('rejects a weak password', async () => {
+  it('rejects a weak password with the policy code', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/setup',
       payload: { email: 'admin@example.com', password: 'short' },
     });
-    expect(res.statusCode).toBe(422);
+    // A weak password is a client error with a localisable reason, not a generic
+    // schema failure: the wizard renders `error.password.too_short`.
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { code?: string }).code).toBe('password.too_short');
   });
 
   it('claims the instance exactly once under concurrent submissions', async () => {

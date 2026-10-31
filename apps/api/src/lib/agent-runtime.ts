@@ -423,8 +423,7 @@ async function executeToolCall(
   await checkpoint(ctx, 'tool', 1);
   const outcome = await ctx.deps.executor(callWithKey);
   // Preserve the result of an already-started action even when cancellation arrived.
-  if (Buffer.byteLength(outcome.body) > 262144)
-    outcome.body = outcome.body.slice(0, 65536) + '\n[工具结果已截断]';
+  if (Buffer.byteLength(outcome.body) > 262144) outcome.body = truncateToolBody(outcome.body);
   const isError = outcome.statusCode >= 400;
   await recordStep(ctx, {
     kind: 'tool_result',
@@ -437,6 +436,29 @@ async function executeToolCall(
       text: outcome.body,
     },
   });
+}
+
+/** Bytes of a tool result that is kept before the truncation marker. */
+const TOOL_BODY_TRUNCATE_BYTES = 65536;
+
+/**
+ * Cut an oversized tool result down to a bounded prefix.
+ *
+ * `String.prototype.slice(0, 65536)` counts UTF-16 code units, so it can split a
+ * surrogate pair and leave a lone high surrogate at the end. That string is not
+ * representable in UTF-8: it round-trips through Postgres as U+FFFD, so the
+ * stored transcript silently loses a character (and the step payload stops being
+ * the bytes the tool actually returned). Encode first, then decode — a
+ * `Buffer.toString('utf8')` boundary always lands on a code-point boundary.
+ */
+function truncateToolBody(body: string): string {
+  const kept = Buffer.from(body, 'utf8')
+    .subarray(0, TOOL_BODY_TRUNCATE_BYTES)
+    .toString('utf8')
+    // A multi-byte sequence cut by the byte boundary decodes to a trailing
+    // replacement character; dropping it keeps the prefix faithful.
+    .replace(/\uFFFD+$/, '');
+  return `${kept}\n[工具结果已截断]`;
 }
 
 /**

@@ -10,6 +10,8 @@ import { firstAdminElectionGuarded, SetupRequiredError } from '../auth/install-c
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { getStateService } from '../state/index.ts';
+import { resolveCookieSecure } from '../lib/cookie-security.ts';
+import { env } from '../config/env.ts';
 
 // H2: OAuth endpoints are public and credential-adjacent; the ceiling comes
 // from the central rate-limit policy so all sensitive surfaces stay auditable.
@@ -150,7 +152,11 @@ export async function authOAuthRoutes(app: FastifyInstance): Promise<void> {
     reply.setCookie('sp_oauth_state_api', state, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // This cookie is the double-submit half of the OAuth CSRF defence: if it
+      // travels over a plaintext channel an observer can read or plant it and
+      // forge a login. Same policy as the session cookie (security audit M-1),
+      // not `NODE_ENV` — that is a build-time variable, not this request's scheme.
+      secure: resolveCookieSecure(env.API_COOKIE_SECURE),
       path: '/auth/oauth',
       maxAge: 300,
     });

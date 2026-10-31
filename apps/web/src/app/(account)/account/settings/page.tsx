@@ -1,4 +1,4 @@
-import { PageHeader } from '@stackpanel/ui';
+import { InlineError, PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { AccountSettings } from '@/components/account-settings';
 import { Separator } from '@/components/ui/separator';
@@ -44,9 +44,7 @@ export default async function AccountSettingsPage() {
               />
             </div>
           ) : (
-            <p role="alert" className="text-sm text-destructive">
-              {t('account.settings.access.keysLoadFailed')}
-            </p>
+            <InlineError>{t('account.settings.access.keysLoadFailed')}</InlineError>
           )
         }
       />

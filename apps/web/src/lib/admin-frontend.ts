@@ -4,7 +4,6 @@ import type {
   FinderProvider,
   FrontendActionExecutors,
   FrontendManifest,
-  FrontendPageDataRequirement,
 } from '@stackpanel/sdk';
 import { matchFrontendPagePath } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
@@ -19,6 +18,7 @@ import { getLocale } from '@/i18n/locale';
 import { DEFAULT_LOCALE } from '@/i18n/config';
 import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
 import { bindPluginActions } from './frontend-plugin-actions';
+import { executePageData } from './frontend-page-data';
 
 export interface PluginAdminMenu {
   pluginId: string;
@@ -97,8 +97,8 @@ export async function resolvePluginAdminRoute(
     matchFrontendPagePath(item.path, path),
   );
   if (!route) return { status: 'not-found' };
+  const api = await getAuthedApiClient();
   if (route.permission) {
-    const api = await getAuthedApiClient();
     const check = await api.checkPermission(route.permission);
     if (!check.allowed) return { status: 'denied', permission: route.permission };
   }
@@ -143,7 +143,14 @@ export async function resolvePluginAdminRoute(
     pluginId,
     componentId: route.component,
     settings,
-    data: await executeRouteData(route.data ?? [], mergedFinders, params, settings),
+    data: await executePageData(route.data ?? [], {
+      finders: mergedFinders,
+      params,
+      settings,
+      session: { role: 'ADMIN' },
+      api,
+      isAllowed: (permission) => isAllowed(api, permission),
+    }),
     actions: bindPluginActions(
       pluginId,
       candidate.manifest.actions,
@@ -183,44 +190,6 @@ function capturePathParams(pattern: string, path: string): Record<string, string
   return params;
 }
 
-async function executeRouteData(
-  requirements: FrontendPageDataRequirement[],
-  finders: Record<string, FinderProvider>,
-  params: Record<string, string>,
-  settings: FrontendSettings,
-): Promise<Record<string, unknown>> {
-  const api = await getAuthedApiClient();
-  const values = await Promise.all(
-    requirements.map(async (requirement) => {
-      if (requirement.permission && !(await isAllowed(api, requirement.permission))) return null;
-      const finder = finders[requirement.finder];
-      if (!finder) {
-        console.error(`[route-data] finder 未注册: ${requirement.finder}`); // i18n-exempt — server log
-        return null;
-      }
-      try {
-        return [
-          requirement.as,
-          await finder.handler(resolveFinderInput(requirement, params), {
-            params,
-            settings,
-            api,
-            session: { role: 'ADMIN' },
-          }),
-        ] as const;
-      } catch (error) {
-        console.error(
-          `[route-data] finder ${requirement.finder} 执行失败:`, // i18n-exempt — server log
-          error instanceof Error ? error.message : error,
-        );
-        return null;
-      }
-    }),
-  );
-  return Object.fromEntries(
-    values.filter((value): value is readonly [string, unknown] => value !== null),
-  );
-}
 
 async function isAllowed(
   api: Awaited<ReturnType<typeof getAuthedApiClient>>,
@@ -233,19 +202,6 @@ async function isAllowed(
   }
 }
 
-function resolveFinderInput(
-  requirement: FrontendPageDataRequirement,
-  params: Record<string, string>,
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(requirement.input ?? {}).map(([key, value]) => [
-      key,
-      typeof value === 'string' && value.startsWith(':')
-        ? (params[value.slice(1)] ?? value)
-        : value,
-    ]),
-  );
-}
 
 /** Plugin-owned settings reuse the regular route resolver and its authorization gates. */
 export async function getPluginSettingsSections() {

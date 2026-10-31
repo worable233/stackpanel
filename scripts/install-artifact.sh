@@ -178,9 +178,12 @@ PKG_NODE_MAJOR="$(node -e 'const r=require(process.argv[1]);process.stdout.write
 PKG_PLATFORM="$(node -e 'const r=require(process.argv[1]);process.stdout.write(String(r.platform||""))' "${STAGING}/RELEASE.json")"
 [[ "${PKG_NODE_MAJOR}" == "${NODE_MAJOR}" ]] || fail "产物要求 Node ${PKG_NODE_MAJOR}，当前为 ${NODE_MAJOR}"
 # 产物的 platform 必须与实际一致：交叉构建会产出坏的原生模块（sharp/prisma/.node）。
-if [[ -n "${PKG_PLATFORM}" && "${PKG_PLATFORM}" != "linux-x64" ]]; then
-  fail "产物平台为 ${PKG_PLATFORM}，与目标机 linux-x64 不一致"
-fi
+# RELEASE.json 写的是**契约名**（linux/amd64），tar 命名用的是**产物名**（linux-x64），
+# 两者必须都接受——只收其中一种会让每一份合法产物都装不上。
+case "${PKG_PLATFORM}" in
+  ''|linux-x64|linux/amd64) ;;
+  *) fail "产物平台为 ${PKG_PLATFORM}，与目标机 linux-x64 不一致" ;;
+esac
 info "内核版本 ${VERSION}（Node ${NODE_MAJOR}）"
 
 # ---- 2. 落版本目录并原子切换 current -----------------------------------------
@@ -476,12 +479,18 @@ chmod 0755 "${INSTALL_ROOT}/bin/stackpanel-upgrade"
 PM2_HOME_DIR="${STACKPANEL_PM2_HOME:-$(getent passwd "${SERVICE_USER}" | cut -d: -f6)/.pm2}"
 if [[ "${SKIP_PM2}" -eq 0 ]]; then
   info "启动 API 与 Web（PM2_HOME=${PM2_HOME_DIR}）…"
-  sudo -u "${SERVICE_USER}" env \
-    PM2_HOME="${PM2_HOME_DIR}" \
-    STACKPANEL_STATE_DIR="${STATE_DIR}" \
-    PATH="/usr/local/bin:/usr/bin:/bin:$PATH" \
-    pm2 start "${RELEASE_DIR}/ecosystem.config.cjs" --update-env
-  sudo -u "${SERVICE_USER}" env PM2_HOME="${PM2_HOME_DIR}" PATH="/usr/local/bin:/usr/bin:/bin:$PATH" pm2 save
+  # 必须在业务用户**可进入**的目录下启动：PM2 守护进程会继承当前工作目录，
+  # 操作员若在 /root 里执行安装，守护进程之后再 spawn 子进程时只会得到
+  # `spawn /usr/local/bin/node EACCES`，进程表看起来建好了、实际一个都没起来。
+  (
+    cd "${RELEASE_DIR}"
+    sudo -u "${SERVICE_USER}" env \
+      PM2_HOME="${PM2_HOME_DIR}" \
+      STACKPANEL_STATE_DIR="${STATE_DIR}" \
+      PATH="/usr/local/bin:/usr/bin:/bin:$PATH" \
+      pm2 start "${RELEASE_DIR}/ecosystem.config.cjs" --update-env
+    sudo -u "${SERVICE_USER}" env PM2_HOME="${PM2_HOME_DIR}" PATH="/usr/local/bin:/usr/bin:/bin:$PATH" pm2 save
+  )
 else
   warn "跳过 PM2 启动；请以 ${SERVICE_USER} 用户、PM2_HOME=${PM2_HOME_DIR} 执行："
   warn "  pm2 start ${RELEASE_DIR}/ecosystem.config.cjs --update-env && pm2 save"

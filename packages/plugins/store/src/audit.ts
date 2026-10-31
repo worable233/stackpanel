@@ -56,6 +56,14 @@ export const STORE_AUDIT_ACTIONS = {
   orderPaid: 'store.order.paid',
   orderPending: 'store.order.pending',
   orderCancelled: 'store.order.cancelled',
+  /** 未支付订单移入回收站（软删）。 */
+  orderRecycled: 'store.order.recycled',
+  /** 管理员从回收站恢复。 */
+  orderRestored: 'store.order.restored',
+  /** 超过保留期后被物理删除（真删之后只剩这条审计能证明它存在过）。 */
+  orderPurged: 'store.order.purged',
+  /** 管理员手动触发回收站清理。 */
+  orderPurgeRun: 'store.order.purge-run',
   cartCheckout: 'store.cart.checkout',
   serviceRenewed: 'store.service.renewed',
   serviceChanged: 'store.service.changed',

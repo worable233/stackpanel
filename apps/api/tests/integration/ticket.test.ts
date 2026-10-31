@@ -134,6 +134,47 @@ describe.skipIf(!dbAvailable || !ticketInstalled)(
       expect(res.statusCode).toBe(400);
     });
 
+    /**
+     * `?all=true` exists because the account pages used to assemble their ticket
+     * list by looping over `/tickets?page=n` **inside a web-process finder** —
+     * plugin code running in the host purely to paginate. The pages now declare a
+     * single bounded read instead, so the endpoint has to return the same set the
+     * loop did, and only the caller's own tickets.
+     */
+    it('all=true returns the whole set, scoped to the caller', async () => {
+      const mine = await app.inject({
+        method: 'GET',
+        url: '/tickets?all=true',
+        headers: { authorization: `Bearer ${userToken}` },
+      });
+      expect(mine.statusCode).toBe(200);
+      const body = mine.json() as { tickets: Array<{ id: string }>; total: number };
+      expect(body.total).toBe(body.tickets.length);
+      expect(body.tickets.some((ticket) => ticket.id === ticketId)).toBe(true);
+
+      const others = await app.inject({
+        method: 'GET',
+        url: '/tickets?all=true',
+        headers: { authorization: `Bearer ${otherToken}` },
+      });
+      expect(others.statusCode).toBe(200);
+      const otherBody = others.json() as { tickets: Array<{ id: string }> };
+      expect(otherBody.tickets.some((ticket) => ticket.id === ticketId)).toBe(false);
+    });
+
+    it('paginates as before when all=true is absent', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/tickets?page=1&pageSize=1',
+        headers: { authorization: `Bearer ${userToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { tickets: unknown[]; page: number; pageSize: number };
+      expect(body.page).toBe(1);
+      expect(body.pageSize).toBe(1);
+      expect(body.tickets.length).toBeLessThanOrEqual(1);
+    });
+
     it('keeps internal notes out of the user view', async () => {
       const note = await app.inject({
         method: 'POST',

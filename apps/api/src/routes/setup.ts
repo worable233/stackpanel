@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { PASSWORD_MAX_LENGTH } from '@stackpanel/sdk';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { toPublicUser } from '../lib/user.ts';
 import { headerUserAgent } from '../plugins/audit.ts';
@@ -43,7 +44,10 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
       const body = z
         .object({
           email: z.string().email(),
-          password: z.string().min(8),
+          // Length is checked by `claimInstallation` against the shared policy
+          // (which returns a localisable `password.*` code); here we only bound
+          // the scrypt input.
+          password: z.string().min(1).max(PASSWORD_MAX_LENGTH),
           setupToken: z.string().min(1).max(256).optional(),
         })
         .safeParse(request.body);

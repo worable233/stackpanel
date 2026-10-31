@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
+import { sessionCookieName, sessionCookieOptions } from '@/lib/session-cookie';
 
 export const dynamic = 'force-dynamic';
 
 const STATE_COOKIE = 'sp_oauth_state';
 const VERIFIER_COOKIE = 'sp_oauth_verifier';
 const NONCE_COOKIE = 'sp_oauth_nonce';
-const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME ?? 'sp_session';
+const SESSION_COOKIE = sessionCookieName();
 
 function clearFlowCookies(response: NextResponse): void {
   response.cookies.delete({ name: STATE_COOKIE, path: '/auth/oauth' });
@@ -52,13 +53,13 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ provide
     const result = (await apiResponse.json()) as { token: string; user: { role: string } };
     const destination = result.user.role === 'ADMIN' ? '/admin' : '/account';
     const response = NextResponse.redirect(new URL(destination, request.url));
-    response.cookies.set(SESSION_COOKIE, result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
-    });
+    response.cookies.set(
+      SESSION_COOKIE,
+      result.token,
+      sessionCookieOptions({
+        forwardedProto: request.headers.get('x-forwarded-proto'),
+      }),
+    );
     clearFlowCookies(response);
     return response;
   } catch {

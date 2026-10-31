@@ -9,7 +9,7 @@
  * The kernel registers this through {@link registerAuditRetention} from its
  * `registerKernelJobs` assembly; the prune itself is bounded and idempotent.
  */
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import type { JobContext } from '@stackpanel/sdk';
 
@@ -23,7 +23,9 @@ export const AUDIT_RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
  * Delete audit rows older than the retention window. Returns the number
  * removed. A window of `0` (disabled) is a no-op.
  */
-export async function pruneAuditLogs(retentionDays = env.AUDIT_LOG_RETENTION_DAYS): Promise<number> {
+export async function pruneAuditLogs(
+  retentionDays = getConfig('AUDIT_LOG_RETENTION_DAYS'),
+): Promise<number> {
   if (retentionDays <= 0) return 0;
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
   const { count } = await getPrisma().auditLog.deleteMany({

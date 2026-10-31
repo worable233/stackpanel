@@ -430,9 +430,9 @@ export function buildProvisionApp(options: ProvisionAppOptions): FastifyInstance
   return app;
 }
 
-/** 与主 app 相同的 trustProxy 解析语义。 */
-function parseTrustProxy(raw: string | undefined): boolean | string[] {
-  if (!raw || raw.trim().length === 0) return false;
+/** 与主 app 相同的 trustProxy 解析语义（含未配置时的 loopback 默认）。 */
+function parseTrustProxy(raw: string | undefined): boolean | string | string[] {
+  if (!raw || raw.trim().length === 0) return 'loopback';
   if (raw === 'true') return true;
   if (raw === 'false') return false;
   return raw

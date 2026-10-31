@@ -263,8 +263,16 @@ export interface AdminPaymentListResponse {
  * Kernel payment orchestration exposed to plugins via `ctx.payments`.
  */
 export interface PaymentService {
-  /** List wallet + active external providers for checkout UI. */
-  listPaymentMethods(): PaymentMethodListing;
+  /**
+   * List wallet + active external providers for checkout UI.
+   *
+   * Async because providers may live in an isolated plugin process: their
+   * `getMethods()` only exists as an async proxy there, so a synchronous
+   * listing would hand callers Promises instead of method arrays (which is
+   * exactly how every gateway checkout broke: `methods` came back as `{}`,
+   * and `providerFor` threw on `.some(...)`).
+   */
+  listPaymentMethods(): Promise<PaymentMethodListing>;
   /**
    * Provider id → collection mode.
    *

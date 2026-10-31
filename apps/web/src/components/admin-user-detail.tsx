@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { SectionTitle } from '@stackpanel/ui';
+import { InlineError, SectionTitle } from '@stackpanel/ui';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -456,13 +456,20 @@ function ServicesSection({
   const [candidates, setCandidates] = useState<AdminUpstreamServiceItem[]>([]);
   const [selected, setSelected] = useState<string>('');
   const [inventoryProduct, setInventoryProduct] = useState('all');
-  const productKey = (item: AdminUpstreamServiceItem) => JSON.stringify([item.sourceId, item.sourceRef ?? null, item.productId ?? item.productName]);
-  const inventoryProducts = [...new Map(candidates.map(item => [productKey(item), item])).entries()];
-  const visibleCandidates = candidates.filter(item => inventoryProduct === 'all' || productKey(item) === inventoryProduct);
+  const productKey = (item: AdminUpstreamServiceItem) =>
+    JSON.stringify([item.sourceId, item.sourceRef ?? null, item.productId ?? item.productName]);
+  const inventoryProducts = [
+    ...new Map(candidates.map((item) => [productKey(item), item])).entries(),
+  ];
+  const visibleCandidates = candidates.filter(
+    (item) => inventoryProduct === 'all' || productKey(item) === inventoryProduct,
+  );
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editExpiresAt, setEditExpiresAt] = useState('');
   const [editStatus, setEditStatus] = useState('');
+  /** 待确认的解绑/删除：原生 `window.confirm` 无法本地化按钮也不能被测试。 */
+  const [confirmTarget, setConfirmTarget] = useState<{ id: string; bound: boolean } | null>(null);
 
   function run(action: () => Promise<UserActionResult>) {
     setState(null);
@@ -496,7 +503,8 @@ function ServicesSection({
           const first = result.data.services.find(
             (item) => !item.boundServiceId && !item.boundUserId,
           );
-          if (first) setSelected(JSON.stringify([first.sourceId, first.sourceRef ?? null, first.id]));
+          if (first)
+            setSelected(JSON.stringify([first.sourceId, first.sourceRef ?? null, first.id]));
         }
       })
       .catch(() => setBindError(t('admin.userDetail.services.bindLoadFailed')))
@@ -505,7 +513,9 @@ function ServicesSection({
 
   function bind() {
     const item = candidates.find(
-      (candidate) => JSON.stringify([candidate.sourceId, candidate.sourceRef ?? null, candidate.id]) === selected,
+      (candidate) =>
+        JSON.stringify([candidate.sourceId, candidate.sourceRef ?? null, candidate.id]) ===
+        selected,
     );
     if (!item) {
       setState({ error: t('admin.userDetail.services.selectUpstream') });
@@ -536,11 +546,17 @@ function ServicesSection({
   }
 
   function remove(serviceId: string) {
-    const bound = boundServiceIds(services).has(serviceId);
+    setConfirmTarget({ id: serviceId, bound: boundServiceIds(services).has(serviceId) });
+  }
+
+  function confirmRemove() {
+    const target = confirmTarget;
+    if (!target) return;
+    setConfirmTarget(null);
     run(() =>
-      bound
-        ? unbindUpstreamServiceAction(userId, serviceId)
-        : deleteServiceAction(userId, serviceId),
+      target.bound
+        ? unbindUpstreamServiceAction(userId, target.id)
+        : deleteServiceAction(userId, target.id),
     );
   }
 
@@ -567,9 +583,7 @@ function ServicesSection({
                 </p>
               ) : bindError ? (
                 <div className="flex flex-col items-start gap-3">
-                  <p role="alert" className="text-sm text-destructive">
-                    {bindError}
-                  </p>
+                  <InlineError>{bindError}</InlineError>
                   <Button variant="outline" size="sm" onClick={() => openBind(true)}>
                     {t('common.retry')}
                   </Button>
@@ -582,15 +596,37 @@ function ServicesSection({
                 </p>
               ) : (
                 <div className="flex flex-col gap-1">
-                  <Label htmlFor="bind-product">{t('admin.userDetail.services.upstreamProduct')}</Label>
-                  <Select value={inventoryProduct} onValueChange={value => { setInventoryProduct(value ?? 'all'); setSelected(''); }}>
+                  <Label htmlFor="bind-product">
+                    {t('admin.userDetail.services.upstreamProduct')}
+                  </Label>
+                  <Select
+                    value={inventoryProduct}
+                    onValueChange={(value) => {
+                      setInventoryProduct(value ?? 'all');
+                      setSelected('');
+                    }}
+                  >
                     <SelectTrigger id="bind-product" className="w-full">
-                      <SelectValue>{inventoryProduct === 'all' ? t('admin.userDetail.services.allProducts') : inventoryProducts.find(([key]) => key === inventoryProduct)?.[1].productName}</SelectValue>
+                      <SelectValue>
+                        {inventoryProduct === 'all'
+                          ? t('admin.userDetail.services.allProducts')
+                          : inventoryProducts.find(([key]) => key === inventoryProduct)?.[1]
+                              .productName}
+                      </SelectValue>
                     </SelectTrigger>
-                    <SelectContent><SelectGroup>
-                      <SelectItem value="all">{t('admin.userDetail.services.allProducts')}</SelectItem>
-                      {inventoryProducts.map(([key, item]) => <SelectItem key={key} value={key}>{item.productName ?? item.name}{item.sourceRef ? ` · ${item.sourceRef}` : ''}</SelectItem>)}
-                    </SelectGroup></SelectContent>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="all">
+                          {t('admin.userDetail.services.allProducts')}
+                        </SelectItem>
+                        {inventoryProducts.map(([key, item]) => (
+                          <SelectItem key={key} value={key}>
+                            {item.productName ?? item.name}
+                            {item.sourceRef ? ` · ${item.sourceRef}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
                   </Select>
                   <Label htmlFor="bind-service">
                     {t('admin.userDetail.services.upstreamService')}
@@ -598,8 +634,11 @@ function ServicesSection({
                   <Select value={selected} onValueChange={(value) => setSelected(value ?? '')}>
                     <SelectTrigger id="bind-service" className="w-full">
                       <SelectValue>
-                        {candidates.find((item) => JSON.stringify([item.sourceId, item.sourceRef ?? null, item.id]) === selected)
-                          ?.name ?? t('admin.userDetail.services.selectUpstream')}
+                        {candidates.find(
+                          (item) =>
+                            JSON.stringify([item.sourceId, item.sourceRef ?? null, item.id]) ===
+                            selected,
+                        )?.name ?? t('admin.userDetail.services.selectUpstream')}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -615,7 +654,11 @@ function ServicesSection({
                           return (
                             <SelectItem
                               key={JSON.stringify([item.sourceId, item.sourceRef ?? null, item.id])}
-                              value={JSON.stringify([item.sourceId, item.sourceRef ?? null, item.id])}
+                              value={JSON.stringify([
+                                item.sourceId,
+                                item.sourceRef ?? null,
+                                item.id,
+                              ])}
                               disabled={boundMine || boundOther}
                             >
                               {item.name}
@@ -800,6 +843,36 @@ function ServicesSection({
           </table>
         </div>
       )}
+
+      <AlertDialog
+        open={confirmTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !isPending) setConfirmTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmTarget?.bound ? t('admin.userDetail.services.unbind') : t('common.delete')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmTarget?.bound
+                ? t('admin.userDetail.services.confirmUnbind')
+                : t('admin.userDetail.services.confirmDelete')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant={confirmTarget?.bound ? 'outline' : 'destructive'}
+              disabled={isPending}
+              onClick={confirmRemove}
+            >
+              {confirmTarget?.bound ? t('admin.userDetail.services.unbind') : t('common.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SectionCard>
   );
 }

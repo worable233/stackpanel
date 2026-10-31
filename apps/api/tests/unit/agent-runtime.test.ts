@@ -313,6 +313,34 @@ describe('kernel agent runtime', () => {
     expect(h.stepRows().find((step) => step['kind'] === 'tool_result')?.['isError']).toBe(false);
   });
 
+  it('truncates an oversized tool result without splitting a character', async () => {
+    // 65 535 ASCII bytes + one astral character puts its surrogate pair exactly
+    // across the byte boundary, which a code-unit `slice(0, 65536)` would split.
+    const body = `${'a'.repeat(65535)}😀${'b'.repeat(300_000)}`;
+    const h = await harness({
+      script: [
+        completion([toolCall('c1', 'order_read', { params: { id: 'o_1' } })], 'tool_calls'),
+        completion([{ type: 'text', text: 'done' }], 'stop'),
+      ],
+    });
+    h.deps.executor = async () => ({
+      statusCode: 200,
+      contentType: 'application/json',
+      body,
+    });
+
+    await runAgentUntilBlocked(h.deps);
+
+    const stored = h.stepRows().find((step) => step['kind'] === 'tool_result')?.['result'] as {
+      text: string;
+    };
+    expect(stored.text.endsWith('[工具结果已截断]')).toBe(true);
+    // No lone surrogate (0xD800–0xDFFF) survives, so the text is valid UTF-8.
+    expect(stored.text).not.toMatch(/[\uD800-\uDFFF]/u);
+    expect(Buffer.from(stored.text, 'utf8').toString('utf8')).toBe(stored.text);
+    expect(stored.text).not.toContain('\uFFFD');
+  });
+
   it('parks a mutating capability for approval under autonomy=read and NEVER calls the executor', async () => {
     const h = await harness({
       script: [

@@ -27,6 +27,13 @@ export const RATE_LIMIT = {
   oauth: { max: 10, timeWindow: '1 minute' },
   /** Issuing / rotating credentials (API tokens). */
   credentialWrite: { max: 30, timeWindow: '1 minute' },
+  /**
+   * Re-authentication: an authenticated route asking for the *current* password
+   * (change password / change email). A stolen session has no password, so this
+   * route is the escalation step; without a ceiling it is an offline-speed
+   * online password oracle. Deliberately the tightest bucket in the table.
+   */
+  credentialCheck: { max: 10, timeWindow: '1 minute' },
   /** Admin mutating endpoints (secrets, signing, platform identity, executors). */
   adminWrite: { max: 60, timeWindow: '1 minute' },
   /**
@@ -61,15 +68,42 @@ export function rateLimitMultiplier(): number {
   return Number.isFinite(raw) && raw > 1 ? Math.floor(raw) : 1;
 }
 
-/** Build the `@fastify/rate-limit` route config for a preset (factor applied). */
-export function rateLimitConfig(preset: RateLimitPreset): {
-  config: { rateLimit: RateLimitRule };
+/**
+ * Per-request bucket key. Structural (not the Fastify type) so this module stays
+ * dependency-free; `@fastify/rate-limit` only needs the returned string.
+ */
+export interface RateLimitKeyRequest {
+  ip?: string | undefined;
+  cookies?: Record<string, string | undefined> | undefined;
+  headers?: Record<string, string | string[] | undefined> | undefined;
+}
+
+/**
+ * Build the `@fastify/rate-limit` route config for a preset (factor applied).
+ *
+ * `keyGenerator` overrides the default (source IP). That default is wrong for
+ * **authenticated** routes behind the web BFF: the BFF calls the API
+ * server-to-server, so every end user arrives from one source IP and an IP-keyed
+ * bucket becomes a site-wide ceiling — ten password changes a minute would start
+ * rejecting everybody else. Authenticated routes key on the credential instead.
+ */
+export function rateLimitConfig(
+  preset: RateLimitPreset,
+  options: { keyGenerator?: (request: RateLimitKeyRequest) => string } = {},
+): {
+  config: {
+    rateLimit: RateLimitRule & { keyGenerator?: (request: RateLimitKeyRequest) => string };
+  };
 } {
   const rule = RATE_LIMIT[preset];
   const factor = rateLimitMultiplier();
   return {
     config: {
-      rateLimit: { max: factor > 1 ? rule.max * factor : rule.max, timeWindow: rule.timeWindow },
+      rateLimit: {
+        max: factor > 1 ? rule.max * factor : rule.max,
+        timeWindow: rule.timeWindow,
+        ...(options.keyGenerator ? { keyGenerator: options.keyGenerator } : {}),
+      },
     },
   };
 }
@@ -85,6 +119,7 @@ export const RATE_LIMIT_COVERAGE: ReadonlyArray<{
 }> = [
   { surface: 'OAuth 授权 / 回调 / 提供方列表', preset: 'oauth' },
   { surface: 'API Token 签发 / 轮换 / 撤销', preset: 'credentialWrite' },
+  { surface: '当前密码复核（改密码 / 改邮箱）', preset: 'credentialCheck' },
   { surface: '管理端密钥 / 签名 / 平台身份写入', preset: 'adminWrite' },
   { surface: '首次初始化认领（/setup）', preset: 'setup' },
   { surface: '插件 / 主题 / 媒体上传', preset: 'upload' },

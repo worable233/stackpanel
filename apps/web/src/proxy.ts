@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { AFFILIATE_COOKIE, normalizeAffiliateCode } from './lib/affiliate';
 import { readCaptchaCspSources, type CaptchaCspSources } from './lib/captcha-csp';
+import { sessionCookieName, sessionCookieSecure } from './lib/session-cookie';
 
-const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? 'sp_session';
+const COOKIE_NAME = sessionCookieName();
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
 
 /**
@@ -137,7 +138,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
-  requestHeaders.set('x-stackpanel-request-path', request.nextUrl.pathname + request.nextUrl.search);
+  requestHeaders.set(
+    'x-stackpanel-request-path',
+    request.nextUrl.pathname + request.nextUrl.search,
+  );
   requestHeaders.set('Content-Security-Policy', csp);
 
   const { pathname } = request.nextUrl;
@@ -154,7 +158,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       response.cookies.set(AFFILIATE_COOKIE, affid, {
         httpOnly: true,
         sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        secure: sessionCookieSecure({
+          forwardedProto: request.headers.get('x-forwarded-proto'),
+        }),
         path: '/',
         maxAge: AFFILIATE_COOKIE_MAX_AGE,
       });

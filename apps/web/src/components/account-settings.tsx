@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from 'reac
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bot, Palette, ShieldCheck, UserRound, Plug, ArrowUpRight, Bell } from 'lucide-react';
-import { SectionTitle } from '@stackpanel/ui';
+import { InlineNotice, SectionTitle } from '@stackpanel/ui';
 import { type User, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@stackpanel/sdk';
 import { toast } from '@/components/ui/toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -18,6 +18,7 @@ import { localeOptions } from '@/i18n/core';
 import { setLocaleAction } from '@/i18n/actions';
 import { agentFetch } from '@/components/agent-workspace';
 import { changeEmailAction, changePasswordAction } from '@/lib/actions';
+import type { AccountMutationState } from '@/lib/actions';
 import type { CaptchaActionConfig } from '@/lib/captcha';
 import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
@@ -304,9 +305,20 @@ function ChangeEmailForm({
   captcha: CaptchaActionConfig | null;
 }) {
   const t = useTranslator();
-  const [state, action, pending] = useActionState(changeEmailAction, {});
   const [open, setOpen] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // 回执走系统通知（toast），失败仍在对话框里内联；不在 effect 里 setState。
+  const [state, action, pending] = useActionState<AccountMutationState, FormData>(
+    async (previous, formData) => {
+      const result = await changeEmailAction(previous, formData);
+      if (result.ok) {
+        toast.success(t('account.settings.profile.saved'));
+        setOpen(false);
+      }
+      return result;
+    },
+    {},
+  );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <Button type="button" variant="outline" onClick={() => setOpen(true)}>
@@ -343,9 +355,6 @@ function ChangeEmailForm({
           {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
           <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           {state.error && <FieldError>{state.error}</FieldError>}
-          {state.ok && (
-            <p className="text-sm text-muted-foreground">{t('account.settings.profile.saved')}</p>
-          )}
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? t('account.settings.saving') : t('account.settings.profile.save')}
@@ -359,9 +368,19 @@ function ChangeEmailForm({
 
 function ChangePasswordForm({ captcha }: { captcha: CaptchaActionConfig | null }) {
   const t = useTranslator();
-  const [state, action, pending] = useActionState(changePasswordAction, {});
   const [open, setOpen] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [state, action, pending] = useActionState<AccountMutationState, FormData>(
+    async (previous, formData) => {
+      const result = await changePasswordAction(previous, formData);
+      if (result.ok) {
+        toast.success(t('account.settings.profile.passwordSaved'));
+        setOpen(false);
+      }
+      return result;
+    },
+    {},
+  );
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <Button type="button" variant="outline" onClick={() => setOpen(true)}>
@@ -401,11 +420,6 @@ function ChangePasswordForm({ captcha }: { captcha: CaptchaActionConfig | null }
           {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
           <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
           {state.error && <FieldError>{state.error}</FieldError>}
-          {state.ok && (
-            <p className="text-sm text-muted-foreground">
-              {t('account.settings.profile.passwordSaved')}
-            </p>
-          )}
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? t('account.settings.saving') : t('account.settings.profile.save')}
@@ -470,11 +484,6 @@ function AppearanceSettings() {
           {error && <FieldError>{error}</FieldError>}
         </Field>
       </FieldGroup>
-      <p role="status" className="text-sm text-muted-foreground">
-        {pending
-          ? t('account.settings.appearance.switching')
-          : t('account.settings.appearance.autosave')}
-      </p>
     </section>
   );
 }
@@ -574,9 +583,7 @@ function PersonalAgentSettings() {
           </Button>
         </div>
       ) : !servers ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t('account.settings.agent.loading')}
-        </p>
+        <InlineNotice>{t('account.settings.agent.loading')}</InlineNotice>
       ) : servers.length ? (
         <div className="flex flex-col gap-6">
           {servers.map((server) => (

@@ -1,8 +1,1012 @@
 {
   "formatVersion": 1,
   "apiVersion": "v1",
-  "hash": "20d1a5a9f60778ce4e34a0c978beda3f8d7915992cefb3452ec6a7569f56f5b5",
+  "hash": "ee211981f88042cc4097eaf53ca68ed628c256e02cdd5d627dcdefac2fa14d74",
   "operations": {
+    "DELETE /api/v1/admin/agent/model": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/agent/model": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/agent/model": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/agent/model/catalog": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/agent/model/default": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/audit-log": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/currency-rates": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/currency-rates": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/currency-rates": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/distribution/catalog-key": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/distribution/refresh": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/distribution/reload": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/distribution/source": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/distribution/source": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/distribution/token": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/jobs/dead-letter": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/jobs/dead-letter/:id/retry": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/jobs/schedules": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/notifications/policy": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/notifications/policy": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/payment-methods": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/payment-methods/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/payment-methods/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/payments": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/payments/:id/cancel": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/payments/:id/confirm": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/permission-groups": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/permission-groups": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/permission-groups/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/permission-groups/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/permissions": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/plugins": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/plugins/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/plugins/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/plugins/:id/settings": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/plugins/:id/settings": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/plugins/upload": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/rbac/templates": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/sales-channels": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/sales-channels": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/sales-channels/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/sales-channels/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/secrets": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/secrets/:key": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/secrets/:key": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/settings": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/settings/:key": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/signing": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/signing": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/ui/actions": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/ui/widgets": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/updates/check": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/updates/plan": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/updates/policy": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PUT /api/v1/admin/updates/policy": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/updates/results": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/updates/results/:key": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/updates/self-update": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/updates/self-update": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/updates/self-update": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/updates/status": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/updates/submit": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/users": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/users": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/users/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/users/:id": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/users/:id/impersonate": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/users/:id/reset-password": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/users/:id/services": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/users/:id/services": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/users/:id/services/:serviceId": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "PATCH /api/v1/admin/users/:id/services/:serviceId": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "GET /api/v1/admin/users/:id/upstream-services": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/users/:id/upstream-services": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "DELETE /api/v1/admin/users/:id/upstream-services/:serviceId": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
+    "POST /api/v1/admin/users/:id/wallet": {
+      "security": [
+        "bearerAuth"
+      ],
+      "requiredParameters": [
+        "header:Idempotency-Key"
+      ],
+      "hasRequestBody": false,
+      "responseCodes": [
+        "200",
+        "401",
+        "403"
+      ]
+    },
     "GET /api/v1/agent/approvals": {
       "security": [],
       "requiredParameters": [],

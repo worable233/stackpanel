@@ -207,7 +207,7 @@ export function PluginManager({
                     {plugin.enabled ? t('admin.plugins.disable') : t('admin.plugins.enable')}
                   </Button>
                 </form>
-                {plugin.source === 'dynamic' ? (
+                {plugin.removable ? (
                   <AlertDialog>
                     <AlertDialogTrigger
                       render={<Button variant="destructive" size="sm" disabled={isMutating} />}

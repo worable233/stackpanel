@@ -1,6 +1,5 @@
 {
   "version": "0.1.0",
-  "revision": "1eb6f513232c",
   "entry": "frontend/dist/index.js",
   "pages": [
     {
@@ -154,7 +153,9 @@
         "labelKey": "nav.products",
         "groupKey": "nav.groupStore",
         "order": 10,
-        "activePaths": ["/products"]
+        "activePaths": [
+          "/products"
+        ]
       },
       "data": [
         {
@@ -437,7 +438,9 @@
     },
     {
       "id": "store.service-action",
-      "silent": true,
+      "successFeedback": {
+        "messageKey": "feedback.serviceActionSubmitted"
+      },
       "method": "POST",
       "path": "/services/:id/actions",
       "permission": "store.view",
@@ -560,7 +563,9 @@
     },
     {
       "id": "store.service-resource-create",
-      "silent": true,
+      "successFeedback": {
+        "messageKey": "feedback.resourceCreated"
+      },
       "method": "POST",
       "path": "/services/:id/resources/:kind",
       "permission": "store.buy",
@@ -586,7 +591,9 @@
     },
     {
       "id": "store.service-resource-action",
-      "silent": true,
+      "successFeedback": {
+        "messageKey": "feedback.resourceActionSubmitted"
+      },
       "method": "POST",
       "path": "/services/:id/resources/:kind/:resourceId/actions/:actionId",
       "permission": "store.buy",
@@ -855,7 +862,9 @@
       "nav": {
         "labelKey": "nav.shop",
         "order": 5,
-        "activePaths": ["/store"]
+        "activePaths": [
+          "/store"
+        ]
       },
       "data": [
         {
@@ -1060,7 +1069,12 @@
       }
     ]
   },
-  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
+  "locales": [
+    "zh-CN",
+    "zh-TW",
+    "zh-HK",
+    "en-US"
+  ],
   "messages": {
     "zh-CN": {
       "review.recover": "核验原账单并重新送审",
@@ -1484,6 +1498,9 @@
       "feedback.serviceTransferred": "服务已转移。",
       "feedback.refundProcessed": "退款已处理。",
       "feedback.productSaved": "商品已保存。",
+      "feedback.serviceActionSubmitted": "运维操作已提交，稍后刷新实例查看结果。",
+      "feedback.resourceCreated": "资源创建已提交，稍后刷新列表查看结果。",
+      "feedback.resourceActionSubmitted": "操作已提交，稍后刷新资源列表查看结果。",
       "refund.actionFailed": "处理失败，请稍后重试",
       "refund.state.PROCESSING": "处理中",
       "refund.state.SUCCEEDED": "已退款",
@@ -2035,6 +2052,9 @@
       "feedback.serviceTransferred": "服務已轉移。",
       "feedback.refundProcessed": "退款已處理。",
       "feedback.productSaved": "商品已儲存。",
+      "feedback.serviceActionSubmitted": "運維操作已提交，稍後重新整理例項檢視結果。",
+      "feedback.resourceCreated": "資源建立已提交，稍後重新整理列表檢視結果。",
+      "feedback.resourceActionSubmitted": "操作已提交，稍後重新整理資源列表檢視結果。",
       "refund.actionFailed": "處理失敗，請稍後重試",
       "refund.state.PROCESSING": "處理中",
       "refund.state.SUCCEEDED": "已退款",
@@ -2586,6 +2606,9 @@
       "feedback.serviceTransferred": "服務已轉移。",
       "feedback.refundProcessed": "退款已處理。",
       "feedback.productSaved": "商品已儲存。",
+      "feedback.serviceActionSubmitted": "運維操作已提交，稍後重新整理例項檢視結果。",
+      "feedback.resourceCreated": "資源建立已提交，稍後重新整理列表檢視結果。",
+      "feedback.resourceActionSubmitted": "操作已提交，稍後重新整理資源列表檢視結果。",
       "refund.actionFailed": "處理失敗，請稍後重試",
       "refund.state.PROCESSING": "處理中",
       "refund.state.SUCCEEDED": "已退款",
@@ -3137,6 +3160,9 @@
       "feedback.serviceTransferred": "Service transferred.",
       "feedback.refundProcessed": "Refund processed.",
       "feedback.productSaved": "Product saved.",
+      "feedback.serviceActionSubmitted": "Operation submitted. Refresh the service in a moment to see the result.",
+      "feedback.resourceCreated": "Resource creation submitted. Refresh the list in a moment to see the result.",
+      "feedback.resourceActionSubmitted": "Action submitted. Refresh the resource list in a moment to see the result.",
       "refund.actionFailed": "Action failed. Please try again.",
       "refund.state.PROCESSING": "Processing",
       "refund.state.SUCCEEDED": "Refunded",

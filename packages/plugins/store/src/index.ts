@@ -1,4 +1,10 @@
-import type { AdminDashboardWidgetMeta, HttpReply, HttpRequest, NavItem } from '@stackpanel/sdk';
+import type {
+  AdminDashboardWidgetMeta,
+  HttpReply,
+  HttpRequest,
+  JobContext,
+  NavItem,
+} from '@stackpanel/sdk';
 import { EXTENSION_POINTS, definePlugin, PluginError } from '@stackpanel/sdk';
 import { bindContext, context, resetContext } from './context';
 import { StoreError } from './errors';
@@ -20,7 +26,11 @@ import {
   getMyOrder,
   cancelOrder,
   listAdminOrders,
+  recycleMyOrder,
+  restoreRecycledOrder,
+  purgeRecycledNow,
 } from './orders';
+import { ORDER_PURGE_INTERVAL_MS, purgeRecycledOrders } from './recycle';
 import {
   createProduct,
   createProductForSync,
@@ -78,6 +88,7 @@ import {
   reviewRefundRequest,
 } from './refund';
 import { runExpirySweep, EXPIRY_SWEEP_INTERVAL_MS } from './expiry';
+import { runUnpaidOrderReminder, UNPAID_REMIND_INTERVAL_MS } from './unpaid-reminder';
 import {
   getUpstreamProduct,
   getUpstreamProductConfig,
@@ -144,6 +155,42 @@ const listChannelMethods = async (req: HttpRequest): Promise<unknown> => {
     }));
   return { channel: { code: channel.code, name: channel.name }, methods };
 };
+
+/**
+ * 本插件注册的内核任务。
+ *
+ * 抽成独立函数是为了让 `jobs-contract.test.ts` 能直接调用它断言名字与频率 ——
+ * `REF-定时任务与幂等契约.md` §3 的清单同样不能靠「文档写着」来维持。
+ */
+export function registerStoreJobs(jobs: JobContext): void {
+  // 履约体系：付款后异步交付 + 队列轮询。集群下只由一个 worker 执行，
+  // 不再每副本各起一个定时器。
+  jobs.handle('fulfillment-poll', async () => {
+    await processDue();
+    await reconcileProvisioning();
+    // 结果未确认的任务不再等人抬：先自动只读反查上游并重试（有界退避）。
+    await retryUnconfirmedProvisioning();
+    // 变配订单「已付款但未落地」同样自动重试（有界退避，错误写回订单行）。
+    await retryFailedChanges();
+  });
+  void jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
+
+  // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。
+  jobs.handle('unpaid-order-reminder', async () => {
+    await runUnpaidOrderReminder();
+  });
+  void jobs.schedule('unpaid-order-reminder', { everyMs: UNPAID_REMIND_INTERVAL_MS });
+  jobs.handle('expiry-sweep', async () => {
+    await runExpirySweep();
+  });
+  void jobs.schedule('expiry-sweep', { everyMs: EXPIRY_SWEEP_INTERVAL_MS });
+
+  // 回收站清理：超过保留期的未支付订单真删。
+  jobs.handle('order-purge', async () => {
+    await purgeRecycledOrders();
+  });
+  void jobs.schedule('order-purge', { everyMs: ORDER_PURGE_INTERVAL_MS });
+}
 
 export const storePlugin = definePlugin({
   manifest: {
@@ -574,6 +621,30 @@ export const storePlugin = definePlugin({
       permission: 'store.buy',
       handler: handle((req) => cancelOrder(context(), req)),
     },
+    // 未支付订单回收站（#12.1）：软删 / 管理员恢复 / 管理员当场清理。
+    // 删除权限用 store.view（用户看得到自己的订单列表就能整理它）；恢复与
+    // 清理是管理动作，走 store.admin。
+    {
+      method: 'DELETE',
+      path: '/orders/:id',
+      auth: 'user',
+      permission: 'store.view',
+      handler: handle(recycleMyOrder),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/orders/:id/restore',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(restoreRecycledOrder),
+    },
+    {
+      method: 'POST',
+      path: '/store/admin/orders/purge-recycled',
+      auth: 'admin',
+      permission: 'store.admin',
+      handler: handle(purgeRecycledNow),
+    },
     {
       method: 'GET',
       path: '/store/admin/products',
@@ -898,23 +969,8 @@ export const storePlugin = definePlugin({
         ctx.logger.warn(`store: currency migration skipped: ${String(error)}`);
       });
     });
-    // 履约体系：付款后异步交付 + 队列轮询。轮询改为内核任务（ctx.jobs），
-    // 集群下只由一个 worker 执行，不再每副本各起一个定时器。
     ctx.effect(() => subscribeOrderPaid());
-    ctx.jobs.handle('fulfillment-poll', async () => {
-      await processDue();
-      await reconcileProvisioning();
-      // 结果未确认的任务不再等人抬：先自动只读反查上游并重试（有界退避）。
-      await retryUnconfirmedProvisioning();
-      // 变配订单「已付款但未落地」同样自动重试（有界退避，错误写回订单行）。
-      await retryFailedChanges();
-    });
-    ctx.jobs.schedule('fulfillment-poll', { everyMs: FULFILLMENT_POLL_INTERVAL_MS });
-    // 到期自动化：提醒 →（宽限期）→ 暂停 →（保留期）→ 终止。集群下单次执行。
-    ctx.jobs.handle('expiry-sweep', async () => {
-      await runExpirySweep();
-    });
-    ctx.jobs.schedule('expiry-sweep', { everyMs: EXPIRY_SWEEP_INTERVAL_MS });
+    registerStoreJobs(ctx.jobs);
     ctx.logger.info('store: activated');
   },
   onDeactivate: (ctx) => {

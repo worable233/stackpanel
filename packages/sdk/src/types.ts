@@ -605,10 +605,51 @@ export interface ApiTokenView {
   scopes: string[];
   ipAllowlist: string[];
   status: string;
+  /** 登记后该凭证每个请求都必须带 Ed25519 请求签名（对标 #12.6）。 */
+  publicKey?: string | null | undefined;
+  signingEnabled?: boolean | undefined;
   expiresAt: string | null;
   lastUsedAt: string | null;
   lastUsedIp: string | null;
   createdAt: string;
+}
+
+/** 一条逐页 SEO 覆写（对标 #12.4）。字段为空表示「不干预」，沿用 provider 的值。 */
+export interface SeoPageView {
+  id: string;
+  path: string;
+  title: string | null;
+  description: string | null;
+  ogImage: string | null;
+  canonical: string | null;
+  noindex: boolean;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SeoPageListResponse {
+  pages: SeoPageView[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface SeoPageUpsertInput {
+  path: string;
+  title?: string | null;
+  description?: string | null;
+  ogImage?: string | null;
+  canonical?: string | null;
+  noindex?: boolean;
+}
+
+/**
+ * 页面元数据的四层来源（由粗到细）：平台默认 → 主题/插件静态声明 →
+ * 插件 `seo.provider` 实体 → 后台逐页覆写。本表只承载最后一层。
+ */
+export interface SeoPageUpsertResponse {
+  page: SeoPageView;
 }
 
 /** Response of GET /me/api-tokens. */
@@ -665,6 +706,45 @@ export interface NavItem {
 /** Response of GET /nav/:surface. */
 export interface NavListResponse {
   items: NavItem[];
+}
+
+/**
+ * 后台菜单编辑视图（对标 #12.3）：多出「这条来自哪里」的信息。
+ * `custom` 是运营自己加的链接，`overrideId` 为 null 表示完全沿用默认。
+ */
+export interface AdminNavItemView extends NavItem {
+  custom: boolean;
+  hidden: boolean;
+  overrideId: string | null;
+  defaultLabel: string | null;
+}
+
+export interface AdminNavResponse {
+  surface: 'public' | 'account' | 'admin';
+  items: AdminNavItemView[];
+}
+
+/** 保存排布时的单条输入；label 留空表示沿用默认文案。 */
+export interface AdminNavLayoutItemInput {
+  href: string;
+  label?: string | null | undefined;
+  hidden?: boolean | undefined;
+}
+
+export interface AdminNavCustomEntry {
+  id: string;
+  surface: string;
+  href: string;
+  label: string | null;
+  sortOrder: number | null;
+  hidden: boolean;
+  custom: boolean;
+  updatedAt: string;
+}
+
+export interface AdminNavCustomResponse {
+  entry: AdminNavCustomEntry;
+  items: AdminNavItemView[];
 }
 
 /** An installed theme. */
@@ -738,6 +818,8 @@ export interface AdminPlugin {
   state: string;
   enabled: boolean;
   source: 'builtin' | 'dynamic';
+  /** Whether an operator may uninstall this plugin (kernel policy, not provenance). */
+  removable: boolean;
   hotReload: boolean;
   frontend: FrontendSummary;
   requires: PluginDependency[];
@@ -1194,6 +1276,27 @@ export interface SigningStatus {
   publicKey: string | null;
 }
 
+/**
+ * 运行期内核配置的一条（ADR-0026）。
+ *
+ * `name` 与 `envSchema` 里的变量名一致，后台界面按它渲染行标题——它是技术标识符，
+ * 不是待翻译文案。`source` 说明当前值来自数据库覆盖、环境变量还是字段默认值。
+ */
+export interface AdminRuntimeConfigEntry {
+  name: string;
+  group: 'auth' | 'session' | 'media' | 'openapi' | 'plugins' | 'audit' | 'agent';
+  /** 当前生效值（已是运行期类型：数字/布尔/字符串）。 */
+  value: unknown;
+  source: 'stored' | 'env' | 'default';
+  /** 环境变量里的值；未设置时为 null。 */
+  envValue: unknown;
+}
+
+/** Response of GET /admin/config and of every write to it. */
+export interface AdminConfigResponse {
+  entries: AdminRuntimeConfigEntry[];
+}
+
 /** Response of GET/PATCH /admin/signing. */
 export interface SigningResponse {
   signing: SigningStatus;
@@ -1215,30 +1318,9 @@ export interface AdminRuntimeConfigEntry {
   envValue: unknown;
 }
 
-/**
- * 前端服务端执行准入（契约 03 §3.1）。
- *
- * `allow` 显式授权，`deny` 一票否决（连 builtin 也不例外），`admitAll` 是误分类时的
- * 紧急放行开关。`source` 说明名单来自数据库还是环境变量兜底。
- */
-export interface AdminFrontendExecPolicy {
-  allow: string[];
-  deny: string[];
-  admitAll: boolean;
-  source: 'stored' | 'env';
-}
-
-/** Response of GET /admin/config and of every write to it. */
-export interface AdminConfigResponse {
-  entries: AdminRuntimeConfigEntry[];
-  frontendExec: AdminFrontendExecPolicy;
-}
-
-/** Response of PUT /admin/frontend-exec. */
-export interface AdminFrontendExecResponse {
-  frontendExec: AdminFrontendExecPolicy;
-}
-
+/** How the platform brand lockup is rendered in navigation and headers. */
+/** How the platform brand lockup is rendered in navigation and headers. */
+/** How the platform brand lockup is rendered in navigation and headers. */
 /** Public, non-secret platform identity managed by administrators. */
 export interface PlatformInfo {
   name: string;

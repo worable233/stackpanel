@@ -13,12 +13,30 @@ import { Transform, type Readable } from 'node:stream';
 import type { MatchResult, PluginDispatcher } from './dispatcher.ts';
 
 const RAW_BODY = Symbol('stackpanel.rawBody');
+const RAW_TEXT = Symbol('stackpanel.rawBodyText');
 const DEFAULT_BODY_LIMIT = 1_048_576;
 
 /** The raw, unparsed body stream for a request (falls back to the socket). */
 export function rawBodyStream(request: FastifyRequest): Readable {
   const stream = (request as unknown as Record<symbol, unknown>)[RAW_BODY];
   return (stream as Readable | undefined) ?? request.raw;
+}
+
+/**
+ * The exact request-body bytes as a string, when the JSON parser had to read
+ * them anyway.
+ *
+ * Request signing (see `lib/request-signing.ts`) signs the *bytes on the wire*,
+ * not the parsed object — re-serialising would change key order and whitespace
+ * and silently verify a different request than the one that arrived. Returns
+ * `undefined` when the parser never retained them (raw plugin routes, multipart).
+ */
+export function rawBodyText(request: FastifyRequest): string | undefined {
+  return (request as unknown as Record<symbol, unknown>)[RAW_TEXT] as string | undefined;
+}
+
+function stashText(request: FastifyRequest, text: string): void {
+  (request as unknown as Record<symbol, unknown>)[RAW_TEXT] = text;
 }
 
 /** Bound raw plugin uploads even though they bypass Fastify's body parser. */
@@ -109,6 +127,8 @@ export function installBodyRouting(app: FastifyInstance, dispatcher: PluginDispa
         );
         return;
       }
+      // Keep the exact bytes for request-signature verification before parsing.
+      stashText(request, body);
       try {
         finish(null, JSON.parse(body));
       } catch (error) {

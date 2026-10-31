@@ -24,6 +24,7 @@ import { installExtensionRoutes } from './extensions/routes.ts';
 import { installObservability } from './observability/index.ts';
 import { maintenanceWriteGuard } from './backup/guard.ts';
 import { getPrisma } from './plugins/prisma.ts';
+import { installAdminCapabilityAliases } from './lib/capability-alias.ts';
 import { createPluginHost } from './plugin-host.ts';
 import { adminAuditRoutes } from './routes/admin/audit.ts';
 import { adminBackupRoutes } from './routes/admin-backup.ts';
@@ -38,9 +39,11 @@ import { adminCurrencyRoutes } from './routes/admin/currency-rates.ts';
 import { currencyDefinitionRoutes } from './routes/currency-definitions.ts';
 import { adminPaymentsRoutes } from './routes/admin/payments.ts';
 import { adminSalesRoutes } from './routes/admin/sales.ts';
+import { adminNavRoutes } from './routes/admin/nav.ts';
 import { adminPermissionGroupRoutes } from './routes/admin/permission-groups.ts';
 import { adminPermissionsRoutes } from './routes/admin/permissions.ts';
 import { adminSigningRoutes } from './routes/admin/signing.ts';
+import { adminSeoRoutes } from './routes/admin/seo.ts';
 import { adminDistributionRoutes } from './routes/admin/distribution.ts';
 import { adminUpdateRoutes } from './routes/admin/updates.ts';
 import { adminUiRoutes } from './routes/admin/ui.ts';
@@ -142,7 +145,24 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // one place (ADR-0012). Success bodies pass through untouched. Legacy
     // `{ error }` bodies are promoted to `detail`; the compat `error` member is
     // no longer emitted (compatibility window closed).
-    if (reply.statusCode >= 400 && typeof payload === 'string' && payload.length > 0) {
+    //
+    // Health probes are exempt. `GET /ready` answers 503 with its *own* payload
+    // (`status`, `database`, `redis`, `pendingFrontends`, …) — that payload is
+    // the diagnosis an orchestrator acts on. Normalising it replaced the whole
+    // body with an opaque `internal.unavailable` problem, so a degraded replica
+    // reported "service unavailable" and nothing else (the pending-frontend list
+    // was lost exactly when it was needed).
+    const isHealthProbe =
+      request.url === '/health' ||
+      request.url === '/ready' ||
+      request.url.startsWith('/ready?') ||
+      request.url.startsWith('/ready/');
+    if (
+      !isHealthProbe &&
+      reply.statusCode >= 400 &&
+      typeof payload === 'string' &&
+      payload.length > 0
+    ) {
       const contentType = String(reply.getHeader('content-type') ?? '');
       if (contentType.includes('application/json')) {
         try {
@@ -429,6 +449,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     await initThemes();
     await seedDefaultBrand();
   });
+  // Open-platform aliases for `/admin/*` (ADR-0001). Installed BEFORE the admin
+  // sub-plugins below so its `onRoute` hook observes every one of them, and each
+  // alias reuses that route's own handler + preHandler chain — the coarse
+  // `requireRole('ADMIN')` guard always runs first, so a refined scope can only
+  // ever narrow access, never widen it.
+  installAdminCapabilityAliases(app);
   void app.register(adminUserRoutes);
   void app.register(adminAuditRoutes);
   void app.register(adminJobsRoutes);
@@ -439,6 +465,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminSecretsRoutes);
   void app.register(adminAgentModelRoutes);
   void app.register(adminSigningRoutes);
+  // 逐页 SEO 后台编辑（对标 #12.4）：覆写压在插件 provider 元数据之上。
+  void app.register(adminSeoRoutes);
   void app.register(adminDistributionRoutes);
   void app.register(adminPluginRoutes);
   void app.register(adminUiRoutes);
@@ -446,6 +474,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   void app.register(adminCurrencyRoutes);
   void app.register(adminPaymentsRoutes);
   void app.register(adminSalesRoutes);
+  void app.register(adminNavRoutes);
   void app.register(adminPermissionGroupRoutes);
   void app.register(adminPermissionsRoutes);
   void app.register(adminBackupRoutes);

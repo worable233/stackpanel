@@ -15,9 +15,18 @@
  * 数据库故障绝不能让生产实例回落到可写配置的页面。
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { BootstrapStateStore, defaultBootstrapStateDir, initialState } from './bootstrap/state.ts';
+import { resolveTargetVersion as readReleaseVersion } from './bootstrap/release-version.ts';
+
+/**
+ * 隔离插件进程通过 RPC 抛出的异步错误不能带走整个 API。
+ * 记录后继续服务，具体请求由插件边界返回错误。
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error('[api] unhandled rejection (kept alive):', reason);
+});
 
 /**
  * 隔离插件进程通过 RPC 抛出的异步错误不能带走整个 API。
@@ -54,22 +63,7 @@ function resolveStateRoots(): { root: string; bootstrapDir: string } {
 
 /** 读取目标内核版本；来自产物内的 `RELEASE.json`。 */
 function resolveTargetVersion(moduleUrl: string): string {
-  const here = path.dirname(new URL(moduleUrl).pathname);
-  // dist/server.js → 产物根是 dist 的上一级
-  const candidates = [
-    path.resolve(here, '..', 'RELEASE.json'),
-    path.resolve(here, '..', '..', 'RELEASE.json'),
-  ];
-  for (const candidate of candidates) {
-    if (!existsSync(candidate)) continue;
-    try {
-      const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: string };
-      if (typeof parsed.version === 'string') return parsed.version;
-    } catch {
-      // 读取失败时继续尝试下一个候选。
-    }
-  }
-  return 'unknown';
+  return readReleaseVersion(moduleUrl);
 }
 
 /**

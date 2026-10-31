@@ -34,6 +34,7 @@ const KERNEL_EMITTERS = [
   'apps/api/src/routes/admin/updates.ts',
   'apps/api/src/notifications/lifecycle-notifications.ts',
   'apps/api/src/notifications/agent-notifications.ts',
+  'apps/api/src/notifications/storage-watch.ts',
   'apps/api/src/routes/agent.ts',
   'apps/api/src/agent/background.ts',
 ];
@@ -47,6 +48,7 @@ const PLUGIN_EMITTERS = [
   'packages/plugins/store/src/expiry.ts',
   'packages/plugins/store/src/refund.ts',
   'packages/plugins/store/src/renewal.ts',
+  'packages/plugins/store/src/unpaid-reminder.ts',
   'packages/plugins/store-wallet/src/notifications.ts',
   'packages/plugins/market/src/index.ts',
 ];

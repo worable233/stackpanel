@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { PageHeader } from '@stackpanel/ui';
+import { InlineError, PageHeader } from '@stackpanel/ui';
 import type { AdminPaymentListResponse } from '@stackpanel/sdk';
 import { buttonVariants } from '@/components/ui/button';
 import { PaymentRecords } from '@/components/payment-records';
@@ -103,12 +103,9 @@ export default async function AdminPaymentsPage({
       </nav>
 
       {failed ? (
-        <p
-          role="alert"
-          className="rounded-xl bg-destructive/10 px-4 py-10 text-center text-sm text-destructive"
-        >
+        <InlineError className="rounded-xl px-4 py-10 text-center">
           {t('adminPayments.loadFailed')}
-        </p>
+        </InlineError>
       ) : (
         <PaymentRecords payments={data?.payments ?? []} />
       )}

@@ -1,22 +1,24 @@
 import type { PrismaClient } from '@stackpanel/db';
-import type {
-  AuthService,
-  AuthUser,
-  AuthAuditInput,
-  AuthAuditEntry,
-  AuthAuditPage,
-  AuthAuditQuery,
-  CreatedPlatformToken,
-  CreatePlatformTokenInput,
-  EnsureSystemUserInput,
-  GrantUserGroupInput,
-  PermissionGroup,
-  PlatformTokenView,
-  PlatformTokenInspection,
-  RegisterUserInput,
-  ResolvedPlatformToken,
-  SessionCookieConfig,
-  UserGroupGrant,
+import {
+  PluginError,
+  type AuthService,
+  type AuthUser,
+  type AuthAuditInput,
+  type AuthAuditEntry,
+  type AuthAuditPage,
+  type AuthAuditQuery,
+  type CreatedPlatformToken,
+  type CreatePlatformTokenInput,
+  type EnsureSystemUserInput,
+  type GrantUserGroupInput,
+  type PermissionGroup,
+  type PlatformTokenView,
+  type PlatformTokenInspection,
+  type RegisterUserInput,
+  type ResetUserPasswordOptions,
+  type ResolvedPlatformToken,
+  type SessionCookieConfig,
+  type UserGroupGrant,
 } from '@stackpanel/sdk';
 import {
   generateApiToken,
@@ -26,9 +28,11 @@ import {
   toStringArray,
 } from '../lib/api-tokens.ts';
 import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { avatarContentUrl } from './avatar.ts';
 import { resolveCookieSecure } from '../lib/cookie-security.ts';
 import { hashPassword, verifyPassword } from '../lib/password.ts';
+import { assertPassword } from '../lib/password-policy.ts';
 import { toPublicUser } from '../lib/user.ts';
 import { permissionsOf } from '../plugins/auth.ts';
 import { getSessionStore } from './session-store.ts';
@@ -86,9 +90,12 @@ export class KernelAuthService implements AuthService {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new Error('邮箱格式无效');
     }
-    if (typeof input.password !== 'string' || input.password.length < 8) {
-      throw new Error('密码至少需要 8 位');
+    if (typeof input.password !== 'string') {
+      throw new PluginError('password.too_short', 400, '密码不能为空');
     }
+    // Defence in depth: the login plugin checks the same policy before calling
+    // this, but no path may create an account with a policy-violating password.
+    assertPassword(input.password, email);
     const exists = await this.options.db.user.findUnique({ where: { email } });
     if (exists) throw new Error('邮箱已被使用');
     // Hash outside the transaction: scrypt is deliberately slow and would
@@ -124,6 +131,30 @@ export class KernelAuthService implements AuthService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Replace a password without the current one, after identity was proven some
+   * other way (consumed reset challenge, admin action). Re-enforces the shared
+   * policy — a plugin must not be able to bypass it — and kills every session.
+   */
+  async resetUserPassword(
+    userId: string,
+    password: string,
+    options: ResetUserPasswordOptions = {},
+  ): Promise<void> {
+    const user = await this.options.db.user.findUnique({ where: { id: userId } });
+    if (!user) throw new PluginError('auth.user_not_found', 404, '用户不存在');
+    assertPassword(password, user.email);
+    const passwordHash = await hashPassword(password);
+    await this.options.db.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        ...(options.emailVerified ? { emailVerifiedAt: new Date() } : {}),
+      },
+    });
+    await getSessionStore().revokeAll(userId);
   }
 
   async issueSession(userId: string): Promise<string> {
@@ -184,8 +215,8 @@ export class KernelAuthService implements AuthService {
 
   sessionCookieConfig(): SessionCookieConfig {
     return {
-      name: env.SESSION_COOKIE_NAME,
-      maxAge: env.SESSION_TTL_SECONDS,
+      name: getConfig('SESSION_COOKIE_NAME'),
+      maxAge: getConfig('SESSION_TTL_SECONDS'),
       // Second guard on top of the env default (security audit M-1).
       secure: resolveCookieSecure(env.API_COOKIE_SECURE),
     };
@@ -374,9 +405,7 @@ export class KernelAuthService implements AuthService {
 
   async listPlatformTokensByScope(scope: string): Promise<PlatformTokenView[]> {
     const rows = await this.options.db.apiToken.findMany({ orderBy: { createdAt: 'desc' } });
-    return rows
-      .filter((row) => toStringArray(row.scopes).includes(scope))
-      .map(toPlatformTokenView);
+    return rows.filter((row) => toStringArray(row.scopes).includes(scope)).map(toPlatformTokenView);
   }
 
   async createPlatformToken(input: CreatePlatformTokenInput): Promise<CreatedPlatformToken> {

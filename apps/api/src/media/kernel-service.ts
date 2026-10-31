@@ -12,6 +12,7 @@ import { extractSession, type AuthUser } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { getStorage } from '../infra.ts';
 import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 import { AttachmentService, MediaError, type MediaActor, type VariantQueue } from './service.ts';
 import { PrismaAttachmentRepository } from './prisma-attachment-repository.ts';
 import { DEFAULT_MEDIA_POLICY } from './policy.ts';
@@ -21,7 +22,7 @@ import { AttachmentReferenceService } from './references.ts';
 
 /** Env-tunable upload ceiling (ADR-0014 §3), defaulting to 25 MiB. */
 export function mediaMaxBytes(): number {
-  return env.MEDIA_MAX_UPLOAD_BYTES;
+  return getConfig('MEDIA_MAX_UPLOAD_BYTES');
 }
 
 export function isMediaAdmin(user: AuthUser): boolean {
@@ -39,7 +40,7 @@ export function mediaActorFor(user: AuthUser | undefined): MediaActor {
  * uploads still succeed on the inline path.
  */
 export function mediaVariantQueue(): VariantQueue | null {
-  if (!env.MEDIA_VARIANTS_ASYNC) return null;
+  if (!getConfig('MEDIA_VARIANTS_ASYNC')) return null;
   return tryBuildVariantQueue();
 }
 

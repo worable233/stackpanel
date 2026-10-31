@@ -171,7 +171,16 @@ export function collectClosure(entries, fromDirs, onMissing, target) {
 
 function copyPackage(source, target) {
   mkdirSync(path.dirname(target), { recursive: true });
-  cpSync(source, target, { recursive: true, dereference: true, force: true });
+  // 跳过包自带的 `node_modules`：那是构建机的 pnpm 布局，里面的链接指向
+  // `.pnpm/...` 的**绝对路径**，解包到目标机后全部失效；而且它会把 typescript、
+  // vitest 这类开发依赖一起拖进产物。真正的运行期依赖由 `place()` 按 `edges`
+  // 显式铺到正确层级。
+  cpSync(source, target, {
+    recursive: true,
+    dereference: true,
+    force: true,
+    filter: (src) => path.basename(src) !== 'node_modules' && path.basename(src) !== '.bin',
+  });
 }
 
 /**

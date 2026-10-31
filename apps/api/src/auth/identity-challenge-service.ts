@@ -11,7 +11,7 @@ import {
   type ConsumeIdentityChallengeInput,
   type StateService,
 } from '@stackpanel/sdk';
-import { env } from '../config/env.ts';
+import { getConfig } from '../config/runtime-config.ts';
 
 /**
  * Kernel-owned identity-challenge service (audit §5).
@@ -96,7 +96,7 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
     }
 
     // Send-rate limits, per recipient and per source IP.
-    const emailLimit = env.AUTH_CODE_SEND_PER_HOUR;
+    const emailLimit = getConfig('AUTH_CODE_SEND_PER_HOUR');
     if (emailLimit > 0) {
       const count = await this.options.state.incr(
         `identity:code:send:email:${email}:${purpose}`,
@@ -106,12 +106,9 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
         throw new PluginError('auth.code_rate_limited', 429, '验证码发送过于频繁，请稍后再试');
       }
     }
-    const ipLimit = env.AUTH_CODE_SEND_PER_HOUR_PER_IP;
+    const ipLimit = getConfig('AUTH_CODE_SEND_PER_HOUR_PER_IP');
     if (ipLimit > 0 && input.ip) {
-      const count = await this.options.state.incr(
-        `identity:code:send:ip:${input.ip}`,
-        3_600_000,
-      );
+      const count = await this.options.state.incr(`identity:code:send:ip:${input.ip}`, 3_600_000);
       if (count > ipLimit) {
         throw new PluginError('auth.code_rate_limited', 429, '验证码发送过于频繁，请稍后再试');
       }
@@ -119,7 +116,7 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
 
     const code = generateCode();
     const salt = randomBytes(16).toString('base64');
-    const ttlMs = env.AUTH_CODE_TTL_SECONDS * 1000;
+    const ttlMs = getConfig('AUTH_CODE_TTL_SECONDS') * 1000;
     const expiresAt = new Date(Date.now() + ttlMs);
 
     // Only one active challenge per (email, purpose): retire earlier ones so a
@@ -135,7 +132,7 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
         email,
         codeDigest: this.digest(code, salt),
         codeSalt: salt,
-        maxAttempts: env.AUTH_CODE_MAX_ATTEMPTS,
+        maxAttempts: getConfig('AUTH_CODE_MAX_ATTEMPTS'),
         locale: input.locale ?? null,
         ip: input.ip ?? null,
         userAgent: input.userAgent ?? null,

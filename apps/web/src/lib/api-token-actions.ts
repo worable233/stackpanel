@@ -21,6 +21,8 @@ export interface CreateApiTokenResult extends ApiTokenActionResult {
 export async function createApiTokenAction(input: {
   name: string;
   scopes: string[];
+  /** 可选的 Ed25519 公钥（PEM）；非空则该密钥的请求必须带签名。 */
+  publicKey?: string | null;
   /** Human-verification token; the kernel's policy decides whether it is needed. */
   captchaToken?: string;
 }): Promise<CreateApiTokenResult> {
@@ -31,6 +33,7 @@ export async function createApiTokenAction(input: {
     const result = await api.createApiToken({
       name: input.name.trim(),
       scopes: input.scopes,
+      ...(input.publicKey ? { publicKey: input.publicKey } : {}),
       ...(input.captchaToken ? { captchaToken: input.captchaToken } : {}),
     });
     revalidatePath('/account/settings');
@@ -59,7 +62,13 @@ export async function revokeApiTokenAction(id: string): Promise<ApiTokenActionRe
 
 export async function updateApiTokenAction(
   id: string,
-  input: { name?: string; scopes?: string[]; status?: 'ACTIVE' | 'DISABLED' },
+  input: {
+    name?: string;
+    scopes?: string[];
+    status?: 'ACTIVE' | 'DISABLED';
+    /** `null` = 清除公钥（退回只凭 Bearer）。 */
+    publicKey?: string | null;
+  },
 ): Promise<ApiTokenActionResult> {
   const locale = await getLocale();
   if (!id) return { error: translate(locale, 'action.apiTokenIdRequired') };

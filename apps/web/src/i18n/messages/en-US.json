@@ -65,7 +65,6 @@
     "settings": "System Settings",
     "plugins": "Plugins",
     "rbac": "Permission Templates",
-    "payments": "Payments",
     "audit": "Audit Log",
     "developer": "Developer Console",
     "themes": "Themes",
@@ -86,7 +85,8 @@
     "homeAriaLabel": "Back to home",
     "updates": "Updates",
     "accountOverview": "Account overview",
-    "credentials": "Credentials"
+    "credentials": "Credentials",
+    "payments": "Payments"
   },
   "auth": {
     "login": {
@@ -695,18 +695,6 @@
         "cleanup": "Remove record",
         "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
         "title": "Leftover plugin records"
-      },
-      "serverExec": {
-        "label": "Server execution",
-        "allowed": "Allowed",
-        "denied": "Not allowed",
-        "grant": "Allow execution",
-        "revoke": "Revoke execution",
-        "saved": "Server execution admission updated",
-        "reasonBuiltin": "built-in packages are always allowed",
-        "reasonDeny": "blocked by the deny list",
-        "reasonAdmitAll": "emergency allow-all is on",
-        "admitAllActive": "Emergency allow-all is on: every plugin may run in the web process. Turn it off when the investigation is over."
       }
     },
     "users": {
@@ -921,16 +909,6 @@
           "plugins": "Plugins",
           "audit": "Audit log",
           "agent": "Agent"
-        },
-        "frontendExec": {
-          "title": "Plugin server-side execution",
-          "description": "Decides which plugins may run server-side code (finders, page data) inside the web process. Built-in plugins are always allowed; for anything else only ids on the allow list may execute. A plugin without this grant still installs, activates and renders — it just receives none of the data it declared.",
-          "allow": "Allow list",
-          "deny": "Deny list",
-          "allowHint": "Plugin ids separated by commas or spaces",
-          "denyHint": "Wins over built-in status and the allow list",
-          "admitAll": "Admit everything (emergency)",
-          "admitAllHint": "Ignores the admission decision and runs every plugin in the web process. For temporary troubleshooting of a misclassified package only — turn it back off afterwards."
         }
       }
     },
@@ -1191,6 +1169,23 @@
     "distributionRefreshOffline": "Remote catalog is disabled; nothing to refresh.",
     "distributionRefreshOk": "Catalog refreshed, current sequence {sequence}.",
     "distributionRefreshFailed": "Catalog refresh failed: {message}",
+    "apiTokenSigningFailed": "Could not update request signing",
+    "seoPathRequired": "A page path is required",
+    "seoSaveFailed": "Could not save the page override",
+    "seoDeleteFailed": "Could not delete the page override",
+    "navLabelRequired": "A menu name is required",
+    "navHrefRequired": "A link is required",
+    "navSaveFailed": "Could not save the menu",
+    "navAddFailed": "Could not add the menu entry",
+    "navDeleteFailed": "Could not delete the menu entry",
+    "navSaved": "Menu saved",
+    "navItemAdded": "Menu entry added",
+    "navItemDeleted": "Menu entry deleted",
+    "seoPageSaved": "Page override saved",
+    "seoPageDeleted": "Page override deleted",
+    "apiTokenSigningSaved": "Signing key saved",
+    "apiTokenSigningCleared": "Request signing disabled",
+    "apiTokenRevoked": "API token revoked",
     "paymentMethodChannelRequired": "Select a sales channel",
     "paymentMethodProviderRequired": "Enter a payment provider",
     "paymentMethodNameRequired": "Enter a name",
@@ -1208,8 +1203,7 @@
     "updateSelfUpdateSubmitFailed": "Failed to queue the self-upgrade request",
     "updateSubmitFailed": "Failed to submit the update task",
     "runtimeConfigSaved": "Configuration applied",
-    "runtimeConfigReverted": "Reverted to the environment variable",
-    "frontendExecSaved": "Admission lists updated"
+    "runtimeConfigReverted": "Reverted to the environment variable"
   },
   "user": {
     "emailRequired": "Please enter an email",
@@ -1701,7 +1695,7 @@
     "auth_password_reset_requested": "Password reset requested",
     "config_changed": "Changed kernel configuration",
     "config_reverted": "Reverted kernel configuration",
-    "config_frontend_exec_changed": "Changed plugin execution admission"
+    "auth_email_changed": "Email changed"
   },
   "auditResource": {
     "user": "User",
@@ -1780,7 +1774,19 @@
     "revokeTitle": "Revoke key",
     "revokeDescription": "Revoke “{name}”? Calls using this key will fail immediately and this cannot be undone.",
     "revoking": "Revoking…",
-    "revokeConfirm": "Confirm revoke"
+    "revokeConfirm": "Confirm revoke",
+    "signing": "Request signing",
+    "signingBadge": "Signing on",
+    "signingTitle": "Request signing (Ed25519)",
+    "signingDescription": "Once a public key is registered, every request made with this key must be signed. Missing, tampered, expired or replayed signatures are rejected.",
+    "signingHint": "Paste an Ed25519 public key (PEM). Clear it and save to turn signing off and fall back to the key alone.",
+    "signingDisable": "Disable signing",
+    "publicKey": "Ed25519 public key (PEM)",
+    "publicKeyPlaceholder": "-----BEGIN PUBLIC KEY-----",
+    "publicKeyHint": "Optional. Leave empty to authenticate with the key alone; once set, every request must carry X-SP-Signature and friends.",
+    "optional": "optional",
+    "save": "Save",
+    "saving": "Saving…"
   },
   "createUser": {
     "trigger": "Add user",
@@ -2011,9 +2017,7 @@
     "themeTitle": "Upload theme",
     "themeDescription": "Upload a theme ZIP to install; activate or preview it afterward.",
     "themeFile": "Theme ZIP file",
-    "themeInstalled": "Theme installed.",
-    "grantServerExec": "Allow this plugin to run server-side code in the web process",
-    "grantServerExecHint": "Its settings panels and page data usually need it. You can revoke it from the plugin list at any time."
+    "themeInstalled": "Theme installed."
   },
   "pluginPage": {
     "notFound": "Plugin admin page not found.",
@@ -2027,9 +2031,7 @@
     "zipTooLarge": "ZIP must be smaller than 2MB",
     "uploadFailed": "Upload failed",
     "uploadFailedStatus": "Upload failed ({status})",
-    "installed": "Plugin installed.",
-    "installedWithServerExec": "Installed and granted server execution: {id}",
-    "installedServerExecFailed": "Installed, but granting server execution failed; enable it from the plugin list."
+    "installed": "Plugin installed."
   },
   "api": {
     "upstreamModelsFailed": "Failed to fetch models",
@@ -2043,17 +2045,7 @@
   "frontend": {
     "pageNotFound": "Page not found",
     "backHome": "Back to home",
-    "renderFailed": "This content could not be displayed. Please refresh and try again.",
-    "dataNotice": {
-      "title": "Some data on this page could not be loaded",
-      "hint": "The page may be incomplete. Administrators see the reasons below.",
-      "notAdmittedHint": "This package declares data that requires its own server-side code, but the kernel has not admitted it to run in the web process. Grant it in Settings → Runtime configuration → Plugin server execution.",
-      "notAdmitted": "package not admitted for server execution",
-      "finderMissing": "data provider not registered",
-      "permission": "missing required permission",
-      "failed": "request failed",
-      "invalidPath": "invalid data request path"
-    }
+    "renderFailed": "This content could not be displayed. Please refresh and try again."
   },
   "statusBadge": {
     "operational": "All systems operational",
@@ -2101,7 +2093,7 @@
       "keyHint": "Kept in this page's memory only; re-enter it after navigating away. Model keys are managed by the site owner.",
       "subObjectiveLabel": "Subtask objective",
       "objectiveLabel": "Objective",
-      "modelLabel": "Model",
+      "modelLabel": "Model (leave blank for the default)",
       "executionLabel": "Execution mode",
       "executionRequest": "Advance with this request",
       "executionBackground": "Authorize background execution (one hour)",
@@ -2135,27 +2127,7 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key",
-      "subtitle": "Let the agent work within your permission boundary. Risky writes always ask for your confirmation first.",
-      "advanced": "Advanced settings",
-      "advancedHint": "Risky writes pause until you confirm them.",
-      "usageTitle": "How it works",
-      "usageKey": "Enter a permission API key. It stays in this page’s memory only.",
-      "usageObjective": "Describe the goal, scope and expected result. Specific tasks are more reliable.",
-      "usageApprove": "When a risky write appears, the agent pauses and waits for your confirmation.",
-      "configure": "Configure",
-      "defaultModel": "Use default",
-      "objectivePlaceholder": "Describe what you want the agent to do…",
-      "pendingCount": "{count} pending",
-      "statusQueued": "Queued",
-      "statusRunning": "Running",
-      "statusWaiting": "Waiting for approval",
-      "statusSucceeded": "Completed",
-      "statusFailed": "Failed",
-      "statusCancelled": "Cancelled",
-      "replayEmpty": "No steps yet",
-      "subtasksTitle": "Subtasks",
-      "runMeta": "{model} · {steps} steps"
+      "keyRequired": "Enter your own permission API key"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -2384,14 +2356,14 @@
     "catalogLocked": "Users cannot customize delivery for this notification.",
     "empty": "No configurable notifications",
     "loading": "Loading notification settings",
-    "saving": "Saving…",
-    "saved": "Saved",
-    "autosave": "Changes are saved automatically.",
     "retry": "Retry",
     "failed": "Could not save. Please try again.",
     "unavailable": "Notification settings are temporarily unavailable. Please try again.",
     "forbidden": "You do not have permission to manage notification policy.",
-    "invalidRequest": "Invalid request format."
+    "invalidRequest": "Invalid request format.",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "autosave": "Changes are saved automatically."
   },
   "errorPage": {
     "unauthorized": {
@@ -2468,6 +2440,59 @@
     "payInstructions": "How to pay",
     "payQrImage": "Payment QR code",
     "payQrOpen": "Open the QR image"
+  },
+  "adminSeo": {
+    "title": "SEO settings",
+    "description": "Override the title, description, share image and canonical of individual pages. Content still comes from plugins; only the fields you fill in are overridden. Pages marked noindex are dropped from the sitemap.",
+    "new": "New override",
+    "newTitle": "New page override",
+    "editTitle": "Edit page override",
+    "formHint": "Fill in only the fields you want to override; empty fields keep the plugin-provided value.",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteTitle": "Delete this override?",
+    "deleteDescription": "The override for {path} will be removed and the page falls back to the plugin-provided metadata.",
+    "path": "Page path",
+    "pathHint": "Starts with /, no query string or anchor; a trailing slash is normalized away.",
+    "titleField": "Title",
+    "descriptionField": "Description",
+    "ogImage": "Share image",
+    "canonical": "Canonical",
+    "noindex": "No index",
+    "noindexOn": "noindex",
+    "noindexOff": "indexable",
+    "noindexHint": "The page will be dropped from the sitemap and marked noindex.",
+    "search": "Search",
+    "searchPlaceholder": "Search by path or title",
+    "empty": "No page overrides yet.",
+    "loadFailed": "Could not load overrides.",
+    "updated": "Updated",
+    "pagination": "Page {page} of {total}",
+    "prev": "Previous",
+    "next": "Next",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel"
+  },
+  "adminNav": {
+    "title": "Menu settings",
+    "description": "Reorder and relabel the admin menu, hide entries you do not use, or add custom links.",
+    "presentationNote": "This only changes how the menu is displayed. Hiding an entry does not make its page unreachable — access is still decided by that page's own guards.",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "custom": "Custom",
+    "visible": "Visible",
+    "delete": "Delete",
+    "reset": "Reset to default",
+    "save": "Save layout",
+    "saving": "Saving…",
+    "saveHint": "Save after reordering, renaming or hiding entries.",
+    "addTitle": "Add a custom link",
+    "name": "Name",
+    "href": "Link",
+    "add": "Add",
+    "hrefHint": "Use a path starting with / for in-site pages, or a full http(s) URL for external ones. A mistyped link is not detected automatically — click it once after adding.",
+    "hrefPlaceholder": "/admin/orders or https://docs.example.com"
   },
   "adminPayments": {
     "title": "Payment records",

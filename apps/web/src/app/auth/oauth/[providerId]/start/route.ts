@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createHash, randomBytes } from 'node:crypto';
+import { sessionCookieSecure } from '@/lib/session-cookie';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,12 @@ const NONCE_COOKIE = 'sp_oauth_nonce';
 export async function GET(request: NextRequest, ctx: { params: Promise<{ providerId: string }> }) {
   const { providerId } = await ctx.params;
   const fallback = new URL('/login', request.url);
+  // The state / PKCE-verifier / nonce cookies are the anti-CSRF material for the
+  // whole dance: handing them out over a plaintext channel would let an observer
+  // plant or read them. Same scheme detection as the session cookie.
+  const secure = sessionCookieSecure({
+    forwardedProto: request.headers.get('x-forwarded-proto'),
+  });
   try {
     const state = randomBytes(16).toString('hex');
     const codeVerifier = randomBytes(32).toString('base64url');
@@ -32,28 +39,28 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ provide
     response.cookies.set(STATE_COOKIE, result.state, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure,
       path: '/auth/oauth',
       maxAge: 300,
     });
     response.cookies.set('sp_oauth_state_api', result.state, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure,
       path: '/auth/oauth',
       maxAge: 300,
     });
     response.cookies.set(VERIFIER_COOKIE, codeVerifier, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure,
       path: '/auth/oauth',
       maxAge: 300,
     });
     response.cookies.set(NONCE_COOKIE, nonce, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure,
       path: '/auth/oauth',
       maxAge: 300,
     });

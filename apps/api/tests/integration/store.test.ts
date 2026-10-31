@@ -80,9 +80,12 @@ async function seedOrder(input: {
   settlementCurrency?: string;
   settlementTotal: number;
   fxRate?: number | null;
+  /** 回收站时间（ISO）；用于直接造出「已在回收站/回收已久」的订单。 */
+  deletedAt?: string | null;
 }): Promise<string> {
   const id = input.id ?? newId('order');
   const state = input.state ?? 'PENDING';
+  const deletedAt = input.deletedAt ?? null;
   const spec = {
     userId: input.userId,
     items: input.items,
@@ -93,17 +96,21 @@ async function seedOrder(input: {
     settlementCurrency: input.settlementCurrency ?? 'CNY',
     settlementTotal: input.settlementTotal,
     fxRate: input.fxRate ?? null,
+    deletedAt,
+    deletedAtMs: deletedAt === null ? null : Date.parse(deletedAt),
   };
   await getPrisma().$executeRawUnsafe(
     `INSERT INTO "${ORDER_TABLE}"
        ("id", "owner_id", "version", "spec", "status", "labels", "annotations", "finalizers",
-        "created_at", "updated_at", "f_userId", "f_state")
+        "created_at", "updated_at", "f_userId", "f_state", "f_deletedAt", "f_deletedAtMs")
      VALUES ($1, NULL, 1, $2::jsonb, NULL, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb,
-             now(), now(), $3, $4)`,
+             now(), now(), $3, $4, $5, $6)`,
     id,
     JSON.stringify(spec),
     input.userId,
     state,
+    deletedAt,
+    deletedAt === null ? null : Date.parse(deletedAt),
   );
   return id;
 }
@@ -595,6 +602,148 @@ describe.skipIf(!dbAvailable)('store plugin wallet and settlement integration (r
     await deleteStoreOrder(orderId);
     await deleteStoreProduct(product);
     unregister();
+  });
+
+  it('recycles an unpaid order instead of deleting it, and only the purge job really removes it', async () => {
+    const prisma = getPrisma();
+    const recycledId = await seedOrder({
+      userId,
+      items: { items: [] },
+      total: 9900,
+      state: 'CANCELLED',
+      settlementTotal: 9900,
+    });
+    const keptId = await seedOrder({
+      userId,
+      items: { items: [] },
+      total: 1200,
+      state: 'CANCELLED',
+      settlementTotal: 1200,
+    });
+    const paidId = await seedOrder({
+      userId,
+      items: { items: [] },
+      total: 5000,
+      state: 'PAID',
+      settlementTotal: 5000,
+    });
+    const userHeaders = { authorization: `Bearer ${userToken}` };
+    const adminHeaders = { authorization: `Bearer ${adminToken}` };
+    const listIds = async (): Promise<string[]> => {
+      const res = await app.inject({ method: 'GET', url: '/orders?pageSize=50', headers: userHeaders });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as { orders: Array<{ id: string }> }).orders.map((order) => order.id);
+    };
+
+    // 支付中/已支付的订单不得进回收站。
+    const refusePaid = await app.inject({
+      method: 'DELETE',
+      url: `/orders/${paidId}`,
+      headers: userHeaders,
+    });
+    expect(refusePaid.statusCode).toBe(409);
+
+    const recycle = await app.inject({
+      method: 'DELETE',
+      url: `/orders/${recycledId}`,
+      headers: userHeaders,
+    });
+    expect(recycle.statusCode).toBe(200);
+    // 软删：行还在，只是打了 deletedAt。
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string; deleted_at: string | null }>>(
+      `SELECT "id", "f_deletedAt"::text AS deleted_at FROM "${ORDER_TABLE}" WHERE "id" = $1`,
+      recycledId,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.deleted_at).not.toBeNull();
+
+    // 用户视野：列表不再出现，详情 404（也不可再取消/再删）。
+    const afterRecycle = await listIds();
+    expect(afterRecycle).not.toContain(recycledId);
+    expect(afterRecycle).toContain(keptId);
+    expect(
+      (await app.inject({ method: 'GET', url: `/orders/${recycledId}`, headers: userHeaders }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (await app.inject({ method: 'DELETE', url: `/orders/${recycledId}`, headers: userHeaders }))
+        .statusCode,
+    ).toBe(404);
+
+    // 管理员仍看得见（含回收站），并可恢复。
+    const adminList = await app.inject({
+      method: 'GET',
+      url: '/store/admin/orders?pageSize=50&recycled=recycled',
+      headers: adminHeaders,
+    });
+    expect(adminList.statusCode).toBe(200);
+    expect((adminList.json() as { orders: Array<{ id: string }> }).orders.map((o) => o.id)).toContain(
+      recycledId,
+    );
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/store/admin/orders/${recycledId}/restore`,
+          headers: adminHeaders,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(await listIds()).toContain(recycledId);
+
+    // 回收站清理：只有超过保留期的才会被真删。
+    const longAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+    const expiredId = await seedOrder({
+      userId,
+      items: { items: [] },
+      total: 700,
+      state: 'CANCELLED',
+      settlementTotal: 700,
+      deletedAt: longAgo,
+    });
+    await app.inject({
+      method: 'DELETE',
+      url: `/orders/${recycledId}`,
+      headers: userHeaders,
+    }).then((res) => expect(res.statusCode).toBe(200));
+
+    const purge = await app.inject({
+      method: 'POST',
+      url: '/store/admin/orders/purge-recycled',
+      headers: adminHeaders,
+    });
+    expect(purge.statusCode).toBe(200);
+    expect((purge.json() as { purged: number }).purged).toBeGreaterThanOrEqual(1);
+    const gone = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT count(*)::bigint AS count FROM "${ORDER_TABLE}" WHERE "id" = $1`,
+      expiredId,
+    );
+    expect(Number(gone[0]?.count ?? -1)).toBe(0);
+    // 刚回收的还在（保留期内不得被清）。
+    const stillThere = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT count(*)::bigint AS count FROM "${ORDER_TABLE}" WHERE "id" = $1`,
+      recycledId,
+    );
+    expect(Number(stillThere[0]?.count ?? -1)).toBe(1);
+
+    // 审计：移入 / 恢复 / 真删三种动作都落一条（真删之后只剩它）。
+    const audits = await prisma.auditLog.findMany({
+      where: {
+        action: {
+          in: ['store.order.recycled', 'store.order.restored', 'store.order.purged'],
+        },
+      },
+      select: { action: true, resourceId: true },
+    });
+    const actionsFor = (id: string) =>
+      audits.filter((entry) => entry.resourceId === id).map((entry) => entry.action);
+    expect(actionsFor(recycledId)).toEqual(
+      expect.arrayContaining(['store.order.recycled', 'store.order.restored', 'store.order.recycled']),
+    );
+    expect(actionsFor(expiredId)).toContain('store.order.purged');
+
+    await deleteStoreOrder(paidId);
+    await deleteStoreOrder(recycledId);
   });
 
   it('does not leave an order stuck in CANCELLING when the provider close throws', async () => {

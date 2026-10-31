@@ -12,5 +12,9 @@
   "settings.save": "儲存配置",
   "settings.saving": "儲存中…",
   "settings.saved": "登錄配置已儲存",
-  "settings.saveFailed": "儲存失敗"
+  "settings.saveFailed": "儲存失敗",
+  "settings.registration": "允許新用戶註冊",
+  "settings.registrationHint": "關閉後註冊入口隱藏，所有註冊請求都會被拒絕；已有用戶不受影響。",
+  "settings.emailVerificationBlocked": "已開啟郵箱驗證，但當前無法傳送驗證碼：註冊會被拒絕。請先安裝並配置 SMTP 郵件，或關閉此項。",
+  "settings.methodLocked": "手機號註冊尚未提供，因此郵箱是當前唯一的註冊方式。"
 }

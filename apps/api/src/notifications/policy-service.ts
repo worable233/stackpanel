@@ -88,6 +88,22 @@ export const BUILTIN_NOTIFICATION_TYPES: readonly NotificationTypeDefinition[] =
     audience: 'admin',
     order: 30,
   },
+  // 存储巡检告警（`storage-watch.ts`）：只发给管理员，且成功/失败都只发一次
+  // （连续失败才报故障、连续成功才报恢复），避免抖动刷屏。
+  {
+    type: 'admin.storage.unreachable',
+    category: 'system',
+    label: '存储不可用',
+    audience: 'admin',
+    order: 40,
+  },
+  {
+    type: 'admin.storage.recovered',
+    category: 'system',
+    label: '存储已恢复',
+    audience: 'admin',
+    order: 41,
+  },
   {
     type: 'security.password.reset',
     category: 'security',

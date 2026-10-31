@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { BootstrapPhase } from '@stackpanel/spec';
 import { env } from '../config/env.ts';
 import { hashPassword } from '../lib/password.ts';
+import { assertPassword } from '../lib/password-policy.ts';
 import { writeAudit } from '../plugins/audit.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { hasAdmin, lockFirstUser } from './first-user.ts';
@@ -165,9 +166,10 @@ export async function claimInstallation(
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw Object.assign(new Error('邮箱格式无效'), { name: 'ValidationError' });
   }
-  if (typeof input.password !== 'string' || input.password.length < 8) {
-    throw Object.assign(new Error('密码至少需要 8 位'), { name: 'ValidationError' });
+  if (typeof input.password !== 'string') {
+    throw Object.assign(new Error('密码不能为空'), { name: 'ValidationError' });
   }
+  assertPassword(input.password, email);
 
   // Hash outside the transaction: scrypt is deliberately slow and must not run
   // while the global first-user advisory lock is held.

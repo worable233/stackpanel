@@ -24,8 +24,10 @@ import {
   listAllOrdersPage,
   listOrdersForUserPage,
   findOrderForUser,
+  setOrderDeletedAt,
   toOrder,
 } from './repository';
+import { purgeRecycledOrders } from './recycle';
 import {
   checkoutSchema,
   createOrderSchema,
@@ -627,8 +629,69 @@ export async function cancelOrder(ctx: PluginContext, req: HttpRequest): Promise
 
 export async function listAdminOrders(req: HttpRequest): Promise<unknown> {
   const { page, pageSize } = parsePagination(req.query);
-  const { items: orders, total } = await listAllOrdersPage(page, pageSize);
-  return { orders, total, page, pageSize };
+  // `?recycled=all|active|recycled`：默认 all 保持历史行为（含回收站），
+  // 后台想看「仍在使用的订单」时才传 active。
+  const raw = (req.query as Record<string, unknown> | undefined)?.['recycled'];
+  const recycled = raw === 'active' || raw === 'recycled' ? raw : 'all';
+  const { items: orders, total } = await listAllOrdersPage(page, pageSize, recycled);
+  return { orders, total, page, pageSize, recycled };
+}
+
+/**
+ * 把一条已取消（未支付）订单移入回收站。
+ *
+ * 只打时间戳，不真删：管理员仍可恢复，财务对账看得到，回收站到期才由
+ * `order-purge` 任务物理删除。支付中（PENDING/CANCELLING）与已支付订单一律拒绝 ——
+ * 否则一笔仍可能成功的支付会从用户视野里消失。
+ */
+export async function recycleMyOrder(req: HttpRequest): Promise<unknown> {
+  const parsed = idSchema.safeParse(req.params);
+  if (!parsed.success) throw new StoreError(400, '订单 ID 无效');
+  const userId = req.user?.id;
+  if (!userId) throw new StoreError(401, '未登录');
+  const order = await findOrderForUser(parsed.data.id, userId);
+  if (!order) throw new StoreError(404, '订单不存在');
+  if (order.status !== 'CANCELLED') throw new StoreError(409, '只有已取消的订单可以移入回收站');
+  if (order.deletedAt) throw new StoreError(409, '订单已在回收站');
+  const moved = await setOrderDeletedAt(order.id, new Date().toISOString());
+  if (!moved) throw new StoreError(409, '订单状态已变更');
+  await recordStoreAudit({
+    action: STORE_AUDIT_ACTIONS.orderRecycled,
+    resource: 'store/order',
+    resourceId: order.id,
+    ...auditActor(req),
+  });
+  return { recycled: true, orderId: order.id };
+}
+
+/** 管理员把订单从回收站恢复（清空 `deletedAt`）。 */
+export async function restoreRecycledOrder(req: HttpRequest): Promise<unknown> {
+  const parsed = idSchema.safeParse(req.params);
+  if (!parsed.success) throw new StoreError(400, '订单 ID 无效');
+  const order = await getOrder(parsed.data.id);
+  if (!order) throw new StoreError(404, '订单不存在');
+  if (!order.deletedAt) throw new StoreError(409, '订单不在回收站');
+  const restored = await setOrderDeletedAt(order.id, null);
+  if (!restored) throw new StoreError(409, '订单状态已变更');
+  await recordStoreAudit({
+    action: STORE_AUDIT_ACTIONS.orderRestored,
+    resource: 'store/order',
+    resourceId: order.id,
+    ...auditActor(req),
+  });
+  return { restored: true, orderId: order.id };
+}
+
+/** 管理员当场触发一次回收站清理（与周期任务同一实现）。 */
+export async function purgeRecycledNow(req: HttpRequest): Promise<unknown> {
+  const result = await purgeRecycledOrders();
+  await recordStoreAudit({
+    action: STORE_AUDIT_ACTIONS.orderPurgeRun,
+    resource: 'store/order',
+    ...auditActor(req),
+    meta: { scanned: result.scanned, purged: result.purged },
+  });
+  return result;
 }
 
 /**

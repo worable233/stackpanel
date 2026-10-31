@@ -65,7 +65,6 @@
     "settings": "系統設定",
     "plugins": "外掛管理",
     "rbac": "許可權模板",
-    "payments": "支付記錄",
     "audit": "審計日誌",
     "developer": "開發者控制台",
     "themes": "主題管理",
@@ -86,7 +85,8 @@
     "homeAriaLabel": "回到首頁",
     "updates": "升級",
     "accountOverview": "賬戶概覽",
-    "credentials": "訪問憑證"
+    "credentials": "訪問憑證",
+    "payments": "支付記錄"
   },
   "auth": {
     "login": {
@@ -695,18 +695,6 @@
         "cleanup": "刪除記錄",
         "description": "這些記錄還在資料庫裡，但包已經不在了，執行期載入不到。清理會移除它們的能力宣告；重新安裝外掛即可恢復。",
         "title": "殘留的外掛記錄"
-      },
-      "serverExec": {
-        "label": "服務端執行",
-        "allowed": "已允許",
-        "denied": "未允許",
-        "grant": "允許執行",
-        "revoke": "撤銷執行",
-        "saved": "已更新服務端執行准入",
-        "reasonBuiltin": "內建外掛始終允許",
-        "reasonDeny": "已被否決名單阻止",
-        "reasonAdmitAll": "緊急放行中（全部允許）",
-        "admitAllActive": "緊急放行已開啟：所有外掛都被允許在網站程序執行。排障結束後請關閉。"
       }
     },
     "users": {
@@ -921,16 +909,6 @@
           "plugins": "外掛",
           "audit": "審計日誌",
           "agent": "Agent"
-        },
-        "frontendExec": {
-          "title": "外掛服務端執行准入",
-          "description": "決定哪些外掛的服務端程式碼（finder、頁面資料）可以在 Web 程序內執行。內建外掛恆放行；其餘只有「允許名單」裡的外掛才能執行。未獲准入的外掛照常安裝、啟用、顯示頁面，只是拿不到自己宣告的資料。",
-          "allow": "允許名單",
-          "deny": "否決名單",
-          "allowHint": "逗號或空格分隔的外掛 id",
-          "denyHint": "命中即拒絕，優先順序高於內建與允許名單",
-          "admitAll": "緊急放行全部",
-          "admitAllHint": "忽略准入判定，任何外掛都在 Web 程序執行。僅用於誤分類時臨時排障，用完請關閉。"
         }
       }
     },
@@ -1191,6 +1169,23 @@
     "distributionRefreshOffline": "遠端目錄已關閉，無需重新整理。",
     "distributionRefreshOk": "目錄重新整理成功，當前序號 {sequence}。",
     "distributionRefreshFailed": "目錄重新整理失敗：{message}",
+    "apiTokenSigningFailed": "更新請求籤名設定失敗",
+    "seoPathRequired": "請填寫頁面路徑",
+    "seoSaveFailed": "儲存頁面覆寫失敗",
+    "seoDeleteFailed": "刪除頁面覆寫失敗",
+    "navLabelRequired": "請填寫選單名稱",
+    "navHrefRequired": "請填寫連結",
+    "navSaveFailed": "儲存選單失敗",
+    "navAddFailed": "新增選單項失敗",
+    "navDeleteFailed": "刪除選單項失敗",
+    "navSaved": "選單已儲存",
+    "navItemAdded": "選單項已新增",
+    "navItemDeleted": "選單項已刪除",
+    "seoPageSaved": "頁面覆寫已儲存",
+    "seoPageDeleted": "頁面覆寫已刪除",
+    "apiTokenSigningSaved": "請求籤名公鑰已儲存",
+    "apiTokenSigningCleared": "已停用請求籤名",
+    "apiTokenRevoked": "API 金鑰已撤銷",
     "paymentMethodChannelRequired": "請選擇銷售渠道",
     "paymentMethodProviderRequired": "請填寫支付提供方",
     "paymentMethodNameRequired": "請填寫名稱",
@@ -1208,8 +1203,7 @@
     "updateSelfUpdateSubmitFailed": "提交自升級請求失敗",
     "updateSubmitFailed": "提交更新任務失敗",
     "runtimeConfigSaved": "配置已生效",
-    "runtimeConfigReverted": "已回退到環境變數",
-    "frontendExecSaved": "准入名單已更新"
+    "runtimeConfigReverted": "已回退到環境變數"
   },
   "user": {
     "emailRequired": "請填寫郵箱",
@@ -1701,7 +1695,7 @@
     "auth_password_reset_requested": "申請重置密碼",
     "config_changed": "修改核心配置",
     "config_reverted": "回退核心配置",
-    "config_frontend_exec_changed": "修改外掛執行准入"
+    "auth_email_changed": "修改信箱"
   },
   "auditResource": {
     "user": "使用者",
@@ -1780,7 +1774,19 @@
     "revokeTitle": "吊銷金鑰",
     "revokeDescription": "確定吊銷「{name}」？使用該金鑰的呼叫將立即失敗，且無法恢復。",
     "revoking": "吊銷中…",
-    "revokeConfirm": "確認吊銷"
+    "revokeConfirm": "確認吊銷",
+    "signing": "請求籤名",
+    "signingBadge": "簽名已啟用",
+    "signingTitle": "請求籤名（Ed25519）",
+    "signingDescription": "登記公鑰後，這枚金鑰的每個請求都必須帶簽名；缺失、被篡改、過期或被重放都會被拒絕。",
+    "signingHint": "貼上 Ed25519 公鑰（PEM）。清空並儲存即停用簽名，退回只憑金鑰本身鑑權。",
+    "signingDisable": "停用簽名",
+    "publicKey": "Ed25519 公鑰（PEM）",
+    "publicKeyPlaceholder": "-----BEGIN PUBLIC KEY-----",
+    "publicKeyHint": "可選。留空則只憑金鑰本身鑑權；填寫後該金鑰的每個請求都必須攜帶 X-SP-Signature 等簽名頭。",
+    "optional": "（可選）",
+    "save": "儲存",
+    "saving": "儲存中…"
   },
   "createUser": {
     "trigger": "新增使用者",
@@ -2011,9 +2017,7 @@
     "themeTitle": "上傳主題",
     "themeDescription": "上傳主題 ZIP 包即可安裝，上傳後可啟用或預覽。",
     "themeFile": "主題 ZIP 檔案",
-    "themeInstalled": "主題已安裝。",
-    "grantServerExec": "允許該外掛在網站程序執行服務端程式碼",
-    "grantServerExecHint": "外掛的設定頁與頁面資料通常依賴它；之後可在外掛列表隨時撤銷。"
+    "themeInstalled": "主題已安裝。"
   },
   "pluginPage": {
     "notFound": "未找到外掛管理頁面。",
@@ -2027,9 +2031,7 @@
     "zipTooLarge": "ZIP 必須小於 2MB",
     "uploadFailed": "上傳失敗",
     "uploadFailedStatus": "上傳失敗（{status}）",
-    "installed": "外掛已安裝。",
-    "installedWithServerExec": "已安裝並授權服務端執行：{id}",
-    "installedServerExecFailed": "已安裝，但授權服務端執行失敗；請在外掛列表中手動開啟。"
+    "installed": "外掛已安裝。"
   },
   "api": {
     "upstreamModelsFailed": "拉取模型失敗",
@@ -2043,17 +2045,7 @@
   "frontend": {
     "pageNotFound": "頁面不存在",
     "backHome": "返回首頁",
-    "renderFailed": "此內容暫時無法顯示，請重新整理後重試。",
-    "dataNotice": {
-      "title": "此頁面的部分資料未能載入",
-      "hint": "頁面可能顯示不完整。管理員可在下方看到具體原因。",
-      "notAdmittedHint": "該外掛聲明瞭需要執行服務端程式碼的資料，但核心未授權它在網站程序執行。可在「設定 → 執行期配置 → 外掛服務端執行准入」中授權。",
-      "notAdmitted": "外掛未獲服務端執行准入",
-      "finderMissing": "資料提供者未註冊",
-      "permission": "沒有所需許可權",
-      "failed": "獲取失敗",
-      "invalidPath": "資料請求路徑無效"
-    }
+    "renderFailed": "此內容暫時無法顯示，請重新整理後重試。"
   },
   "statusBadge": {
     "operational": "所有服務正常執行",
@@ -2101,7 +2093,7 @@
       "keyHint": "僅保留在當前頁面記憶體；切換頁面後需重新輸入。模型金鑰由站長管理。",
       "subObjectiveLabel": "子任務目標",
       "objectiveLabel": "任務目標",
-      "modelLabel": "模型",
+      "modelLabel": "模型（留空使用預設）",
       "executionLabel": "執行方式",
       "executionRequest": "本次請求推進",
       "executionBackground": "授權後臺持續執行（一小時）",
@@ -2135,27 +2127,7 @@
       "unconfigured": "未配置",
       "saveCredential": "儲存憑證",
       "clearCredential": "清除憑證",
-      "keyRequired": "請填寫本人的許可權 API Key",
-      "subtitle": "讓 Agent 在許可權邊界內執行任務，危險操作會先徵求你的確認。",
-      "advanced": "進階設定",
-      "advancedHint": "危險寫入會暫停，等待你確認後繼續。",
-      "usageTitle": "使用方式",
-      "usageKey": "填入許可權 API Key，它只儲存在當前頁面記憶體中。",
-      "usageObjective": "描述目標、範圍和期望結果，越具體越穩定。",
-      "usageApprove": "遇到危險寫入時，Agent 會暫停並等待你確認。",
-      "configure": "配置",
-      "defaultModel": "跟隨預設",
-      "objectivePlaceholder": "描述你想讓 Agent 完成的事情…",
-      "pendingCount": "{count} 項待確認",
-      "statusQueued": "排隊中",
-      "statusRunning": "執行中",
-      "statusWaiting": "等待確認",
-      "statusSucceeded": "已完成",
-      "statusFailed": "失敗",
-      "statusCancelled": "已取消",
-      "replayEmpty": "暫無執行步驟",
-      "subtasksTitle": "子任務",
-      "runMeta": "{model} · {steps} 步"
+      "keyRequired": "請填寫本人的許可權 API Key"
     },
     "chat": {
       "contextDefault": "當前工作區",
@@ -2384,14 +2356,14 @@
     "catalogLocked": "此通知不允許使用者修改接收方式。",
     "empty": "暫無可配置通知",
     "loading": "正在載入通知設定",
-    "saving": "正在儲存…",
-    "saved": "已儲存",
-    "autosave": "更改自動儲存。",
     "retry": "重試",
     "failed": "儲存失敗，請重試。",
     "unavailable": "暫時無法載入通知設定，請稍後重試。",
     "forbidden": "你沒有管理通知策略的許可權。",
-    "invalidRequest": "請求格式無效。"
+    "invalidRequest": "請求格式無效。",
+    "saving": "正在儲存…",
+    "saved": "已儲存",
+    "autosave": "更改自動儲存。"
   },
   "errorPage": {
     "unauthorized": {
@@ -2468,6 +2440,59 @@
     "payInstructions": "付款方式說明",
     "payQrImage": "收款碼圖片",
     "payQrOpen": "開啟收款碼圖片"
+  },
+  "adminSeo": {
+    "title": "SEO 設定",
+    "description": "逐頁覆寫標題、描述、分享圖與 canonical。內容仍由外掛提供，這裡只改運營要改的欄位；標記 noindex 的頁面不會出現在 sitemap。",
+    "new": "新建覆寫",
+    "newTitle": "新建頁面覆寫",
+    "editTitle": "編輯頁面覆寫",
+    "formHint": "只填寫需要覆蓋的欄位，留空表示沿用外掛提供的值。",
+    "edit": "編輯",
+    "delete": "刪除",
+    "deleteTitle": "刪除這條覆寫？",
+    "deleteDescription": "將刪除 {path} 的覆寫，頁面會回到外掛提供的後設資料。",
+    "path": "頁面路徑",
+    "pathHint": "以 / 開頭，不帶查詢串或錨點；尾斜槓會被自動收斂。",
+    "titleField": "標題",
+    "descriptionField": "描述",
+    "ogImage": "分享圖",
+    "canonical": "canonical",
+    "noindex": "不索引（noindex）",
+    "noindexOn": "不索引",
+    "noindexOff": "可索引",
+    "noindexHint": "標記後該頁面不會出現在 sitemap，並輸出 noindex 指令。",
+    "search": "搜尋",
+    "searchPlaceholder": "按路徑或標題搜尋",
+    "empty": "還沒有任何頁面覆寫。",
+    "loadFailed": "讀取覆寫列表失敗。",
+    "updated": "更新時間",
+    "pagination": "第 {page} / {total} 頁",
+    "prev": "上一頁",
+    "next": "下一頁",
+    "save": "儲存",
+    "saving": "儲存中…",
+    "cancel": "取消"
+  },
+  "adminNav": {
+    "title": "選單設定",
+    "description": "調整後臺選單的順序與文案、隱藏暫時不用的入口，也可以新增自定義連結。",
+    "presentationNote": "這裡只改「怎麼顯示」。隱藏一個選單項不會讓對應頁面無法訪問 —— 許可權仍由頁面自己的守衛決定。",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "custom": "自定義",
+    "visible": "顯示",
+    "delete": "刪除",
+    "reset": "恢復預設",
+    "save": "儲存排布",
+    "saving": "儲存中…",
+    "saveHint": "順序、文案、顯隱改完記得儲存。",
+    "addTitle": "新增自定義連結",
+    "name": "名稱",
+    "href": "連結",
+    "add": "新增",
+    "hrefHint": "站內頁面寫路徑（以 / 開頭），站外寫完整的 http(s) 地址。打錯連結不會被自動發現，新增後建議點一下確認。",
+    "hrefPlaceholder": "/admin/orders 或 https://docs.example.com"
   },
   "adminPayments": {
     "title": "支付記錄",

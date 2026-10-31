@@ -15,6 +15,7 @@ import { setupStatus } from './auth/install-claim.ts';
 import { initInfra } from './infra.ts';
 import { startOutboxConsumption } from './plugins/events.ts';
 import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence.ts';
+import { loadRuntimeConfig } from './config/runtime-config.ts';
 import { startTracing, stopTracing } from './observability/index.ts';
 import { peekRedis } from '@stackpanel/db';
 import { stopAllIsolatedPlugins } from './plugins/isolated/host.ts';
@@ -40,6 +41,10 @@ try {
 // 分发源配置可能由后台保存（数据库覆盖环境变量）。`buildApp()` 是同步的且会在
 // 注册内核任务时读取配置，所以先预热一次，避免首次启动用错源。
 await loadCatalogSourceConfig();
+
+// 运行期配置（ADR-0026）同样是「数据库覆盖环境变量」，且 `buildApp()` 注册路由时
+// 就会读（会话 TTL、上传上限、限流额度……）。先预热快照，避免首个请求用到 .env 旧值。
+await loadRuntimeConfig();
 
 const app = buildApp({ redis: peekRedis() });
 

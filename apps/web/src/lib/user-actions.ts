@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { cookies } from 'next/headers';
+import { setSessionCookie } from './session-cookie.server';
 import { redirect } from 'next/navigation';
 import type { AdminUserUpstreamServicesResponse } from '@stackpanel/sdk';
 import { getLocale } from '@/i18n/locale';
@@ -198,13 +198,8 @@ export async function unbindUpstreamServiceAction(
 export async function impersonateUserAction(userId: string): Promise<never> {
   const api = await getAuthedApiClient();
   const result = await api.impersonateUser(userId);
-  const store = await cookies();
-  store.set(process.env.SESSION_COOKIE_NAME ?? 'sp_session', result.token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
-  });
+  // Impersonation mints a real session for the target account, so it goes
+  // through the same cookie writer as a normal login.
+  await setSessionCookie(result.token);
   redirect('/account');
 }

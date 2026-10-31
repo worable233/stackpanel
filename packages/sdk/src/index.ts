@@ -5,6 +5,8 @@ export {
   KernelError,
   PluginError,
   isPluginError,
+  brandSdkErrorValue,
+  sdkErrorClassName,
   type BrandedPluginError,
 } from './errors.js';
 export type { FieldError, ProblemDetails } from './errors.js';
@@ -104,14 +106,11 @@ export {
   buildZodFromSettingsSchema,
   captureFrontendPathParams,
   defineFrontend,
-  frontendFetchPathProblem,
-  isFetchDataRequirement,
   matchFrontendPagePath,
   mergeFrontendSettings,
   migrateFrontendSettings,
   resolveFrontendPageSource,
   resolveThemeOverride,
-  selectDataPath,
   selectFrontendPageDefinition,
   settingsDefaultsFromSchema,
 } from './frontend.js';
@@ -143,10 +142,8 @@ export type {
   FrontendActionExecutor,
   FrontendActionExecutors,
   FrontendPageComponent,
+  FrontendDataFetch,
   FrontendPageDataRequirement,
-  FrontendFinderDataRequirement,
-  FrontendFetchDataRequirement,
-  FrontendFetchDataRequest,
   FrontendPageDefinition,
   FrontendPageManifestEntry,
   FrontendPageProps,
@@ -420,6 +417,7 @@ export {
   buildMcpTools,
   isMcpWriteAuthorized,
   mcpToolName,
+  normalizeToolBody,
 } from './mcp.js';
 export type {
   McpApiCall,

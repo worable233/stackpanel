@@ -50,6 +50,8 @@ export interface OrderRecord {
   settlementCurrency: string;
   settlementTotal: number;
   fxRate: number | null;
+  /** 回收站时间；`null` 表示未进回收站。 */
+  deletedAt: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -124,11 +126,21 @@ export function toCartItem(instance: ExtensionInstance<StoreCartItemData>): Cart
 }
 
 export function toOrder(instance: ExtensionInstance<StoreOrderData>): OrderRecord {
-  const { state, ...rest } = instance.spec;
+  // `deletedAtMs` / 催付两列都是实现细节（索引镜像与内部标记），不外暴露给接口调用方。
+  const {
+    state,
+    deletedAt,
+    deletedAtMs: _deletedAtMs,
+    unpaidRemindAtMs: _unpaidRemindAtMs,
+    unpaidRemindedAt: _unpaidRemindedAt,
+    ...rest
+  } = instance.spec;
   return {
     id: instance.name,
     ...rest,
     status: state,
+    // 存量行没有这个键（列是后来加的），统一归一为 null。
+    deletedAt: deletedAt ?? null,
     createdAt: instance.createdAt,
     updatedAt: instance.updatedAt,
   };
@@ -411,8 +423,10 @@ export async function getOrder(id: string): Promise<OrderRecord | null> {
 }
 
 export async function findOrderForUser(id: string, userId: string): Promise<OrderRecord | null> {
+  // 回收站里的订单对用户不可见（详情/取消/再次删除都当 404），也不得被
+  // 交易路径当成“可用订单”改状态。
   const page = await extensions().list<StoreOrderData>(orderModel, {
-    where: { name: { eq: id }, userId: { eq: userId } },
+    where: { name: { eq: id }, userId: { eq: userId }, deletedAt: { eq: null } },
     page: 1,
     pageSize: 1,
   });
@@ -424,9 +438,13 @@ export async function listOrdersForUserPage(
   userId: string,
   page: number,
   pageSize: number,
+  options: { includeRecycled?: boolean } = {},
 ): Promise<{ items: OrderRecord[]; total: number }> {
   const result = await extensions().list<StoreOrderData>(orderModel, {
-    where: { userId: { eq: userId } },
+    where: {
+      userId: { eq: userId },
+      ...(options.includeRecycled ? {} : { deletedAt: { eq: null } }),
+    },
     orderBy: { field: 'createdAt', desc: true },
     page,
     pageSize,
@@ -437,25 +455,120 @@ export async function listOrdersForUserPage(
 export async function listAllOrdersPage(
   page: number,
   pageSize: number,
+  /**
+   * 回收站筛选。`all`（默认）保持历史行为（含已回收），因为财务报表、
+   * 币种审计这类调用必须看得到全部订单；后台列表按需传 `active` / `recycled`。
+   */
+  recycled: 'all' | 'active' | 'recycled' = 'all',
 ): Promise<{ items: OrderRecord[]; total: number }> {
   const result = await extensions().list<StoreOrderData>(orderModel, {
+    ...(recycled === 'active' ? { where: { deletedAt: { eq: null } } } : {}),
     orderBy: { field: 'createdAt', desc: true },
     page,
     pageSize,
   });
-  return { items: result.items.map(toOrder), total: result.total };
+  const items = result.items.map(toOrder);
+  if (recycled !== 'recycled') return { items, total: result.total };
+  // “只看回收站”无法用一个索引条件表达（`deletedAt != null` 不是引擎支持的
+  // where 形状），所以在页内过滤；分页总数保持原值，调用方不得把它当精确总数。
+  return { items: items.filter((order) => order.deletedAt !== null), total: result.total };
 }
 
-export interface OrderCreateInput extends Omit<StoreOrderData, 'state'> {
+/** 把订单移入/移出回收站（`null` = 移出）。返回是否命中该订单。 */
+export async function setOrderDeletedAt(id: string, deletedAt: string | null): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    orderModel,
+    { name: { eq: id } },
+    {
+      deletedAt: { set: deletedAt },
+      // 两列必须一起写：范围查询只看 `deletedAtMs`，展示只看 `deletedAt`。
+      deletedAtMs: { set: deletedAt === null ? null : Date.parse(deletedAt) },
+    },
+  );
+  return updated > 0;
+}
+
+/** 回收站中回收时间不晚于 `cutoff` 的订单（供定时清理扫描）。 */
+export async function listRecycledOrdersBefore(
+  cutoff: string,
+  limit: number,
+): Promise<OrderRecord[]> {
+  const cutoffMs = Date.parse(cutoff);
+  const page = await extensions().list<StoreOrderData>(orderModel, {
+    where: { deletedAtMs: { lte: cutoffMs } },
+    orderBy: { field: 'deletedAtMs', desc: false },
+    page: 1,
+    pageSize: limit,
+  });
+  return page.items.map(toOrder);
+}
+
+/** 物理删除一条订单（仅回收站清理使用）。 */
+export async function deleteOrderInstance(id: string): Promise<void> {
+  await extensions().delete(orderModel, id);
+}
+
+export interface OrderCreateInput
+  extends Omit<StoreOrderData, 'state' | 'deletedAt' | 'deletedAtMs'> {
   state?: string;
 }
 
 export async function createOrderInstance(data: OrderCreateInput): Promise<OrderRecord> {
   const created = await extensions().create<StoreOrderData>(orderModel, {
     state: 'PENDING',
+    deletedAt: null,
+    deletedAtMs: null,
+    // 下单即排定催付时间：之后无论任务何时跑，都是由「到期时间戳」决定要不要发。
+    unpaidRemindAtMs: Date.now() + UNPAID_REMIND_AFTER_MS,
+    unpaidRemindedAt: null,
     ...data,
-  });
+  } as StoreOrderData);
   return toOrder(created);
+}
+
+/** 未付款催付：下单后多久提醒（毫秒）。 */
+export const UNPAID_REMIND_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 列出待催付订单：仍是 `PENDING`、从未催付、且已过计划催付时间。
+ *
+ * 三个条件都落在索引列上（`state` / `unpaidRemindedAt` / `unpaidRemindAtMs`），
+ * 所以不会退化成全表扫描；`unpaidRemindedAt: { eq: null }` 编译为 `IS NULL`，
+ * 已催过的行不会反复占批次。
+ */
+export async function listOrdersToRemind(
+  cutoffMs: number,
+  take: number,
+): Promise<OrderRecord[]> {
+  const rows = await extensions().listAll<StoreOrderData>(orderModel, {
+    where: {
+      state: { eq: 'PENDING' },
+      unpaidRemindedAt: { eq: null },
+      unpaidRemindAtMs: { lte: cutoffMs },
+    },
+    orderBy: { field: 'unpaidRemindAtMs', desc: false },
+  });
+  return rows.slice(0, take).map(toOrder);
+}
+
+/** 认领催付：只有「尚未催付」的行会被改，返回是否抢到（重复执行不会重复发）。 */
+export async function claimUnpaidReminder(id: string, at: Date): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    orderModel,
+    { name: { eq: id }, unpaidRemindedAt: { eq: null } },
+    { unpaidRemindedAt: { set: at.toISOString() } },
+  );
+  return updated > 0;
+}
+
+/** 通知发送失败时释放认领，让下一轮可以重试（否则用户永久收不到）。 */
+export async function releaseUnpaidReminder(id: string): Promise<boolean> {
+  const { updated } = await extensions().updateWhere(
+    orderModel,
+    { name: { eq: id } },
+    { unpaidRemindedAt: { set: null } },
+  );
+  return updated > 0;
 }
 
 /** 原子状态迁移：仅当当前状态匹配时变更。 */
@@ -693,14 +806,41 @@ export async function claimExpiryStage(
  * 回退到期阶段为「未进入」：仅当当前阶段匹配 `from` 时置 NULL，返回是否命中。
  * 用于「认领阶段 → 副作用失败」时把阶段释放回可重试状态（如提醒写入失败）。
  */
-export async function resetExpiryStage(id: string, from: string): Promise<boolean> {
+export async function resetExpiryStage(
+  id: string,
+  from: string,
+  to: string | null = null,
+): Promise<boolean> {
   const { updated } = await extensions().updateWhere(
     serviceInstanceModel,
     { name: { eq: id }, expiryStage: { eq: from } },
     // `set: null` 编译为 SQL NULL（与 claimExpiryStage 的 `eq: null` 对称）。
-    { expiryStage: { set: null } },
+    { expiryStage: { set: to } },
   );
   return updated > 0;
+}
+
+/**
+ * 列出到期提醒链的下一档候选：阶段仍是 `fromStage`、且到期时间已进入触发窗口。
+ *
+ * 逐档查询（而不是把所有阶段一次捞出来再在内存里判断）有两个好处：每档都能单独
+ * 限批，不会因为一档积压把后面几档饿死；锁语义也简单 —— `fromStage` 就是
+ * `claimExpiryStage` 的 CAS 前置条件。
+ */
+export async function listReminderCandidates(
+  fromStage: string | null,
+  dueBeforeMs: number,
+  take: number,
+): Promise<ServiceInstanceRecord[]> {
+  const rows = await extensions().listAll<StoreServiceInstanceData>(serviceInstanceModel, {
+    where: {
+      state: { eq: 'ACTIVE' },
+      expiresAtMs: { lte: dueBeforeMs },
+      expiryStage: { eq: fromStage },
+    },
+    orderBy: { field: 'expiresAtMs', desc: false },
+  });
+  return rows.slice(0, take).map(toService);
 }
 
 /** 列出「已到期／临近到期」的活跃服务（按 expiresAtMs 升序，上限 take）。 */
@@ -712,24 +852,6 @@ export async function listExpiringServices(
     where: {
       state: { in: ['ACTIVE', 'SUSPENDED'] },
       expiresAtMs: { lte: nowMs },
-    },
-    orderBy: { field: 'expiresAtMs', desc: false },
-  });
-  return rows.slice(0, take).map(toService);
-}
-
-/** 列出「即将到期（尚未到期）」的服务，供到期提醒（窗口内、未提醒过）。 */
-export async function listDueExpiryReminders(
-  fromMs: number,
-  toMs: number,
-  take: number,
-): Promise<ServiceInstanceRecord[]> {
-  const rows = await extensions().listAll<StoreServiceInstanceData>(serviceInstanceModel, {
-    where: {
-      state: { eq: 'ACTIVE' },
-      expiresAtMs: { gte: fromMs, lte: toMs },
-      // 只提醒尚未进入任何阶段（expiryStage IS NULL）的服务，避免已提醒记录占满批次。
-      expiryStage: { eq: null },
     },
     orderBy: { field: 'expiresAtMs', desc: false },
   });

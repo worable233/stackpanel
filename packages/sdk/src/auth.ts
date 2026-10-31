@@ -148,6 +148,17 @@ export interface RegisterUserInput {
   emailVerified?: boolean;
 }
 
+/** Options for {@link AuthService.resetUserPassword}. */
+export interface ResetUserPasswordOptions {
+  /**
+   * Mark the email as verified. Set when the reset flow consumed a code that
+   * was delivered to that address — proving control of the mailbox — so a
+   * legacy unverified account is repaired instead of staying unverified
+   * forever. Admin resets leave verification untouched.
+   */
+  emailVerified?: boolean;
+}
+
 /** Session cookie parameters the login plugin needs to set the cookie. */
 export interface SessionCookieConfig {
   name: string;
@@ -231,6 +242,23 @@ export interface AuthService {
   revokeSession(token: string): Promise<void>;
   /** Revoke every session of a user (password change / ban). */
   revokeAllSessions(userId: string): Promise<void>;
+  /**
+   * Replace a user's password **without** knowing the current one.
+   *
+   * Only for flows that already proved who the caller is some other way: a
+   * consumed `password_reset` identity challenge (self-service reset) or an
+   * authenticated admin. The kernel enforces the shared password policy again
+   * here, so a plugin cannot bypass it, and revokes every session of the user
+   * (a reset must not leave the attacker's session alive).
+   *
+   * Throws `PluginError('password.*')` when the candidate violates the policy
+   * and `auth.user_not_found` for an unknown id.
+   */
+  resetUserPassword(
+    userId: string,
+    password: string,
+    options?: ResetUserPasswordOptions,
+  ): Promise<void>;
   /** Session cookie parameters (name/ttl/secure) for the login plugin. */
   sessionCookieConfig(): SessionCookieConfig;
   /** Whether a user has a permission (union of their groups' permissions). */

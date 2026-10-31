@@ -17,6 +17,7 @@
  */
 import { buildApp } from './app.ts';
 import { loadCatalogSourceConfig } from './distribution/source-config.ts';
+import { loadRuntimeConfig } from './config/runtime-config.ts';
 import type { FastifyInstance } from 'fastify';
 import { initInfra } from './infra.ts';
 import { startOutboxConsumption } from './plugins/events.ts';
@@ -41,10 +42,12 @@ async function main(): Promise<void> {
   await initInfra();
   // 与 API 一致：先读生效的分发源配置（后台可覆盖环境变量）。
   await loadCatalogSourceConfig();
+  // 运行期配置快照（ADR-0026）：worker 内的任务（媒体变体、清理、限流）读同一份。
+  await loadRuntimeConfig();
 
   // Build the same guarded HTTP stack without listening on a socket. Agent jobs
   // dispatch with the original credential through inject(), including on a dedicated worker.
-  workerApp = buildApp({redis:peekRedis()});
+  workerApp = buildApp({ redis: peekRedis() });
   await workerApp.ready();
   await workerApp.pluginHost.syncEnabledPlugins();
   // W3 (audit 4B · B-1): durable consumption only after plugins subscribed.

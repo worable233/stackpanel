@@ -13,7 +13,6 @@ import {
 import { readFrontendManifest } from '../lib/frontend.ts';
 import { ensureRuntimeAdminBundle } from '../lib/frontend-runtime-bundle.ts';
 import { pluginPackageDir } from '../lib/plugins.ts';
-import { resolveFrontendExecution } from '../lib/frontend-exec-policy.ts';
 import {
   isRevisionName,
   readCurrentRevision,
@@ -61,12 +60,11 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
       const manifest = await readFrontendManifest(packageDir);
       if (!manifest) continue;
       // Admission decision for server-side execution in the web process
-      // (contract 03 §3.1). Computed per request from the kernel-owned policy so
-      // an operator change (database `frontend.serverExec`) takes effect without
-      // reloading plugin definitions: `builtin` OR allowlist grants it, the deny
-      // list vetoes even builtin. The installed manifest can never self-grant.
+      // (contract 03 §3.1). The runtime already resolved this to the concrete
+      // grant (`builtin` OR operator allowlist ⇒ `server`), so the web layer
+      // reads one field instead of re-deriving trust from provenance.
       const serverExecution =
-        resolveFrontendExecution(plugin.id, plugin.builtin) === 'server'
+        plugin.frontendExecutions === 'server'
           ? ('allowed' as const)
           : ('declarative' as const);
       const pointer = await readCurrentRevision(packageDir);

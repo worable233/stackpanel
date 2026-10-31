@@ -58,6 +58,15 @@ sudo bash scripts/install-artifact.sh \
 已有实例默认**拒绝**重新初始化（防止覆盖 `JWT_SECRET` / `SETTINGS_ENCRYPTION_KEY`）；
 确实要覆盖需显式 `--allow-reinstall`。密钥只在缺失时生成，重复安装不轮换。
 
+安装脚本用 `sudo -u … env … pm2 start` 拉起进程，并且**先 `cd` 到版本目录**再执行：
+PM2 守护进程会继承当时的工作目录，若在 `/root` 里执行安装，守护进程随后 spawn
+子进程只会得到 `spawn /usr/local/bin/node EACCES`——进程表看起来建好了，实际一个
+都没起来。
+
+产物平台名有两个来源：`RELEASE.json` 写的是**契约名**（`linux/amd64`），tar 与清单
+命名用的是**产物名**（`linux-x64`）。安装器两者都接受，只认其一会让每一份合法产物
+都装不上。
+
 ## 首次自举（零配置文件）
 
 1. 用 HTTPS 或 SSH 隧道打开 `/setup`（例如 `ssh -L 3000:127.0.0.1:3000 <user>@<host>`），
@@ -72,6 +81,11 @@ sudo bash scripts/install-artifact.sh \
 
 阶段：`needs_infra → validating → queued → migrating → starting → needs_admin → complete`，
 失败停在 `migration_failed`（可直接修正候选）或 `runtime_failed`（**不**重开配置写接口）。
+
+任务里的 `targetVersion` 由 API 从产物根的 `RELEASE.json` 读取（`dist/server.js`
+向上三层到 `<release>/RELEASE.json`）。读不到时只能退化成 `unknown`，runner 就
+找不到对应的迁移包——因此解析逻辑集中在 `apps/api/src/bootstrap/release-version.ts`
+并有单测钉住层级。
 
 `GET /setup/status` 是未认证的公开投影，只给阶段与失败分类。查看详细诊断（最近一次
 runner 结果、三个独立结果）需要带上同一个令牌：
@@ -92,6 +106,39 @@ curl -s -H "X-Setup-Token: ${TOKEN}" http://127.0.0.1:3001/setup/diagnostics
 内核产物内自带 `deploy/systemd/`，因此目标机不需要源码树：安装脚本优先从
 `releases/<version>/deploy/systemd` 取单元文件。`/etc/stackpanel/upgrade.env`
 只在不存在时创建，升级不会覆盖运维配置。
+
+### 产物必须自带什么
+
+`build-kernel-artifact.mjs` 除了 `apps/` 与依赖闭包，还会把**内置插件与默认主题**
+打进 `releases/<version>/packages/{plugins,themes}`（只带 `dist/`、`frontend/`、
+`assets/`、`package.json`、`theme.css|json`，不带 `src/`、`node_modules`、
+`dist-pack/`）。原因是内核把这两棵目录当作「随内核发布的本地来源」：
+
+- 缺 `packages/themes/default` → 默认主题没被播种，`GET /` 直接 404；
+- 缺 `packages/plugins/*` → 市场里没有任何内置插件（`plugins: []`）。
+
+这两种情况在构建机上完全看不出来（构建机有完整源码树），只会在目标机上暴露，
+所以构建脚本在没找到任何 `stackpanel.builtin === true` 的插件时直接失败。
+插件与主题的前端产物保留裸导入（`@stackpanel/sdk`、`zod`），它们的依赖因此被
+并入依赖闭包。
+
+闭包复制会跳过包自带的 `node_modules`/`.bin`：那是构建机的 pnpm 布局，里面的
+链接是 `.pnpm/...` 的绝对路径，解包到目标机后全部失效，还会把 typescript、vitest
+这类开发依赖一起拖进产物。
+
+### 插件如何解析到内核依赖
+
+插件装在 `<state>/data/plugins/<id>/`，而 `@stackpanel/sdk`、`zod` 在
+`<root>/current/node_modules`；数据目录通常在安装根之外（`/var/lib/stackpanel`
+vs `/opt/stackpanel`），Node 的 ESM 解析只会**向上**找 `node_modules`，这条路径
+永远到不了内核依赖。表现极具误导性：进程正常、安装与自举都报成功，但每个插件
+都是 `Skipping invalid plugin: Cannot find package 'zod'`，首页 404、市场为空。
+
+API 启动时会建立**符号链接桥接** `<data>/node_modules -> <root>/current/node_modules`：
+
+- 不复制依赖，因此不会出现第二份 zod 实例（`instanceof` 与 schema 复用都会失效）；
+- 目标指向 `current`，升级切换后自动跟随新版本，无需重写；
+- 已存在时不介入（开发布局下数据目录本来就有真实 `node_modules`）。
 
 ## 升级流程
 
@@ -130,17 +177,17 @@ sudo systemctl start stackpanel-upgrade.service
 
 runner 读取 `/etc/stackpanel/upgrade.env`（`deploy/systemd/upgrade.env.example`）：
 
-| 变量                                                    | 说明                                                          |
-| ------------------------------------------------------- | ------------------------------------------------------------- |
-| `STACKPANEL_ROOT`                                       | 安装根，默认 `/opt/stackpanel`                                |
-| `STACKPANEL_STATE_DIR`                                  | 状态根，默认 `/var/lib/stackpanel`                            |
-| `STACKPANEL_UPDATE_INSTANCE_ID`                         | 实例 ID；必须与 API 的 `DISTRIBUTION_UPDATE_INSTANCE_ID` 一致 |
-| `STACKPANEL_PM2_HOME`                                   | 必须与业务进程同一用户、同一 PM2_HOME                         |
+| 变量                                                    | 说明                                                                                                                    |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `STACKPANEL_ROOT`                                       | 安装根，默认 `/opt/stackpanel`                                                                                          |
+| `STACKPANEL_STATE_DIR`                                  | 状态根，默认 `/var/lib/stackpanel`                                                                                      |
+| `STACKPANEL_UPDATE_INSTANCE_ID`                         | 实例 ID；必须与 API 的 `DISTRIBUTION_UPDATE_INSTANCE_ID` 一致                                                           |
+| `STACKPANEL_PM2_HOME`                                   | 必须与业务进程同一用户、同一 PM2_HOME                                                                                   |
 | `DATABASE_URL`                                          | **不在此文件配置**：唯一来源是 `/var/lib/stackpanel/stackpanel.env`（systemd 单元把它放在最后加载；同名键后者覆盖前者） |
-| `STACKPANEL_RELEASE_RETENTION`                          | 保留 release 数，默认 2                                       |
-| `STACKPANEL_HEALTH_URL` / `_READINESS_URL` / `_WEB_URL` | 维护态探针地址                                                |
-| `STACKPANEL_DATABASE_BACKUP=off`                        | 备份由外部系统负责时跳过 `pg_dump`                            |
-| `STACKPANEL_ARTIFACT_ALLOW_HTTP=1`                      | 仅离线镜像源/联调时放宽 https 要求                            |
+| `STACKPANEL_RELEASE_RETENTION`                          | 保留 release 数，默认 2                                                                                                 |
+| `STACKPANEL_HEALTH_URL` / `_READINESS_URL` / `_WEB_URL` | 维护态探针地址                                                                                                          |
+| `STACKPANEL_DATABASE_BACKUP=off`                        | 备份由外部系统负责时跳过 `pg_dump`                                                                                      |
+| `STACKPANEL_ARTIFACT_ALLOW_HTTP=1`                      | 仅离线镜像源/联调时放宽 https 要求                                                                                      |
 
 API 侧需要设置：
 
@@ -182,3 +229,6 @@ DISTRIBUTION_UPDATER_STATUS_FILE=/var/lib/stackpanel/update/status.json
 - systemd 单元刻意不设 `ProtectHome`：runner 必须与业务进程共用同一 `PM2_HOME`
   （默认 `~/.pm2`）。若要求收紧，请把 `PM2_HOME` 与业务进程一并迁到
   `/var/lib/stackpanel/.pm2` 并加入 `ReadWritePaths`。
+- 在 QEMU 模拟的 amd64 环境里做长时间压测时，`ecosystem.config.cjs` 的
+  `max_memory_restart`（512M）可能因慢速模拟下的内存峰值反复重启 API。这是模拟
+  环境的性能特征，不是安装链路缺陷；真实 amd64 机器上不出现。

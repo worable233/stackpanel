@@ -31,7 +31,9 @@ describe.skipIf(!dbAvailable)('CONTRACT-SEC (real DB)', () => {
     userToken = user.token;
     // Ensure a clean window for the credential limiter.
     const prisma = getPrisma();
-    await prisma.apiToken.deleteMany({ where: { user: { email: `contractsec_${suffix}@example.com` } } });
+    await prisma.apiToken.deleteMany({
+      where: { user: { email: `contractsec_${suffix}@example.com` } },
+    });
   });
 
   afterAll(async () => {
@@ -99,6 +101,27 @@ describe.skipIf(!dbAvailable)('CONTRACT-SEC (real DB)', () => {
     expect(throttled).toBeGreaterThan(0);
     expect(lastStatus).toBe(429);
     expect(retryAfter).toBeDefined();
+  });
+
+  it('throttles current-password re-authentication (credentialCheck)', async () => {
+    // `/auth/password` asks for the *current* password, so on a stolen session it
+    // is the escalation step — and, unthrottled, an online password oracle at
+    // request speed. It therefore carries the tightest bucket in the table
+    // (10/min), not the generic admin/user ceiling.
+    let throttled = 0;
+    let lastStatus = 0;
+    for (let i = 0; i < 12; i += 1) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/password',
+        headers: { authorization: `Bearer ${userToken}` },
+        payload: { currentPassword: `definitely-wrong-${i}`, newPassword: 'CorrectHorseBattery9' },
+      });
+      lastStatus = res.statusCode;
+      if (res.statusCode === 429) throttled += 1;
+    }
+    expect(throttled).toBeGreaterThan(0);
+    expect(lastStatus).toBe(429);
   });
 
   it('reports the secret-storage state in a machine-readable shape (H3)', async () => {

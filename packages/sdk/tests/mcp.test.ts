@@ -60,6 +60,31 @@ describe('mcp tool derivation', () => {
     expect(tools.map((t) => t.name)).toEqual(['store_orders_list']);
   });
 
+  it('gives colliding capability ids distinct, deterministic tool names', () => {
+    // `.`, `:` and `_` all normalise to `_`, so these three ids would otherwise
+    // collapse onto one name and become indistinguishable to a name-keyed lookup.
+    const colliding: McpCapability[] = [
+      { ...readCap },
+      { ...readCap, id: 'store_orders_list' },
+      { ...readCap, id: 'store:orders:list' },
+    ];
+    const tools = buildMcpTools(colliding, null);
+    expect(tools.map((t) => t.name)).toEqual([
+      'store_orders_list',
+      'store_orders_list__2',
+      'store_orders_list__3',
+    ]);
+    expect(tools.map((t) => t.capabilityId)).toEqual([
+      'store.orders.list',
+      'store_orders_list',
+      'store:orders:list',
+    ]);
+    // Deterministic for the same input order.
+    expect(buildMcpTools(colliding, null).map((t) => t.name)).toEqual(
+      tools.map((t) => t.name),
+    );
+  });
+
   it('exposes mutating tools only with an explicit mcp.write grant', () => {
     const tools = buildMcpTools([readCap, writeCap], new Set([MCP_WRITE_SCOPE]));
     expect(tools.map((t) => t.name)).toEqual(['store_orders_list', 'ticket_create']);
@@ -87,6 +112,38 @@ describe('mcp api call mapping', () => {
 
   it('rejects a call missing a required path param', () => {
     expect(() => buildMcpApiCall(writeCap, {})).toThrow(McpToolInputError);
+  });
+
+  it('substitutes whole placeholder names, never a prefix of one', () => {
+    const cap: McpCapability = {
+      id: 'store.orders.read',
+      method: 'GET',
+      path: '/api/v1/store/orders/:id',
+      scope: null,
+      summary: 'read one order',
+      mutating: false,
+    };
+    // A param named `i` must not be spliced into `:id`; doing so built a request
+    // for a different route instead of reporting the missing `id`.
+    expect(() => buildMcpApiCall(cap, { params: { i: 'X' } })).toThrow(McpToolInputError);
+    expect(buildMcpApiCall(cap, { params: { id: 'o-1', i: 'X' } }).path).toBe(
+      '/api/v1/store/orders/o-1',
+    );
+  });
+
+  it('fills every placeholder of a multi-param path', () => {
+    const cap: McpCapability = {
+      id: 'admin.users.services.read',
+      method: 'GET',
+      path: '/api/v1/admin/users/:id/services/:serviceId',
+      scope: 'platform.admin',
+      summary: 'read a bound service',
+      mutating: false,
+    };
+    expect(buildMcpApiCall(cap, { params: { id: 'u1', serviceId: 's1' } }).path).toBe(
+      '/api/v1/admin/users/u1/services/s1',
+    );
+    expect(() => buildMcpApiCall(cap, { params: { id: 'u1' } })).toThrow(McpToolInputError);
   });
 
   it('omits a body for GET and drops undefined query values', () => {

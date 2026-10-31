@@ -8,7 +8,7 @@
  */
 import { useMemo, useState, useTransition } from 'react';
 import type { AdminPageComponentProps } from '@stackpanel/sdk';
-import { Button, Input, PageHeader, StatusBadge } from '@stackpanel/ui';
+import { Button, InlineError, Input, PageHeader, StatusBadge } from '@stackpanel/ui';
 import { ArrowDownToLine, Blocks, LoaderCircle, PackageSearch, Palette, RefreshCw, Search } from 'lucide-react';
 import { t } from './i18n.js';
 
@@ -104,7 +104,7 @@ function MarketRow({
               </>
             ) : null}
           </p>
-          {error ? <p role="alert" className="mt-2 text-sm text-destructive">{error}</p> : null}
+          {error ? <InlineError className="mt-2">{error}</InlineError> : null}
         </div>
       </div>
       <form

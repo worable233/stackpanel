@@ -17,7 +17,12 @@ import type { NotificationChannel, NotificationTypeDefinition } from '@stackpane
 import type { PrismaClient } from '@stackpanel/db';
 import { peekRedis } from '@stackpanel/db';
 import { EXTENSION_POINTS } from '@stackpanel/sdk';
-import { loadPluginDefinition, scanPlugins, seedBuiltinPlugins } from './lib/plugins.ts';
+import {
+  ensurePluginModuleResolution,
+  loadPluginDefinition,
+  scanPlugins,
+  seedBuiltinPlugins,
+} from './lib/plugins.ts';
 import { packageManager } from './packages/manager.ts';
 import { MarketService } from './market/service.ts';
 import { getCatalogRefresh } from './distribution/runtime.ts';
@@ -39,6 +44,8 @@ import { KernelNotificationsService } from './notifications/notifications-servic
 import { KernelNotificationPolicyService } from './notifications/policy-service.ts';
 import { KernelIdentityChallengeService } from './auth/identity-challenge-service.ts';
 import { KernelCaptchaService } from './auth/captcha-service.ts';
+import { createStorageWatch } from './notifications/storage-watch.ts';
+import { listAdminUserIds } from './lib/admin-recipients.ts';
 import { getStateService } from './state/index.ts';
 import { getCacheService, getDataCache } from './cache/index.ts';
 import { getJobRuntime, registerKernelSweeps, createKernelJobContext } from './jobs/index.ts';
@@ -46,10 +53,9 @@ import { registerBackupJobs } from './backup/jobs.ts';
 import { registerConversationRetentionJobs } from './agent/retention.ts';
 import { registerMediaJobs } from './media/jobs.ts';
 import { AttachmentReferenceService } from './media/references.ts';
-import { setStorageRuntime, refreshStorageDriver } from './infra.ts';
+import { getStorage, setStorageRuntime, refreshStorageDriver } from './infra.ts';
 import { NotificationDispatcher } from './notifications/dispatcher.ts';
 import { loadRuntimeConfig } from './config/runtime-config.ts';
-import { loadFrontendExecPolicy } from './lib/frontend-exec-policy.ts';
 
 export interface PluginHostLogger {
   info: (message: string) => void;
@@ -241,11 +247,12 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
       return row?.enabled ?? false;
     },
     onThemeReload: () => options.onThemeReload?.(),
-    // ADR-0026: a config change on another replica refreshes this replica's
-    // snapshot so the next `getConfig()` call sees it (no restart needed).
-    onConfigReload: async () => {
-      await Promise.all([loadRuntimeConfig(), loadFrontendExecPolicy()]);
-    },
+    // ADR-0026: another replica changed a DB-backed config value; re-read the
+    // snapshot so the next request on this replica uses it without a restart.
+    onConfigReload: () => loadRuntimeConfig(),
+    // The isolation frame carries a snapshot of the *synchronous* kernel service
+    // values; a config change can invalidate it, so ask every live worker for a
+    // refresh instead of waiting for the next activation.
     onServiceSnapshotStale: () => refreshAllIsolatedServiceSnapshots(),
     logger: { warn: (message) => logger.warn(message), info: (message) => logger.info(message) },
   });
@@ -268,6 +275,7 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     media,
     coherence,
     async registerPlugins(): Promise<void> {
+      await ensurePluginModuleResolution((message) => console.info(message));
       await seedBuiltinPlugins();
       // 回收上次崩溃遗留的未引用暂存/备份产物（§7.6/§7.8）；活动目录不受影响。
       await packageManager.gcAll().catch(() => undefined);
@@ -317,6 +325,21 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
             .cleanup()
             .then(() => undefined),
         notificationDeliverySweep: () => notificationDispatcher.sweep(),
+        // 存储巡检（对标 #12.5 `ossExceptionNotice`）：连续失败才告警管理员，
+        // 连续成功才报恢复。探测本身失败只累加计数，不抛给任务。
+        storageWatch: createStorageWatch({
+          ping: async () => {
+            const driver = getStorage();
+            if (!('ping' in driver) || typeof (driver as { ping?: unknown }).ping !== 'function') {
+              // 本地磁盘驱动没有探测能力：磁盘挂了 API 自己也起不来，无需巡检。
+              return true;
+            }
+            return (driver as unknown as { ping(): Promise<boolean> }).ping();
+          },
+          notifications: notificationsService,
+          listAdminIds: () => listAdminUserIds(getPrisma()),
+          logger,
+        }),
         // 会员权益到期清理：删除已过期的限时成员关系（会员商品授予）。
         // 授权正确性由读路径保证，这里只是数据清理。
         membershipSweep: async () => {

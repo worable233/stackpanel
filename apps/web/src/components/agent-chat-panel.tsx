@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import { AgentEffortPicker } from '@/components/agent-effort-picker';
+import { InlineError, InlineNotice } from '@stackpanel/ui';
 import { AgentChatWindow } from '@/components/agent-chat-window';
 import { agentErrorFromBody, agentErrorText } from '@/lib/agent-errors';
 import { Button } from '@/components/ui/button';
@@ -116,7 +117,7 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
           <DropdownMenuItem onClick={() => setEditing({ ...conversation, action: 'delete' })}><Trash2 />{t('agent.chat.deleteConversation')}</DropdownMenuItem>
         </DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
       </div>)}</div>
-      {history.listLoading && <p role="status" className="px-2 py-4 text-xs text-muted-foreground">{t('agent.chat.loadingList')}</p>}
+      {history.listLoading && <InlineNotice className="px-2 py-4 text-xs">{t('agent.chat.loadingList')}</InlineNotice>}
       {!history.listLoading && !conversations.length && <p className="px-2 py-4 text-xs text-muted-foreground">{search ? t('agent.chat.noMatch') : t('agent.chat.emptyList')}</p>}
       {history.nextCursor && <Button variant="ghost" size="sm" disabled={history.listLoading} onClick={() => void history.loadMore()}>{t('agent.chat.loadMore')}</Button>}
     </div>
@@ -140,7 +141,7 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
     </>}>
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-5" aria-live="polite" data-agent-conversation>
         {history.error && <div className="mb-4 flex items-center gap-2"><FieldError role="alert">{history.error}</FieldError><Button variant="ghost" size="sm" onClick={history.retry}>{t('agent.chat.retryLoad')}</Button></div>}
-        {history.loading && !active && <p role="status" className="py-4 text-sm text-muted-foreground">{t('agent.chat.loadingConversation')}</p>}
+        {history.loading && !active && <InlineNotice className="py-4">{t('agent.chat.loadingConversation')}</InlineNotice>}
         {history.earlierCursor && <Button variant="ghost" size="sm" disabled={history.loading} onClick={() => void history.loadEarlier()}>{t('agent.chat.loadEarlier')}</Button>}
         {active ? <div className="flex flex-col gap-10">{active.turns.map((turn) => <section key={turn.id} className="flex flex-col gap-7">
           <div className="ml-8 flex max-w-[90%] flex-col gap-2 self-end rounded-3xl bg-muted px-4 py-3 text-sm leading-6 break-words">{turn.attachments.length > 0 && <div className="flex flex-wrap gap-2">{turn.attachments.map((attachment) => <Image key={attachment.id} src={attachment.url} alt={attachment.name} width={80} height={80} unoptimized className="size-20 rounded-lg object-cover" />)}</div>}{turn.objective}</div>
@@ -160,8 +161,8 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
             <Button type="submit" size="icon" disabled={busy || history.loading || (!objective.trim() && !attachments.length)} aria-label={t('agent.chat.send')} className="rounded-full bg-foreground text-background hover:bg-foreground/85">{busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}</Button>
           </InputGroupAddon>
         </InputGroup>
-        {uploading && <p role="status" className="mt-2 px-2 text-xs text-muted-foreground">{t('agent.chat.uploading')}</p>}
-        {attachmentError && <p role="alert" className="mt-2 px-2 text-xs text-destructive">{attachmentError}</p>}
+        {uploading && <InlineNotice className="mt-2 px-2 text-xs">{t('agent.chat.uploading')}</InlineNotice>}
+        {attachmentError && <InlineError className="mt-2 px-2 text-xs">{attachmentError}</InlineError>}
       </form>
     </AgentChatWindow>
   </>;

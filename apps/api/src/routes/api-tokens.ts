@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { PluginError } from '@stackpanel/sdk';
 import { apiTokenPrefix, generateApiToken, toStringArray } from '../lib/api-tokens.ts';
+import { isValidEd25519PublicKey } from '../lib/request-signing.ts';
 import { canGrantScope, grantableScopesFor, type ScopeGovernance } from '../lib/capability-registry.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { isKnownPlatformScope, mcpGrantableScopes } from '../mcp/index.ts';
@@ -47,6 +48,8 @@ const createSchema = z
     name: z.string().trim().min(1).max(60),
     scopes: z.array(z.string().trim().min(1).max(120)).max(200).default([]),
     ipAllowlist: z.array(ipEntry).max(50).default([]),
+    // 对标 #12.6：登记公钥后该凭证的每个请求都必须带 Ed25519 请求签名。
+    publicKey: z.string().trim().min(1).max(2_000).nullable().optional(),
     expiresAt: z
       .string()
       .datetime({ offset: true })
@@ -63,6 +66,8 @@ const patchSchema = z
     scopes: z.array(z.string().trim().min(1).max(120)).max(200).optional(),
     ipAllowlist: z.array(ipEntry).max(50).optional(),
     status: z.enum(['ACTIVE', 'DISABLED']).optional(),
+    /** null 清除公钥（退回 Bearer）；字符串则必须是合法 Ed25519 PEM。 */
+    publicKey: z.string().trim().min(1).max(2_000).nullable().optional(),
     expiresAt: z
       .string()
       .datetime({ offset: true })
@@ -81,10 +86,15 @@ type TokenRow = {
   scopes: unknown;
   ipAllowlist: unknown;
   status: string;
+  publicKey?: string | null;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   lastUsedIp: string | null;
   createdAt: Date;
+  updatedAt?: Date;
+  userId?: string;
+  audience?: string | null;
+  keyHash?: string;
 };
 
 function toView(row: TokenRow) {
@@ -95,11 +105,20 @@ function toView(row: TokenRow) {
     scopes: toStringArray(row.scopes),
     ipAllowlist: toStringArray(row.ipAllowlist),
     status: row.status,
+    // 公钥是公开信息；是否启用签名看它是否为空。
+    publicKey: row.publicKey ?? null,
+    signingEnabled: Boolean(row.publicKey),
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
     lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
     lastUsedIp: row.lastUsedIp,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/** 公钥要么不传，要么必须是 Ed25519 — 存下去才发现验不了签就等于没有防护。 */
+function publicKeyRejection(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  return isValidEd25519PublicKey(value) ? null : '平台凭证公钥必须是 Ed25519 PEM';
 }
 
 /**
@@ -162,6 +181,10 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const body = createSchema.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: '参数无效' });
+      // Cheap, purely local validation first: no point burning a captcha
+      // challenge on a request whose key is malformed anyway.
+      const keyError = publicKeyRejection(body.data.publicKey);
+      if (keyError) return reply.code(400).send({ error: keyError });
       // Minting a durable credential is the highest-value write in this file, so
       // the challenge runs before scope resolution and before the row exists.
       await guardCaptcha(app, request, 'api_token_create', body.data.captchaToken);
@@ -179,6 +202,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
           keyHash: generated.keyHash,
           scopes: body.data.scopes,
           ipAllowlist: body.data.ipAllowlist,
+          ...(body.data.publicKey ? { publicKey: body.data.publicKey } : {}),
           expiresAt: body.data.expiresAt ?? null,
         },
       });
@@ -202,6 +226,8 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
       if (!params.success) return reply.code(400).send({ error: '参数无效' });
       const body = patchSchema.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: '参数无效' });
+      const keyError = publicKeyRejection(body.data.publicKey);
+      if (keyError) return reply.code(400).send({ error: keyError });
       const existing = await db.apiToken.findUnique({ where: { id: params.data.id } });
       if (!existing || existing.userId !== currentUser(request).id) {
         return reply.code(404).send({ error: 'API 密钥不存在' });
@@ -220,6 +246,7 @@ export async function apiTokenRoutes(app: FastifyInstance): Promise<void> {
           ...(body.data.scopes !== undefined ? { scopes: body.data.scopes } : {}),
           ...(body.data.ipAllowlist !== undefined ? { ipAllowlist: body.data.ipAllowlist } : {}),
           ...(body.data.status !== undefined ? { status: body.data.status } : {}),
+          ...(body.data.publicKey !== undefined ? { publicKey: body.data.publicKey } : {}),
           ...(body.data.expiresAt !== undefined ? { expiresAt: body.data.expiresAt } : {}),
         },
       });

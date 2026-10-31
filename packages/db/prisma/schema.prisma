@@ -459,6 +459,9 @@ model ApiToken {
   keyHash     String    @unique // sha256(明文)
   scopes      Json      @default("[]") // 授权范围 string[]；空 = 仅身份、无任何权限
   ipAllowlist Json      @default("[]") // CIDR/单 IP；空 = 不限制
+  /// 对标 #12.6：登记后该凭证的每个请求都必须带 Ed25519 请求签名；
+  /// null = 只凭 Bearer（存量凭证行为不变）。
+  publicKey   String?
   status      String    @default("ACTIVE") // ACTIVE|DISABLED
   expiresAt   DateTime?
   lastUsedAt  DateTime?
@@ -871,4 +874,62 @@ model AgentMessageAttachment {
 
   @@id([messageId, attachmentId])
   @@map("agent_message_attachments")
+}
+
+/// 逐页 SEO 覆写（对标 #12.4）。
+///
+/// 内容归属仍在插件（`seo.provider` 给实体级元数据），这张表只存运营要改的
+/// 那几个字段，并在渲染时**逐字段**压在 provider 之上 —— 改标题不该连带抹掉
+/// 商品的 JSON-LD。`noindex` 同时约束 sitemap：被标记的页面不得出现在 sitemap。
+model SeoPage {
+  id          String   @id @default(cuid())
+  /// 规范化路径：以 `/` 开头、无尾斜杠、不含 query/hash，唯一。
+  path        String   @unique
+  title       String?
+  description String?
+  ogImage     String?
+  canonical   String?
+  noindex     Boolean  @default(false)
+  /// 最后修改人（用户 id）；系统导入时为空。
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([noindex])
+  @@map("seo_pages")
+}
+
+/// 菜单显示覆写（对标 #12.3）：排序、改名、隐藏，以及运营自定义的链接。
+/// 只影响「怎么显示」，不参与任何授权判断 —— 隐藏菜单不等于禁止访问。
+model NavEntry {
+  id String @id
+  surface String
+  href String
+  label String?
+  sortOrder Int?
+  hidden Boolean @default(false)
+  custom Boolean @default(false)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([surface, href])
+  @@index([surface])
+  @@map("nav_entries")
+}
+
+/// 任务调度的跨副本租约（对标 #12.5）：无 Redis 时用数据库做单实例保证。
+///
+/// 进程内后端的每个副本都会按时触发定时器，执行前抢一次租约、抢到才跑；
+/// 租约靠 `expiresAtMs` 自然过期，持有者被 kill 后由下一个副本接手。
+/// 有 Redis 时走 BullMQ 抢占，这张表不参与。
+model KernelJobLease {
+  /// 任务全名（`<owner>.<name>`）。
+  name String @id
+  /// 持有者标识，仅用于排查「上一轮是谁在跑」。
+  holder String
+  /// 租约到期时间（epoch ms）。
+  expiresAtMs BigInt
+  // 表名用 snake_case，与其余表一致。
+  @@map("kernel_job_leases")
 }

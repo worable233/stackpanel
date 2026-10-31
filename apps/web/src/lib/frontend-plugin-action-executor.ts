@@ -2,7 +2,7 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { cookies } from 'next/headers';
+import { clearSessionCookie } from './session-cookie.server';
 import { redirect } from 'next/navigation';
 import type { PluginActionDefinition } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
@@ -247,7 +247,6 @@ function actionSuccess(returnPath: string, actionId: string, message: string): n
 
 /** Drop a stale opaque token before routing the operator through a fresh login. */
 async function expiredSessionFailure(returnPath: string): Promise<never> {
-  const store = await cookies();
-  store.delete(process.env.SESSION_COOKIE_NAME ?? 'sp_session');
+  await clearSessionCookie();
   redirect(expiredSessionLoginPath(returnPath));
 }

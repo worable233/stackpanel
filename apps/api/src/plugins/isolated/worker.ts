@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { z } from 'zod';
-import { PluginError, formatMinorCurrency, toMinorUnits } from '@stackpanel/sdk';
+import { formatMinorCurrency, toMinorUnits } from '@stackpanel/sdk';
 import type { CustomModelDefinition } from '@stackpanel/sdk';
 import {
   decodeWire,
@@ -14,6 +14,7 @@ import {
   RPC_PROTOCOL,
   RPC_TIMEOUT_MS,
   wireError,
+  reviveWireError,
   RAW_CHUNK_BYTES,
   RAW_MAX_QUEUE_BYTES,
   RAW_WINDOW_BYTES,
@@ -23,48 +24,14 @@ import type { RawInvokeRequest } from './raw-protocol.ts';
 /**
  * Serialise a thrown error for the host side.
  *
- * `detail` has to travel with the code: the host rebuilds a branded
- * `PluginError` from this payload, and the human-readable detail would otherwise
- * be replaced by the machine code.
+ * Delegates to `wireError` instead of hand-rolling the literal: `details` and
+ * the SDK error-class brand have to travel too, otherwise `isWalletError` /
+ * `isPluginError` narrowing on the host silently takes the generic branch. The
+ * human-readable `detail` also has to survive, or the host can only show the
+ * machine code.
  */
-function wireThrown(error: unknown): {
-  message: string;
-  code?: string;
-  status?: number;
-  detail?: string;
-} {
-  const candidate = error as { code?: unknown; status?: unknown; detail?: unknown };
-  return {
-    message: String(error instanceof Error ? error.message : error),
-    ...(typeof candidate.code === 'string' ? { code: candidate.code } : {}),
-    ...(typeof candidate.status === 'number' ? { status: candidate.status } : {}),
-    ...(typeof candidate.detail === 'string' ? { detail: candidate.detail } : {}),
-  };
-}
+const wireThrown = (error: unknown): ReturnType<typeof wireError> => wireError(error);
 
-/**
- * Rebuild an error the host reported into a `PluginError` instance.
- *
- * Plugins routinely branch on `error instanceof PluginError` before deciding
- * whether to surface or wrap a failure. Copying fields onto a bare `Error` (the
- * previous behaviour) broke that check across the RPC boundary, so plugin code
- * collapsed the kernel's precise error into a generic one — a disabled currency
- * surfaced as "不支持的币种" instead of "币种已被停用". Rebuilding the real class
- * keeps `code`/`status`/`detail` and satisfies `instanceof` for plugins that load
- * the same SDK module instance as the worker.
- */
-function restoreHostError(payload: {
-  message?: string;
-  code?: string;
-  status?: number;
-  detail?: string;
-}): Error {
-  const message = payload.message ?? 'host capability failed';
-  if (typeof payload.code === 'string' && typeof payload.status === 'number') {
-    return new PluginError(payload.code, payload.status, payload.detail ?? message);
-  }
-  return Object.assign(new Error(message), payload);
-}
 import { resolveMaxRssMb, startMemoryGuard } from './memory-guard.ts';
 
 type PluginHook = (value: unknown) => unknown | Promise<unknown>;
@@ -120,7 +87,18 @@ const definition = (mod[manifest.export ?? 'default'] ?? mod.default) as {
   manifest?: {
     consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
     inject?: string[];
+    /**
+     * Open-platform capabilities the plugin declares.
+     *
+     * 必须跨进程序列化回宿主：宿主只有磁盘 manifest，而安装器生成的
+     * manifest.json 只写权限/执行等字段，`capabilities` 只存在于插件定义里。
+     * 漏传的后果是插件路由照常可用、`/api/v1/<capability.path>` 别名也挂上了，
+     * 但 `pluginRuntime.listCapabilities()` 返回空 —— 于是 `/api/v1/capabilities`
+     * 与 MCP `tools/list` 里看不到任何插件贡献的能力，Agent 无从调用。
+     */
+    capabilities?: Array<Record<string, unknown>>;
   };
+  capabilities?: Array<Record<string, unknown>>;
   consumes?: Array<{ pluginId: string; extensionPoint: string; optional?: boolean }>;
   eventListeners?: Array<{ topic: string; handler: (payload: unknown) => void }>;
   onRegister?: PluginHook;
@@ -230,6 +208,12 @@ function sendHost(message: Record<string, unknown>): void {
 
 const declaredConsumes = definition.manifest?.consumes ?? definition.consumes ?? [];
 const declaredInject = definition.manifest?.inject ?? definition.inject ?? [];
+// 插件定义优先，磁盘 manifest 兜底：与 consumes 同理，安装器可能只写后者。
+const declaredCapabilities: Array<Record<string, unknown>> =
+  definition.manifest?.capabilities ??
+  definition.capabilities ??
+  (manifest['capabilities'] as Array<Record<string, unknown>> | undefined) ??
+  [];
 
 sendHost({
   protocol: RPC_PROTOCOL,
@@ -239,6 +223,7 @@ sendHost({
   ...(modelDescriptors.length > 0 ? { models: modelDescriptors } : {}),
   ...(declaredInject.length > 0 ? { inject: declaredInject } : {}),
   ...(declaredConsumes.length > 0 ? { consumes: declaredConsumes } : {}),
+  ...(declaredCapabilities.length > 0 ? { capabilities: declaredCapabilities } : {}),
   ...(unsupported.length > 0 ? { unsupported } : {}),
 });
 
@@ -560,6 +545,7 @@ const context = {
     'issueSession',
     'revokeSession',
     'revokeAllSessions',
+    'resetUserPassword',
     'sessionCookieConfig',
     'hasPermission',
     'listUserGroups',
@@ -643,7 +629,10 @@ const context = {
 
   payments: serviceProxy('payments', [
     'listPaymentMethods',
+    // Provider capability map for the admin UI (which modes each provider
+    // supports). Missing here means an isolated plugin sees an undefined method.
     'providerModes',
+    'manualInstructions',
     'listAvailablePaymentMethods',
     'createRecord',
     'initiate',
@@ -672,19 +661,6 @@ const context = {
     'listLedger',
     'getMonthlySpending',
   ]),
-  // Currency governance was reachable in-process only: the isolated worker had
-  // no `currency` entry at all, so `ctx.currency.requireEnabled(...)` threw a
-  // TypeError that plugins caught and rewrote into a vague "不支持的币种".
-  // The pure helpers run locally so synchronous plugin code keeps working.
-  currency: {
-    list: (...args: unknown[]) => callHost('currency.list', args),
-    listEnabled: (...args: unknown[]) => callHost('currency.listEnabled', args),
-    get: (...args: unknown[]) => callHost('currency.get', args),
-    requireEnabled: (...args: unknown[]) => callHost('currency.requireEnabled', args),
-    toMinor: (value: unknown, code: unknown) => toMinorUnits(value as never, String(code)),
-    format: (amountMinor: unknown, code: unknown, locale: unknown) =>
-      formatMinorCurrency(Number(amountMinor), String(code), String(locale)),
-  },
   fx: serviceProxy('fx', [
     'quote',
     'quoteToSettlement',
@@ -692,6 +668,18 @@ const context = {
     'getRate',
     'listRates',
   ]),
+  // Currency catalog. `list`/`listEnabled`/`get`/`requireEnabled` are async and
+  // proxy over IPC; `toMinor`/`format` are synchronous in the kernel contract
+  // (`CurrencyService`), so they run locally from SDK pure functions — a
+  // round trip would force them to become async and break every plugin that
+  // calls them inline. Missing this service made isolated plugins fail on
+  // `ctx.currency.requireEnabled(...)` (referral's admin config route).
+  currency: {
+    ...serviceProxy('currency', ['list', 'listEnabled', 'get', 'requireEnabled']),
+    toMinor: (value: number | string, code: string) => toMinorUnits(value, code),
+    format: (amountMinor: number, code: string, locale: string) =>
+      formatMinorCurrency(amountMinor, code, locale),
+  },
   extensions,
   registerExtension,
   provide: provideService,
@@ -1207,7 +1195,11 @@ process.on('message', async (raw: unknown) => {
     pending.delete(requestId);
     clearTimeout(waiter.timer);
     if (message.error) {
-      waiter.reject(restoreHostError(message.error));
+      // Shared revival: restores `code`/`status`/`details` and the SDK
+      // error-class brand. A plain `Object.assign` copied the fields but lost
+      // the brand, so `isWalletError(e)` inside the plugin returned false and
+      // error-specific branches (e.g. insufficient-balance) never ran.
+      waiter.reject(reviveWireError(message.error));
     } else waiter.resolve(message.value);
     return;
   }
@@ -1571,12 +1563,15 @@ process.on('message', async (raw: unknown) => {
         : {}),
     });
   } catch (error) {
+    // Route `wireError` (not a hand-rolled literal) so `details` and the SDK
+    // error-class brand survive the boundary. Dropping the brand broke
+    // `isWalletError`/`isPluginError` narrowing on the host.
     sendHost({
       protocol: 1,
       pluginId,
       type: 'result',
       id: requestId,
-      error: wireThrown(error),
+      error: wireError(error),
     });
   }
 });

@@ -1,4 +1,5 @@
 import 'server-only';
+import { headers } from 'next/headers';
 import { ApiClient } from '@stackpanel/sdk';
 import { getSessionToken } from './auth';
 import { createResilientFetch, parseResilienceConfig } from './resilience';
@@ -22,16 +23,71 @@ const aggregateTimeoutMs = resilience.enabled
   ? // Cover every attempt plus its backoff, with headroom, so the SDK's outer
     // abort never pre-empts a retry the wrapper intended to make.
     resilience.timeoutMs * resilience.retry.attempts +
-      resilience.retry.maxDelayMs * resilience.retry.attempts +
-      2_000
+    resilience.retry.maxDelayMs * resilience.retry.attempts +
+    2_000
   : resilience.timeoutMs;
+
+/**
+ * Headers that describe the *original* client to the kernel.
+ *
+ * The BFF is a reverse proxy, so without this every visitor reaches the kernel
+ * from one address and per-IP limits (rate limits, code-send quotas, captcha
+ * remote-IP checks) collapse into a single global bucket: one attacker locks out
+ * the whole site, which is exactly the failure the audit flagged (M-4).
+ *
+ * We forward what the browser's request already carries and never invent it —
+ * the kernel only honours `X-Forwarded-For` from a peer listed in
+ * `API_TRUST_PROXY`, and it resolves right-to-left, so a spoofed left-hand entry
+ * is discarded.
+ */
+async function clientForwardingHeaders(): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  try {
+    const incoming = await headers();
+    const forwardedFor = incoming.get('x-forwarded-for')?.trim();
+    const realIp = incoming.get('x-real-ip')?.trim();
+    if (forwardedFor) out['x-forwarded-for'] = forwardedFor;
+    else if (realIp) out['x-forwarded-for'] = realIp;
+    const proto = incoming.get('x-forwarded-proto')?.trim();
+    if (proto) out['x-forwarded-proto'] = proto;
+    const host = incoming.get('x-forwarded-host')?.trim();
+    if (host) out['x-forwarded-host'] = host;
+  } catch {
+    // Outside a request scope (build time, background work) there is no client.
+  }
+  return out;
+}
+
+/**
+ * Kernel egress that carries the caller's address along.
+ *
+ * Header precedence: an explicit header wins, so nothing a caller sets is
+ * overwritten. `next/headers` is resolved per call (not once), which keeps the
+ * module-level client and the shared circuit breaker intact while still binding
+ * each call to its own request.
+ */
+const upstreamFetch: typeof fetch = async (input, init) => {
+  const extra = await clientForwardingHeaders();
+  if (Object.keys(extra).length === 0) return fetch(input, init);
+  const request = input instanceof Request ? input : undefined;
+  const merged = new Headers(request?.headers);
+  if (init?.headers) {
+    new Headers(init.headers).forEach((value, name) => merged.set(name, value));
+  }
+  for (const [name, value] of Object.entries(extra)) {
+    if (!merged.has(name)) merged.set(name, value);
+  }
+  return fetch(input, { ...init, headers: merged });
+};
+
 const transport = resilience.enabled
   ? createResilientFetch({
       timeoutMs: resilience.timeoutMs,
       retry: resilience.retry,
       circuit: resilience.circuit,
+      fetchImpl: upstreamFetch,
     })
-  : undefined;
+  : upstreamFetch;
 
 /**
  * The single browser-facing egress into the kernel: the web BFF route
@@ -63,7 +119,7 @@ export function getApiClient(): ApiClient {
   return new ApiClient({
     baseUrl: baseUrl(),
     timeoutMs: aggregateTimeoutMs,
-    ...(transport ? { fetchImpl: transport } : {}),
+    fetchImpl: transport,
   });
 }
 
@@ -84,7 +140,7 @@ export async function getAuthedApiClient(): Promise<ApiClient> {
   return new ApiClient({
     baseUrl: baseUrl(),
     timeoutMs: aggregateTimeoutMs,
-    ...(transport ? { fetchImpl: transport } : {}),
+    fetchImpl: transport,
     ...(token ? { token } : {}),
   });
 }

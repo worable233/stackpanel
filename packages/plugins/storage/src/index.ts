@@ -76,10 +76,7 @@ const putAdminConfig = async (req: HttpRequest): Promise<unknown> => {
   let hasCredentials = current.hasCredentials;
   if (input.accessKeyId || input.secretAccessKey) {
     if (!context().secrets.isAvailable()) {
-      throw new StoragePluginError(
-        409,
-        '密钥存储不可用：请先配置 SETTINGS_ENCRYPTION_KEY',
-      );
+      throw new StoragePluginError(409, '密钥存储不可用：请先配置 SETTINGS_ENCRYPTION_KEY');
     }
     if (input.accessKeyId) await context().secrets.set(SECRET_ACCESS_KEY_ID, input.accessKeyId);
     if (input.secretAccessKey)
@@ -139,7 +136,10 @@ const testConnection = async (): Promise<unknown> => {
     const ok = provider.ping ? await provider.ping() : true;
     return { ok };
   } catch (error) {
-    return { ok: false, error: String((error as Error)?.message ?? error) };
+    // 反馈契约：provider 的原始异常不上屏（`SignatureDoesNotMatch`、上游 XML 等只进日志），
+    // 前端按 `ok: false` 显示本地化的 `test.failed`。
+    console.error('[storage] connection test failed', error);
+    return { ok: false };
   }
 };
 

@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { SectionTitle } from '@stackpanel/ui';
-import { toast } from '@/components/ui/toast';
+import { InlineError, SectionTitle } from '@stackpanel/ui';
+import { toast } from 'sonner';
 import { agentFetch } from './agent-workspace';
 import { agentErrorText } from '@/lib/agent-errors';
 import { AgentAdvancedSettings } from './agent-settings-advanced';
@@ -62,7 +62,8 @@ export function AgentSettings() {
   const t = useTranslator();
   const locale = useLocale();
   const [loaded, setLoaded] = useState(false);
-  const [enabled, setEnabled] = useState(false);  const [model, setModel] = useState<Model>({ baseUrl: '', model: '', apiKeyConfigured: false });
+  const [enabled, setEnabled] = useState(false);
+  const [model, setModel] = useState<Model>({ baseUrl: '', model: '', apiKeyConfigured: false });
   const [catalog, setCatalog] = useState<Catalog>();
   const [secret, setSecret] = useState('');
   const [retention, setRetention] = useState<Retention>();
@@ -137,17 +138,14 @@ export function AgentSettings() {
         </Badge>
       </div>
       {error && (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 text-sm text-destructive"
-        >
+        <InlineError className="flex items-center justify-between gap-3">
           {error}
           {!loaded && (
             <Button variant="outline" onClick={() => void load()}>
               {t('agent.admin.retry')}
             </Button>
           )}
-        </div>
+        </InlineError>
       )}
       {loaded && (
         <>

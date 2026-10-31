@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PluginDefinition, PluginDependency, PluginExtensionConsumer } from '@stackpanel/sdk';
@@ -54,8 +54,22 @@ const RESERVED_IDS = new Set<string>([...BUILTIN_PLUGIN_IDS, 'kernel', 'default'
  * package (that would let a plugin self-grant), only from operator config.
  */
 function frontendServerExecutionAllowlist(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  return parseIdList(env['STACKPANEL_FRONTEND_SERVER_EXEC']);
+}
+
+/**
+ * Kernel-owned denylist for the same grant. Exists so "ships with the kernel"
+ * and "may execute code in the web process" are truly independent: an operator
+ * can keep a built-in without granting it the web process, or admit a
+ * third-party package without it being built-in.
+ */
+function frontendServerExecutionDenylist(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  return parseIdList(env['STACKPANEL_FRONTEND_SERVER_EXEC_DENY']);
+}
+
+function parseIdList(value: string | undefined): Set<string> {
   return new Set(
-    (env['STACKPANEL_FRONTEND_SERVER_EXEC'] ?? '')
+    (value ?? '')
       .split(',')
       .map((id) => id.trim())
       .filter((id) => id.length > 0),
@@ -63,15 +77,22 @@ function frontendServerExecutionAllowlist(env: NodeJS.ProcessEnv = process.env):
 }
 
 /**
- * Resolve a plugin's explicit web-process server-execution grant. `builtin` is
- * always admitted; beyond that, only the kernel allowlist can grant it.
+ * Resolve a plugin's explicit web-process server-execution grant.
+ *
+ * Three inputs, each independent:
+ *
+ * 1. `STACKPANEL_FRONTEND_SERVER_EXEC_DENY` wins outright. Without this, the
+ *    only way to run a built-in declaratively was to stop it being a built-in.
+ * 2. `STACKPANEL_FRONTEND_SERVER_EXEC` grants a package that is not built-in.
+ * 3. `builtin` is a *default* grant, not an override of (1).
  */
-function resolveFrontendExecutions(
+export function resolveFrontendExecutions(
   id: string,
   builtin: boolean,
 ): 'declarative' | 'server' {
-  if (builtin) return 'server';
-  return frontendServerExecutionAllowlist().has(id) ? 'server' : 'declarative';
+  if (frontendServerExecutionDenylist().has(id)) return 'declarative';
+  if (frontendServerExecutionAllowlist().has(id)) return 'server';
+  return builtin ? 'server' : 'declarative';
 }
 
 const PLUGIN_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
@@ -117,9 +138,24 @@ export interface PluginManifestFile {
   /** Interface locales this plugin ships messages for (ADR-0016 §5). */
   locales?: string[];
   /**
+   * Whether an operator may uninstall the package.
+   *
+   * Kernel-owned: written at seed time (`false` for packages that ship with the
+   * image) and never accepted from an uploaded package. This is deliberately a
+   * separate field from `builtin` — "ships with the kernel" is provenance,
+   * while "can be uninstalled" is a policy decision, and conflating them meant
+   * every built-in was also forced to be trusted and web-executable.
+   */
+  removable?: boolean;
+  /**
    * Whether this package is a kernel built-in. Written by the kernel from the
    * package's `stackpanel.builtin` metadata when seeding; never accepted from an
    * uploaded package (ADR-0008 D9).
+   *
+   * Provenance only. Execution mode, web-process admission and uninstallability
+   * are each decided by their own field (`execution`, `frontendExecutions`,
+   * `removable`), so a built-in can run isolated or be removable if the kernel
+   * says so.
    */
   builtin?: boolean;
 }
@@ -140,6 +176,54 @@ export interface PluginFileWrite {
 
 function pluginsDir(): string {
   return path.join(resolveStackPanelDataDir(), 'plugins');
+}
+
+/**
+ * 让「数据目录里的插件」能解析到内核自带的依赖。
+ *
+ * 插件包被装在 `<data>/plugins/<id>/`，而它 import 的 `@stackpanel/sdk`、`zod`
+ * 等裸包位于版本目录的 `node_modules`（`<root>/current/node_modules`）。
+ * Node 的 ESM 解析只会从插件目录**向上**找 `node_modules`，数据目录通常在
+ * 版本目录之外（`/var/lib/stackpanel` vs `/opt/stackpanel`），这条路径永远
+ * 到不了内核依赖——结果是每个内置插件都被判为 `Skipping invalid plugin`，
+ * 市场与主题首页全空，而进程本身看起来完全正常。
+ *
+ * 做法是在数据目录放一个**符号链接** `node_modules -> <root>/current/node_modules`：
+ * - 不复制依赖（否则会出现第二份 zod 实例、`instanceof` 失效）；
+ * - 升级切换 `current` 后链接自动指向新版本，不需要重写；
+ * - 只在目标不存在时创建，开发布局下数据目录本来就有真实 node_modules 时不介入。
+ *
+ * 失败只记日志：插件加载会因为找不到依赖而各自报错，这里再抛异常只会让
+ * 整个进程起不来，反而更难定位。
+ */
+export async function ensurePluginModuleResolution(
+  log: (message: string) => void = () => {},
+): Promise<void> {
+  const dataDir = resolveStackPanelDataDir();
+  const link = path.join(dataDir, 'node_modules');
+  if (existsSync(link)) return;
+  // 内核进程的工作目录是同版本目录下的 `apps/api`（见 ecosystem.config.cjs），
+  // 因此 `<cwd>/../../node_modules` 就是该版本目录的 node_modules；再兜底
+  // `<data>/../current/node_modules`（数据目录与安装根相邻的默认布局）。
+  const cwd = process.cwd();
+  const candidates = [
+    path.resolve(cwd, '..', '..', 'node_modules'),
+    path.resolve(cwd, 'node_modules'),
+    path.join(path.dirname(dataDir), 'current', 'node_modules'),
+  ];
+  const target = candidates.find((candidate) => existsSync(candidate));
+  if (!target) return;
+  try {
+    await mkdir(dataDir, { recursive: true });
+    await symlink(target, link, 'dir');
+    log(`[plugins] 已建立模块解析桥接：${link} -> ${target}`);
+  } catch (error) {
+    log(
+      `[plugins] 无法建立模块解析桥接（${link} -> ${target}）：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 export function pluginPackageDir(id: string): string {
@@ -286,6 +370,11 @@ export function validateManifest(manifest: PluginManifestFile, allowReserved = f
   }
   if (!allowReserved && manifest.builtin === true) {
     throw new PluginError(422, '插件包不得声明 builtin');
+  }
+  // Uninstall policy is kernel-owned. A package that could declare
+  // `removable: false` would be able to pin itself forever.
+  if (!allowReserved && manifest.removable === true) {
+    throw new PluginError(422, '插件包不得声明 removable');
   }
   if (!semver.valid(manifest.version)) {
     throw new PluginError(422, `插件版本号无效：${manifest.version}`);
@@ -686,6 +775,10 @@ async function seedBuiltinPlugin(id: string): Promise<{ name: string; version: s
     name,
     version,
     builtin: true,
+    // Shipped in the image: seeded packages are not removable unless the
+    // kernel's metadata explicitly says otherwise. Kept as its own field so
+    // uninstall policy can change without touching execution decisions.
+    removable: resolveRemovable({ builtin: true }),
     ...(pkg.description ? { description: pkg.description } : {}),
     apiVersion: kernelApiVersionRange(),
   };
@@ -765,6 +858,45 @@ async function readBuiltinPluginMetadata(
   };
 }
 
+/**
+ * The backend execution mode actually applied to a plugin.
+ *
+ * Three inputs, in priority order:
+ *
+ * 1. An explicit `execution` in the installed manifest (the kernel writes this
+ *    when seeding a package; an upload may also declare it, but production
+ *    rejects `trusted` for non-built-ins below).
+ * 2. A kernel built-in: shipped in the image, so it runs in-process.
+ * 3. Otherwise `isolated` in production, `trusted` only in development.
+ *
+ * The distinction that used to be missing: `builtin` is *provenance*, not a
+ * privilege. A built-in that declares `execution: 'isolated'` really does run
+ * out of process. The value returned here is also what the runtime *reports*,
+ * so the reported mode can never disagree with the applied one (it did before:
+ * a production built-in reported `isolated` while running in-process).
+ */
+export function resolveExecution(
+  manifest: Pick<PluginManifestFile, 'builtin' | 'execution'>,
+): 'trusted' | 'isolated' {
+  if (manifest.execution) return manifest.execution;
+  if (manifest.builtin === true) return 'trusted';
+  return process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted';
+}
+
+/**
+ * Whether the operator may uninstall this package.
+ *
+ * Kernel-owned policy, separate from provenance. Existing installs predate the
+ * field, so the fallback keeps the old behaviour (`builtin` ⇒ not removable)
+ * rather than suddenly making every shipped package deletable.
+ */
+export function resolveRemovable(
+  manifest: Pick<PluginManifestFile, 'builtin' | 'removable'>,
+): boolean {
+  if (manifest.removable !== undefined) return manifest.removable;
+  return manifest.builtin !== true;
+}
+
 /** Read a plugin manifest returning null when the package is absent/invalid. */
 async function readPluginManifestOrNull(id: string): Promise<PluginManifestFile | null> {
   try {
@@ -783,13 +915,17 @@ export async function loadPluginDefinition(id: string): Promise<PluginDefinition
   if (!entryData) throw new PluginError(422, `缺少插件入口文件：${id}`);
   // Existing local development plugins predate the execution field. Keep them
   // usable during development; production always takes the isolated path.
-  const execution =
-    manifest.execution ?? (process.env.NODE_ENV === 'production' ? 'isolated' : 'trusted');
+  const execution = resolveExecution(manifest);
   // Web-process server-execution grant. Kernel-owned (builtin + operator
   // allowlist), never taken from the uploaded manifest (contract 03 §3.1).
   const frontendExecutions = resolveFrontendExecutions(id, manifest.builtin === true);
-  if (!manifest.builtin && execution !== 'trusted') {
-    return loadIsolatedPluginDefinition(id, entry, { ...manifest, execution, frontendExecutions });
+  if (execution === 'isolated') {
+    return loadIsolatedPluginDefinition(id, entry, {
+      ...manifest,
+      execution,
+      frontendExecutions,
+      removable: resolveRemovable(manifest),
+    });
   }
   const url = `${pathToFileURL(entry).href}?v=${Date.now()}`;
   const mod = (await import(url)) as Record<string, unknown>;
@@ -809,6 +945,7 @@ export async function loadPluginDefinition(id: string): Promise<PluginDefinition
       ...(manifest.builtin ? { builtin: true } : {}),
       ...(execution ? { execution } : {}),
       frontendExecutions,
+      removable: resolveRemovable(manifest),
     },
   };
 }
