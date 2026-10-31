@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   ISOLATED_CONTEXT_SERVICES,
+  KNOWN_ASYNC_ONLY_METHODS,
   SYNC_SERVICE_METHODS,
   SYNC_SERVICE_PREDICATES,
   isWireSafe,
@@ -236,5 +237,41 @@ describe('isWireSafe', () => {
     }
     expect(isWireSafe(new SessionCookie())).toBe(false);
     expect(isWireSafe({ name: 'sp_session' })).toBe(true);
+  });
+});
+
+/**
+ * The same audit run over the rest of `packages/sdk`, so the next reader can tell
+ * "checked and safe" from "not looked at yet".
+ *
+ * Findings, in the order the audit produced them:
+ *
+ * - `NotificationChannel.wants` — declared `boolean | Promise<boolean>` and the
+ *   dispatcher awaits it, so an async bridge cannot invert a guard. Safe.
+ * - `JobContext.handle` — returns a dispose function, and the worker builds that
+ *   synchronously around `callHost('jobs.handle')`. Safe.
+ * - `EventBus.publish/subscribe/intercept` — the worker wraps them with explicit
+ *   `void callHost(...)` and a local handler map, so the sync shapes are real. Safe.
+ * - `PluginContext.provide/getService/requireService/registerExtension/
+ *   getExtensions*` — answered from the worker's own maps. Safe.
+ * - `PluginLogger.info/warn/error` — `void callHost`, fire-and-forget by contract.
+ *   Safe.
+ * - `CurrencyService.toMinor/format` — pure functions evaluated in-process. Safe.
+ * - `CaptchaProvider.clientConfig/policyFor` — declared `MaybePromise`, and the
+ *   kernel awaits them. Safe.
+ * - `StorageProvider.url(key)` — **not safe**, see KNOWN_ASYNC_ONLY_METHODS.
+ */
+describe('sync-method audit coverage', () => {
+  it('pins the one known method the bridge still cannot serve synchronously', () => {
+    // If this ever becomes fixable, the entry must be deleted from the map and
+    // this test updated together — leaving it stale would hide a real gap.
+    expect(KNOWN_ASYNC_ONLY_METHODS).toEqual({ storage: ['url'] });
+  });
+
+  it('does not list a gap for any service the snapshot already covers', () => {
+    for (const name of Object.keys(KNOWN_ASYNC_ONLY_METHODS)) {
+      expect(SYNC_SERVICE_METHODS as Record<string, unknown>).not.toHaveProperty(name);
+      expect(SYNC_SERVICE_PREDICATES as Record<string, unknown>).not.toHaveProperty(name);
+    }
   });
 });

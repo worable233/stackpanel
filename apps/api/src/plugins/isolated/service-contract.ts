@@ -73,6 +73,36 @@ export const SYNC_SERVICE_PREDICATES: Readonly<
   notificationPolicy: ['declares'],
 });
 
+/**
+ * Provider-shaped capabilities (handed out as a handle, not a kernel service)
+ * whose methods the SDK declares **synchronous** but which the bridge cannot
+ * serve synchronously.
+ *
+ * `StorageProvider.url(key)` is the case: it returns a `string`, but the worker
+ * reaches it through `storage.invoke`, which awaits every method uniformly — so
+ * an isolated plugin gets a `Promise<string>` where the SDK promised a `string`.
+ * Concatenating that into markup yields `[object Promise]`, silently.
+ *
+ * It cannot be fixed the way the kernel services above are fixed. Those are
+ * snapshotted because their answer is a *value*; `url(key)` is a *function* of
+ * an argument the host does not know ahead of time, and the URL itself is
+ * provider-specific (local path vs S3 base vs image host), so the worker cannot
+ * compute it either without duplicating every provider's rules.
+ *
+ * The honest fix is therefore a signature change — `url` becomes async, or the
+ * plugin-facing backend drops it in favour of the already-async `signedUrl()`.
+ * Both touch `packages/sdk/src/storage.ts` and the kernel's own sync
+ * `provider-router.url()`, so it is tracked separately instead of being papered
+ * over here. Documented because "returns a promise where a string is expected"
+ * is exactly the silent breakage this module exists to eliminate, and the next
+ * reader should not assume it is covered.
+ *
+ * Pinned by `isolated-service-contract.test.ts` so the gap stays visible.
+ */
+export const KNOWN_ASYNC_ONLY_METHODS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  storage: ['url'],
+});
+
 /** Catalog of declared notification types, the input to `declares()`. */
 export interface NotificationTypeCatalog {
   /** Exact types and `.*` wildcards, as registered by the kernel and plugins. */
