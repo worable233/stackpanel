@@ -1,0 +1,41 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "invoice",
+  "version": "0.1.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "invoice-0.1.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "invoice.admin",
+    "invoice.view"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "发票插件",
+  "description": "按订单/客户开具发票，支持税费、折扣与打印导出。",
+  "artifact": {
+    "sha256": "b806b3bc99281b6a2b1dc0363748dc16bf0c92aaea8d4f9a3c83aa710489b94d",
+    "size": 64268
+  }
+}

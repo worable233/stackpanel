@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "myname",
+  "version": "0.1.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "myname-0.1.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "我的插件",
+  "description": "基于模板创建的 StackPanel 插件。",
+  "artifact": {
+    "sha256": "b1486608e20f51aedc582ca14b87fc621f750a4967b3a34d10291134c6634d57",
+    "size": 2311
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "altcha",
+  "version": "0.1.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "altcha-0.1.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "altcha.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "自托管人机验证",
+  "description": "插件自己签发并校验 ALTCHA 工作量证明挑战：无第三方服务、无需站点密钥、装完即用，可保护登录、注册、改密码、改邮箱等操作。",
+  "artifact": {
+    "sha256": "1c5eadedec8d6c8899feaeee4f22c342d78cffee36ba0598201dbf4fe254b7fa",
+    "size": 120211
+  }
+}

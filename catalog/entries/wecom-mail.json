@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "wecom-mail",
+  "version": "0.2.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "wecom-mail-0.2.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "wecom-mail.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "企业微信邮箱",
+  "description": "通过企业微信「应用发送邮件」接口投递站内通知与注册验证码，无需自建 SMTP 与发信域名。",
+  "artifact": {
+    "sha256": "82303663c421db457d81151a86a2ed723ba1b114f67bd51d5395354b25cb18e7",
+    "size": 416320
+  }
+}

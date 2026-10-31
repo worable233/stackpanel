@@ -186,3 +186,85 @@ git tag -d v0.1.0 && git push origin :refs/tags/v0.1.0
 `pnpm release:catalog` → `.github/workflows/publish-catalog.yml`。内核清单里的
 `upgradeFrom` 决定实例能从哪些旧版本直接升，市场目录里的 `compatibility.kernel`
 决定插件能装在哪些内核上，两者不要互相顶替。
+
+「目录里有条目」才算真能装。只跑通工作流、目录 `entries: []`，实例刷新后照样
+一个包都装不到——这是这条流水线最容易误判的地方。
+
+### 8.1 打包（在插件仓执行）
+
+```bash
+cd ../StackPanel-plugins
+STACKPANEL_KERNEL_ROOT=/path/to/StackPanel \
+  node scripts/pack-all.mjs \
+    --out dist-pack \
+    --key ~/.stackpanel-release/pkg-signing.pem \
+    --tag plugins-v0.1.0
+```
+
+产出两类东西，缺一不可：
+
+- `dist-pack/<id>-<version>.zip` —— 真正的安装包，内含 `manifest.json`、`dist/`、
+  `frontend/` 与 `signature.json`（Ed25519，全部文件的 SHA-256 集合）；
+- `dist-pack/entries/<id>.json` —— 目录条目，摘要与大小由
+  `scripts/release/build-manifest.mjs` 按真实字节算出，不手写。
+
+打包前先保证每个插件 `frontend/manifest.json` 的 `files[]` **只列真实产物**。
+内核的 `validateFrontendFiles` 逐条校验「存在且在允许列表内」，多写一个
+`admin.runtime.js`（内核发布时才派生）就会让整个包 422。本地各有一次机会发现：
+
+```bash
+node scripts/check-frontend-manifests.mjs          # 与源码一致
+STACKPANEL_KERNEL_ROOT=... node scripts/verify-frontend-manifests.mjs   # 真构建比对
+```
+
+### 8.2 上传资产
+
+```bash
+cd dist-pack
+gh release create plugins-v0.1.0 --repo worable233/stackpanel-plugins \
+  --title "插件包 v0.1.0" --notes "…" *.zip
+```
+
+目录条目的 `source.tag` / `source.asset` 必须指到这个 Release 的真实 tag 与资产名。
+改个文件名就装不上，而且失败发生在用户的安装点击之后。
+
+### 8.3 目录条目与发布者白名单
+
+把 `dist-pack/entries/*.json` 提交到本仓 `catalog/entries/`（工作流从这里拷）。
+再配 `CATALOG_PUBLISHERS`（secret，JSON 数组）：
+
+```json
+[{ "publisher": "stackpanel", "keyIds": ["pkg-2026-11"], "repositories": ["worable233/stackpanel-plugins"] }]
+```
+
+三重绑定缺一不可：条目的 `publisher` 必须出现在这里；`keyIds` 必须能验证包内
+`signature.json`；`repositories` 必须包含条目的 `source.repository`。实例侧同理，
+keyring（`<数据目录>/trust/keyring.json`）里要有同一个 keyId 且 `purpose: "package"`。
+
+### 8.4 触发目录发布
+
+```bash
+gh workflow run publish-catalog.yml -f sequence=<N+1> -f publish=true
+```
+
+`sequence` 单调递增，**不能覆盖**已存在的 `catalog-v1/<N>` 标签（工作流会拦）。
+`publish=true` 才会把 `channels.json` 提交到市场仓默认分支——**不提交，实例永远
+看不到新目录**，表现为「刷新成功但 sequence 不变」。
+
+### 8.5 本地先验一遍条目
+
+```bash
+node scripts/release/build-catalog.mjs \
+  --entries catalog/entries --config /tmp/catalog.config.json \
+  --key-file /tmp/test-key.pem --out /tmp/catalog-out --key-id catalog-2026
+```
+
+用临时私钥即可，目的是让条目过一遍契约校验（`entries: 22` 之类的输出就是通过），
+产物不要发布。
+
+### 8.6 验收
+
+1. 实例 `POST /admin/distribution/refresh` → `sequence` 变成新值、`expired:false`；
+2. `GET /market/admin/plugins` 出现远程条目；
+3. `POST /market/admin/plugins/:id/install` 装成功并能启用；
+4. 包签名 keyId 在实例 keyring 中且 `purpose: "package"`，否则安装会被拒。

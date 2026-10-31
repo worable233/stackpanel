@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "notice",
+  "version": "0.2.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "notice-0.2.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "notice.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "站点公告",
+  "description": "站点公告：发布与维护前台公告，通过自定义模型（notice/announcement）实现。",
+  "artifact": {
+    "sha256": "716e0ddd4c6367f4f647f8035438da0c55313efc2407e29aae393b1f4a3d063a",
+    "size": 20092
+  }
+}

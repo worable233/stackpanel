@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "captcha",
+  "version": "0.1.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "captcha-0.1.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "captcha.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "人机验证",
+  "description": "在登录、注册、改密码、改邮箱等敏感操作前加人机验证。支持 Turnstile / hCaptcha / reCAPTCHA / Cap 与任意 siteverify 兼容接口。",
+  "artifact": {
+    "sha256": "705be8f817237dcbd8486c3feb2cdf154f51f01940c84c9480b9617fff12f6c8",
+    "size": 380175
+  }
+}

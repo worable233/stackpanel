@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "ticket",
+  "version": "0.3.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "ticket-0.3.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "ticket.view",
+    "ticket.create",
+    "ticket.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "工单插件",
+  "description": "工单系统：用户提交/关闭/催单，管理员接单/转交/内部备注，支持分类、部门与关联订单。",
+  "artifact": {
+    "sha256": "3cc49cfb13f9acf9e1d3dfdfab4d0da200d9c9446b8b54e7d061bbadefef9f6d",
+    "size": 58048
+  }
+}

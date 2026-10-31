@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "wowid",
+  "version": "0.1.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "wowid-0.1.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "WowID 登录",
+  "description": "符合标准的 WowID OpenID Connect 第三方认证提供商。",
+  "artifact": {
+    "sha256": "84e72f11df9cf93b7fdaeb7abe1838674dc357e871368d4950e5722225f45707",
+    "size": 8001
+  }
+}

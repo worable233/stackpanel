@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "alipay",
+  "version": "0.1.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "alipay-0.1.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "alipay.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "支付宝（当面付）",
+  "description": "支付宝当面付直连：扫码支付 + 异步通知验签，不经过第三方聚合网关。",
+  "artifact": {
+    "sha256": "3b0a4f8d87ffd65444d3eece48e2f23d21143c3ce59ec5672939e333a5007004",
+    "size": 34877
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "cms",
+  "version": "0.3.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "cms-0.3.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "custom.cms.post.read",
+    "custom.cms.post.write",
+    "custom.cms.page.read",
+    "custom.cms.page.write"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "CMS 内容管理",
+  "description": "文章与页面：草稿 / 版本 / 定时发布 / 预览 + slug 变更 301，含内容语言与译文分组。",
+  "artifact": {
+    "sha256": "37ffafb52bfdea0ecf9407f75fb31e6e43ec7bf185e491f5ec1e3b7594c5e9c0",
+    "size": 84493
+  }
+}

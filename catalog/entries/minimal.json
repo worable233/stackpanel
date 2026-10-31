@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "minimal",
+  "version": "1.0.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "minimal-1.0.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "最小示例",
+  "description": "最简单的 StackPanel 插件示例。",
+  "artifact": {
+    "sha256": "7075aacf0a8321522b1ce87006f2341b90d352bce30856527331d298a510014b",
+    "size": 1999
+  }
+}

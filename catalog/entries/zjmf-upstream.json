@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "zjmf-upstream",
+  "version": "0.3.11",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "zjmf-upstream-0.3.11.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "zjmf-upstream.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "魔方上游",
+  "description": "将魔方财务（ZJMF）V1 与 V10 商品作为货源接入商店：提供货源清单、配置读取与履约，不自动创建商店商品。",
+  "artifact": {
+    "sha256": "8dc550dccf4a5390dee46f73960f5d83f9058891a491226bac92bc73f8593f8c",
+    "size": 188571
+  }
+}

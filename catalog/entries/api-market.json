@@ -1,0 +1,41 @@
+{
+  "formatVersion": 1,
+  "kind": "plugin",
+  "id": "api-market",
+  "version": "0.1.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "plugins-v0.1.0",
+    "asset": "api-market-0.1.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <1.0.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [
+    "api-market.use",
+    "api-market.admin"
+  ],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "API 市场",
+  "description": "管理员录入第三方 REST 接口，用户自助签发 key，网关按模板转发并按次扣额度。",
+  "artifact": {
+    "sha256": "9edbd03ef091980747d417dbdef8f3402201b5386a40822fa7215d2b5d1869af",
+    "size": 7448
+  }
+}
