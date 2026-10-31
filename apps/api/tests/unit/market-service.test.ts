@@ -317,6 +317,21 @@ describe('MarketService（内核保留的分发安全原语）', () => {
     expect((limitedError as PluginError).code).toBe('market.sourceRateLimited');
     expect((limitedError as PluginError).status).toBe(503);
     expect((limitedError as PluginError).retryAfterSeconds).toBe(8);
+
+    // 限流有时被包在「下载失败」里再抛出来：只看最外层就会退化成「网络不可用」。
+    const wrapped = harness({
+      catalogConfigured: true,
+      installError: new CatalogMarketError('下载失败', [], 'fetch', {
+        message: 'wrapper',
+        cause: { kind: 'rate_limited', retryAfterMs: 3000 },
+      }),
+    });
+    const wrappedError = await wrapped.service.install('plugin', 'analytics').then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect((wrappedError as PluginError).code).toBe('market.sourceRateLimited');
+    expect((wrappedError as PluginError).retryAfterSeconds).toBe(3);
   });
 
   it('未配置目录时安装远程条目给出明确拒绝', async () => {

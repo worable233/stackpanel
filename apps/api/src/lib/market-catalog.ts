@@ -116,27 +116,36 @@ export function mapCatalogInstallError(error: unknown): PluginError | null {
 }
 
 /** 从各类分发异常里提取一个统一的失败类别（未知一律按「下载不到」）。 */
-function fetchFailureKind(cause: unknown): string | null {
+function fetchFailureKind(cause: unknown, depth = 0): string | null {
   if (!cause || typeof cause !== 'object') return null;
   const kind = (cause as { kind?: unknown }).kind;
-  if (typeof kind !== 'string') return null;
-  if (kind === 'too_large') return 'too_large';
-  if (kind === 'rate_limited') return 'rate_limited';
-  if (kind === 'invalid_archive') return 'invalid';
-  if (kind === 'digest_mismatch' || kind === 'signature') return 'signature';
-  if (kind === 'unknown_publisher' || kind === 'repository_not_allowed' || kind === 'missing_key') {
-    return 'signature';
+  if (typeof kind === 'string') {
+    if (kind === 'too_large') return 'too_large';
+    if (kind === 'rate_limited') return 'rate_limited';
+    if (kind === 'invalid_archive') return 'invalid';
+    if (kind === 'digest_mismatch' || kind === 'signature') return 'signature';
+    if (kind === 'unknown_publisher' || kind === 'repository_not_allowed' || kind === 'missing_key') {
+      return 'signature';
+    }
   }
   if (cause instanceof DistributionSignatureError) return 'signature';
   if (cause instanceof KeyringError) return 'signature';
+  // 包下载失败有时会把 GitHub 的 429 包在 `cause` 里；不往下看一层，限流就会被
+  // 当成「网络不可用」，界面也就无法给出「等 N 秒」。
+  if (depth < 2) {
+    const nested = fetchFailureKind((cause as { cause?: unknown }).cause, depth + 1);
+    if (nested) return nested;
+  }
   return null;
 }
 
 /** `Retry-After` 建议的等待秒数（向上取整；没有就交给调用方兜底）。 */
-function rateLimitRetrySeconds(cause: unknown): number | undefined {
-  const ms = (cause as { retryAfterMs?: unknown } | null)?.retryAfterMs;
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return undefined;
-  return Math.max(1, Math.ceil(ms / 1000));
+function rateLimitRetrySeconds(cause: unknown, depth = 0): number | undefined {
+  if (!cause || typeof cause !== 'object') return undefined;
+  const ms = (cause as { retryAfterMs?: unknown }).retryAfterMs;
+  if (typeof ms === 'number' && Number.isFinite(ms) && ms > 0) return Math.max(1, Math.ceil(ms / 1000));
+  if (depth >= 2) return undefined;
+  return rateLimitRetrySeconds((cause as { cause?: unknown }).cause, depth + 1);
 }
 
 /** 远程目录安装所需的、可注入的依赖集合。 */
