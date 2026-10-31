@@ -8,7 +8,9 @@
  * travel as explicit base64 strings inside the existing JSON channel. Both the
  * host and the worker import these types so the two sides cannot drift.
  *
- * See `docs/architecture/INTERFACES.md` §3.3e for the frozen contract.
+ * The shapes below are the frozen contract between the two sides: both the host
+ * and the worker import them, and `tests/unit/isolated-rpc.test.ts` pins the
+ * wire format. Changing either side alone is a protocol break.
  */
 
 /** Metadata for a raw invocation (no body; the body streams in separately). */
@@ -123,14 +125,6 @@ export interface RawAckFrame {
 }
 
 export type RawHostFrame =
-  | RawInvokeFrame
-  | RawBodyFrame
-  | RawBodyErrorFrame
-  | RawAbortFrame
-  | RawAckFrame;
+  RawInvokeFrame | RawBodyFrame | RawBodyErrorFrame | RawAbortFrame | RawAckFrame;
 export type RawWorkerFrame =
-  | RawHeadFrame
-  | RawChunkFrame
-  | RawEndFrame
-  | RawErrorFrame
-  | RawPullFrame;
+  RawHeadFrame | RawChunkFrame | RawEndFrame | RawErrorFrame | RawPullFrame;

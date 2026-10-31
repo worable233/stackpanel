@@ -22,13 +22,13 @@
 
 ## 2. 已存在的文件与职责
 
-| 文件 | 作用 |
-| --- | --- |
-| `packages/plugins/storage/frontend/src/index.tsx` | 前端包入口：声明 `finders` + `ui.adminRoutes` + `ui.actions`（保存动作）。**元数据声明**，无交互逻辑。 |
-| `packages/plugins/storage/frontend/src/admin.tsx` | `'use client'` 交互式管理页组件（`adminPages['admin/storage']`）。表单本体在这里。 |
-| `packages/plugins/storage/frontend/src/schemas.ts` | finder 响应 zod schema（`adminConfigSchema`）。**必须与后端 `toView` 逐字对齐**。 |
-| `packages/plugins/storage/frontend/manifest.json` | **生成物**，不要手改。由 `scripts/build-frontend.mjs` 依据编译产物 + `frontend` 导出重建。 |
-| `packages/plugins/storage/frontend/dist/{index,admin}.js` | **编译产物**。改完 `src/*` 必须重新构建。 |
+| 文件                                                      | 作用                                                                                                   |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `packages/plugins/storage/frontend/src/index.tsx`         | 前端包入口：声明 `finders` + `ui.adminRoutes` + `ui.actions`（保存动作）。**元数据声明**，无交互逻辑。 |
+| `packages/plugins/storage/frontend/src/admin.tsx`         | `'use client'` 交互式管理页组件（`adminPages['admin/storage']`）。表单本体在这里。                     |
+| `packages/plugins/storage/frontend/src/schemas.ts`        | finder 响应 zod schema（`adminConfigSchema`）。**必须与后端 `toView` 逐字对齐**。                      |
+| `packages/plugins/storage/frontend/manifest.json`         | **生成物**，不要手改。由 `scripts/build-frontend.mjs` 依据编译产物 + `frontend` 导出重建。             |
+| `packages/plugins/storage/frontend/dist/{index,admin}.js` | **编译产物**。改完 `src/*` 必须重新构建。                                                              |
 
 后端契约来源：
 
@@ -62,10 +62,10 @@
     httpPublicBaseUrl: string;
     httpMethod: 'PUT' | 'POST';
     httpFieldName: string;
-    httpHeaders: string;              // 多行文本，每行 "Header: value"
+    httpHeaders: string; // 多行文本，每行 "Header: value"
     httpDeleteUrlTemplate: string;
-    hasCredentials: boolean;          // 是否已存过 S3 密钥
-    secretsAvailable: boolean;        // 内核是否配了 SETTINGS_ENCRYPTION_KEY
+    hasCredentials: boolean; // 是否已存过 S3 密钥
+    secretsAvailable: boolean; // 内核是否配了 SETTINGS_ENCRYPTION_KEY
   }
 }
 ```
@@ -111,7 +111,7 @@
 - **成功提示需要前端自己做**：因为成功后只是 `revalidatePath` + 静默兑现。
   可行做法：用 `useActionState`/`useFormStatus` 包一层，在提交后本地置一个「已保存」态；
   但注意 `redirect` 会 reject server-action promise，**不要**用 `await action(formData)` 的 try/catch
-  去判失败（见 executor 源码 L70–80 的注释与 `INTERFACES.md §3.4`）。判断是否成功最稳妥的方式是
+  去判失败（见 `docs/design/feedback-ux-handoff.md` §4.1「action 返回语义」）。判断是否成功最稳妥的方式是
   观察 `props.data` 是否刷新（配置回显与表单一致），或比较提交前后配置值。
 
 ---
@@ -157,7 +157,7 @@
   「当前无法保存配置（缺少权限或未登录）」。
 - `StorageAdminPage`：从 `props.data.storageConfig` 取配置，配 `PageHeader`。
 - UI 组件来自 `@stackpanel/ui`：`Button/Card/CardContent/CardDescription/CardHeader/Input/Label/
-  PageHeader/SectionTitle/Select`；图标来自 `lucide-react`。
+PageHeader/SectionTitle/Select`；图标来自 `lucide-react`。
 
 ### 页面 URL 与宿主渲染
 

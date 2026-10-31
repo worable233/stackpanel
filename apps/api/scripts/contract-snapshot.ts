@@ -7,10 +7,7 @@ import {
   diffContracts,
   type ContractSnapshot,
 } from '../src/lib/contract-snapshot.ts';
-import {
-  capabilityPaths,
-  fromKernelCapability,
-} from '../src/lib/openapi-contract.ts';
+import { capabilityPaths, fromKernelCapability } from '../src/lib/openapi-contract.ts';
 
 /**
  * Generate / check the OpenAPI contract snapshot (CONTRACT-SEC / G2).
@@ -65,7 +62,7 @@ async function main(): Promise<void> {
   if (baseline.formatVersion !== snapshot.formatVersion) {
     console.error(
       `契约快照格式版本不一致（基线 ${baseline.formatVersion}，当前 ${snapshot.formatVersion}）；` +
-        '请更新基线并走接口变更流程（INTERFACES.md §5）。',
+        '请更新基线并走接口变更流程（`docs/API-COMPATIBILITY.md`）。',
     );
     process.exit(1);
   }
@@ -79,7 +76,7 @@ async function main(): Promise<void> {
     for (const item of diff.breaking) {
       console.error(`  - [${item.kind}] ${item.method} ${item.path}：${item.detail}`);
     }
-    console.error('如属预期，请更新基线快照并走接口变更流程（INTERFACES.md §5）。');
+    console.error('如属预期，请更新基线快照并走接口变更流程（`docs/API-COMPATIBILITY.md`）。');
     process.exit(1);
   }
   console.log(`契约兼容检查通过（基线操作数：${Object.keys(baseline.operations).length}）。`);

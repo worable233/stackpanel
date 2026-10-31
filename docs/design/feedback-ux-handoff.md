@@ -122,6 +122,39 @@
 
 6. **轮询失败不加 toast。** `agent-workspace` 每 5s 轮询，失败提示会刷屏。
 
+### 4.1 action 返回语义（2026-11 修订，替代本节第 4 条的「成功也 redirect」）
+
+插件 action 对**业务结果**不再用 redirect 表达，而是**返回** `PluginActionResult`：
+
+```ts
+{ ok: true, message?: string }
+| { ok: false, error: string; requestId?: string }
+```
+
+- 只有**真导航**（`action.redirect` 声明的目的地、会话过期跳登录）才 reject——Next 用
+  异常表达 redirect，插件 `await action(formData)` 会把**成功**当失败。
+  真实事故：市场页「重新安装」服务端 200 + `Plugin activated`，界面却弹
+  「安装失败，请重试」，用户反复重装（每次都 unregister→register，服务短暂中断）。
+- 提示仍由宿主给：`apps/web/src/lib/plugin-action-client.ts` 在客户端包装 action，
+  成功有 `message` 就 `toast.success`，`ok: false` 就 `toast.error(error)`，然后把结果
+  原样返回给页面。包装点必须覆盖三条渲染路径：`runtime-admin-page.tsx`（M2 默认）、
+  `admin-plugin-page.tsx`（构建期登记）、`frontend-route.tsx`（公开页面）。
+- 页面要行内显示精确原因时直接用 `result.error`（市场页就是这么做的）：
+  「前端文件超 2 MiB / 签名验不过 / 条目不在目录 / worker 起不来」不能被压成一句通用文案。
+  宿主会**先用包自己的 catalog** 查 `error.<code>`（ADR-0016 §3：包拥有自己的领域词汇），
+  查不到才退回内核 catalog 与通用兜底——服务端英文 `detail` 永远不会上屏（ADR-0012）。
+  因此失败文案的可分辨程度取决于**包的错误码粒度**：把多种原因塞进同一个码，
+  界面就只能给同一句话。
+- `requestId` 是「界面上这句话」与「日志里那条原因」之间唯一的桥：`actionFailure()`
+  从 `ApiError.requestId` 带出来，页面把它渲染成小字（市场页：`row.requestId`）。
+  没有它，操作者拿到「安装失败」四个字无从下手。
+- 成功的**持久**回执由页面自己给（`ok: true` 后置行内状态，如市场页「已安装 0.1.0」），
+  宿主 toast 只在包声明了 `successFeedback` 时出现。守门测试
+  `apps/web/tests/feedback-success-feedback.test.ts` 因此接受三种形态：
+  `successFeedback` / `silent` / 登记在 `INLINE_RECEIPT_ACTIONS` 里的行内回执（须写明谁渲染）。
+- `?action=…&success|error=…` 这套 URL 通道保留给内核自己的 server action，插件 action
+  不再写它；`ActionFeedbackToaster` 因此对插件页面静默。
+
 ---
 
 ## 5. 怎么验证（记忆里踩过的命令坑）
