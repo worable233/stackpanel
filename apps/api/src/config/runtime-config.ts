@@ -32,7 +32,10 @@ const SETTING_PREFIX = 'config.';
 export type RuntimeConfigGroup =
   'auth' | 'session' | 'media' | 'openapi' | 'plugins' | 'audit' | 'agent';
 
-/** 可入库的运行期配置键（值一律是 `envSchema` 里同名字段的合法取值）。 */
+/**
+ * 内核可以**读**的运行期配置键（值一律是 `envSchema` 里同名字段的合法取值）。
+ * 注意这是读取口径，不等于"后台可改"：可改的只有 `RUNTIME_CONFIG_SPECS` 里的项。
+ */
 export type RuntimeConfigName =
   | 'AUTH_CAPTCHA_MODE'
   | 'AUTH_CODE_TTL_SECONDS'
@@ -63,6 +66,13 @@ export interface RuntimeConfigSpec {
  * 不在这里、但仍需运维理解的项见 `docs/design/runtime-config.md`：
  * 引导/密钥/基础设施 16 项 + 启动期读取 15 项，以及已有专属后台界面的
  * `distribution.catalogSource`（分发源）与 `signing.publicKey`（签名公钥）。
+ *
+ * **跨进程约定项不得入库**：`SESSION_COOKIE_NAME` / `SESSION_TTL_SECONDS` 虽然内核自己
+ * 也在读，但 web BFF 是**另一个进程**（另一个容器、另一份环境变量），它用它决定自己写入
+ * 的 cookie 名与 maxAge。内核这边改了名，web 那边仍按旧名读 → 全站会话立即全部失效；
+ * 内核侧 TTL 缩短、web 侧 cookie 仍按旧 maxAge 存活 → 运维以为"把会话调短了"，浏览器却
+ * 一直带着一个已过期的 token（表现为 401 循环）。这类"必须两边同时改"的项属于部署契约，
+ * 只能留在 `.env`，不进后台。
  */
 export const RUNTIME_CONFIG_SPECS: readonly RuntimeConfigSpec[] = Object.freeze([
   { name: 'AUTH_CAPTCHA_MODE', group: 'auth' },
@@ -70,8 +80,6 @@ export const RUNTIME_CONFIG_SPECS: readonly RuntimeConfigSpec[] = Object.freeze(
   { name: 'AUTH_CODE_MAX_ATTEMPTS', group: 'auth' },
   { name: 'AUTH_CODE_SEND_PER_HOUR', group: 'auth' },
   { name: 'AUTH_CODE_SEND_PER_HOUR_PER_IP', group: 'auth' },
-  { name: 'SESSION_COOKIE_NAME', group: 'session' },
-  { name: 'SESSION_TTL_SECONDS', group: 'session' },
   { name: 'MEDIA_MAX_UPLOAD_BYTES', group: 'media' },
   { name: 'MEDIA_VARIANTS_ASYNC', group: 'media' },
   { name: 'OPEN_API_TOKEN_RPM', group: 'openapi' },

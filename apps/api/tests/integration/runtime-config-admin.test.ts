@@ -37,7 +37,7 @@ describe.skipIf(!dbAvailable)('runtime config admin API (real DB)', () => {
       where: {
         key: {
           in: [
-            runtimeConfigSettingKey('SESSION_TTL_SECONDS'),
+            runtimeConfigSettingKey('AUDIT_LOG_RETENTION_DAYS'),
             runtimeConfigSettingKey('AUTH_CODE_TTL_SECONDS'),
           ],
         },
@@ -92,35 +92,49 @@ describe.skipIf(!dbAvailable)('runtime config admin API (real DB)', () => {
   });
 
   it('rejects every verb for a non-admin', async () => {
-    // 这些写入口能改变全站会话寿命、上传上限、限流额度，必须只有管理员能碰。
+    // 这些写入口能改变审计留存、上传上限、限流额度，必须只有管理员能碰。
     expect((await get('/admin/config', userToken)).statusCode).toBe(403);
     expect(
-      (await put('/admin/config/SESSION_TTL_SECONDS', { value: '900' }, userToken)).statusCode,
+      (await put('/admin/config/AUDIT_LOG_RETENTION_DAYS', { value: '900' }, userToken)).statusCode,
     ).toBe(403);
-    expect((await del('/admin/config/SESSION_TTL_SECONDS', userToken)).statusCode).toBe(403);
+    expect((await del('/admin/config/AUDIT_LOG_RETENTION_DAYS', userToken)).statusCode).toBe(403);
+  });
+
+  it('refuses to expose the cross-process session contract as a runtime knob', async () => {
+    // 内核与 web BFF 是两个进程、两份环境变量，cookie 名与寿命必须逐字节一致：
+    // 让管理员在后台单边改掉，等于把"登录"这件事弄坏一半，且没有任何错误看得见。
+    for (const name of ['SESSION_COOKIE_NAME', 'SESSION_TTL_SECONDS']) {
+      const response = await put(`/admin/config/${name}`, { value: '1' }, adminToken);
+      expect(response.statusCode, name).toBe(404);
+      expect((response.json() as { code?: string }).code).toBe('config.unknown_key');
+      expect(await getPrisma().setting.findUnique({ where: { key: `config.${name}` } })).toBeNull();
+    }
+    const listed = await get('/admin/config', adminToken);
+    const names = (listed.json() as { entries: { name: string }[] }).entries.map((e) => e.name);
+    expect(names).not.toContain('SESSION_TTL_SECONDS');
   });
 
   it('stores an override and applies it to the running process immediately', async () => {
-    const response = await put('/admin/config/SESSION_TTL_SECONDS', { value: '900' });
+    const response = await put('/admin/config/AUDIT_LOG_RETENTION_DAYS', { value: '900' });
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
       entries: { name: string; value: unknown; source: string }[];
     };
-    const entry = body.entries.find((item) => item.name === 'SESSION_TTL_SECONDS');
+    const entry = body.entries.find((item) => item.name === 'AUDIT_LOG_RETENTION_DAYS');
     expect(entry?.value).toBe(900);
     expect(entry?.source).toBe('stored');
     // The point of the whole mechanism: the runtime reads the new value at once.
-    expect(getConfig('SESSION_TTL_SECONDS')).toBe(900);
-    expect(getConfigSource('SESSION_TTL_SECONDS')).toBe('stored');
+    expect(getConfig('AUDIT_LOG_RETENTION_DAYS')).toBe(900);
+    expect(getConfigSource('AUDIT_LOG_RETENTION_DAYS')).toBe('stored');
     // Persisted, not just cached in memory.
     const row = await getPrisma().setting.findUnique({
-      where: { key: runtimeConfigSettingKey('SESSION_TTL_SECONDS') },
+      where: { key: runtimeConfigSettingKey('AUDIT_LOG_RETENTION_DAYS') },
     });
     expect(row?.value).toBe(900);
     // A fresh process (snapshot reload) sees it too.
     resetRuntimeConfigForTest();
     await loadRuntimeConfig();
-    expect(getConfig('SESSION_TTL_SECONDS')).toBe(900);
+    expect(getConfig('AUDIT_LOG_RETENTION_DAYS')).toBe(900);
   });
 
   it('rejects values the runtime could not parse, and unknown keys', async () => {
@@ -141,17 +155,17 @@ describe.skipIf(!dbAvailable)('runtime config admin API (real DB)', () => {
   });
 
   it('reverts to the environment value when the override is removed', async () => {
-    await put('/admin/config/SESSION_TTL_SECONDS', { value: '900' });
-    const response = await del('/admin/config/SESSION_TTL_SECONDS');
+    await put('/admin/config/AUDIT_LOG_RETENTION_DAYS', { value: '900' });
+    const response = await del('/admin/config/AUDIT_LOG_RETENTION_DAYS');
     expect(response.statusCode).toBe(200);
-    expect(getConfigSource('SESSION_TTL_SECONDS')).not.toBe('stored');
+    expect(getConfigSource('AUDIT_LOG_RETENTION_DAYS')).not.toBe('stored');
     expect(
       await getPrisma().setting.findUnique({
-        where: { key: runtimeConfigSettingKey('SESSION_TTL_SECONDS') },
+        where: { key: runtimeConfigSettingKey('AUDIT_LOG_RETENTION_DAYS') },
       }),
     ).toBeNull();
     const body = response.json() as { entries: { name: string; source: string }[] };
-    expect(body.entries.find((item) => item.name === 'SESSION_TTL_SECONDS')?.source).not.toBe(
+    expect(body.entries.find((item) => item.name === 'AUDIT_LOG_RETENTION_DAYS')?.source).not.toBe(
       'stored',
     );
   });

@@ -18,28 +18,26 @@ import {
 
 afterEach(() => {
   resetRuntimeConfigForTest();
-  delete process.env['SESSION_TTL_SECONDS'];
+  delete process.env['AUTH_CODE_TTL_SECONDS'];
 });
 
 describe('runtime config precedence (ADR-0026)', () => {
   it('falls back to the environment variable when nothing is stored', () => {
-    process.env['SESSION_TTL_SECONDS'] = '900';
     resetRuntimeConfigForTest();
     // `env` was parsed once at import, so this asserts the un-overridden path is
     // whatever the process started with — the stored override is what must win.
-    const fromEnv = getConfig('SESSION_TTL_SECONDS');
-    expect(fromEnv).toBeGreaterThan(0);
-    expect(getConfigSource('SESSION_TTL_SECONDS')).not.toBe('stored');
+    expect(getConfig('AUTH_CODE_TTL_SECONDS')).toBeGreaterThan(0);
+    expect(getConfigSource('AUTH_CODE_TTL_SECONDS')).not.toBe('stored');
   });
 
   it('lets a stored row win over the environment variable', () => {
     applyRuntimeConfigRows([
-      { key: runtimeConfigSettingKey('SESSION_TTL_SECONDS'), value: 7200 },
       { key: runtimeConfigSettingKey('AUTH_CODE_TTL_SECONDS'), value: '300' },
+      { key: runtimeConfigSettingKey('AUTH_CODE_MAX_ATTEMPTS'), value: '3' },
     ]);
-    expect(getConfig('SESSION_TTL_SECONDS')).toBe(7200);
     expect(getConfig('AUTH_CODE_TTL_SECONDS')).toBe(300);
-    expect(getConfigSource('SESSION_TTL_SECONDS')).toBe('stored');
+    expect(getConfig('AUTH_CODE_MAX_ATTEMPTS')).toBe(3);
+    expect(getConfigSource('AUTH_CODE_TTL_SECONDS')).toBe('stored');
   });
 
   it('parses booleans through the same field schema as the env variable', () => {
@@ -58,12 +56,11 @@ describe('runtime config precedence (ADR-0026)', () => {
     applyRuntimeConfigRows([
       { key: runtimeConfigSettingKey('AUTH_CODE_TTL_SECONDS'), value: 'not-a-number' },
       { key: runtimeConfigSettingKey('AUTH_CODE_MAX_ATTEMPTS'), value: -1 },
-      { key: runtimeConfigSettingKey('SESSION_COOKIE_NAME'), value: 'sp_session' },
+      { key: runtimeConfigSettingKey('AUTH_CAPTCHA_MODE'), value: 'sometimes' },
     ]);
     // Invalid rows fall back to the env/default value, valid ones still apply.
     expect(getConfig('AUTH_CODE_TTL_SECONDS')).toBeGreaterThan(0);
     expect(getConfig('AUTH_CODE_MAX_ATTEMPTS')).toBeGreaterThan(0);
-    expect(getConfig('SESSION_COOKIE_NAME')).toBe('sp_session');
     expect(getConfigSource('AUTH_CODE_TTL_SECONDS')).not.toBe('stored');
   });
 
@@ -73,7 +70,27 @@ describe('runtime config precedence (ADR-0026)', () => {
       { key: 'config.DATABASE_URL', value: 'postgres://evil' },
     ]);
     expect(isRuntimeConfigName('JWT_SECRET' as string)).toBe(false);
+    expect(getConfigSource('AUTH_CODE_TTL_SECONDS')).not.toBe('stored');
+  });
+
+  it('keeps the cross-process session contract out of the admin catalogue', () => {
+    // `SESSION_COOKIE_NAME` / `SESSION_TTL_SECONDS` are read by the kernel *and*
+    // by the web BFF (a different process with its own environment). Letting an
+    // administrator change them in one of the two makes the pair disagree: the
+    // kernel would set/expect a different cookie name than the BFF writes, which
+    // logs every user out, and a TTL change would only apply server-side while
+    // the browser keeps the old maxAge. Deploy-time contract, not a runtime knob.
+    expect(isRuntimeConfigName('SESSION_COOKIE_NAME')).toBe(false);
+    expect(isRuntimeConfigName('SESSION_TTL_SECONDS')).toBe(false);
+    applyRuntimeConfigRows([
+      { key: runtimeConfigSettingKey('SESSION_TTL_SECONDS'), value: '60' },
+      { key: runtimeConfigSettingKey('SESSION_COOKIE_NAME'), value: 'pwned' },
+    ]);
     expect(getConfigSource('SESSION_TTL_SECONDS')).not.toBe('stored');
+    expect(getConfig('SESSION_COOKIE_NAME')).not.toBe('pwned');
+    const names = runtimeConfigEntries().map((entry) => entry.name as string);
+    expect(names).not.toContain('SESSION_TTL_SECONDS');
+    expect(names).not.toContain('SESSION_COOKIE_NAME');
   });
 
   it('exposes a whitelist-only catalogue for the admin UI', () => {

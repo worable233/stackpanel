@@ -20,6 +20,7 @@ const ACTION_KEYS: Record<string, string> = {
   'auth.oauth.failed': 'auditAction.auth_oauth_failed',
   'auth.oauth.conflict': 'auditAction.auth_oauth_conflict',
   'auth.password.changed': 'auditAction.auth_password_changed',
+  'auth.email.changed': 'auditAction.auth_email_changed',
   'auth.password.reset': 'auditAction.auth_password_reset',
   'auth.password.reset_requested': 'auditAction.auth_password_reset_requested',
   'user.create': 'auditAction.user_create',

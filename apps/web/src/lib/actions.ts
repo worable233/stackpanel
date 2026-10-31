@@ -1,6 +1,7 @@
 'use server';
 import { ApiError, validatePassword } from '@stackpanel/sdk';
 import { cookies } from 'next/headers';
+import { clearSessionCookie, setSessionCookie } from './session-cookie.server';
 import { redirect } from 'next/navigation';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
@@ -114,14 +115,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     const result = await getApiClient().login(email, password, {
       ...captchaTokenFrom(formData),
     });
-    const store = await cookies();
-    store.set(process.env.SESSION_COOKIE_NAME ?? 'sp_session', result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
-    });
+    await setSessionCookie(result.token);
     destination = nextPath ?? (result.user.role === 'ADMIN' ? '/admin' : '/account');
   } catch (error) {
     return {
@@ -138,8 +132,7 @@ export async function logoutAction(): Promise<void> {
   } catch {
     // Ignore API failures; the local session cookie is cleared regardless.
   }
-  const store = await cookies();
-  store.delete(process.env.SESSION_COOKIE_NAME ?? 'sp_session');
+  await clearSessionCookie();
   redirect('/');
 }
 
@@ -171,18 +164,11 @@ export async function registerAction(_prev: LoginState, formData: FormData): Pro
         ? { captchaToken: captchaToken.trim() }
         : {}),
     });
-    const store = await cookies();
-    store.set(process.env.SESSION_COOKIE_NAME ?? 'sp_session', result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
-    });
+    await setSessionCookie(result.token);
     // Attribution is now recorded server-side; the landing cookie has no
     // further purpose, and keeping it would mis-attribute a second signup
     // from the same browser.
-    store.delete(AFFILIATE_COOKIE);
+    (await cookies()).delete(AFFILIATE_COOKIE);
     redirect(result.user.role === 'ADMIN' ? '/admin' : '/account');
   } catch (error) {
     return { error: await apiErrorMessage(error, translate(locale, 'auth.error.registerFailed')) };
@@ -367,14 +353,7 @@ export async function setupAction(_prev: LoginState, formData: FormData): Promis
         ? { setupToken: setupToken.trim() }
         : {}),
     });
-    const store = await cookies();
-    store.set(process.env.SESSION_COOKIE_NAME ?? 'sp_session', result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: Number(process.env.SESSION_TTL_SECONDS ?? 43200),
-    });
+    await setSessionCookie(result.token);
   } catch (error) {
     if (
       error instanceof ApiError &&

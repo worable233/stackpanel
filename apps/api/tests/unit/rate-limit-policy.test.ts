@@ -28,6 +28,7 @@ describe('rate-limit policy', () => {
     expect(surfaces.some((s) => s.includes('API Token'))).toBe(true);
     expect(surfaces.some((s) => s.includes('密钥'))).toBe(true);
     expect(surfaces.some((s) => s.includes('上传'))).toBe(true);
+    expect(surfaces.some((s) => s.includes('当前密码复核'))).toBe(true);
     for (const entry of RATE_LIMIT_COVERAGE) {
       expect(RATE_LIMIT[entry.preset]).toBeDefined();
     }

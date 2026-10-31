@@ -2,6 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { ApiClient } from '@stackpanel/sdk';
+import { sessionCookieName } from './session-cookie';
 
 export interface SessionUser {
   sub: string;
@@ -9,7 +10,9 @@ export interface SessionUser {
 }
 
 function cookieName(): string {
-  return process.env.SESSION_COOKIE_NAME ?? 'sp_session';
+  // Same single source as the writer (`session-cookie.ts`): reader and writer
+  // disagreeing on the name is the failure mode that logs everyone out at once.
+  return sessionCookieName();
 }
 
 function apiBaseUrl(): string {

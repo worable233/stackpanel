@@ -55,17 +55,22 @@
 新增环境变量默认不可编辑。这样某天多加一个密钥类变量时，不会因为"忘了加黑名单"
 而被无意暴露到后台。
 
-当前可编辑 16 项：
+当前可编辑 14 项：
 
 | 组           | 键                                                                                                                                  |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | 认证与验证码 | `AUTH_CAPTCHA_MODE`、`AUTH_CODE_TTL_SECONDS`、`AUTH_CODE_MAX_ATTEMPTS`、`AUTH_CODE_SEND_PER_HOUR`、`AUTH_CODE_SEND_PER_HOUR_PER_IP` |
-| 会话         | `SESSION_COOKIE_NAME`、`SESSION_TTL_SECONDS`                                                                                        |
 | 媒体         | `MEDIA_MAX_UPLOAD_BYTES`、`MEDIA_VARIANTS_ASYNC`                                                                                    |
 | 开放 API     | `OPEN_API_TOKEN_RPM`、`OPEN_API_TOKEN_CONCURRENCY`、`STACKPANEL_API_TOKEN_PREFIX`                                                   |
 | 插件         | `PACKAGE_SIGNATURE_REQUIRED`                                                                                                        |
 | 审计         | `AUDIT_LOG_RETENTION_DAYS`                                                                                                          |
 | Agent        | `AGENT_PUBLIC_ORIGIN`、`AGENT_WEB_ORIGIN`                                                                                           |
+
+**准入标准是"只影响内核自己"**。凡是内核与 web BFF（另一个进程、另一份环境变量）
+必须**逐字节一致**的项都不能入库——`SESSION_COOKIE_NAME` / `SESSION_TTL_SECONDS` 就是
+反例：内核这边改了名，web 仍按旧名读/写 cookie，全站会话立刻全部失效；内核侧 TTL 调短
+而 web 侧 cookie 仍按旧 `maxAge` 存活，运维以为"会话已经收紧"而浏览器一直带着一个已过期
+的 token。这类项属于**部署契约**，只能留在 `.env`。
 
 ## 3. 什么**不能**入库（必须留在进程外）
 
