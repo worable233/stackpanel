@@ -33,7 +33,7 @@ process.env.API_RATE_LIMIT_MULTIPLIER ??= '1000';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
-import { beforeAll } from 'vitest';
+import { afterAll, beforeAll } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
@@ -118,3 +118,23 @@ if (!(globalThis as { __spTestMigrated?: boolean }).__spTestMigrated) {
 // store-product-server, store-wallet). No extra plugin bundles are pre-installed
 // here: suites that need a plugin install it into their own temp data dir (see
 // integration/plugins.test.ts and integration/plugin-dispatch.test.ts).
+
+// ---- Cross-file module cache reset ----------------------------------------
+// Two module-level caches hold distribution state for the whole process:
+// `distribution/runtime.ts` (the refresh singleton) and
+// `distribution/source-config.ts` (the resolved source config). A suite that
+// pins a coordinator via `setCatalogRefreshForTest()` or saves a
+// `distribution.catalogSource` row leaves both behind, so the *next* file can
+// see a configured catalog even though its own env says `off` — the exact cause
+// of the flaky 「目录未配置」 assertion in integration/market.test.ts.
+//
+// Resetting after each **file** (afterAll, not afterEach) keeps a file's own
+// `beforeAll` pin intact while making files independent.
+afterAll(async () => {
+  const [{ resetCatalogRefreshForTest }, { resetCatalogSourceConfigForTest }] = await Promise.all([
+    import('../src/distribution/runtime.ts'),
+    import('../src/distribution/source-config.ts'),
+  ]);
+  resetCatalogRefreshForTest();
+  resetCatalogSourceConfigForTest();
+});

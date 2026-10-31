@@ -109,6 +109,18 @@ export function currentCatalogSourceConfig(): CatalogSourceConfig {
   return cached ?? ENV_DEFAULTS();
 }
 
+/**
+ * 仅供测试：丢弃进程内缓存的分发源配置。
+ *
+ * 缓存是**进程级**的，而数据库里的 `distribution.catalogSource` 在测试之间会被改写/
+ * 删除。不重置就会跨文件泄漏：某个套件存过仓库地址，后面的套件即使 env 是 `off`，
+ * `getCatalogRefresh()` 仍按缓存构造出协调器，于是「目录未配置」的断言随机失败。
+ */
+export function resetCatalogSourceConfigForTest(): void {
+  cached = null;
+  cachedSource = 'env';
+}
+
 /** 配置来自数据库还是环境变量。 */
 export function currentCatalogSourceConfigSource(): 'stored' | 'env' {
   return cachedSource;
@@ -237,12 +249,6 @@ export async function loadCatalogSourceConfig(): Promise<CatalogSourceConfig> {
   };
   cachedSource = stored ? 'stored' : 'env';
   return cached;
-}
-
-/** 供测试重置缓存。 */
-export function resetCatalogSourceConfigForTest(): void {
-  cached = null;
-  cachedSource = 'env';
 }
 
 export interface SaveCatalogSourceInput {

@@ -154,20 +154,28 @@ describe.skipIf(!dbAvailable)('storage plugin (real kernel + real backend)', () 
       // The object exists under the plugin's configured root...
       const inPlugin = await readFile(path.join(pluginRoot, key)).catch(() => null);
       expect(inPlugin, `expected ${key} under plugin root`).not.toBeNull();
-      expect(Buffer.from(inPlugin as Buffer).equals(png0)).toBe(true);
+      const stored = Buffer.from(inPlugin as Buffer);
+      // Ingest stores the **delivered** WebP copy, not the uploaded PNG bytes
+      // (ADR-0014 §4 addendum: 「the WebP *is* the stored original」). Asserting
+      // byte equality with the upload would pin the pre-WebP behaviour.
+      expect(key.endsWith('.webp')).toBe(true);
+      expect(stored.length).toBeLessThan(png0.length);
+      const decoded = await sharp(stored).metadata();
+      expect(decoded.format).toBe('webp');
+      expect([decoded.width, decoded.height]).toEqual([64, 64]);
 
       // ...and NOT under the env-configured default root.
       const inEnv = await readFile(path.join(envRoot, key)).catch(() => null);
       expect(inEnv).toBeNull();
 
-      // Bytes round-trip through the HTTP content route.
+      // The content route streams exactly the stored object back.
       const content = await app.inject({
         method: 'GET',
         url: `/media/${id}/content`,
         headers: { authorization: `Bearer ${adminToken}` },
       });
       expect(content.statusCode).toBe(200);
-      expect(content.rawPayload.equals(png0)).toBe(true);
+      expect(content.rawPayload.equals(stored)).toBe(true);
     });
 
     it('executes puts and deletes through the provider (spool, zero-copy)', async () => {
@@ -213,7 +221,9 @@ describe.skipIf(!dbAvailable)('storage plugin (real kernel + real backend)', () 
         headers: { authorization: `Bearer ${adminToken}` },
       });
       expect(content.statusCode, 'historical object must remain readable').toBe(200);
-      expect(content.rawPayload.equals(png0)).toBe(true);
+      // Served bytes are the stored (WebP-delivered) object, not the upload.
+      const historical = await readFile(path.join(envRoot, key));
+      expect(content.rawPayload.equals(historical)).toBe(true);
     });
   });
 
@@ -354,7 +364,11 @@ describe.skipIf(!dbAvailable)('storage plugin (real kernel + real backend)', () 
         // The bytes really reached the external image host, under the same key.
         const stored = host.files.get(key);
         expect(stored, `expected ${key} at the image host`).toBeDefined();
-        expect(Buffer.from(stored as Buffer).equals(png0)).toBe(true);
+        const pushed = Buffer.from(stored as Buffer);
+        // The proxy channel uploads the **stored** (WebP-delivered) object, so the
+        // host must see the same bytes the kernel wrote, not the upload.
+        expect(key.endsWith('.webp')).toBe(true);
+        expect(pushed.length).toBeLessThan(png0.length);
 
         // And `/media/:id/content` streams them back through proxy reads.
         const content = await app.inject({
@@ -363,7 +377,7 @@ describe.skipIf(!dbAvailable)('storage plugin (real kernel + real backend)', () 
           headers: { authorization: `Bearer ${adminToken}` },
         });
         expect(content.statusCode, content.body).toBe(200);
-        expect(content.rawPayload.equals(png0)).toBe(true);
+        expect(content.rawPayload.equals(pushed)).toBe(true);
       } finally {
         await host.close();
       }
