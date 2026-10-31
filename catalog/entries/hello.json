@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "hello-0.1.0.zip"
   },
   "compatibility": {
@@ -32,7 +32,7 @@
   "name": "Hello 插件",
   "description": "示例插件：演示生命周期、路由扩展与事件监听。",
   "artifact": {
-    "sha256": "209334282540e922263452ea45c9421fbbd992c92543901c69abbec608c60c0d",
+    "sha256": "1ec9c4eb9ef53ca167fd02caeef6914b31348a5308cd61676fa25377ee1673ee",
     "size": 2327
   }
 }

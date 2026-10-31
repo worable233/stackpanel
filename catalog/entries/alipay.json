@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "alipay-0.1.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "支付宝（当面付）",
   "description": "支付宝当面付直连：扫码支付 + 异步通知验签，不经过第三方聚合网关。",
   "artifact": {
-    "sha256": "3b0a4f8d87ffd65444d3eece48e2f23d21143c3ce59ec5672939e333a5007004",
-    "size": 34877
+    "sha256": "4b9a83d163de2eb59b75d1ede5d9ebe7f22bce04201b32607831154e882c7840",
+    "size": 29966
   }
 }

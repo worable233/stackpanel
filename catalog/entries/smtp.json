@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "smtp-0.1.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "SMTP 邮件通知",
   "description": "通过 SMTP 投递站内通知与注册验证码（TLS、认证、超时、连接复用、限速）。",
   "artifact": {
-    "sha256": "3804022bfade47497ed86677939ad7d8a9fab7f18920fd5866e396ae75dd2d4c",
+    "sha256": "e1352974c76b17906cca4630dd4eebd4c769e7ce8693ce0648884d685d7d2b43",
     "size": 379836
   }
 }

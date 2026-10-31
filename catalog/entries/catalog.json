@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "catalog-0.4.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "商品分类",
   "description": "单一分类树：商品在设置页选择分类，前台按分类树浏览服务。",
   "artifact": {
-    "sha256": "0484e490063399c5a0815aa21f045228b9c4d7fe9fcbeb2eaa0078e23577eba9",
+    "sha256": "820834c23de7cd492129cf2637d13a721e9b4d9b5c2401945e341fe48f74e5f6",
     "size": 48502
   }
 }

@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "epay-0.3.1.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "易支付",
   "description": "易支付（EasyPay）网关：为余额充值与订单结算提供 RSA 签名支付。",
   "artifact": {
-    "sha256": "84dca2ef787c8279ca728af3d9324ae1205dda7227b6f241c9b50e51f9eb4d9c",
+    "sha256": "229732cf576e49ad6b78135e0f6e899390071d7857c3e6388fde927dcad98b5e",
     "size": 35370
   }
 }

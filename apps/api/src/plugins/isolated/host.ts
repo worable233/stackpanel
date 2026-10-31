@@ -203,6 +203,19 @@ function workerMaxRssMb(): number {
   return Number.isFinite(value) ? Math.trunc(value) : heapMb + 256;
 }
 
+/**
+ * 注销一个 worker，但**只在登记项仍属于自己时**。
+ *
+ * 旧 worker 的 `exit` / 超时回调是异步到达的：安装新版本时先 `stopIsolatedPlugin`
+ * 杀掉旧子进程，紧接着 `startWorker` 已经用**同一个 id** 登记了新 worker；旧子进程
+ * 的退出事件随后才触发，若直接 `workers.delete(id)` 就会把刚起来的新 worker 一起
+ * 抹掉。结果是安装返回 409「isolated plugin X is unavailable」，并且插件在失败前
+ * 已经被 unregister——**一次失败的覆盖安装会让插件彻底消失**。
+ */
+function dropWorker(id: string, state: IsolatedWorker): void {
+  if (workers.get(id) === state) workers.delete(id);
+}
+
 async function startWorker(id: string, entry: string, manifest: PluginManifest): Promise<Ready> {
   const child = fork(workerModule(), [], {
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
@@ -245,13 +258,13 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
     let readySettled = false;
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      workers.delete(id);
+      dropWorker(id, state);
       readySettled = true;
       reject(new Error(`isolated plugin ${id} failed to start`));
     }, 10_000);
     child.once('error', (error) => {
       clearTimeout(timer);
-      workers.delete(id);
+      dropWorker(id, state);
       readySettled = true;
       reject(error);
     });
@@ -349,7 +362,7 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
         readySettled = true;
         reject(new Error(`isolated plugin ${id} exited before ready`));
       }
-      workers.delete(id);
+      dropWorker(id, state);
       for (const request of state.pending.values()) {
         clearTimeout(request.timer);
         request.reject(new Error(`isolated plugin ${id} exited`));

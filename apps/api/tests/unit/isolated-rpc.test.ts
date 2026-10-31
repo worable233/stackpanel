@@ -979,3 +979,39 @@ it('invokes an isolated model provider with unwrapped results and propagates can
     expect(await provider.aborted()).toBe(true);
   } finally {stopIsolatedPlugin(id);}
 },15000);
+
+it('reloads the same plugin id right after the previous worker was stopped',async()=>{
+  // 回归：覆盖安装（市场升级、ZIP 重装）先 stop 旧 worker，再用**同一个 id** fork
+  // 新的。旧子进程的 `exit` 事件是异步到达的；退出清理若无条件 `workers.delete(id)`，
+  // 就会把刚登记的新 worker 一起抹掉，于是 startWorker 明明成功了，
+  // `loadIsolatedPluginDefinition` 仍读到 undefined 并抛
+  // `isolated plugin X is unavailable`：安装返回 409，而插件在失败前已经被
+  // unregister——**一次失败的覆盖安装会让插件彻底消失**（重启才回来）。
+  const id=`reinstall-${randomUUID()}`;
+  const manifest:PluginManifest={id,name:'Reinstall fixture',version:'1.0.0'};
+  const first=await loadIsolatedPluginDefinition(id,entry,manifest);
+  expect(first.manifest.id).toBe(id);
+  stopIsolatedPlugin(id);
+  const second=await loadIsolatedPluginDefinition(id,entry,manifest);
+  try {
+    expect(second.manifest.id).toBe(id);
+  } finally {
+    stopIsolatedPlugin(id);
+  }
+},20000);
+
+it('starts a plugin that declares no routes at all',async()=>{
+  // 回归：只贡献扩展、没有 HTTP 路由的插件（如 wowid 的 auth provider）在 isolated
+  // 下曾被判为「definition is invalid」——worker 在 ready 帧前抛错，宿主只能报
+  // 「exited before ready」。没有路由是合法形态，应该照常起来。
+  const id=`routeless-${randomUUID()}`;
+  const manifest:PluginManifest={id,name:'Routeless fixture',version:'1.0.0'};
+  const entry=fileURLToPath(new URL('../fixtures/isolated-routeless-plugin.mjs',import.meta.url));
+  const definition=await loadIsolatedPluginDefinition(id,entry,manifest);
+  try {
+    expect(definition.routes ?? []).toHaveLength(0);
+    expect(definition.manifest.id).toBe(id);
+  } finally {
+    stopIsolatedPlugin(id);
+  }
+},20000);

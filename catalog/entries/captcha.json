@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "captcha-0.1.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "人机验证",
   "description": "在登录、注册、改密码、改邮箱等敏感操作前加人机验证。支持 Turnstile / hCaptcha / reCAPTCHA / Cap 与任意 siteverify 兼容接口。",
   "artifact": {
-    "sha256": "705be8f817237dcbd8486c3feb2cdf154f51f01940c84c9480b9617fff12f6c8",
+    "sha256": "d5c3802f7009c95e6048b1f8fc10034508dd876b5e2d3267310ce76aa3bc1db2",
     "size": 380175
   }
 }

@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "zjmf-upstream-0.3.11.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "魔方上游",
   "description": "将魔方财务（ZJMF）V1 与 V10 商品作为货源接入商店：提供货源清单、配置读取与履约，不自动创建商店商品。",
   "artifact": {
-    "sha256": "8dc550dccf4a5390dee46f73960f5d83f9058891a491226bac92bc73f8593f8c",
+    "sha256": "27f1e31b8878171d29d70b8d166b93999c8ec978d9b5074d4f7aa2ed7ad0b15b",
     "size": 188571
   }
 }

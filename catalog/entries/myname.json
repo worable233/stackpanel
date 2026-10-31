@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "myname-0.1.0.zip"
   },
   "compatibility": {
@@ -32,7 +32,7 @@
   "name": "我的插件",
   "description": "基于模板创建的 StackPanel 插件。",
   "artifact": {
-    "sha256": "b1486608e20f51aedc582ca14b87fc621f750a4967b3a34d10291134c6634d57",
+    "sha256": "80c63b71f5344f7ca8d0c10b9fa4b48a73acf28b1dbae5623a5985be6305ab8e",
     "size": 2311
   }
 }

@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "api-market-0.1.0.zip"
   },
   "compatibility": {
@@ -35,7 +35,7 @@
   "name": "API 市场",
   "description": "管理员录入第三方 REST 接口，用户自助签发 key，网关按模板转发并按次扣额度。",
   "artifact": {
-    "sha256": "9edbd03ef091980747d417dbdef8f3402201b5386a40822fa7215d2b5d1869af",
+    "sha256": "0717af4db6e9c110144ba660f7b1351af28901dcfb2d9fd38c0911ef6ae54ca5",
     "size": 7448
   }
 }

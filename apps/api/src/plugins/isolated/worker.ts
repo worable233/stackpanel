@@ -106,12 +106,16 @@ const definition = (mod[manifest.export ?? 'default'] ?? mod.default) as {
   onDeactivate?: PluginHook;
 };
 
-if (!definition || !Array.isArray(definition.routes))
-  throw new Error('isolated plugin definition is invalid');
+if (!definition) throw new Error('isolated plugin definition is invalid');
+// 没有 HTTP 路由的插件是合法的（例如只贡献 `auth.provider` 扩展、不对外暴露
+// 路由的 wowid）。早期这里要求 `routes` 必须是数组，于是这类包在 isolated 下
+// 一律起不来：worker 在 ready 帧之前抛错，宿主只看到「exited before ready」，
+// 而真正的原因（插件本来就没有路由）完全看不出来。
+const declaredRoutes = Array.isArray(definition.routes) ? definition.routes : [];
 const unsupported: string[] = [];
 
 const serviceControllers = new Map<string, AbortController>();
-const routes = definition.routes.map(({ handler: _handler, ...route }) => route);
+const routes = declaredRoutes.map(({ handler: _handler, ...route }) => route);
 const modelDescriptors: Array<Record<string, unknown>> = [];
 for (const model of definition.customModels ?? []) {
   try {

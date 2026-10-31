@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "altcha-0.1.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "自托管人机验证",
   "description": "插件自己签发并校验 ALTCHA 工作量证明挑战：无第三方服务、无需站点密钥、装完即用，可保护登录、注册、改密码、改邮箱等操作。",
   "artifact": {
-    "sha256": "1c5eadedec8d6c8899feaeee4f22c342d78cffee36ba0598201dbf4fe254b7fa",
+    "sha256": "fa72af7f96424b9696d266fdf989e031d2b402110275acccff9fb13c38c4246e",
     "size": 120211
   }
 }

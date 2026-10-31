@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "wechatpay-0.1.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "微信支付（Native）",
   "description": "微信支付 v3 Native 直连：扫码支付 + 回调验签与 AES-GCM 解密，不经过第三方聚合。",
   "artifact": {
-    "sha256": "69c260ab176ac68f3c5bc57f5ddea9c09a952fea189275fa77dc0532f0f69111",
+    "sha256": "6164b2a26be5cae557eeed88ea7e24f33be75243796121e6b6cf1b9b39ab5633",
     "size": 46147
   }
 }

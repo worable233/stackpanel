@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "zjmf-compat-0.1.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "魔方兼容",
   "description": "ZJMF 协议兼容层：把智简魔方客户端请求翻译为平台商业域操作。",
   "artifact": {
-    "sha256": "db79f2701a0118d87e77da3e7065e3dcaeb02b3919853b8067c94373e6e3fff9",
+    "sha256": "c9794139e2a75bbee0d9d449f8e5222f7607b2a90a8ede6e532dc67c8710ed49",
     "size": 20917
   }
 }

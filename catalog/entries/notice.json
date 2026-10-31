@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "notice-0.2.0.zip"
   },
   "compatibility": {
@@ -34,7 +34,7 @@
   "name": "站点公告",
   "description": "站点公告：发布与维护前台公告，通过自定义模型（notice/announcement）实现。",
   "artifact": {
-    "sha256": "716e0ddd4c6367f4f647f8035438da0c55313efc2407e29aae393b1f4a3d063a",
+    "sha256": "130b2becfebaeb2cfa2a6ebec88041d22abb01730f7297c47ac9cc11de5104b2",
     "size": 20092
   }
 }

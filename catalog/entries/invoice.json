@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "invoice-0.1.0.zip"
   },
   "compatibility": {
@@ -35,7 +35,7 @@
   "name": "发票插件",
   "description": "按订单/客户开具发票，支持税费、折扣与打印导出。",
   "artifact": {
-    "sha256": "b806b3bc99281b6a2b1dc0363748dc16bf0c92aaea8d4f9a3c83aa710489b94d",
+    "sha256": "af0bcd826e2c20b94e6b13eda8a40da4a145d458524585864e63ddb3100f33eb",
     "size": 64268
   }
 }

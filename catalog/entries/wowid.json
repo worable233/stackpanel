@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "wowid-0.1.0.zip"
   },
   "compatibility": {
@@ -32,7 +32,7 @@
   "name": "WowID 登录",
   "description": "符合标准的 WowID OpenID Connect 第三方认证提供商。",
   "artifact": {
-    "sha256": "84e72f11df9cf93b7fdaeb7abe1838674dc357e871368d4950e5722225f45707",
-    "size": 8001
+    "sha256": "e7bf1f13a556e938aa96c07a02fd03fec09047723a6779aed8d5c41711c56c5e",
+    "size": 32570
   }
 }

@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "referral-0.1.0.zip"
   },
   "compatibility": {
@@ -35,7 +35,7 @@
   "name": "推广插件",
   "description": "用户推广码、注册归因与余额奖励。",
   "artifact": {
-    "sha256": "a51cb6348ead16e892a34b47e250f5078b0143f2737352a809f2ce5e39bc8fe4",
+    "sha256": "c636072a732890242e3173fa47a4578a450eef17d8e32a7e0eb0f3c9a5804a67",
     "size": 80990
   }
 }

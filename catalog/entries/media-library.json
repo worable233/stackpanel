@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "media-library-0.1.0.zip"
   },
   "compatibility": {
@@ -32,7 +32,7 @@
   "name": "媒体库",
   "description": "跨用户浏览、预览、删除附件，切换可见性并重建缩略图。",
   "artifact": {
-    "sha256": "96d0137f5fa723c0947df9c426d31dcf64420b74eea35ef70548626de2113033",
+    "sha256": "bfa4e67566d6b424860c6ded87301d48f2162633c2adf48df892310c8e13e481",
     "size": 65068
   }
 }

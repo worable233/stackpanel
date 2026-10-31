@@ -6,7 +6,7 @@
   "channel": "stable",
   "source": {
     "repository": "worable233/stackpanel-plugins",
-    "tag": "plugins-v0.1.0",
+    "tag": "plugins-v0.1.1",
     "asset": "minimal-1.0.0.zip"
   },
   "compatibility": {
@@ -32,7 +32,7 @@
   "name": "最小示例",
   "description": "最简单的 StackPanel 插件示例。",
   "artifact": {
-    "sha256": "7075aacf0a8321522b1ce87006f2341b90d352bce30856527331d298a510014b",
+    "sha256": "61310d36c2c0c94eae5844794e6f7b5caf7036e338e2dd82f30753ceaa556c2d",
     "size": 1999
   }
 }
