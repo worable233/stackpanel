@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import type {
   CaptchaClientConfig,
   CaptchaContainerWidgetConfig,
@@ -8,6 +9,9 @@ import type {
   CaptchaScriptWidgetConfig,
 } from '@stackpanel/sdk';
 import { useTranslator } from '@/i18n/provider';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { ALTCHA_STRINGS, resolveAltchaLocale } from '@/components/altcha-widget-strings';
 
 /**
  * Vendor-agnostic human-verification widget.
@@ -28,10 +32,46 @@ import { useTranslator } from '@/i18n/provider';
  * The token is reported upward through `onToken` on every change (including
  * expiry/withdrawal, reported as `null`) so the surrounding form owns a single
  * hidden input rather than each widget reaching into the DOM.
+ *
+ * The one vendor-specific exception is ALTCHA localisation: its custom element
+ * exposes no `strings` property, only the global `$altcha.i18n` registry. That
+ * hook is isolated to `prepareAltchaAttributes` below.
  */
 
 /** Loaded script registry: one <script> per URL, shared by every widget instance. */
 const scriptLoads = new Map<string, Promise<void>>();
+
+function prepareAltchaAttributes(attributes: Record<string, string>): Record<string, string> {
+  const locale = resolveAltchaLocale(
+    attributes['language'] || document.documentElement.lang || navigator.language,
+  );
+  const i18n = (
+    window as unknown as {
+      $altcha?: { i18n?: { set?: (locale: string, strings: Record<string, string>) => void } };
+    }
+  ).$altcha?.i18n;
+  i18n?.set?.(locale, ALTCHA_STRINGS[locale]);
+
+  let configuration: Record<string, unknown> = {};
+  const raw = attributes['configuration'];
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        configuration = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // A malformed vendor blob should not block verification; fall back to the
+      // host's own footer suppression below.
+    }
+  }
+
+  return {
+    ...attributes,
+    language: locale,
+    configuration: JSON.stringify({ ...configuration, hideFooter: true, hideLogo: true }),
+  };
+}
 
 function loadScript(src: string): Promise<void> {
   const existing = scriptLoads.get(src);
@@ -59,7 +99,10 @@ interface RenderHandle {
 }
 
 interface WidgetFactory {
-  render: (element: HTMLElement, options: Record<string, unknown>) => RenderHandle | string | undefined;
+  render: (
+    element: HTMLElement,
+    options: Record<string, unknown>,
+  ) => RenderHandle | string | undefined;
   /**
    * Tear down a widget. Vendors disagree on the argument: some take the id the
    * `render` call returned, some take the container element. Both are covered by
@@ -128,7 +171,11 @@ function elementWidget(
 
   const mount = (): void => {
     const node = document.createElement(config.tag);
-    for (const [name, value] of Object.entries(config.attributes)) {
+    const attributes =
+      config.tag === 'altcha-widget'
+        ? prepareAltchaAttributes(config.attributes)
+        : config.attributes;
+    for (const [name, value] of Object.entries(attributes)) {
       node.setAttribute(name, value);
     }
     element = node;
@@ -339,18 +386,50 @@ export function CaptchaField({
   if (!config) return null;
 
   return (
-    <div className={className}>
+    <div
+      className={cn(
+        'relative flex min-h-16 flex-col justify-center rounded-2xl bg-muted/35 px-4 py-3',
+        // The vendor widget is light DOM; these custom properties are its
+        // supported styling surface. Only paint the host — never reach into
+        // `.altcha-*` internals, which are not part of the widget contract.
+        '[&_altcha-widget]:block [&_altcha-widget]:w-full',
+        '[&_altcha-widget]:[--altcha-max-width:100%]',
+        '[&_altcha-widget]:[--altcha-border-width:0px]',
+        '[&_altcha-widget]:[--altcha-border-color:transparent]',
+        '[&_altcha-widget]:[--altcha-border-radius:0px]',
+        '[&_altcha-widget]:[--altcha-color-base:transparent]',
+        '[&_altcha-widget]:[--altcha-color-base-content:var(--foreground)]',
+        '[&_altcha-widget]:[--altcha-color-primary:var(--foreground)]',
+        '[&_altcha-widget]:[--altcha-color-primary-content:var(--background)]',
+        '[&_altcha-widget]:[--altcha-color-success:var(--foreground)]',
+        '[&_altcha-widget]:[--altcha-color-success-content:var(--background)]',
+        '[&_altcha-widget]:[--altcha-color-neutral:var(--muted-foreground)]',
+        '[&_altcha-widget]:[--altcha-color-neutral-content:var(--foreground)]',
+        '[&_altcha-widget]:[--altcha-padding:0px]',
+        '[&_altcha-widget]:[--altcha-shadow:none]',
+        className,
+      )}
+    >
       <div ref={containerRef} />
       {failed ? (
-        <div className="space-y-1 text-sm text-destructive">
-          <p>{t('auth.captcha.unavailable')}</p>
-          <button
+        <div
+          role="alert"
+          className="flex flex-col gap-2 rounded-xl bg-destructive/8 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>{t('auth.captcha.unavailable')}</span>
+          </p>
+          <Button
             type="button"
-            className="text-xs underline underline-offset-2"
+            variant="ghost"
+            size="sm"
+            className="h-8 self-start text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-auto"
             onClick={() => setAttempt((value) => value + 1)}
           >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
             {t('auth.captcha.retry')}
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>
