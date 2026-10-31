@@ -327,3 +327,15 @@ pnpm release:pack-theme --out dist-pack --tag themes-v0.1.0 \
 2. `GET /market/admin/plugins` 出现远程条目；
 3. `POST /market/admin/plugins/:id/install` 装成功并能启用；
 4. 包签名 keyId 在实例 keyring 中且 `purpose: "package"`，否则安装会被拒。
+
+两件在真实实例上一定会踩到的事：
+
+- **冷启动时市场页是空的，不是目录坏了**。目录快照只活在进程内存里，而页面渲染
+  路径**零出网**（ADR-0027），所以重启后市场页显示「等待远程目录的首次刷新结果」，
+  直到有人触发一次刷新。现在页头有「刷新目录」按钮（`POST /market/admin/refresh`），
+  和 `/admin/updates` 的「检查更新」、`POST /admin/distribution/refresh` 共用同一套
+  冷却——冷却期内按钮返回 429 并在按钮旁直说「刚检查过目录，请稍后再试」。
+- **生产实例要给 `DISTRIBUTION_CATALOG_TOKEN`**（或后台「分发源」里保存 token，
+  存库版本优先且加密）。匿名访问 raw.githubusercontent.com 有严格限流，一旦被限流
+  安装会返回 `market.sourceRateLimited`（503 + `retry-after`），而不是含糊的失败。
+  临时排障可用 `DISTRIBUTION_CATALOG_MIRROR` 换前缀，但镜像**不会**收到 token。
