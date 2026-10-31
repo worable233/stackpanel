@@ -37,6 +37,26 @@ if (!target) {
 }
 
 /**
+ * 下载期间必须清掉所有「钉死引擎路径」的环境变量。
+ *
+ * `@prisma/fetch-engine` 的 `download()` 会先校验这些变量：路径不存在就直接抛
+ * `Env var PRISMA_SCHEMA_ENGINE_BINARY is provided but provided path ... can't be resolved`。
+ * 而镜像里正是**先 `ENV` 再下载**（先钉住路径，再让脚本把文件放进去），于是下载
+ * 一定失败、镜像一定构建不出来——v0.1.0 的首次发布就挂在这里。
+ *
+ * 本脚本的进程不需要这些变量（目标路径走命令行参数），所以整段下载在「无钉死
+ * 路径」的环境里跑；文件落盘后由 Dockerfile 的 `ENV` 生效。
+ */
+for (const key of [
+  'PRISMA_SCHEMA_ENGINE_BINARY',
+  'PRISMA_QUERY_ENGINE_BINARY',
+  'PRISMA_QUERY_ENGINE_LIBRARY',
+  'PRISMA_MIGRATION_ENGINE_BINARY',
+]) {
+  delete process.env[key];
+}
+
+/**
  * 找到 `@prisma/fetch-engine` 的入口。
  *
  * pnpm 用**隔离式** node_modules：`prisma` 包只能解析到它自己在 `.pnpm/<hash>/`
