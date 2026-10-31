@@ -518,7 +518,9 @@ export function BackendShell({
               // eslint-disable-next-line @next/next/no-img-element
               <img src={brandLogoUrl} alt="" className="size-8 shrink-0 object-contain" />
             ) : (
-              <PanelsTopLeft className="size-4 shrink-0" />
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
+                <PanelsTopLeft className="size-4 shrink-0" />
+              </span>
             )
           ) : null}
           {brandDisplay !== 'icon' && brandName?.trim() ? (
