@@ -27,6 +27,7 @@ const repoRoot = path.resolve(here, '..', '..', '..');
 const INLINE_RECEIPT_ACTIONS: Record<string, string> = {
   'market.install-plugin': 'plugins/market/frontend/src/admin.tsx（行内「已安装 x.y.z」/ 精确失败原因）',
   'market.install-theme': 'plugins/market/frontend/src/admin.tsx（行内「已安装 x.y.z」/ 精确失败原因）',
+  'market.refresh-catalog': 'plugins/market/frontend/src/admin.tsx（「刷新目录」按钮旁的行内「目录已刷新」/ 限流与取不到的错误码）',
 };
 const SCAN_ROOTS = [
   ...readdirSync(path.join(repoRoot, 'packages/plugins')).map(

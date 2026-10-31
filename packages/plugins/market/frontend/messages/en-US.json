@@ -45,5 +45,9 @@
   "catalog.expiresAt": "Expires {date}",
   "row.installedNow": "Installed {version}",
   "row.requestId": "Request id {requestId} (search the server log for the cause)",
-  "error.market.installFailed": "Install failed while downloading or verifying the catalog package. Use the request id to find the cause in the server log."
+  "error.market.installFailed": "Install failed while downloading or verifying the catalog package. Use the request id to find the cause in the server log.",
+  "catalog.refresh": "Refresh catalog",
+  "catalog.refreshing": "Refreshing…",
+  "catalog.refreshed": "Catalog refreshed.",
+  "catalog.checkedAt": "checked {date}"
 }

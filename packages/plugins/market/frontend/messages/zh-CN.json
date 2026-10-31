@@ -45,5 +45,9 @@
   "catalog.expiresAt": "{date} 过期",
   "row.installedNow": "已安装 {version}",
   "row.requestId": "请求编号 {requestId}（服务端日志可据此定位原因）",
-  "error.market.installFailed": "安装失败：下载或校验目录包时出错，请按请求编号查服务端日志。"
+  "error.market.installFailed": "安装失败：下载或校验目录包时出错，请按请求编号查服务端日志。",
+  "catalog.refresh": "刷新目录",
+  "catalog.refreshing": "正在刷新…",
+  "catalog.refreshed": "目录已刷新。",
+  "catalog.checkedAt": "上次检查 {date}"
 }

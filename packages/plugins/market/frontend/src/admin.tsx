@@ -12,6 +12,7 @@
  * 一句「安装失败，请重试」。
  */
 import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import type { AdminPageComponentProps, PluginActionResult } from '@stackpanel/sdk';
 import { Button, InlineError, Input, PageHeader, StatusBadge } from '@stackpanel/ui';
 import {
@@ -312,6 +313,8 @@ interface MarketStatusView {
     sequence?: number;
     expired?: boolean;
     expiresAt?: string;
+    /** 上次真的发起过检查的时间；用于区分「刷新过但没变」与「从未刷新」。 */
+    checkedAt?: string;
     failure?: { kind: string; message: string; retryAt?: string };
   };
 }
@@ -407,7 +410,82 @@ function catalogSnapshotLine(
       parts.push(tr('catalog.expiresAt', { date: formatted }));
     }
   }
+  // 「上次检查」是冷启动场景下唯一能回答「目录到底是不是卡住了」的信息：
+  // 渲染路径不出网，没有这行只能看到「等待首次刷新」而永远不知道要不要动手。
+  if (catalog.checkedAt) {
+    const checked = new Date(catalog.checkedAt);
+    if (!Number.isNaN(checked.getTime())) {
+      const formatted = new Intl.DateTimeFormat(locale, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(checked);
+      parts.push(tr('catalog.checkedAt', { date: formatted }));
+    }
+  }
   return parts.join(' · ');
+}
+
+/**
+ * 手动刷新目录快照。
+ *
+ * 进程重启后目录快照只活在内存里，而页面渲染路径**不出网**（ADR-0027），所以
+ * 冷启动时列表只能是空的、状态只能写「等待首次刷新」。没有这个按钮，唯一能触发
+ * 刷新的入口藏在 `/admin/updates` 的「检查更新」里——运维会直接判定目录坏了。
+ */
+function CatalogRefresh({
+  action,
+  tr,
+}: {
+  action: MarketAction;
+  tr: Translator;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [note, setNote] = useState<{ tone: 'success' | 'warn'; text: string } | null>(null);
+
+  function run(): void {
+    if (!action) {
+      setNote({ tone: 'warn', text: tr('error.actionUnavailable') });
+      return;
+    }
+    startTransition(async () => {
+      setNote(null);
+      try {
+        const result = await action(new FormData());
+        if (result && result.ok === false) {
+          // 限流/离线/取不到都是失败：按钮不能报成功，否则运维以为目录是好的。
+          setNote({ tone: 'warn', text: result.error ?? tr('error.installFailed') });
+          return;
+        }
+        setNote({ tone: 'success', text: tr('catalog.refreshed') });
+        // 快照变了，条目也得重拉：finder 是页面渲染时取的数据。
+        router.refresh();
+      } catch (caught) {
+        setNote({ tone: 'warn', text: failureMessage(caught, tr) });
+      }
+    });
+  }
+
+  return (
+    <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
+      <Button type="button" variant="outline" size="sm" disabled={isPending || !action} onClick={run}>
+        <RefreshCw
+          className={isPending ? 'animate-spin' : undefined}
+          data-icon="inline-start"
+          aria-hidden="true"
+        />
+        {isPending ? tr('catalog.refreshing') : tr('catalog.refresh')}
+      </Button>
+      {note ? (
+        <p
+          className={note.tone === 'success' ? 'text-xs text-success' : 'text-xs text-warning'}
+          role={note.tone === 'success' ? undefined : 'alert'}
+        >
+          {note.text}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function MarketAdminPage(props: AdminPageComponentProps) {
@@ -417,6 +495,7 @@ function MarketAdminPage(props: AdminPageComponentProps) {
   const status = (props.data.status ?? null) as MarketStatusView | null;
   const installPlugin = props.actions['market.install-plugin'] as MarketAction;
   const installTheme = props.actions['market.install-theme'] as MarketAction;
+  const refreshCatalog = props.actions['market.refresh-catalog'] as MarketAction;
   const [filter, setFilter] = useState<MarketFilter>('all');
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -444,7 +523,14 @@ function MarketAdminPage(props: AdminPageComponentProps) {
   return (
     <main className="flex w-full flex-col gap-5">
       <PageHeader title={tr('page.title')} description={tr('page.description')} />
-      {status ? <SourceStatus status={status} locale={props.locale ?? 'zh-CN'} tr={tr} /> : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          {status ? (
+            <SourceStatus status={status} locale={props.locale ?? 'zh-CN'} tr={tr} />
+          ) : null}
+        </div>
+        <CatalogRefresh action={refreshCatalog} tr={tr} />
+      </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="plugin-segmented inline-flex w-fit items-center">

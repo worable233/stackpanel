@@ -62,6 +62,13 @@
           "maxLength": 64
         }
       ]
+    },
+    {
+      "id": "market.refresh-catalog",
+      "method": "POST",
+      "path": "/market/admin/refresh",
+      "permission": "market.admin",
+      "input": []
     }
   ],
   "accountRoutes": [],
@@ -123,7 +130,11 @@
       "catalog.expiresAt": "{date} 过期",
       "row.installedNow": "已安装 {version}",
       "row.requestId": "请求编号 {requestId}（服务端日志可据此定位原因）",
-      "error.market.installFailed": "安装失败：下载或校验目录包时出错，请按请求编号查服务端日志。"
+      "error.market.installFailed": "安装失败：下载或校验目录包时出错，请按请求编号查服务端日志。",
+      "catalog.refresh": "刷新目录",
+      "catalog.refreshing": "正在刷新…",
+      "catalog.refreshed": "目录已刷新。",
+      "catalog.checkedAt": "上次检查 {date}"
     },
     "zh-TW": {
       "status.installed": "已安裝",
@@ -172,7 +183,11 @@
       "catalog.expiresAt": "{date} 過期",
       "row.installedNow": "已安裝 {version}",
       "row.requestId": "請求編號 {requestId}（服務端日誌可據此定位原因）",
-      "error.market.installFailed": "安裝失敗：下載或校驗目錄包時出錯，請依請求編號查服務端日誌。"
+      "error.market.installFailed": "安裝失敗：下載或校驗目錄包時出錯，請依請求編號查服務端日誌。",
+      "catalog.refresh": "重新整理目錄",
+      "catalog.refreshing": "正在重新整理…",
+      "catalog.refreshed": "目錄已重新整理。",
+      "catalog.checkedAt": "上次檢查 {date}"
     },
     "zh-HK": {
       "status.installed": "已安裝",
@@ -221,7 +236,11 @@
       "catalog.expiresAt": "{date} 過期",
       "row.installedNow": "已安裝 {version}",
       "row.requestId": "請求編號 {requestId}（伺服器日誌可據此定位原因）",
-      "error.market.installFailed": "安裝失敗：下載或校驗目錄包時出錯，請依請求編號查伺服器日誌。"
+      "error.market.installFailed": "安裝失敗：下載或校驗目錄包時出錯，請依請求編號查伺服器日誌。",
+      "catalog.refresh": "重新整理目錄",
+      "catalog.refreshing": "正在重新整理…",
+      "catalog.refreshed": "目錄已重新整理。",
+      "catalog.checkedAt": "上次檢查 {date}"
     },
     "en-US": {
       "status.installed": "Installed",
@@ -270,7 +289,11 @@
       "catalog.expiresAt": "Expires {date}",
       "row.installedNow": "Installed {version}",
       "row.requestId": "Request id {requestId} (search the server log for the cause)",
-      "error.market.installFailed": "Install failed while downloading or verifying the catalog package. Use the request id to find the cause in the server log."
+      "error.market.installFailed": "Install failed while downloading or verifying the catalog package. Use the request id to find the cause in the server log.",
+      "catalog.refresh": "Refresh catalog",
+      "catalog.refreshing": "Refreshing…",
+      "catalog.refreshed": "Catalog refreshed.",
+      "catalog.checkedAt": "checked {date}"
     }
   }
 }

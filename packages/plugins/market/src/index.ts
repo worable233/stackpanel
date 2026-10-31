@@ -8,15 +8,17 @@
  * 插件自带：
  * - `GET /market/admin/plugins`、`GET /market/admin/themes`：浏览（本地 + 远程目录）
  * - `POST /market/admin/plugins/:id/install`、`/market/admin/themes/:id/install`：安装
+ * - `POST /market/admin/refresh`：手动刷新目录快照（与 `/admin/distribution/refresh` 共享冷却）
  * - 后台页面 `/admin/plugin/market`（前端包，见 `frontend/`）
  *
  * 权限：所有路由要求 `market.admin`（`roleTemplates` 默认授予 ADMIN 组）。
- * 审计：安装写 `market.plugin.install` / `market.theme.install`，与迁移前动作名一致。
+ * 审计：安装写 `market.plugin.install` / `market.theme.install`，目录刷新写
+ * `market.catalog.refresh`，与迁移前动作名一致。
  */
 
 import { z } from 'zod';
 import type { HttpReply, HttpRequest, PluginContext } from '@stackpanel/sdk';
-import { definePlugin, PluginError } from '@stackpanel/sdk';
+import { definePlugin, isPluginError, PluginError } from '@stackpanel/sdk';
 import type { MarketService } from '@stackpanel/sdk';
 
 /** 路由前缀；避免与其他插件或内核路径冲突。 */
@@ -104,10 +106,20 @@ async function install(req: HttpRequest, kind: 'plugin' | 'theme', id: string) {
     });
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // `PluginError.message` 是**错误码**（签名 `PluginError(code, status, detail)`），
+    // 通知正文要用 detail，否则用户在通知中心看到的是 `market.sourceUnavailable`。
+    //
+    // 判定用 `isPluginError` 而不是 `instanceof`：内核与插件可能持有**两个** SDK
+    // 模块实例（插件 bundle 走 cache-busted URL 加载），`instanceof` 会漏判，把
+    // 「目录限流 / 验签失败」这类精确错误码降级成通用的 `market.installFailed`。
+    const message = isPluginError(error)
+      ? (error.detail ?? error.code)
+      : error instanceof Error
+        ? error.message
+        : String(error);
     // PluginError 是预期内的拒绝（未配置源、验签失败等），同样要给操作者回执。
     await notifyLifecycle(req, kind, id, { ok: false, error: message });
-    if (error instanceof PluginError) throw error;
+    if (isPluginError(error)) throw error;
     throw new PluginError('market.installFailed', 409, message);
   }
 }
@@ -153,6 +165,53 @@ export const marketPlugin = definePlugin({
       auth: 'admin',
       permission: 'market.admin',
       handler: async (): Promise<unknown> => ({ themes: await listPackages('theme') }),
+    },
+    {
+      // 手动刷新目录快照：进程重启后内存里没有快照，市场页只能显示「等待首次刷新」。
+      // 冷启动时目录状态是只读的（渲染路径不出网），所以必须有一个显式入口。
+      method: 'POST',
+      path: `${BASE}/refresh`,
+      auth: 'admin',
+      permission: 'market.admin',
+      handler: async (req: HttpRequest): Promise<unknown> => {
+        const service = market();
+        if (!service.refreshCatalog) {
+          throw new PluginError('market.refreshUnavailable', 503, '内核未提供目录刷新能力');
+        }
+        const result = await service.refreshCatalog();
+        await requireContext().auth.audit({
+          action: 'market.catalog.refresh',
+          resource: 'catalog',
+          ...(req.user ? { actorId: req.user.id } : {}),
+          meta: {
+            configured: result.configured,
+            throttled: result.throttled ?? false,
+            ...(result.sequence !== null && result.sequence !== undefined
+              ? { sequence: result.sequence }
+              : {}),
+            ...(result.failure ? { failure: result.failure.kind } : {}),
+          },
+        });
+        // 「没配目录」「刚查过」「查失败」都不是成功：按钮不能报成成功，否则运维会
+        // 以为目录是好的。三种情况都给稳定错误码，界面才能分别说清楚。
+        if (!result.configured) {
+          throw new PluginError('market.catalogOffline', 409, '未配置远程目录');
+        }
+        if (result.throttled) {
+          const retryAfterSeconds = Math.max(1, Math.ceil((result.retryAtMs ?? 0) / 1000));
+          throw new PluginError(
+            'market.refreshThrottled',
+            429,
+            `刚检查过目录，${retryAfterSeconds} 秒后可再试`,
+            undefined,
+            { retryAfterSeconds },
+          );
+        }
+        if (result.failure) {
+          throw new PluginError('market.sourceUnavailable', 502, result.failure.message);
+        }
+        return { refreshed: true, sequence: result.sequence ?? null };
+      },
     },
     {
       method: 'POST',

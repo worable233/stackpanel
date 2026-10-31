@@ -55,6 +55,8 @@ const marketStatusSchema = z.object({
         expired: z.boolean().optional(),
         /** 快照过期时间（ISO 8601）；用于在页面上显示「装的是哪一版目录」。 */
         expiresAt: z.string().optional(),
+        /** 最近一次真的发起过检查的时间；用于区分「从未刷新」与「刚刷新过」。 */
+        checkedAt: z.string().optional(),
         failure: z
           .object({
             kind: z.string(),
@@ -104,6 +106,14 @@ const marketActions: PluginActionDefinition[] = [
     path: '/market/admin/themes/:id/install',
     permission: 'market.admin',
     input: [{ name: 'id', type: 'string', required: true, maxLength: 64 }],
+  },
+  {
+    // 进程重启后内存里没有目录快照；渲染路径不出网，所以必须有一个显式刷新入口。
+    id: 'market.refresh-catalog',
+    method: 'POST',
+    path: '/market/admin/refresh',
+    permission: 'market.admin',
+    input: [],
   },
 ];
 

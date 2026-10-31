@@ -45,5 +45,9 @@
   "catalog.expiresAt": "{date} 過期",
   "row.installedNow": "已安裝 {version}",
   "row.requestId": "請求編號 {requestId}（服務端日誌可據此定位原因）",
-  "error.market.installFailed": "安裝失敗：下載或校驗目錄包時出錯，請依請求編號查服務端日誌。"
+  "error.market.installFailed": "安裝失敗：下載或校驗目錄包時出錯，請依請求編號查服務端日誌。",
+  "catalog.refresh": "重新整理目錄",
+  "catalog.refreshing": "正在重新整理…",
+  "catalog.refreshed": "目錄已重新整理。",
+  "catalog.checkedAt": "上次檢查 {date}"
 }
