@@ -208,6 +208,23 @@ STACKPANEL_KERNEL_ROOT=/path/to/StackPanel \
 - `dist-pack/entries/<id>.json` —— 目录条目，摘要与大小由
   `scripts/release/build-manifest.mjs` 按真实字节算出，不手写。
 
+打包出来的包会离开构建机，落到一个**没有 `node_modules`** 的目录里
+（`data/plugins/<id>/`）。因此它必须自包含：除宿主提供的
+`@stackpanel/{sdk,spec,ui,net-guard}`、`zod`、`@prisma/*` 与 `node:*` 外，第三方
+依赖全部内联。`wowid` 曾因 `jose` 留在 bundle 外，装到干净实例上 worker 启动即退，
+宿主只报 `isolated plugin wowid exited before ready`——而本机内核根目录恰好装过
+`jose`，本地怎么试都是好的。`scripts/build-plugin.mjs` 现在会在产物里残留宿主不
+提供的裸导入时直接构建失败。
+
+同理，`pack-plugin.mjs` 会在打 zip 之前预检内核的硬约束，越早失败越便宜：
+
+| 约束 | 违反后的表现 |
+|---|---|
+| 单个前端产物 ≤ 2 MiB（`.map` 不计，`MAX_FRONTEND_FILE_BYTES`） | 上传/安装 422「前端文件过大」 |
+| `frontend/manifest.json` 的 `files[]` 只列真实产物 | 422「前端文件不存在」 |
+| 业务插件不得标 `builtin: true` | 拿到 trusted 执行与 `frontendExecutions: 'server'`，且不可卸载 |
+| `execution` 显式写 `isolated`、`frontendModes` 只写 `M2` | 内核当前只支持 M2，声明 M1 会被门禁拒 |
+
 打包前先保证每个插件 `frontend/manifest.json` 的 `files[]` **只列真实产物**。
 内核的 `validateFrontendFiles` 逐条校验「存在且在允许列表内」，多写一个
 `admin.runtime.js`（内核发布时才派生）就会让整个包 422。本地各有一次机会发现：
@@ -227,6 +244,10 @@ gh release create plugins-v0.1.0 --repo worable233/stackpanel-plugins \
 
 目录条目的 `source.tag` / `source.asset` 必须指到这个 Release 的真实 tag 与资产名。
 改个文件名就装不上，而且失败发生在用户的安装点击之后。
+
+不必所有包共用一个 tag：改动只涉及个别包时，单独发一个批次（`plugins-v0.1.2`）
+并只更新那一条 `catalog/entries/<id>.json`，其余条目继续指旧 tag 即可。已发布的
+tag 不要重写——条目里的 `sha256` 是对**当时那份字节**签的名。
 
 ### 8.3 目录条目与发布者白名单
 

@@ -19,6 +19,7 @@
 | `compatibility.frontendAbi` | 前端 ABI 区间 | 同上 |
 | `publisher` | 发布者标识 | 必须在 `CATALOG_PUBLISHERS` 白名单里 |
 | `artifact.sha256` / `size` | 包体摘要与字节数 | 与资产不符 → 下载后校验失败 |
+| 包内单个前端产物 | ≤ 2 MiB（`MAX_FRONTEND_FILE_BYTES`，`.map` 不计） | 超过 → 安装 422「前端文件过大」，条目等于不可用 |
 
 ## 发布流程
 
