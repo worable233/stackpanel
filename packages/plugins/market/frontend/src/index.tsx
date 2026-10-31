@@ -24,6 +24,8 @@ const marketPackageSchema = z.object({
   upgradable: z.boolean(),
   current: z.boolean(),
   builtin: z.boolean(),
+  /** `local` = 随内核发布的包；`catalog` = 已签名远程目录（内核 0.1.0+）。 */
+  source: z.enum(['local', 'catalog']).optional(),
   frontend: z
     .object({
       available: z.boolean(),
@@ -51,6 +53,8 @@ const marketStatusSchema = z.object({
         available: z.boolean(),
         sequence: z.number().optional(),
         expired: z.boolean().optional(),
+        /** 快照过期时间（ISO 8601）；用于在页面上显示「装的是哪一版目录」。 */
+        expiresAt: z.string().optional(),
         failure: z
           .object({
             kind: z.string(),
@@ -81,11 +85,14 @@ const marketFinders: Record<string, FinderProvider> = {
 /**
  * 安装动作。`path` 必须与插件路由逐字一致，`permission` 必须与路由权限一致，
  * 否则内核会拒绝（action-target 校验）。
+ *
+ * 不声明 `successFeedback`：安装结果本身会写一条 lifecycle 通知，由通知 toaster
+ * 弹出（「插件「x」升级完成 v0.1.0」）。再加一份 action 回执就是一次操作两条
+ * 提示，且两份文案口径不一致。
  */
 const marketActions: PluginActionDefinition[] = [
   {
     id: 'market.install-plugin',
-    successFeedback: { messageKey: 'feedback.installed' },
     method: 'POST',
     path: '/market/admin/plugins/:id/install',
     permission: 'market.admin',
@@ -93,7 +100,6 @@ const marketActions: PluginActionDefinition[] = [
   },
   {
     id: 'market.install-theme',
-    successFeedback: { messageKey: 'feedback.installed' },
     method: 'POST',
     path: '/market/admin/themes/:id/install',
     permission: 'market.admin',

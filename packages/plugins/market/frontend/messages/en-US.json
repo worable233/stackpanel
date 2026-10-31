@@ -35,5 +35,15 @@
   "source.catalogFailed": "Remote catalog unavailable: {message}",
   "source.catalogPending": "Waiting for the first refresh of the remote catalog ({repository}).",
   "source.catalogExpired": "The remote catalog has expired: cached entries are shown, but automatic installs from it are blocked.",
-  "feedback.installed": "Installed. Refresh the page to see it."
+  "row.builtinHint": "Built into the kernel; it cannot be installed from the market.",
+  "row.confirm": "Overwrite {version}",
+  "row.confirmHint": "Click again to replace the installed {version} with the catalog package (the plugin restarts).",
+  "source.local": "Local source",
+  "source.catalog": "Signed catalog",
+  "catalog.sequence": "Catalog sequence {sequence}",
+  "catalog.channel": "Channel {channel}",
+  "catalog.expiresAt": "Expires {date}",
+  "row.installedNow": "Installed {version}",
+  "row.requestId": "Request id {requestId} (search the server log for the cause)",
+  "error.market.installFailed": "Install failed while downloading or verifying the catalog package. Use the request id to find the cause in the server log."
 }

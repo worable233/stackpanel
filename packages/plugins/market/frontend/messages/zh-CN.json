@@ -35,5 +35,15 @@
   "source.catalogFailed": "远程目录不可用：{message}",
   "source.catalogPending": "正在等待远程目录（{repository}）的首次刷新结果。",
   "source.catalogExpired": "远程目录已过期：仍可查看缓存条目，但已禁止据此自动安装。",
-  "feedback.installed": "已安装，刷新页面后生效。"
+  "row.builtinHint": "内置包随内核发布，不能从市场安装。",
+  "row.confirm": "确认覆盖 {version}",
+  "row.confirmHint": "再点一次会用目录包覆盖已装的 {version}（会重启该插件）。",
+  "source.local": "本地来源",
+  "source.catalog": "已签名目录",
+  "catalog.sequence": "目录序列 {sequence}",
+  "catalog.channel": "通道 {channel}",
+  "catalog.expiresAt": "{date} 过期",
+  "row.installedNow": "已安装 {version}",
+  "row.requestId": "请求编号 {requestId}（服务端日志可据此定位原因）",
+  "error.market.installFailed": "安装失败：下载或校验目录包时出错，请按请求编号查服务端日志。"
 }
