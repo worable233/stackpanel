@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import type {
-  UpdateCheckResponse,
   UpdatePlanResponse,
   UpdateResultsResponse,
   UpdateSelfUpdateResponse,
@@ -25,7 +24,6 @@ import { useTranslator } from '@/i18n/provider';
 import {
   cancelSelfUpdateAction,
   checkUpdateCatalogAction,
-  planUpdateAction,
   refreshUpdateSnapshotAction,
   submitSelfUpdateAction,
   submitUpdateAction,
@@ -67,7 +65,6 @@ export function UpdateCenter({
   const [selfUpdate, setSelfUpdate] =
     useState<UpdateSelfUpdateResponse['request']>(initialSelfUpdate);
   const [plan, setPlan] = useState<UpdatePlanResponse | null>(null);
-  const [check, setCheck] = useState<UpdateCheckResponse | null>(null);
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState<null | 'check' | 'plan' | 'submit' | 'self'>(null);
   const [acknowledge, setAcknowledge] = useState(false);
@@ -139,7 +136,6 @@ export function UpdateCenter({
         setFeedback({ kind: 'error', text: next.error });
         return;
       }
-      if (next.check) setCheck(next.check);
       if (next.status) setStatus(next.status);
       const result = next.check;
       if (!result) return;
@@ -175,21 +171,6 @@ export function UpdateCenter({
               })
             : t('admin.updates.checkNoChanges'),
       });
-    });
-  }
-
-  function onPlan() {
-    setFeedback(null);
-    setPlan(null);
-    setAcknowledge(false);
-    setAllowExpired(false);
-    run('plan', async () => {
-      const next = await planUpdateAction();
-      if (next.error) {
-        setFeedback({ kind: 'error', text: next.error });
-        return;
-      }
-      if (next.plan) setPlan(next.plan);
     });
   }
 

@@ -2566,12 +2566,5 @@
     "methodWallet": "지갑 잔액",
     "methodStripe": "Stripe",
     "methodPaypal": "PayPal"
-  },
-  "locale.en-US": "English",
-  "locale.fr-FR": "Français",
-  "locale.ja-JP": "日本語",
-  "locale.ko-KR": "한국어",
-  "locale.zh-CN": "简体中文",
-  "locale.zh-HK": "繁體中文（香港）",
-  "locale.zh-TW": "繁體中文"
+  }
 }

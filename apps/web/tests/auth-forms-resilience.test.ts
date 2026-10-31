@@ -26,6 +26,7 @@ const registerForm = read('src/app/(auth)/register/register-form.tsx');
 const loginForm = read('src/app/(auth)/login/login-form.tsx');
 const resetForm = read('src/app/(auth)/forgot-password/reset-password-form.tsx');
 const captchaField = read('src/components/captcha-field.tsx');
+const cooldownHook = read('src/hooks/use-cooldown.ts');
 
 describe('auth forms resilience', () => {
   it('binds every typed field so an action cannot wipe it', () => {
@@ -60,15 +61,32 @@ describe('auth forms resilience', () => {
     expect(loginForm).toContain('auth.retryIn');
     // The button must be held until the wait elapses, or each click extends it.
     expect(loginForm).toMatch(/disabled=\{pending \|\| wait > 0\}/);
-    expect(registerForm).toContain('codeState.retryAfterSeconds');
+    expect(registerForm).toContain('cooldownSignalFor([codeState], DEAD_CODE_ERRORS');
     expect(registerForm).toContain('auth.register.resendIn');
+    // The remaining seconds come from the kernel's `retryAfterSeconds`, not from a
+    // locally invented window length.
+    expect(cooldownHook).toContain('result.retryAfterSeconds');
+  });
+
+  it('derives the countdown instead of seeding it inside an effect', () => {
+    // Seeding in `useEffect` renders one frame with the button enabled, and the
+    // lint rule `react-hooks/set-state-in-effect` forbids the cascade outright.
+    for (const [name, source] of [
+      ['login', loginForm],
+      ['register', registerForm],
+    ] as const) {
+      expect(source, `${name} form must not own a countdown state`).not.toContain('setCooldown(');
+      expect(source, `${name} form must not own a countdown state`).not.toContain('setWait(');
+    }
+    expect(cooldownHook).toContain('setTimeout(() => setSeconds');
   });
 
   it('unlocks the resend button when the kernel says the code is dead', () => {
     for (const code of ['auth.code_expired', 'auth.code_missing', 'auth.code_invalid']) {
       expect(registerForm, `register form must react to ${code}`).toContain(code);
     }
-    expect(registerForm).toContain('setCooldown(0)');
+    // A dead code resolves to a 0-second signal, i.e. the button frees up at once.
+    expect(cooldownHook).toContain('seconds: 0');
   });
 
   it('re-mounts the widget after a rejected challenge', () => {

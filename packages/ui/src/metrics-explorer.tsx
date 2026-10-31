@@ -130,16 +130,20 @@ function MetricCard({
   locale: string;
 }) {
   const points = series.points;
-  const fullStart = points[0]!.t;
-  const fullEnd = points[points.length - 1]!.t;
+  // 空序列必须能渲染：指标窗口没有采样点时，`points[0]` / `points[len-1]` 都是
+  // `undefined`。早先用非空断言把 `undefined` 当点用，一旦后端返回空窗口就会在
+  // 渲染时崩在 `latest.v` 上。这里先算出安全值，再在 hook 之后给出空态。
+  const last = points[points.length - 1];
+  const fullStart = points[0]?.t ?? 0;
+  const fullEnd = last?.t ?? fullStart;
   const fullSpan = Math.max(fullEnd - fullStart, 1);
   const [zoom, setZoom] = useState<[number, number] | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const values = points.map((point) => point.v);
-  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const latest = points[points.length - 1]!;
+  const average = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const minValue = values.length > 0 ? Math.min(...values) : 0;
+  const maxValue = values.length > 0 ? Math.max(...values) : 0;
+  const latest = last;
   const domain = zoom ?? ([fullStart, fullEnd] as [number, number]);
 
   useEffect(() => {
@@ -180,6 +184,17 @@ function MetricCard({
   }, [fullStart, fullEnd, fullSpan, points.length]);
 
   const gradientId = `metric-fill-${series.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+
+  if (!latest) {
+    return (
+      <figure className="flex min-w-0 flex-col gap-3 rounded-2xl bg-muted/25 p-4">
+        <figcaption className="min-w-0">
+          <h4 className="text-sm font-semibold">{series.label}</h4>
+        </figcaption>
+        <p className="text-sm text-muted-foreground">{labels.empty}</p>
+      </figure>
+    );
+  }
 
   return (
     <figure className="flex min-w-0 flex-col gap-3 rounded-2xl bg-muted/25 p-4">

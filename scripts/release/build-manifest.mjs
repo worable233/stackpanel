@@ -17,7 +17,7 @@
  *   {
  *     "kind": "plugin", "id": "llm-gateway", "version": "1.2.3", "channel": "stable",
  *     "source": { "repository": "worable233/stackpanel-plugins", "tag": "plugin-llm-gateway-v1.2.3", "asset": "llm-gateway-1.2.3.zip" },
- *     "compatibility": { "kernel": ">=0.2.0 <0.3.0", "kernelApi": "^0.4.0", "frontendAbi": "^1.0.0", "packageFormat": 1 },
+ *     "compatibility": { "kernel": ">=0.1.0 <0.2.0", "kernelApi": "^0.4.0", "frontendAbi": "^1.0.0", "packageFormat": 1 },
  *     "requires": [], "conflicts": [], "permissions": [], "frontendModes": ["M2"],
  *     "migration": { "mode": "none", "rollback": "code-compatible" },
  *     "automatic": { "eligible": true },

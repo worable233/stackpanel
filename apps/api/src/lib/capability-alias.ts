@@ -122,7 +122,6 @@ export function installAdminCapabilityAliases(app: FastifyInstance): void {
               : handler,
           });
         } catch (error) {
-          // eslint-disable-next-line no-console
           app.log.error(
             `[capability-alias] 无法挂载 ${capability.id} → ${capability.path}: ${String(error)}`,
           );

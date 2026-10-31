@@ -35,7 +35,7 @@ function entry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     source: { repository: REPO, tag: 'demo-v1.1.0', asset: 'demo-1.1.0.zip' },
     artifact: { sha256: 'a'.repeat(64), size: 100 },
     compatibility: {
-      kernel: '>=0.2.0 <0.3.0',
+      kernel: '>=0.1.0 <0.2.0',
       kernelApi: '^0.4.0',
       frontendAbi: '^1.0.0',
       packageFormat: 1,
@@ -231,7 +231,7 @@ describe('buildUpdatePlan', () => {
         entry({
           version: '1.1.0',
           compatibility: {
-            kernel: '>=0.2.0 <0.4.0',
+            kernel: '>=0.1.0 <0.4.0',
             kernelApi: '^0.4.0',
             frontendAbi: '^1.0.0',
             packageFormat: 1,

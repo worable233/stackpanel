@@ -211,16 +211,6 @@ export function ApiTokenManager({
     });
   };
 
-  const copyIssued = async () => {
-    if (!issued) return;
-    try {
-      await navigator.clipboard.writeText(issued);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  };
-
   return (
     <>
       <div className="flex justify-end">

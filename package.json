@@ -1,6 +1,6 @@
 {
   "name": "stackpanel",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "description": "API-first, microkernel plugin-based digital goods / hosting business management system.",
   "packageManager": "pnpm@11.5.1",
@@ -36,6 +36,7 @@
     "release:kernel-manifest": "node scripts/release/build-kernel-manifest.mjs",
     "release:kernel-artifact": "node scripts/release/build-kernel-artifact.mjs",
     "release:verify-catalog": "node scripts/release/verify-catalog.mjs",
+    "release:preflight": "node scripts/release/preflight.mjs",
     "release:rehearse": "node scripts/release/rehearse-distribution.mjs",
     "release:updater-drill": "node scripts/release/updater-drill.mjs",
     "release:acceptance-report": "node scripts/release/acceptance-report.mjs",

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import { AuthShell, type AuthPost, type AuthProvider } from '@/components/auth-shell';
@@ -8,6 +8,7 @@ import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useCooldown } from '@/hooks/use-cooldown';
 import { useTranslator } from '@/i18n/provider';
 import type { CaptchaActionConfig } from '@/lib/captcha';
 import { loginAction } from '@/lib/actions';
@@ -43,15 +44,43 @@ export function LoginForm({
   const [state, action, pending] = useActionState(loginAction, {});
   const [showPassword, setShowPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
   /**
    * Countdown driven by the kernel's `Retry-After`.
    *
    * A 429 that says nothing but "too often" is a dead end — the visitor either
    * gives up or keeps clicking and extends the lockout. Counting down *and*
-   * disabling the button turns the throttle into an instruction.
+   * disabling the button turns the throttle into an instruction. The countdown is
+   * derived from the action result rather than seeded inside an effect, so it can
+   * never flash "clickable" for a frame before the throttle is honoured.
    */
-  const [wait, setWait] = useState(0);
-  const [captchaReset, setCaptchaReset] = useState(0);
+  const wait = useCooldown(
+    useMemo(
+      () =>
+        typeof state.retryAfterSeconds === 'number' && state.retryAfterSeconds > 0
+          ? { seconds: state.retryAfterSeconds, rev: state }
+          : null,
+      [state],
+    ),
+  );
+  /**
+   * A rejected challenge token is spent: remount so a new one can be solved
+   * instead of leaving a widget that looks verified but no longer works.
+   */
+  const handledRejectionRef = useRef<unknown>(null);
+  /* eslint-disable react-hooks/set-state-in-effect -- 服务端动作结果回写界面状态，渲染期对齐在 SSR 下会死循环（见 use-cooldown.ts） */
+  useEffect(() => {
+    if (handledRejectionRef.current === state) return;
+    handledRejectionRef.current = state;
+    if (
+      state.errorCode === 'auth.captcha_required' ||
+      state.errorCode === 'auth.captcha_failed'
+    ) {
+      setCaptchaToken(null);
+      setCaptchaReset((value) => value + 1);
+    }
+  }, [state]);
+  /* eslint-enable react-hooks/set-state-in-effect */
   // Controlled: React resets an uncontrolled form whenever its action returns, so
   // a rejected sign-in would blank the email and password and force a full retype
   // (the same trap that made the register button unclickable).
@@ -62,24 +91,6 @@ export function LoginForm({
       setValues((previous) => ({ ...previous, [name]: event.target.value })),
   });
   const t = useTranslator();
-
-  useEffect(() => {
-    if (wait <= 0) return;
-    const timer = setTimeout(() => setWait((value) => value - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [wait]);
-
-  useEffect(() => {
-    if (typeof state.retryAfterSeconds === 'number' && state.retryAfterSeconds > 0) {
-      setWait(state.retryAfterSeconds);
-    }
-    // A rejected challenge token is spent; remount so a new one can be solved
-    // instead of leaving a widget that looks verified but no longer works.
-    if (state.errorCode === 'auth.captcha_required' || state.errorCode === 'auth.captcha_failed') {
-      setCaptchaToken(null);
-      setCaptchaReset((value) => value + 1);
-    }
-  }, [state]);
 
   const errorMessage = state.error ?? (oauthError ? t('auth.login.oauthFailed') : null);
   return (

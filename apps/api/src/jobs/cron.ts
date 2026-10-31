@@ -11,7 +11,7 @@
  * - `*` — every value
  * - `N` — one value
  * - `a-b` — inclusive range
- * - `*​/s`, `a-b/s`, `a/s` — every `s`-th value
+ * - `a/s`, `a-b/s`, and a star followed by `/s` — every `s`-th value
  * - comma lists of any of the above
  *
  * Standard cron semantics for day-of-month/day-of-week: when *both* are
@@ -102,11 +102,20 @@ export function parseCron(expression: string): ParsedCron {
     throw new CronParseError(
       `cron 需要 5 个字段（分 时 日 月 周），收到 ${fields.length} 个：${expression}`,
     );
-  const minutes = parseField(fields[0]!, { min: 0, max: 59, name: '分钟' });
-  const hours = parseField(fields[1]!, { min: 0, max: 23, name: '小时' });
-  const daysOfMonth = parseField(fields[2]!, { min: 1, max: 31, name: '日' });
-  const months = parseField(fields[3]!, { min: 1, max: 12, name: '月' });
-  const daysOfWeek = parseField(fields[4]!, {
+  // 上面已确认恰好 5 段，因此这里按元组解构是安全的；用元组断言而不是 `!`，
+  // 是因为前者把「长度已校验」这件事写进了类型，后者只是让编译器闭嘴。
+  const [minuteField, hourField, dayField, monthField, dayOfWeekField] = fields as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  const minutes = parseField(minuteField, { min: 0, max: 59, name: '分钟' });
+  const hours = parseField(hourField, { min: 0, max: 23, name: '小时' });
+  const daysOfMonth = parseField(dayField, { min: 1, max: 31, name: '日' });
+  const months = parseField(monthField, { min: 1, max: 12, name: '月' });
+  const daysOfWeek = parseField(dayOfWeekField, {
     min: 0,
     max: 7,
     name: '星期',

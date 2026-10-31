@@ -32,8 +32,17 @@ import {
   writeChannelPointers,
 } from './lib/catalog.mjs';
 
-const KERNEL_VERSION = '0.2.0';
-const KERNEL_API_VERSION = '0.4.0';
+/**
+ * 内核产品版本的上一个 minor 边界：`0.1.0` → `0.2.0`。
+ *
+ * 演练里的插件清单要写一条「兼容哪个内核区间」的声明，必须跟着产品版本走。
+ * 早先这里与 `KERNEL_VERSION` 一起写死，两个常量会悄悄漂移（改版本时改一处、
+ * 漏一处，演练就成了在测旧版本）。现在两者都从契约包读。
+ */
+function nextMinor(version) {
+  const [major, minor] = version.split('.').map(Number);
+  return `${major}.${minor + 1}.0`;
+}
 
 function assert(condition, message) {
   if (!condition) throw new Error(`断言失败：${message}`);
@@ -130,8 +139,8 @@ async function main() {
     },
     artifact: { sha256: sha256(zipBytes), size: zipBytes.byteLength },
     compatibility: {
-      kernel: `>=${KERNEL_VERSION} <0.3.0`,
-      kernelApi: `^${KERNEL_API_VERSION}`,
+      kernel: `>=${spec.KERNEL_VERSION} <${nextMinor(spec.KERNEL_VERSION)}`,
+      kernelApi: `^${spec.KERNEL_API_VERSION}`,
       frontendAbi: '^1.0.0',
       packageFormat: 1,
     },
@@ -157,7 +166,7 @@ async function main() {
     kind: 'kernel',
     version: '0.3.0',
     channel: 'stable',
-    kernelApi: KERNEL_API_VERSION,
+    kernelApi: spec.KERNEL_API_VERSION,
     frontendAbi: '1.0.0',
     updateProtocol: spec.UPDATE_PROTOCOL_VERSION,
     upgradeFrom: '>=0.1.0',
@@ -196,7 +205,7 @@ async function main() {
     keyId: 'kernel-rehearsal',
   };
   const resolvedKernel = spec.resolveKernelUpgrade({
-    currentVersion: KERNEL_VERSION,
+    currentVersion: spec.KERNEL_VERSION,
     platform: 'linux/amd64',
     channel: 'stable',
     candidates: [kernelManifest],

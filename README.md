@@ -110,6 +110,7 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel@sha256:<dige
 | 查阅 API 契约 | [`packages/spec`](./packages/spec) 是内核 API 版本与 OpenAPI 投影的单一来源。 |
 | 本地开发与代码规范 | [贡献指南](./CONTRIBUTING.md) |
 | 排查生产运行问题 | [运维手册](./docs/OPERATIONS-RUNBOOK.md) |
+| 发布内核新版本 | [发版流程](./docs/RELEASE.md)（预检 → 门禁 → 打标签 → CI 自动构建与发布） |
 
 本地开发需要 Node.js 22+、pnpm 11.5.1、PostgreSQL 16 和 Redis 7。详细环境配置在 [贡献指南](./CONTRIBUTING.md)；常用校验与 CI 保持一致：
 

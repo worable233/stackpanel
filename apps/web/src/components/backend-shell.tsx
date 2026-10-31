@@ -38,7 +38,6 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PlatformBrandDisplay } from '@stackpanel/sdk';
-import { Button } from '@/components/ui/button';
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -480,9 +479,12 @@ export function BackendShell({
     rootHref === '/admin' ? t('adminShell.backend') : t('nav.accountOverview');
   const activeGroup = activeItem?.group ? groupLabel(activeItem.group) : null;
 
+  // 换路由就收起移动端抽屉。渲染期 setState 在 SSR 下会死循环，因此留在 effect 里。
+  /* eslint-disable react-hooks/set-state-in-effect -- 路由变化是外部事件，只能在 effect 里响应 */
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <SidebarProvider

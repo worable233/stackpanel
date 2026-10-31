@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ReceiptText, X } from 'lucide-react';
 import type { AdminPaymentRecord } from '@stackpanel/sdk';
@@ -69,6 +69,14 @@ export function PaymentRecords({ payments }: { payments: AdminPaymentRecord[] })
   const router = useRouter();
   const [isMutating, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
+  // 「已超时」必须随时间自己变。渲染期直接读 `Date.now()` 会让渲染不纯
+  // （每次渲染结果不同，React 无法安全地跳过或重放），改为挂载取一次、
+  // 之后每 30 秒由定时器回调刷新。
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   function run(
     paymentId: string,
@@ -143,7 +151,7 @@ export function PaymentRecords({ payments }: { payments: AdminPaymentRecord[] })
             const overdue =
               payment.status === 'PENDING' &&
               payment.expiresAt !== null &&
-              new Date(payment.expiresAt).getTime() < Date.now();
+              new Date(payment.expiresAt).getTime() < now;
             const amount = payment.orderAmount ?? payment.amount;
             const currency = payment.orderCurrency ?? payment.currency;
             const differs = currency !== payment.currency || amount !== payment.amount;

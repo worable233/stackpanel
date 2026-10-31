@@ -388,7 +388,11 @@ export function CaptchaField({
   // `onToken` is identity-unstable in most forms (inline arrow); keep it in a ref
   // so it cannot tear down and re-render a solved widget on every parent render.
   const reportRef = useRef(onToken);
-  reportRef.current = onToken;
+  // Ref 同步放进 effect：渲染期写 ref 破坏渲染的纯粹性（`react-hooks/refs`）。
+  // 回调只可能在挂载之后被调用，所以晚一拍赋值不会漏事件。
+  useEffect(() => {
+    reportRef.current = onToken;
+  }, [onToken]);
 
   // Rename the vendor's own field when the page hosts more than one widget.
   // Memoised on purpose: a fresh object every render would re-run the mount effect
@@ -408,8 +412,11 @@ export function CaptchaField({
 
   // A reset signal can arrive before the widget ever failed, so it must work in
   // both states: remount the vendor widget *and* clear a previous failure banner.
+  // 用 ref 去重后回到 effect：渲染期 setState 在 SSR 下会「Too many re-renders」。
+  const seenResetRef = useRef(resetSignal);
   useEffect(() => {
-    if (!resetSignal) return;
+    if (resetSignal === seenResetRef.current) return;
+    seenResetRef.current = resetSignal;
     setFailed(false);
     setAttempt((value) => value + 1);
   }, [resetSignal]);

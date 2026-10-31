@@ -43,6 +43,9 @@ describe('contract version', () => {
       'package.json',
       'apps/api/package.json',
       'apps/web/package.json',
+      // 升级器是随内核一起发出去的自包含二进制，它的版本必须与产品版本同步，
+      // 否则发布产物声称 0.1.0、runner 内建版本还停在上一号。
+      'apps/updater/package.json',
       'packages/db/package.json',
       'packages/ui/package.json',
       'packages/net-guard/package.json',

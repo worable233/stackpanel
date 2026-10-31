@@ -153,9 +153,7 @@
         "labelKey": "nav.products",
         "groupKey": "nav.groupStore",
         "order": 10,
-        "activePaths": [
-          "/products"
-        ]
+        "activePaths": ["/products"]
       },
       "data": [
         {
@@ -862,9 +860,7 @@
       "nav": {
         "labelKey": "nav.shop",
         "order": 5,
-        "activePaths": [
-          "/store"
-        ]
+        "activePaths": ["/store"]
       },
       "data": [
         {
@@ -1069,12 +1065,7 @@
       }
     ]
   },
-  "locales": [
-    "zh-CN",
-    "zh-TW",
-    "zh-HK",
-    "en-US"
-  ],
+  "locales": ["zh-CN", "zh-TW", "zh-HK", "en-US"],
   "messages": {
     "zh-CN": {
       "review.recover": "核验原账单并重新送审",

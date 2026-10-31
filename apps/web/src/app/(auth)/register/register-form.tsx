@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validatePassword } from '@stackpanel/sdk';
 import { AuthShell, type AuthProvider } from '@/components/auth-shell';
@@ -8,12 +8,27 @@ import { CaptchaField } from '@/components/captcha-field';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { cooldownSignalFor, useCooldown } from '@/hooks/use-cooldown';
 import { useTranslator } from '@/i18n/provider';
 import type { CaptchaActionConfig } from '@/lib/captcha';
 import { registerAction, sendRegisterCodeAction } from '@/lib/actions';
 
 /** Mirrors the kernel default for `AUTH_CODE_SEND_COOLDOWN_SECONDS`. */
 const SEND_CODE_COOLDOWN_SECONDS = 60;
+
+/**
+ * 服务端判定的「这枚码已经不可用」。命中就要立刻解锁重发按钮——文案说着
+ * 「请重新获取」而按钮还在倒计时，是访客无法自行解除的矛盾。
+ */
+const DEAD_CODE_ERRORS = new Set([
+  'auth.code_expired',
+  'auth.code_missing',
+  'auth.code_invalid',
+  'auth.code_locked',
+]);
+
+/** 人机验证 token 被拒：控件必须重挂，否则会一直显示「已验证」。 */
+const CAPTCHA_ERRORS = new Set(['auth.captcha_required', 'auth.captcha_failed']);
 
 export function RegisterForm({
   providers = [],
@@ -47,12 +62,27 @@ export function RegisterForm({
   /** Token of the `register_send_code` widget; the two actions are guarded separately. */
   const [sendCodeToken, setSendCodeToken] = useState<string | null>(null);
   /**
+   * 注册动作判定「这枚码不可再用」的那一刻，之前那次「已发送」就不再是可执行的
+   * 指令了。这里记住是哪一次结果吊销的它，重发成功时再清空。
+   */
+  const [deadCode, setDeadCode] = useState<unknown>(null);
+  /**
    * Client-side echo of the kernel's per-recipient cooldown
    * (`AUTH_CODE_SEND_COOLDOWN_SECONDS`, 60s by default). The server is the
    * authority; this only stops the visitor from discovering the limit by
    * hammering the button — and shows how long the wait is.
    */
-  const [cooldown, setCooldown] = useState(0);
+  const cooldownSignal = useMemo(
+    () =>
+      // 注册动作说出「这枚码已作废」时，之前那条"已发送"的 notice 就过期了：
+      // 两边都参与优先级比较会打架（谁更「新」只有渲染才知道），所以由状态机
+      // 自己维护——作废即吊销 notice，重发成功即解除吊销。
+      deadCode
+        ? { seconds: 0, rev: deadCode }
+        : cooldownSignalFor([codeState], DEAD_CODE_ERRORS, SEND_CODE_COOLDOWN_SECONDS),
+    [codeState, deadCode],
+  );
+  const cooldown = useCooldown(cooldownSignal);
   /** Client-side refusal for the send-code button (empty email, unsolved widget). */
   const [sendCodeError, setSendCodeError] = useState<string | null>(null);
   /** Client-side refusal for the sign-up button (unsolved widget). */
@@ -97,69 +127,39 @@ export function RegisterForm({
       setValues((previous) => ({ ...previous, [name]: event.target.value })),
   });
 
+  /* eslint-disable react-hooks/set-state-in-effect -- 服务端动作结果回写界面状态，渲染期对齐在 SSR 下会死循环（见 use-cooldown.ts） */
+  // A rejected human-verification token is single-use: remount so the visitor can
+  // solve a new one instead of staring at a widget that looks verified.
+  const handledCodeRef = useRef<unknown>(null);
   useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [cooldown]);
-
-  useEffect(() => {
-    // Only a *delivered* code starts the countdown. Starting it on an error made a
-    // rejected request (missing email, unsolved widget) look like "sent — wait 53s",
-    // which is worse than no feedback at all.
-    if (codeState.notice) setCooldown(SEND_CODE_COOLDOWN_SECONDS);
-
-    // The kernel is the authority on the wait: on a 429 it returns the *remaining*
-    // seconds, which is shorter than a full window when the visitor already waited.
-    if (typeof codeState.retryAfterSeconds === 'number' && codeState.retryAfterSeconds > 0) {
-      setCooldown(codeState.retryAfterSeconds);
-    }
-
-    // A dead code must not leave the resend button locked: "验证码已过期，请重新获取"
-    // plus a button that is still counting down is a contradiction the visitor
-    // cannot resolve. Expiry/consumption are server facts, so honour them here.
-    if (
-      codeState.errorCode === 'auth.code_expired' ||
-      codeState.errorCode === 'auth.code_missing' ||
-      codeState.errorCode === 'auth.code_invalid' ||
-      codeState.errorCode === 'auth.code_locked'
-    ) {
-      setCooldown(0);
-    }
-
-    // A rejected human-verification token is single-use: remount so the visitor can
-    // solve a new one instead of staring at a widget that looks verified.
-    if (
-      codeState.errorCode === 'auth.captcha_required' ||
-      codeState.errorCode === 'auth.captcha_failed'
-    ) {
+    if (handledCodeRef.current === codeState) return;
+    handledCodeRef.current = codeState;
+    if (codeState.errorCode && CAPTCHA_ERRORS.has(codeState.errorCode)) {
       setSendCodeToken(null);
       setSendCodeCaptchaReset((value) => value + 1);
     }
-
+    // 新的码已投递：上一枚「已作废」的判定随之失效，倒计时重新开始。
+    if (codeState.notice) setDeadCode(null);
+    // A delivered code plus an unsolved sign-up widget reads as "the form does
+    // nothing": say so and bring the second checkbox into view.
     if (codeState.notice && captcha?.policy === 'required' && !captchaToken) {
       setNeedsRegisterCaptcha(true);
     }
   }, [codeState, captcha?.policy, captchaToken]);
 
+  const handledRegisterRef = useRef<unknown>(null);
   useEffect(() => {
-    if (
-      state.errorCode === 'auth.captcha_required' ||
-      state.errorCode === 'auth.captcha_failed'
-    ) {
+    if (handledRegisterRef.current === state) return;
+    handledRegisterRef.current = state;
+    if (state.errorCode && CAPTCHA_ERRORS.has(state.errorCode)) {
       setCaptchaToken(null);
       setCaptchaReset((value) => value + 1);
     }
-    // Same unlock rule as above: an unusable code must free the resend button.
-    if (
-      state.errorCode === 'auth.code_expired' ||
-      state.errorCode === 'auth.code_missing' ||
-      state.errorCode === 'auth.code_invalid' ||
-      state.errorCode === 'auth.code_locked'
-    ) {
-      setCooldown(0);
-    }
+    // 服务端说这枚码不可用了——文案让人「重新获取」，按钮必须当场解锁，
+    // 否则访客被卡在一个自己解除不了的倒计时里。
+    if (state.errorCode && DEAD_CODE_ERRORS.has(state.errorCode)) setDeadCode(state);
   }, [state]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!needsRegisterCaptcha) return;

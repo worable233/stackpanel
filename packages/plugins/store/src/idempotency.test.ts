@@ -31,6 +31,13 @@ function memoryState(): StateService {
     async del(key) {
       values.delete(key);
     },
+    // `ttl` 是内核契约的一部分（ADR-0028：限流要能算出剩余等待），假实现少了它
+    // 会在 typecheck 处炸——那正是它该起的作用：假实现的表面必须与真的一致。
+    async ttl(key) {
+      if (!alive(key)) return 0;
+      const entry = values.get(key)!;
+      return entry.expiresAt === null ? null : Math.max(0, entry.expiresAt - Date.now());
+    },
     async incr(key, ttlMs) {
       const next = Number(alive(key) ? values.get(key)!.value : 0) + 1;
       values.set(key, { value: String(next), expiresAt: ttlMs ? Date.now() + ttlMs : null });
