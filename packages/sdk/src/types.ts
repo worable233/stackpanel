@@ -125,15 +125,19 @@ export interface CaptchaElementWidgetConfig {
   /** Custom element tag the vendor's script registers. */
   tag: string;
   /**
-   * Script that defines the custom element. Omitted when the host page already
-   * loaded it; otherwise the host loads it before creating the element, because
-   * an undefined custom tag renders nothing and reports nothing.
+   * URL of the script that **defines** the custom element. Omitted when the
+   * host page already loaded it; otherwise the host loads it before creating the
+   * element, because an undefined custom tag renders nothing and reports nothing.
    */
   script?: string;
   attributes: Record<string, string>;
   /**
-   * Attribute read back after `event` fires to obtain the token. Exactly one of
-   * `tokenAttribute` / `hiddenField` is used.
+   * Attribute holding the solution once `event` fires.
+   *
+   * Optional: widgets that report the token through the event's `detail`
+   * (`statechange` → `{ payload }`) publish no attribute at all, and the host
+   * reads `detail.payload` first. Exactly one of `tokenAttribute` /
+   * `hiddenField` is used.
    */
   tokenAttribute?: string;
   /**

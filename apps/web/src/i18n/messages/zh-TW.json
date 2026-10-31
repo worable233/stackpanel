@@ -120,6 +120,7 @@
       "code": "郵箱驗證碼",
       "sendCode": "獲取驗證碼",
       "sendingCode": "傳送中…",
+      "resendIn": "重新傳送（{seconds} 秒）",
       "codeSent": "驗證碼已傳送，請查收郵箱。",
       "codeSentTo": "驗證碼已傳送至 {email}，請查收（有效期 10 分鐘）。",
       "closedTitle": "當前已關閉註冊",

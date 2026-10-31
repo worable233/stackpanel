@@ -136,6 +136,10 @@ const envSchema = z.object({
   AUTH_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   AUTH_CODE_SEND_PER_HOUR: z.coerce.number().int().min(0).default(5),
   AUTH_CODE_SEND_PER_HOUR_PER_IP: z.coerce.number().int().min(0).default(20),
+  // Minimum gap between two codes to the **same** recipient. The hourly cap alone
+  // lets a caller burn the whole quota in one second, which is an inbox bomb for
+  // the recipient and a spam signal for our sending reputation.
+  AUTH_CODE_SEND_COOLDOWN_SECONDS: z.coerce.number().int().min(0).default(60),
   // First-run setup wizard (ADR: setup page). `auto` (default) lets the operator
   // claim the instance from the browser at `/setup`; `disabled` turns the wizard
   // off entirely, so a fresh instance can only be initialized out-of-band.

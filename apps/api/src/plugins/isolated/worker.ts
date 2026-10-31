@@ -1520,7 +1520,7 @@ process.on('message', async (raw: unknown) => {
     let status: number | undefined;
     let sent = false;
     let payload: unknown;
-    let headers: Array<[string, string]> = [];
+    let headers: Array<[string, string | string[]]> = [];
     // `HttpReply.code` is chainable per the SDK contract: plugins write
     // `reply.code(201).send(body)`. Returning `undefined` here made that chain
     // throw "Cannot read properties of undefined (reading 'send')", which killed
@@ -1533,7 +1533,7 @@ process.on('message', async (raw: unknown) => {
       // Response headers are collected here because the worker only sends the
       // status and payload back. Dropping them silently would break any route
       // that serves something other than JSON (a script needs its own MIME).
-      header: (name: string, value: string) => {
+      header: (name: string, value: string | string[]) => {
         headers = [
           ...headers.filter(([existing]) => existing.toLowerCase() !== name.toLowerCase()),
           [name, value],

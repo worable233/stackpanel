@@ -22,6 +22,7 @@ export interface CaptchaCspSources {
   style: string[];
   frame: string[];
   connect: string[];
+  /** `worker-src` values a proof-of-work widget needs (currently only `blob:`). */
   worker: string[];
 }
 
@@ -53,22 +54,17 @@ let cache: { at: number; value: CaptchaCspSources; ok: boolean } | null = null;
 let inflight: Promise<CaptchaCspSources> | null = null;
 
 /**
- * Only absolute https origins survive, mirroring the kernel's sanitizer, plus
- * the literal `blob:` scheme source a proof-of-work widget needs for its solver
- * worker. Anything else is dropped rather than trusted.
+ * Only absolute https origins survive, mirroring the kernel's sanitizer. The
+ * `blob:` scheme a proof-of-work worker needs goes through `normalizeWorkers`
+ * instead, so it can never widen `script-src` or `frame-src`.
  */
 function normalize(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   const origins = new Set<string>();
   for (const value of values) {
     if (typeof value !== 'string') continue;
-    const trimmed = value.trim();
-    if (trimmed === 'blob:') {
-      origins.add(trimmed);
-      continue;
-    }
     try {
-      const url = new URL(trimmed);
+      const url = new URL(value.trim());
       if (url.protocol !== 'https:') continue;
       origins.add(url.origin);
     } catch {
@@ -76,6 +72,20 @@ function normalize(values: unknown): string[] {
     }
   }
   return [...origins];
+}
+
+/** `worker-src` values: `blob:` is a scheme, not an origin, so it needs its own check. */
+const ALLOWED_WORKER_SOURCES = new Set(['blob:']);
+
+function normalizeWorkers(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const allowed = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim().toLowerCase();
+    if (ALLOWED_WORKER_SOURCES.has(normalized)) allowed.add(normalized);
+  }
+  return [...allowed];
 }
 
 function pick(sources: unknown): CaptchaCspSources {
@@ -86,7 +96,7 @@ function pick(sources: unknown): CaptchaCspSources {
     style: normalize(raw['style']),
     frame: normalize(raw['frame']),
     connect: normalize(raw['connect']),
-    worker: normalize(raw['worker']),
+    worker: normalizeWorkers(raw['worker']),
   };
 }
 

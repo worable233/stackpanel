@@ -48,7 +48,7 @@ describe('readCaptchaCspSources', () => {
       style: ['https://challenges.example.test'],
       frame: ['https://challenges.example.test'],
       connect: ['https://api.example.test'],
-      worker: ['https://challenges.example.test'],
+      worker: [],
     });
   });
 
@@ -112,7 +112,9 @@ describe('readCaptchaCspSources', () => {
   });
 
   it('caches the result, including a failed read', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve(json({ sources: { connect: ['https://a.test'] } })));
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(json({ sources: { connect: ['https://a.test'] } })),
+    );
     vi.stubGlobal('fetch', fetchMock);
     await readCaptchaCspSources();
     await readCaptchaCspSources();

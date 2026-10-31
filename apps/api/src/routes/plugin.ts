@@ -21,7 +21,7 @@ import {
 } from '../lib/frontend-revisions.ts';
 import { rateLimitConfig } from '../lib/rate-limit-policy.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
-import { requireAuth } from '../plugins/auth.ts';
+import { extractSession, requireAuth } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 
 const pluginIdSchema = z.object({ id: z.string().min(1).max(64) });
@@ -64,9 +64,7 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
       // grant (`builtin` OR operator allowlist ⇒ `server`), so the web layer
       // reads one field instead of re-deriving trust from provenance.
       const serverExecution =
-        plugin.frontendExecutions === 'server'
-          ? ('allowed' as const)
-          : ('declarative' as const);
+        plugin.frontendExecutions === 'server' ? ('allowed' as const) : ('declarative' as const);
       const pointer = await readCurrentRevision(packageDir);
       const current =
         pointer && !repaired && (await isRevisionComplete(packageDir, pointer.revision))
@@ -158,19 +156,27 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
    * frontend action that tries to target a kernel route or a different plugin
    * before it can use the current session.
    */
-  app.get('/plugins/:id/action-targets', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/plugins/:id/action-targets', async (request, reply) => {
     const params = pluginIdSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: '插件 ID 无效' });
     const { id } = params.data;
     if (!app.pluginRuntime.isActive(id)) {
       return reply.code(404).send({ error: '插件不存在' });
     }
+    // 匿名调用方只拿到 `auth: 'public'` 的路由：BFF 必须在没有会话时也能判断某个
+    // 插件路径能不能公开访问，否则插件自己声明的公共资源（captcha 的 widget.js 与
+    // challenge）在登录页/注册页这类匿名页面上永远取不到——人机验证挂不出来，
+    // 而内核又按 `required` 拒绝提交，用户看到的就是「请完成人机验证」却无处可验。
+    const user = await extractSession(request, reply);
+    const authenticated = Boolean(user);
     const routes = app.pluginDispatcher
       .list()
       .filter((route) => route.pluginId === id)
+      .filter((route) => authenticated || route.auth === 'public')
       .map((route) => ({
         method: route.method,
         path: route.path,
+        ...(route.auth ? { auth: route.auth } : {}),
         ...(route.permission ? { permission: route.permission } : {}),
       }));
     return { routes };

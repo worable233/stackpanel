@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validatePassword } from '@stackpanel/sdk';
 import { AuthShell, type AuthProvider } from '@/components/auth-shell';
@@ -11,6 +11,9 @@ import { Label } from '@/components/ui/label';
 import { useTranslator } from '@/i18n/provider';
 import type { CaptchaActionConfig } from '@/lib/captcha';
 import { registerAction, sendRegisterCodeAction } from '@/lib/actions';
+
+/** Mirrors the kernel default for `AUTH_CODE_SEND_COOLDOWN_SECONDS`. */
+const SEND_CODE_COOLDOWN_SECONDS = 60;
 
 export function RegisterForm({
   providers = [],
@@ -41,18 +44,67 @@ export function RegisterForm({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  /** Token of the `register_send_code` widget; the two actions are guarded separately. */
+  const [sendCodeToken, setSendCodeToken] = useState<string | null>(null);
+  /**
+   * Client-side echo of the kernel's per-recipient cooldown
+   * (`AUTH_CODE_SEND_COOLDOWN_SECONDS`, 60s by default). The server is the
+   * authority; this only stops the visitor from discovering the limit by
+   * hammering the button — and shows how long the wait is.
+   */
+  const [cooldown, setCooldown] = useState(0);
+  /** Client-side refusal for the send-code button (empty email, unsolved widget). */
+  const [sendCodeError, setSendCodeError] = useState<string | null>(null);
+  /** Client-side refusal for the sign-up button (unsolved widget). */
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
+  useEffect(() => {
+    // Only a *delivered* code starts the countdown. Starting it on an error made a
+    // rejected request (missing email, unsolved widget) look like "sent — wait 53s",
+    // which is worse than no feedback at all.
+    if (codeState.notice) setCooldown(SEND_CODE_COOLDOWN_SECONDS);
+  }, [codeState]);
   const t = useTranslator();
 
-  /**
-   * One widget serves both submitting actions. The two actions are policy-
-   * independent (a deployment may guard sign-up but not the code request), so
-   * the widget renders whenever *either* is guarded and the same token is
-   * submitted with both — the kernel ignores it for whichever action is `off`.
-   * Register wins when both are on because it is the form's primary action.
-   */
-  const activeCaptcha = captcha ?? sendCodeCaptcha;
-
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    // "获取验证码" is a second submit button on the same form, and it only sends an
+    // email — it never creates the account. Running the password rules for it made
+    // the button do nothing at all while the password fields were still empty
+    // (native `required` on code/password + this handler), so a visitor who asked
+    // for the code first could not get one.
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLElement | null;
+    if (submitter?.dataset.sendCode === 'true') {
+      setPasswordError(null);
+      setConfirmError(null);
+      // Native constraint validation does not run for React form actions, so the
+      // send-code button has to refuse on its own: without this the browser posted
+      // an empty email (and an unsolved widget) and only the server said no.
+      const emailInput = event.currentTarget.elements.namedItem('email') as HTMLInputElement | null;
+      const email = emailInput?.value.trim() ?? '';
+      if (!email) {
+        event.preventDefault();
+        setSendCodeError(t('auth.validation.emailRequired'));
+        return;
+      }
+      if (emailInput && !emailInput.validity.valid) {
+        event.preventDefault();
+        setSendCodeError(t('auth.validation.emailInvalid'));
+        return;
+      }
+      if (sendCodeCaptcha?.policy === 'required' && !sendCodeToken) {
+        event.preventDefault();
+        setSendCodeError(t('error.auth.captcha_required'));
+        return;
+      }
+      setSendCodeError(null);
+      return;
+    }
     const form = event.currentTarget;
     const email = (form.elements.namedItem('email') as HTMLInputElement | null)?.value ?? '';
     const password = (form.elements.namedItem('password') as HTMLInputElement | null)?.value ?? '';
@@ -72,7 +124,15 @@ export function RegisterForm({
       setConfirmError(t('auth.validation.passwordMismatch'));
       return;
     }
+    // The kernel enforces this too, but answering here keeps the visitor from
+    // paying a round trip (and from reading a server 400 as "the form is broken").
+    if (captcha?.policy === 'required' && !captchaToken) {
+      event.preventDefault();
+      setCaptchaError(t('error.auth.captcha_required'));
+      return;
+    }
     setConfirmError(null);
+    setCaptchaError(null);
   }
 
   return (
@@ -95,6 +155,7 @@ export function RegisterForm({
             autoComplete="email"
             required
             className="py-2.5"
+            onChange={() => setSendCodeError(null)}
           />
         </div>
         {emailVerificationRequired ? (
@@ -113,11 +174,17 @@ export function RegisterForm({
               <Button
                 type="submit"
                 formAction={sendCodeAction}
-                disabled={sendingCode}
+                formNoValidate
+                data-send-code="true"
+                disabled={sendingCode || cooldown > 0}
                 variant="outline"
                 className="h-auto shrink-0 whitespace-nowrap"
               >
-                {sendingCode ? t('auth.register.sendingCode') : t('auth.register.sendCode')}
+                {sendingCode
+                  ? t('auth.register.sendingCode')
+                  : cooldown > 0
+                    ? t('auth.register.resendIn', { seconds: cooldown })
+                    : t('auth.register.sendCode')}
               </Button>
             </div>
             {codeState.notice ? (
@@ -127,7 +194,23 @@ export function RegisterForm({
                   : codeState.notice}
               </p>
             ) : null}
-            {codeState.error ? <p className="text-sm text-destructive">{codeState.error}</p> : null}
+            {sendCodeError ? (
+              <p className="text-sm text-destructive">{sendCodeError}</p>
+            ) : (
+              codeState.error && <p className="text-sm text-destructive">{codeState.error}</p>
+            )}
+            {sendCodeToken ? (
+              <input type="hidden" name="sendCodeCaptchaToken" value={sendCodeToken} />
+            ) : null}
+            {/*
+              Its own widget, bound to `register_send_code`: a CAPTCHA token is
+              minted for one action only, so reusing the sign-up widget's token
+              here made the kernel reject a legitimately solved code request.
+            */}
+            <CaptchaField
+              config={sendCodeCaptcha?.clientConfig ?? null}
+              onToken={setSendCodeToken}
+            />
           </div>
         ) : null}
         <div className="space-y-2">
@@ -174,7 +257,14 @@ export function RegisterForm({
         </div>
         {confirmError ? <p className="text-sm text-destructive">{confirmError}</p> : null}
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        <CaptchaField config={activeCaptcha?.clientConfig ?? null} onToken={setCaptchaToken} />
+        <CaptchaField
+          config={captcha?.clientConfig ?? null}
+          onToken={(token) => {
+            setCaptchaToken(token);
+            if (token) setCaptchaError(null);
+          }}
+        />
+        {captchaError ? <p className="text-sm text-destructive">{captchaError}</p> : null}
         <Button type="submit" disabled={pending} className="h-10 w-full text-base">
           {pending ? t('auth.register.submitting') : t('auth.register.submit')}
         </Button>

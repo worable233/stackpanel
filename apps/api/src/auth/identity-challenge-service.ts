@@ -95,6 +95,21 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
       throw new PluginError('auth.code_channel_unavailable', 503, '未配置验证码发送通道');
     }
 
+    // Minimum gap between two codes for the same recipient. Checked **before** the
+    // hourly counters so a burst cannot eat the quota: without it a caller can
+    // send every hourly code within one second, which floods the recipient's
+    // inbox and makes a legitimate "resend" fail for the rest of the hour.
+    const cooldown = getConfig('AUTH_CODE_SEND_COOLDOWN_SECONDS');
+    if (cooldown > 0) {
+      const seen = await this.options.state.incr(
+        `identity:code:cooldown:${email}:${purpose}`,
+        cooldown * 1000,
+      );
+      if (seen > 1) {
+        throw new PluginError('auth.code_rate_limited', 429, '验证码发送过于频繁，请稍后再试');
+      }
+    }
+
     // Send-rate limits, per recipient and per source IP.
     const emailLimit = getConfig('AUTH_CODE_SEND_PER_HOUR');
     if (emailLimit > 0) {

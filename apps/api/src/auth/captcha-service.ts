@@ -33,6 +33,16 @@ export type CaptchaMode = 'off' | 'optional' | 'required';
  * once any provider claims an action, only claiming providers are asked, so a
  * Turnstile token is never sent to a Cap endpoint in a multi-provider install.
  */
+/**
+ * Provider methods may be answered by an in-process implementation or proxied to
+ * an isolated plugin, which makes every answer a Promise. Awaiting both shapes in
+ * one place keeps callers honest: a forgotten await here is a policy that
+ * silently degrades to "off".
+ */
+async function resolve<T>(value: T | Promise<T> | undefined | null): Promise<T | null> {
+  return (await value) ?? null;
+}
+
 export interface CaptchaServiceOptions {
   getProviders: () => CaptchaProvider[];
   logger?: { warn: (message: string) => void };
@@ -46,8 +56,6 @@ export class KernelCaptchaService implements CaptchaService {
   }
 
   /**
-   * Whether any provider is registered.
-   *
    * Deliberately synchronous: it only counts registrations, and a boolean that
    * arrives as a pending promise is the kind of "true" nobody can debug.
    */
@@ -61,7 +69,7 @@ export class KernelCaptchaService implements CaptchaService {
 
   async clientConfig(): Promise<Record<string, unknown> | null> {
     for (const provider of this.options.getProviders()) {
-      const config = await provider.clientConfig?.();
+      const config = await resolve(provider.clientConfig?.());
       if (config) return config;
     }
     return null;
@@ -69,7 +77,12 @@ export class KernelCaptchaService implements CaptchaService {
 
   async clientConfigFor(action: string): Promise<Record<string, unknown> | null> {
     for (const provider of await this.providersForAction(action)) {
-      const config = await provider.clientConfig?.();
+      // Action-scoped config first: a provider that binds a challenge to one
+      // action must not be handed the generic widget (which would mint tokens
+      // for whatever action its default is).
+      const config =
+        (await resolve(provider.clientConfigFor?.(action))) ??
+        (await resolve(provider.clientConfig?.()));
       if (config) return config;
     }
     // A provider that ignores actions entirely still renders wherever it is
@@ -86,7 +99,7 @@ export class KernelCaptchaService implements CaptchaService {
   async policyFor(action: string): Promise<CaptchaMode> {
     if (this.mode() === 'off') return 'off';
     for (const provider of this.options.getProviders()) {
-      const policy = (await provider.policyFor?.(action)) ?? null;
+      const policy = await resolve(provider.policyFor?.(action));
       if (policy) return policy.mode;
     }
     return this.mode();
@@ -125,6 +138,9 @@ export class KernelCaptchaService implements CaptchaService {
     // so disabling verification is one restart away in an emergency.
     if (this.mode() === 'off') return;
 
+    // Await: a provider backed by an isolated plugin answers with a Promise, and a
+    // Promise is neither "off" nor "required" — comparing it directly let a
+    // `required` deployment admit token-less requests (fail-open).
     const policy = input.action ? await this.policyFor(input.action) : this.mode();
     if (policy === 'off') return;
 
@@ -161,10 +177,10 @@ export class KernelCaptchaService implements CaptchaService {
   private async providersForAction(action?: string): Promise<CaptchaProvider[]> {
     const providers = this.options.getProviders();
     if (!action) return providers;
-    const claimed: CaptchaProvider[] = [];
+    const claiming: CaptchaProvider[] = [];
     for (const provider of providers) {
-      if ((await provider.policyFor?.(action)) != null) claimed.push(provider);
+      if ((await resolve(provider.policyFor?.(action))) != null) claiming.push(provider);
     }
-    return claimed.length > 0 ? claimed : providers;
+    return claiming.length > 0 ? claiming : providers;
   }
 }

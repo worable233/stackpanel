@@ -44,7 +44,13 @@ describe('CSP allows package stylesheets (contract 05 §5)', () => {
           revision: 'abc123def456',
         },
       },
-      [{ id: 'store', manifest: { styles: ['frontend/dist/store.css'] }, revision: 'f00dbabe1234' }],
+      [
+        {
+          id: 'store',
+          manifest: { styles: ['frontend/dist/store.css'] },
+          revision: 'f00dbabe1234',
+        },
+      ],
     );
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {
@@ -153,7 +159,7 @@ describe('CSP allows a captcha widget without weakening script-src (spec §5.1)'
     // without these two directives it renders unstyled and never solves, which on
     // `required` is indistinguishable from a broken login form.
     expect(map.get('style-src')).toContain('https://challenges.example.test');
-    expect(map.get('worker-src')).toEqual(['\'self\'', 'blob:', 'https://challenges.example.test']);
+    expect(map.get('worker-src')).toEqual(["'self'", 'blob:', 'https://challenges.example.test']);
   });
 
   it('never widens the production script-src', () => {
@@ -176,5 +182,28 @@ describe('CSP allows a captcha widget without weakening script-src (spec §5.1)'
       connect: [],
     });
     expect(directives(csp).get('script-src')).toContain('https://challenges.example.test');
+  });
+});
+
+describe('captcha worker sources', () => {
+  it('allows the blob: worker a proof-of-work widget needs', () => {
+    // Without an explicit `worker-src`, the solver worker inherits
+    // `default-src 'self'`, refuses to start from a blob: URL, and the widget
+    // reports "verification failed" while looking perfectly installed.
+    const csp = buildCsp('nonce', false, {
+      script: [],
+      frame: [],
+      connect: [],
+      worker: ['blob:'],
+    });
+    expect(csp).toContain("worker-src 'self' blob:");
+  });
+
+  it('omits worker-src when no provider asks for one', () => {
+    const csp = buildCsp('nonce', false, { script: [], frame: [], connect: [], worker: [] });
+    // No captcha installed must leave the pre-captcha policy byte-for-byte
+    // intact; adding `worker-src 'self'` here would change every deployment.
+    expect(csp).not.toContain('worker-src');
+    expect(csp).not.toContain('blob:;');
   });
 });

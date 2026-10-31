@@ -1,3 +1,4 @@
+import { captchaCspSources } from '../../src/routes/captcha.ts';
 import { describe, expect, it } from 'vitest';
 import type { CaptchaProvider } from '@stackpanel/sdk';
 import { isPluginError } from '@stackpanel/sdk';
@@ -17,7 +18,7 @@ describe('KernelCaptchaService', () => {
   it('reports not configured when no provider is registered', async () => {
     const service = new KernelCaptchaService({ getProviders: () => [] });
     expect(service.isConfigured()).toBe(false);
-    expect(await service.clientConfig()).toBeNull();
+    await expect(service.clientConfig()).resolves.toBeNull();
   });
 
   it('passes verification through to the provider', async () => {
@@ -79,7 +80,7 @@ describe('KernelCaptchaService', () => {
     const service = new KernelCaptchaService({
       getProviders: () => [provider({ clientConfig: () => ({ siteKey: 'public' }) })],
     });
-    expect(await service.clientConfig()).toEqual({ siteKey: 'public' });
+    await expect(service.clientConfig()).resolves.toEqual({ siteKey: 'public' });
   });
 
   it('falls through to a second provider when the first rejects', async () => {
@@ -235,6 +236,41 @@ describe('KernelCaptchaService per-action policy', () => {
     });
   });
 
+  it('prefers the action-scoped widget config over the generic one', async () => {
+    const service = new KernelCaptchaService({
+      getProviders: () => [
+        provider({
+          policyFor: () => ({ mode: 'required' }),
+          clientConfig: () => ({ challenge: '/challenge?action=login' }),
+          clientConfigFor: (action: string) => ({ challenge: `/challenge?action=${action}` }),
+        } as never),
+      ],
+    });
+    // A generic widget would mint a token bound to whatever action its default is,
+    // so the send-code form could submit a login token.
+    expect(await service.clientConfigFor('register_send_code')).toEqual({
+      challenge: '/challenge?action=register_send_code',
+    });
+  });
+
+  it('does not fail open when a provider answers asynchronously', async () => {
+    // Providers reached through the isolated-plugin proxy answer with Promises.
+    // A Promise is neither 'off' nor 'required', so comparing it directly used to
+    // skip the token check and admit token-less requests (seen live with altcha).
+    const service = new KernelCaptchaService({
+      getProviders: () => [
+        provider({
+          policyFor: (async () => ({ mode: 'required' })) as never,
+        }),
+      ],
+    });
+    await withMode('required', async () => {
+      await expect(
+        service.enforce({ token: '', action: 'register_send_code' }),
+      ).rejects.toMatchObject({ code: 'auth.captcha_required' });
+    });
+  });
+
   it('resolves widget config per action with a fallback to the default', async () => {
     const service = new KernelCaptchaService({
       getProviders: () => [
@@ -247,5 +283,23 @@ describe('KernelCaptchaService per-action policy', () => {
     expect(await service.clientConfigFor('login')).toEqual({ kind: 'script', siteKey: 'k' });
     // Nobody claims `register`, so the default provider config still applies.
     expect(await service.clientConfigFor('register')).toEqual({ kind: 'script', siteKey: 'k' });
+  });
+});
+
+describe('captchaCspSources', () => {
+  it('passes the blob: worker source through untouched', () => {
+    // A proof-of-work widget builds its solver from a blob: URL. It is a scheme,
+    // not an https origin, so the origin sanitizer must not eat it — dropping it
+    // leaves the widget installed but permanently unsolvable (CSP blocks the
+    // worker and the browser only logs the reason).
+    expect(captchaCspSources({ sources: { worker: ['blob:'] } })).toEqual({ worker: ['blob:'] });
+  });
+
+  it('refuses any other worker source', () => {
+    expect(
+      captchaCspSources({
+        sources: { worker: ['blob:https://evil.test', 'data:', 'https://ok.test'] },
+      }),
+    ).toEqual({});
   });
 });

@@ -129,6 +129,7 @@
       "code": "Email verification code",
       "sendCode": "Send code",
       "sendingCode": "Sending…",
+      "resendIn": "재전송 ({seconds}초)",
       "codeSent": "A verification code has been sent to your email.",
       "codeSentTo": "A code was sent to {email}. It expires in 10 minutes.",
       "closedTitle": "현재 회원가입이 닫혀 있습니다",

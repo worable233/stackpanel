@@ -33,9 +33,19 @@ export interface CaptchaCspSources {
   style?: string[];
   frame?: string[];
   connect?: string[];
-  /** Origins a `Blob`/URL worker is created from (proof-of-work widgets). */
+  /**
+   * `worker-src` values.
+   *
+   * A proof-of-work widget runs its solver in a worker built from a `blob:` URL.
+   * `blob:` is not an origin, so it goes through its own narrow check: the
+   * literal scheme only, never `blob:https://…` prefixes that would smuggle
+   * anything else in.
+   */
   worker?: string[];
 }
+
+/** Worker sources a provider may request: the `blob:` scheme, nothing broader. */
+const ALLOWED_WORKER_SOURCES = new Set(['blob:']);
 
 /**
  * Narrow one declared source to an https origin.
@@ -52,18 +62,8 @@ export function sanitizeCspOrigins(values: unknown): string[] {
   const origins = new Set<string>();
   for (const value of values) {
     if (typeof value !== 'string') continue;
-    const trimmed = value.trim();
-    // `blob:` is a scheme source, not an origin: a proof-of-work widget runs its
-    // solver in `new Worker(URL.createObjectURL(blob))`. It is relayed verbatim
-    // because `new URL('blob:')` throws and it can never widen to a host.
-    // `data:` is deliberately not relayed — it turns any HTML injection into
-    // script execution, and no widget needs it.
-    if (trimmed === 'blob:') {
-      origins.add(trimmed);
-      continue;
-    }
     try {
-      const url = new URL(trimmed);
+      const url = new URL(value.trim());
       if (url.protocol !== 'https:') continue;
       origins.add(url.origin);
     } catch {
@@ -71,6 +71,18 @@ export function sanitizeCspOrigins(values: unknown): string[] {
     }
   }
   return [...origins];
+}
+
+/** Sanitize the `worker-src` entries: only the literal `blob:` scheme survives. */
+export function sanitizeWorkerSources(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const allowed = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim().toLowerCase();
+    if (ALLOWED_WORKER_SOURCES.has(normalized)) allowed.add(normalized);
+  }
+  return [...allowed];
 }
 
 /** Extract and sanitize the `sources` block of a provider's client config. */
@@ -82,7 +94,7 @@ export function captchaCspSources(config: Record<string, unknown> | null): Captc
   const style = sanitizeCspOrigins(raw['style']);
   const frame = sanitizeCspOrigins(raw['frame']);
   const connect = sanitizeCspOrigins(raw['connect']);
-  const worker = sanitizeCspOrigins(raw['worker']);
+  const worker = sanitizeWorkerSources(raw['worker']);
   return {
     ...(script.length > 0 ? { script } : {}),
     ...(style.length > 0 ? { style } : {}),

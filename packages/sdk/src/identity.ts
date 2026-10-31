@@ -197,6 +197,15 @@ export interface CaptchaProvider {
    * May return a promise, for the same reason as {@link clientConfig}.
    */
   policyFor?(action: string): MaybePromise<CaptchaPolicy | null>;
+  /**
+   * Widget config for one action when it differs from {@link clientConfig} —
+   * e.g. a challenge URL that must carry the action, so a token minted for the
+   * login form cannot be replayed on the send-code form.
+   *
+   * The kernel prefers this over `clientConfig` for claiming providers. May
+   * return a promise for the same reason as {@link clientConfig}.
+   */
+  clientConfigFor?(action: string): MaybePromise<Record<string, unknown> | null>;
 }
 
 /** Kernel-owned captcha service (`ctx.captcha`). */
@@ -233,6 +242,10 @@ export interface CaptchaService {
   /**
    * Effective policy for one action: the first provider that declares one wins,
    * otherwise the global `AUTH_CAPTCHA_MODE`.
+   *
+   * The result may be a Promise because providers are reached through the
+   * isolated-plugin proxy. Always `await` it: a Promise is neither `'off'` nor
+   * `'required'`, so comparing it directly silently disables the policy.
    */
   policyFor(action: string): Promise<'off' | 'optional' | 'required'>;
   /**

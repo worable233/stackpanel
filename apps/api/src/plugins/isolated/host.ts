@@ -34,10 +34,7 @@ import {
   parseTransactionCapability,
 } from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
-import {
-  takeSyncServicePredicateInput,
-  takeSyncServiceSnapshot,
-} from './service-contract.ts';
+import { takeSyncServicePredicateInput, takeSyncServiceSnapshot } from './service-contract.ts';
 import { dispatchCacheCapability } from '../../cache/index.ts';
 
 type ModelDescriptor = {
@@ -83,7 +80,11 @@ type Result = {
   id: string;
   value?: unknown;
   /** `headers` is a list because a header name may legitimately repeat. */
-  response?: { status?: number; payload?: unknown; headers?: Array<[string, string]> };
+  response?: {
+    status?: number;
+    payload?: unknown;
+    headers?: Array<[string, string | string[]]>;
+  };
   error?: { message: string; code?: string; status?: number; details?: unknown; sdkError?: string };
 };
 type Capability = {
@@ -1450,6 +1451,12 @@ export async function loadIsolatedPluginDefinition(
       ...route,
       handler: async (request: HttpRequest, _reply: HttpReply) => {
         const result = await invoke(id, String(route.method), String(route.path), request);
+        // Headers first: Fastify infers a content-type from the payload, and the
+        // plugin's explicit one must win (a widget script served as text/plain is
+        // blocked by nosniff).
+        for (const entry of result.response?.headers ?? []) {
+          _reply.header?.(entry[0], entry[1]);
+        }
         if (result.response?.status !== undefined) _reply.code(result.response.status);
         // Headers before the payload: `send` finalises the response, so a
         // `content-type` set afterwards would never reach the browser. A route

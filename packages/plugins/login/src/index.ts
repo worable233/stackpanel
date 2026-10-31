@@ -627,6 +627,9 @@ const authConfig = handle(async () => {
   // Only non-`off` actions are listed: an anonymous caller needs the widgets it
   // will render, not a full map of the deployment's policy.
   const actionConfig = async (action: string) => {
+    // Provider answers travel through the isolated-plugin proxy, so both calls
+    // resolve to Promises: awaiting them is what keeps `policy` a mode string
+    // instead of a serialised `{}`.
     const config = await captcha.clientConfigFor(action);
     return { policy: await captcha.policyFor(action), clientConfig: config };
   };

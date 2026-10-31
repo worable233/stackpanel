@@ -205,11 +205,15 @@ function elementWidget(
     }
 
     const attribute = config.tokenAttribute;
-    const read = (): void => {
-      // The protocol names the attribute the widget writes its solution into; the
-      // host never learns what the value means.
+    const read = (event?: Event): void => {
+      // Two published shapes: the solution arrives either in the event's `detail`
+      // (`statechange` → `{ payload }`) or in the attribute the provider named.
+      // The host knows neither the vendor nor what the value means.
+      const detail = (event as CustomEvent<{ payload?: unknown }> | undefined)?.detail;
+      const fromEvent = typeof detail?.payload === 'string' ? detail.payload.trim() : '';
       const value = attribute ? node.getAttribute(attribute) : null;
-      onToken(value && value.trim().length > 0 ? value : null);
+      const token = fromEvent || (value ? value.trim() : '');
+      onToken(token.length > 0 ? token : null);
     };
     node.addEventListener(config.event, read);
     if (config.resetEvent) node.addEventListener(config.resetEvent, () => onToken(null));

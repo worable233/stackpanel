@@ -100,7 +100,7 @@ export function buildCsp(
     // or script source, so a deployment with no captcha keeps its previous policy
     // exactly. Deduplicated because a provider may name `blob:` itself.
     ...(sources.worker.length > 0 || sources.script.length > 0
-      ? [`worker-src ${['\'self\'', ...new Set(['blob:', ...sources.worker])].join(' ')}`]
+      ? [`worker-src ${["'self'", ...new Set(['blob:', ...sources.worker])].join(' ')}`]
       : []),
     scriptSrc,
     // The widget's script posts its solution back to the challenge origin.

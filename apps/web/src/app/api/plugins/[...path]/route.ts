@@ -171,8 +171,14 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
   try {
     let apiToken: string | null = null;
     if (!publicAsset) {
-      const api = await getBffPluginClient();
-      apiToken = api.token ?? null;
+      // Anonymous visitors still need a few plugin routes: a self-hosted captcha
+      // widget (`/altcha/widget.js`) and its challenge endpoint sit on the
+      // sign-in and sign-up pages, which by definition have no session. The
+      // kernel therefore answers the route-table query without a token, listing
+      // only the routes the plugin itself declared `auth: 'public'`; anything
+      // else stays invisible to this BFF for anonymous callers.
+      const api = await getBffPluginClient().catch(() => null);
+      apiToken = api?.token ?? null;
       // Resolve the namespace against the kernel's active route table before
       // forwarding. The BFF must never become a generic same-origin proxy.
       //
@@ -184,17 +190,18 @@ async function proxy(request: NextRequest, context: RouteContext): Promise<Respo
       let routeResponse = await fetchRouteTable(segments[0] ?? '', table, apiToken);
       // A dead session (expired cookie from a previous browser tab) must degrade
       // to the public subset and be forwarded anonymously, not fail the asset.
-      if (apiToken && routeResponse && (routeResponse.status === 401 || routeResponse.status === 403)) {
+      if (
+        apiToken &&
+        routeResponse &&
+        (routeResponse.status === 401 || routeResponse.status === 403)
+      ) {
         apiToken = null;
         table = 'public-routes';
         routeResponse = await fetchRouteTable(segments[0] ?? '', table, null);
       }
       if (!routeResponse) {
         // The table lookup itself failed; refuse rather than proxy blind.
-        return NextResponse.json(
-          { error: t('api.notificationsUnavailable') },
-          { status: 502 },
-        );
+        return NextResponse.json({ error: t('api.notificationsUnavailable') }, { status: 502 });
       }
       if (!routeResponse.ok) {
         return NextResponse.json(
