@@ -26,7 +26,10 @@ vi.mock('next/headers', () => ({
   cookies: async () => ({ delete: mocks.deleteCookie }),
 }));
 vi.mock('@/i18n/locale', () => ({ getLocale: async () => 'zh-CN' }));
-vi.mock('@/lib/api-errors', () => ({ apiErrorMessage: async () => '保存失败' }));
+vi.mock('@/lib/api-errors', () => ({
+  apiErrorMessage: async () => '保存失败',
+  apiErrorMessageFor: () => '保存失败',
+}));
 vi.mock('@/lib/slots', () => ({
   listPluginFrontendCandidates: async () => [
     {
@@ -93,7 +96,7 @@ it('formats a declared sync summary from finite numeric response fields only', (
     ),
   ).toBe('同步完成：已更新 3 个商品，跳过 1 个。');
 });
-it('redirects an opted-in action after it has completed and revalidated', async () => {
+it('resolves the receipt instead of redirecting once the action completes and revalidates', async () => {
   mocks.actions = [
     {
       id: 'save',
@@ -103,9 +106,12 @@ it('redirects an opted-in action after it has completed and revalidated', async 
       successFeedback: { message: '已保存' },
     },
   ];
+  // Resolving (not redirecting) is the fix for「成功被界面报成失败」：Next 用 reject
+  // 表达 redirect，包 `await action()` 会把成功当失败（docs/design/feedback-ux-handoff.md §4.1）。
   await expect(
     executePluginAction('storage', 'save', '/admin/settings#storage', new FormData()),
-  ).rejects.toThrow('REDIRECT:/admin/settings?action=save&success=%E5%B7%B2%E4%BF%9D%E5%AD%98#storage');
+  ).resolves.toEqual({ ok: true, message: '已保存' });
+  expect(mocks.redirect).not.toHaveBeenCalled();
   expect(mocks.revalidate).toHaveBeenCalledWith('/admin/settings');
 });
 it('localizes a success receipt through the package catalog when it declares messageKey', async () => {
@@ -131,9 +137,7 @@ it('localizes a success receipt through the package catalog when it declares mes
   mocks.post.mockResolvedValue({ updated: 2 });
   await expect(
     executePluginAction('storage', 'save', '/admin/settings#storage', new FormData()),
-  ).rejects.toThrow(
-    `REDIRECT:/admin/settings?action=save&success=${encodeURIComponent('已保存 2 项').replace(/%20/g, '+')}#storage`,
-  );
+  ).resolves.toEqual({ ok: true, message: '已保存 2 项' });
 });
 it('keeps the active settings section on failure without showing success', async () => {
   mocks.permission.mockResolvedValue({ allowed: false });
@@ -144,12 +148,10 @@ it('keeps the active settings section on failure without showing success', async
       '/admin/settings#plugin-storage-%2Fconfig',
       new FormData(),
     ),
-  ).rejects.toThrow('REDIRECT:');
-  expect(mocks.redirect.mock.calls[0]?.[0]).toMatch(
-    /^\/admin\/settings\?action=save&error=.+#plugin-storage-%2Fconfig$/,
-  );
+  ).resolves.toEqual({ ok: false, error: expect.stringMatching(/权限|无权|拒绝/) });
   expect(mocks.post).not.toHaveBeenCalled();
   expect(mocks.revalidate).not.toHaveBeenCalled();
+  expect(mocks.redirect).not.toHaveBeenCalled();
 });
 
 it('keeps the local session when a plugin returns an upstream 401', async () => {
@@ -160,12 +162,27 @@ it('keeps the local session when a plugin returns an upstream 401', async () => 
     }),
   );
 
+  // 本地会话保留，且不把上游文案直接上屏：按 ADR-0012 只给稳定错误码的本地文案。
   await expect(
     executePluginAction('storage', 'save', '/admin/settings#plugin-storage-%2Fconfig', new FormData()),
-  ).rejects.toThrow('REDIRECT:');
+  ).resolves.toEqual({ ok: false, error: '保存失败' });
 
   expect(mocks.deleteCookie).not.toHaveBeenCalled();
-  expect(mocks.redirect.mock.calls[0]?.[0]).toMatch(
-    /^\/admin\/settings\?action=save&error=.+#plugin-storage-%2Fconfig$/,
+  expect(mocks.redirect).not.toHaveBeenCalled();
+});
+
+it('carries the kernel request id so the inline failure can be traced', async () => {
+  mocks.post.mockRejectedValue(
+    new ApiError('分发请求失败', {
+      status: 409,
+      code: 'market.installFailed',
+      requestId: 'req-abc123',
+    }),
   );
+
+  // ADR-0012 keeps `detail` out of the UI, so the id is the only link between
+  // 「安装失败」 on screen and the cause in the server log.
+  await expect(
+    executePluginAction('storage', 'save', '/admin/settings#storage', new FormData()),
+  ).resolves.toEqual({ ok: false, error: '保存失败', requestId: 'req-abc123' });
 });

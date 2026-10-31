@@ -7,6 +7,7 @@ import type { PluginAdminRouteResult } from '@/lib/admin-frontend';
 import { getClientAdminPages } from '@/lib/frontend-client-registry';
 import { RuntimeAdminPage } from './runtime-admin-page';
 import { FrontendScopeRoot } from './frontend-scope';
+import { wrapPluginActions } from '@/lib/plugin-action-client';
 import { useLocale, useTranslator } from '@/i18n/provider';
 
 /**
@@ -82,11 +83,16 @@ export function AdminPluginPage({
     params: result.params,
     settings: result.settings,
     data: result.data,
-    actions: result.actions,
+    // Same wrapping as the runtime-loading path: one host-side toast, and the
+    // page still gets `{ ok, error }` back from the action it awaits.
+    actions: wrapPluginActions(result.actions, t),
     locale,
   } as AdminPageComponentProps;
   return (
-    <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="plugin-admin block space-y-6">
+    <FrontendScopeRoot
+      scope={`plugins:${result.pluginId}`}
+      className="plugin-admin block space-y-6"
+    >
       {createElement(Component, props as never) as unknown as ReactElement}
     </FrontendScopeRoot>
   );

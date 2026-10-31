@@ -4,44 +4,52 @@ import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { clearSessionCookie } from './session-cookie.server';
 import { redirect } from 'next/navigation';
-import type { PluginActionDefinition } from '@stackpanel/sdk';
+import { ApiError } from '@stackpanel/sdk';
+import type { PluginActionDefinition, PluginActionResult } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
-import { apiErrorMessage } from './api-errors';
+import { apiErrorMessageFor } from './api-errors';
 import { actionTargetsSchema } from './frontend-plugin-action-targets';
 import { safeInternalPath } from './safe-path';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
-import { DEFAULT_LOCALE } from '@/i18n/config';
+import { DEFAULT_LOCALE, type Locale } from '@/i18n/config';
 import { listPluginFrontendCandidates } from './slots';
 import { isNextRedirectError } from './next-navigation';
 import { expiredSessionLoginPath, isExpiredSessionError } from './session-recovery';
-import { actionSuccessUrl, formatActionSuccessMessage } from './frontend-plugin-action-feedback';
+import { formatActionSuccessMessage } from './frontend-plugin-action-feedback';
 import { readPackageMessages, packageMessage } from '@/i18n/package-messages';
 
-/** The only mutation bridge exposed to plugin frontend packages. */
+/**
+ * The only mutation bridge exposed to plugin frontend packages.
+ *
+ * Resolves `{ ok, message?, error? }` for **domain** outcomes so the package can
+ * render the receipt or the precise reason inline. Only real navigation
+ * (`action.redirect`, expired session) rejects — see
+ * `docs/design/feedback-ux-handoff.md` §4「action 返回语义」.
+ */
 export async function executePluginAction(
   pluginId: string,
   actionId: string,
   returnPath: string,
   formData: FormData,
-): Promise<void> {
+): Promise<PluginActionResult> {
   const locale = await getLocale();
   const candidate = (await listPluginFrontendCandidates()).find((item) => item.id === pluginId);
   const action = candidate?.manifest.actions.find((item) => item.id === actionId);
   if (!candidate || !action) {
-    return actionFailure(returnPath, actionId, translate(locale, 'action.pluginUnavailable'));
+    return actionFailure(translate(locale, 'action.pluginUnavailable'));
   }
 
   const api = await getAuthedApiClient();
   if (action.permission) {
     try {
       if (!(await api.checkPermission(action.permission)).allowed) {
-        actionFailure(returnPath, actionId, translate(locale, 'action.pluginForbidden'));
+        return actionFailure(translate(locale, 'action.pluginForbidden'));
       }
     } catch (error) {
       if (isNextRedirectError(error)) throw error;
       if (isExpiredSessionError(error)) return expiredSessionFailure(returnPath);
-      return actionFailure(returnPath, actionId, translate(locale, 'action.pluginLoginRequired'));
+      return actionFailure(translate(locale, 'action.pluginLoginRequired'));
     }
   }
 
@@ -56,11 +64,7 @@ export async function executePluginAction(
       (route) => route.method === action.method && route.path === action.path,
     );
     if (!target || (target.permission ?? undefined) !== (action.permission ?? undefined)) {
-      return actionFailure(
-        returnPath,
-        actionId,
-        translate(locale, 'action.pluginInvalidDeclaration'),
-      );
+      return actionFailure(translate(locale, 'action.pluginInvalidDeclaration'));
     }
     const body = coerceActionInput(action, formData);
     const path = resolveActionPath(action.path, body);
@@ -75,13 +79,19 @@ export async function executePluginAction(
     if (isNextRedirectError(error)) throw error;
     if (isExpiredSessionError(error)) return expiredSessionFailure(returnPath);
     console.error(`[action:${actionId}] failed`, error);
-    const message = await apiErrorMessage(error, translate(locale, 'action.pluginActionFailed'));
-    return actionFailure(returnPath, actionId, message);
+    const message = packageErrorMessage(candidate, locale, error);
+    // ADR-0012 forbids rendering server `detail`, so the raw reason stays in the
+    // log above. The request id is the bridge an operator needs to find it; "安装
+    // 失败" alone gives them nothing to search for.
+    const requestId = error instanceof ApiError ? error.requestId : undefined;
+    return actionFailure(message, requestId);
   }
   await api
     .recordFrontendAudit('frontend.action.execute', pluginId, actionId, { method: action.method })
     .catch(() => undefined);
   revalidatePath(new URL(returnPath, 'http://stackpanel.local').pathname);
+  // An explicitly declared destination wins: it is a real page change (create → detail).
+  if (destination) redirect(destination);
   if (action.successFeedback) {
     // `messageKey` resolves through the package's own catalog (ADR-0016 §5) so
     // a localized package gets a localized receipt; the literal `message` stays
@@ -92,20 +102,18 @@ export async function executePluginAction(
     ]);
     const message = localized ?? action.successFeedback.message;
     if (message) {
-      actionSuccess(
-        returnPath,
-        actionId,
-        formatActionSuccessMessage({ ...action.successFeedback, message }, result),
-      );
+      // Returning the receipt (instead of redirecting with `?success=`) keeps the
+      // server-action promise resolved: a redirect rejects it, and packages that
+      // `await` the action then report a successful install as a failure. The
+      // client wrapper in `plugin-action-client.ts` toasts it host-side, so the
+      // feedback still looks the same to the operator.
+      return {
+        ok: true,
+        message: formatActionSuccessMessage({ ...action.successFeedback, message }, result),
+      };
     }
   }
-  // Only redirect when the action declares an explicit destination. A bare
-  // `redirect(returnPath)` on success would reject the server-action promise
-  // (Next's reducer rejects on redirect), which plugin frontends that `await`
-  // the action mistake for a failure — even though the mutation persisted.
-  // `revalidatePath` above already refreshes the current route's data.
-  // See INTERFACES.md §3.4「前端 action 执行语义」.
-  if (destination) redirect(destination);
+  return { ok: true };
 }
 
 /** Resolve declared `:id` path parameters from already validated form fields. */
@@ -233,16 +241,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function actionFailure(returnPath: string, actionId: string, message: string): never {
-  const url = new URL(returnPath, 'http://stackpanel.local');
-  url.searchParams.set('action', actionId);
-  url.searchParams.set('error', message);
-  redirect(`${url.pathname}${url.search}${url.hash}`);
+/** Domain failure: resolve the reason so the page can render it without losing it. */
+function actionFailure(message: string, requestId?: string): PluginActionResult {
+  return { ok: false, error: message, ...(requestId ? { requestId } : {}) };
 }
 
-/** Route an opted-in, manifest-declared success notice through the shared toaster. */
-function actionSuccess(returnPath: string, actionId: string, message: string): never {
-  redirect(actionSuccessUrl(returnPath, actionId, message));
+/**
+ * Localize a failed action through the **package's** catalog first (ADR-0016 §3).
+ *
+ * A plugin owns the vocabulary of its own domain: `market.installFailed` means
+ * something no kernel-wide sentence can express. Falling back to the kernel
+ * catalog keeps codes the kernel defines (`auth.*`, `common.*`) working, and
+ * finally to the caller's generic line when neither side has copy — never to the
+ * server's English `detail`.
+ */
+function packageErrorMessage(
+  candidate: { id: string; manifest: { messages?: Record<string, Record<string, string>> } },
+  locale: Locale,
+  error: unknown,
+): string {
+  const code = error instanceof ApiError ? error.code : undefined;
+  if (code) {
+    // A package that ships no catalog (or a torn one) must not hide the failure:
+    // the lookup is best-effort and the kernel path below always runs.
+    try {
+      const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
+      const localized = packageMessage(messages, locale, `error.${code}`, [DEFAULT_LOCALE]);
+      if (localized) return localized;
+    } catch {
+      // fall through to the kernel catalog
+    }
+  }
+  return apiErrorMessageFor(locale, error, translate(locale, 'action.pluginActionFailed'));
 }
 
 /** Drop a stale opaque token before routing the operator through a fresh login. */

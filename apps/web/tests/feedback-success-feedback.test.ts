@@ -12,12 +12,22 @@ const repoRoot = path.resolve(here, '..', '..', '..');
  *
  * A `POST`/`PATCH`/`DELETE` action must carry either `successFeedback` (the host
  * shows a localized toast) or `silent: true` (the package already gives a
- * receipt: inline result, redirect, or its own toast). Without this, a save can
+ * receipt: inline state, redirect, or its own toast). Without this, a save can
  * succeed with no visible confirmation — the audit's §3.1 finding.
+ *
+ * `INLINE_RECEIPT_ACTIONS` is the third, explicit form: since the executor now
+ * *resolves* `{ ok, message?, error? }` (docs/design/feedback-ux-handoff.md §4.1),
+ * a package may render its own persistent receipt instead of asking the host for
+ * a toast. Each entry must name the component that renders it, so 「谁给了回执」
+ * stays checkable instead of becoming an untracked exemption.
  *
  * This scans kernel-shipped plugin/theme sources. External plugin repos run the
  * same test against their own sources.
  */
+const INLINE_RECEIPT_ACTIONS: Record<string, string> = {
+  'market.install-plugin': 'plugins/market/frontend/src/admin.tsx（行内「已安装 x.y.z」/ 精确失败原因）',
+  'market.install-theme': 'plugins/market/frontend/src/admin.tsx（行内「已安装 x.y.z」/ 精确失败原因）',
+};
 const SCAN_ROOTS = [
   ...readdirSync(path.join(repoRoot, 'packages/plugins')).map(
     (id) => `packages/plugins/${id}/frontend/src`,
@@ -72,14 +82,19 @@ function scanAction(node: ts.ObjectLiteralExpression, file: string, findings: Fi
 
   const hasFeedback = props.has('successFeedback');
   const hasSilent = props.has('silent');
-  if (hasFeedback === hasSilent) {
+  if (hasFeedback && hasSilent) {
+    const { line } = node.getSourceFile().getLineAndCharacterOfPosition(node.getStart());
+    findings.push({ id, file: path.relative(repoRoot, file), line: line + 1 });
+    return;
+  }
+  if (!hasFeedback && !hasSilent && !(id in INLINE_RECEIPT_ACTIONS)) {
     const { line } = node.getSourceFile().getLineAndCharacterOfPosition(node.getStart());
     findings.push({ id, file: path.relative(repoRoot, file), line: line + 1 });
   }
 }
 
 describe('mutating frontend actions declare success feedback', () => {
-  it('each POST/PATCH/DELETE action has successFeedback xor silent', () => {
+  it('each POST/PATCH/DELETE action has successFeedback, silent, or an inline receipt', () => {
     const findings: Finding[] = [];
     for (const root of SCAN_ROOTS) {
       const files: string[] = [];

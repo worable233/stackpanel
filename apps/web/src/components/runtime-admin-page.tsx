@@ -1,17 +1,12 @@
 'use client';
 
-import {
-  Component,
-  createElement,
-  useMemo,
-  type ComponentType,
-  type ReactElement,
-} from 'react';
+import { Component, createElement, useMemo, type ComponentType, type ReactElement } from 'react';
 import { InlineError } from '@stackpanel/ui';
 import type { AdminPageComponentProps } from '@stackpanel/sdk';
 import { LoaderCircle } from 'lucide-react';
 import { FrontendAbiBridge } from './frontend-abi-bridge';
 import { FrontendScopeRoot } from './frontend-scope';
+import { wrapPluginActions } from '@/lib/plugin-action-client';
 import { useRuntimeModule } from '@/lib/use-runtime-module';
 import { useLocale, useTranslator } from '@/i18n/provider';
 import { isNextRedirectError } from '@/lib/next-navigation';
@@ -47,9 +42,10 @@ export function RuntimeAdminPage({
   const locale = useLocale();
   const state = useRuntimeModule(moduleUrl);
   const adminPages = useMemo(() => extractAdminPages(state.data), [state.data]);
+  // Hooks stay above the early returns: the wrapper must be created on every render.
+  const actions = useMemo(() => wrapPluginActions(result.actions, t), [result.actions, t]);
   const Component = adminPages?.[result.componentId] as
-    | ComponentType<AdminPageComponentProps>
-    | undefined;
+    ComponentType<AdminPageComponentProps> | undefined;
 
   // 无论加载状态如何，宿主 ABI 都必须在挂载时发布，保证后续 import() 可用。
   const bridge = <FrontendAbiBridge />;
@@ -84,13 +80,18 @@ export function RuntimeAdminPage({
     params: result.params,
     settings: result.settings,
     data: result.data,
-    actions: result.actions,
+    // Host-side toast + structured result instead of a feedback redirect: a
+    // redirect rejects the action promise and pages read that as a failure.
+    actions,
     locale,
   } as unknown as AdminPageComponentProps;
   return (
     <>
       {bridge}
-      <FrontendScopeRoot scope={`plugins:${result.pluginId}`} className="plugin-admin block space-y-6">
+      <FrontendScopeRoot
+        scope={`plugins:${result.pluginId}`}
+        className="plugin-admin block space-y-6"
+      >
         <RuntimeErrorBoundary>
           {createElement(Component, props as never) as unknown as ReactElement}
         </RuntimeErrorBoundary>
@@ -184,9 +185,7 @@ export class RuntimeErrorBoundary extends Component<
 /** Static, localised render failure; the exception itself stays in the console. */
 function RuntimeRenderError(): ReactElement {
   const t = useTranslator();
-  return (
-    <InlineError>{t('pluginPage.renderFailed')}</InlineError>
-  );
+  return <InlineError>{t('pluginPage.renderFailed')}</InlineError>;
 }
 
 function extractAdminPages(
@@ -195,7 +194,6 @@ function extractAdminPages(
   if (!data || typeof data !== 'object') return null;
   const record = data as Record<string, unknown>;
   const pages = (record['adminPages'] ?? record['default']) as
-    | Record<string, ComponentType<AdminPageComponentProps>>
-    | undefined;
+    Record<string, ComponentType<AdminPageComponentProps>> | undefined;
   return pages ?? null;
 }

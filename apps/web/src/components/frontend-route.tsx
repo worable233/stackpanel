@@ -12,6 +12,7 @@ import type { FrontendSettings } from '@stackpanel/sdk';
 import { notFound } from 'next/navigation';
 import { FrontendScopeRoot } from '@/components/frontend-scope';
 import { FrontendRenderBoundary } from '@/components/frontend-render-boundary';
+import { PluginActionScope } from '@/lib/plugin-action-client';
 import { apiAssetUrl, getApiClient, KERNEL_BFF_PREFIX } from '@/lib/api';
 import { getSessionToken } from '@/lib/auth';
 import { resolveFallbackRoute, resolveFrontendRoute, type PageResolution } from '@/lib/pages';
@@ -56,7 +57,14 @@ export async function FrontendRoute({
   themeId?: string;
   searchParams?: Record<string, string | string[] | undefined>;
 }): Promise<ReactElement> {
-  const resolved = await resolveFrontendRoute(path, params, fallback, themeId, searchParams, settingsOverride);
+  const resolved = await resolveFrontendRoute(
+    path,
+    params,
+    fallback,
+    themeId,
+    searchParams,
+    settingsOverride,
+  );
   if (!resolved || resolved.fallback) notFound();
   return renderResolution(resolved, standalone, themeId, settingsOverride);
 }
@@ -79,17 +87,22 @@ async function renderResolution(
   settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
   const locale = await getLocale();
-  const content = createElement(resolved.component, {
-    params: resolved.params,
-    settings: settingsOverride ?? resolved.settings,
-    data: resolved.data,
-    actions: resolved.actions,
-    // Same-origin BFF, never the server-only `API_BASE_URL` (see renderPublicLayout).
-    assetsBaseUrl: resolved.assetsBaseUrl ?? KERNEL_BFF_PREFIX,
-    locale,
-  } as never) as unknown as ReactElement;
-  // Action results are toasted once by `<ActionFeedbackToaster />`; rendering
-  // `?error=` inline here duplicated the same message on public pages.
+  // Actions are wrapped on the client (`plugin-action-client.ts`): the host toasts
+  // the declared receipt and the page still receives `{ ok, error }`.
+  const content = (
+    <PluginActionScope
+      component={resolved.component as never}
+      props={{
+        params: resolved.params,
+        settings: settingsOverride ?? resolved.settings,
+        data: resolved.data,
+        actions: resolved.actions,
+        // Same-origin BFF, never the server-only `API_BASE_URL` (see renderPublicLayout).
+        assetsBaseUrl: resolved.assetsBaseUrl ?? KERNEL_BFF_PREFIX,
+        locale,
+      }}
+    />
+  );
   const page = content;
   // Contract 05 §3.3: wrap the package's render root in a stable scope marker so
   // its `styles[]` selectors can be scoped to its own DOM. `display: contents`
@@ -110,13 +123,25 @@ async function renderResolution(
   if (!resolved.layout) return scoped;
   const shared = await getPublicThemeLayout();
   if (!standalone && resolved.layout === shared) return scoped;
-  return renderPublicLayout(resolved.layout, scoped, resolved.assetsBaseUrl, locale, themeId, settingsOverride);
+  return renderPublicLayout(
+    resolved.layout,
+    scoped,
+    resolved.assetsBaseUrl,
+    locale,
+    themeId,
+    settingsOverride,
+  );
 }
 
 export const getPublicThemeLayout = cache(async () => {
   const candidate = await activeThemeCandidate();
   if (!candidate) return undefined;
-  const pkg = await importFrontendPackage(candidate.kind, candidate.id, candidate.manifest, candidate.revision);
+  const pkg = await importFrontendPackage(
+    candidate.kind,
+    candidate.id,
+    candidate.manifest,
+    candidate.revision,
+  );
   return pkg?.layouts?.theme;
 });
 
@@ -134,33 +159,34 @@ async function renderPublicLayout(
   themeId?: string,
   settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
-  const [navigation, token, platform, categories, brand, settings, pluginCandidates] = await Promise.all([
-    getApiClient()
-      .getNav('public')
-      .then((result) => result.items.map(({ label, href }) => ({ label, href })))
-      .catch(() => []),
-    getSessionToken(),
-    getApiClient()
-      .getPlatformInfo()
-      .then((result) => result.platform)
-      .catch(() => DEFAULT_PLATFORM_INFO),
-    getApiClient()
-      .get('/catalog/categories', catalogCategoriesSchema)
-      .then((result) => result.categories)
-      .catch(() => []),
-    getApiClient()
-      .getPlatformBrand()
-      .then((result) => result.brand)
-      .catch(() => null),
-    settingsOverride
-      ? Promise.resolve(settingsOverride)
-      : themeId
-      ? readThemeSettings(themeId)
-      : activeThemeCandidate().then((candidate) =>
-          candidate ? readThemeSettings(candidate.id) : {},
-        ),
-    listPluginFrontendCandidates().catch(() => []),
-  ]);
+  const [navigation, token, platform, categories, brand, settings, pluginCandidates] =
+    await Promise.all([
+      getApiClient()
+        .getNav('public')
+        .then((result) => result.items.map(({ label, href }) => ({ label, href })))
+        .catch(() => []),
+      getSessionToken(),
+      getApiClient()
+        .getPlatformInfo()
+        .then((result) => result.platform)
+        .catch(() => DEFAULT_PLATFORM_INFO),
+      getApiClient()
+        .get('/catalog/categories', catalogCategoriesSchema)
+        .then((result) => result.categories)
+        .catch(() => []),
+      getApiClient()
+        .getPlatformBrand()
+        .then((result) => result.brand)
+        .catch(() => null),
+      settingsOverride
+        ? Promise.resolve(settingsOverride)
+        : themeId
+          ? readThemeSettings(themeId)
+          : activeThemeCandidate().then((candidate) =>
+              candidate ? readThemeSettings(candidate.id) : {},
+            ),
+      listPluginFrontendCandidates().catch(() => []),
+    ]);
   return createElement(layout, {
     children: page,
     settings,
