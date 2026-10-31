@@ -32,6 +32,12 @@ import {
   wireError,
 } from './protocol.ts';
 import type { RawInvokeRequest } from './raw-protocol.ts';
+import {
+  ISOLATED_CONTEXT_SERVICES,
+  takeSyncServicePredicateInput,
+  takeSyncServiceSnapshot,
+  type IsolatedContextService,
+} from './service-contract.ts';
 import { dispatchCacheCapability } from '../../cache/index.ts';
 
 type ModelDescriptor = {
@@ -66,7 +72,8 @@ type Result = {
   type: 'result';
   id: string;
   value?: unknown;
-  response?: { status?: number; payload?: unknown };
+  /** `headers` is a list because a header name may legitimately repeat. */
+  response?: { status?: number; payload?: unknown; headers?: Array<[string, string]> };
   error?: { message: string; code?: string; status?: number };
 };
 type Capability = {
@@ -85,12 +92,6 @@ type Lifecycle = {
   phase: 'register' | 'activate' | 'deactivate';
 };
 type Cancel = { protocol: 1; pluginId: string; type: 'cancel'; id: string };
-
-const SYNC_SERVICE_METHODS: Record<string, readonly string[]> = {
-  auth: ['sessionCookieConfig'],
-  secrets: ['isAvailable'],
-  payments: ['listPaymentMethods'],
-};
 
 /** Shape a worker reported error as JSON over the RPC channel. */
 type WorkerErrorPayload = {
@@ -453,9 +454,7 @@ async function handleCapability(
   // `transaction.tx.extensions`. Without the negative lookahead this generic
   // pattern matched first and reported `未知事务操作：extensions.create`, so
   // every isolated plugin that created a model row inside `ctx.tx()` failed.
-  const transactionMatch = /^tx\.(?!extensions\.)([a-z]+)\.([a-zA-Z]+)$/.exec(
-    message.capability,
-  );
+  const transactionMatch = /^tx\.(?!extensions\.)([a-z]+)\.([a-zA-Z]+)$/.exec(message.capability);
   if (transactionMatch) {
     const transaction = state.transactions.get(String(args.txId));
     if (!transaction) throw new Error('事务不存在或已结束');
@@ -704,20 +703,7 @@ async function handleCapability(
   const serviceMatch = /^([a-z][a-zA-Z]*)\.([a-zA-Z][a-zA-Z0-9]*)$/.exec(message.capability);
   if (
     serviceMatch &&
-    [
-      'state',
-      'auth',
-      'notifications',
-      'notificationPolicy',
-      'identity',
-      'captcha',
-      'secrets',
-      'payments',
-      'wallet',
-      'fx',
-      'currency',
-      'cache',
-    ].includes(serviceMatch[1] ?? '')
+    ISOLATED_CONTEXT_SERVICES.includes(serviceMatch[1] as IsolatedContextService)
   ) {
     const service = ctx[
       serviceMatch[1] as
@@ -733,9 +719,14 @@ async function handleCapability(
         | 'fx'
         | 'cache'
     ] as unknown as Record<string, unknown>;
-    const method = service[serviceMatch[2] ?? ''];
+    const method = service?.[serviceMatch[2] ?? ''];
     if (typeof method !== 'function') throw new Error(`未知插件服务方法：${message.capability}`);
-    value = await method.apply(service, Array.isArray(args) ? args : []);
+    // `cache` is sync-shaped on the worker side only when a loader resolves
+    // locally; everything here goes through the host, so awaiting is correct.
+    value = await (method as (...a: unknown[]) => unknown).apply(
+      service,
+      Array.isArray(args) ? args : [],
+    );
     sendWorker(state.child, { protocol: 1, pluginId: id, type: 'result', id: message.id, value });
     return;
   }
@@ -1413,22 +1404,21 @@ export async function loadIsolatedPluginDefinition(
       if (!state) throw new Error(`isolated plugin ${id} is unavailable`);
       state.context = ctx;
       try {
+        // Injected services (services another plugin published) keep their shape
+        // snapshot: those methods always cross the bridge asynchronously.
         const services = (ready.inject ?? []).flatMap((name) => {
           const service = ctx.getService<Record<string, unknown>>(name);
           if (!service) return [];
-          const shape = implementationShape(service);
-          const syncValues: Record<string, unknown> = Object.create(null) as Record<
-            string,
-            unknown
-          >;
-          for (const method of SYNC_SERVICE_METHODS[name] ?? []) {
-            const candidate = service[method];
-            if (typeof candidate === 'function') syncValues[method] = candidate.call(service);
-          }
-          return [
-            { name, ...shape, ...(Object.keys(syncValues).length > 0 ? { syncValues } : {}) },
-          ];
+          return [{ name, ...implementationShape(service) }];
         });
+        // Kernel services reachable as `ctx.<name>` get a **value snapshot** for
+        // the methods the SDK declares synchronous. Without it those methods
+        // returned a (always-truthy) promise inside the worker and every
+        // "is this configured?" guard silently inverted. See service-contract.ts.
+        const syncValues = takeSyncServiceSnapshot(ctx as unknown as Record<string, unknown>);
+        const syncPredicates = await takeSyncServicePredicateInput(
+          ctx as unknown as Record<string, unknown>,
+        );
         const extensions = declaredConsumers.flatMap((consumer) => {
           const entries = ctx
             .getExtensionsWithOwner<Record<string, unknown>>(consumer.extensionPoint)
@@ -1440,7 +1430,12 @@ export async function loadIsolatedPluginDefinition(
             ...implementationShape(entry.implementation),
           }));
         });
-        const result = await invokeWorker(id, 'lifecycle', phase, { services, extensions });
+        const result = await invokeWorker(id, 'lifecycle', phase, {
+          services,
+          extensions,
+          syncValues,
+          syncPredicates,
+        });
         if (result.error) throw new Error(result.error.message);
       } finally {
         if (phase === 'deactivate') {
@@ -1470,6 +1465,10 @@ export async function loadIsolatedPluginDefinition(
       handler: async (request: HttpRequest, _reply: HttpReply) => {
         const result = await invoke(id, String(route.method), String(route.path), request);
         if (result.response?.status !== undefined) _reply.code(result.response.status);
+        // Headers before the payload: `send` finalises the response, so a
+        // `content-type` set afterwards would never reach the browser. A route
+        // that serves a widget script depends on this.
+        for (const [name, value] of result.response?.headers ?? []) _reply.header?.(name, value);
         if (result.response?.payload !== undefined) _reply.send(result.response.payload);
         return result.value;
       },
@@ -1506,6 +1505,52 @@ export async function restartIsolatedPlugin(id: string): Promise<void> {
   const spec = workerSpecs.get(id);
   if (!spec || workers.has(id)) return;
   await startWorker(id, spec.entry, spec.manifest);
+}
+
+/**
+ * Re-take the synchronous-service snapshot for one live worker.
+ *
+ * Only meaningful for the handful of snapshot values that are *not* derivable
+ * from plugin activation: `captcha.mode()` reads `AUTH_CAPTCHA_MODE` and
+ * `auth.sessionCookieConfig()` reads the session cookie settings, both editable
+ * in the admin UI at runtime. Everything else in the snapshot changes exactly
+ * when a plugin activates or deactivates, which already triggers a re-push.
+ *
+ * A worker that is not activated yet is skipped: it will get a fresh snapshot
+ * from its own lifecycle frame.
+ */
+export function refreshIsolatedServiceSnapshot(id: string): void {
+  const state = workers.get(id);
+  if (!state?.context || !state.child.connected) return;
+  void (async () => {
+    const context = state.context as unknown as Record<string, unknown>;
+    let syncValues: ReturnType<typeof takeSyncServiceSnapshot>;
+    let syncPredicates: Awaited<ReturnType<typeof takeSyncServicePredicateInput>>;
+    try {
+      syncValues = takeSyncServiceSnapshot(context);
+      syncPredicates = await takeSyncServicePredicateInput(context);
+    } catch {
+      return;
+    }
+    if (!state.child.connected) return;
+    try {
+      sendWorker(state.child, {
+        protocol: 1,
+        pluginId: id,
+        type: 'sync-services',
+        syncValues,
+        syncPredicates,
+      });
+    } catch {
+      // A worker that died while we were snapshotting will be restarted by the
+      // exit handler and will receive a full snapshot then.
+    }
+  })();
+}
+
+/** Re-push snapshots to every live worker (called after a plugin topology change). */
+export function refreshAllIsolatedServiceSnapshots(): void {
+  for (const id of workers.keys()) refreshIsolatedServiceSnapshot(id);
 }
 
 export function stopAllIsolatedPlugins(): void {

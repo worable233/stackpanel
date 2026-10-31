@@ -52,6 +52,7 @@ import {
   type ScopeGovernance,
 } from '../lib/capability-registry.ts';
 import {
+  refreshAllIsolatedServiceSnapshots,
   restartIsolatedPlugin,
   setIsolatedWorkerExitHandler,
   stopIsolatedPlugin,
@@ -706,6 +707,11 @@ export class PluginRuntime {
     plugin.activating = false;
     this.options.events.publish('plugin.activated', { pluginId: id });
     await this.registerPluginPermissions(plugin.definition);
+    // A newly activated plugin can change what other plugins observe through the
+    // snapshot-only service methods (a payment provider, a captcha provider, a
+    // notification type). Re-push so no worker keeps answering from a pre-change
+    // value. See `plugins/isolated/service-contract.ts`.
+    refreshAllIsolatedServiceSnapshots();
     this.options.logger.info(`Plugin activated: ${id}`);
   }
 
@@ -736,6 +742,9 @@ export class PluginRuntime {
     // Jobs are owned per plugin; drop handlers, schedules and recurring work so
     // an inactive plugin leaves nothing running on any replica.
     await this.options.jobs.removeByOwner(id);
+    // Deactivation removes a provider/sender from the registries the snapshot
+    // describes, so the surviving workers must stop answering from the old value.
+    refreshAllIsolatedServiceSnapshots();
     this.options.logger.info(`Plugin deactivated: ${id}`);
   }
 

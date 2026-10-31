@@ -80,6 +80,32 @@ export default {
       }),
     },
       {
+        // 契约探针：SDK 声明为同步的方法在 isolated 下必须真的同步返回。
+        // 旧缺陷里它们经 callHost 变成 Promise（恒真），`if (!x.isAvailable())`
+        // 这类守卫直接失效。这里把「是不是 Promise」本身当断言值返回。
+        method: 'GET',
+        path: '/sync-contract',
+        handler: async () => {
+          const probe = (value) => ({
+            isPromise: typeof value?.then === 'function',
+            value: typeof value?.then === 'function' ? null : value,
+          });
+          return {
+            secrets: probe(pluginContext.secrets.isAvailable()),
+            captchaMode: probe(pluginContext.captcha.mode()),
+            captchaConfigured: probe(pluginContext.captcha.isConfigured()),
+            captchaProviders: probe(pluginContext.captcha.providerIds()),
+            requiresVerification: probe(pluginContext.identity.requiresEmailVerification()),
+            deliveryConfigured: probe(pluginContext.identity.isDeliveryConfigured()),
+            senders: probe(pluginContext.identity.senderIds()),
+            providerModes: probe(pluginContext.payments.providerModes()),
+            declared: probe(pluginContext.notificationPolicy.declares('order.paid')),
+            undeclared: probe(pluginContext.notificationPolicy.declares('nope.unregistered')),
+            wildcard: probe(pluginContext.notificationPolicy.declares('agent.run.done')),
+          };
+        },
+      },
+      {
         method: 'GET',
         path: '/state-lock',
         handler: async () => pluginContext.state.withLock('rpc-lock', 1000, async () => undefined),

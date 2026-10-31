@@ -28,9 +28,9 @@ export type RuntimeChangeAction = 'activate' | 'deactivate' | 'reload' | 'remove
 
 /** A runtime cache invalidation broadcast across replicas. */
 export interface RuntimeChange {
-  /** Which runtime cache changed. */
-  kind: 'plugin' | 'theme';
-  /** Plugin id, or theme id for `kind: 'theme'`. */
+  /** Which runtime cache changed. `config` = 运行期配置快照（ADR-0026）。 */
+  kind: 'plugin' | 'theme' | 'config';
+  /** Plugin id, or theme id for `kind: 'theme'`. `config` uses `*`. */
   id: string;
   action: RuntimeChangeAction;
 }
@@ -45,6 +45,17 @@ export interface RuntimeCoherenceOptions {
   isEnabled: (id: string) => Promise<boolean>;
   /** Invoked when a theme change is broadcast (defaults to a no-op). */
   onThemeReload?: () => void | Promise<void>;
+  /**
+   * Invoked when a runtime-config change is broadcast (ADR-0026): the replica
+   * re-reads its config snapshot so the next `getConfig()` sees the new value.
+   */
+  onConfigReload?: () => void | Promise<void>;
+  /**
+   * Invoked when in-memory values derived from config or from the plugin
+   * topology need re-deriving — currently the isolated-worker service snapshot
+   * (`plugins/isolated/service-contract.ts`).
+   */
+  onServiceSnapshotStale?: () => void;
   logger?: { warn: (m: string) => void; info?: (m: string) => void };
   /** Override the Pub/Sub channel (tests). Defaults to the runtime namespace. */
   channel?: string;
@@ -111,16 +122,31 @@ export class RuntimeCoherence {
    * already applied it locally. No-op without Redis.
    */
   async publish(change: RuntimeChange): Promise<void> {
+    // Apply the local half of a broadcast change too: the publisher has already
+    // written the new value, but in-memory derived state (the isolated service
+    // snapshot) lives on this replica as well.
+    if (change.kind === 'config') this.options.onServiceSnapshotStale?.();
     const redis = this.options.redis;
     if (!redis) return;
     const envelope: RuntimeEnvelope = { ...change, origin: this.origin };
     await redis.publish(this.channel(), JSON.stringify(envelope));
   }
 
-  /** Apply a received change: reload the plugin, or refresh theme state. */
+  /** Apply a received change: reload the plugin, refresh theme state, or reload config. */
   async apply(change: RuntimeChange): Promise<void> {
     if (change.kind === 'theme') {
       await this.options.onThemeReload?.();
+      return;
+    }
+    if (change.kind === 'config') {
+      await this.options.onConfigReload?.();
+      // A runtime config change can move a snapshot value: `AUTH_CAPTCHA_MODE`
+      // (captcha.mode) and the session cookie settings
+      // (auth.sessionCookieConfig) are both admin-editable. Without this re-push
+      // an isolated plugin would keep answering `ctx.captcha.mode()` from the
+      // value captured at its activation. The publish path calls this in
+      // {@link publish}, so local and remote replicas converge the same way.
+      this.options.onServiceSnapshotStale?.();
       return;
     }
     await this.reload(change.id);
@@ -183,9 +209,15 @@ function safeParse(value: string): RuntimeEnvelope | null {
   try {
     const parsed = JSON.parse(value) as Partial<RuntimeEnvelope>;
     if (typeof parsed.id !== 'string' || typeof parsed.origin !== 'string') return null;
-    if (parsed.kind !== 'plugin' && parsed.kind !== 'theme') return null;
+    if (parsed.kind !== 'plugin' && parsed.kind !== 'theme' && parsed.kind !== 'config')
+      return null;
     const action = parsed.action;
-    if (action !== 'activate' && action !== 'deactivate' && action !== 'reload' && action !== 'remove') {
+    if (
+      action !== 'activate' &&
+      action !== 'deactivate' &&
+      action !== 'reload' &&
+      action !== 'remove'
+    ) {
       return null;
     }
     return { kind: parsed.kind, id: parsed.id, action, origin: parsed.origin };

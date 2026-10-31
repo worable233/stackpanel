@@ -24,6 +24,8 @@ type Message = {
   models?: Array<Record<string, unknown>>;
   context?: unknown;
   value?: unknown;
+  syncValues?: unknown;
+  syncPredicates?: unknown;
   error?: { message: string };
 };
 
@@ -320,11 +322,27 @@ describe('isolated worker RPC protocol', () => {
       id: randomUUID(),
       phase: 'activate',
       context: {
-        services: [
-          { name: 'auth', methods: [], syncValues: { sessionCookieConfig: { name: 'session', ttlSeconds: 60, secure: true } } },
-          { name: 'secrets', methods: [], syncValues: { isAvailable: true } },
-          { name: 'payments', methods: [], syncValues: { listPaymentMethods: { wallet: { id: 'wallet', label: 'Wallet' }, providers: [] } } },
-        ],
+        // Kernel capability services reach the worker as a top-level snapshot:
+        // they are not `inject` bindings (that channel only governs
+        // `ctx.getService`), so modelling them as one is what hid the bug.
+        services: [],
+        syncValues: {
+          auth: { sessionCookieConfig: { name: 'session', ttlSeconds: 60, secure: true } },
+          secrets: { isAvailable: true },
+          captcha: { mode: 'optional', isConfigured: false, providerIds: [] },
+          identity: {
+            requiresEmailVerification: false,
+            isDeliveryConfigured: true,
+            senderIds: ['smtp'],
+          },
+          payments: {
+            listPaymentMethods: { wallet: { id: 'wallet', label: 'Wallet' }, providers: [] },
+            providerModes: { wallet: 'manual' },
+          },
+        },
+        syncPredicates: {
+          notificationPolicy: { declares: { types: ['order.paid', 'agent.*'] } },
+        },
         extensions: [{ pointId: 'probe.point', ownerId: 'owner-plugin', index: 0, methods: ['run'], values: { id: 'snapshot-extension' } }],
       },
     });
@@ -440,6 +458,69 @@ describe('isolated worker RPC protocol', () => {
         methods: { wallet: { id: 'wallet', label: 'Wallet' }, providers: [] },
       },
     });
+
+    // The regression this guards (spec/captcha-provider.md §15): each of these
+    // used to arrive as a truthy Promise, so `if (!ctx.secrets.isAvailable())`
+    // and `if (!declares(type))` silently took the wrong branch. Asserting the
+    // value alone is not enough — a Promise-shaped result must fail the probe.
+    const contractInvokeId = randomUUID();
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'invoke',
+      id: contractInvokeId,
+      method: 'GET',
+      route: '/sync-contract',
+      request: { params: {}, query: {}, body: null, headers: {} },
+    });
+    const contractResult = await nextMessage(child);
+    expect(contractResult).toMatchObject({ type: 'result', id: contractInvokeId });
+    const contract = (contractResult.value ?? {}) as Record<
+      string,
+      { isPromise: boolean; value: unknown }
+    >;
+    for (const [name, probe] of Object.entries(contract)) {
+      expect(probe.isPromise, `${name} must be synchronous`).toBe(false);
+    }
+    expect(contract.secrets?.value).toBe(true);
+    expect(contract.captchaMode?.value).toBe('optional');
+    expect(contract.captchaConfigured?.value).toBe(false);
+    expect(contract.captchaProviders?.value).toEqual([]);
+    expect(contract.requiresVerification?.value).toBe(false);
+    expect(contract.deliveryConfigured?.value).toBe(true);
+    expect(contract.senders?.value).toEqual(['smtp']);
+    expect(contract.providerModes?.value).toEqual({ wallet: 'manual' });
+    expect(contract.declared?.value).toBe(true);
+    expect(contract.undeclared?.value).toBe(false);
+    expect(contract.wildcard?.value).toBe(true);
+
+    // A host push must update the snapshot in place, without a re-activation.
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'sync-services',
+      syncValues: { secrets: { isAvailable: false } },
+      syncPredicates: { notificationPolicy: { declares: { types: ['other.only'] } } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const refreshedInvokeId = randomUUID();
+    send(child, {
+      protocol: 1,
+      pluginId,
+      type: 'invoke',
+      id: refreshedInvokeId,
+      method: 'GET',
+      route: '/sync-contract',
+      request: { params: {}, query: {}, body: null, headers: {} },
+    });
+    const refreshed = await nextMessage(child);
+    const refreshedValues = (refreshed.value ?? {}) as Record<
+      string,
+      { isPromise: boolean; value: unknown }
+    >;
+    expect(refreshedValues.secrets?.value).toBe(false);
+    expect(refreshedValues.declared?.value).toBe(false);
+    expect(refreshedValues.wildcard?.value).toBe(false);
 
     const lockInvokeId = randomUUID();
     send(child, {

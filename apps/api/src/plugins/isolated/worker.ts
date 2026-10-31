@@ -166,6 +166,34 @@ const finalizers = new Map<string, (instance: unknown) => Promise<void> | void>(
 const providedImplementations = new Map<string, Record<string, unknown>>();
 const serviceProxies = new Map<string, Record<string, unknown>>();
 const serviceSyncValues = new Map<string, Record<string, unknown>>();
+/**
+ * Rebuilt synchronous *predicates* (`notificationPolicy.declares(type)`).
+ *
+ * A predicate takes an argument and returns a value, so it cannot be shipped as a
+ * value — the host ships the catalog behind it and the worker evaluates the same
+ * exact/prefix match locally instead of paying an async hop per call.
+ */
+const serviceSyncPredicates = new Map<string, Record<string, unknown>>();
+
+/** Rebuild the shipped predicate closures for one service. */
+function buildSyncPredicates(input: Record<string, unknown>): Record<string, unknown> | null {
+  const built: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  const declaresInput = input['declares'] as { types?: unknown } | undefined;
+  if (declaresInput && Array.isArray(declaresInput.types)) {
+    const types = declaresInput.types.filter((type): type is string => typeof type === 'string');
+    // Mirrors KernelNotificationPolicyService.declares exactly: an exact match, or
+    // a `.*` wildcard matching anything under its prefix.
+    built['declares'] = (type: unknown) => {
+      const value = String(type);
+      return types.some(
+        (declared) =>
+          declared === value ||
+          (declared.endsWith('.*') && value.startsWith(declared.slice(0, -1))),
+      );
+    };
+  }
+  return Object.keys(built).length > 0 ? built : null;
+}
 const extensionProxies = new Map<
   string,
   Array<{ pluginId: string; implementation: Record<string, unknown> }>
@@ -573,6 +601,7 @@ const context = {
     'isEnabled',
     'enabledChannels',
     'inAppExclusions',
+    'declares',
   ]),
   identity: serviceProxy('identity', [
     'requiresEmailVerification',
@@ -614,6 +643,7 @@ const context = {
 
   payments: serviceProxy('payments', [
     'listPaymentMethods',
+    'providerModes',
     'listAvailablePaymentMethods',
     'createRecord',
     'initiate',
@@ -624,6 +654,7 @@ const context = {
     'listTopUps',
     'getProviderConfig',
     'listByOrderIds',
+    'manualInstructions',
     'listChannelMethods',
     'sweepExpired',
     'confirmManual',
@@ -639,6 +670,7 @@ const context = {
     'adjust',
     'listAccounts',
     'listLedger',
+    'getMonthlySpending',
   ]),
   // Currency governance was reachable in-process only: the isolated worker had
   // no `currency` entry at all, so `ctx.currency.requireEnabled(...)` threw a
@@ -653,7 +685,13 @@ const context = {
     format: (amountMinor: unknown, code: unknown, locale: unknown) =>
       formatMinorCurrency(Number(amountMinor), String(code), String(locale)),
   },
-  fx: serviceProxy('fx', ['quote', 'getRate', 'listRates']),
+  fx: serviceProxy('fx', [
+    'quote',
+    'quoteToSettlement',
+    'getSettlementCurrency',
+    'getRate',
+    'listRates',
+  ]),
   extensions,
   registerExtension,
   provide: provideService,
@@ -825,6 +863,11 @@ function serviceProxy(
     methods.map((method) => [
       method,
       (...args: unknown[]) => {
+        // Rebuilt predicates come first: they are the only way a declared-sync
+        // method that takes arguments can stay synchronous across the bridge.
+        const predicates = serviceSyncPredicates.get(service);
+        if (predicates && Object.prototype.hasOwnProperty.call(predicates, method))
+          return (predicates[method] as (...a: unknown[]) => unknown)(...args);
         const snapshot = serviceSyncValues.get(service);
         if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, method))
           return snapshot[method];
@@ -1155,7 +1198,8 @@ process.on('message', async (raw: unknown) => {
     value?: unknown;
   };
   if (message?.protocol !== RPC_PROTOCOL || message.pluginId !== pluginId) return;
-  if (!message.id && message.type !== 'event') return;
+  // `event` and `sync-services` are unsolicited pushes and carry no request id.
+  if (!message.id && message.type !== 'event' && message.type !== 'sync-services') return;
   const requestId = message.id as string;
   if (message.type === 'result') {
     const waiter = pending.get(requestId);
@@ -1165,6 +1209,24 @@ process.on('message', async (raw: unknown) => {
     if (message.error) {
       waiter.reject(restoreHostError(message.error));
     } else waiter.resolve(message.value);
+    return;
+  }
+  // Host-pushed synchronous service values. Sent after activation and again
+  // whenever a snapshot input changes at runtime (a captcha mode, the session
+  // cookie config), so the plain values `ctx.*` returns stay current instead of
+  // being frozen at activation time. See `service-contract.ts` in the host.
+  if (message.type === 'sync-services') {
+    const frame = message as {
+      syncValues?: Record<string, Record<string, unknown>>;
+      syncPredicates?: Record<string, Record<string, unknown>>;
+    };
+    for (const [name, values] of Object.entries(frame.syncValues ?? {})) {
+      serviceSyncValues.set(name, values);
+    }
+    for (const [name, values] of Object.entries(frame.syncPredicates ?? {})) {
+      const built = buildSyncPredicates(values);
+      if (built) serviceSyncPredicates.set(name, built);
+    }
     return;
   }
   if (message.type === 'cancel') {
@@ -1282,6 +1344,10 @@ process.on('message', async (raw: unknown) => {
               values?: Record<string, unknown>;
               syncValues?: Record<string, unknown>;
             }>;
+            /** Plain values for SDK-declared synchronous kernel service methods. */
+            syncValues?: Record<string, Record<string, unknown>>;
+            /** Shipped inputs for SDK-declared synchronous *predicates*. */
+            syncPredicates?: Record<string, Record<string, unknown>>;
             extensions?: Array<{
               pointId: string;
               ownerId: string;
@@ -1303,6 +1369,19 @@ process.on('message', async (raw: unknown) => {
         }
         serviceProxies.set(binding.name, proxy);
         serviceSyncValues.set(binding.name, binding.syncValues ?? {});
+      }
+      // Kernel capability services (`ctx.payments`, `ctx.secrets`, …) are not
+      // bindings: they reach the worker through the capability channel, and their
+      // SDK-declared synchronous methods arrive here as plain values. Without this
+      // the calls fell through to `callHost` and returned a promise — a truthy
+      // promise, so `if (!ctx.secrets.isAvailable())` could never take the
+      // negative branch. See service-contract.ts.
+      for (const [name, values] of Object.entries(lifecycleContext?.syncValues ?? {})) {
+        serviceSyncValues.set(name, values);
+      }
+      for (const [name, values] of Object.entries(lifecycleContext?.syncPredicates ?? {})) {
+        const built = buildSyncPredicates(values);
+        if (built) serviceSyncPredicates.set(name, built);
       }
       extensionProxies.clear();
       for (const binding of lifecycleContext?.extensions ?? []) {
@@ -1449,6 +1528,7 @@ process.on('message', async (raw: unknown) => {
     let status: number | undefined;
     let sent = false;
     let payload: unknown;
+    let headers: Array<[string, string]> = [];
     // `HttpReply.code` is chainable per the SDK contract: plugins write
     // `reply.code(201).send(body)`. Returning `undefined` here made that chain
     // throw "Cannot read properties of undefined (reading 'send')", which killed
@@ -1456,6 +1536,16 @@ process.on('message', async (raw: unknown) => {
     const replyView: Record<string, unknown> = {
       code: (next: number) => {
         status = next;
+        return replyView;
+      },
+      // Response headers are collected here because the worker only sends the
+      // status and payload back. Dropping them silently would break any route
+      // that serves something other than JSON (a script needs its own MIME).
+      header: (name: string, value: string) => {
+        headers = [
+          ...headers.filter(([existing]) => existing.toLowerCase() !== name.toLowerCase()),
+          [name, value],
+        ];
         return replyView;
       },
       send: (next: unknown) => {
@@ -1472,7 +1562,11 @@ process.on('message', async (raw: unknown) => {
       value: sent ? undefined : value,
       ...(sent || status !== undefined
         ? {
-            response: { ...(status !== undefined ? { status } : {}), ...(sent ? { payload } : {}) },
+            response: {
+              ...(status !== undefined ? { status } : {}),
+              ...(headers.length > 0 ? { headers } : {}),
+              ...(sent ? { payload } : {}),
+            },
           }
         : {}),
     });
