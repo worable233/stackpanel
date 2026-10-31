@@ -161,7 +161,13 @@ export class MarketService implements MarketServiceContract {
         repository: service?.repository ?? null,
         channel: service?.channel ?? null,
         available: current !== null,
-        ...(current ? { sequence: current.sequence, expired: current.expired } : {}),
+        ...(current
+          ? {
+              sequence: current.sequence,
+              expired: current.expired,
+              expiresAt: current.snapshot.expiresAt,
+            }
+          : {}),
         ...(failure ? { failure } : {}),
       },
     };
@@ -242,7 +248,9 @@ export class MarketService implements MarketServiceContract {
     // 升级前先记下运行中的旧定义与激活状态：装载新定义失败时必须把它装回去，
     // 否则文件回滚了、进程里却没有这个插件——路由静默消失，比升级失败更难查。
     const wasRegistered = kind === 'plugin' && runtime.has(id);
-    const previousDefinition = wasRegistered ? await this.loadDefinition(id).catch(() => null) : null;
+    const previousDefinition = wasRegistered
+      ? await this.loadDefinition(id).catch(() => null)
+      : null;
     const wasActive = wasRegistered && runtime.isActive(id);
     let oldUnregistered = false;
     let newRegistered = false;

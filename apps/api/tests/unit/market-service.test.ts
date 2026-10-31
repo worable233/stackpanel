@@ -56,6 +56,8 @@ function harness(
     installedThemes?: string[];
     /** 激活新定义时抛错（模拟升级失败）。 */
     activateError?: Error;
+    /** 注入一份目录刷新服务（status() 读它的 current()/lastFailureInfo()）。 */
+    refresh?: unknown;
   } = {},
 ): Harness {
   const installed: Array<{ kind: string; id: string }> = [];
@@ -113,7 +115,7 @@ function harness(
       return { manifest: { id, name: id, version: '1.0.0' } };
     },
     localSources: () => options.localSources ?? { enabled: true },
-    catalogRefresh: () => null,
+    catalogRefresh: () => (options.refresh as never) ?? null,
     notifyChange: async (change) => {
       notified.push(change);
     },
@@ -181,6 +183,9 @@ describe('MarketService（内核保留的分发安全原语）', () => {
     expect(store?.builtin).toBe(true);
     const analytics = packages.find((pkg) => pkg.id === 'analytics');
     expect(analytics?.version).toBe('2.0.0');
+    // 每行必须能看出这次安装会走哪条路径：本地源（不受验签）还是已签名目录。
+    expect(store?.source).toBe('local');
+    expect(analytics?.source).toBe('catalog');
   });
 
   it('未配置远程目录时完全离线（只返回本地来源）', async () => {
@@ -200,6 +205,26 @@ describe('MarketService（内核保留的分发安全原语）', () => {
     expect(status?.catalog.available).toBe(false);
     expect(status?.catalog.repository).toBeNull();
     expect(status?.localSources).toEqual({ enabled: true });
+  });
+
+  it('目录可用时健康度带出快照序列与过期时间（页面用于显示「装的是哪一版」）', async () => {
+    const expiresAt = '2026-12-01T00:00:00.000Z';
+    const h = harness({
+      refresh: {
+        repository: 'acme/catalog',
+        channel: 'stable',
+        current: () => ({
+          snapshot: { expiresAt },
+          sequence: 6,
+          expired: false,
+        }),
+        lastFailureInfo: () => null,
+      },
+    });
+    const status = await h.service.status?.();
+    expect(status?.catalog.available).toBe(true);
+    expect(status?.catalog.sequence).toBe(6);
+    expect(status?.catalog.expiresAt).toBe(expiresAt);
   });
 
   it('容器形态下本地来源被禁用时，健康度给出可执行原因', async () => {

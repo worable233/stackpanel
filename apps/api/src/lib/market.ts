@@ -238,6 +238,7 @@ export async function marketPackageView(
     upgradable,
     current: installed && installedVersion === source.version,
     builtin: kind === 'plugin' ? source.builtin === true : source.id === 'default',
+    source: 'local',
     ...(frontendManifest
       ? {
           frontend: {
@@ -274,6 +275,7 @@ export function catalogMarketPackageView(
     upgradable: installed && installedVersion !== entry.version,
     current: installed && installedVersion === entry.version,
     builtin: false,
+    source: 'catalog',
   };
 }
 
