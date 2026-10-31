@@ -39,6 +39,9 @@ class RoutedStateService implements StateService {
   decr(key: string): Promise<number> {
     return this.active.decr(key);
   }
+  ttl(key: string): Promise<number | null> {
+    return this.active.ttl(key);
+  }
   acquire(key: string, ttlMs: number): Promise<string | null> {
     return this.active.acquire(key, ttlMs);
   }

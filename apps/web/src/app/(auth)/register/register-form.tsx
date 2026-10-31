@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validatePassword } from '@stackpanel/sdk';
 import { AuthShell, type AuthProvider } from '@/components/auth-shell';
@@ -57,6 +57,45 @@ export function RegisterForm({
   const [sendCodeError, setSendCodeError] = useState<string | null>(null);
   /** Client-side refusal for the sign-up button (unsolved widget). */
   const [captchaError, setCaptchaError] = useState<string | null>(null);
+  /**
+   * Bumped to force a widget to re-mount. A solved token is single-use and bound
+   * to one action, so after the kernel rejects it (`captcha_failed`) the visitor
+   * must get a *fresh* widget — reusing a dead one leaves the form permanently
+   * unsolvable with no visible cause.
+   */
+  const [sendCodeCaptchaReset, setSendCodeCaptchaReset] = useState(0);
+  const [captchaReset, setCaptchaReset] = useState(0);
+  /**
+   * Set once a code has been delivered but the sign-up widget is still unsolved:
+   * the second checkbox sits further down the page and is easy to miss, which
+   * reads as "the form does nothing".
+   */
+  const [needsRegisterCaptcha, setNeedsRegisterCaptcha] = useState(false);
+  const registerCaptchaRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Controlled values for everything the visitor typed.
+   *
+   * React resets an uncontrolled form when its action returns, so the email
+   * entered *before* pressing "获取验证码" was wiped — `required` then blocked the
+   * submit on an invisible field and the register button appeared to do nothing.
+   * A rejected sign-up wiped all four fields the same way.
+   */
+  /**
+   * Form-level complaint for a missing field.
+   *
+   * The sign-up button is `formNoValidate`: the send-code widget's own checkbox
+   * stays `required` after its token is spent, so native validation vetoed the
+   * *sign-up* submit on a control the visitor cannot see. We therefore validate
+   * the required fields ourselves and say which one is missing, next to the
+   * button that refused.
+   */
+  const [formError, setFormError] = useState<string | null>(null);
+  const [values, setValues] = useState({ email: '', code: '', password: '', confirmPassword: '' });
+  const field = (name: keyof typeof values) => ({
+    value: values[name],
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+      setValues((previous) => ({ ...previous, [name]: event.target.value })),
+  });
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -69,7 +108,63 @@ export function RegisterForm({
     // rejected request (missing email, unsolved widget) look like "sent — wait 53s",
     // which is worse than no feedback at all.
     if (codeState.notice) setCooldown(SEND_CODE_COOLDOWN_SECONDS);
-  }, [codeState]);
+
+    // The kernel is the authority on the wait: on a 429 it returns the *remaining*
+    // seconds, which is shorter than a full window when the visitor already waited.
+    if (typeof codeState.retryAfterSeconds === 'number' && codeState.retryAfterSeconds > 0) {
+      setCooldown(codeState.retryAfterSeconds);
+    }
+
+    // A dead code must not leave the resend button locked: "验证码已过期，请重新获取"
+    // plus a button that is still counting down is a contradiction the visitor
+    // cannot resolve. Expiry/consumption are server facts, so honour them here.
+    if (
+      codeState.errorCode === 'auth.code_expired' ||
+      codeState.errorCode === 'auth.code_missing' ||
+      codeState.errorCode === 'auth.code_invalid' ||
+      codeState.errorCode === 'auth.code_locked'
+    ) {
+      setCooldown(0);
+    }
+
+    // A rejected human-verification token is single-use: remount so the visitor can
+    // solve a new one instead of staring at a widget that looks verified.
+    if (
+      codeState.errorCode === 'auth.captcha_required' ||
+      codeState.errorCode === 'auth.captcha_failed'
+    ) {
+      setSendCodeToken(null);
+      setSendCodeCaptchaReset((value) => value + 1);
+    }
+
+    if (codeState.notice && captcha?.policy === 'required' && !captchaToken) {
+      setNeedsRegisterCaptcha(true);
+    }
+  }, [codeState, captcha?.policy, captchaToken]);
+
+  useEffect(() => {
+    if (
+      state.errorCode === 'auth.captcha_required' ||
+      state.errorCode === 'auth.captcha_failed'
+    ) {
+      setCaptchaToken(null);
+      setCaptchaReset((value) => value + 1);
+    }
+    // Same unlock rule as above: an unusable code must free the resend button.
+    if (
+      state.errorCode === 'auth.code_expired' ||
+      state.errorCode === 'auth.code_missing' ||
+      state.errorCode === 'auth.code_invalid' ||
+      state.errorCode === 'auth.code_locked'
+    ) {
+      setCooldown(0);
+    }
+  }, [state]);
+
+  useEffect(() => {
+    if (!needsRegisterCaptcha) return;
+    registerCaptchaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [needsRegisterCaptcha]);
   const t = useTranslator();
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -109,6 +204,19 @@ export function RegisterForm({
     const email = (form.elements.namedItem('email') as HTMLInputElement | null)?.value ?? '';
     const password = (form.elements.namedItem('password') as HTMLInputElement | null)?.value ?? '';
     const confirm = (form.elements.namedItem('confirmPassword') as HTMLInputElement | null)?.value;
+    const code = (form.elements.namedItem('code') as HTMLInputElement | null)?.value ?? '';
+    // Required fields are enforced here instead of by the browser (see formError).
+    if (!email.trim() || !email.includes('@')) {
+      event.preventDefault();
+      setFormError(t(email.trim() ? 'auth.validation.emailInvalid' : 'auth.validation.emailRequired'));
+      return;
+    }
+    if (emailVerificationRequired && !code.trim()) {
+      event.preventDefault();
+      setFormError(t('auth.validation.codeRequired'));
+      return;
+    }
+    setFormError(null);
     // Same rule set as the kernel, evaluated in the browser: the visitor gets the
     // reason immediately (and in their language) instead of after a round trip.
     const policy = validatePassword(password, { email });
@@ -155,7 +263,11 @@ export function RegisterForm({
             autoComplete="email"
             required
             className="py-2.5"
-            onChange={() => setSendCodeError(null)}
+            {...field('email')}
+            onChange={(event) => {
+              field('email').onChange(event);
+              setSendCodeError(null);
+            }}
           />
         </div>
         {emailVerificationRequired ? (
@@ -170,6 +282,7 @@ export function RegisterForm({
                 required
                 maxLength={16}
                 className="py-2.5"
+                {...field('code')}
               />
               <Button
                 type="submit"
@@ -211,6 +324,7 @@ export function RegisterForm({
               config={sendCodeCaptcha?.clientConfig ?? null}
               onToken={setSendCodeToken}
               fieldName="altcha_send_code"
+              resetSignal={sendCodeCaptchaReset}
             />
           </div>
         ) : null}
@@ -227,6 +341,7 @@ export function RegisterForm({
               maxLength={PASSWORD_MAX_LENGTH}
               aria-invalid={passwordError ? true : undefined}
               className="py-2.5 pr-9"
+              {...field('password')}
             />
             <button
               type="button"
@@ -254,19 +369,35 @@ export function RegisterForm({
             required
             className="py-2.5"
             aria-invalid={confirmError ? true : undefined}
+            {...field('confirmPassword')}
           />
         </div>
         {confirmError ? <p className="text-sm text-destructive">{confirmError}</p> : null}
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        <CaptchaField
-          config={captcha?.clientConfig ?? null}
-          onToken={(token) => {
-            setCaptchaToken(token);
-            if (token) setCaptchaError(null);
-          }}
-        />
+        <div ref={registerCaptchaRef}>
+          <CaptchaField
+            config={captcha?.clientConfig ?? null}
+            onToken={(token) => {
+              setCaptchaToken(token);
+              if (token) {
+                setCaptchaError(null);
+                setNeedsRegisterCaptcha(false);
+              }
+            }}
+            resetSignal={captchaReset}
+          />
+        </div>
+        {needsRegisterCaptcha ? (
+          <p className="text-sm text-muted-foreground">{t('auth.register.alsoVerify')}</p>
+        ) : null}
         {captchaError ? <p className="text-sm text-destructive">{captchaError}</p> : null}
-        <Button type="submit" disabled={pending} className="h-10 w-full text-base">
+        {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+        <Button
+          type="submit"
+          formNoValidate
+          disabled={pending}
+          className="h-10 w-full text-base"
+        >
           {pending ? t('auth.register.submitting') : t('auth.register.submit')}
         </Button>
       </form>

@@ -291,6 +291,20 @@ async function request<T>(
         ...(typeof problem?.code === 'string' ? { code: problem.code } : {}),
         ...(typeof problem?.requestId === 'string' ? { requestId: problem.requestId } : {}),
         ...(Array.isArray(problem?.errors) ? { errors: problem.errors } : {}),
+        ...(() => {
+          // Header first (works for any server/proxy), body second (survives a
+          // proxy that strips headers). Both are optional; the UI degrades to a
+          // plain "try again later" message when neither is present.
+          const header = res.headers.get('retry-after');
+          const fromHeader = header ? Number.parseInt(header, 10) : Number.NaN;
+          const fromBody = problem?.retryAfterSeconds;
+          const seconds = Number.isFinite(fromHeader)
+            ? fromHeader
+            : typeof fromBody === 'number' && Number.isFinite(fromBody)
+              ? fromBody
+              : null;
+          return seconds !== null && seconds >= 0 ? { retryAfterSeconds: seconds } : {};
+        })(),
         details: json,
       });
     }

@@ -155,15 +155,34 @@ function assertPasswordPolicy(password: string, email: string): void {
  * dimension: login, registration and reset must not consume each other's
  * budget, and both the source IP and the target account are limited.
  */
+/**
+ * Sliding-window limiter.
+ *
+ * Returns `null` when the call is allowed, otherwise the number of seconds the
+ * caller must wait. A boolean alone cannot express "come back in 43s", which is
+ * the only answer that helps a throttled visitor.
+ */
 async function allow(
   scope: 'login' | 'register' | 'reset',
   kind: 'ip' | 'user',
   identifier: string,
   limit: number,
-): Promise<boolean> {
-  if (limit <= 0) return true;
-  const count = await auth().state.incr(`${scope}:${kind}:${identifier}`, WINDOW_MS);
-  return count <= limit;
+): Promise<number | null> {
+  if (limit <= 0) return null;
+  const key = `${scope}:${kind}:${identifier}`;
+  const count = await auth().state.incr(key, WINDOW_MS);
+  if (count <= limit) return null;
+  const remaining = await auth().state.ttl(key);
+  return remaining === null || !Number.isFinite(remaining)
+    ? Math.max(1, Math.ceil(WINDOW_MS / 1000))
+    : Math.max(1, Math.ceil(remaining / 1000));
+}
+
+/** The uniform 429, carrying the exact remaining wait (rendered as `Retry-After`). */
+function throttled(retryAfterSeconds: number): PluginError {
+  return new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试', undefined, {
+    retryAfterSeconds,
+  });
 }
 
 function handle(handler: (req: HttpRequest, reply: HttpReply) => Promise<unknown>) {
@@ -261,15 +280,13 @@ async function notifySuccessfulLogin(input: {
 }
 
 const login = handle(async (req: HttpRequest, reply: HttpReply) => {
-  if (!(await allow('login', 'ip', req.ip ?? 'unknown', rateLimits().login))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait1 = await allow('login', 'ip', req.ip ?? 'unknown', rateLimits().login);
+  if (wait1 !== null) throw throttled(wait1);
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
   const { email, password } = parsed.data;
-  if (!(await allow('login', 'user', email.toLowerCase(), rateLimits().login))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait2 = await allow('login', 'user', email.toLowerCase(), rateLimits().login);
+  if (wait2 !== null) throw throttled(wait2);
   // Credential stuffing is the reason this action exists, so the challenge is
   // enforced *before* `verifyPassword`: otherwise every rejected challenge still
   // answers "was that the right password?".
@@ -313,9 +330,8 @@ const login = handle(async (req: HttpRequest, reply: HttpReply) => {
  */
 const sendCode = handle(async (req: HttpRequest, reply: HttpReply) => {
   const ip = clientIp(req);
-  if (!(await allow('register', 'ip', ip ?? 'unknown', rateLimits().register))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait3 = await allow('register', 'ip', ip ?? 'unknown', rateLimits().register);
+  if (wait3 !== null) throw throttled(wait3);
   const parsed = sendCodeSchema.safeParse(req.body);
   if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
   const email = parsed.data.email.toLowerCase();
@@ -378,9 +394,8 @@ const sendCode = handle(async (req: HttpRequest, reply: HttpReply) => {
 
 const register = handle(async (req: HttpRequest, reply: HttpReply) => {
   const ip = clientIp(req);
-  if (!(await allow('register', 'ip', ip ?? 'unknown', rateLimits().register))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait4 = await allow('register', 'ip', ip ?? 'unknown', rateLimits().register);
+  if (wait4 !== null) throw throttled(wait4);
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
   const { email, password, affid, code } = parsed.data;
@@ -398,9 +413,8 @@ const register = handle(async (req: HttpRequest, reply: HttpReply) => {
       '注册邮箱验证已开启，但当前无法发送验证码，请联系站点管理员',
     );
   }
-  if (!(await allow('register', 'user', email.toLowerCase(), rateLimits().register))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait5 = await allow('register', 'user', email.toLowerCase(), rateLimits().register);
+  if (wait5 !== null) throw throttled(wait5);
 
   // Human verification covers the register entry point.
   await auth().captcha.enforce({
@@ -482,9 +496,8 @@ const passwordForgotSchema = z.object({
 
 const passwordForgot = handle(async (req: HttpRequest, reply: HttpReply) => {
   const ip = clientIp(req);
-  if (!(await allow('reset', 'ip', ip ?? 'unknown', rateLimits().register))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait6 = await allow('reset', 'ip', ip ?? 'unknown', rateLimits().register);
+  if (wait6 !== null) throw throttled(wait6);
   const parsed = passwordForgotSchema.safeParse(req.body);
   if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
   const email = parsed.data.email.toLowerCase();
@@ -504,9 +517,8 @@ const passwordForgot = handle(async (req: HttpRequest, reply: HttpReply) => {
   }
 
   // Its own bucket: reset requests must not eat the login/registration budget.
-  if (!(await allow('reset', 'user', email, rateLimits().register))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait7 = await allow('reset', 'user', email, rateLimits().register);
+  if (wait7 !== null) throw throttled(wait7);
 
   const user = await auth().auth.getUserByEmail(email);
   if (user) {
@@ -543,18 +555,16 @@ const passwordResetSchema = z.object({
 
 const passwordReset = handle(async (req: HttpRequest) => {
   const ip = clientIp(req);
-  if (!(await allow('reset', 'ip', ip ?? 'unknown', rateLimits().login))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait8 = await allow('reset', 'ip', ip ?? 'unknown', rateLimits().login);
+  if (wait8 !== null) throw throttled(wait8);
   const parsed = passwordResetSchema.safeParse(req.body);
   if (!parsed.success) throw new PluginError('validation.invalid', 422, '请求参数无效');
   const email = parsed.data.email.toLowerCase();
 
   assertPasswordPolicy(parsed.data.password, email);
 
-  if (!(await allow('reset', 'user', email, rateLimits().login))) {
-    throw new PluginError('auth.rate_limited', 429, '尝试太频繁，请稍后再试');
-  }
+  const wait9 = await allow('reset', 'user', email, rateLimits().login);
+  if (wait9 !== null) throw throttled(wait9);
 
   const user = await auth().auth.getUserByEmail(email);
   if (!user) {

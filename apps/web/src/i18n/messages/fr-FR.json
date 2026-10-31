@@ -135,7 +135,8 @@
       "closedTitle": "Les inscriptions sont fermées",
       "closedBody": "Ce site n’accepte pas de nouveaux comptes. Contactez l’administrateur.",
       "blockedTitle": "Les inscriptions sont momentanément indisponibles",
-      "blockedBody": "La vérification par e-mail est activée mais aucun code ne peut être envoyé. Réessayez plus tard ou contactez l’administrateur."
+      "blockedBody": "La vérification par e-mail est activée mais aucun code ne peut être envoyé. Réessayez plus tard ou contactez l’administrateur.",
+      "alsoVerify": "Code envoyé. Validez la vérification ci-dessous pour créer votre compte."
     },
     "setup": {
       "title": "Initialize your platform",
@@ -224,6 +225,7 @@
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
       "emailRequired": "Please enter your email",
+      "emailInvalid": "Saisissez une adresse e-mail valide",
       "codeRequired": "Saisissez le code reçu par e-mail",
       "passwordRequired": "Saisissez un nouveau mot de passe"
     },
@@ -258,7 +260,9 @@
     },
     "password": {
       "hint": "Au moins {min} caractères. Évitez les mots de passe courants et votre adresse e-mail."
-    }
+    },
+    "retryIn": "Vous pourrez réessayer dans {seconds} secondes.",
+    "retryInShort": "Réessayer dans {seconds}s"
   },
   "localeSwitcher": {
     "label": "Language",
@@ -1255,6 +1259,8 @@
       "code_expired": "The verification code expired. Request a new one.",
       "code_locked": "Too many attempts. Request a new code.",
       "code_rate_limited": "Too many code requests, please try again later",
+      "code_cooldown": "Trop de codes demandés. Réessayez dans {seconds} secondes.",
+      "code_quota_exceeded": "Cette adresse a atteint sa limite horaire de codes. Réessayez dans {seconds} secondes.",
       "code_channel_unavailable": "No verification channel is configured; contact the administrator",
       "code_delivery_failed": "Could not send the verification code, please try again later",
       "code_not_required": "Email verification is not enabled",

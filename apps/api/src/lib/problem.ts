@@ -64,6 +64,7 @@ export function buildProblem(input: {
   instance?: string;
   requestId?: string;
   errors?: FieldError[];
+  retryAfterSeconds?: number;
 }): ProblemDetails {
   const code = input.code && input.code.length > 0 ? input.code : codeForStatus(input.status);
   const problem: ProblemDetails = {
@@ -76,6 +77,12 @@ export function buildProblem(input: {
   if (input.instance) problem.instance = input.instance;
   if (input.requestId) problem.requestId = input.requestId;
   if (input.errors && input.errors.length > 0) problem.errors = input.errors;
+  // Mirrors the `Retry-After` header. A proxy can strip headers, so the number a
+  // UI needs for a countdown also lives in the body (ADR-0012 §4: the body is
+  // the contract, the header is transport).
+  if (typeof input.retryAfterSeconds === 'number' && Number.isFinite(input.retryAfterSeconds)) {
+    problem.retryAfterSeconds = Math.max(0, Math.ceil(input.retryAfterSeconds));
+  }
   return problem;
 }
 

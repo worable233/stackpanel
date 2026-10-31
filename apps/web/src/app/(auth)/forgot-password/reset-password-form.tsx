@@ -35,6 +35,15 @@ export function ResetPasswordForm({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // Controlled, because React resets an uncontrolled form when its action
+  // returns: the email typed before "发送验证码" vanished, and a rejected reset wiped
+  // every field (same trap as the register form).
+  const [values, setValues] = useState({ email: '', code: '', password: '', confirmPassword: '' });
+  const field = (name: keyof typeof values) => ({
+    value: values[name],
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+      setValues((previous) => ({ ...previous, [name]: event.target.value })),
+  });
   const t = useTranslator();
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -71,6 +80,7 @@ export function ResetPasswordForm({
             autoComplete="email"
             required
             className="py-2.5"
+            {...field('email')}
           />
         </div>
         <div className="space-y-2">
@@ -83,6 +93,7 @@ export function ResetPasswordForm({
               autoComplete="one-time-code"
               maxLength={16}
               className="py-2.5"
+              {...field('code')}
             />
             <Button
               type="submit"
@@ -112,6 +123,7 @@ export function ResetPasswordForm({
               maxLength={PASSWORD_MAX_LENGTH}
               aria-invalid={passwordError ? true : undefined}
               className="py-2.5 pr-9"
+              {...field('password')}
             />
             <button
               type="button"
@@ -139,6 +151,7 @@ export function ResetPasswordForm({
             required
             aria-invalid={confirmError ? true : undefined}
             className="py-2.5"
+            {...field('confirmPassword')}
           />
           {confirmError ? <p className="text-sm text-destructive">{confirmError}</p> : null}
         </div>

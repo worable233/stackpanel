@@ -21,6 +21,20 @@ describe('MemoryStateService', () => {
     expect(await state.decr('c')).toBe(0);
   });
 
+  it('reports the remaining TTL so a throttle can say how long to wait', async () => {
+    const state = new MemoryStateService();
+    await state.set('ttl:warm', 'v', 60_000);
+    const remaining = await state.ttl('ttl:warm');
+    expect(remaining).toBeGreaterThan(55_000);
+    expect(remaining).toBeLessThanOrEqual(60_000);
+
+    // Missing key and no-expiry key are distinct: `0` means "gone", `null` means
+    // "present forever". Collapsing them would make a permanent key look expired.
+    await state.set('ttl:forever', 'v');
+    expect(await state.ttl('ttl:forever')).toBeNull();
+    expect(await state.ttl('ttl:absent')).toBe(0);
+  });
+
   it('exposes a mutual-exclusion lock', async () => {
     const state = new MemoryStateService();
     const token = await state.acquire('lock', 1000);

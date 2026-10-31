@@ -5,6 +5,13 @@ export class ApiError extends Error {
   readonly details: unknown;
   /** Correlation id from the problem-details body, when present (ADR-0015). */
   readonly requestId: string | undefined;
+  /**
+   * Seconds until the caller may retry, for 429/503 responses.
+   *
+   * Carried by both the `Retry-After` header and the problem body so a UI can
+   * render a countdown ("N 秒后重试") instead of a dead end.
+   */
+  readonly retryAfterSeconds: number | undefined;
   /** Field-level failures from the problem-details body, when present. */
   readonly errors: FieldError[] | undefined;
 
@@ -16,6 +23,7 @@ export class ApiError extends Error {
       details?: unknown;
       requestId?: string;
       errors?: FieldError[];
+      retryAfterSeconds?: number;
     },
   ) {
     super(message);
@@ -25,6 +33,7 @@ export class ApiError extends Error {
     this.details = options.details;
     this.requestId = options.requestId;
     this.errors = options.errors;
+    this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
 
@@ -62,6 +71,8 @@ export interface ProblemDetails {
   requestId?: string;
   /** Field-level failures (present for validation errors). */
   errors?: FieldError[];
+  /** Seconds until a retry can succeed (429/503). Mirrors the `Retry-After` header. */
+  retryAfterSeconds?: number;
 }
 
 /**
@@ -77,14 +88,29 @@ export class PluginError extends Error {
   readonly status: number;
   readonly detail: string | undefined;
   readonly errors: FieldError[] | undefined;
+  /**
+   * Seconds until the caller may retry (429/503).
+   *
+   * The kernel renders it as the `Retry-After` header plus a problem-body field;
+   * without it a throttled UI can only say "too often" and leave the user
+   * guessing. Pass the *remaining* window, not the window length.
+   */
+  readonly retryAfterSeconds: number | undefined;
 
-  constructor(code: string, status = 400, detail?: string, errors?: FieldError[]) {
+  constructor(
+    code: string,
+    status = 400,
+    detail?: string,
+    errors?: FieldError[],
+    options?: { retryAfterSeconds?: number },
+  ) {
     super(code);
     this.name = 'PluginError';
     this.code = code;
     this.status = status;
     this.detail = detail;
     this.errors = errors;
+    this.retryAfterSeconds = options?.retryAfterSeconds;
   }
 }
 

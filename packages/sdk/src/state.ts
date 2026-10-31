@@ -43,6 +43,15 @@ export interface StateService {
   incr(key: string, ttlMs?: number): Promise<number>;
   /** Decrement a counter (floored at 0). */
   decr(key: string): Promise<number>;
+  /**
+   * Remaining lifetime of `key`, in milliseconds.
+   *
+   * Returns `0` when the key is missing or already expired and `null` when it
+   * exists without an expiry. Callers use it to tell a rate-limited user **how
+   * long** to wait instead of only that they waited too often — a 429 with no
+   * `Retry-After` forces every client to guess.
+   */
+  ttl(key: string): Promise<number | null>;
   /** Acquire a lock keyed by `key`. Returns false if already held. */
   acquire(key: string, ttlMs: number): Promise<string | null>;
   /** Release a lock only when `token` is still its owner. */

@@ -70,7 +70,13 @@ describe.skipIf(!dbAvailable)('register code cooldown (real DB)', () => {
       payload: { email },
     });
     expect(second.statusCode).toBe(429);
-    expect((second.json() as { code: string }).code).toBe('auth.code_rate_limited');
+    const throttled = second.json() as { code: string; retryAfterSeconds?: number };
+    // Distinct from the hourly quota: the wait is short and the UI can count it.
+    expect(throttled.code).toBe('auth.code_cooldown');
+    expect(throttled.retryAfterSeconds).toBeGreaterThan(0);
+    expect(throttled.retryAfterSeconds).toBeLessThanOrEqual(60);
+    // Transport-level half of the same number.
+    expect(second.headers['retry-after']).toBe(String(throttled.retryAfterSeconds));
     // Nothing was delivered for the refused request.
     expect(sender.sent).toBe(1);
   });

@@ -126,7 +126,8 @@
       "closedTitle": "Sign-ups are closed",
       "closedBody": "This site is not accepting new accounts. Please contact the administrator.",
       "blockedTitle": "Sign-ups are temporarily unavailable",
-      "blockedBody": "Email verification is enabled, but no code can be sent right now. Please try again later or contact the administrator."
+      "blockedBody": "Email verification is enabled, but no code can be sent right now. Please try again later or contact the administrator.",
+      "alsoVerify": "Code sent. Complete the verification below to create your account."
     },
     "setup": {
       "title": "Initialize your platform",
@@ -215,6 +216,7 @@
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
       "emailRequired": "Please enter your email",
+      "emailInvalid": "Enter a valid email address",
       "codeRequired": "Enter the code from your email",
       "passwordRequired": "Enter a new password"
     },
@@ -249,7 +251,9 @@
     },
     "password": {
       "hint": "At least {min} characters. Avoid common passwords and your email address."
-    }
+    },
+    "retryIn": "You can retry in {seconds} seconds.",
+    "retryInShort": "Retry in {seconds}s"
   },
   "localeSwitcher": {
     "label": "Language",
@@ -1255,6 +1259,8 @@
       "code_expired": "The verification code expired. Request a new one.",
       "code_locked": "Too many attempts. Request a new code.",
       "code_rate_limited": "Too many code requests, please try again later",
+      "code_cooldown": "Too many codes requested. Try again in {seconds} seconds.",
+      "code_quota_exceeded": "This mailbox reached its hourly limit for verification codes. Try again in {seconds} seconds.",
       "code_channel_unavailable": "No verification channel is configured; contact the administrator",
       "code_delivery_failed": "Could not send the verification code, please try again later",
       "code_not_required": "Email verification is not enabled",

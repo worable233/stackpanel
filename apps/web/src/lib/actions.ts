@@ -7,19 +7,52 @@ import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
 import { getApiClient, getAuthedApiClient } from './api';
 import { AFFILIATE_COOKIE, normalizeAffiliateCode } from './affiliate';
-import { apiErrorMessage } from './api-errors';
+import { apiErrorView, apiErrorMessage } from './api-errors';
 import { safeInternalPath } from './safe-path';
 
 export interface LoginState {
   error?: string;
+  /**
+   * Stable kernel code behind `error`.
+   *
+   * Forms branch on it: an expired code has to unlock the resend button, a
+   * throttled one has to start a countdown, a failed human-verification has to
+   * offer a fresh widget. Matching on the localised sentence would break in
+   * every non-default locale.
+   */
+  errorCode?: string;
+  /** Seconds until retry, forwarded from the kernel's `Retry-After`. */
+  retryAfterSeconds?: number;
   notice?: string;
   /** Set by the send-code action so the form can show a countdown. */
   codeSentTo?: string;
   codeExpiresInSeconds?: number;
 }
 
+/**
+ * Merge a structured API failure into a form state.
+ *
+ * Keeps `errorCode`/`retryAfterSeconds` so the form can act on the *reason*
+ * (unlock a resend, start a countdown, remount the widget) instead of only
+ * printing a sentence.
+ */
+async function failureState(error: unknown, fallback?: string): Promise<LoginState> {
+  const view = await apiErrorView(error, fallback);
+  return {
+    error: view.error,
+    ...(view.code ? { errorCode: view.code } : {}),
+    ...(typeof view.retryAfterSeconds === 'number'
+      ? { retryAfterSeconds: view.retryAfterSeconds }
+      : {}),
+  };
+}
+
 export interface AccountMutationState {
   error?: string;
+  /** Stable kernel code behind `error` (see {@link LoginState.errorCode}). */
+  errorCode?: string;
+  /** Seconds until retry, forwarded from the kernel's `Retry-After`. */
+  retryAfterSeconds?: number;
   ok?: boolean;
 }
 
@@ -57,12 +90,10 @@ export async function changePasswordAction(
       ...captchaTokenFrom(formData),
     });
   } catch (error) {
-    return {
-      error: await apiErrorMessage(
-        error,
-        translate(locale, 'account.settings.security.passwordChangeFailed'),
-      ),
-    };
+    return failureState(
+      error,
+      translate(locale, 'account.settings.security.passwordChangeFailed'),
+    );
   }
   redirect('/login');
 }
@@ -84,12 +115,10 @@ export async function changeEmailAction(
       ...captchaTokenFrom(formData),
     });
   } catch (error) {
-    return {
-      error: await apiErrorMessage(
-        error,
-        translate(locale, 'account.settings.security.emailChangeFailed'),
-      ),
-    };
+    return failureState(
+      error,
+      translate(locale, 'account.settings.security.emailChangeFailed'),
+    );
   }
   redirect('/login');
 }
@@ -118,9 +147,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     await setSessionCookie(result.token);
     destination = nextPath ?? (result.user.role === 'ADMIN' ? '/admin' : '/account');
   } catch (error) {
-    return {
-      error: await apiErrorMessage(error, translate(locale, 'auth.error.invalidCredentials')),
-    };
+    return failureState(error, translate(locale, 'auth.error.invalidCredentials'));
   }
   redirect(destination);
 }
@@ -171,7 +198,7 @@ export async function registerAction(_prev: LoginState, formData: FormData): Pro
     (await cookies()).delete(AFFILIATE_COOKIE);
     redirect(result.user.role === 'ADMIN' ? '/admin' : '/account');
   } catch (error) {
-    return { error: await apiErrorMessage(error, translate(locale, 'auth.error.registerFailed')) };
+    return failureState(error, translate(locale, 'auth.error.registerFailed'));
   }
 }
 
@@ -200,7 +227,7 @@ export async function sendRegisterCodeAction(
       codeExpiresInSeconds: result.expiresInSeconds,
     };
   } catch (error) {
-    return { error: await apiErrorMessage(error, translate(locale, 'auth.error.sendCodeFailed')) };
+    return failureState(error, translate(locale, 'auth.error.sendCodeFailed'));
   }
 }
 
@@ -223,9 +250,7 @@ export async function requestPasswordResetAction(
     });
     return { notice: translate(locale, 'auth.reset.codeSent'), codeSentTo: email.trim() };
   } catch (error) {
-    return {
-      error: await apiErrorMessage(error, translate(locale, 'auth.error.sendCodeFailed')),
-    };
+    return failureState(error, translate(locale, 'auth.error.sendCodeFailed'));
   }
 }
 
@@ -261,9 +286,7 @@ export async function resetPasswordAction(
   try {
     await getApiClient().resetPassword(email.trim(), code.trim(), password);
   } catch (error) {
-    return {
-      error: await apiErrorMessage(error, translate(locale, 'auth.error.passwordResetFailed')),
-    };
+    return failureState(error, translate(locale, 'auth.error.passwordResetFailed'));
   }
   redirect('/login?reset=1');
 }

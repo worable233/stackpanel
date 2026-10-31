@@ -78,6 +78,17 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
     return this.options.getSenders().map((sender) => sender.id);
   }
 
+  /**
+   * Seconds left on a limiter key, or the full window when the backend cannot
+   * report a TTL. Always returns a positive integer so the UI shows a countdown
+   * rather than `0 秒后重试`.
+   */
+  private async remainingSeconds(key: string, fallbackSeconds: number): Promise<number> {
+    const ms = await this.options.state.ttl(key);
+    if (ms === null || !Number.isFinite(ms)) return Math.max(1, Math.ceil(fallbackSeconds));
+    return Math.max(1, Math.ceil(ms / 1000));
+  }
+
   private digest(code: string, salt: string): string {
     return createHmac('sha256', this.digestKey).update(`${salt}:${code}`).digest('hex');
   }
@@ -101,31 +112,45 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
     // inbox and makes a legitimate "resend" fail for the rest of the hour.
     const cooldown = getConfig('AUTH_CODE_SEND_COOLDOWN_SECONDS');
     if (cooldown > 0) {
-      const seen = await this.options.state.incr(
-        `identity:code:cooldown:${email}:${purpose}`,
-        cooldown * 1000,
-      );
+      const cooldownKey = `identity:code:cooldown:${email}:${purpose}`;
+      const seen = await this.options.state.incr(cooldownKey, cooldown * 1000);
       if (seen > 1) {
-        throw new PluginError('auth.code_rate_limited', 429, '验证码发送过于频繁，请稍后再试');
+        // Distinct code from the hourly quota: the user can retry shortly, and
+        // because the number differs the UI can offer a countdown instead of
+        // "try again later" (which reads as "this is broken").
+        throw new PluginError('auth.code_cooldown', 429, '验证码发送过于频繁，请稍后再试', undefined, {
+          retryAfterSeconds: await this.remainingSeconds(cooldownKey, cooldown),
+        });
       }
     }
 
     // Send-rate limits, per recipient and per source IP.
     const emailLimit = getConfig('AUTH_CODE_SEND_PER_HOUR');
     if (emailLimit > 0) {
-      const count = await this.options.state.incr(
-        `identity:code:send:email:${email}:${purpose}`,
-        3_600_000,
-      );
+      const emailKey = `identity:code:send:email:${email}:${purpose}`;
+      const count = await this.options.state.incr(emailKey, 3_600_000);
       if (count > emailLimit) {
-        throw new PluginError('auth.code_rate_limited', 429, '验证码发送过于频繁，请稍后再试');
+        throw new PluginError(
+          'auth.code_quota_exceeded',
+          429,
+          '该邮箱一小时内获取验证码次数已达上限',
+          undefined,
+          { retryAfterSeconds: await this.remainingSeconds(emailKey, 3_600) },
+        );
       }
     }
     const ipLimit = getConfig('AUTH_CODE_SEND_PER_HOUR_PER_IP');
     if (ipLimit > 0 && input.ip) {
-      const count = await this.options.state.incr(`identity:code:send:ip:${input.ip}`, 3_600_000);
+      const ipKey = `identity:code:send:ip:${input.ip}`;
+      const count = await this.options.state.incr(ipKey, 3_600_000);
       if (count > ipLimit) {
-        throw new PluginError('auth.code_rate_limited', 429, '验证码发送过于频繁，请稍后再试');
+        throw new PluginError(
+          'auth.code_quota_exceeded',
+          429,
+          '当前网络一小时内获取验证码次数已达上限',
+          undefined,
+          { retryAfterSeconds: await this.remainingSeconds(ipKey, 3_600) },
+        );
       }
     }
 

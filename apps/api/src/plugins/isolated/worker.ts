@@ -524,6 +524,9 @@ const context = {
       'del',
       'incr',
       'decr',
+      // Needed by a plugin that has to answer "how long until retry" — a limiter
+      // that can only say "no" cannot render a countdown.
+      'ttl',
       'acquire',
       'release',
       'acquireLease',

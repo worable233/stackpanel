@@ -60,6 +60,13 @@ export class MemoryStateService implements StateService {
     return next;
   }
 
+  async ttl(key: string): Promise<number | null> {
+    const entry = this.live(key);
+    if (!entry) return 0;
+    if (entry.expiresAt === null) return null;
+    return Math.max(0, entry.expiresAt - Date.now());
+  }
+
   async decr(key: string): Promise<number> {
     const current = this.live(key);
     const next = Math.max(0, (current ? Number(current.value) : 0) - 1);

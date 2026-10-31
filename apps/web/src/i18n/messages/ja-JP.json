@@ -135,7 +135,8 @@
       "closedTitle": "新規登録は停止しています",
       "closedBody": "このサイトは現在、セルフサインアップを受け付けていません。管理者にお問い合わせください。",
       "blockedTitle": "現在、登録を受け付けられません",
-      "blockedBody": "メール認証が有効ですが、確認コードを送信できません。しばらくしてから再度お試しいただくか、管理者にお問い合わせください。"
+      "blockedBody": "メール認証が有効ですが、確認コードを送信できません。しばらくしてから再度お試しいただくか、管理者にお問い合わせください。",
+      "alsoVerify": "コードを送信しました。下の認証を完了するとアカウントを作成できます。"
     },
     "setup": {
       "title": "Initialize your platform",
@@ -224,6 +225,7 @@
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
       "emailRequired": "Please enter your email",
+      "emailInvalid": "有効なメールアドレスを入力してください",
       "codeRequired": "メールの確認コードを入力してください",
       "passwordRequired": "新しいパスワードを入力してください"
     },
@@ -258,7 +260,9 @@
     },
     "password": {
       "hint": "{min} 文字以上。よく使われるパスワードやメールアドレスに似た文字列は避けてください。"
-    }
+    },
+    "retryIn": "{seconds} 秒後に再試行できます。",
+    "retryInShort": "{seconds} 秒後に再試行"
   },
   "localeSwitcher": {
     "label": "Language",
@@ -1255,6 +1259,8 @@
       "code_expired": "The verification code expired. Request a new one.",
       "code_locked": "Too many attempts. Request a new code.",
       "code_rate_limited": "Too many code requests, please try again later",
+      "code_cooldown": "認証コードの送信が多すぎます。{seconds} 秒後に再試行してください。",
+      "code_quota_exceeded": "このメールアドレスは1時間あたりの認証コード取得上限に達しました。{seconds} 秒後に再試行してください。",
       "code_channel_unavailable": "No verification channel is configured; contact the administrator",
       "code_delivery_failed": "Could not send the verification code, please try again later",
       "code_not_required": "Email verification is not enabled",

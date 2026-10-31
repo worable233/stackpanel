@@ -41,6 +41,18 @@ describe.skipIf(!available)('RedisStateService', () => {
     expect(await state.get(`${prefix}plain`)).toBeNull();
   });
 
+  it('reports the remaining TTL, and distinguishes missing from permanent', async () => {
+    const state = svc();
+    await state.set(`${prefix}ttl`, 'v', 60_000);
+    const remaining = await state.ttl(`${prefix}ttl`);
+    expect(remaining).toBeGreaterThan(55_000);
+    expect(remaining).toBeLessThanOrEqual(60_000);
+
+    await state.set(`${prefix}ttl-forever`, 'v');
+    expect(await state.ttl(`${prefix}ttl-forever`)).toBeNull();
+    expect(await state.ttl(`${prefix}ttl-missing`)).toBe(0);
+  });
+
   it('expires values after the TTL', async () => {
     const state = svc();
     await state.set(`${prefix}ttl`, 'v', 40);

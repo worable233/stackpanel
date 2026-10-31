@@ -348,6 +348,7 @@ export function CaptchaField({
   onToken,
   className,
   fieldName,
+  resetSignal,
 }: {
   /** Widget config for the guarded action, or `null` when nothing guards it. */
   config: CaptchaClientConfig | null | undefined;
@@ -369,6 +370,15 @@ export function CaptchaField({
    * the host's own `captchaToken` input, so the protocol never changes.
    */
   fieldName?: string;
+  /**
+   * Bump to throw the current widget away and mount a new one.
+   *
+   * The kernel rejects a token that is single-use, expired, or minted for another
+   * action (`captcha_failed`). Without a re-mount the visitor keeps a widget that
+   * *looks* solved while every submit fails, so the parent signals a reset here
+   * after such a rejection.
+   */
+  resetSignal?: number;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -395,6 +405,14 @@ export function CaptchaField({
         : config,
     [config, fieldName],
   );
+
+  // A reset signal can arrive before the widget ever failed, so it must work in
+  // both states: remount the vendor widget *and* clear a previous failure banner.
+  useEffect(() => {
+    if (!resetSignal) return;
+    setFailed(false);
+    setAttempt((value) => value + 1);
+  }, [resetSignal]);
 
   const kind = resolved?.kind;
   const scriptSrc = resolved && resolved.kind === 'script' ? resolved.script : null;

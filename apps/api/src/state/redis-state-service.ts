@@ -151,6 +151,16 @@ export class RedisStateService implements StateService {
     )) as number;
   }
 
+  async ttl(key: string): Promise<number | null> {
+    // PTTL returns -2 for a missing key and -1 for a key without expiry; the
+    // contract uses 0 and null for those two cases.
+    const result = await this.redis.pttl(this.key(key));
+    const ms = typeof result === 'number' ? result : Number(result);
+    if (!Number.isFinite(ms) || ms === -2) return 0;
+    if (ms === -1) return null;
+    return Math.max(0, ms);
+  }
+
   async decr(key: string): Promise<number> {
     const result = (await this.redis.eval(DECR_FLOOR_SCRIPT, 1, this.key(key))) as number;
     return result;

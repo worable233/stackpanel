@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import { AuthShell, type AuthPost, type AuthProvider } from '@/components/auth-shell';
@@ -43,7 +43,44 @@ export function LoginForm({
   const [state, action, pending] = useActionState(loginAction, {});
   const [showPassword, setShowPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  /**
+   * Countdown driven by the kernel's `Retry-After`.
+   *
+   * A 429 that says nothing but "too often" is a dead end — the visitor either
+   * gives up or keeps clicking and extends the lockout. Counting down *and*
+   * disabling the button turns the throttle into an instruction.
+   */
+  const [wait, setWait] = useState(0);
+  const [captchaReset, setCaptchaReset] = useState(0);
+  // Controlled: React resets an uncontrolled form whenever its action returns, so
+  // a rejected sign-in would blank the email and password and force a full retype
+  // (the same trap that made the register button unclickable).
+  const [values, setValues] = useState({ email: '', password: '' });
+  const field = (name: keyof typeof values) => ({
+    value: values[name],
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+      setValues((previous) => ({ ...previous, [name]: event.target.value })),
+  });
   const t = useTranslator();
+
+  useEffect(() => {
+    if (wait <= 0) return;
+    const timer = setTimeout(() => setWait((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [wait]);
+
+  useEffect(() => {
+    if (typeof state.retryAfterSeconds === 'number' && state.retryAfterSeconds > 0) {
+      setWait(state.retryAfterSeconds);
+    }
+    // A rejected challenge token is spent; remount so a new one can be solved
+    // instead of leaving a widget that looks verified but no longer works.
+    if (state.errorCode === 'auth.captcha_required' || state.errorCode === 'auth.captcha_failed') {
+      setCaptchaToken(null);
+      setCaptchaReset((value) => value + 1);
+    }
+  }, [state]);
+
   const errorMessage = state.error ?? (oauthError ? t('auth.login.oauthFailed') : null);
   return (
     <AuthShell
@@ -71,6 +108,7 @@ export function LoginForm({
             autoComplete="email"
             required
             className="py-2.5"
+            {...field('email')}
           />
         </div>
         <div className="space-y-2">
@@ -93,6 +131,7 @@ export function LoginForm({
               autoComplete="current-password"
               required
               className="py-2.5 pr-9"
+              {...field('password')}
             />
             <button
               type="button"
@@ -107,9 +146,20 @@ export function LoginForm({
           </div>
         </div>
         {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
-        <CaptchaField config={captcha?.clientConfig ?? null} onToken={setCaptchaToken} />
-        <Button type="submit" disabled={pending} className="h-10 w-full text-base">
-          {pending ? t('auth.login.submitting') : t('auth.login.submit')}
+        <CaptchaField
+          config={captcha?.clientConfig ?? null}
+          onToken={setCaptchaToken}
+          resetSignal={captchaReset}
+        />
+        {wait > 0 ? (
+          <p className="text-sm text-muted-foreground">{t('auth.retryIn', { seconds: wait })}</p>
+        ) : null}
+        <Button type="submit" disabled={pending || wait > 0} className="h-10 w-full text-base">
+          {pending
+            ? t('auth.login.submitting')
+            : wait > 0
+              ? t('auth.retryInShort', { seconds: wait })
+              : t('auth.login.submit')}
         </Button>
       </form>
     </AuthShell>

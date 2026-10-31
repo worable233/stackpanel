@@ -193,6 +193,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // deterministic 4xx to 500.
     if (isPluginError(error)) {
       request.log.info({ code: error.code }, 'plugin error');
+      // A throttle without `Retry-After` forces the client to guess; the header
+      // is the transport-level half of the same number that goes in the body.
+      if (typeof error.retryAfterSeconds === 'number' && Number.isFinite(error.retryAfterSeconds)) {
+        reply.header('retry-after', String(Math.max(0, Math.ceil(error.retryAfterSeconds))));
+      }
       return reply.code(error.status).send(
         buildProblem({
           status: error.status,
@@ -201,6 +206,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
           instance: request.url,
           requestId: request.id,
           ...(error.errors ? { errors: error.errors } : {}),
+          ...(typeof error.retryAfterSeconds === 'number'
+            ? { retryAfterSeconds: error.retryAfterSeconds }
+            : {}),
         }),
       );
     }

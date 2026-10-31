@@ -120,8 +120,14 @@ describe.skipIf(!dbAvailable)('plugin nav + my orders integration (real DB)', ()
   });
 
   it('only exposes Store-owned mutation targets to an authenticated session', async () => {
+    // Anonymous callers may read the *public* subset (a login page has to render a
+    // captcha widget before it has a session), so the route answers 200 — but the
+    // kernel filters to routes the plugin itself marks `auth: 'public'`, and a
+    // mutation like `store.buy` is never among them.
     const anonymous = await app.inject({ method: 'GET', url: '/plugins/store/action-targets' });
-    expect(anonymous.statusCode).toBe(401);
+    expect(anonymous.statusCode).toBe(200);
+    const anonymousRoutes = (anonymous.json() as { routes: Array<{ path: string }> }).routes;
+    expect(anonymousRoutes.map((route) => route.path)).not.toContain('/orders');
 
     const res = await app.inject({
       method: 'GET',
@@ -130,7 +136,11 @@ describe.skipIf(!dbAvailable)('plugin nav + my orders integration (real DB)', ()
     });
     expect(res.statusCode).toBe(200);
     const routes = (res.json() as { routes: Array<{ method: string; path: string }> }).routes;
-    expect(routes).toContainEqual({ method: 'POST', path: '/orders', permission: 'store.buy' });
+    // Subset match: the target list also carries framing fields (plugin id, auth
+    // mode, …), which are none of this test's business.
+    expect(routes).toContainEqual(
+      expect.objectContaining({ method: 'POST', path: '/orders', permission: 'store.buy' }),
+    );
     expect(routes).not.toContainEqual(expect.objectContaining({ path: '/logout' }));
   });
 

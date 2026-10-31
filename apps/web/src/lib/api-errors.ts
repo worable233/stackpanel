@@ -2,6 +2,7 @@ import 'server-only';
 
 import { ApiError } from '@stackpanel/sdk';
 import { DEFAULT_LOCALE, type Locale } from '@/i18n/config';
+import type { MessageParams } from '@/i18n/core';
 import { lookupTranslation, translate } from '@/i18n/core';
 import { getLocale } from '@/i18n/locale';
 
@@ -29,17 +30,62 @@ export function apiErrorMessageFor(
   locale: Locale,
   error: unknown,
   fallback?: string,
+  params?: MessageParams,
 ): string {
   const resolvedFallback = fallback ?? translate(locale, 'common.operationFailed');
   if (error instanceof ApiError) {
     if (error.status === 0) return translate(locale, 'common.networkError');
-    const localized = lookupTranslation(locale, `error.${error.code}`);
+    const localized = lookupTranslation(locale, `error.${error.code}`, params);
     if (localized) return localized;
     logRawError(error);
     return resolvedFallback;
   }
   logRawError(error);
   return resolvedFallback;
+}
+
+/**
+ * Structured form of {@link apiErrorMessageFor} for forms that need more than a
+ * sentence.
+ *
+ * A 429 that only says "too often" is a dead end: the form has to decide whether
+ * to *unlock* a resend button and how long to count down. `code` and
+ * `retryAfterSeconds` carry that decision without re-parsing the message.
+ */
+export interface ApiErrorView {
+  error: string;
+  /** Stable kernel code, when the failure came from the API. */
+  code?: string;
+  /** Seconds until a retry can succeed (present on throttled responses). */
+  retryAfterSeconds?: number;
+}
+
+export function apiErrorViewFor(
+  locale: Locale,
+  error: unknown,
+  fallback?: string,
+): ApiErrorView {
+  if (!(error instanceof ApiError)) return { error: apiErrorMessageFor(locale, error, fallback) };
+  const retryAfterSeconds =
+    typeof error.retryAfterSeconds === 'number' ? error.retryAfterSeconds : undefined;
+  // Throttle copy embeds the wait ("N 秒后重试"), so the countdown is part of the
+  // sentence rather than a second line the caller has to concatenate.
+  const message = apiErrorMessageFor(
+    locale,
+    error,
+    fallback,
+    retryAfterSeconds === undefined ? undefined : { seconds: String(retryAfterSeconds) },
+  );
+  return {
+    error: message,
+    code: error.code,
+    ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+  };
+}
+
+/** Request-scoped variant of {@link apiErrorViewFor}. */
+export async function apiErrorView(error: unknown, fallback?: string): Promise<ApiErrorView> {
+  return apiErrorViewFor(await getLocale(), error, fallback);
 }
 
 /** Keep the diagnostic in server logs; it must not become user-facing copy. */

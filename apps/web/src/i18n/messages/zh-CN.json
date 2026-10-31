@@ -126,7 +126,8 @@
       "closedTitle": "当前已关闭注册",
       "closedBody": "本站暂不开放自助注册。如需账号，请联系站点管理员。",
       "blockedTitle": "暂时无法注册",
-      "blockedBody": "本站启用了邮箱验证，但当前无法发送验证码。请稍后再试，或联系站点管理员。"
+      "blockedBody": "本站启用了邮箱验证，但当前无法发送验证码。请稍后再试，或联系站点管理员。",
+      "alsoVerify": "验证码已发送。完成下方人机验证即可创建账户。"
     },
     "setup": {
       "title": "初始化你的平台",
@@ -215,6 +216,7 @@
       "passwordMin": "密码至少需要 8 位",
       "passwordMismatch": "两次输入的密码不一致",
       "emailRequired": "请输入邮箱",
+      "emailInvalid": "请输入有效的邮箱地址",
       "codeRequired": "请输入邮箱验证码",
       "passwordRequired": "请输入新密码"
     },
@@ -249,7 +251,9 @@
     },
     "password": {
       "hint": "至少 {min} 个字符；请勿使用常见密码或与邮箱相似的内容。"
-    }
+    },
+    "retryIn": "{seconds} 秒后可重试",
+    "retryInShort": "{seconds} 秒后重试"
   },
   "localeSwitcher": {
     "label": "语言",
@@ -1255,6 +1259,8 @@
       "code_expired": "验证码已过期，请重新获取",
       "code_locked": "验证码尝试次数过多，请重新获取",
       "code_rate_limited": "验证码发送过于频繁，请稍后再试",
+      "code_cooldown": "验证码发送过于频繁，请 {seconds} 秒后重试",
+      "code_quota_exceeded": "该邮箱一小时内获取验证码次数已达上限，请 {seconds} 秒后重试",
       "code_channel_unavailable": "暂未配置验证码发送通道，请联系管理员",
       "code_delivery_failed": "验证码发送失败，请稍后再试",
       "code_not_required": "当前未启用注册邮箱验证",

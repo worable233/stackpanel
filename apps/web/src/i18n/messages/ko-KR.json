@@ -135,7 +135,8 @@
       "closedTitle": "현재 회원가입이 닫혀 있습니다",
       "closedBody": "이 사이트는 셀프 가입을 받지 않습니다. 관리자에게 문의하세요.",
       "blockedTitle": "현재 가입할 수 없습니다",
-      "blockedBody": "이메일 인증이 켜져 있지만 지금은 인증 코드를 보낼 수 없습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요."
+      "blockedBody": "이메일 인증이 켜져 있지만 지금은 인증 코드를 보낼 수 없습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.",
+      "alsoVerify": "코드를 보냈습니다. 아래 인증을 완료하면 계정이 생성됩니다."
     },
     "setup": {
       "title": "Initialize your platform",
@@ -224,6 +225,7 @@
       "passwordMin": "Password must be at least 8 characters",
       "passwordMismatch": "The two passwords do not match",
       "emailRequired": "Please enter your email",
+      "emailInvalid": "올바른 이메일 주소를 입력하세요",
       "codeRequired": "이메일 인증 코드를 입력하세요",
       "passwordRequired": "새 비밀번호를 입력하세요"
     },
@@ -258,7 +260,9 @@
     },
     "password": {
       "hint": "{min}자 이상. 흔한 비밀번호나 이메일 주소와 비슷한 문자열은 피하세요."
-    }
+    },
+    "retryIn": "{seconds}초 후에 다시 시도할 수 있습니다.",
+    "retryInShort": "{seconds}초 후 재시도"
   },
   "localeSwitcher": {
     "label": "Language",
@@ -1255,6 +1259,8 @@
       "code_expired": "The verification code expired. Request a new one.",
       "code_locked": "Too many attempts. Request a new code.",
       "code_rate_limited": "Too many code requests, please try again later",
+      "code_cooldown": "인증 코드 요청이 너무 많습니다. {seconds}초 후에 다시 시도하세요.",
+      "code_quota_exceeded": "이 메일 주소가 1시간 인증 코드 한도에 도달했습니다. {seconds}초 후에 다시 시도하세요.",
       "code_channel_unavailable": "No verification channel is configured; contact the administrator",
       "code_delivery_failed": "Could not send the verification code, please try again later",
       "code_not_required": "Email verification is not enabled",

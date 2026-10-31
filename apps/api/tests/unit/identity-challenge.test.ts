@@ -3,6 +3,7 @@ import type { PrismaClient } from '@stackpanel/db';
 import type { IdentityChallengeMessage, IdentityChallengeSender } from '@stackpanel/sdk';
 import { isPluginError } from '@stackpanel/sdk';
 import { KernelIdentityChallengeService } from '../../src/auth/identity-challenge-service.ts';
+import { applyRuntimeConfigRows } from '../../src/config/runtime-config.ts';
 import { MemoryStateService } from '../../src/state/state-service.ts';
 
 /**
@@ -199,6 +200,53 @@ describe('KernelIdentityChallengeService', () => {
     await expect(
       service.consume({ purpose: 'register', email: 'a@b.com', code: second }),
     ).resolves.toBeUndefined();
+  });
+
+  it('throttles an immediate resend with a cooldown code and the remaining wait', async () => {
+    applyRuntimeConfigRows([
+      { key: 'config.AUTH_CODE_SEND_COOLDOWN_SECONDS', value: 60 },
+      { key: 'config.AUTH_CODE_SEND_PER_HOUR', value: 20 },
+    ]);
+    await service.issue({ purpose: 'register', email: 'cool@example.com' });
+
+    let thrown: unknown;
+    try {
+      await service.issue({ purpose: 'register', email: 'cool@example.com' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isPluginError(thrown)).toBe(true);
+    if (!isPluginError(thrown)) return;
+    // A distinct code from the hourly quota: the visitor can retry *soon*, and the
+    // UI turns `retryAfterSeconds` into a countdown instead of a dead end.
+    expect(thrown.code).toBe('auth.code_cooldown');
+    expect(thrown.status).toBe(429);
+    expect(thrown.retryAfterSeconds).toBeGreaterThan(0);
+    expect(thrown.retryAfterSeconds).toBeLessThanOrEqual(60);
+  });
+
+  it('reports the hourly quota as its own code with a wait near the full window', async () => {
+    applyRuntimeConfigRows([
+      { key: 'config.AUTH_CODE_SEND_COOLDOWN_SECONDS', value: 0 },
+      { key: 'config.AUTH_CODE_SEND_PER_HOUR', value: 2 },
+    ]);
+    await service.issue({ purpose: 'register', email: 'quota@example.com' });
+    await service.issue({ purpose: 'register', email: 'quota@example.com' });
+
+    let thrown: unknown;
+    try {
+      await service.issue({ purpose: 'register', email: 'quota@example.com' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isPluginError(thrown)).toBe(true);
+    if (!isPluginError(thrown)) return;
+    expect(thrown.code).toBe('auth.code_quota_exceeded');
+    expect(thrown.status).toBe(429);
+    // The window is one hour; the number must describe *that* wait, not the 60s
+    // cooldown, or the UI would promise a retry that still fails.
+    expect(thrown.retryAfterSeconds).toBeGreaterThan(3_000);
+    expect(thrown.retryAfterSeconds).toBeLessThanOrEqual(3_600);
   });
 
   it('reports whether email verification is required', () => {

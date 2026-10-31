@@ -126,7 +126,8 @@
       "closedTitle": "當前已關閉註冊",
       "closedBody": "本站暫不開放自助註冊。如需賬號，請聯絡站點管理員。",
       "blockedTitle": "暫時無法註冊",
-      "blockedBody": "本站啟用了郵箱驗證，但當前無法傳送驗證碼。請稍後再試，或聯絡站點管理員。"
+      "blockedBody": "本站啟用了郵箱驗證，但當前無法傳送驗證碼。請稍後再試，或聯絡站點管理員。",
+      "alsoVerify": "驗證碼已寄出。完成下方人機驗證即可建立帳戶。"
     },
     "setup": {
       "title": "初始化你的平臺",
@@ -215,6 +216,7 @@
       "passwordMin": "密碼至少需要 8 位",
       "passwordMismatch": "兩次輸入的密碼不一致",
       "emailRequired": "請輸入郵箱",
+      "emailInvalid": "請輸入有效的電郵地址",
       "codeRequired": "請輸入郵箱驗證碼",
       "passwordRequired": "請輸入新密碼"
     },
@@ -249,7 +251,9 @@
     },
     "password": {
       "hint": "至少 {min} 個字元；請勿使用常見密碼或與郵箱相似的內容。"
-    }
+    },
+    "retryIn": "{seconds} 秒後可重試",
+    "retryInShort": "{seconds} 秒後重試"
   },
   "localeSwitcher": {
     "label": "語言",
@@ -1255,6 +1259,8 @@
       "code_expired": "驗證碼已過期，請重新獲取",
       "code_locked": "驗證碼嘗試次數過多，請重新獲取",
       "code_rate_limited": "驗證碼傳送過於頻繁，請稍後再試",
+      "code_cooldown": "驗證碼發送過於頻繁，請 {seconds} 秒後重試",
+      "code_quota_exceeded": "該郵箱一小時內取得驗證碼次數已達上限，請 {seconds} 秒後重試",
       "code_channel_unavailable": "暫未配置驗證碼傳送通道，請聯絡管理員",
       "code_delivery_failed": "驗證碼傳送失敗，請稍後再試",
       "code_not_required": "當前未啟用註冊郵箱驗證",
