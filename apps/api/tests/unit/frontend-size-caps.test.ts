@@ -12,6 +12,7 @@ import { validateFrontendFiles } from '../../src/lib/frontend.ts';
  */
 
 const ONE_MB = 1024 * 1024;
+const CAP = 2 * ONE_MB;
 
 function files(entryBytes: number, mapBytes: number, extra: Record<string, number> = {}) {
   const map = new Map<string, Uint8Array>([
@@ -36,22 +37,25 @@ function files(entryBytes: number, mapBytes: number, extra: Record<string, numbe
 }
 
 describe('frontend size caps', () => {
-  it('accepts an entry up to 1MB (store-sized bundles get a revision)', () => {
+  it('accepts an entry up to the 2 MiB cap (store/llm-gateway-sized bundles get a revision)', () => {
     expect(() => validateFrontendFiles(files(624_139, 10))).not.toThrow();
-    expect(() => validateFrontendFiles(files(ONE_MB, 10))).not.toThrow();
+    // llm-gateway 的 admin bundle 实测 1,074,522 字节：契约要求内联 zod 与 7 份
+    // 语言包，1 MiB 的旧上限把它挡住，于是「合法但偏大」的包永远发不出去。
+    expect(() => validateFrontendFiles(files(1_074_522, 10))).not.toThrow();
+    expect(() => validateFrontendFiles(files(CAP, 10))).not.toThrow();
   });
 
-  it('rejects an entry above 1MB', () => {
-    expect(() => validateFrontendFiles(files(ONE_MB + 1, 10))).toThrow(/前端入口文件过大/);
+  it('rejects an entry above the 2 MiB cap', () => {
+    expect(() => validateFrontendFiles(files(CAP + 1, 10))).toThrow(/前端入口文件过大/);
   });
 
   it('exempts source maps from the per-file cap (they are never executed)', () => {
-    expect(() => validateFrontendFiles(files(624_139, ONE_MB * 2))).not.toThrow();
+    expect(() => validateFrontendFiles(files(624_139, CAP * 2))).not.toThrow();
   });
 
   it('still caps non-map assets', () => {
     expect(() =>
-      validateFrontendFiles(files(1024, 1024, { 'frontend/dist/big.css': ONE_MB + 1 })),
+      validateFrontendFiles(files(1024, 1024, { 'frontend/dist/big.css': CAP + 1 })),
     ).toThrow(/前端文件过大/);
   });
 });

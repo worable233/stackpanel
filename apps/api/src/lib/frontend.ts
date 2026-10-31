@@ -14,14 +14,25 @@ import type {
 
 export const FRONTEND_MANIFEST_FILE = 'frontend/manifest.json';
 
-const MAX_FRONTEND_FILE_BYTES = 1024 * 1024;
+/**
+ * 单个前端产物（.js / .css，`.map` 不计）的上限。
+ *
+ * 1 MiB 曾把 `llm-gateway` 的 `admin.js`（1,074,522 字节）挡在门外，而它的体积
+ * 不是浪费：契约要求 admin bundle 内联 `zod`（`zod` 不是宿主 ABI 槽，宿主无法
+ * 映射到 `/api/frontend-abi/*`），再加上 7 份语言包。也就是说「合法但偏大」的包
+ * 会稳定地撞上这条线，而 1 MiB 这个数字当初只是随手取的整数值。
+ *
+ * 提到 2 MiB：解压总量（128 MB）与文件数（256）两个真正的资源边界不变，单文件
+ * 仍远小于它们，浏览器解析这样一个包也仍然是常规量级。
+ */
+const MAX_FRONTEND_FILE_BYTES = 2 * 1024 * 1024;
 /**
  * Upper bound for a compiled frontend entry (`dist/index.js` / `admin.runtime.js`).
  * Matches the per-file cap so a legitimately large bundle (e.g. the built-in
  * `store` frontend at ~610 KB) still materializes as a revision instead of
  * silently falling back to the flat, unversioned path.
  */
-const MAX_FRONTEND_ENTRY_BYTES = 1024 * 1024;
+const MAX_FRONTEND_ENTRY_BYTES = MAX_FRONTEND_FILE_BYTES;
 
 export class FrontendError extends Error {
   constructor(
