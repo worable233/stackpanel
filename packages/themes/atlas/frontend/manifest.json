@@ -178,6 +178,318 @@
         ]
       },
       {
+        "id": "notice",
+        "labelKey": "settings.notice.group",
+        "fields": [
+          {
+            "type": "text",
+            "name": "label",
+            "labelKey": "settings.notice.label.label",
+            "default": "新上线"
+          },
+          {
+            "type": "text",
+            "name": "text",
+            "labelKey": "settings.notice.text.label",
+            "default": "Atlas Inference Gateway 已上线"
+          },
+          {
+            "type": "text",
+            "name": "href",
+            "labelKey": "settings.notice.href.label",
+            "default": "/shop"
+          }
+        ]
+      },
+      {
+        "id": "logos",
+        "labelKey": "settings.logos.group",
+        "fields": [
+          {
+            "type": "text",
+            "name": "label",
+            "labelKey": "settings.logos.label.label",
+            "default": "支持接入的上游与基础设施"
+          },
+          {
+            "type": "list",
+            "name": "items",
+            "labelKey": "settings.logos.items.label",
+            "itemLabelField": "name",
+            "fields": [
+              {
+                "type": "text",
+                "name": "name",
+                "labelKey": "settings.logos.items.name.label"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "products",
+        "labelKey": "settings.products.group",
+        "fields": [
+          {
+            "type": "text",
+            "name": "title",
+            "labelKey": "settings.products.title.label",
+            "default": "从一项服务，到一整套稳定方案。"
+          },
+          {
+            "type": "textarea",
+            "name": "text",
+            "labelKey": "settings.products.text.label",
+            "default": "把计算、存储、网络与模型能力组合成可交付的服务，价格与库存全部公开。"
+          },
+          {
+            "type": "text",
+            "name": "viewAll",
+            "labelKey": "settings.products.viewAll.label",
+            "default": "查看全部服务"
+          }
+        ]
+      },
+      {
+        "id": "solutions",
+        "labelKey": "settings.solutions.group",
+        "fields": [
+          {
+            "type": "text",
+            "name": "title",
+            "labelKey": "settings.solutions.title.label",
+            "default": "按业务目标选服务，而不是按规格表。"
+          },
+          {
+            "type": "textarea",
+            "name": "text",
+            "labelKey": "settings.solutions.text.label",
+            "default": "告诉我们你要达成什么，我们负责把服务稳定地交到你手上。"
+          },
+          {
+            "type": "text",
+            "name": "cta",
+            "labelKey": "settings.solutions.cta.label",
+            "default": "和工程师聊聊"
+          },
+          {
+            "type": "list",
+            "name": "items",
+            "labelKey": "settings.solutions.items.label",
+            "itemLabelField": "title",
+            "fields": [
+              {
+                "type": "text",
+                "name": "title",
+                "labelKey": "settings.solutions.items.title.label"
+              },
+              {
+                "type": "textarea",
+                "name": "text",
+                "labelKey": "settings.solutions.items.text.label"
+              },
+              {
+                "type": "text",
+                "name": "tag1",
+                "labelKey": "settings.solutions.items.tag1.label"
+              },
+              {
+                "type": "text",
+                "name": "tag2",
+                "labelKey": "settings.solutions.items.tag2.label"
+              },
+              {
+                "type": "text",
+                "name": "metric",
+                "labelKey": "settings.solutions.items.metric.label"
+              },
+              {
+                "type": "text",
+                "name": "metricLabel",
+                "labelKey": "settings.solutions.items.metricLabel.label"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cases",
+        "labelKey": "settings.cases.group",
+        "fields": [
+          {
+            "type": "text",
+            "name": "title",
+            "labelKey": "settings.cases.title.label",
+            "default": "真实业务，真实结果。"
+          },
+          {
+            "type": "textarea",
+            "name": "text",
+            "labelKey": "settings.cases.text.label",
+            "default": "从小团队到出海企业，Atlas 承载的不只是流量。"
+          },
+          {
+            "type": "list",
+            "name": "items",
+            "labelKey": "settings.cases.items.label",
+            "itemLabelField": "person",
+            "fields": [
+              {
+                "type": "textarea",
+                "name": "quote",
+                "labelKey": "settings.cases.items.quote.label"
+              },
+              {
+                "type": "text",
+                "name": "person",
+                "labelKey": "settings.cases.items.person.label"
+              },
+              {
+                "type": "text",
+                "name": "metric1",
+                "labelKey": "settings.cases.items.metric1.label"
+              },
+              {
+                "type": "text",
+                "name": "metric1Label",
+                "labelKey": "settings.cases.items.metric1Label.label"
+              },
+              {
+                "type": "text",
+                "name": "metric2",
+                "labelKey": "settings.cases.items.metric2.label"
+              },
+              {
+                "type": "text",
+                "name": "metric2Label",
+                "labelKey": "settings.cases.items.metric2Label.label"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "infrastructure",
+        "labelKey": "settings.infrastructure.group",
+        "fields": [
+          {
+            "type": "text",
+            "name": "title",
+            "labelKey": "settings.infrastructure.title.label",
+            "default": "把复杂的基础设施，交付成稳定的服务。"
+          },
+          {
+            "type": "textarea",
+            "name": "text",
+            "labelKey": "settings.infrastructure.text.label",
+            "default": "我们不承诺拥有每一段网络，但对每一件交付的服务负责：接入、监控、响应和账单。"
+          },
+          {
+            "type": "text",
+            "name": "regionsValue",
+            "labelKey": "settings.infrastructure.regionsValue.label",
+            "default": "8"
+          },
+          {
+            "type": "text",
+            "name": "regionsLabel",
+            "labelKey": "settings.infrastructure.regionsLabel.label",
+            "default": "年稳定运行"
+          },
+          {
+            "type": "text",
+            "name": "azsValue",
+            "labelKey": "settings.infrastructure.azsValue.label",
+            "default": "24"
+          },
+          {
+            "type": "text",
+            "name": "azsLabel",
+            "labelKey": "settings.infrastructure.azsLabel.label",
+            "default": "服务节点"
+          },
+          {
+            "type": "text",
+            "name": "nodesValue",
+            "labelKey": "settings.infrastructure.nodesValue.label",
+            "default": "2800"
+          },
+          {
+            "type": "text",
+            "name": "nodesLabel",
+            "labelKey": "settings.infrastructure.nodesLabel.label",
+            "default": "服务实例"
+          },
+          {
+            "type": "text",
+            "name": "slaValue",
+            "labelKey": "settings.infrastructure.slaValue.label",
+            "default": "99.99"
+          },
+          {
+            "type": "text",
+            "name": "slaLabel",
+            "labelKey": "settings.infrastructure.slaLabel.label",
+            "default": "服务可用性"
+          },
+          {
+            "type": "list",
+            "name": "regions",
+            "labelKey": "settings.infrastructure.regions.label",
+            "itemLabelField": "name",
+            "fields": [
+              {
+                "type": "text",
+                "name": "name",
+                "labelKey": "settings.infrastructure.regions.name.label"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "faq",
+        "labelKey": "settings.faq.group",
+        "fields": [
+          {
+            "type": "text",
+            "name": "title",
+            "labelKey": "settings.faq.title.label",
+            "default": "开通之前，先把问题问清楚。"
+          },
+          {
+            "type": "textarea",
+            "name": "text",
+            "labelKey": "settings.faq.text.label",
+            "default": "没找到答案？工程师会直接回复。"
+          },
+          {
+            "type": "text",
+            "name": "contact",
+            "labelKey": "settings.faq.contact.label",
+            "default": "联系工程师"
+          },
+          {
+            "type": "list",
+            "name": "items",
+            "labelKey": "settings.faq.items.label",
+            "itemLabelField": "q",
+            "fields": [
+              {
+                "type": "text",
+                "name": "q",
+                "labelKey": "settings.faq.items.q.label"
+              },
+              {
+                "type": "textarea",
+                "name": "a",
+                "labelKey": "settings.faq.items.a.label"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "id": "closing",
         "labelKey": "settings.closing.group",
         "fields": [
@@ -628,7 +940,60 @@
       "layout.language.zh-CN": "简体中文",
       "layout.language.zh-TW": "繁體中文（台灣）",
       "layout.language.zh-HK": "繁體中文（香港）",
-      "layout.language.en-US": "English"
+      "layout.language.en-US": "English",
+      "settings.notice.group": "顶部公告",
+      "settings.notice.label.label": "标签",
+      "settings.notice.text.label": "公告内容",
+      "settings.notice.href.label": "公告链接",
+      "settings.logos.group": "客户与生态",
+      "settings.logos.label.label": "区块标题",
+      "settings.logos.items.label": "品牌列表",
+      "settings.logos.items.name.label": "品牌名称",
+      "settings.products.group": "服务展示",
+      "settings.products.title.label": "标题",
+      "settings.products.text.label": "说明",
+      "settings.products.viewAll.label": "查看全部文案",
+      "settings.solutions.group": "解决方案",
+      "settings.solutions.title.label": "标题",
+      "settings.solutions.text.label": "说明",
+      "settings.solutions.cta.label": "行动链接文案",
+      "settings.solutions.items.label": "方案列表",
+      "settings.solutions.items.title.label": "方案标题",
+      "settings.solutions.items.text.label": "方案说明",
+      "settings.solutions.items.tag1.label": "标签一",
+      "settings.solutions.items.tag2.label": "标签二",
+      "settings.solutions.items.metric.label": "指标数值",
+      "settings.solutions.items.metricLabel.label": "指标说明",
+      "settings.cases.group": "客户案例",
+      "settings.cases.title.label": "标题",
+      "settings.cases.text.label": "说明",
+      "settings.cases.items.label": "案例列表",
+      "settings.cases.items.quote.label": "客户引述",
+      "settings.cases.items.person.label": "客户身份",
+      "settings.cases.items.metric1.label": "指标一数值",
+      "settings.cases.items.metric1Label.label": "指标一说明",
+      "settings.cases.items.metric2.label": "指标二数值",
+      "settings.cases.items.metric2Label.label": "指标二说明",
+      "settings.infrastructure.group": "交付与基础设施",
+      "settings.infrastructure.title.label": "标题",
+      "settings.infrastructure.text.label": "说明",
+      "settings.infrastructure.regionsValue.label": "稳定运行年数",
+      "settings.infrastructure.regionsLabel.label": "稳定运行说明",
+      "settings.infrastructure.azsValue.label": "服务节点数",
+      "settings.infrastructure.azsLabel.label": "服务节点说明",
+      "settings.infrastructure.nodesValue.label": "服务实例数",
+      "settings.infrastructure.nodesLabel.label": "服务实例说明",
+      "settings.infrastructure.slaValue.label": "可用性百分比",
+      "settings.infrastructure.slaLabel.label": "可用性说明",
+      "settings.infrastructure.regions.label": "区域标签",
+      "settings.infrastructure.regions.name.label": "区域名称",
+      "settings.faq.group": "常见问题",
+      "settings.faq.title.label": "标题",
+      "settings.faq.text.label": "说明",
+      "settings.faq.contact.label": "联系链接文案",
+      "settings.faq.items.label": "问题列表",
+      "settings.faq.items.q.label": "问题",
+      "settings.faq.items.a.label": "回答"
     },
     "zh-TW": {
       "brand.edition": "ATLAS EDITION",
@@ -999,7 +1364,60 @@
       "layout.language.zh-CN": "簡體中文",
       "layout.language.zh-TW": "繁體中文（臺灣）",
       "layout.language.zh-HK": "繁體中文（香港）",
-      "layout.language.en-US": "English"
+      "layout.language.en-US": "English",
+      "settings.notice.group": "頂部公告",
+      "settings.notice.label.label": "標籤",
+      "settings.notice.text.label": "公告內容",
+      "settings.notice.href.label": "公告連結",
+      "settings.logos.group": "客戶與生態",
+      "settings.logos.label.label": "區塊標題",
+      "settings.logos.items.label": "品牌列表",
+      "settings.logos.items.name.label": "品牌名稱",
+      "settings.products.group": "服務展示",
+      "settings.products.title.label": "標題",
+      "settings.products.text.label": "說明",
+      "settings.products.viewAll.label": "檢視全部文案",
+      "settings.solutions.group": "解決方案",
+      "settings.solutions.title.label": "標題",
+      "settings.solutions.text.label": "說明",
+      "settings.solutions.cta.label": "行動連結文案",
+      "settings.solutions.items.label": "方案列表",
+      "settings.solutions.items.title.label": "方案標題",
+      "settings.solutions.items.text.label": "方案說明",
+      "settings.solutions.items.tag1.label": "標籤一",
+      "settings.solutions.items.tag2.label": "標籤二",
+      "settings.solutions.items.metric.label": "指標數值",
+      "settings.solutions.items.metricLabel.label": "指標說明",
+      "settings.cases.group": "客戶案例",
+      "settings.cases.title.label": "標題",
+      "settings.cases.text.label": "說明",
+      "settings.cases.items.label": "案例列表",
+      "settings.cases.items.quote.label": "客戶引述",
+      "settings.cases.items.person.label": "客戶身份",
+      "settings.cases.items.metric1.label": "指標一數值",
+      "settings.cases.items.metric1Label.label": "指標一說明",
+      "settings.cases.items.metric2.label": "指標二數值",
+      "settings.cases.items.metric2Label.label": "指標二說明",
+      "settings.infrastructure.group": "交付與基礎設施",
+      "settings.infrastructure.title.label": "標題",
+      "settings.infrastructure.text.label": "說明",
+      "settings.infrastructure.regionsValue.label": "穩定執行年數",
+      "settings.infrastructure.regionsLabel.label": "穩定執行說明",
+      "settings.infrastructure.azsValue.label": "服務節點數",
+      "settings.infrastructure.azsLabel.label": "服務節點說明",
+      "settings.infrastructure.nodesValue.label": "服務例項數",
+      "settings.infrastructure.nodesLabel.label": "服務例項說明",
+      "settings.infrastructure.slaValue.label": "可用性百分比",
+      "settings.infrastructure.slaLabel.label": "可用性說明",
+      "settings.infrastructure.regions.label": "區域標籤",
+      "settings.infrastructure.regions.name.label": "區域名稱",
+      "settings.faq.group": "常見問題",
+      "settings.faq.title.label": "標題",
+      "settings.faq.text.label": "說明",
+      "settings.faq.contact.label": "聯絡連結文案",
+      "settings.faq.items.label": "問題列表",
+      "settings.faq.items.q.label": "問題",
+      "settings.faq.items.a.label": "回答"
     },
     "zh-HK": {
       "brand.edition": "ATLAS EDITION",
@@ -1370,7 +1788,60 @@
       "layout.language.zh-CN": "簡體中文",
       "layout.language.zh-TW": "繁體中文（臺灣）",
       "layout.language.zh-HK": "繁體中文（香港）",
-      "layout.language.en-US": "English"
+      "layout.language.en-US": "English",
+      "settings.notice.group": "頂部公告",
+      "settings.notice.label.label": "標籤",
+      "settings.notice.text.label": "公告內容",
+      "settings.notice.href.label": "公告連結",
+      "settings.logos.group": "客戶與生態",
+      "settings.logos.label.label": "區塊標題",
+      "settings.logos.items.label": "品牌列表",
+      "settings.logos.items.name.label": "品牌名稱",
+      "settings.products.group": "服務展示",
+      "settings.products.title.label": "標題",
+      "settings.products.text.label": "說明",
+      "settings.products.viewAll.label": "檢視全部文案",
+      "settings.solutions.group": "解決方案",
+      "settings.solutions.title.label": "標題",
+      "settings.solutions.text.label": "說明",
+      "settings.solutions.cta.label": "行動連結文案",
+      "settings.solutions.items.label": "方案列表",
+      "settings.solutions.items.title.label": "方案標題",
+      "settings.solutions.items.text.label": "方案說明",
+      "settings.solutions.items.tag1.label": "標籤一",
+      "settings.solutions.items.tag2.label": "標籤二",
+      "settings.solutions.items.metric.label": "指標數值",
+      "settings.solutions.items.metricLabel.label": "指標說明",
+      "settings.cases.group": "客戶案例",
+      "settings.cases.title.label": "標題",
+      "settings.cases.text.label": "說明",
+      "settings.cases.items.label": "案例列表",
+      "settings.cases.items.quote.label": "客戶引述",
+      "settings.cases.items.person.label": "客戶身份",
+      "settings.cases.items.metric1.label": "指標一數值",
+      "settings.cases.items.metric1Label.label": "指標一說明",
+      "settings.cases.items.metric2.label": "指標二數值",
+      "settings.cases.items.metric2Label.label": "指標二說明",
+      "settings.infrastructure.group": "交付與基礎設施",
+      "settings.infrastructure.title.label": "標題",
+      "settings.infrastructure.text.label": "說明",
+      "settings.infrastructure.regionsValue.label": "穩定執行年數",
+      "settings.infrastructure.regionsLabel.label": "穩定執行說明",
+      "settings.infrastructure.azsValue.label": "服務節點數",
+      "settings.infrastructure.azsLabel.label": "服務節點說明",
+      "settings.infrastructure.nodesValue.label": "服務例項數",
+      "settings.infrastructure.nodesLabel.label": "服務例項說明",
+      "settings.infrastructure.slaValue.label": "可用性百分比",
+      "settings.infrastructure.slaLabel.label": "可用性說明",
+      "settings.infrastructure.regions.label": "區域標籤",
+      "settings.infrastructure.regions.name.label": "區域名稱",
+      "settings.faq.group": "常見問題",
+      "settings.faq.title.label": "標題",
+      "settings.faq.text.label": "說明",
+      "settings.faq.contact.label": "聯絡連結文案",
+      "settings.faq.items.label": "問題列表",
+      "settings.faq.items.q.label": "問題",
+      "settings.faq.items.a.label": "回答"
     },
     "en-US": {
       "brand.edition": "ATLAS EDITION",
@@ -1741,7 +2212,60 @@
       "layout.language.zh-CN": "简体中文",
       "layout.language.zh-TW": "繁體中文（台灣）",
       "layout.language.zh-HK": "繁體中文（香港）",
-      "layout.language.en-US": "English"
+      "layout.language.en-US": "English",
+      "settings.notice.group": "Announcement bar",
+      "settings.notice.label.label": "Label",
+      "settings.notice.text.label": "Message",
+      "settings.notice.href.label": "Announcement link",
+      "settings.logos.group": "Customers & ecosystem",
+      "settings.logos.label.label": "Section label",
+      "settings.logos.items.label": "Brand list",
+      "settings.logos.items.name.label": "Brand name",
+      "settings.products.group": "Service showcase",
+      "settings.products.title.label": "Title",
+      "settings.products.text.label": "Description",
+      "settings.products.viewAll.label": "View-all label",
+      "settings.solutions.group": "Solutions",
+      "settings.solutions.title.label": "Title",
+      "settings.solutions.text.label": "Description",
+      "settings.solutions.cta.label": "Call-to-action label",
+      "settings.solutions.items.label": "Solution list",
+      "settings.solutions.items.title.label": "Solution title",
+      "settings.solutions.items.text.label": "Solution description",
+      "settings.solutions.items.tag1.label": "First tag",
+      "settings.solutions.items.tag2.label": "Second tag",
+      "settings.solutions.items.metric.label": "Metric value",
+      "settings.solutions.items.metricLabel.label": "Metric label",
+      "settings.cases.group": "Customer stories",
+      "settings.cases.title.label": "Title",
+      "settings.cases.text.label": "Description",
+      "settings.cases.items.label": "Story list",
+      "settings.cases.items.quote.label": "Customer quote",
+      "settings.cases.items.person.label": "Customer identity",
+      "settings.cases.items.metric1.label": "First metric value",
+      "settings.cases.items.metric1Label.label": "First metric label",
+      "settings.cases.items.metric2.label": "Second metric value",
+      "settings.cases.items.metric2Label.label": "Second metric label",
+      "settings.infrastructure.group": "Delivery & infrastructure",
+      "settings.infrastructure.title.label": "Title",
+      "settings.infrastructure.text.label": "Description",
+      "settings.infrastructure.regionsValue.label": "Years in production",
+      "settings.infrastructure.regionsLabel.label": "Years-in-production label",
+      "settings.infrastructure.azsValue.label": "Service node count",
+      "settings.infrastructure.azsLabel.label": "Service node label",
+      "settings.infrastructure.nodesValue.label": "Service instance count",
+      "settings.infrastructure.nodesLabel.label": "Service instance label",
+      "settings.infrastructure.slaValue.label": "Availability percentage",
+      "settings.infrastructure.slaLabel.label": "Availability label",
+      "settings.infrastructure.regions.label": "Region tags",
+      "settings.infrastructure.regions.name.label": "Region name",
+      "settings.faq.group": "FAQ",
+      "settings.faq.title.label": "Title",
+      "settings.faq.text.label": "Description",
+      "settings.faq.contact.label": "Contact link label",
+      "settings.faq.items.label": "Question list",
+      "settings.faq.items.q.label": "Question",
+      "settings.faq.items.a.label": "Answer"
     }
   },
   "overrides": {

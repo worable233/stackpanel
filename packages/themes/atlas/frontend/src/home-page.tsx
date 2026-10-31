@@ -41,7 +41,7 @@ import {
 import type { ReactElement } from 'react';
 import { t } from './i18n.js';
 import { MOTION_CSS } from './motion-styles.js';
-import { safeHref, setting } from './settings.js';
+import { listSetting, numberSetting, safeHref, setting } from './settings.js';
 
 const INTL_FALLBACK_LOCALE = 'en';
 
@@ -72,6 +72,11 @@ function cn(...values: Array<string | false | null | undefined>): string {
   return values.filter(Boolean).join(' ');
 }
 
+function rowText(row: Record<string, unknown>, key: string): string {
+  const value = row[key];
+  return typeof value === 'string' ? value : '';
+}
+
 function money(amount: number, currency: string, locale?: string): string {
   try {
     return formatMinorCurrency(amount, currency, locale ?? INTL_FALLBACK_LOCALE);
@@ -89,9 +94,7 @@ function readProducts(data: FrontendPageProps['data']): ShopProduct[] {
 
 function readCategories(data: FrontendPageProps['data']): ShopCategoryNode[] {
   const raw = data.storeCategories as
-    | ShopCategoryNode[]
-    | { categories?: ShopCategoryNode[] }
-    | undefined;
+    ShopCategoryNode[] | { categories?: ShopCategoryNode[] } | undefined;
   if (Array.isArray(raw)) return raw;
   if (raw && Array.isArray(raw.categories)) return raw.categories;
   return [];
@@ -113,38 +116,51 @@ function categoryLabel(slug: string | null, fallback: string, tr: ReturnType<typ
 
 function ProductIcon({ name }: { name: string }): ReactElement {
   const lower = name.toLowerCase();
-  if (lower.includes('network') || lower.includes('加速') || lower.includes('cdn')) { // i18n-exempt — product name matching keyword.
+  if (
+    lower.includes('network') ||
+    lower.includes('加速') /* i18n-exempt — product name keyword */ ||
+    lower.includes('cdn')
+  ) {
     return <Network className="size-5" aria-hidden="true" />;
   }
-  if (lower.includes('storage') || lower.includes('volume') || lower.includes('对象')) { // i18n-exempt — product name matching keyword.
+  if (
+    lower.includes('storage') ||
+    lower.includes('volume') ||
+    lower.includes('对象') /* i18n-exempt — product name keyword */
+  ) {
     return <HardDrive className="size-5" aria-hidden="true" />;
   }
-  if (lower.includes('postgres') || lower.includes('database') || lower.includes('数据')) { // i18n-exempt — product name matching keyword.
+  if (
+    lower.includes('postgres') ||
+    lower.includes('database') ||
+    lower.includes('数据') /* i18n-exempt — product name keyword */
+  ) {
     return <Database className="size-5" aria-hidden="true" />;
   }
-  if (lower.includes('inference') || lower.includes('model') || lower.includes('推理')) { // i18n-exempt — product name matching keyword.
+  if (
+    lower.includes('inference') ||
+    lower.includes('model') ||
+    lower.includes('推理') /* i18n-exempt — product name keyword */
+  ) {
     return <Sparkles className="size-5" aria-hidden="true" />;
   }
-  if (lower.includes('domain') || lower.includes('域名')) { // i18n-exempt — product name matching keyword.
+  if (lower.includes('domain') || lower.includes('域名') /* i18n-exempt — product name keyword */) {
     return <Globe2 className="size-5" aria-hidden="true" />;
   }
   return <Server className="size-5" aria-hidden="true" />;
 }
 
 /* A slow diagonal wave, rendered by Animate UI's MotionGrid. */
-const HERO_GRID_FRAMES: Array<Array<[number, number]>> = Array.from(
-  { length: 16 },
-  (_, frame) => {
-    const cells: Array<[number, number]> = [];
-    for (let y = 0; y < 11; y += 1) {
-      for (let x = 0; x < 24; x += 1) {
-        const distance = (x + y * 3 - frame * 1.5 + 80) % 18;
-        if (distance < 2.8) cells.push([x, y]);
-      }
+const HERO_GRID_FRAMES: Array<Array<[number, number]>> = Array.from({ length: 16 }, (_, frame) => {
+  const cells: Array<[number, number]> = [];
+  for (let y = 0; y < 11; y += 1) {
+    for (let x = 0; x < 24; x += 1) {
+      const distance = (x + y * 3 - frame * 1.5 + 80) % 18;
+      if (distance < 2.8) cells.push([x, y]);
     }
-    return cells;
-  },
-);
+  }
+  return cells;
+});
 
 const REGION_DOTS = new Set([8, 14, 21, 33, 38, 46, 52, 61, 67, 74, 79, 86]);
 
@@ -206,10 +222,12 @@ function ProductShowcase({
   products,
   categories,
   locale,
+  settings,
 }: {
   products: ShopProduct[];
   categories: ShopCategoryNode[];
   locale: string | undefined;
+  settings: FrontendPageProps['settings'];
 }): ReactElement {
   const tr = t(locale);
   const tabs = [
@@ -224,8 +242,7 @@ function ProductShowcase({
   ];
 
   const panelProducts = (id: string): ShopProduct[] => {
-    const list =
-      id === 'all' ? products : products.filter((product) => product.categoryId === id);
+    const list = id === 'all' ? products : products.filter((product) => product.categoryId === id);
     return list.slice(0, 6);
   };
 
@@ -235,17 +252,17 @@ function ProductShowcase({
         <Fade className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <h2 className="max-w-xl text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              {tr('home.products.title')}
+              {setting(settings, 'products', 'title', tr('home.products.title'))}
             </h2>
             <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
-              {tr('home.products.text')}
+              {setting(settings, 'products', 'text', tr('home.products.text'))}
             </p>
           </div>
           <a
             href="/shop"
             className="group inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            {tr('home.products.viewAll')}
+            {setting(settings, 'products', 'viewAll', tr('home.products.viewAll'))}
             <ArrowRight
               className="size-4 transition-transform group-hover:translate-x-1"
               aria-hidden="true"
@@ -306,27 +323,56 @@ const SOLUTIONS = [
   },
 ] as const;
 
-function SolutionsSection({ locale }: { locale: string | undefined }): ReactElement {
+function SolutionsSection({
+  locale,
+  settings,
+}: {
+  locale: string | undefined;
+  settings: FrontendPageProps['settings'];
+}): ReactElement {
   const tr = t(locale);
+  const configured = listSetting(settings, 'solutions', 'items');
+  const cards =
+    configured.length > 0
+      ? configured.map((item, index) => ({
+          key: `custom-${index}`,
+          icon: SOLUTIONS[index % SOLUTIONS.length]!.icon,
+          metric: rowText(item, 'metric'),
+          title: rowText(item, 'title'),
+          text: rowText(item, 'text'),
+          tag1: rowText(item, 'tag1'),
+          tag2: rowText(item, 'tag2'),
+          metricLabel: rowText(item, 'metricLabel'),
+        }))
+      : SOLUTIONS.map((solution) => ({
+          key: solution.key,
+          icon: solution.icon,
+          metric: solution.metric,
+          title: tr(`home.solutions.${solution.key}.title`),
+          text: tr(`home.solutions.${solution.key}.text`),
+          tag1: tr(`home.solutions.${solution.key}.tag1`),
+          tag2: tr(`home.solutions.${solution.key}.tag2`),
+          metricLabel: tr(`home.solutions.${solution.key}.metricLabel`),
+        }));
   return (
     <section className="bg-background py-20 sm:py-24">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <Fade className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <h2 className="max-w-2xl text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              {tr('home.solutions.title')}
+              {setting(settings, 'solutions', 'title', tr('home.solutions.title'))}
             </h2>
           </div>
           <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-            {tr('home.solutions.text')}
+            {setting(settings, 'solutions', 'text', tr('home.solutions.text'))}
           </p>
         </Fade>
 
         <div className="mt-10 grid gap-4 lg:grid-cols-3">
-          {SOLUTIONS.map((solution, index) => {
-            const Icon = solution.icon;
+          {cards.map((card, index) => {
+            const Icon = card.icon;
             return (
-              <Slide key={solution.key} delay={index * 90} className="h-full">
+              <Slide key={card.key} delay={index * 90} className="h-full">
                 <Tilt maxTilt={3} perspective={1100} className="h-full">
                   <TiltContent className="h-full">
                     <article className="group flex h-full flex-col rounded-[28px] bg-muted/80 p-7 transition-colors duration-300 hover:bg-muted">
@@ -335,31 +381,27 @@ function SolutionsSection({ locale }: { locale: string | undefined }): ReactElem
                           <Icon className="size-5" aria-hidden="true" />
                         </span>
                         <span className="text-3xl font-medium tracking-tight text-muted-foreground/45 tabular-nums">
-                          {solution.metric}
+                          {card.metric}
                         </span>
                       </div>
 
-                      <h3 className="mt-12 text-xl font-medium tracking-tight">
-                        {tr(`home.solutions.${solution.key}.title`)}
-                      </h3>
-                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                        {tr(`home.solutions.${solution.key}.text`)}
-                      </p>
+                      <h3 className="mt-12 text-xl font-medium tracking-tight">{card.title}</h3>
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">{card.text}</p>
 
                       <div className="mt-6 flex flex-wrap gap-2">
-                        {[1, 2].map((tag) => (
+                        {[card.tag1, card.tag2].filter(Boolean).map((tag) => (
                           <span
                             key={tag}
                             className="rounded-full bg-background px-3 py-1 text-[11px] text-muted-foreground"
                           >
-                            {tr(`home.solutions.${solution.key}.tag${tag}`)}
+                            {tag}
                           </span>
                         ))}
                       </div>
 
                       <div className="mt-auto flex items-center gap-2 pt-10 text-xs text-muted-foreground">
                         <Check className="size-3.5" aria-hidden="true" />
-                        {tr(`home.solutions.${solution.key}.metricLabel`)}
+                        {card.metricLabel}
                       </div>
                     </article>
                   </TiltContent>
@@ -374,7 +416,7 @@ function SolutionsSection({ locale }: { locale: string | undefined }): ReactElem
             href="/about"
             className="group inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            {tr('home.solutions.cta')}
+            {setting(settings, 'solutions', 'cta', tr('home.solutions.cta'))}
             <ArrowUpRight
               className="size-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
               aria-hidden="true"
@@ -386,41 +428,68 @@ function SolutionsSection({ locale }: { locale: string | undefined }): ReactElem
   );
 }
 
-function CasesSection({ locale }: { locale: string | undefined }): ReactElement {
+function CasesSection({
+  locale,
+  settings,
+}: {
+  locale: string | undefined;
+  settings: FrontendPageProps['settings'];
+}): ReactElement {
   const tr = t(locale);
+  const configured = listSetting(settings, 'cases', 'items');
+  const cases =
+    configured.length > 0
+      ? configured.map((item, index) => ({
+          key: `custom-${index}`,
+          quote: rowText(item, 'quote'),
+          person: rowText(item, 'person'),
+          metric1: rowText(item, 'metric1'),
+          metric1Label: rowText(item, 'metric1Label'),
+          metric2: rowText(item, 'metric2'),
+          metric2Label: rowText(item, 'metric2Label'),
+        }))
+      : [1, 2].map((index) => ({
+          key: String(index),
+          quote: tr(`home.cases.${index}.quote`),
+          person: tr(`home.cases.${index}.person`),
+          metric1: tr(`home.cases.${index}.metric1`),
+          metric1Label: tr(`home.cases.${index}.metric1Label`),
+          metric2: tr(`home.cases.${index}.metric2`),
+          metric2Label: tr(`home.cases.${index}.metric2Label`),
+        }));
+
   return (
     <section className="bg-muted py-20 sm:py-24">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <Fade>
           <h2 className="max-w-2xl text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-            {tr('home.cases.title')}
+            {setting(settings, 'cases', 'title', tr('home.cases.title'))}
           </h2>
           <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
-            {tr('home.cases.text')}
+            {setting(settings, 'cases', 'text', tr('home.cases.text'))}
           </p>
         </Fade>
 
         <div className="mt-10 grid gap-4 lg:grid-cols-2">
-          {[1, 2].map((index) => (
-            <Slide key={index} delay={index * 80} className="h-full">
+          {cases.map((item, index) => (
+            <Slide key={item.key} delay={index * 80} className="h-full">
               <article className="flex h-full flex-col rounded-[28px] bg-background p-7 sm:p-9">
                 <Quote className="size-7 text-muted-foreground/50" aria-hidden="true" />
                 <blockquote className="mt-8 text-xl leading-8 font-medium tracking-tight text-balance sm:text-2xl sm:leading-9">
-                  {tr(`home.cases.${index}.quote`)}
+                  {item.quote}
                 </blockquote>
-                <p className="mt-5 text-xs text-muted-foreground">
-                  {tr(`home.cases.${index}.person`)}
-                </p>
+                <p className="mt-5 text-xs text-muted-foreground">{item.person}</p>
 
                 <div className="mt-10 grid grid-cols-2 gap-4">
-                  {[1, 2].map((metric) => (
-                    <div key={metric} className="rounded-2xl bg-muted/60 px-5 py-4">
+                  {[
+                    { value: item.metric1, label: item.metric1Label },
+                    { value: item.metric2, label: item.metric2Label },
+                  ].map((metric) => (
+                    <div key={metric.label} className="rounded-2xl bg-muted/60 px-5 py-4">
                       <p className="text-2xl font-medium tracking-tight tabular-nums">
-                        {tr(`home.cases.${index}.metric${metric}`)}
+                        {metric.value}
                       </p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {tr(`home.cases.${index}.metric${metric}Label`)}
-                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{metric.label}</p>
                     </div>
                   ))}
                 </div>
@@ -433,24 +502,58 @@ function CasesSection({ locale }: { locale: string | undefined }): ReactElement 
   );
 }
 
-function InfrastructureSection({ locale }: { locale: string | undefined }): ReactElement {
+function InfrastructureSection({
+  locale,
+  settings,
+}: {
+  locale: string | undefined;
+  settings: FrontendPageProps['settings'];
+}): ReactElement {
   const tr = t(locale);
   const stats = [
-    { value: 8, decimals: 0, suffix: '', label: tr('home.infra.regionsLabel') },
-    { value: 24, decimals: 0, suffix: '', label: tr('home.infra.azsLabel') },
-    { value: 2800, decimals: 0, suffix: '+', label: tr('home.infra.nodesLabel') },
-    { value: 99.99, decimals: 2, suffix: '%', label: tr('home.infra.slaLabel') },
+    {
+      value: numberSetting(settings, 'infrastructure', 'regionsValue', 8),
+      decimals: 0,
+      suffix: '',
+      label: setting(settings, 'infrastructure', 'regionsLabel', tr('home.infra.regionsLabel')),
+    },
+    {
+      value: numberSetting(settings, 'infrastructure', 'azsValue', 24),
+      decimals: 0,
+      suffix: '',
+      label: setting(settings, 'infrastructure', 'azsLabel', tr('home.infra.azsLabel')),
+    },
+    {
+      value: numberSetting(settings, 'infrastructure', 'nodesValue', 2800),
+      decimals: 0,
+      suffix: '+',
+      label: setting(settings, 'infrastructure', 'nodesLabel', tr('home.infra.nodesLabel')),
+    },
+    {
+      value: numberSetting(settings, 'infrastructure', 'slaValue', 99.99),
+      decimals: 2,
+      suffix: '%',
+      label: setting(settings, 'infrastructure', 'slaLabel', tr('home.infra.slaLabel')),
+    },
   ];
+  const configuredRegions = listSetting(settings, 'infrastructure', 'regions')
+    .map((item) => rowText(item, 'name'))
+    .filter(Boolean);
+  const regions =
+    configuredRegions.length > 0
+      ? configuredRegions
+      : [1, 2, 3, 4, 5, 6].map((region) => tr(`home.infra.region.${region}`));
+
   return (
     <section className="bg-background py-20 sm:py-24">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-20">
           <Fade>
             <h2 className="max-w-md text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              {tr('home.infra.title')}
+              {setting(settings, 'infrastructure', 'title', tr('home.infra.title'))}
             </h2>
             <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
-              {tr('home.infra.text')}
+              {setting(settings, 'infrastructure', 'text', tr('home.infra.text'))}
             </p>
 
             <div className="mt-10 grid grid-cols-2 gap-x-6 gap-y-8">
@@ -478,9 +581,7 @@ function InfrastructureSection({ locale }: { locale: string | undefined }): Reac
                     key={index}
                     className={cn(
                       'self-center justify-self-center rounded-full transition-colors',
-                      REGION_DOTS.has(index)
-                        ? 'size-2 bg-foreground'
-                        : 'size-1.5 bg-foreground/15',
+                      REGION_DOTS.has(index) ? 'size-2 bg-foreground' : 'size-1.5 bg-foreground/15',
                     )}
                     aria-hidden="true"
                   />
@@ -489,17 +590,16 @@ function InfrastructureSection({ locale }: { locale: string | undefined }): Reac
 
               <div className="pointer-events-none absolute inset-x-7 bottom-7 flex flex-wrap items-end justify-between gap-4 sm:inset-x-9 sm:bottom-9">
                 <div className="flex flex-wrap gap-2">
-                  {[1, 2, 3, 4, 5, 6].map((region) => (
+                  {regions.map((region) => (
                     <span
                       key={region}
                       className="rounded-full bg-background px-3 py-1 text-[10px] font-medium text-muted-foreground"
                     >
-                      {tr(`home.infra.region.${region}`)}
+                      {region}
                     </span>
                   ))}
                 </div>
               </div>
-
             </div>
           </Slide>
         </div>
@@ -510,38 +610,58 @@ function InfrastructureSection({ locale }: { locale: string | undefined }): Reac
 
 const FAQS = ['1', '2', '3', '4'] as const;
 
-function FaqSection({ locale }: { locale: string | undefined }): ReactElement {
+function FaqSection({
+  locale,
+  settings,
+}: {
+  locale: string | undefined;
+  settings: FrontendPageProps['settings'];
+}): ReactElement {
   const tr = t(locale);
+  const configured = listSetting(settings, 'faq', 'items');
+  const faqs =
+    configured.length > 0
+      ? configured.map((item, index) => ({
+          key: `custom-${index}`,
+          q: rowText(item, 'q'),
+          a: rowText(item, 'a'),
+        }))
+      : FAQS.map((index) => ({
+          key: index,
+          q: tr(`home.faq.${index}.q`),
+          a: tr(`home.faq.${index}.a`),
+        }));
+
   return (
     <section className="bg-background pb-24">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         <div className="grid gap-10 lg:grid-cols-[0.75fr_1.25fr] lg:gap-20">
           <Fade>
             <h2 className="max-w-sm text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              {tr('home.faq.title')}
+              {setting(settings, 'faq', 'title', tr('home.faq.title'))}
             </h2>
             <p className="mt-4 max-w-xs text-sm leading-6 text-muted-foreground">
-              {tr('home.faq.text')}
+              {setting(settings, 'faq', 'text', tr('home.faq.text'))}
             </p>
             <a
               href="/about"
               className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              {tr('home.faq.contact')}
+              {setting(settings, 'faq', 'contact', tr('home.faq.contact'))}
               <ArrowUpRight className="size-4" aria-hidden="true" />
             </a>
           </Fade>
 
-          <AccordionRoot defaultValue={['faq-1']} className="flex flex-col gap-3">
-            {FAQS.map((index) => (
+          <AccordionRoot defaultValue={['faq-0']} className="flex flex-col gap-3">
+            {faqs.map((item, index) => (
               <AccordionItem
-                key={index}
+                key={item.key}
                 value={`faq-${index}`}
                 className="rounded-[20px] bg-muted/80 px-5 transition-colors data-[open]:bg-muted sm:px-6"
               >
                 <AccordionHeader>
                   <AccordionTrigger className="group flex w-full items-center justify-between gap-4 py-5 text-left text-sm font-medium">
-                    {tr(`home.faq.${index}.q`)}
+                    {item.q}
                     <Plus
                       className="size-4 shrink-0 text-muted-foreground transition-transform duration-300 group-data-[panel-open]:rotate-45"
                       aria-hidden="true"
@@ -549,7 +669,7 @@ function FaqSection({ locale }: { locale: string | undefined }): ReactElement {
                   </AccordionTrigger>
                 </AccordionHeader>
                 <AccordionPanel className="pb-5 pr-8 text-sm leading-6 text-muted-foreground">
-                  {tr(`home.faq.${index}.a`)}
+                  {item.a}
                 </AccordionPanel>
               </AccordionItem>
             ))}
@@ -560,25 +680,37 @@ function FaqSection({ locale }: { locale: string | undefined }): ReactElement {
   );
 }
 
-function LogoWall({ locale }: { locale: string | undefined }): ReactElement {
+function LogoWall({
+  locale,
+  settings,
+}: {
+  locale: string | undefined;
+  settings: FrontendPageProps['settings'];
+}): ReactElement {
   const tr = t(locale);
-  const logos = [
-    'OpenAI',
-    'Anthropic',
-    'Google',
-    'AWS',
-    'Azure',
-    'Cloudflare',
-    'Alibaba',
-    'DeepSeek',
-    'vLLM',
-    'Ollama',
-  ];
+  const configured = listSetting(settings, 'logos', 'items')
+    .map((item) => rowText(item, 'name'))
+    .filter(Boolean);
+  const logos =
+    configured.length > 0
+      ? configured
+      : [
+          'OpenAI',
+          'Anthropic',
+          'Google',
+          'AWS',
+          'Azure',
+          'Cloudflare',
+          'Alibaba',
+          'DeepSeek',
+          'vLLM',
+          'Ollama',
+        ];
   return (
     <section className="bg-background">
       <div className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6">
         <p className="text-center text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-          {tr('home.logos.label')}
+          {setting(settings, 'logos', 'label', tr('home.logos.label'))}
         </p>
         <div className="atl-ticker-mask mt-7 overflow-hidden">
           <div className="atl-ticker">
@@ -620,6 +752,7 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
     setting(props.settings, 'closing', 'secondaryHref', '/guide'),
     '/guide',
   );
+  const noticeHref = safeHref(setting(props.settings, 'notice', 'href', '/shop'), '/shop');
   const products = readProducts(props.data);
   const categories = readCategories(props.data);
 
@@ -635,7 +768,9 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
           className="pointer-events-none absolute inset-0 opacity-70 [mask-image:radial-gradient(ellipse_at_center,black,transparent_74%)]"
         >
           <MotionGridCells
-            activeProps={{ className: 'bg-[radial-gradient(circle,rgba(0,0,0,0.26)_2px,transparent_2px)]' }}
+            activeProps={{
+              className: 'bg-[radial-gradient(circle,rgba(0,0,0,0.26)_2px,transparent_2px)]',
+            }}
             inactiveProps={{ className: 'bg-transparent' }}
           />
         </MotionGrid>
@@ -643,15 +778,18 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
         <div className="relative mx-auto w-full max-w-6xl px-4 pb-16 pt-16 text-center sm:px-6 lg:pb-24 lg:pt-24">
           <Fade>
             <a
-              href="/shop"
+              href={noticeHref}
               className="group inline-flex max-w-full items-center gap-3 rounded-full bg-muted/80 py-1.5 pl-2 pr-4 text-xs text-muted-foreground transition-colors hover:bg-muted"
             >
               <span className="inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-[10px] font-medium tracking-[0.12em] text-foreground uppercase">
                 <span className="atl-blink size-1.5 rounded-full bg-success" aria-hidden="true" />
-                {tr('home.notice.label')}
+                {setting(props.settings, 'notice', 'label', tr('home.notice.label'))}
               </span>
               <span className="truncate">
-                <ShimmeringText text={tr('home.notice.text')} className="font-medium text-foreground" />
+                <ShimmeringText
+                  text={setting(props.settings, 'notice', 'text', tr('home.notice.text')) ?? ''}
+                  className="font-medium text-foreground"
+                />
               </span>
               <ArrowRight
                 className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5"
@@ -662,7 +800,10 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
 
           <h1 className="mx-auto mt-8 max-w-4xl text-[2.6rem] leading-[1.08] font-medium tracking-[-0.04em] text-balance sm:text-6xl lg:text-7xl">
             <SplittingText
-              text={setting(props.settings, 'hero', 'title1', tr('home.hero.title1')) ?? tr('home.hero.title1')}
+              text={
+                setting(props.settings, 'hero', 'title1', tr('home.hero.title1')) ??
+                tr('home.hero.title1')
+              }
               type="chars"
               initial={{ y: '0.35em', opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -673,7 +814,10 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
               className="block"
             />
             <SplittingText
-              text={setting(props.settings, 'hero', 'title2', tr('home.hero.title2')) ?? tr('home.hero.title2')}
+              text={
+                setting(props.settings, 'hero', 'title2', tr('home.hero.title2')) ??
+                tr('home.hero.title2')
+              }
               type="chars"
               initial={{ y: '0.35em', opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -715,9 +859,39 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
 
           <div className="mx-auto mt-14 flex max-w-2xl flex-wrap items-center justify-center gap-x-10 gap-y-4 text-xs text-muted-foreground">
             {[
-              { value: 8, decimals: 0, suffix: '', label: tr('home.infra.regionsLabel') },
-              { value: 24, decimals: 0, suffix: '', label: tr('home.infra.azsLabel') },
-              { value: 99.99, decimals: 2, suffix: '%', label: tr('home.infra.slaLabel') },
+              {
+                value: numberSetting(props.settings, 'infrastructure', 'regionsValue', 8),
+                decimals: 0,
+                suffix: '',
+                label: setting(
+                  props.settings,
+                  'infrastructure',
+                  'regionsLabel',
+                  tr('home.infra.regionsLabel'),
+                ),
+              },
+              {
+                value: numberSetting(props.settings, 'infrastructure', 'azsValue', 24),
+                decimals: 0,
+                suffix: '',
+                label: setting(
+                  props.settings,
+                  'infrastructure',
+                  'azsLabel',
+                  tr('home.infra.azsLabel'),
+                ),
+              },
+              {
+                value: numberSetting(props.settings, 'infrastructure', 'slaValue', 99.99),
+                decimals: 2,
+                suffix: '%',
+                label: setting(
+                  props.settings,
+                  'infrastructure',
+                  'slaLabel',
+                  tr('home.infra.slaLabel'),
+                ),
+              },
             ].map((item) => (
               <span key={item.label} className="inline-flex items-baseline gap-2">
                 <span className="text-lg font-medium text-foreground tabular-nums">
@@ -735,16 +909,21 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
         </div>
       </section>
 
-      <LogoWall locale={props.locale} />
+      <LogoWall locale={props.locale} settings={props.settings} />
 
       {products.length > 0 ? (
-        <ProductShowcase products={products} categories={categories} locale={props.locale} />
+        <ProductShowcase
+          products={products}
+          categories={categories}
+          locale={props.locale}
+          settings={props.settings}
+        />
       ) : null}
 
-      <SolutionsSection locale={props.locale} />
-      <CasesSection locale={props.locale} />
-      <InfrastructureSection locale={props.locale} />
-      <FaqSection locale={props.locale} />
+      <SolutionsSection locale={props.locale} settings={props.settings} />
+      <CasesSection locale={props.locale} settings={props.settings} />
+      <InfrastructureSection locale={props.locale} settings={props.settings} />
+      <FaqSection locale={props.locale} settings={props.settings} />
 
       <section className="mx-auto w-full max-w-6xl px-4 pb-24 sm:px-6">
         <Slide>
