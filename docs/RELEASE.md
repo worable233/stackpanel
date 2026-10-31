@@ -252,6 +252,10 @@ tag 不要重写——条目里的 `sha256` 是对**当时那份字节**签的�
 ### 8.3 目录条目与发布者白名单
 
 把 `dist-pack/entries/*.json` 提交到本仓 `catalog/entries/`（工作流从这里拷）。
+条目文件名一律 `<kind>-<id>.json`（`plugin-smtp.json` / `theme-aurora.json`）：
+**插件与主题允许同 id**（`minimal` 两边都有），只写 `<id>.json` 时后拷进去的会
+静默覆盖前一个，目录里凭空少一条而没有任何报错。`build-catalog.mjs` 现在会对
+重复的 `(kind,id)` 直接报错。
 再配 `CATALOG_PUBLISHERS`（secret，JSON 数组）：
 
 ```json
@@ -283,7 +287,41 @@ node scripts/release/build-catalog.mjs \
 用临时私钥即可，目的是让条目过一遍契约校验（`entries: 22` 之类的输出就是通过），
 产物不要发布。
 
-### 8.6 验收
+### 8.6 主题（同一套分发链，另一种包布局）
+
+主题走的是同一份目录、同一把发布密钥、同一个 `sequence`，只是包内布局不同：
+
+```bash
+pnpm release:pack-theme --out dist-pack --tag themes-v0.1.0 \
+  --key ~/.stackpanel-release/pkg-signing.pem
+```
+
+| 项 | 插件 | 主题 |
+|---|---|---|
+| 条目 `kind` | `plugin` | `theme` |
+| 必需文件 | `manifest.json` + `dist/` | `theme.json` + `theme.css` |
+| 可选 | `frontend/` | `assets/`、`frontend/` |
+| 后端代码 | 有（`execution`） | 无，`permissions` 恒为 `[]` |
+| 保留 ID | `login` 等随内核发布 | `default`（上架会被内核拒收） |
+
+三点与插件不同、弄错就装不上：
+
+1. `theme.json` 的 `id` 必须等于目录名，且 `theme.css` 与它同时存在
+   （`assembleThemeFiles` 缺一个就 422）；
+2. 打包器会在**产生任何可发布字节之前**调用内核自己的
+   `assembleThemeFiles`（`scripts/release/validate-theme-package.mts`，经 `tsx`）
+   验一遍：CSS 危险写法、`files[]` 是否真实存在、前端白名单，一次全过。校验器是
+   内核安装时真正跑的那段代码，不是打包器里的第二份规则；
+3. mtime 固定 + `zip -D` + 按名字排序，同一份内容打出同一份字节——否则每次构建
+   摘要都不同，「这个包是不是上次那个」无从核对。
+
+**本地来源优先**：`MarketService.install()` 先查随内核发布的本地来源
+（`packages/plugins`、`packages/themes`），命中就不走目录。所以同名主题在开发布局
+下表现为「远程条目在列表里，但安装走本地」；容器/生产形态本地来源被禁用
+（`localSourcesAllowed()`），远程条目才是唯一来源。验证远程主题安装是否真的可用，
+要以 `STACKPANEL_MARKET_LOCAL_SOURCES=off` 起一次实例。
+
+### 8.7 验收
 
 1. 实例 `POST /admin/distribution/refresh` → `sequence` 变成新值、`expired:false`；
 2. `GET /market/admin/plugins` 出现远程条目；

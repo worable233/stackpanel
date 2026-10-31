@@ -4,6 +4,10 @@
 （`StackPanel-plugins/scripts/pack-plugin.mjs`）生成，交给
 `.github/workflows/publish-catalog.yml` 汇编成 `catalog.json` + `catalog.sig`。
 
+条目文件按 `<kind>-<id>.json` 命名（`plugin-smtp.json` / `theme-aurora.json`）。
+插件与主题允许同 id（`minimal` 两边都有），光写 `<id>.json` 会互相覆盖，目录里
+凭空少一条；`build-catalog.mjs` 对重复的 `(kind,id)` 直接报错。
+
 不要手写，也不要手改。条目里的 `artifact.sha256` / `artifact.size` 是按 ZIP 的
 真实字节算出来的，改一个空格就和实际资产对不上，实例安装会在下载校验阶段失败
 （`摘要不匹配`），而目录本身仍然「有效」——排查成本极高。

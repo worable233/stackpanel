@@ -1,0 +1,36 @@
+{
+  "formatVersion": 1,
+  "kind": "theme",
+  "id": "minimal",
+  "version": "1.0.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "themes-v0.1.0",
+    "asset": "minimal-1.0.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <0.2.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [],
+  "frontendModes": [],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "Minimal Theme",
+  "description": "A minimal StackPanel theme: token-only CSS, no frontend templates.",
+  "artifact": {
+    "sha256": "d4883be3903c104823ee32fa4ec29a99f88a70ff721e7e7fa44dd97ac8e6eef8",
+    "size": 1319
+  }
+}

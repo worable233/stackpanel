@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "kind": "theme",
+  "id": "atlas",
+  "version": "1.0.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "themes-v0.1.0",
+    "asset": "atlas-1.0.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <0.2.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "Atlas",
+  "description": "A monochrome, editorial storefront for stable managed services: clear specs, stock and pricing, built on shadcn/ui and Base UI with restrained motion.",
+  "artifact": {
+    "sha256": "973142a7124e36d44725f71ed764389a40521f7594eafc83550dc237ef7696ec",
+    "size": 76343
+  }
+}

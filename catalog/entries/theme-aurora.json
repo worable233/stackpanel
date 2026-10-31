@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "kind": "theme",
+  "id": "aurora",
+  "version": "1.0.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "themes-v0.1.0",
+    "asset": "aurora-1.0.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <0.2.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "Aurora Night",
+  "description": "Deep-space dark-first theme with cyan/violet neon accents. Custom pages, layout and 404.",
+  "artifact": {
+    "sha256": "eeb4f765d6a7bf2fbf26c79104fb42e00f7203ee7df958091c703dfafee116fc",
+    "size": 46458
+  }
+}

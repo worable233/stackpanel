@@ -55,9 +55,21 @@ async function main() {
 
   const files = (await readdir(entriesDir)).filter((name) => name.endsWith('.json')).sort();
   const entries = [];
+  // 同一 `(kind, id)` 出现两次一定是打包/拷贝出错（最典型的是主题与插件撞了同一个
+  // id，条目文件名都是 `<id>.json` 时互相覆盖，目录里于是**少一条**而没人发现）。
+  // 条目文件名按 `<kind>-<id>.json` 约定，这里再硬校验一次。
+  const seen = new Map();
   for (const name of files) {
     const manifest = await readPackageManifest(path.join(entriesDir, name));
     if (manifest.channel === 'beta' && !(config.channels ?? []).includes('beta')) continue;
+    const key = `${manifest.kind}:${manifest.id}`;
+    const previous = seen.get(key);
+    if (previous) {
+      throw new Error(
+        `目录条目重复：${key} 同时出现在 ${previous} 与 ${name}（插件与主题可以同 id，但条目文件名必须按 <kind>-<id>.json 区分）`,
+      );
+    }
+    seen.set(key, name);
     entries.push(manifest);
   }
 

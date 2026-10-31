@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "kind": "theme",
+  "id": "stratus",
+  "version": "1.0.0",
+  "channel": "stable",
+  "source": {
+    "repository": "worable233/stackpanel-plugins",
+    "tag": "themes-v0.1.0",
+    "asset": "stratus-1.0.0.zip"
+  },
+  "compatibility": {
+    "kernel": ">=0.1.0 <0.2.0",
+    "kernelApi": ">=0.4.0",
+    "frontendAbi": "^1.0.0",
+    "packageFormat": 1
+  },
+  "requires": [],
+  "conflicts": [],
+  "permissions": [],
+  "frontendModes": [
+    "M2"
+  ],
+  "migration": {
+    "mode": "none",
+    "rollback": "code-compatible"
+  },
+  "automatic": {
+    "eligible": false
+  },
+  "publisher": "stackpanel",
+  "name": "Stratus Enterprise Cloud",
+  "description": "Enterprise-grade blue/white cloud theme. Inspired by modern global cloud platforms: gradient hero, product matrix, industry solutions, global infrastructure stats, partner logo wall and news feed. Built with Tailwind CSS 4.",
+  "artifact": {
+    "sha256": "c03bb5383664fa4c9efde99698dd3c542bd013da1867c50651c4d885312c37f7",
+    "size": 147807
+  }
+}
