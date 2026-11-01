@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { FrontendRoute } from '@/components/frontend-route';
 import { JsonLd } from '@/components/json-ld';
 import { resolvePageSeo, resolveSiteOrigin, toNextMetadata } from '@/lib/seo';
+import { stripFeedbackParams } from '@/lib/feedback-params';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ export default async function UserThemeRoute({
   searchParams,
 }: {
   params: Promise<{ slug: string[] }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { slug } = await params;
   const query = await searchParams;
@@ -20,7 +21,9 @@ export default async function UserThemeRoute({
   return (
     <>
       <JsonLd meta={meta} />
-      <FrontendRoute path={path} searchParams={query} />
+      {/* `error` / `success` / `flash` 属于宿主反馈通道，不进插件页面：
+          否则插件可以把 URL 里的任意文本渲染成自己的界面文案。 */}
+      <FrontendRoute path={path} searchParams={stripFeedbackParams(query)} />
     </>
   );
 }

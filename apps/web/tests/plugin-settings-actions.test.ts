@@ -87,9 +87,19 @@ it('clears explicit empty string defaults while preserving write-only secrets, a
   expect(mocks.revalidate).toHaveBeenCalledWith('/admin/settings');
   expect(mocks.redirect).not.toHaveBeenCalled();
 });
-it('preserves the active route while carrying a declared success notice', () => {
-  expect(actionSuccessUrl('/admin/settings?tab=plugin#storage', 'storage.save', '已保存')).toBe(
-    '/admin/settings?tab=plugin&action=storage.save&success=%E5%B7%B2%E4%BF%9D%E5%AD%98#storage',
+it('preserves the active route while carrying a declared success code', () => {
+  // URL 只带 code（`?success=<code>`）：文案由界面查表，URL 不再是文案通道。
+  expect(actionSuccessUrl('/admin/settings?tab=plugin#storage', 'storage.save', 'succeeded')).toBe(
+    '/admin/settings?tab=plugin&action=storage.save&success=succeeded#storage',
+  );
+});
+it('drops a non-code receipt instead of reflecting it into the URL', () => {
+  // 传入整句文案（历史调用 / 误用）时宁可不带提示，也不能让它进 URL 被反射。
+  expect(actionSuccessUrl('/admin/settings', 'storage.save', '已保存')).toBe(
+    '/admin/settings?action=storage.save',
+  );
+  expect(actionSuccessUrl('/admin/settings', 'storage.save', 'a'.repeat(65))).toBe(
+    '/admin/settings?action=storage.save',
   );
 });
 it('formats a declared sync summary from finite numeric response fields only', () => {

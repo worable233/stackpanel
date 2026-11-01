@@ -92,7 +92,8 @@ export default async function RootLayout({
           <ThemeProvider>
             {children}
             <Toaster />
-            {/* Global: plugin actions redirect back with `?error=`/`?success=`. */}
+            {/* Global：`?action=…&error|success=<code>`（只认 code，文案查表）。
+                动态文本走一次性 flash，不进 URL——见 lib/action-feedback-codes.ts。 */}
             <ActionFeedbackToaster />
           </ThemeProvider>
         </I18nProvider>

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { FrontendRoute } from '@/components/frontend-route';
 import { JsonLd } from '@/components/json-ld';
 import { resolvePageSeo, resolveSiteOrigin, toNextMetadata } from '@/lib/seo';
+import { stripFeedbackParams } from '@/lib/feedback-params';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,14 +10,15 @@ export const dynamic = 'force-dynamic';
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const query = await searchParams;
   const meta = await resolvePageSeo('/', JSON.stringify({}));
   return (
     <>
       <JsonLd meta={meta} />
-      <FrontendRoute path="/" searchParams={query} />
+      {/* 同 `(user)/[...slug]`：宿主反馈参数不传给插件页面。 */}
+      <FrontendRoute path="/" searchParams={stripFeedbackParams(query)} />
     </>
   );
 }

@@ -3,6 +3,7 @@ import type { AccountUser } from '@stackpanel/sdk';
 import { AccountPluginPage } from '@/components/account-plugin-page';
 import { getAuthedApiClient } from '@/lib/api';
 import { resolvePluginAccountRoute } from '@/lib/account-frontend';
+import { stripFeedbackParams } from '@/lib/feedback-params';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,14 +29,17 @@ export default async function PluginAccountRoute({
     role: currentUser.user.role,
   };
   const path = `/${slug.join('/')}`;
-  const result = await resolvePluginAccountRoute(path, user, flattenSearchParams(query));
+  // 宿主反馈参数（`error`/`success`/`flash`）不传给插件页面：插件的
+  // `searchParams` 是它自己的输入面，不该承载宿主的提示通道。
+  const pluginQuery = flattenSearchParams(stripFeedbackParams(query));
+  const result = await resolvePluginAccountRoute(path, user, pluginQuery);
   return (
     <AccountPluginPage
       pluginId={result.status === 'ok' ? result.pluginId : 'unknown'}
       path={path}
       user={user}
       result={result}
-      searchParams={flattenSearchParams(query)}
+      searchParams={pluginQuery}
     />
   );
 }

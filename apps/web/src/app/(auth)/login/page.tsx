@@ -63,6 +63,8 @@ export default async function LoginPage({
   return (
     <LoginForm
       nextPath={nextPath}
+      // 只做**精确匹配**：`error` 来自 URL，任何其它值都当作不存在（`?error=<code>`
+      // 契约见 lib/action-feedback-codes；这里只需要知道「是不是 OAuth 失败」）。
       oauthError={error === 'oauth'}
       providers={providers}
       platformName={platform.name}
