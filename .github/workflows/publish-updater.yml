@@ -106,7 +106,7 @@ jobs:
 
       - name: 构建并推送镜像
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           # 上下文必须是仓库根：apps/updater/Dockerfile 要 COPY pnpm-workspace.yaml /
           # pnpm-lock.yaml / tsconfig.base.json / packages/spec / apps/updater。
