@@ -150,7 +150,11 @@ describe.skipIf(!dbAvailable)('同机多副本不得共用游标', () => {
     b.subscribe(topic, (payload) => seenB.push(payload));
 
     a.publish(topic, { both: true });
-    await waitFor(() => seenA.length === 1 || seenB.length === 1);
+    // 这一行等的是「任一副本被 relay 或 catch-up 投递一次」。`publish` 只负责落库
+    // （outbox 模式下投递归 relay），所以要等一次真实的数据库轮询 + 本地投递。
+    // 单跑约 50ms，但全量并行时 setup 与其它套件抢同一个库，5s 默认预算会偶发
+    // 打穿（实测 193 个文件里 1 个失败，重跑必过）。用例本身给了 30s，这里对齐。
+    await waitFor(() => seenA.length === 1 || seenB.length === 1, 20_000);
     await a.catchUp();
     await b.catchUp();
 
