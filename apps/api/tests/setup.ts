@@ -85,7 +85,22 @@ function databaseName(url: string): string {
 
 // ---- Recreate the test database, then apply migrations --------------------
 // Uses a raw `pg` connection (dynamic import so config/env.ts is not pulled in
-// before DATABASE_URL is set). Runs once per test process.
+// before DATABASE_URL is set).
+//
+// **Cross-process**, not just cross-file. The `globalThis` guard below only
+// covers one process, and vitest's default `isolate: true` runs **every test
+// file in a fresh worker process** — so each of ~190 files re-ran this block,
+// DROPping the database the previous file was still using. Symptoms were
+// `The table public.users does not exist` / `Database "stackpanel_test" does not
+// exist` on unrelated suites, and they got *worse* with `--no-file-parallelism`
+// (that flag serialises files, it does not stop isolation). Two changes:
+//
+//   1. An exclusive advisory lock (`pg_advisory_lock`) held across
+//      DROP+CREATE+migrate, so concurrent processes queue instead of racing.
+//   2. A readiness marker in the database itself (`_sp_test_ready`): once one
+//      process has migrated, later processes skip the destructive step entirely.
+//      That makes the whole run O(1) recreations instead of O(files), and the
+//      migration is no longer the 5-minute bottleneck of a serial run.
 if (!(globalThis as { __spTestMigrated?: boolean }).__spTestMigrated) {
   (globalThis as { __spTestMigrated?: boolean }).__spTestMigrated = true;
 
@@ -94,23 +109,92 @@ if (!(globalThis as { __spTestMigrated?: boolean }).__spTestMigrated) {
   const admin = new Client({ connectionString: maintenanceUrl(TEST_DATABASE_URL) });
   await admin.connect();
   try {
-    // Terminate lingering connections so DROP DATABASE does not hang.
-    await admin.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-         WHERE datname = $1 AND pid <> pg_backend_pid()`,
+    // Arbitrary but stable: any constant works as long as every process uses it.
+    const LOCK_KEY = 4_120_198_501;
+    // Wait indefinitely: the holder is another test worker doing DROP+migrate,
+    // which is bounded work. Timing out here would turn a slow machine into a
+    // spurious failure.
+    await admin.query('SELECT pg_advisory_lock($1)', [LOCK_KEY]);
+
+    // Already prepared by an earlier worker in this run? Two separate facts:
+    //   1. does the database exist (`pg_database` is cluster-wide, so the admin
+    //      connection can answer this);
+    //   2. does it carry the readiness marker — this MUST be asked **inside**
+    //      the test database. `to_regclass` resolves against the current
+    //      database, and the admin connection is attached to `postgres`; asking
+    //      there always answers `null`, so every worker concluded "not ready"
+    //      and dropped the database out from under the others. That is what made
+    //      a full `pnpm test` fail 100% of files while a single file passed.
+    //
+    // **The default is "already ready".** Recreating is destructive and only
+    // safe when we can positively prove the schema is missing; a probe that
+    // merely *failed* (connection reset because another worker terminated our
+    // backend, transient socket error) must never be read as "wipe it".
+    const exists = await admin.query(
+      `SELECT 1 FROM pg_database WHERE datname = $1 AND datallowconn`,
       [dbName],
     );
-    await admin.query(`DROP DATABASE IF EXISTS "${dbName}"`);
-    await admin.query(`CREATE DATABASE "${dbName}"`);
+    let needsRebuild = exists.rowCount !== 1;
+    let markerExists = false;
+    if (!needsRebuild) {
+      const probe = new Client({ connectionString: TEST_DATABASE_URL });
+      try {
+        await probe.connect();
+        const marker = await probe.query(
+          `SELECT to_regclass('public._sp_test_ready') IS NOT NULL AS present`,
+        );
+        markerExists = marker.rows[0]?.present === true;
+      } catch {
+        // 探测失败 ≠ 需要重建。库就在那儿（上面刚确认过），只是这一下连不上；
+        // 重建会把其它 worker 正在用的库删掉，代价远高于偶尔跑一次迁移。
+        markerExists = true;
+      } finally {
+        await probe.end().catch(() => {});
+      }
+    }
+
+    if (!markerExists) {
+      if (!needsRebuild) {
+        // 库存在但没有 marker：可能是旧版本跑过、也可能是上一轮 DROP 后中断。
+        // 迁移是幂等的（`migrate deploy` 只看 `_prisma_migrations`），补跑即可，
+        // 不需要 DROP。
+        execSync('pnpm --filter @stackpanel/db migrate:deploy', {
+          cwd: rootDir,
+          stdio: 'ignore',
+          env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+        });
+      } else {
+        // Terminate lingering connections so DROP DATABASE does not hang.
+        await admin.query(
+          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+             WHERE datname = $1 AND pid <> pg_backend_pid()`,
+          [dbName],
+        );
+        await admin.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+        await admin.query(`CREATE DATABASE "${dbName}"`);
+
+        execSync('pnpm --filter @stackpanel/db migrate:deploy', {
+          cwd: rootDir,
+          stdio: 'ignore',
+          env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+        });
+      }
+
+      const marker = new Client({ connectionString: TEST_DATABASE_URL });
+      await marker.connect();
+      try {
+        await marker.query('CREATE TABLE IF NOT EXISTS _sp_test_ready (at timestamptz NOT NULL)');
+        await marker.query('INSERT INTO _sp_test_ready (at) VALUES (now())');
+      } finally {
+        await marker.end();
+      }
+    }
   } finally {
+    // Session-level locks are released by disconnect, but be explicit: this
+    // client is reused for the marker check above.
+    await admin.query('SELECT pg_advisory_unlock($1)', [4_120_198_501]).catch(() => {});
     await admin.end();
   }
-
-  execSync('pnpm --filter @stackpanel/db migrate:deploy', {
-    cwd: rootDir,
-    stdio: 'ignore',
-    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
-  });
 }
 
 // ---- Non-builtin test plugins ---------------------------------------------
