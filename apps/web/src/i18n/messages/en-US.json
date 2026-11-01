@@ -2316,7 +2316,8 @@
       "probeAuth": "Authentication failed (401/403): check that the key is correct, not revoked, and valid for this endpoint.",
       "probeNotFound": "404: the endpoint or model name does not exist (current model {model}).",
       "probeUnconfigured": "No model provider is configured yet. Save the endpoint, key and model name first.",
-      "probeUnreachable": "Unreachable: {reason}"
+      "probeUnreachable": "Unreachable: {reason}",
+      "probeToolsRejected": "The upstream accepted the first tool call but rejected the tool result replay ({reason}). This is usually a relay/protocol-channel problem (e.g. the Responses channel demands item_reference), not a network fault: switch to the openai-chat protocol or connect to the upstream directly."
     },
     "advanced": {
       "title": "Advanced settings",

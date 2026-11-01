@@ -2316,7 +2316,8 @@
       "probeAuth": "鑑權失敗（401/403）：檢查 API Key 是否正確、是否被撤銷、是否與介面地址匹配。",
       "probeNotFound": "404：介面地址或模型名不存在（當前模型 {model}）。",
       "probeUnconfigured": "尚未配置模型提供方，先儲存介面地址、金鑰與模型名。",
-      "probeUnreachable": "連不通：{reason}"
+      "probeUnreachable": "連不通：{reason}",
+      "probeToolsRejected": "上游接受了第一次工具呼叫，但拒絕了工具結果回灌（{reason}）。這通常是中轉站/協議通道的問題（例如 Responses 通道要求 item_reference），不是網絡故障：換用 openai-chat 協議或直連上游。"
     },
     "advanced": {
       "title": "進階設置",

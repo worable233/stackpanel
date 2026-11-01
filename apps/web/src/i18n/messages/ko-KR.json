@@ -2316,7 +2316,8 @@
       "probeAuth": "인증 실패(401/403): 키가 올바른지, 폐기되지 않았는지, 이 엔드포인트에 유효한지 확인하세요.",
       "probeNotFound": "404: 엔드포인트 또는 모델 이름이 없습니다(현재 모델 {model}).",
       "probeUnconfigured": "모델 제공자가 설정되지 않았습니다. 먼저 엔드포인트, 키, 모델 이름을 저장하세요.",
-      "probeUnreachable": "연결할 수 없습니다: {reason}"
+      "probeUnreachable": "연결할 수 없습니다: {reason}",
+      "probeToolsRejected": "업스트림이 첫 도구 호출은 받아들였지만 도구 결과 재전송을 거부했습니다({reason}). 대개 중계/프로토콜 경로 문제(예: Responses 경로는 item_reference 요구)이며 네트워크 장애가 아닙니다. openai-chat 프로토콜로 바꾸거나 업스트림에 직접 연결하세요."
     },
     "advanced": {
       "title": "Advanced settings",

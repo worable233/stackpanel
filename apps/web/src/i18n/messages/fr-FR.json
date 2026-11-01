@@ -2316,7 +2316,8 @@
       "probeAuth": "Échec d'authentification (401/403) : vérifiez que la clé est correcte, non révoquée et valide pour ce point d'accès.",
       "probeNotFound": "404 : le point d'accès ou le nom de modèle n'existe pas (modèle actuel {model}).",
       "probeUnconfigured": "Aucun fournisseur de modèle n'est configuré. Enregistrez d'abord l'adresse, la clé et le nom du modèle.",
-      "probeUnreachable": "Injoignable : {reason}"
+      "probeUnreachable": "Injoignable : {reason}",
+      "probeToolsRejected": "L'amont a accepté le premier appel d'outil mais a refusé le renvoi du résultat ({reason}). C'est généralement un problème de relais/canal de protocole (par ex. le canal Responses exige item_reference), pas une panne réseau : passez au protocole openai-chat ou connectez-vous directement à l'amont."
     },
     "advanced": {
       "title": "Advanced settings",

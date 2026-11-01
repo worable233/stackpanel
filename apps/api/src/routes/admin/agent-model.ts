@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { isPublicHttpUrl } from '@stackpanel/net-guard';
 import { encryptSecret, isSecretsEnabled } from '../../lib/crypto.ts';
@@ -326,8 +327,11 @@ export async function adminAgentModelRoutes(app: FastifyInstance): Promise<void>
           maxTokens: 64,
         },
         {
-          // 固定 callId：测试不产生真实计费流水，重测也是同一条。
-          callId: 'agent-model-probe',
+          // 每次探测都是一个**新的**调用（管理员点一次就是想测一次）。
+          // 早先这里用固定 callId，结果是第一次探测的失败记录进了插件侧的
+          // 推理幂等台账，之后每次「测试连接」都命中那条 `STARTED` 记录并回
+          // 「此前调用结果不明」——探测器被自己的防重复计费机制锁死。
+          callId: `agent-model-probe:${randomUUID()}`,
           runId: 'agent-model-probe',
           actorId: request.user?.id ?? 'system',
           timeoutMs: 20_000,
@@ -347,19 +351,37 @@ export async function adminAgentModelRoutes(app: FastifyInstance): Promise<void>
       };
     } catch (error) {
       const status = (error as { status?: number }).status;
+      const message = error instanceof Error ? error.message : '测试失败';
+      /**
+       * 第四类结论（比四分类更细，但同样明确）：`tools_rejected`。
+       *
+       * 中转站「能收 tools 却不肯在工具协议上配合」有两种典型表现，而且都会在
+       * 第二次请求时才炸——第一次工具调用成功，回灌 `function_call_output` 被拒
+       * （实测 codex666 的 openai-responses 通道：
+       * `function_call_output requires item_reference ids …`）。把它们混进
+       * `unreachable` 会让运维去查网络，而真正要改的是 provider/协议选择。
+       */
+      // 只按**内容**判定，不按状态码：`status` 是内核看到的那个（插件把上游
+      // 400 转成了 502），拿它当依据会把「上游 5xx」也误判成工具协议问题。
+      const toolProtocolFault =
+        /function_call_output|item_reference|previous_response_id|tool_call|tools?\b.*(unsupported|not support|invalid)|工具/i.test(
+          message,
+        );
       const result =
         status === 401 || status === 403
           ? ('auth_failed' as const)
           : status === 404
             ? ('not_found' as const)
-            : ('unreachable' as const);
+            : toolProtocolFault
+              ? ('tools_rejected' as const)
+              : ('unreachable' as const);
       return {
         ok: false,
         result,
         toolsSupported: false,
         model: model || null,
         latencyMs: Date.now() - startedAt,
-        message: error instanceof Error ? error.message : '测试失败',
+        message,
       };
     }
   });

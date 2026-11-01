@@ -2316,7 +2316,8 @@
       "probeAuth": "認証に失敗しました（401/403）：キーが正しいか、失効していないか、このエンドポイントに有効かを確認してください。",
       "probeNotFound": "404：エンドポイントまたはモデル名が存在しません（現在のモデル {model}）。",
       "probeUnconfigured": "モデル提供元が未設定です。先にエンドポイント・キー・モデル名を保存してください。",
-      "probeUnreachable": "接続できません：{reason}"
+      "probeUnreachable": "接続できません：{reason}",
+      "probeToolsRejected": "上流は最初のツール呼び出しは受け付けましたが、ツール結果の再投入を拒否しました（{reason}）。多くは中継/プロトコル経路の問題（例：Responses 経路は item_reference を要求）で、ネットワーク障害ではありません。openai-chat プロトコルに切り替えるか、上流へ直接接続してください。"
     },
     "advanced": {
       "title": "Advanced settings",

@@ -61,7 +61,14 @@ type Retention = {
 /** 「测试连接」的服务端结论（`POST /admin/model/test`）。 */
 type ModelProbe = {
   ok: boolean;
-  result: 'ok' | 'tools_unsupported' | 'auth_failed' | 'not_found' | 'unreachable' | 'unconfigured';
+  result:
+    | 'ok'
+    | 'tools_unsupported'
+    | 'tools_rejected'
+    | 'auth_failed'
+    | 'not_found'
+    | 'unreachable'
+    | 'unconfigured';
   toolsSupported: boolean;
   model: string | null;
   latencyMs: number;
@@ -75,6 +82,8 @@ function probeText(t: (key: string, params?: Record<string, string | number>) =>
       return t('agent.admin.probeOk', { model: probe.model ?? '' });
     case 'tools_unsupported':
       return t('agent.admin.probeNoTools');
+    case 'tools_rejected':
+      return t('agent.admin.probeToolsRejected', { reason: probe.message ?? '' });
     case 'auth_failed':
       return t('agent.admin.probeAuth');
     case 'not_found':
