@@ -13,7 +13,7 @@ import {
   listPluginFrontendCandidates,
   readPluginSettings,
 } from './slots';
-import { runtimeAdminModuleUrl, runtimeFrontendLoadingEnabled } from './frontend-runtime';
+import { runtimeAdminModuleUrl, runtimeFrontendFailure, runtimeFrontendLoadingEnabled } from './frontend-runtime';
 import { getLocale } from '@/i18n/locale';
 import { DEFAULT_LOCALE } from '@/i18n/config';
 import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
@@ -47,6 +47,8 @@ export type PluginAdminRouteResult =
       runtimeAdminModuleUrl?: string;
     }
   | { status: 'denied'; permission: string }
+  /** 包加载失败（原因见 `runtimeFrontendFailure`），与「没有这个页面」区分开。 */
+  | { status: 'broken'; pluginId: string; reason: string }
   | { status: 'not-found' };
 
 /** Admin sidebar menus contributed by active plugin frontend packages. */
@@ -108,7 +110,12 @@ export async function resolvePluginAdminRoute(
     candidate.manifest,
     candidate.revision,
   );
-  if (!pkg) return { status: 'not-found' };
+  if (!pkg) {
+    // 与账号页同理：加载崩溃不能伪装成 404（v0.1.1 插件页全部「未找到」的根因）。
+    const reason = runtimeFrontendFailure('plugins', pluginId, candidate.revision);
+    if (reason) return { status: 'broken', pluginId, reason };
+    return { status: 'not-found' };
+  }
   // 合并所有已加载插件的前端 finders，使 admin 页面可跨插件复用数据提供者
   // （例如 store 的商品管理页读取 catalog 的分类数据）。
   const mergedFinders: Record<string, FinderProvider> = {};

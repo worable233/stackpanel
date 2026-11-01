@@ -4,6 +4,8 @@ import { healthResponseSchema } from '../lib/openapi.ts';
 import { getInfraConfig, getStorage } from '../infra.ts';
 import { pingRedis } from '@stackpanel/db';
 import { frontendReadiness } from '../lib/frontend-readiness.ts';
+import { fallbackBootReport, getBootReport } from '../lib/boot-report.ts';
+import { memoryPressure, memoryReport } from '../lib/memory-report.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 
 /**
@@ -20,8 +22,22 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
     timestamp: new Date().toISOString(),
   }));
 
+  /**
+   * 构建身份 + 启动自检（版本、提交号、信任根、反代信任配置）。
+   *
+   * 排障第一个问题永远是「这个容器跑的是哪一次构建」。以前只能靠行为观察
+   * （比如「首页有没有样式」），现在一次 GET 就有答案，而且能看出信任根是否齐、
+   * 真实客户端 IP 是否会被正确处理。
+   */
+  app.get('/version', async () => getBootReport() ?? fallbackBootReport(KERNEL_VERSION));
+
   app.get('/ready', async (_request, reply) => {
     const checks: Record<string, 'ok' | 'unreachable' | 'disabled'> = {};
+    // 内存放进 readiness 响应（v0.1.1 的 OOM 盲区）：运维在容器被反复重启、连
+    // `docker exec` 都进不去时，仍能从外部轮询看到堆占用与上限的趋势。
+    // `memoryPressure` 不参与 503 判定：高水位不等于不可用，把正在服务的副本摘掉
+    // 只会把压力推给剩下的实例。
+    const memory = memoryReport();
 
     let databaseOk = false;
     try {
@@ -65,11 +81,18 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       frontendOk = false;
     }
     if (databaseOk && redisOk && storageOk && frontendOk) {
-      return { status: 'ready', ...checks };
+      return {
+        status: 'ready',
+        ...checks,
+        memory,
+        ...(memoryPressure(memory) ? { memoryPressure: true } : {}),
+      };
     }
     return reply.code(503).send({
       status: 'degraded',
       ...checks,
+      memory,
+      ...(memoryPressure(memory) ? { memoryPressure: true } : {}),
       ...(frontend && !frontend.ok ? { pendingFrontends: frontend.pending } : {}),
     });
   });

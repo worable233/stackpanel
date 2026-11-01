@@ -1092,7 +1092,8 @@
       "upToDateSummary": "你已经是最新版本，无需更新。",
       "upToDateTitle": "已是最新",
       "updateContentTitle": "将会更新什么",
-      "updatedAt": "状态更新时间"
+      "updatedAt": "状态更新时间",
+      "executorOffline": "未检测到升级执行器（updater 容器未运行）。现在投递的任务不会被认领，只会一直停在「已投递」。请先启动 updater（docker compose --profile updater up -d），或改用 pull + migrate + up -d 手工升级。"
     }
   },
   "locale": {
@@ -1597,6 +1598,7 @@
       "notInCatalog": "目录里没有这个条目：请确认 ID 拼写与发布通道。",
       "packageBlocked": "目录拒绝安装：当前内核版本或权限不满足该版本要求（详见服务端日志）。",
       "signatureInvalid": "目录包验签失败：签名、摘要或发布者与信任根不匹配，已拒绝安装。",
+      "trustRootMissing": "实例信任根缺少该包的签名公钥：请把公钥补进数据目录的 trust/keyring.json（默认信任根随安装写入；缺失时删除该文件后重启即可重新生成）。",
       "packageTooLarge": "目录包超过大小上限，已拒绝安装。",
       "sourceRateLimited": "目录源限流：稍后重试。",
       "sourceUnavailable": "取不到目录包：网络或镜像不可用，请检查网络后重试。",
@@ -2051,7 +2053,10 @@
     "denied": "无权限访问：需要 {permission}。",
     "loading": "正在加载插件页面…",
     "loadFailed": "插件页面加载失败，请刷新后重试。",
-    "renderFailed": "插件页面渲染失败，请刷新后重试。"
+    "renderFailed": "插件页面渲染失败，请刷新后重试。",
+    "brokenTitle": "插件前端加载失败",
+    "brokenHint": "插件「{pluginId}」的前端包未能加载，因此这个页面无法显示。这通常是插件产物与当前内核版本不兼容，重新安装该插件通常可以修复。",
+    "brokenReason": "原因"
   },
   "plugin": {
     "uploadSelectZip": "请选择要上传的插件 ZIP",
@@ -2504,6 +2509,10 @@
   "adminNav": {
     "title": "菜单设置",
     "description": "调整后台菜单的顺序与文案、隐藏暂时不用的入口，也可以添加自定义链接。",
+    "itemsTitle": "菜单项",
+    "itemsCount": "显示 {visible} / 共 {total} 项",
+    "empty": "还没有可配置的菜单项。",
+    "hidden": "已隐藏",
     "presentationNote": "这里只改「怎么显示」。隐藏一个菜单项不会让对应页面无法访问 —— 权限仍由页面自己的守卫决定。",
     "moveUp": "上移",
     "moveDown": "下移",

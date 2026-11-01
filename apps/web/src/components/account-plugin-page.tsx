@@ -5,6 +5,7 @@ import type { PluginAccountRouteResult } from '@/lib/account-frontend';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 import { FrontendScopeRoot } from './frontend-scope';
+import { PluginFrontendBroken } from './plugin-frontend-broken';
 
 /** Render a resolved plugin account page without exposing transport errors. */
 export async function AccountPluginPage({
@@ -27,6 +28,9 @@ export async function AccountPluginPage({
   }
   if (result.status === 'denied') {
     return <p className="text-sm text-destructive">{t('account.page.denied')}</p>;
+  }
+  if (result.status === 'broken') {
+    return <PluginFrontendBroken pluginId={result.pluginId} reason={result.reason} />;
   }
   const Component = result.component;
   return (

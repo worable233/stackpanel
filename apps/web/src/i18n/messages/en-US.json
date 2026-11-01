@@ -1092,7 +1092,8 @@
       "upToDateSummary": "You are on the latest version. Nothing to update.",
       "upToDateTitle": "You are up to date",
       "updateContentTitle": "What will be updated",
-      "updatedAt": "Status updated at"
+      "updatedAt": "Status updated at",
+      "executorOffline": "No upgrade executor detected (the updater container is not running). A task submitted now would never be claimed and would stay at “submitted” forever. Start the updater first (docker compose --profile updater up -d), or upgrade manually with pull + migrate + up -d."
     }
   },
   "locale": {
@@ -1597,6 +1598,7 @@
       "notInCatalog": "Not in the catalog: check the ID and release channel.",
       "packageBlocked": "Install rejected: this kernel version or permission set does not satisfy the package (see server log).",
       "signatureInvalid": "Catalog package failed signature verification: signature, digest or publisher does not match the trust root. Install rejected.",
+      "trustRootMissing": "This instance's trust root is missing the package signing key: add it to trust/keyring.json in the data directory (the default root ships with the install; delete the file and restart to regenerate it).",
       "packageTooLarge": "Catalog package exceeds the size limit. Install rejected.",
       "sourceRateLimited": "Catalog source is rate limited: try again later.",
       "sourceUnavailable": "Cannot fetch the catalog package: network or mirror unavailable. Check connectivity and retry.",
@@ -2051,7 +2053,10 @@
     "denied": "Access denied: requires {permission}.",
     "loading": "Loading plugin page…",
     "loadFailed": "Plugin page failed to load. Please refresh and try again.",
-    "renderFailed": "Plugin page failed to render. Please refresh and try again."
+    "renderFailed": "Plugin page failed to render. Please refresh and try again.",
+    "brokenTitle": "Plugin frontend failed to load",
+    "brokenHint": "The frontend package for plugin \"{pluginId}\" could not be loaded, so this page cannot render. This usually means the plugin artifact is incompatible with this kernel version; reinstalling the plugin usually fixes it.",
+    "brokenReason": "Reason"
   },
   "plugin": {
     "uploadSelectZip": "Choose a plugin ZIP to upload",
@@ -2504,6 +2509,10 @@
   "adminNav": {
     "title": "Menu settings",
     "description": "Reorder and relabel the admin menu, hide entries you do not use, or add custom links.",
+    "itemsTitle": "Menu items",
+    "itemsCount": "{visible} of {total} visible",
+    "empty": "There are no configurable menu items yet.",
+    "hidden": "Hidden",
     "presentationNote": "This only changes how the menu is displayed. Hiding an entry does not make its page unreachable — access is still decided by that page's own guards.",
     "moveUp": "Move up",
     "moveDown": "Move down",

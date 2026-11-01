@@ -23,6 +23,43 @@ import path from 'node:path';
  * 找不到或内容不可解析时返回 `'unknown'`；调用方必须显式拒绝该值，
  * 不能把它当成合法版本继续执行。
  */
+export interface ReleaseInfo {
+  version: string;
+  commit: string | null;
+  builtAt: string | null;
+}
+
+/**
+ * 读产物 `RELEASE.json` 的完整信息（版本 / 提交号 / 构建时间）。
+ *
+ * `resolveTargetVersion` 只关心版本；启动横幅和 `GET /version` 还需要提交号，
+ * 因为「容器里跑的是哪一次构建」在线上排障时是第一个要回答的问题。
+ */
+export function readReleaseInfo(moduleUrl: string | URL): ReleaseInfo {
+  const here = path.dirname(moduleUrl instanceof URL ? moduleUrl.pathname : fileUrlPath(moduleUrl));
+  const candidates = [
+    path.resolve(here, '..', 'RELEASE.json'),
+    path.resolve(here, '..', '..', 'RELEASE.json'),
+    path.resolve(here, '..', '..', '..', 'RELEASE.json'),
+  ];
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as Record<string, unknown>;
+      const version = typeof parsed['version'] === 'string' ? parsed['version'] : '';
+      if (version.length === 0) continue;
+      return {
+        version,
+        commit: typeof parsed['gitCommit'] === 'string' ? parsed['gitCommit'] : null,
+        builtAt: typeof parsed['builtAt'] === 'string' ? parsed['builtAt'] : null,
+      };
+    } catch {
+      // 解析失败继续尝试下一个候选。
+    }
+  }
+  return { version: 'unknown', commit: null, builtAt: null };
+}
+
 export function resolveTargetVersion(moduleUrl: string | URL): string {
   const here = path.dirname(moduleUrl instanceof URL ? moduleUrl.pathname : fileUrlPath(moduleUrl));
   const candidates = [

@@ -84,6 +84,16 @@ export function UpdateCenter({
   const activeTask = status.status?.activeTask ?? null;
   const catalog = status.catalogState;
   const history: TaskResultRow[] = results.length > 0 ? results : (status.status?.recent ?? []);
+  /**
+   * 没有执行器时投递只会产生一个永远停在「已投递」的任务。
+   *
+   * 标准 compose 默认不带 updater，所以这是**常见**状态而不是异常：以前这里只是
+   * 在页面上提示一句「独立执行器状态不可读」，按钮仍然可点，toast 还说「可在更新
+   * 中心查看结果」——于是用户投递了 11 个包升级，永远看不到结果。
+   *
+   * 判定口径：`status` 投影为 null 即视为执行器不在（该文件由 updater 自己写）。
+   */
+  const executorOffline = status.status === null;
 
   const refresh = useCallback(async () => {
     const next = await refreshUpdateSnapshotAction();
@@ -176,6 +186,12 @@ export function UpdateCenter({
 
   function onSubmit() {
     setFeedback(null);
+    // 没有执行器就不投递：任务会无限期停在「已投递」，而界面只会说「可在更新中心
+    // 查看结果」。直接在按钮处拦住并说清楚原因（下方按钮本身也已置灰）。
+    if (executorOffline) {
+      setFeedback({ kind: 'error', text: t('admin.updates.executorOffline') });
+      return;
+    }
     run('submit', async () => {
       const next = await submitUpdateAction({ acknowledge, allowExpired });
       if (next.error) {
@@ -270,7 +286,12 @@ export function UpdateCenter({
             {busy === 'check' ? t('admin.updates.checking') : t('admin.updates.checkAction')}
           </Button>
           {hasUpdates && !needsConfirm ? (
-            <Button type="button" onClick={onSubmit} disabled={busy !== null}>
+            <Button
+              type="button"
+              onClick={onSubmit}
+              disabled={busy !== null || executorOffline}
+              title={executorOffline ? t('admin.updates.executorOffline') : undefined}
+            >
               <ArrowUpCircle className="size-4" aria-hidden="true" />
               {t('admin.updates.submit')}
             </Button>
@@ -448,7 +469,12 @@ export function UpdateCenter({
             </div>
           ) : (
             <div className="flex justify-end">
-              <Button type="button" onClick={onSubmit} disabled={busy !== null}>
+              <Button
+                type="button"
+                onClick={onSubmit}
+                disabled={busy !== null || executorOffline}
+                title={executorOffline ? t('admin.updates.executorOffline') : undefined}
+              >
                 <ArrowUpCircle className="size-4" aria-hidden="true" />
                 {t('admin.updates.submit')}
               </Button>
@@ -508,7 +534,9 @@ export function UpdateCenter({
                   </div>
                 </dl>
               ) : (
-                <p className="text-sm text-muted-foreground">{t('admin.updates.statusUnreadable')}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t('admin.updates.statusUnreadable')}
+                </p>
               )}
             </section>
 

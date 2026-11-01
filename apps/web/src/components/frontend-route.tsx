@@ -12,7 +12,6 @@ import type { FrontendSettings } from '@stackpanel/sdk';
 import { notFound } from 'next/navigation';
 import { FrontendScopeRoot } from '@/components/frontend-scope';
 import { FrontendRenderBoundary } from '@/components/frontend-render-boundary';
-import { PluginActionScope } from '@/lib/plugin-action-client';
 import { apiAssetUrl, getApiClient, KERNEL_BFF_PREFIX } from '@/lib/api';
 import { getSessionToken } from '@/lib/auth';
 import { resolveFallbackRoute, resolveFrontendRoute, type PageResolution } from '@/lib/pages';
@@ -87,22 +86,25 @@ async function renderResolution(
   settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
   const locale = await getLocale();
-  // Actions are wrapped on the client (`plugin-action-client.ts`): the host toasts
-  // the declared receipt and the page still receives `{ ok, error }`.
-  const content = (
-    <PluginActionScope
-      component={resolved.component as never}
-      props={{
-        params: resolved.params,
-        settings: settingsOverride ?? resolved.settings,
-        data: resolved.data,
-        actions: resolved.actions,
-        // Same-origin BFF, never the server-only `API_BASE_URL` (see renderPublicLayout).
-        assetsBaseUrl: resolved.assetsBaseUrl ?? KERNEL_BFF_PREFIX,
-        locale,
-      }}
-    />
-  );
+  // The page component is resolved **on the server** by the runtime package
+  // loader, so it can only be rendered here.
+  //
+  // This used to go through `<PluginActionScope>` (a `'use client'` module) so the
+  // host could toast the action receipt. A client boundary only accepts
+  // serialisable values, and a component function is not one: React threw
+  // 「Functions cannot be passed directly to Client Components」 for **every**
+  // public page, so the home page answered 500 (v0.1.1 regression). Host-side
+  // toasting still applies to the admin paths, which resolve their components in
+  // the browser (`admin-plugin-page.tsx`, `runtime-admin-page.tsx`).
+  const content = createElement(resolved.component, {
+    params: resolved.params,
+    settings: settingsOverride ?? resolved.settings,
+    data: resolved.data,
+    actions: resolved.actions,
+    // Same-origin BFF, never the server-only `API_BASE_URL` (see renderPublicLayout).
+    assetsBaseUrl: resolved.assetsBaseUrl ?? KERNEL_BFF_PREFIX,
+    locale,
+  } as never) as unknown as ReactElement;
   const page = content;
   // Contract 05 §3.3: wrap the package's render root in a stable scope marker so
   // its `styles[]` selectors can be scoped to its own DOM. `display: contents`

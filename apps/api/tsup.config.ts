@@ -54,7 +54,19 @@ function bundledDependencyPatterns(): RegExp[] {
 }
 
 export default defineConfig({
-  entry: ['src/server.ts', 'src/worker.ts'],
+  /**
+   * Three entries, not two: `plugins/isolated/worker.ts` is fork()ed as its own
+   * process by `plugins/isolated/host.ts`. While it was missing here it got
+   * bundled into `server.js`, and the fork resolved `./worker.js` — which is the
+   * **job worker** that happens to sit at the same path — so the child booted the
+   * wrong module and every isolated (M2) plugin install failed with
+   * `isolated plugin X exited before ready`.
+   */
+  entry: {
+    server: 'src/server.ts',
+    worker: 'src/worker.ts',
+    'plugins/isolated/worker': 'src/plugins/isolated/worker.ts',
+  },
   format: ['esm'],
   platform: 'node',
   target: 'node22',

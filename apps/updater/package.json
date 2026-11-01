@@ -1,6 +1,6 @@
 {
   "name": "@stackpanel/updater",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "StackPanel 独立升级执行器（PLAN-github-distribution-and-updates §5）。",
   "type": "module",

@@ -1092,7 +1092,8 @@
       "upToDateSummary": "你已經是最新版本，無需更新。",
       "upToDateTitle": "已是最新",
       "updateContentTitle": "將會更新什麼",
-      "updatedAt": "狀態更新時間"
+      "updatedAt": "狀態更新時間",
+      "executorOffline": "未偵測到升級執行器（updater 容器未執行）。現在投遞的任務不會被認領，只會一直停在「已投遞」。請先啟動 updater（docker compose --profile updater up -d），或改用 pull + migrate + up -d 手動升級。"
     }
   },
   "locale": {
@@ -1597,6 +1598,7 @@
       "notInCatalog": "目錄裡沒有這個條目：請確認 ID 拼寫與釋出通道。",
       "packageBlocked": "目錄拒絕安裝：當前核心版本或許可權不滿足該版本要求（詳見服務端日誌）。",
       "signatureInvalid": "目錄包驗籤失敗：簽名、摘要或釋出者與信任根不匹配，已拒絕安裝。",
+      "trustRootMissing": "例項信任根缺少該包的簽名公鑰：請把公鑰補進資料目錄的 trust/keyring.json（默認信任根隨安裝寫入；缺失時刪除該文件後重啟即可重新生成）。",
       "packageTooLarge": "目錄包超過大小上限，已拒絕安裝。",
       "sourceRateLimited": "目錄源限流：稍後重試。",
       "sourceUnavailable": "取不到目錄包：網絡或映象不可用，請檢查網絡後重試。",
@@ -2051,7 +2053,10 @@
     "denied": "無許可權訪問：需要 {permission}。",
     "loading": "正在載入外掛頁面…",
     "loadFailed": "外掛頁面載入失敗，請重新整理後重試。",
-    "renderFailed": "外掛頁面渲染失敗，請重新整理後重試。"
+    "renderFailed": "外掛頁面渲染失敗，請重新整理後重試。",
+    "brokenTitle": "外掛前端載入失敗",
+    "brokenHint": "外掛「{pluginId}」的前端包未能載入，因此這個頁面無法顯示。這通常是外掛產物與目前內核版本不相容，重新安裝該外掛通常可以修復。",
+    "brokenReason": "原因"
   },
   "plugin": {
     "uploadSelectZip": "請選擇要上傳的外掛 ZIP",
@@ -2504,6 +2509,10 @@
   "adminNav": {
     "title": "選單設置",
     "description": "調整後臺選單的順序與文案、隱藏暫時不用的入口，也可以新增自定義連結。",
+    "itemsTitle": "選單項",
+    "itemsCount": "顯示 {visible} / 共 {total} 項",
+    "empty": "還沒有可配置的選單項。",
+    "hidden": "已隱藏",
     "presentationNote": "這裡只改「怎麼顯示」。隱藏一個選單項不會讓對應頁面無法訪問 —— 許可權仍由頁面自己的守衛決定。",
     "moveUp": "上移",
     "moveDown": "下移",

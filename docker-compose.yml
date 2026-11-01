@@ -115,7 +115,7 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     pids_limit: 256
-    mem_limit: ${API_MEM_LIMIT:-768m}
+    mem_limit: ${API_MEM_LIMIT:-1024m}
     cpus: ${API_CPU_LIMIT:-1.5}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
@@ -131,6 +131,10 @@ services:
     entrypoint: ['/usr/local/bin/entrypoint-api']
     environment:
       NODE_ENV: production
+      # 堆上限必须显式给：不给时 V8 只取容器限额的 ~50%，装了 10+ 个插件后
+      # 259MB 的堆根本不够，容器被 OOM 打出 500（v0.1.1 线上）。留 1/4 给
+      # off-heap（Buffer / 原生分配）与运行时本身。
+      NODE_OPTIONS: ${API_NODE_OPTIONS:---max-old-space-size=768}
       API_HOST: 0.0.0.0
       API_PORT: '3001'
       API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
@@ -140,7 +144,10 @@ services:
       # the visitor's address, and Caddy may add its own hop. External clients
       # hitting the published API port are not in this CIDR, so they cannot spoof
       # it. Must match the pinned `stackpanel` network subnet below.
-      API_TRUST_PROXY: ${API_TRUST_PROXY:-172.28.0.0/16}
+      # 信任 loopback 与 RFC1918 私网：compose 默认网段是 172.28/16，但 1Panel /
+      # 宝塔等自建环境常用 172.18.x、10.x——写死一个网段时，api 会把所有访客
+      # 识别成反代那一个 IP（限流/封禁/审计全部失真）。私网之外仍不信任。
+      API_TRUST_PROXY: ${API_TRUST_PROXY:-loopback,linklocal,uniquelocal}
       DATABASE_URL: postgresql://${POSTGRES_USER:-stackpanel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stackpanel}
       REDIS_URL: redis://redis:6379
       STORAGE_DRIVER: s3
@@ -199,7 +206,9 @@ services:
       # Harden by binding to loopback (`127.0.0.1:3001:3001`) when no external
       # client must reach the kernel directly — this also keeps plain-HTTP API
       # traffic off the public interface.
-      - '3001:3001'
+      # 端口可覆盖：同一台主机跑两个实例、或发布前冒烟（scripts/release/smoke-image.mjs）
+      # 都需要避开默认端口。
+      - '${STACKPANEL_API_PORT:-3001}:3001'
     networks:
       - stackpanel
     healthcheck:
@@ -226,7 +235,7 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     pids_limit: 256
-    mem_limit: ${WORKER_MEM_LIMIT:-768m}
+    mem_limit: ${WORKER_MEM_LIMIT:-1600m}
     cpus: ${WORKER_CPU_LIMIT:-1.5}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
@@ -242,6 +251,8 @@ services:
     entrypoint: ['/usr/local/bin/entrypoint-worker']
     environment:
       NODE_ENV: production
+      # worker 常驻插件服务端处理器（任务分发要它们），内存与 api 同量级。
+      NODE_OPTIONS: ${WORKER_NODE_OPTIONS:---max-old-space-size=1200}
       API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER:-stackpanel}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stackpanel}
       REDIS_URL: redis://redis:6379
@@ -291,9 +302,14 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    # web 也要限额与显式堆：它持有 Next 服务端 + 每个已装插件的服务端前端包
+    # （账号页 / 后台页的 RSC 渲染都在这里），插件越多常驻越多。
+    mem_limit: ${WEB_MEM_LIMIT:-2048m}
+    cpus: ${WEB_CPU_LIMIT:-2.0}
     entrypoint: ['/usr/local/bin/entrypoint-web']
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: ${WEB_NODE_OPTIONS:---max-old-space-size=1536}
       API_BASE_URL: ${API_BASE_URL:-http://api:3001}
       WEB_PORT: '3000'
       JWT_SECRET: ${JWT_SECRET}
@@ -310,14 +326,21 @@ services:
     volumes:
       - stackpanel-data:/app/data
     ports:
-      - '3000:3000'
+      - '${STACKPANEL_WEB_PORT:-3000}:3000'
     networks:
       - stackpanel
 
-  # 独立升级执行器（PLAN-github-distribution-and-updates §5.1）。默认档提供端到端自动
-  # 升级能力：唯一持有 Docker socket，只操作本 Compose project，不依赖业务内核启动。
-  # 用预构建镜像（apps/updater/Dockerfile），运行 Compose 不含 build。
+  # 独立升级执行器（PLAN-github-distribution-and-updates §5.1）：唯一持有 Docker
+  # socket，只操作本 Compose project，不依赖业务内核启动。
+  #
+  # **显式 profile**：它需要 Docker socket（等价于宿主 root）与宿主的 docker 组 GID，
+  # 而默认部署既不该假设有 socket，也不该在没配置好时静默启动一个永远失败的容器。
+  # 不启用时更新中心的「投递」按钮会置灰并说明原因——投递出去的任务没有执行器认领，
+  # 只会永远停在「已投递」（v0.1.1 线上投递 11 个包升级后的实际状态）。
+  # 升级方式：`docker compose --profile updater up -d`，或按 docker/README.md §10
+  # 手工 pull + migrate + up -d。
   updater:
+    profiles: ['updater']
     build:
       context: .
       dockerfile: apps/updater/Dockerfile
@@ -431,10 +454,11 @@ volumes:
 
 networks:
   stackpanel:
-    # Fixed subnet so the kernel can trust forwarded client-IP headers from the
-    # in-network reverse proxy (Caddy) without trusting arbitrary peers. The
-    # `api` service defaults `API_TRUST_PROXY` to this CIDR; if you change the
-    # subnet here, update that variable to match.
+    # Fixed subnet for the bundled reverse proxy. `api` trusts
+    # `loopback,linklocal,uniquelocal` by default, i.e. every RFC1918 range, so
+    # changing the subnet below does not require touching `API_TRUST_PROXY`.
+    # Public sources are still never trusted: a spoofed X-Forwarded-For from the
+    # internet is ignored.
     ipam:
       config:
         - subnet: 172.28.0.0/16

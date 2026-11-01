@@ -20,6 +20,9 @@ ENV COREPACK_HOME=/opt/corepack
 # `pnpm --filter @stackpanel/db migrate:deploy`. The modules tree in this image is
 # intentionally frozen at build time, so the check is disabled for every stage.
 ENV PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false
+# 下载缓存挂到 BuildKit cache mount：本地慢网/CI 重试时不必把 1.2k 个包重下一遍
+# （之前一次断流就整层重跑，20 分钟的构建全白做）。
+ENV PNPM_CONFIG_STORE_DIR=/pnpm-store
 RUN corepack enable && corepack prepare pnpm@11.5.1 --activate
 WORKDIR /app
 
@@ -29,7 +32,8 @@ WORKDIR /app
 # and build output are excluded via .dockerignore.
 FROM base AS deps
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store,sharing=locked \
+    pnpm install --frozen-lockfile
 
 
 # ---- build --------------------------------------------------------------
@@ -64,8 +68,20 @@ FROM build AS prod-deps
 # Lifecycle scripts are skipped on purpose: the workspace `prepare` hooks need
 # dev-only compilers (tsc/tsup) that are absent in this mode, and everything they
 # emit (built `dist/`, generated Prisma client) is already in place from `build`.
-RUN find . -maxdepth 4 -name node_modules -type d -prune -exec rm -rf {} + \
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store,sharing=locked \
+    find . -maxdepth 4 -name node_modules -type d -prune -exec rm -rf {} + \
  && pnpm install --prod --frozen-lockfile --ignore-scripts
+
+# Next does NOT put `.next/static` (or `public/`) inside the standalone tree, and
+# the standalone server only serves build assets from *within* it. The kernel
+# artifact builder already patches this
+# (`scripts/release/build-kernel-artifact.mjs` step 2); the image did not, so
+# every `/_next/static/*.js|*.css` request 404'd: the page rendered with no
+# styles and never hydrated (v0.1.0 and v0.1.1 both shipped that way). The
+# presence check keeps the build honest if the Next output layout ever changes.
+RUN cp -a apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static \
+ && if [ -d apps/web/public ]; then cp -a apps/web/public apps/web/.next/standalone/apps/web/public; fi \
+ && test -n "$(ls -A apps/web/.next/standalone/apps/web/.next/static)"
 
 # Pre-download the Prisma **schema engine** into the image.
 #
@@ -107,6 +123,18 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends postgresql-client-16 \
  && rm -rf /var/lib/apt/lists/*
 COPY --chown=node:node --from=prod-deps /app /app
+
+# 镜像身份：写一份与自包含产物同格式的 `RELEASE.json`，让 `GET /version` 直接回答
+# 「这个容器跑的是哪一次构建」。不传参数（本地 `docker build`）时不写文件，代码侧
+# 回落到编译期的 `KERNEL_VERSION`——两种情况下 `/version` 都不会是 `unknown`。
+ARG STACKPANEL_VERSION=""
+ARG STACKPANEL_COMMIT=""
+ARG STACKPANEL_BUILT_AT=""
+RUN if [ -n "$STACKPANEL_VERSION" ]; then \
+      printf '{"version":"%s","gitCommit":"%s","builtAt":"%s"}\n' \
+        "$STACKPANEL_VERSION" "$STACKPANEL_COMMIT" "$STACKPANEL_BUILT_AT" > /app/RELEASE.json \
+      && chown node:node /app/RELEASE.json; \
+    fi
 # Point the Prisma CLI at the engine baked in by the prod-deps stage. This ENV
 # must be repeated here: `FROM base AS runtime` starts a fresh stage, so the
 # prod-deps ENV does not carry over. Without it the CLI ignores the baked engine

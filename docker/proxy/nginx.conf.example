@@ -1,0 +1,93 @@
+# StackPanel 反代模板（nginx）
+#
+# 为什么需要这份模板：Web（3000）与 API（3001）是两个上游，**API 独占 13 个路径
+# 前缀**。少写一个就会出现「插件前端 404 / 主题资源 404 / 支付回调 404」，而且
+# 页面本身是好的，非常难看出是路由问题。1Panel、宝塔、群晖这类面板自带 nginx，
+# 用户不会用仓库里的 Caddy，所以这份模板把前缀列表固定下来。
+#
+# 用法：把 upstream 的地址改成实际地址（同机 compose 用 127.0.0.1:3000/3001，
+# 或容器名 web:3000 / api:3001），再在站点配置里 include。
+
+# WebSocket（插件前端实时刷新、部分流式接口）需要的升级头映射。
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream stackpanel_web {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+upstream stackpanel_api {
+    server 127.0.0.1:3001;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    server_name panel.example.com;
+
+    # ------------------------------------------------------------------------
+    # 真实客户端 IP
+    #
+    # 前面还有 CDN / 云负载均衡时，**必须**写它们的回源网段：否则 nginx 拿到的
+    # $remote_addr 是 CDN 节点，内核看到的所有访客都是同一个 IP，按 IP 的限流、
+    # 验证码冷却、封禁与审计全部失真。
+    #
+    # `real_ip_recursive on` 从右往左解析 X-Forwarded-For，和内核
+    # `API_TRUST_PROXY` 的方向一致：左边可以伪造，右边才可信。
+    # ------------------------------------------------------------------------
+    # set_real_ip_from 173.245.48.0/20;   # 例：Cloudflare
+    # set_real_ip_from 10.0.0.0/8;        # 例：内网 SLB
+    # real_ip_header X-Forwarded-For;
+    # real_ip_recursive on;
+
+    # 插件/主题包、备份恢复都是大文件上行。默认 1m 会让上传在 nginx 侧 413，
+    # 而内核日志里什么都不会出现。
+    client_max_body_size 512m;
+
+    # ------------------------------------------------------------------------
+    # API：机器面（OpenAPI / MCP / SP v1 / 智简魔方兼容 / 支付回调 / 资产）
+    #
+    # 前缀必须**原样保留**：`/api/v1/platform` 到上游还是 `/api/v1/platform`。
+    # 用 `proxy_pass http://upstream;`（不带 URI）即可；写成
+    # `proxy_pass http://upstream/;` 会剥掉前缀，全部 404。
+    #
+    # Web 自己的 BFF 路由（`/api/notifications`、`/api/llm-gateway/*`、
+    # `/api/catalog/*`、`/api/store/*`）不在这个列表里，走下面的 Web 段。
+    # ------------------------------------------------------------------------
+    location ~ ^/(api/v1|api/product|mcp|sp/v1|llm-gateway|callbacks|zjmf_api_login|cart|host|provision|themes|plugins|media|platform|health|ready)(/|$) {
+        proxy_pass http://stackpanel_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+
+        # SSE（llm-gateway / 任务进度 / 备份流）不能被缓冲，否则客户端收不到事件。
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+    }
+
+    # ------------------------------------------------------------------------
+    # Web：UI + BFF。兜底规则，必须放在 API 段之后。
+    # ------------------------------------------------------------------------
+    location / {
+        proxy_pass http://stackpanel_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+}

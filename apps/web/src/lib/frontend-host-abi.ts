@@ -25,6 +25,76 @@ import * as form from 'next/form';
 import * as navigation from 'next/navigation';
 import * as jsxRuntime from 'react/jsx-runtime';
 import * as react from 'react';
+// 宿主 RSC 图里的 `react` 是 **react-server 构建**：没有 `useState`/`useEffect`/
+// `useLayoutEffect`/`createContext` 等客户端 hook（实测差异 18 个名字）。而插件的
+// 服务端入口 `dist/index.js` 常把某个 `'use client'` 模块一并打进同一个文件——
+// referral 的 `route-progress.tsx` 就是如此，它在文件顶层写
+// `import { useCallback, useState } from 'react'`。
+//
+// Node 的 ESM 链接是静态的：缺一个具名导出就抛
+// `SyntaxError: The requested module 'react' does not provide an export named
+// 'useState'`，**整个包**装载失败 → `pkg.ui` 为空 → 账号页/后台页全部被伪装成
+// 404（v0.1.1 线上 `/account/referral` 的「未找到这个账户页面」）。
+//
+// 修法不是把客户端 React 塞进 RSC 图（那会让 `createContext` 直接抛），而是把
+// 这些**只可能出现在客户端模块里的**名字补成链接期桩：真实渲染这些组件本来就是
+// 错的，但「能链接」与「能执行」是两件事——前者不该让整包死掉。
+const CLIENT_ONLY_REACT_NAMES = [
+  'Component',
+  'PureComponent',
+  'act',
+  'addTransitionType',
+  'createContext',
+  'startTransition',
+  'useActionState',
+  'useContext',
+  'useDeferredValue',
+  'useEffect',
+  'useEffectEvent',
+  'useImperativeHandle',
+  'useInsertionEffect',
+  'useLayoutEffect',
+  'useOptimistic',
+  'useReducer',
+  'useRef',
+  'useState',
+  'useSyncExternalStore',
+  'useTransition',
+] as const;
+
+/**
+ * 把 react-server 构建里缺失的客户端名字补成链接期桩（存在的不动）。
+ *
+ * 桩**不在加载时抛**：`dist/index.js` 顶层只 import 名字、不调用，所以抛错会让
+ * 本可以正常渲染的账号页一起挂掉。它在真正被调用时抛，把「组件在 RSC 图里被执行」
+ * 这个真实的 bug 暴露在正确的位置，而不是伪装成「页面不存在」。
+ */
+export function reactServerAbi(reactNamespace: Record<string, unknown>): Record<string, unknown> {
+  const abi: Record<string, unknown> = { ...reactNamespace };
+  for (const name of CLIENT_ONLY_REACT_NAMES) {
+    if (name in abi) continue;
+    abi[name] = (): never => {
+      throw new Error(
+        `[frontend-runtime] React.${name} 是客户端 API，服务端 RSC 图里不可用。` +
+          '这个组件应该在浏览器里渲染：发布期应把它作为单独的客户端入口（admin.tsx / route-progress.tsx）',
+      );
+    };
+  }
+  return abi;
+}
+
+/**
+ * `react-dom` 在 RSC 图里没有可用的服务端构建，但插件包可能把它当成宿主 ABI 导入。
+ * 与上面的 React 桩同理：只为链接而存在。
+ */
+function reactDomServerAbi(): Record<string, unknown> {
+  const notInRsc = (): never => {
+    throw new Error(
+      "[frontend-runtime] 'react-dom' 只能在浏览器里使用；服务端渲染请用 react-dom/server。",
+    );
+  };
+  return { default: notInRsc, createPortal: notInRsc, flushSync: notInRsc, version: '0.0.0-rsc-stub' };
+}
 import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
 import * as sonner from 'sonner';
@@ -76,8 +146,12 @@ export function publishHostServerAbi(): HostServerAbi {
     __STACKPANEL_ABSORBED_CLIENT__?: Record<string, unknown>;
   };
   g.__STACKPANEL_SERVER_ABI__ = {
-    react,
+    react: reactServerAbi(react as unknown as Record<string, unknown>),
     'react/jsx-runtime': jsxRuntime,
+    // 两条 react-dom 说明符都要在：插件包同时会写 `react-dom` 与 `react-dom/client`，
+    // 漏一个就是整包链接失败。
+    'react-dom': reactDomServerAbi(),
+    'react-dom/client': reactDomServerAbi(),
     'next/link': link,
     'next/form': form,
     'next/navigation': navigationServerAbi(navigation as unknown as Record<string, unknown>),

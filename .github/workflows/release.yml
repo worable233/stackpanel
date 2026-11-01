@@ -84,6 +84,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # 镜像内写入 `RELEASE.json`（`GET /version` 的提交号来源）。版本取 tag，
+          # 提交号取触发点——线上「容器里到底是哪次构建」不再靠行为猜。
+          build-args: |
+            STACKPANEL_VERSION=${{ steps.meta.outputs.version }}
+            STACKPANEL_COMMIT=${{ github.sha }}
+            STACKPANEL_BUILT_AT=${{ steps.meta.outputs.created }}
           # 同时推送 SBOM 与 SLSA 来源证明（OCI attestation）。
           provenance: true
           sbom: true
@@ -306,3 +312,51 @@ jobs:
     with:
       tag: ${{ github.ref_name }}
       latest: ${{ !contains(github.ref_name, '-') }}
+
+  # 发布前冒烟（v0.1.0 / v0.1.1 的教训）：镜像推上去之后**拉下来**起一套 compose，
+  # 按用户路径走一遍——首页静态资源、健康检查、无浏览器初始化管理员、从市场装一个
+  # isolated 插件并激活、装一个主题后首页仍可渲染。那两版镜像的四个阻断缺陷（漏打
+  # `.next/static`、插件子进程入口打错、首页 500、没有信任根）在构建机与单元测试里
+  # 全绿，只有这一步能抓住。
+  #
+  # 跑在发布之后：失败不会撤销已推送的镜像，但会把这次发布标红，形成强制门禁。
+  smoke:
+    name: 冒烟（拉官方镜像起 compose）
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: 检出（冒烟脚本与 compose 文件按标签取）
+        uses: actions/checkout@v7
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 登录 GHCR（镜像是私有包时必须）
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 解析镜像引用
+        id: image
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          version="${GITHUB_REF_NAME#v}"
+          echo "ref=${REGISTRY}/${owner}/${IMAGE_NAME}:${version}" >> "$GITHUB_OUTPUT"
+
+      # 端口避开默认值：runner 上虽然通常空闲，但显式指定能避免与镜像自带的端口
+      # 默认值耦合，也让失败日志里的地址可读。
+      - name: 冒烟
+        run: |
+          node scripts/release/smoke-image.mjs \
+            --image "${{ steps.image.outputs.ref }}" \
+            --web-port 18000 \
+            --api-port 18001

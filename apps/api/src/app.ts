@@ -86,7 +86,7 @@ export interface BuildAppOptions {
  * `true` trusts the immediate peer; a comma-separated list of addresses/CIDRs (or
  * the `loopback` / `linklocal` / `uniquelocal` presets) selects explicitly.
  */
-function trustProxyOption(): boolean | string | string[] {
+export function trustProxyOption(): boolean | string | string[] {
   const raw = env.API_TRUST_PROXY?.trim();
   if (!raw) return 'loopback';
   if (raw === 'true') return true;
@@ -97,18 +97,33 @@ function trustProxyOption(): boolean | string | string[] {
     .filter((entry) => entry.length > 0);
 }
 
+/**
+ * 生效的反代信任配置（给启动横幅与 `/version` 用）。
+ *
+ * 「反代后面所有访客共用一个 IP」这类故障，看日志永远只能看到反代地址，猜不出
+ * 是配置问题还是网络问题；把归一化后的值打出来，运维一眼就能对上。
+ */
+export function describeTrustProxy(): string {
+  const option = trustProxyOption();
+  if (Array.isArray(option)) return option.join(',');
+  if (option === true) return 'true';
+  if (option === false) return 'false';
+  return option;
+}
+
 /** Build a configured Fastify instance. Register all plugins/routes here. */
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   if (process.env.NODE_ENV === 'production' && !options.redis) {
     throw new InfraConfigError('生产环境必须配置 Redis：多副本的限流、会话与状态依赖共享存储。');
   }
+  const trustProxy = trustProxyOption();
   const app = Fastify({
     // HEAD routes are registered explicitly by the plugin dispatcher.
     exposeHeadRoutes: false,
     // Resolve `req.ip` through the reverse proxy only when explicitly trusted;
     // an untrusted X-Forwarded-For would otherwise let callers spoof their IP
     // and evade per-IP rate limits (audit M-4).
-    trustProxy: trustProxyOption(),
+    trustProxy,
     logger: {
       level: env.API_LOG_LEVEL,
       redact: {
@@ -117,6 +132,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       },
     },
   });
+
+  if (trustProxy === false) {
+    // 显式关掉反代信任时，反代后的每个访客都会落到同一个「对端 IP」上：按 IP 的
+    // 限流、验证码冷却、封禁与审计全部失真。这是配置问题，不是运行期噪声。
+    app.log.warn(
+      '[api] API_TRUST_PROXY=false：反代/网关后的所有访客会被识别为同一个 IP，' +
+        '按 IP 的限流与封禁会失真。若 api 前面有反代，请把它所在网段加进 API_TRUST_PROXY。',
+    );
+  }
 
   app.addHook('onSend', async (request, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');

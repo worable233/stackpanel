@@ -1101,7 +1101,8 @@
       "actionFailed": "The action did not complete. Check your connection or try again later.",
       "errorDetails": "Technical details",
       "beforeCheckTitle": "Checking for updates does not affect the running service",
-      "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours."
+      "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours.",
+      "executorOffline": "Aucun exécuteur de mise à jour détecté (le conteneur updater ne tourne pas). Une tâche soumise maintenant ne serait jamais prise en charge et resterait indéfiniment « soumise ». Démarrez d’abord l’updater (docker compose --profile updater up -d) ou mettez à jour manuellement avec pull + migrate + up -d."
     }
   },
   "action": {
@@ -1597,6 +1598,7 @@
       "notInCatalog": "Absent du catalogue : vérifiez l’ID et le canal de publication.",
       "packageBlocked": "Installation refusée : cette version du noyau ou ces permissions ne satisfont pas les exigences du paquet (voir le journal serveur).",
       "signatureInvalid": "La vérification de signature du paquet a échoué : signature, empreinte ou éditeur ne correspond pas à la racine de confiance. Installation refusée.",
+      "trustRootMissing": "La racine de confiance de cette instance n'a pas la clé de signature du package : ajoutez-la dans trust/keyring.json du répertoire de données (la racine par défaut est installée avec le produit ; supprimez le fichier puis redémarrez pour la régénérer).",
       "packageTooLarge": "Le paquet dépasse la taille maximale. Installation refusée.",
       "sourceRateLimited": "La source du catalogue est limitée en débit : réessayez plus tard.",
       "sourceUnavailable": "Impossible de récupérer le paquet du catalogue : réseau ou miroir indisponible. Vérifiez la connexion puis réessayez.",
@@ -2051,7 +2053,10 @@
     "denied": "Access denied: requires {permission}.",
     "loading": "Loading plugin page…",
     "loadFailed": "Plugin page failed to load. Please refresh and try again.",
-    "renderFailed": "Plugin page failed to render. Please refresh and try again."
+    "renderFailed": "Plugin page failed to render. Please refresh and try again.",
+    "brokenTitle": "Échec du chargement du frontend du plugin",
+    "brokenHint": "Le paquet frontend du plugin « {pluginId} » n'a pas pu être chargé, cette page ne peut donc pas s'afficher. Cela signifie généralement que l'artefact du plugin est incompatible avec cette version du noyau ; réinstaller le plugin corrige le plus souvent le problème.",
+    "brokenReason": "Cause"
   },
   "plugin": {
     "uploadSelectZip": "Choose a plugin ZIP to upload",
@@ -2504,6 +2509,10 @@
   "adminNav": {
     "title": "Menu settings",
     "description": "Reorder and relabel the admin menu, hide entries you do not use, or add custom links.",
+    "itemsTitle": "Éléments du menu",
+    "itemsCount": "{visible} sur {total} affichés",
+    "empty": "Aucun élément de menu configurable pour l'instant.",
+    "hidden": "Masqué",
     "presentationNote": "This only changes how the menu is displayed. Hiding an entry does not make its page unreachable — access is still decided by that page's own guards.",
     "moveUp": "Move up",
     "moveDown": "Move down",

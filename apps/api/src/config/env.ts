@@ -295,12 +295,6 @@ if (process.env.NODE_ENV === 'production') {
     console.error(`生产环境密钥未正确配置：\n${problems.map((p) => ` - ${p}`).join('\n')}`);
     throw new Error('Invalid production environment variables');
   }
-  if (env.PACKAGE_SIGNATURE_REQUIRED && !env.STACKPANEL_SIGNING_PUBLIC_KEY) {
-    console.warn(
-      '[env] PACKAGE_SIGNATURE_REQUIRED=true 但未配置签名公钥：' +
-        '上传插件/主题将被拒绝，可在后台「签名策略」中上传公钥后恢复。',
-    );
-  }
   if (!env.SETTINGS_ENCRYPTION_KEY) {
     // I-2: the key is optional, but silently disabling the encrypted-secret
     // store in production is a footgun — surface it loudly at boot.

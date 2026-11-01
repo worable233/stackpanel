@@ -1101,7 +1101,8 @@
       "actionFailed": "The action did not complete. Check your connection or try again later.",
       "errorDetails": "Technical details",
       "beforeCheckTitle": "Checking for updates does not affect the running service",
-      "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours."
+      "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours.",
+      "executorOffline": "업그레이드 실행기(updater 컨테이너)가 실행 중이 아닙니다. 지금 제출한 작업은 인계되지 않고 “제출됨” 상태로 계속 남습니다. 먼저 updater를 시작하거나(docker compose --profile updater up -d) pull + migrate + up -d 로 수동 업그레이드하세요."
     }
   },
   "action": {
@@ -1597,6 +1598,7 @@
       "notInCatalog": "카탈로그에 이 항목이 없습니다. ID와 릴리스 채널을 확인하세요.",
       "packageBlocked": "카탈로그가 설치를 거부했습니다. 현재 커널 버전 또는 권한이 이 버전의 요구 사항을 충족하지 않습니다(서버 로그 참조).",
       "signatureInvalid": "카탈로그 패키지 서명 검증에 실패했습니다. 서명·다이제스트·발행자가 신뢰 루트와 일치하지 않아 설치를 중단했습니다.",
+      "trustRootMissing": "이 인스턴스의 신뢰 루트에 패키지 서명 키가 없습니다. 데이터 디렉터리의 trust/keyring.json 에 추가하세요(기본 신뢰 루트는 설치 시 기록됩니다. 파일을 삭제하고 재시작하면 다시 생성됩니다).",
       "packageTooLarge": "카탈로그 패키지가 크기 한도를 초과하여 설치를 중단했습니다.",
       "sourceRateLimited": "카탈로그 소스가 속도 제한 중입니다. 잠시 후 다시 시도하세요.",
       "sourceUnavailable": "카탈로그 패키지를 가져올 수 없습니다. 네트워크 또는 미러를 사용할 수 없으니 연결을 확인한 뒤 다시 시도하세요.",
@@ -2051,7 +2053,10 @@
     "denied": "Access denied: requires {permission}.",
     "loading": "Loading plugin page…",
     "loadFailed": "Plugin page failed to load. Please refresh and try again.",
-    "renderFailed": "Plugin page failed to render. Please refresh and try again."
+    "renderFailed": "Plugin page failed to render. Please refresh and try again.",
+    "brokenTitle": "플러그인 프런트엔드를 불러오지 못했습니다",
+    "brokenHint": "플러그인 \"{pluginId}\"의 프런트엔드 패키지를 불러오지 못해 이 페이지를 표시할 수 없습니다. 대개 플러그인 산출물이 현재 커널 버전과 호환되지 않기 때문이며, 다시 설치하면 해결되는 경우가 많습니다.",
+    "brokenReason": "원인"
   },
   "plugin": {
     "uploadSelectZip": "Choose a plugin ZIP to upload",
@@ -2504,6 +2509,10 @@
   "adminNav": {
     "title": "Menu settings",
     "description": "Reorder and relabel the admin menu, hide entries you do not use, or add custom links.",
+    "itemsTitle": "메뉴 항목",
+    "itemsCount": "{total}개 중 {visible}개 표시",
+    "empty": "아직 설정할 수 있는 메뉴 항목이 없습니다.",
+    "hidden": "숨김",
     "presentationNote": "This only changes how the menu is displayed. Hiding an entry does not make its page unreachable — access is still decided by that page's own guards.",
     "moveUp": "Move up",
     "moveDown": "Move down",

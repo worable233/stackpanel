@@ -1,0 +1,66 @@
+# StackPanel 反代模板（Traefik v3）
+#
+# 放进你现有的 Traefik dynamic configuration（file provider），或把 routers/services
+# 段并进静态 file config。两个上游：web:3000（UI + BFF）与 api:3001（机器面）。
+#
+# 与 nginx 模板同理：API 独占 13 个路径前缀，漏一个就是「插件前端 404 / 回调 404」。
+
+http:
+  routers:
+    # API：优先级更高（比如 100），路径匹配必须原样透传。
+    stackpanel-api:
+      rule: >-
+        Host(`panel.example.com`) && (
+          PathPrefix(`/api/v1`) || PathPrefix(`/api/product`) ||
+          Path(`/mcp`) ||
+          PathPrefix(`/sp/v1`) || PathPrefix(`/llm-gateway`) ||
+          PathPrefix(`/callbacks`) || Path(`/zjmf_api_login`) ||
+          PathPrefix(`/cart`) || PathPrefix(`/host`) || PathPrefix(`/provision`) ||
+          PathPrefix(`/themes`) || PathPrefix(`/plugins`) || PathPrefix(`/media`) ||
+          PathPrefix(`/platform`) ||
+          Path(`/health`) || Path(`/ready`) || Path(`/version`)
+        )
+      priority: 100
+      service: stackpanel-api
+      entryPoints: [websecure]
+      tls: {}
+
+    # Web：兜底。
+    stackpanel-web:
+      rule: Host(`panel.example.com`)
+      priority: 10
+      service: stackpanel-web
+      entryPoints: [websecure]
+      tls: {}
+
+  services:
+    stackpanel-api:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: http://api:3001
+    stackpanel-web:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: http://web:3000
+
+# ---------------------------------------------------------------------------
+# 真实客户端 IP
+#
+# Traefik 默认**不**信任上游传来的 X-Forwarded-For。前面还有 CDN / 云 LB 时，要在
+# 静态配置里声明它们的回源网段，否则内核看到的永远是那个代理的地址：
+#
+#   entryPoints:
+#     websecure:
+#       address: ":443"
+#       forwardedHeaders:
+#         trustedIPs:
+#           - 173.245.48.0/20   # Cloudflare 示例
+#           - 10.0.0.0/8        # 内网 SLB 示例
+#
+# 内核侧的 `API_TRUST_PROXY` 默认信任 `loopback,linklocal,uniquelocal`（所有 RFC1918
+# 私网）——容器网络里 Traefik 的地址就在私网，所以不用改；公网伪造的 XFF 仍然无效。
+#
+# 若把 api 直接暴露在公网（不推荐），把 API_TRUST_PROXY 收窄到反代所在网段。
+# ---------------------------------------------------------------------------

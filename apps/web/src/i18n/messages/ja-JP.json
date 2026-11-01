@@ -1101,7 +1101,8 @@
       "actionFailed": "The action did not complete. Check your connection or try again later.",
       "errorDetails": "Technical details",
       "beforeCheckTitle": "Checking for updates does not affect the running service",
-      "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours."
+      "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours.",
+      "executorOffline": "アップグレード実行基盤（updater コンテナ）が動作していません。いま投入したタスクは引き取られず、「投入済み」のまま残ります。先に updater を起動する（docker compose --profile updater up -d）か、pull + migrate + up -d で手動アップグレードしてください。"
     }
   },
   "action": {
@@ -1597,6 +1598,7 @@
       "notInCatalog": "カタログにこの項目がありません。ID とリリースチャネルを確認してください。",
       "packageBlocked": "カタログがインストールを拒否しました。このカーネルバージョンまたは権限では要件を満たしません（サーバーログを参照）。",
       "signatureInvalid": "カタログパッケージの署名検証に失敗しました。署名・ダイジェスト・発行者が信頼の起点と一致しないため、インストールを中止しました。",
+      "trustRootMissing": "このインスタンスの信頼ルートにパッケージ署名鍵がありません。データディレクトリの trust/keyring.json に追加してください（既定の信頼ルートはインストール時に書き込まれます。ファイルを削除して再起動すると再生成されます）。",
       "packageTooLarge": "カタログパッケージがサイズ上限を超えているため、インストールを中止しました。",
       "sourceRateLimited": "カタログ配布元がレート制限中です。しばらくしてから再試行してください。",
       "sourceUnavailable": "カタログパッケージを取得できません。ネットワークまたはミラーが利用できないため、接続を確認して再試行してください。",
@@ -2051,7 +2053,10 @@
     "denied": "Access denied: requires {permission}.",
     "loading": "Loading plugin page…",
     "loadFailed": "Plugin page failed to load. Please refresh and try again.",
-    "renderFailed": "Plugin page failed to render. Please refresh and try again."
+    "renderFailed": "Plugin page failed to render. Please refresh and try again.",
+    "brokenTitle": "プラグインのフロントエンドを読み込めませんでした",
+    "brokenHint": "プラグイン「{pluginId}」のフロントエンドパッケージを読み込めなかったため、このページを表示できません。多くの場合、プラグインのビルド成果物が現在のカーネルと互換性がありません。再インストールすると解決することがあります。",
+    "brokenReason": "原因"
   },
   "plugin": {
     "uploadSelectZip": "Choose a plugin ZIP to upload",
@@ -2504,6 +2509,10 @@
   "adminNav": {
     "title": "Menu settings",
     "description": "Reorder and relabel the admin menu, hide entries you do not use, or add custom links.",
+    "itemsTitle": "メニュー項目",
+    "itemsCount": "{total} 件中 {visible} 件を表示",
+    "empty": "設定できるメニュー項目はまだありません。",
+    "hidden": "非表示",
     "presentationNote": "This only changes how the menu is displayed. Hiding an entry does not make its page unreachable — access is still decided by that page's own guards.",
     "moveUp": "Move up",
     "moveDown": "Move down",

@@ -142,3 +142,162 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel:1.2.3
   ```bash
   docker compose --env-file docker/.env up -d        # 读到 .env 里的 STACKPANEL_IMAGE
   ```
+
+## 5. 反代模板（自建 nginx / Traefik / 面板）
+
+仓库自带的 Caddy（`docker/Caddyfile`，compose 的 `https` profile）已经处理好路由。
+自己挂反代（1Panel、宝塔、群晖、K8s Ingress）时**必须把 API 的 13 个前缀单独转发**，
+漏一个就是「页面正常但插件前端 / 主题资源 / 支付回调 404」：
+
+```
+/api/v1   /api/product   /mcp   /sp/v1   /llm-gateway   /callbacks   /zjmf_api_login
+/cart     /host          /provision   /themes   /plugins   /media   /platform
+/health   /ready         /version
+```
+
+其余（含 Web 自己的 BFF：`/api/notifications`、`/api/llm-gateway/*`、`/api/catalog/*`、
+`/api/store/*`）转发到 web(3000)。现成模板：
+
+- `docker/proxy/nginx.conf.example`
+- `docker/proxy/traefik.yml.example`
+- `docker/Caddyfile`（compose 内置）
+
+**真实客户端 IP**：反代前面还有 CDN / 云负载均衡时，必须让反代信任那些回源网段
+（nginx：`set_real_ip_from` + `real_ip_recursive on`；Traefik：`forwardedHeaders.trustedIPs`），
+否则内核看到的所有访客都是同一个地址——按 IP 的限流、验证码冷却、封禁与审计会全部失真。
+内核侧 `API_TRUST_PROXY` 默认 `loopback,linklocal,uniquelocal`（所有 RFC1918 私网），
+容器网络里的反代本来就落在私网，因此通常不用改；公网伪造的 `X-Forwarded-For` 依旧无效。
+
+## 6. 首次启动：管理员、信任根、版本
+
+**信任根自动写入**：首启时内核把默认公钥（`catalog-2026` / `pkg-2026-11` / `kernel-2026-11`）
+幂等写进 `<数据目录>/trust/keyring.json`，因此全新实例可以直接从市场安装插件/主题。
+已存在的文件**绝不覆盖**（运维删掉的默认 key 不会被加回来；文件非法时只告警）。
+市场安装报 `market.trustRootMissing` 时，就是该文件缺对应 keyId。
+
+**无浏览器初始化管理员**（容器化 / CI 用；实例还没有任何管理员时才可用）：
+
+```bash
+# 有 STACKPANEL_SETUP_TOKEN 时带上；没有则不传 setupToken 字段
+curl -fsS -X POST http://127.0.0.1:3001/api/v1/setup \
+  -H 'content-type: application/json' \
+  -d '{"email":"admin@example.com","password":"<强密码>","setupToken":"<令牌>"}'
+# → 201 { token, user }，token 可直接当会话 Cookie 值 / Bearer 使用
+```
+
+**版本与自检**：`GET /version` 返回 `version / commit / builtAt / trustProxy / trust`
+（信任根各用途公钥数量、`PACKAGE_SIGNATURE_REQUIRED` 当前值、keyring 的实际路径）。
+启动日志也会打一行同样的横幅，容器里跑的是哪一次构建不用再靠行为猜。
+
+## 7. 必须备份的路径
+
+数据卷 `stackpanel-data`（容器内 `/app/data`）里放的是**不可再生的实例状态**：
+
+| 路径 | 内容 | 丢失后果 |
+| --- | --- | --- |
+| `trust/keyring.json` | 信任根（目录/包/内核公钥） | 已装包的验签与内核升级全部失败 |
+| `plugins/` | 已安装插件（含前端产物与私有配置） | 需重新安装，插件里的业务数据一并丢失 |
+| `themes/` | 已安装主题 | 前台回到默认外观 |
+| `distribution/` | 目录缓存、分发源配置 | 需重新拉取目录（不致命） |
+
+数据库与对象存储分别在 `stackpanel-postgres` / `stackpanel-minio` 卷里，用
+「系统设置 → 备份」导出（`pg_dump` + 对象存储清单）比 `docker cp` 更可靠。示例：
+
+```bash
+# 停写期间冷备（最稳）
+docker compose stop api worker web
+docker run --rm -v stackpanel_stackpanel-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/stackpanel-data-$(date +%F).tgz -C /data .
+docker compose start api worker web
+```
+
+注意 `docker compose down -v` 会**删除全部卷**（含上面这些）；升级只用 `up -d`。
+
+## 8. 健康检查端点
+
+| 端点 | 用途 | 期望 |
+| --- | --- | --- |
+| `GET /health` | 存活探针（不碰依赖） | 200 `{"status":"ok","version":"…"}` |
+| `GET /ready` | 就绪探针（真连 DB / Redis / 存储 / 待生成前端） | 200；任一不可用 → 503，body 里带具体项 |
+| `GET /version` | 构建身份 + 信任根 + 反代配置 | 200 |
+
+`/ready` 的响应里带 `memory: { heapUsed, heapTotal, heapLimit, rss }`（单位 MiB）。
+容器被 OOM 打出 500 时往往连 `docker exec` 都进不去，这是唯一还能从外部看到的
+内存视角；堆用到 `heapLimit` 的 85% 以上时会额外带 `memoryPressure: true`，
+监控据此在 OOM **之前**报警。
+
+编排里建议：`livenessProbe` 用 `/health`（快、不依赖下游），`readinessProbe` 用 `/ready`
+（失败就把流量摘掉，而不是重启容器）。
+
+### 内存：默认值与扩容公式
+
+每个已装插件都会在 **web**（账号页 / 后台页的 RSC 渲染）和 **worker**（任务分发要
+插件服务端处理器）里各常驻一份，所以内存需求随插件数量线性增长。默认值按「装 10+
+个插件」给的，**不要再往下调**：
+
+| 服务 | `mem_limit` | `--max-old-space-size` |
+| --- | --- | --- |
+| `web` | 2048m | 1536 |
+| `worker` | 1600m | 1200 |
+| `api` | 1024m | 768 |
+
+三条规则：
+
+1. **必须显式给堆**。不给 `NODE_OPTIONS` 时 V8 只取容器限额的 ~50%，259MB 的堆
+   装 10+ 个插件直接 OOM（v0.1.1 线上事故）。留 1/4 给 off-heap（Buffer / 原生分配）。
+2. **扩容公式**：`建议内存 = 基础值 + 已装插件数 × 128MB`，其中 web 基础 1024MB、
+   worker 基础 800MB、api 基础 768MB。例如装 20 个插件：web 需
+   `1024 + 20×128 = 3584MB`，把 `WEB_MEM_LIMIT=3584m` 与
+   `WEB_NODE_OPTIONS=--max-old-space-size=2688` 一起调（堆 ≈ 限额 × 0.75）。
+3. **看启动横幅**。api 与 worker 启动时都会打印
+   `内存：heap <used>/<limit> MiB (total <n>) · rss <n> MiB`。`heapLimit` 明显小于
+   `mem_limit` 的一半，就说明 `NODE_OPTIONS` 没生效。
+
+## 9. 发布前冒烟（拉官方镜像，不本地构建）
+
+每次发 tag 之后必须跑一遍——它会真的起一套 compose、装一个插件和一个主题、
+再验静态资源与健康检查：
+
+```bash
+node scripts/release/smoke-image.mjs --image ghcr.io/<owner>/stackpanel:<version>
+```
+
+它断言的事（对应线上事故清单）：
+
+1. `/` 200，且首页引用的前几个 `/_next/static/chunks/*.js` 都 200（镜像漏打 `.next/static` 会在这里死）；
+2. `/health` 200、`/ready` 200、`/api/v1/me` 401；
+3. 全新数据卷首启后无需人工写 `keyring.json` 就能安装市场包；
+4. 安装一个 isolated（M2）插件 → 最终 `activated`，容器日志出现激活行；
+5. 安装一个主题 → 前台首页 200 且渲染出主题。
+
+## 10. 升级：有执行器 / 无执行器两条路
+
+`updater` 服务在 compose 里是**显式 profile**，默认不启动——它需要
+`/var/run/docker.sock`（等价于宿主 root）与宿主 docker 组 GID，默认部署不该假设这两样
+都在。两种升级方式选一种：
+
+**A. 自动升级（需要 updater）**
+
+```bash
+docker compose --profile updater up -d          # 先起执行器
+# 之后在 后台 → 更新中心 检查并投递
+```
+
+执行器不在时，更新中心的「投递」按钮会**置灰**并说明原因。这是刻意的：投递出去
+的任务没有执行器认领，只会永远停在「已投递」（v0.1.1 线上投递 11 个包升级后的实际
+状态，页面只有一行「独立执行器状态不可读」）。
+
+**B. 手工升级（不需要 updater）**
+
+```bash
+# 1) 拉新镜像（版本号必须与内核同号）
+docker compose pull
+
+# 2) 迁移：一次性容器，必须在启动新版本之前
+docker compose run --rm migrate
+
+# 3) 重建
+docker compose up -d
+```
+
+顺序不能反：`migrate` 用的是新镜像里的 schema，先 `up -d` 会让旧代码跑新库。

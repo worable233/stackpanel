@@ -16,7 +16,10 @@ export interface NavActionResult {
 
 function revalidateNav(): void {
   revalidatePath('/admin/nav');
-  revalidatePath('/admin');
+  // Custom links also live in the admin sidebar, which belongs to the layout.
+  // Revalidating only the page leaves the sidebar showing deleted entries until
+  // a hard reload.
+  revalidatePath('/admin', 'layout');
 }
 
 /**

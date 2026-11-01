@@ -8,6 +8,7 @@ import type {
 } from '@stackpanel/sdk';
 import { matchFrontendPagePath } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
+import { runtimeFrontendFailure } from './frontend-runtime';
 import {
   candidateAdmitsServerExecution,
   importFrontendPackage,
@@ -40,6 +41,14 @@ export type PluginAccountRouteResult =
       actions: FrontendActionExecutors;
     }
   | { status: 'denied'; permission: string }
+  /**
+   * 包**加载失败**（不是没有这个页面）。
+   *
+   * 与 `not-found` 必须分开：加载崩溃时以前一律报 404，运维看到的是「未找到这个
+   * 账户页面」，而真实原因是服务端 import 抛错（v0.1.1 线上 `/account/referral`
+   * 连续 57 次同一条报错的根源）。混在一起就无法从界面定位问题。
+   */
+  | { status: 'broken'; pluginId: string; reason: string }
   | { status: 'not-found' };
 
 export interface PluginAccountWidget {
@@ -141,6 +150,13 @@ export async function resolvePluginAccountRoute(
     candidate.manifest,
     candidate.revision,
   );
+  if (!pkg) {
+    // 区分「包没加载起来」与「包里没有这个页面」：前者是可诊断的故障，后者是
+    // 真的 404。只报 not-found 会让加载崩溃伪装成「页面不存在」。
+    const reason = runtimeFrontendFailure('plugins', candidate.id, candidate.revision);
+    if (reason) return { status: 'broken', pluginId: candidate.id, reason };
+    return { status: 'not-found' };
+  }
   const component = pkg?.ui?.accountPages?.[route.component];
   if (!component) return { status: 'not-found' };
 

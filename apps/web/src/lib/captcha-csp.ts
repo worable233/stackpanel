@@ -38,6 +38,16 @@ const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
 const TTL_MS = 30_000;
 
 /**
+ * 未安装验证码提供方时的缓存窗口（5 分钟）。
+ *
+ * 「本实例没有 captcha 插件」是个稳定的结论，但按 30 秒窗口它会变成一条持续
+ * 的 `GET /captcha/policy` 日志噪音——运维在排查真问题时会被它干扰（v0.1.1
+ * 线上反馈里就有一条）。装了提供方的实例仍按 30 秒刷新，保证后台改配置后不用
+ * 重启即可生效。
+ */
+const IDLE_TTL_MS = 5 * 60_000;
+
+/**
  * A **failed** read is cached only long enough to collapse a request burst.
  *
  * Caching a failure for the full window is a self-inflicted outage: the proxy
@@ -49,7 +59,13 @@ const TTL_MS = 30_000;
  */
 const FAILURE_TTL_MS = 2_000;
 
-let cache: { at: number; value: CaptchaCspSources; ok: boolean } | null = null;
+let cache: {
+  at: number;
+  value: CaptchaCspSources;
+  ok: boolean;
+  /** 内核答复里 `configured`：false 表示没有任何提供方安装。 */
+  configured: boolean | null;
+} | null = null;
 /** In-flight read, so a burst of concurrent requests shares one fetch. */
 let inflight: Promise<CaptchaCspSources> | null = null;
 
@@ -113,26 +129,33 @@ export function resetCaptchaCspCache(): void {
  */
 export async function readCaptchaCspSources(): Promise<CaptchaCspSources> {
   const now = Date.now();
-  if (cache && now - cache.at < (cache.ok ? TTL_MS : FAILURE_TTL_MS)) return cache.value;
+  const ttl =
+    cache === null ? FAILURE_TTL_MS : cache.ok ? (cache.configured === false ? IDLE_TTL_MS : TTL_MS) : FAILURE_TTL_MS;
+  if (cache && now - cache.at < ttl) return cache.value;
   if (inflight) return inflight;
 
   inflight = (async () => {
     let value: CaptchaCspSources = EMPTY;
     let ok = false;
+    let configured: boolean | null = null;
     try {
       const response = await fetch(`${API_BASE_URL}/captcha/policy`, {
         headers: { accept: 'application/json' },
         cache: 'no-store',
       });
       if (response.ok) {
-        const body = (await response.json().catch(() => null)) as { sources?: unknown } | null;
+        const body = (await response.json().catch(() => null)) as {
+          sources?: unknown;
+          configured?: unknown;
+        } | null;
         value = pick(body?.sources);
+        configured = typeof body?.configured === 'boolean' ? body.configured : null;
         ok = true;
       }
     } catch {
       value = EMPTY;
     }
-    cache = { at: Date.now(), value, ok };
+    cache = { at: Date.now(), value, ok, configured };
     inflight = null;
     return value;
   })();

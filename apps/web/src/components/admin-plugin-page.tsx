@@ -6,6 +6,7 @@ import type { AdminPageComponentProps } from '@stackpanel/sdk';
 import type { PluginAdminRouteResult } from '@/lib/admin-frontend';
 import { getClientAdminPages } from '@/lib/frontend-client-registry';
 import { RuntimeAdminPage } from './runtime-admin-page';
+import { PluginFrontendBroken } from './plugin-frontend-broken';
 import { FrontendScopeRoot } from './frontend-scope';
 import { wrapPluginActions } from '@/lib/plugin-action-client';
 import { useLocale, useTranslator } from '@/i18n/provider';
@@ -48,6 +49,13 @@ export function AdminPluginPage({
         <p className="text-sm text-destructive">
           {t('pluginPage.denied', { permission: result.permission })}
         </p>
+      </main>
+    );
+  }
+  if (result.status === 'broken') {
+    return (
+      <main className="mx-auto w-full max-w-3xl">
+        <PluginFrontendBroken pluginId={result.pluginId} reason={result.reason} />
       </main>
     );
   }

@@ -28,13 +28,15 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     pids_limit: 256
-    mem_limit: ${API_MEM_LIMIT:-768m}
+    mem_limit: ${API_MEM_LIMIT:-1024m}
     cpus: ${API_CPU_LIMIT:-1.5}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
     entrypoint: ['/usr/local/bin/entrypoint-api']
     environment:
       NODE_ENV: production
+      # 与单机 compose 一致：不显式给堆，V8 只取容器限额的一半，插件一多就 OOM。
+      NODE_OPTIONS: ${API_NODE_OPTIONS:---max-old-space-size=768}
       API_HOST: 0.0.0.0
       API_PORT: '3001'
       API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
@@ -44,7 +46,10 @@ services:
       # / web BFF). External clients hitting the published API port are not in
       # this CIDR, so they cannot spoof it. Must match the pinned `stackpanel`
       # network subnet below.
-      API_TRUST_PROXY: ${API_TRUST_PROXY:-172.28.0.0/16}
+      # 信任 loopback 与 RFC1918 私网：compose 默认网段是 172.28/16，但 1Panel /
+      # 宝塔等自建环境常用 172.18.x、10.x——写死一个网段时，api 会把所有访客
+      # 识别成反代那一个 IP（限流/封禁/审计全部失真）。私网之外仍不信任。
+      API_TRUST_PROXY: ${API_TRUST_PROXY:-loopback,linklocal,uniquelocal}
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       STORAGE_DRIVER: s3
@@ -122,13 +127,14 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     pids_limit: 256
-    mem_limit: ${WORKER_MEM_LIMIT:-768m}
+    mem_limit: ${WORKER_MEM_LIMIT:-1600m}
     cpus: ${WORKER_CPU_LIMIT:-1.5}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
     entrypoint: ['/usr/local/bin/entrypoint-worker']
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: ${WORKER_NODE_OPTIONS:---max-old-space-size=1200}
       API_LOG_LEVEL: ${API_LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -268,10 +274,11 @@ volumes:
 
 networks:
   stackpanel:
-    # Fixed subnet so the kernel can trust forwarded client-IP headers from the
-    # in-network reverse proxy (Caddy) without trusting arbitrary peers. The
-    # `api` service defaults `API_TRUST_PROXY` to this CIDR; if you change the
-    # subnet here, update that variable to match.
+    # Fixed subnet for the bundled reverse proxy. `api` trusts
+    # `loopback,linklocal,uniquelocal` by default, i.e. every RFC1918 range, so
+    # changing the subnet below does not require touching `API_TRUST_PROXY`.
+    # Public sources are still never trusted: a spoofed X-Forwarded-For from the
+    # internet is ignored.
     ipam:
       config:
         - subnet: 172.28.0.0/16

@@ -161,11 +161,65 @@ export function setIsolatedWorkerExitHandler(handler: (id: string) => void): voi
 const MAX_IPC_BYTES = RPC_MAX_BYTES;
 const MAX_IN_FLIGHT = RPC_MAX_IN_FLIGHT;
 
+/**
+ * 子进程入口：**打包产物布局决定它不能叫 `./worker.js`**。
+ *
+ * tsup 把它输出到 `dist/plugins/isolated/worker.js`（见 `apps/api/tsup.config.ts`
+ * 的 entry），而 `dist/worker.js` 是**任务 worker**——两个文件同名不同物。
+ * 曾经这里写 `./worker.js`：打包后 `import.meta.url` 指向 `dist/server.js`，
+ * 于是 `existsSync` 命中任务 worker，子进程加载错模块、立刻退出，所有 isolated
+ * （M2）插件安装都报 `exited before ready`，而我在构建机上永远看不到——那里
+ * 只有源码，`./worker.ts` 回退分支掩盖了一切。
+ *
+ * 所以先找打包后的专有路径，找不到才回退到源码兄弟文件（开发/测试跑 tsx 时）。
+ */
 function workerModule(): string {
-  const js = new URL('./worker.js', import.meta.url);
+  const js = new URL('./plugins/isolated/worker.js', import.meta.url);
   return fileURLToPath(
     existsSync(fileURLToPath(js)) ? js : new URL('./worker.ts', import.meta.url),
   );
+}
+
+/**
+ * 每个子进程最近 stderr 的环形缓冲。
+ *
+ * 隔离插件崩溃时运维只拿到 `exited before ready`，而真正的原因（顶层 import
+ * 失败、语法错误、原生模块缺失……）全在子进程 stderr 里——以前 `stdio` 是
+ * `'ignore'`，等于把唯一线索丢掉了。现在留最后几 KB 进日志，并附在启动失败
+ * 的错误里。
+ */
+const STDERR_MAX_LINES = 200;
+const STDERR_MAX_BYTES = 8 * 1024;
+const stderrTails = new Map<string, { lines: string[]; bytes: number }>();
+
+function appendStderr(id: string, chunk: string): void {
+  // 每个子进程单独计数：全局计数器会把 A 的输出算到 B 的预算上，长跑之后就
+  // 谁都不留了。
+  const entry = stderrTails.get(id) ?? { lines: [], bytes: 0 };
+  const lines = entry.lines;
+  for (const line of chunk.split(/\r?\n/)) {
+    if (line.length === 0) continue;
+    const trimmed = line.slice(0, 2_000);
+    lines.push(trimmed);
+    entry.bytes += trimmed.length;
+  }
+  while (lines.length > STDERR_MAX_LINES || entry.bytes > STDERR_MAX_BYTES) {
+    const dropped = lines.shift();
+    if (dropped === undefined) break;
+    entry.bytes -= dropped.length;
+  }
+  stderrTails.set(id, entry);
+  // 崩溃现场要立刻可见：运维 tail 容器日志就能看到原因，不必等退出回调。
+  if (lines.length > 0) console.error(`[plugin:${id}] ${lines[lines.length - 1]}`);
+}
+
+function stderrTail(id: string): string {
+  const lines = stderrTails.get(id)?.lines ?? [];
+  return lines.slice(-20).join('\n');
+}
+
+function dropStderrTail(id: string): void {
+  stderrTails.delete(id);
 }
 
 function workerExecArgv(): string[] {
@@ -218,7 +272,8 @@ function dropWorker(id: string, state: IsolatedWorker): void {
 
 async function startWorker(id: string, entry: string, manifest: PluginManifest): Promise<Ready> {
   const child = fork(workerModule(), [], {
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+    // stderr 必须接住：插件子进程崩溃的唯一线索在那里（见 appendStderr）。
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
     env: {
       NODE_ENV: process.env.NODE_ENV ?? 'production',
       STACKPANEL_PLUGIN_ID: id,
@@ -356,12 +411,25 @@ async function startWorker(id: string, entry: string, manifest: PluginManifest):
       if (message.error) request.reject(reviveWireError(message.error));
       else request.resolve(message);
     });
-    child.once('exit', () => {
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => appendStderr(id, chunk));
+    child.once('exit', (code, signal) => {
+      const tail = stderrTail(id);
+      const how = `code=${code ?? '-'} signal=${signal ?? '-'}`;
       if (!readySettled) {
         clearTimeout(timer);
         readySettled = true;
-        reject(new Error(`isolated plugin ${id} exited before ready`));
+        reject(
+          new Error(
+            `isolated plugin ${id} exited before ready (${how})` +
+              (tail ? `; stderr tail:\n${tail}` : '; stderr empty'),
+          ),
+        );
+      } else if (!shuttingDown) {
+        console.error(`[plugin:${id}] worker exited unexpectedly (${how})`);
+        if (tail) console.error(`[plugin:${id}] stderr tail:\n${tail}`);
       }
+      dropStderrTail(id);
       dropWorker(id, state);
       for (const request of state.pending.values()) {
         clearTimeout(request.timer);
@@ -1567,6 +1635,12 @@ export function refreshAllIsolatedServiceSnapshots(): void {
   for (const id of workers.keys()) refreshIsolatedServiceSnapshot(id);
 }
 
+/**
+ * 进程级停机标记：停机时子进程按设计被杀，不算「意外退出」，不该再刷错误日志。
+ */
+let shuttingDown = false;
+
 export function stopAllIsolatedPlugins(): void {
+  shuttingDown = true;
   for (const id of [...workers.keys()]) stopIsolatedPlugin(id);
 }

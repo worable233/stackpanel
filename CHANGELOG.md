@@ -6,6 +6,51 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-01
+
+**镜像可用性修复版**：0.1.0 / 0.1.1 的官方镜像无法开箱跑通——0.1.0 缺前端静态资源，
+0.1.1 首页恒 500；即使绕过这两条，全新实例还会被「没有信任根」和「isolated 插件
+worker 打错入口」拦住。这个版本修掉四条阻断项，并把「拉官方镜像跑一遍」变成发布门禁。
+
+### 修复（阻断级）
+
+- **镜像漏打 `.next/static`**：`Dockerfile` 现在把 `apps/web/.next/static`（及 `public/`）
+  拷进 standalone 目录（内核产物打包脚本一直有这一步，镜像没有）。此前 `/_next/static/*`
+  全部 404：页面 200 但没有样式、也不 hydrate。
+- **isolated 插件 worker 不是构建入口**：`apps/api/tsup.config.ts` 增加
+  `plugins/isolated/worker` 入口，`host.ts` 改从 `./plugins/isolated/worker.js` fork。
+  此前子进程被指引到同名的**任务** worker，任何 M2 插件安装都报
+  `isolated plugin X exited before ready`。
+- **首页 500（0.1.1 回归）**：公开页面不再把运行时解析出来的组件传给客户端组件
+  （React 禁止跨客户端边界传函数），改回服务端 `createElement` 渲染；后台两条
+  客户端渲染路径的 toast 包装保留。
+- **全新实例没有信任根**：首启幂等写入默认 `trust/keyring.json`（`catalog-2026` /
+  `pkg-2026-11` / `kernel-2026-11`），已存在的文件绝不覆盖。市场安装因缺 keyId 失败时
+  现在返回 `market.trustRootMissing`（422）而不是笼统的「验签失败」。
+
+### 新增
+
+- `GET /version`：版本、提交号、构建时间、生效的反代信任配置、信任根各用途公钥数量。
+  启动日志也打同样的横幅，「容器里跑的是哪一次构建」不再靠行为猜。
+- **发布前冒烟** `scripts/release/smoke-image.mjs`：拉官方镜像起一套 compose，断言首页
+  静态资源、`/health` `/ready`、无浏览器初始化管理员、market 装插件（isolated）激活、
+  装主题后首页可渲染。
+- 反代模板：`docker/proxy/nginx.conf.example`、`docker/proxy/traefik.yml.example`
+  （含 API 的 13 个路径前缀与真实 IP 配置）；`docker/README.md` 补「必须备份的路径」、
+  headless 初始化、健康检查端点说明。
+
+### 变化
+
+- `API_TRUST_PROXY` 在 compose 里默认 `loopback,linklocal,uniquelocal`（所有 RFC1918
+  私网），不再写死 `172.28.0.0/16`——1Panel / 宝塔等环境的 `172.18.x` 网段从此也认得出
+  访客真实 IP；公网伪造的 `X-Forwarded-For` 依旧无效。
+- compose 的 Web / API 宿主端口可覆盖（`STACKPANEL_WEB_PORT` / `STACKPANEL_API_PORT`），
+  同机跑多实例与冒烟都不再撞端口。
+- isolated 插件子进程的 stderr 进日志（环形缓冲 200 行 / 8 KB），启动失败的错误里带
+  最近 20 行；再也不会只剩一句 `exited before ready`。
+- 未安装验证码提供方时，Web 侧对 `/captcha/policy` 的缓存窗口从 30 秒延长到 5 分钟
+  （装了提供方的实例保持 30 秒，后台改配置仍然即时生效）。
+
 ## [0.1.1] - 2026-11-01
 
 应用市场与插件动作在真机上的可用性修复版。契约版本 `KERNEL_API_VERSION` 仍为 `0.4.0`，

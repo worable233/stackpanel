@@ -17,6 +17,8 @@
  */
 import { buildApp } from './app.ts';
 import { loadCatalogSourceConfig } from './distribution/source-config.ts';
+import { seedDefaultKeyring } from './distribution/default-keyring.ts';
+import { describeMemory } from './lib/memory-report.ts';
 import { loadRuntimeConfig } from './config/runtime-config.ts';
 import type { FastifyInstance } from 'fastify';
 import { initInfra } from './infra.ts';
@@ -42,6 +44,8 @@ async function main(): Promise<void> {
   await initInfra();
   // 与 API 一致：先读生效的分发源配置（后台可覆盖环境变量）。
   await loadCatalogSourceConfig();
+  // 信任根随内核安装：worker 也可能在 API 之前启动（任务先到），同样是首启写入点。
+  await seedDefaultKeyring();
   // 运行期配置快照（ADR-0026）：worker 内的任务（媒体变体、清理、限流）读同一份。
   await loadRuntimeConfig();
 
@@ -58,6 +62,8 @@ async function main(): Promise<void> {
   // so it must not serve stale plugin handlers.
   await startRuntimeCoherence();
 
+  // 与 api 一致：堆上限必须显式可见，否则 OOM 时只能靠猜。
+  logger.info(`[worker] 内存：${describeMemory()}`);
   logger.info('[worker] 已就绪，等待任务');
 }
 

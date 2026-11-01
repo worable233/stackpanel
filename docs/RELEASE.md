@@ -91,7 +91,16 @@ git push origin v0.1.0
    `stackpanel-upgrade{,.json}`，并用提交历史自动生成 Release Notes；
 6. 以同一个 tag 调起 `.github/workflows/publish-updater.yml`，发布与内核同号的
    `ghcr.io/<owner>/stackpanel-updater:<v>`（updater 是独立服务，镜像独立于主镜像；
-   补发只跑这个工作流，否则主镜像的版本标签会被重指到新摘要，与已签清单对不上）。
+   补发只跑这个工作流，否则主镜像的版本标签会被重指到新摘要，与已签清单对不上）；
+7. **冒烟**：把刚推上去的镜像拉下来起一套 compose，按用户路径验一遍——首页引用
+   的 `/_next/static/*` 均 200、`/health` `/ready` `/version`、无浏览器初始化
+   管理员、从市场装一个 isolated 插件并激活、装一个主题后首页仍可渲染
+   （`scripts/release/smoke-image.mjs`）。
+
+   为什么要它：v0.1.0 / v0.1.1 的镜像漏打了 `.next/static`、isolated 插件子进程入口
+   指向了同名的任务 worker、首页因服务端组件跨客户端边界而 500、全新实例没有信任
+   根——四项在构建、类型检查、单元测试里全绿，只有这一步能抓住。失败只标红本次
+   发布（镜像已推送、不会回滚），但下一个版本必须先看它。
 
 ### 需要配置的仓库变量与密钥
 

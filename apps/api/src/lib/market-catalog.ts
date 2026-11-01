@@ -70,7 +70,8 @@ export class CatalogMarketError extends Error {
  * 错误码按「操作者下一步该做什么」划分，而不是按实现细节：
  * - `market.notInCatalog` 404：目录里没这个条目（拼错 id / 渠道不含此版本）
  * - `market.packageBlocked` 422：兼容/权限/迁移门禁挡住
- * - `market.signatureInvalid` 502：验签、摘要、发布者或信任根不匹配
+ * - `market.trustRootMissing` 422：实例信任根缺这把公钥（补 `trust/keyring.json`）
+ * - `market.signatureInvalid` 502：验签、摘要不匹配
  * - `market.packageTooLarge` 413：包体超限
  * - `market.sourceRateLimited` 503：GitHub 限流（带 retryAfterSeconds）
  * - `market.sourceUnavailable` 502：下载不到（网络/HTTP/重定向）
@@ -106,6 +107,16 @@ export function mapCatalogInstallError(error: unknown): PluginError | null {
       retryAfterSeconds === undefined ? undefined : { retryAfterSeconds },
     );
   }
+  if (kind === 'trust_root') {
+    // 顶层 message 是「安装 x 失败」，真正缺哪个 keyId 在 cause 里。详情只进日志与
+    // ProblemDetails，把 cause 接上才能让运维一眼看到要补什么。
+    const causeMessage = cause instanceof Error ? cause.message : '';
+    return new PluginError(
+      'market.trustRootMissing',
+      422,
+      causeMessage ? `${detail}（${causeMessage}）` : detail,
+    );
+  }
   if (kind === 'signature') {
     return new PluginError('market.signatureInvalid', 502, detail);
   }
@@ -124,8 +135,11 @@ function fetchFailureKind(cause: unknown, depth = 0): string | null {
     if (kind === 'rate_limited') return 'rate_limited';
     if (kind === 'invalid_archive') return 'invalid';
     if (kind === 'digest_mismatch' || kind === 'signature') return 'signature';
+    // 信任根类问题单独一类：它们的修法不是「重试」也不是「换个包」，而是把公钥
+    // 补进实例的 `trust/keyring.json`。混进 `signature` 时界面只会说「验签失败」，
+    // 运维拿不到任何下一步（v0.1.0/v0.1.1 默认部署的真实死因）。
     if (kind === 'unknown_publisher' || kind === 'repository_not_allowed' || kind === 'missing_key') {
-      return 'signature';
+      return 'trust_root';
     }
   }
   if (cause instanceof DistributionSignatureError) return 'signature';

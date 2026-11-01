@@ -14,12 +14,9 @@
  * 前端 `await action(formData)` 会把**成功**当失败（市场页曾因此把装好的插件报成
  * 「安装失败，请重试」，而服务端日志是 200 + `Plugin activated`）。
  */
-import type { ComponentType, ReactElement } from 'react';
-import { createElement, useMemo } from 'react';
 import type { PluginActionResult } from '@stackpanel/sdk';
 import { toast } from '@/components/ui/toast';
 import { actionFeedbackTitle, actionSuccessTitle } from '@/components/action-feedback-toaster';
-import { useTranslator } from '@/i18n/provider';
 
 type RawAction = (formData: FormData) => Promise<unknown>;
 
@@ -62,22 +59,14 @@ export interface WrappedPageProps {
   [key: string]: unknown;
 }
 
-/**
- * Render a package page with wrapped actions. Client boundary so the wrapper can
- * use the host toaster; the page component itself is unchanged.
+/*
+ * 这里曾经还有一个 `PluginActionScope`（客户端边界），用来包住**运行时在服务端
+ * 解析出来的**页面组件。那是 v0.1.1 首页 500 的根因：服务端组件不能作为 props
+ * 跨到客户端边界（`Functions cannot be passed directly to Client Components`），
+ * 凡是公开页面都会渲染失败。
+ *
+ * 所以包装只做在**组件本身就在浏览器里解析**的两条后台路径上
+ * （`admin-plugin-page.tsx`、`runtime-admin-page.tsx`）；服务端渲染的公开页面
+ * 继续用 `createElement`，由包自己行内展示回执——这是
+ * `feedback-success-feedback.test.ts` 允许的第三种形态。
  */
-export function PluginActionScope({
-  component,
-  props,
-}: {
-  component: ComponentType<never>;
-  props: WrappedPageProps;
-}): ReactElement {
-  const t = useTranslator();
-  const rawActions = props.actions;
-  const actions = useMemo(
-    () => (rawActions ? wrapPluginActions(rawActions, t) : rawActions),
-    [rawActions, t],
-  );
-  return createElement(component, { ...props, actions } as never) as unknown as ReactElement;
-}

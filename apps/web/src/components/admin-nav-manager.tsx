@@ -1,13 +1,26 @@
 'use client';
 
-import { ArrowDown, ArrowUp, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ExternalLink,
+  Info,
+  ListTree,
+  Plus,
+  RotateCcw,
+  Save,
+  Trash2,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 import type { AdminNavItemView } from '@stackpanel/sdk';
+import { Badge, SectionTitle } from '@stackpanel/ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import {
   addNavItemAction,
   deleteNavItemAction,
@@ -42,6 +55,17 @@ function toRows(items: AdminNavItemView[]): Row[] {
 }
 
 /**
+ * Saving the layout records an override row even when every value still equals
+ * the default, so `overrideId` alone is not a reason to offer "reset". Only an
+ * actual label change, a hidden entry, or a custom link is.
+ */
+function hasOverride(row: Row): boolean {
+  return (
+    row.custom || row.hidden || (row.defaultLabel !== null && row.label.trim() !== row.defaultLabel)
+  );
+}
+
+/**
  * 后台菜单编辑（对标 #12.3）。
  *
  * 这里改的是「怎么显示」：顺序、文案、是否展示。隐藏一个菜单项**不会**让对应
@@ -56,6 +80,14 @@ export function AdminNavManager({ surface, items }: Props) {
   const [pending, startTransition] = useTransition();
   const [label, setLabel] = useState('');
   const [href, setHref] = useState('');
+
+  // `router.refresh()` re-renders the server component, but this client state
+  // survives. Without this effect a newly added link (or a deleted override)
+  // would only appear after a full reload. Unsaved edits win over the refresh.
+  useEffect(() => {
+    if (dirty) return;
+    setRows(toRows(items));
+  }, [items, dirty]);
 
   const move = (index: number, delta: number) => {
     const next = [...rows];
@@ -121,113 +153,168 @@ export function AdminNavManager({ surface, items }: Props) {
     });
   };
 
+  const visibleCount = rows.filter((row) => !row.hidden).length;
+
   return (
-    <div className="space-y-5">
-      <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-        {t('adminNav.presentationNote')}
-      </p>
-
-      <ul className="divide-y rounded-lg border">
-        {rows.map((row, index) => (
-          <li key={row.href} className="flex flex-wrap items-center gap-2 px-3 py-2">
-            <div className="flex flex-col">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t('adminNav.moveUp')}
-                disabled={index === 0 || pending}
-                onClick={() => move(index, -1)}
-              >
-                <ArrowUp className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t('adminNav.moveDown')}
-                disabled={index === rows.length - 1 || pending}
-                onClick={() => move(index, 1)}
-              >
-                <ArrowDown className="size-3.5" />
-              </Button>
-            </div>
-            <div className="min-w-40 flex-1">
-              <Input
-                value={row.label}
-                placeholder={row.defaultLabel ?? row.href}
-                maxLength={40}
-                onChange={(event) => update(index, { label: event.target.value })}
-              />
-            </div>
-            <a
-              href={row.href}
-              target="_blank"
-              rel="noreferrer"
-              className="max-w-64 truncate font-mono text-xs text-muted-foreground hover:underline"
-            >
-              {row.href}
-            </a>
-            <div className="flex items-center gap-3">
-              {row.custom ? (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-                  {t('adminNav.custom')}
-                </span>
-              ) : null}
-              <label className="flex items-center gap-1.5 text-xs">
-                <input
-                  type="checkbox"
-                  checked={!row.hidden}
-                  onChange={(event) => update(index, { hidden: !event.target.checked })}
-                />
-                {t('adminNav.visible')}
-              </label>
-              {row.overrideId ? (
-                <Button variant="ghost" size="sm" disabled={pending} onClick={() => remove(row)}>
-                  {row.custom ? <Trash2 className="size-4" /> : <RotateCcw className="size-4" />}
-                  {row.custom ? t('adminNav.delete') : t('adminNav.reset')}
-                </Button>
-              ) : null}
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{t('adminNav.saveHint')}</p>
-        <Button onClick={save} disabled={!dirty || pending}>
-          <Save className="size-4" />
-          {pending ? t('adminNav.saving') : t('adminNav.save')}
-        </Button>
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start gap-3 rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
+        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-background text-foreground">
+          <Info className="size-4" />
+        </span>
+        <p className="min-w-0 leading-relaxed">{t('adminNav.presentationNote')}</p>
       </div>
 
-      <div className="space-y-3 rounded-lg border p-3">
-        <div className="text-sm font-medium">{t('adminNav.addTitle')}</div>
-        <div className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
-          <div className="space-y-1">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <section className="flex min-w-0 flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-col gap-1">
+              <SectionTitle icon={<ListTree />}>{t('adminNav.itemsTitle')}</SectionTitle>
+              <p className="text-xs text-muted-foreground">{t('adminNav.saveHint')}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                {t('adminNav.itemsCount', { visible: visibleCount, total: rows.length })}
+              </span>
+              <Button size="sm" onClick={save} disabled={!dirty || pending}>
+                <Save className="size-4" />
+                {pending ? t('adminNav.saving') : t('adminNav.save')}
+              </Button>
+            </div>
+          </div>
+
+          <ul className="flex flex-col gap-2">
+            {rows.length === 0 ? (
+              <li className="rounded-2xl bg-muted/40 px-4 py-10 text-center text-sm text-muted-foreground">
+                {t('adminNav.empty')}
+              </li>
+            ) : null}
+            {rows.map((row, index) => (
+              <li
+                key={`${row.href}-${row.overrideId ?? 'default'}`}
+                className={cn(
+                  'flex flex-col gap-3 rounded-2xl bg-muted/40 p-3.5 transition-opacity',
+                  row.hidden && 'opacity-60',
+                )}
+              >
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-background p-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={t('adminNav.moveUp')}
+                      disabled={index === 0 || pending}
+                      onClick={() => move(index, -1)}
+                    >
+                      <ArrowUp className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={t('adminNav.moveDown')}
+                      disabled={index === rows.length - 1 || pending}
+                      onClick={() => move(index, 1)}
+                    >
+                      <ArrowDown className="size-3.5" />
+                    </Button>
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <Input
+                      value={row.label}
+                      placeholder={row.defaultLabel ?? row.href}
+                      maxLength={40}
+                      aria-label={row.defaultLabel ?? row.href}
+                      className="h-9 bg-background"
+                      onChange={(event) => update(index, { label: event.target.value })}
+                    />
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      <a
+                        href={row.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-w-0 max-w-full items-center gap-1 truncate font-mono hover:text-foreground hover:underline"
+                      >
+                        <ExternalLink className="size-3 shrink-0" />
+                        <span className="truncate">{row.href}</span>
+                      </a>
+                      {row.custom ? (
+                        <Badge variant="secondary">{t('adminNav.custom')}</Badge>
+                      ) : null}
+                      {row.hidden ? <Badge variant="outline">{t('adminNav.hidden')}</Badge> : null}
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <label className="flex h-8 items-center gap-2 rounded-lg bg-background px-2.5 text-xs">
+                      <Switch
+                        checked={!row.hidden}
+                        disabled={pending}
+                        aria-label={t('adminNav.visible')}
+                        onCheckedChange={(checked) => update(index, { hidden: !checked })}
+                      />
+                      <span>{t('adminNav.visible')}</span>
+                    </label>
+                    {row.overrideId && hasOverride(row) ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={pending}
+                        className={cn(
+                          row.custom &&
+                            'text-destructive hover:bg-destructive/10 hover:text-destructive',
+                        )}
+                        onClick={() => remove(row)}
+                      >
+                        {row.custom ? (
+                          <Trash2 className="size-4" />
+                        ) : (
+                          <RotateCcw className="size-4" />
+                        )}
+                        {row.custom ? t('adminNav.delete') : t('adminNav.reset')}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <aside className="order-first flex flex-col gap-4 rounded-2xl bg-muted/40 p-4 xl:order-none xl:sticky xl:top-4">
+          <SectionTitle icon={<Plus />}>{t('adminNav.addTitle')}</SectionTitle>
+          <div className="flex flex-col gap-2">
             <Label htmlFor="nav-label">{t('adminNav.name')}</Label>
             <Input
               id="nav-label"
               value={label}
               maxLength={40}
+              className="h-10 bg-background"
               onChange={(event) => setLabel(event.target.value)}
             />
           </div>
-          <div className="space-y-1">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="nav-href">{t('adminNav.href')}</Label>
             <Input
               id="nav-href"
               value={href}
               placeholder={t('adminNav.hrefPlaceholder')}
+              className="h-10 bg-background"
               onChange={(event) => setHref(event.target.value)}
             />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {t('adminNav.hrefHint')}
+            </p>
           </div>
-          <div className="flex items-end">
-            <Button variant="outline" onClick={add} disabled={pending}>
-              <Plus className="size-4" />
-              {t('adminNav.add')}
-            </Button>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">{t('adminNav.hrefHint')}</p>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={add}
+            disabled={pending || !label.trim() || !href.trim()}
+          >
+            <Plus className="size-4" />
+            {t('adminNav.add')}
+          </Button>
+        </aside>
       </div>
     </div>
   );

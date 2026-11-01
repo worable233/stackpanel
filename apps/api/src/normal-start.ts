@@ -8,8 +8,17 @@
  * 迁移由 runner 执行，本入口不做 `migrate deploy`（ADR-0025）。
  */
 
-import { buildApp } from './app.ts';
+import path from 'node:path';
+import { buildApp, describeTrustProxy } from './app.ts';
 import { loadCatalogSourceConfig } from './distribution/source-config.ts';
+import { readReleaseInfo } from './bootstrap/release-version.ts';
+import { seedDefaultKeyring } from './distribution/default-keyring.ts';
+import { KEYRING_FILE, loadKeyring } from './distribution/keyring.ts';
+import { setBootReport, type TrustSummary } from './lib/boot-report.ts';
+import { describeMemory } from './lib/memory-report.ts';
+import { getConfig } from './config/runtime-config.ts';
+import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
+import { KERNEL_API_VERSION, KERNEL_VERSION } from '@stackpanel/spec';
 import { env } from './config/env.ts';
 import { setupStatus } from './auth/install-claim.ts';
 import { initInfra } from './infra.ts';
@@ -46,7 +55,54 @@ await loadCatalogSourceConfig();
 // 就会读（会话 TTL、上传上限、限流额度……）。先预热快照，避免首个请求用到 .env 旧值。
 await loadRuntimeConfig();
 
+// 信任根**随内核安装**（packages/spec trust.ts 的契约）。全新实例的数据目录里没有
+// `trust/keyring.json` 时市场里一个包都装不上，而界面只说「安装失败」——v0.1.0/
+// v0.1.1 的默认 compose 部署就是这么坏掉的。这里在首启时幂等写入默认公钥（已存在
+// 则原样保留，解析失败也不覆盖）。
+await seedDefaultKeyring();
+
+const keyring = await loadKeyring();
+const signatureRequired = getConfig('PACKAGE_SIGNATURE_REQUIRED') === true;
+const trust: TrustSummary = {
+  catalogKeys: keyring.keys.filter((key) => key.purpose === 'catalog' && !key.revoked).length,
+  packageKeys: keyring.keys.filter((key) => key.purpose === 'package' && !key.revoked).length,
+  kernelKeys: keyring.keys.filter((key) => key.purpose === 'kernel' && !key.revoked).length,
+  signatureRequired,
+  keyringPath: path.join(resolveStackPanelDataDir(), KEYRING_FILE),
+};
+if (signatureRequired && trust.packageKeys === 0) {
+  // 以前只有 env 解析期的一行 warn，而且发生在「上传已经被拒」之后。信任根缺失是
+  // 部署配置问题，必须在启动日志里说清「缺什么、在哪、怎么补」。
+  console.error(
+    `[trust] PACKAGE_SIGNATURE_REQUIRED=true，但信任根里没有可用的 package 公钥：` +
+      `${trust.keyringPath}。上传插件/主题会被拒绝——请在该文件补一把 package 公钥，` +
+      '或删除该文件后重启以生成默认信任根，或在后台关闭签名校验。',
+  );
+}
+
+const release = readReleaseInfo(import.meta.url);
+// 镜像里没有 `RELEASE.json`（只有自包含产物带），但版本号编译期就在 `KERNEL_VERSION`。
+// 两边都不看就得到 `unknown`——那正是线上排障最不想看到的答案。
+const reportedVersion = release.version === 'unknown' ? KERNEL_VERSION : release.version;
+setBootReport({
+  version: reportedVersion,
+  apiVersion: KERNEL_API_VERSION,
+  commit: release.commit,
+  builtAt: release.builtAt,
+  startedAt: new Date().toISOString(),
+  trustProxy: describeTrustProxy(),
+  trust,
+});
+
 const app = buildApp({ redis: peekRedis() });
+app.log.info(
+  `[api] stackpanel ${reportedVersion}` +
+    (release.commit ? ` (commit ${release.commit.slice(0, 8)})` : '') +
+    ` · API_TRUST_PROXY=${describeTrustProxy()} · 信任根：catalog ${trust.catalogKeys}/package ${trust.packageKeys}/kernel ${trust.kernelKeys}`,
+);
+// 堆上限要显式可见：没设 `--max-old-space-size` 时 V8 只给容器限额的一半左右，
+// 这是 v0.1.1 装到 10+ 插件后 OOM 的直接原因。看到这个数字才知道该调多大。
+app.log.info(`[api] 内存：${describeMemory()}`);
 
 async function start(): Promise<void> {
   try {
