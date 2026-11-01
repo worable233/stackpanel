@@ -210,7 +210,22 @@ export async function ensureExtensionModels(
         return;
       }
       await prisma.$transaction(async (tx) => {
-        if (!existing) {
+        // 跨进程串行。`migrationLocks` 只在**本进程**内有效，而 compose 里 api 与
+        // worker 是两个容器（pid 都是 1）、共用同一个数据库，首次启动时同时激活
+        // 内置插件：两条 `CREATE TABLE IF NOT EXISTS` 并发会撞 PostgreSQL 的
+        // `23505 duplicate key value violates unique constraint
+        // "pg_type_typname_nsp_index"`（隐式 row type 同名），其中一个进程直接退出。
+        // 实测：全新数据卷 `up -d` 偶发 worker 启动失败。
+        await tx.$queryRawUnsafe(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          `stackpanel.extension.${table.kind}`,
+        );
+        // 拿到锁后必须**重新读一次**：另一个进程可能刚刚建完表并写好了元数据。
+        const current = await tx.extensionSchema.findUnique({ where: { kind: table.kind } });
+        if (current && current.definitionHash === hash && current.tableName === table.tableName) {
+          return;
+        }
+        if (!current) {
           await tx.$executeRawUnsafe(createTableSql(table));
           for (const index of table.indexes) {
             await tx.$executeRawUnsafe(createIndexSql(table.tableName, index));

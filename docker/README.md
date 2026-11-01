@@ -162,6 +162,28 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel:1.2.3
 - `docker/proxy/traefik.yml.example`
 - `docker/Caddyfile`（compose 内置）
 
+**协议头（最容易踩、症状最误导）**：`X-Forwarded-Proto` 必须送**访客看到的**协议，
+不能写 nginx 的 `$scheme`。TLS 在 CDN / 面板终止、回源到 `listen 80` 时 `$scheme`
+永远是 `http`，而浏览器的 `Origin` 是 `https://…`；Web BFF 的同源守卫
+（`apps/web/src/lib/request-origin.ts`）比对不上就 403 —— 界面显示「请求来源无效」，
+**后台所有 POST 全部失效**，但页面本身完全正常（GET 不受影响），几乎不会有人
+联想到是反代。正确写法：
+
+```nginx
+map $http_x_forwarded_proto $sp_forwarded_proto {
+    default $http_x_forwarded_proto;   # 优先透传 CDN 写的
+    ''      $scheme;                   # 上游没写时才兜底
+}
+proxy_set_header X-Forwarded-Proto $sp_forwarded_proto;
+proxy_set_header X-Forwarded-Port  $server_port;
+```
+
+（本站**只**经 CDN 的 TLS 暴露、且 CDN 不回写这个头时，把兜底那一行改成 `https`。）
+Caddy 与 Traefik 自动处理这一项，只有手写 nginx 会错。
+
+**API 前缀用 `^~`**：1Panel / 宝塔 的站点配置里常有 `location ^~ /api/`，nginx
+先匹配 `^~` 再看正则，裸正则版本会被静默吞掉，`/api/v1/*` 全部落到 Web 上游 → 404。
+
 **真实客户端 IP**：反代前面还有 CDN / 云负载均衡时，必须让反代信任那些回源网段
 （nginx：`set_real_ip_from` + `real_ip_recursive on`；Traefik：`forwardedHeaders.trustedIPs`），
 否则内核看到的所有访客都是同一个地址——按 IP 的限流、验证码冷却、封禁与审计会全部失真。

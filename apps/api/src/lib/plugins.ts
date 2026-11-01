@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { cp, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -784,7 +784,10 @@ async function seedBuiltinPlugin(id: string): Promise<{ name: string; version: s
   };
   // Build into a temp dir then rename the whole directory, so concurrent
   // readers (parallel test workers) never observe a partial plugin package.
-  const tmp = path.join(pluginsDir(), `.seed-${id}-${process.pid}`);
+  // 后缀不能只用 pid：compose 里 api 与 worker 都是容器内的 pid 1，共享同一个数据
+  // 目录，两个进程会算出同一个临时目录，先到的 `cp` 与后到的 `rm -rf` 互相踩，实测
+  // 报 `ENOTEMPTY: directory not empty, rmdir .../.seed-store-1/dist`。
+  const tmp = path.join(pluginsDir(), `.seed-${id}-${process.pid}-${randomUUID().slice(0, 8)}`);
   await rm(tmp, { recursive: true, force: true });
   await mkdir(tmp, { recursive: true });
   await cp(distDir, path.join(tmp, 'dist'), { recursive: true });
