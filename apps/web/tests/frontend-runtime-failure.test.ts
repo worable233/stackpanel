@@ -46,12 +46,20 @@ function writeBrokenPackage(id: string, source: string): string {
   return entry;
 }
 
+/**
+ * 这个文件里**第一个** `freshRuntime()` 要真的把 `@/lib/frontend-runtime` 连同
+ * React / Next 的整条链冷导入一遍，实测 5.3 秒——已经超过 vitest 默认的 5 秒上限。
+ * 表现是「单跑这个文件能过（并行度不同，导入更快），跑全量就挂」：第一个用例超时，
+ * 后面的用例因为模块已在缓存里，全都几毫秒就过。给它显式的预算，而不是调快机器。
+ */
+const COLD_IMPORT_TIMEOUT_MS = 30_000;
+
 describe('runtimeFrontendFailure (装载失败原因)', () => {
   it('returns null for a package that was never loaded', async () => {
     const { runtimeFrontendFailure } = await freshRuntime();
     writeBrokenPackage('clean', 'export default { ui: {} }');
     expect(runtimeFrontendFailure('plugins', 'clean')).toBeNull();
-  });
+  }, COLD_IMPORT_TIMEOUT_MS);
 
   it('records why a package failed to link, so callers can tell it from 404', async () => {
     const { loadRuntimeFrontend, runtimeFrontendFailure } = await freshRuntime();

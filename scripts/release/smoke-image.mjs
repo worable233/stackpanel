@@ -157,9 +157,12 @@ const authHeaders = (token) => ({ authorization: `Bearer ${token}` });
  * 写操作必须带 `Idempotency-Key`（`request.idempotency_key_required`）。冒烟里每次
  * 写都是一次性动作，用新 key；真正的重试语义由内核按 key 去重，冒烟不重复发同一请求。
  */
-const idempotent = (token) => ({
+const idempotent = (token, hasBody = false) => ({
   ...authHeaders(token),
-  'content-type': 'application/json',
+  // 空体请求不能声称是 JSON：内核的 body 解析器会回
+  // `request.invalid: Body cannot be empty when content-type is set to 'application/json'`
+  // （装主题/装插件都是无体 POST）。
+  ...(hasBody ? { 'content-type': 'application/json' } : {}),
   'idempotency-key': randomUUID(),
 });
 
@@ -291,20 +294,21 @@ async function createAdmin() {
 
 /**
  * 市场是随内核发行的**内置插件**，但内置不等于已启用：全新实例里它是 `registered`，
- * `/api/v1/market/admin/*` 全是 404。用户视角的「打开应用市场」第一步就是启用它，
+ * `/market/admin/*` 全是 404（插件路由挂在根路径上，只有 manifest.capabilities
+ * 声明的公开别名才以 `/api/v1/` 开头）。用户视角的「打开应用市场」第一步就是启用它，
  * 冒烟必须走同一条路。
  */
 async function enableMarket(token) {
   const patch = await http(`${API}/api/v1/admin/plugins/market`, {
     method: 'PATCH',
-    headers: idempotent(token),
+    headers: idempotent(token, true),
     body: JSON.stringify({ enabled: true }),
   });
   if (patch.status >= 400) {
     throw new Error(`启用 market = ${patch.status}：${patch.text.slice(0, 300)}`);
   }
   await waitFor('market 激活', async () => {
-    const status = await http(`${API}/api/v1/market/admin/status`, { headers: authHeaders(token) });
+    const status = await http(`${API}/market/admin/status`, { headers: authHeaders(token) });
     if (status.status === 200) return true;
     if (status.status !== 404 && status.status !== 503) {
       throw new Error(`market 状态 = ${status.status}`);
@@ -314,16 +318,22 @@ async function enableMarket(token) {
   return 'market → active';
 }
 
-async function listCatalog(token) {
-  const response = await http(`${API}/api/v1/market/admin/plugins`, { headers: authHeaders(token) });
+/** `GET /market/admin/plugins|themes` → 条目 id 列表（两种 kind 的响应字段名不同）。 */
+async function listCatalog(token, kind) {
+  const key = kind === 'theme' ? 'themes' : 'plugins';
+  const response = await http(`${API}/market/admin/${key}`, { headers: authHeaders(token) });
   if (response.status !== 200) {
-    throw new Error(`目录列表 = ${response.status}：${response.text.slice(0, 300)}`);
+    throw new Error(`目录列表(${kind}) = ${response.status}：${response.text.slice(0, 300)}`);
   }
-  return Array.isArray(response.json?.plugins) ? response.json.plugins : [];
+  const entries = response.json?.[key];
+  if (!Array.isArray(entries)) {
+    throw new Error(`目录列表(${kind}) 响应缺少 ${key} 数组：${response.text.slice(0, 200)}`);
+  }
+  return entries.map((entry) => entry.id);
 }
 
 async function installPlugin(token, pluginId) {
-  const response = await http(`${API}/api/v1/market/admin/plugins/${pluginId}/install`, {
+  const response = await http(`${API}/market/admin/plugins/${pluginId}/install`, {
     method: 'POST',
     headers: idempotent(token),
   });
@@ -347,7 +357,7 @@ async function installPlugin(token, pluginId) {
 async function installTheme(token, themeIds) {
   let lastError = '';
   for (const themeId of themeIds) {
-    const response = await http(`${API}/api/v1/market/admin/themes/${themeId}/install`, {
+    const response = await http(`${API}/market/admin/themes/${themeId}/install`, {
       method: 'POST',
       headers: idempotent(token),
     });
@@ -404,8 +414,7 @@ async function main() {
     } else {
       await check('启用内置 market 插件（全新实例默认是 registered）', () => enableMarket(token));
       await check('从市场安装插件并激活', async () => {
-        const catalog = await listCatalog(token);
-        const plugins = catalog.map((entry) => entry.id);
+        const plugins = await listCatalog(token, 'plugin');
         const wanted = typeof args.plugin === 'string' ? args.plugin : 'captcha';
         const target = plugins.includes(wanted) ? wanted : plugins[0];
         if (!target) throw new Error('目录里没有任何插件条目');
@@ -418,8 +427,7 @@ async function main() {
       console.log('  - 跳过（--offline）');
     } else {
       await check('安装主题后首页仍可渲染', async () => {
-        const catalog = await listCatalog(token);
-        const themes = catalog.map((entry) => entry.id);
+        const themes = await listCatalog(token, 'theme');
         const wanted = typeof args.theme === 'string' ? args.theme : 'default';
         const candidates = [wanted, ...themes].filter((id, index, all) => all.indexOf(id) === index);
         if (candidates.length === 0) throw new Error('目录里没有任何主题条目');
