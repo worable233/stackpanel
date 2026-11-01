@@ -88,7 +88,10 @@ git push origin v0.1.0
    `kernel-ref.json`（清单的 SHA-256 与 keyId）——它**不进 Release**，只作为工作流产物，
    用于拼进目录的 `kernels[]`（`release:catalog --kernels <dir>`）；
 5. 以同一 tag 创建 GitHub Release，附上镜像摘要、两个自包含产物、清单与 `.sig`、
-   `stackpanel-upgrade{,.json}`，并用提交历史自动生成 Release Notes。
+   `stackpanel-upgrade{,.json}`，并用提交历史自动生成 Release Notes；
+6. 以同一个 tag 调起 `.github/workflows/publish-updater.yml`，发布与内核同号的
+   `ghcr.io/<owner>/stackpanel-updater:<v>`（updater 是独立服务，镜像独立于主镜像；
+   补发只跑这个工作流，否则主镜像的版本标签会被重指到新摘要，与已签清单对不上）。
 
 ### 需要配置的仓库变量与密钥
 

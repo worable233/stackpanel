@@ -17,6 +17,9 @@
 # 环境变量：
 #   STACKPANEL_REPO      期望的 GitHub 仓库（owner/name），默认从 git remote 推断；
 #                        无 remote 时必须显式给出，否则报错退出。
+#   STACKPANEL_IMAGE_WORKFLOW  签发它的工作流文件名（默认按镜像名推断：
+#                        `stackpanel-updater` → `publish-updater.yml`，其余 → `release.yml`）。
+#                        两个镜像由不同工作流签名，身份正则写错就永远验不过。
 #   COSIGN_EXPERIMENTAL  透传（旧版 cosign 需要 =1 才启用 keyless 校验）。
 #
 set -euo pipefail
@@ -40,6 +43,17 @@ fi
 [[ -n "$REPO" ]] || fail "无法推断 GitHub 仓库。请设置 STACKPANEL_REPO=owner/name 后重试。"
 info "期望签发仓库：${REPO}"
 
+# 签发它的工作流：主镜像在 release.yml，updater 在 publish-updater.yml。
+# 身份正则里写错文件名，验签就永远不过（反之写宽了等于不校验）。
+WORKFLOW="${STACKPANEL_IMAGE_WORKFLOW:-}"
+if [[ -z "$WORKFLOW" ]]; then
+  case "$IMAGE_REF" in
+    */stackpanel-updater)* WORKFLOW="publish-updater.yml" ;;
+    *) WORKFLOW="release.yml" ;;
+  esac
+fi
+info "期望签发工作流：${WORKFLOW}"
+
 # ---- 2. 标签 → 摘要 -------------------------------------------------------
 DIGEST_REF="$IMAGE_REF"
 if [[ "$IMAGE_REF" != *"@sha256:"* ]]; then
@@ -54,7 +68,7 @@ info "校验目标：${DIGEST_REF}"
 # 绑定「签发身份 = 本仓库 release.yml」+「OIDC 签发方 = GitHub Actions」，
 # 从而阻止任何其他工作流 / 身份的伪造签名通过。
 cosign verify \
-  --certificate-identity-regexp "^https://github.com/${REPO}/.github/workflows/release.yml@" \
+  --certificate-identity-regexp "^https://github.com/${REPO}/.github/workflows/${WORKFLOW}@" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   "$DIGEST_REF"
 

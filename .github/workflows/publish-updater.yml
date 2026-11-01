@@ -1,0 +1,160 @@
+# updater 镜像发布（GHCR + tag + cosign）。
+#
+# 为什么单独一份工作流，而不是只往 release.yml 里加个 job：
+# updater 是独立服务（唯一持有 docker.sock），镜像必须与内核**同号**，但**不能**用
+# `release.yml` 的手工触发补发——那条路径会把 `stackpanel:0.1.1` 这类版本标签重新
+# 指向一个新摘要，而已签名的内核清单里写死了旧摘要，两边就对不上了（清单是升级
+# 目标的唯一事实来源，标签漂移等于发布了一版没人能验过的镜像）。
+#
+# 所以 updater 单独成一份可复用工作流：
+# - 推 `v*` 标签：由 release.yml 的 `publish-updater` job 调起，两个镜像同 Tag 发布；
+# - 手工补发：直接 dispatch 本文件（--ref 分支 + `tag: v0.1.1`），按该标签检出去构建，
+#   只动 updater 镜像，主镜像与内核清单一律不碰。
+name: Publish updater image
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: '检出与镜像版本所用的标签（形如 v1.2.3）'
+        required: true
+        type: string
+      latest:
+        description: '是否同时打 latest（正式版标签发布时为 true，补发时为 false）'
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '检出与镜像版本所用的标签（形如 v0.1.1）'
+        required: true
+        type: string
+      latest:
+        description: '是否同时打 latest（只有当它就是最新正式版时才勾）'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: stackpanel-updater
+
+jobs:
+  publish:
+    name: 构建 · 推送 · 签名（updater）
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      # 按**标签**检出而不是默认分支：updater 镜像声明的版本必须与内核清单里的
+      # `version` 一致，从别的提交构建出来的镜像即使标签同号也是错的内容。
+      - name: 检出（指定标签）
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: 解析版本与镜像命名空间
+        id: v
+        run: |
+          set -euo pipefail
+          tag='${{ inputs.tag }}'
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "majorMinor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "major=${version%%.*}" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # GHCR 要求命名空间全小写；仓库所有者可能含大写，这里统一归一。
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "updater 镜像版本：${version}（检出 $(git rev-parse --short HEAD)）"
+
+      - name: 安装 QEMU（多架构）
+        uses: docker/setup-qemu-action@v4
+
+      - name: 安装 Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 计算镜像元数据
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.v.outputs.owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=sha-${{ steps.v.outputs.short }}
+            type=raw,value=${{ steps.v.outputs.version }}
+            type=raw,value=${{ steps.v.outputs.majorMinor }}
+            type=raw,value=${{ steps.v.outputs.major }}
+            type=raw,value=latest,enable=${{ inputs.latest }}
+          labels: |
+            org.opencontainers.image.title=StackPanel Updater
+            org.opencontainers.image.description=独立升级执行器：不含内核源码，运行期只操作本 Compose 项目
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: 构建并推送镜像
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          # 上下文必须是仓库根：apps/updater/Dockerfile 要 COPY pnpm-workspace.yaml /
+          # pnpm-lock.yaml / tsconfig.base.json / packages/spec / apps/updater。
+          context: .
+          file: ./apps/updater/Dockerfile
+          # runtime 才是不带源码与构建器的运行时镜像；build 阶段可以丢掉。
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          # 独立 scope：与主镜像共用 `type=gha` 会互相覆盖缓存，
+          # 表现为「命中缓存但层对不上」，构建变慢甚至报错。
+          cache-from: type=gha,scope=updater
+          cache-to: type=gha,mode=max,scope=updater
+
+      - name: 安装 cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: 签名镜像摘要（keyless）
+        env:
+          IMAGE_DIGEST_REF: ${{ env.REGISTRY }}/${{ steps.v.outputs.owner }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_DIGEST_REF"
+
+      - name: 签名自检
+        env:
+          IMAGE_DIGEST_REF: ${{ env.REGISTRY }}/${{ steps.v.outputs.owner }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/publish-updater.yml@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE_DIGEST_REF"
+
+      - name: 写入工作流摘要
+        env:
+          IMAGE_DIGEST_REF: ${{ env.REGISTRY }}/${{ steps.v.outputs.owner }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo '## 已发布 updater 镜像'
+            echo
+            echo '```'
+            echo "$IMAGE_TAGS"
+            echo '```'
+            echo
+            echo "- 摘要：\`${{ steps.build.outputs.digest }}\`"
+            echo "- 签名身份：\`publish-updater.yml\`（keyless），与主镜像不是同一份工作流"
+            echo "- 消费：\`STACKPANEL_UPDATER_IMAGE=${{ env.REGISTRY }}/${{ steps.v.outputs.owner }}/${{ env.IMAGE_NAME }}:${{ steps.v.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

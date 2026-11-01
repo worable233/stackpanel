@@ -13,6 +13,9 @@
 #   --no-https      即使给了域名也不启用 Caddy（纯 HTTP，仅测试用）
 #   --cluster       使用 docker-compose.cluster.yml（忽略内置 PG/Redis/MinIO）
 #   --image <ref>   使用已发布镜像（GHCR）而非本地构建；建议用 @sha256: 摘要引用
+#   --updater-image <ref>
+#                   updater 镜像（独立服务，版本必须与内核同号）。不给时会从 --image
+#                   推导 `<仓库>-updater:<tag>`；--image 用摘要引用时必须显式给。
 #
 # 行为：
 #   1. 检测 docker / docker compose
@@ -31,6 +34,7 @@ EMAIL=""
 NO_HTTPS=0
 CLUSTER=0
 IMAGE=""
+UPDATER_IMAGE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --no-https) NO_HTTPS=1; shift ;;
     --cluster)  CLUSTER=1; shift ;;
     --image)    IMAGE="${2:-}"; shift 2 ;;
+    --updater-image) UPDATER_IMAGE="${2:-}"; shift 2 ;;
     *) echo "未知参数: $1" >&2; exit 1 ;;
   esac
 done
@@ -201,11 +206,33 @@ if [[ -n "$IMAGE" ]]; then
     set_env CADDY_IMAGE "caddy:2-alpine"
   fi
   info "使用已发布镜像：${IMAGE}"
+
+  # updater 是独立服务（唯一持有 docker.sock），镜像独立于主镜像；不写这一项时
+  # compose 会退回本地标签 `stackpanel-updater:latest`，`up -d` 就会去 build，
+  # 违背「运行 Compose 不含 build」的基线。
+  updater_ref="$UPDATER_IMAGE"
+  if [[ -z "$updater_ref" ]]; then
+    if [[ "$IMAGE" == *"@sha256:"* ]]; then
+      warn "--image 用了摘要引用，无法推导 updater 镜像；请追加 --updater-image ghcr.io/<owner>/stackpanel-updater:<版本>"
+    elif [[ "${IMAGE##*/}" != *:* ]]; then
+      # 仓库名后面没有 `:tag`（如 `ghcr.io/o/stackpanel`）时不能推导，否则会把整串当标签。
+      warn "--image 未带版本标签，无法推导 updater 镜像；请追加 --updater-image ghcr.io/<owner>/stackpanel-updater:<版本>"
+    else
+      updater_ref="${IMAGE%:*}-updater:${IMAGE##*:}"
+      info "推导 updater 镜像：${updater_ref}"
+    fi
+  fi
+  if [[ -n "$updater_ref" ]]; then
+    export STACKPANEL_UPDATER_IMAGE="$updater_ref"
+    set_env STACKPANEL_UPDATER_IMAGE "$updater_ref"
+  fi
   # 默认验签（fail-closed）：-image 路径本可被默认跳过，使 cosign 投入形同虚设
   #（审计 E-3）。默认强制校验镜像签名；确需跳过时显式 STACKPANEL_VERIFY_IMAGE=0。
   if [[ "${STACKPANEL_VERIFY_IMAGE:-1}" != "0" ]]; then
     info "校验镜像签名（cosign keyless）…"
     bash "$ROOT_DIR/scripts/verify-image.sh" "$IMAGE"
+    # updater 由 `publish-updater.yml` 签名，verify-image.sh 会按镜像名选对应的工作流身份。
+    [[ -z "$updater_ref" ]] || bash "$ROOT_DIR/scripts/verify-image.sh" "$updater_ref"
   else
     warn "已按 STACKPANEL_VERIFY_IMAGE=0 跳过镜像签名校验——生产环境强烈建议保持默认校验。"
   fi

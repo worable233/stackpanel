@@ -50,7 +50,10 @@ docker compose --env-file docker/.env up -d --build
 发布由 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 完成：
 
 - **触发**：推送 `v*` 标签（如 `v1.2.3`）；或手工 `workflow_dispatch`（只构建/推送/签名，不建 Release）。
-- **推送目标**：`ghcr.io/<owner>/stackpanel`（`<owner>` 为仓库所有者，自动转小写）。
+- **推送目标**：
+  - `ghcr.io/<owner>/stackpanel` —— api / worker / web 同一镜像（`release.yml`）
+  - `ghcr.io/<owner>/stackpanel-updater` —— updater 独立服务（`publish-updater.yml`），
+    **版本号必须与内核同号**：updater 协议由内核清单声明，跨号会让升级任务被拒
 - **标签策略**（`docker/metadata-action` 的 semver 派生）：
 
   | 触发                    | 产出标签                                                      |
@@ -61,17 +64,29 @@ docker compose --env-file docker/.env up -d --build
 
 - **平台**：`linux/amd64`、`linux/arm64`（Buildx + QEMU 多架构清单）。
 - **附带证明**：同一 digest 上推送 **SBOM** 与 **SLSA provenance**（BuildKit `sbom: true` / `provenance: true`）。
-- **签名**：cosign **keyless**（GitHub OIDC）。签发身份绑定本仓库的 `release.yml`，无长期私钥。
+- **签名**：cosign **keyless**（GitHub OIDC）。主镜像的签发身份绑定本仓库的 `release.yml`，
+  updater 镜像绑定 `publish-updater.yml`——两者**不是同一份工作流**，`scripts/verify-image.sh`
+  会按镜像名自动选对应身份（也可用 `STACKPANEL_IMAGE_WORKFLOW` 显式指定）。
 - **Release Notes**：`v*` 标签推送时自动创建 GitHub Release，`generate_release_notes: true` 按提交历史汇总，
   正文追加镜像引用 / digest / 拉取与验签命令。预发布标签自动标 `prerelease`。
 
 > 一次性前置：仓库需允许 Actions 写入 Packages（`permissions.packages: write`，工作流内已声明）。
-> 首次发布后，把仓库可见性/包可见性设为 public（若希望匿名 `docker pull`）。
+> 首次发布后，把仓库可见性/包可见性设为 public（若希望匿名 `docker pull`）——
+> **两个包都要设**：`stackpanel` 与 `stackpanel-updater`。漏掉后者时部署端 `docker pull` 会 401。
 
 ### 手工补发 / 重签
 
 Actions → Release → Run workflow → 填 `tag`（如 `v1.2.3`）→ 运行。
 它重跑构建/推送/签名，但**不**创建或修改 Release（Release 只在标签推送时生成）。
+
+> 补发 **updater 镜像**要动 `Publish updater image` 这份工作流，不要用上面的 `Release`：
+> `Release` 的手工触发会把 `stackpanel:1.2.3` 这类版本标签重新指向一个新摘要，而已签名的
+> 内核清单里写死的是旧摘要，两边对不上就等于发布了一版没人能验过的镜像。
+>
+> ```bash
+> # 按标签检出后构建：镜像内容与内核同号，且只动 updater 镜像
+> gh workflow run publish-updater.yml --ref main -f tag=v0.1.1
+> ```
 
 ## 3. 校验签名（`scripts/verify-image.sh`）
 
@@ -80,6 +95,7 @@ Actions → Release → Run workflow → 填 `tag`（如 `v1.2.3`）→ 运行�
 # 需要 docker（用于把标签解析成摘要）
 
 bash scripts/verify-image.sh ghcr.io/<owner>/stackpanel:v1.2.3
+bash scripts/verify-image.sh ghcr.io/<owner>/stackpanel-updater:v1.2.3   # 签发身份不同，脚本自动切换
 ```
 
 脚本行为：
@@ -116,7 +132,11 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel:1.2.3
 ```
 
 - `--image` 会：写 `STACKPANEL_IMAGE` 到 `docker/.env`、`docker compose pull`（不 build）、再 `up -d`。
-- `STACKPANEL_VERIFY_IMAGE=1` 时先跑 `scripts/verify-image.sh` 校验签名；缺省只提示、不阻断。
+- **updater 镜像**：`--image` 带了 `<tag>` 时会自动推导并写入
+  `STACKPANEL_UPDATER_IMAGE=ghcr.io/<owner>/stackpanel-updater:<同一 tag>`，也可以用
+  `--updater-image` 显式指定。**用摘要引用（`@sha256:`）时必须显式给**——摘要推不出同一版本的
+  updater 镜像，不给就会退回本地标签并触发 `build`，违背「运行 Compose 不含 build」的基线。
+- `STACKPANEL_VERIFY_IMAGE=1` 时先跑 `scripts/verify-image.sh` 校验签名（主镜像与 updater 各一次）；缺省只提示、不阻断。
 - 后续手动运维可直接复用同一镜像：
 
   ```bash
