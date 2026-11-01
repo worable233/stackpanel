@@ -84,8 +84,11 @@ git push origin v0.1.0
 2. cosign **keyless** 签名镜像摘要并自检验签；
 3. 构建自包含产物（ADR-0025）：`stackpanel-<v>-kernel-linux-x64.tar.zst`、
    `stackpanel-<v>-migrate-linux-x64.tar.zst`、upgrade runner；
-4. 生成并签名内核清单 `kernel-manifest.json` + `.sig` + `kernel-ref.json`；
-5. 以同一 tag 创建 GitHub Release，附上上述资产，并用提交历史自动生成 Release Notes。
+4. 生成并签名内核清单 `kernel-manifest.json` + `kernel-manifest.sig`；同时生成
+   `kernel-ref.json`（清单的 SHA-256 与 keyId）——它**不进 Release**，只作为工作流产物，
+   用于拼进目录的 `kernels[]`（`release:catalog --kernels <dir>`）；
+5. 以同一 tag 创建 GitHub Release，附上镜像摘要、两个自包含产物、清单与 `.sig`、
+   `stackpanel-upgrade{,.json}`，并用提交历史自动生成 Release Notes。
 
 ### 需要配置的仓库变量与密钥
 
