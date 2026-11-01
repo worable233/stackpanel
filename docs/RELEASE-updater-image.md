@@ -73,6 +73,24 @@ docker run --rm --entrypoint sh ghcr.io/worable233/stackpanel-updater:0.1.1 \
   -c 'command -v docker && docker compose version && command -v pg_restore'
 ```
 
+### 已在 `v0.1.1` 上实测（2026-11-01）
+
+| 项 | 结果 |
+| --- | --- |
+| 工作流 | `publish-updater.yml` 的 `workflow_dispatch`（`--ref main -f tag=v0.1.1`，按标签检出 → 内容与内核同号） |
+| 摘要 | `sha256:355732150059f19490f0e01092e1a007c4245739a898c1652fc0593c347de262`（arm64/amd64 索引） |
+| 标签 | `0.1.1`、`0.1`、`0`、`sha-876637f`（**无 `latest`**：补发路径默认不打） |
+| 镜像内版本 | `/app/apps/updater/package.json` → `"version": "0.1.1"` |
+| 工具链 | `docker 29.9.2`、`docker compose v5.6.1`、`pg_restore 16.15`、`node 22.23.4`；无 `pnpm`、无源码 |
+| 验签 | `scripts/verify-image.sh` 通过，签发身份 `publish-updater.yml`（keyless），摘要与 CI 一致 |
+| 主镜像回归 | `scripts/verify-image.sh ghcr.io/worable233/stackpanel:0.1.1` 同时通过（身份 `release.yml@refs/tags/v0.1.1`） |
+
+> `scripts/verify-image.sh` 的两个坑已修：① 签发身份原来写死 `release.yml`，updater 永远验不过；
+> ② 摘要解析依赖 `docker buildx imagetools`，而很多机器（包括本机）只有 compose 插件没有 buildx，
+> 回退到 `docker manifest inspect --verbose` 拿到的是**平台清单**摘要，验签会报
+> 「no signatures found」，看着像没签名。现在按「本地 RepoDigests → buildx → registry API
+> (`scripts/lib/image-digest.mjs`) → 平台清单（明确告警）」降级。
+
 ## 6. 版本与运行期约束
 
 - **版本必须与内核同号**（`0.1.1` ↔ `0.1.1`）。updater 协议版本由内核清单

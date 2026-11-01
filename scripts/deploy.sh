@@ -223,6 +223,18 @@ if [[ -n "$IMAGE" ]]; then
     fi
   fi
   if [[ -n "$updater_ref" ]]; then
+    # 集群档的 compose 用 `:?` 要求这一项非空、且注释写着「必须固定到不可变摘要」。
+    # 只有标签时先解析成摘要：标签可以被重新指向，而 updater 会拿它给自己升级。
+    if [[ "$CLUSTER" == "1" && "$updater_ref" != *"@sha256:"* && "${updater_ref##*/}" == *:* ]]; then
+      info "集群档：解析 updater 镜像摘要…"
+      updater_digest="$(node "$ROOT_DIR/scripts/lib/image-digest.mjs" "$updater_ref" 2>/dev/null || true)"
+      if [[ -n "$updater_digest" ]]; then
+        updater_ref="${updater_ref%:*}@${updater_digest}"
+        info "updater 固定在：${updater_ref}"
+      else
+        warn "解析不到 ${updater_ref} 的摘要，仍写入标签引用；集群档建议显式给 --updater-image ...@sha256:<摘要>"
+      fi
+    fi
     export STACKPANEL_UPDATER_IMAGE="$updater_ref"
     set_env STACKPANEL_UPDATER_IMAGE "$updater_ref"
   fi
