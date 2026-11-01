@@ -13,7 +13,7 @@ import {
 } from '../../lib/llm-provider.ts';
 import { SECRETS_DISABLED_CODE, SECRETS_DISABLED_MESSAGE } from '../../lib/secrets-policy.ts';
 import { PluginError } from '@stackpanel/sdk';
-import type { LlmTool } from '@stackpanel/sdk';
+import type { LlmMessage, LlmPart, LlmTool } from '@stackpanel/sdk';
 import { auditContext, writeAudit } from '../../plugins/audit.ts';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
 import { getPrisma } from '../../plugins/prisma.ts';
@@ -307,64 +307,96 @@ export async function adminAgentModelRoutes(app: FastifyInstance): Promise<void>
         additionalProperties: false,
       },
     };
+    /**
+     * 两步探测：先让模型调一次工具，再把工具结果**回灌**给它。
+     *
+     * 只做第一步是不够的——实测 codex666 的 Responses 通道：第一步返回了
+     * 合法的 tool_call（`toolsSupported` 看起来是 true），第二步回灌
+     * `function_call_output` 时上游 400。而 Agent 的每一步都走这两步，所以
+     * 「只测第一步」等于给了一个假的绿灯，正是报告里点名的无效测试。
+     */
+    const callOptions = (suffix: string) => ({
+      // 每次探测都是一个**新的**调用（管理员点一次就是想测一次）。早先这里用
+      // 固定 callId，结果第一次探测的失败记录进了插件侧推理幂等台账，之后每次
+      // 「测试连接」都命中那条 `STARTED` 记录并回「此前调用结果不明」。
+      callId: `agent-model-probe:${suffix}:${randomUUID()}`,
+      runId: 'agent-model-probe',
+      actorId: request.user?.id ?? 'system',
+      timeoutMs: 20_000,
+    });
+    const prompt: LlmMessage[] = [
+      {
+        role: 'user',
+        parts: [
+          {
+            type: 'text',
+            text: 'Call the stackpanel_probe_echo tool with probe="ping". Do not answer in prose.',
+          },
+        ],
+      },
+    ];
     try {
-      const result = await provider.complete(
+      const first = await provider.complete(
+        { model, messages: prompt, tools: [tool], toolChoice: 'auto', maxTokens: 64 },
+        callOptions('1'),
+      );
+      const calls = first.parts.filter(
+        (part): part is Extract<LlmPart, { type: 'tool-call' }> => part.type === 'tool-call',
+      );
+      if (calls.length === 0) {
+        return {
+          ok: false,
+          result: 'tools_unsupported' as const,
+          toolsSupported: false,
+          model: first.model || model,
+          latencyMs: Date.now() - startedAt,
+          message:
+            '接口可达，但模型没有按工具调用返回：该中转/模型可能不转发 tools，Agent 无法可靠运行',
+        };
+      }
+      // 第二步：把工具结果回灌，证明「工具结果 → 模型继续」这一段也通。
+      await provider.complete(
         {
           model,
           messages: [
-            {
-              role: 'user',
+            ...prompt,
+            { role: 'assistant', parts: first.parts },
+            ...calls.map((call): LlmMessage => ({
+              role: 'tool',
+              toolCallId: call.id,
               parts: [
-                {
-                  type: 'text',
-                  text: 'Call the stackpanel_probe_echo tool with probe="ping". Do not answer in prose.',
-                },
+                { type: 'tool-result', id: call.id, content: '{"probe":"pong"}', isError: false },
               ],
-            },
+            })),
           ],
           tools: [tool],
           toolChoice: 'auto',
           maxTokens: 64,
         },
-        {
-          // 每次探测都是一个**新的**调用（管理员点一次就是想测一次）。
-          // 早先这里用固定 callId，结果是第一次探测的失败记录进了插件侧的
-          // 推理幂等台账，之后每次「测试连接」都命中那条 `STARTED` 记录并回
-          // 「此前调用结果不明」——探测器被自己的防重复计费机制锁死。
-          callId: `agent-model-probe:${randomUUID()}`,
-          runId: 'agent-model-probe',
-          actorId: request.user?.id ?? 'system',
-          timeoutMs: 20_000,
-        },
+        callOptions('2'),
       );
-      const toolCalls = result.parts.filter((part) => part.type === 'tool-call');
       return {
-        ok: toolCalls.length > 0,
-        result: toolCalls.length > 0 ? ('ok' as const) : ('tools_unsupported' as const),
-        toolsSupported: toolCalls.length > 0,
-        model: result.model || model,
+        ok: true,
+        result: 'ok' as const,
+        toolsSupported: true,
+        model: first.model || model,
         latencyMs: Date.now() - startedAt,
-        message:
-          toolCalls.length > 0
-            ? null
-            : '接口可达，但模型没有按工具调用返回：该中转/模型可能不转发 tools，Agent 无法可靠运行',
+        message: null,
       };
     } catch (error) {
       const status = (error as { status?: number }).status;
       const message = error instanceof Error ? error.message : '测试失败';
       /**
-       * 第四类结论（比四分类更细，但同样明确）：`tools_rejected`。
+       * 比四分类更细、但同样明确的一类：`tools_rejected`。
        *
-       * 中转站「能收 tools 却不肯在工具协议上配合」有两种典型表现，而且都会在
-       * 第二次请求时才炸——第一次工具调用成功，回灌 `function_call_output` 被拒
-       * （实测 codex666 的 openai-responses 通道：
-       * `function_call_output requires item_reference ids …`）。把它们混进
+       * 中转站「能收 tools 却不肯在工具协议上配合」的典型表现就是第二步被拒
+       * （`function_call_output requires item_reference ids …`）。把它混进
        * `unreachable` 会让运维去查网络，而真正要改的是 provider/协议选择。
+       * 只按**内容**判定：`status` 是内核看到的那个（插件把上游 400 转成了
+       * 502），拿它当依据会把「上游 5xx」也误判成工具协议问题。
        */
-      // 只按**内容**判定，不按状态码：`status` 是内核看到的那个（插件把上游
-      // 400 转成了 502），拿它当依据会把「上游 5xx」也误判成工具协议问题。
       const toolProtocolFault =
-        /function_call_output|item_reference|previous_response_id|tool_call|tools?\b.*(unsupported|not support|invalid)|工具/i.test(
+        /function_call_output|item_reference|previous_response_id|tool_call|tool_result|tools?\b.*(unsupported|not support|invalid)|工具/i.test(
           message,
         );
       const result =
