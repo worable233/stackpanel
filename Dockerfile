@@ -122,7 +122,38 @@ RUN apt-get update \
  && apt-get update \
  && apt-get install -y --no-install-recommends postgresql-client-16 \
  && rm -rf /var/lib/apt/lists/*
+# Source maps.
+#
+# `apps/api/tsup.config.ts` emits `sourcemap: true`, so `dist/` is 20 MB of JS +
+# **13 MB of `.map`** — 65% of the artifact. Those maps shipped into the image
+# but nothing ever read them: `--enable-source-maps` was not set anywhere, so a
+# production stack trace pointed at tsup's chunk names (`bowser-KGNXATBQ.js:1:2`)
+# while 13 MB of every layer did nothing. Either they are used or they are dead
+# weight — this ARG makes that a decision:
+#
+#   --build-arg STACKPANEL_SOURCE_MAPS=0   → maps deleted (~13 MB smaller image,
+#                                             stack traces lose original lines)
+#   default (1)                            → maps kept **and** enabled, so the
+#                                             stack traces actually resolve
+#
+# Deliberately not `NODE_OPTIONS=--enable-source-maps` in compose: compose sets
+# that variable explicitly (`API_NODE_OPTIONS` / `WORKER_NODE_OPTIONS`) and would
+# **override** anything set here. The entrypoints add the flag themselves instead
+# (`docker/entrypoint-*.sh`), which also keeps it off `pg_dump` child processes.
+ARG STACKPANEL_SOURCE_MAPS=1
 COPY --chown=node:node --from=prod-deps /app /app
+RUN if [ "$STACKPANEL_SOURCE_MAPS" = "0" ]; then \
+      find /app -name '*.map' -type f -delete \
+      && echo "source maps stripped"; \
+    fi
+# 裁掉源码与构建期残留：镜像里只需要构建产物。`*.ts` 里含开发注释与内部路径，
+# `*.tsbuildinfo` 是 tsc 的增量缓存，运行时一概不读。
+#
+# 排除 `node_modules` 是必须的：里面有带 `.ts` 源码的包，删掉会打穿依赖。
+# **不能用 `-prune`**：`-delete` 隐含 `-depth`，而 `-depth` 下 `-prune` 完全失效
+# —— 本地实测会连 `node_modules/x/f.ts` 一起删掉。用 `! -path '*/node_modules/*'`。
+RUN find /app -type f \( -name '*.ts' ! -name '*.d.ts' -o -name '*.tsbuildinfo' \) \
+      ! -path '*/node_modules/*' -delete
 
 # 镜像身份：写一份与自包含产物同格式的 `RELEASE.json`，让 `GET /version` 直接回答
 # 「这个容器跑的是哪一次构建」。不传参数（本地 `docker build`）时不写文件，代码侧
