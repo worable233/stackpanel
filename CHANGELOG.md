@@ -6,6 +6,54 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-01
+
+应用市场与插件动作在真机上的可用性修复版。契约版本 `KERNEL_API_VERSION` 仍为 `0.4.0`，
+插件无需改代码即可装上；`PluginActionResult` 是**新增**导出，旧插件不受影响。
+
+### 修复
+
+- **插件动作成功后不再被界面报成失败。** 动作处理器过去用 `redirect(...)` 表达「成功」，
+  那条路径会变成导航异常，界面只能统一按失败渲染——于是「保存成功」弹出红色错误。
+  现在处理器返回结构化结果 `PluginActionResult { ok, message?, error?, requestId? }`
+  （`@stackpanel/sdk` 导出），经 `useActionState` 原样透传，成功与失败各有独立回执；
+  仍返回 `redirect` 的旧包按「已完成」处理，不误报。
+- **市场页的安装回执改为持久行内回执。** 原来是一次性 toast：刷新或切标签就消失，失败
+  又只有一句「安装失败」。现在成功是 `text-success` 行、失败是 `text-warning` 行 + 请求
+  编号，并显示条目来源（内置 / 本地来源 / 已签名目录）以及是否需要二次点击确认覆盖。
+- **目录安装失败按「下一步做什么」给稳定错误码**：`market.notInCatalog`(404)、
+  `market.packageBlocked`(422)、`market.packageTooLarge`(413)、
+  `market.signatureInvalid` / `market.packageInvalid` / `market.sourceUnavailable`(502)、
+  `market.sourceRateLimited`(503，带 `retryAfterSeconds`)、`market.catalogOffline`(409)。
+  原来这类失败是普通 `Error`，接口直接 500，运维看不出该查网络、升内核还是换个包。
+  限流被包在「下载失败」里再抛出时也能识别（往下看两层 `cause`），界面才能给倒计时。
+- **市场状态补「上次检查」与「过期时间」。** 渲染路径零出网（ADR-0027），冷启动时
+  「上次检查」是唯一能区分「刚查过、目录本来就这样」与「从没查过」的依据；过期与否
+  也单独可见，不再让操作者以为「目录里就是这些」。
+- **覆盖安装后新 worker 不再被旧进程的退出回调抹掉**（隔离执行）：装了新版却仍跑旧版，
+  且不报任何错。
+- **目录条目文件名必须与 `kind`+`id` 一致**：否则 `release:catalog` 会静默产出实例端
+  拒绝安装的目录（`entries` 有内容、市场却一个都装不了）。
+- 财务概览的「订单」「商品」快捷入口原来指向应用市场（那是插件与主题市场），改为指向
+  商店插件的实际页面。
+
+### 新增
+
+- **市场页「刷新目录」按钮**（`POST /market/admin/refresh`，`market.admin` 权限，审计
+  `market.catalog.refresh`）。目录快照只活在进程内存里，重启后页面只能停在「正在等待
+  首次刷新结果」，而唯一的触发入口藏在 `/admin/updates` 的「检查更新」里。现在页头可
+  直接刷新：成功显示行内「目录已刷新」并重拉条目，且与 `/admin/distribution/refresh`、
+  `/admin/updates/check` **共用同一冷却**（冷却期内不发网络请求）。
+- `MarketStatus.catalog.checkedAt`：目录最后一次成功检查的时间。
+- 主题可以打包上目录，与插件共用同一条分发与验签链（`release:pack-theme`）。
+- `catalog/entries/` 首批 22 个插件条目：目录不再是空的，市场首次有可装内容。
+
+### 变更
+
+- 前端包单文件上限 1 MiB → 2 MiB：源码压缩后合法但略大的包以前发得出去、装不上。
+- 内核的市场健康度类型改为直接复用 `@stackpanel/sdk` 的声明（单一来源），此前内核自己
+  抄了一份，内核加字段插件侧看不到。
+
 ## [0.1.0] - 2026-11-01
 
 首次公开发布。此前 `0.1.0` / `0.2.0` 只是内部里程碑，从未打过标签、也从未对外发布，
