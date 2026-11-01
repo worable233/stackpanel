@@ -248,6 +248,8 @@ export interface AdminPaymentRecord {
 export interface AdminPaymentListQuery {
   status?: string;
   mode?: AdminPaymentProviderMode;
+  /** Restrict the list to one buyer (used by the admin user-detail page). */
+  userId?: string;
   page?: number;
   pageSize?: number;
 }

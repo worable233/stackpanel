@@ -1,3 +1,4 @@
+// @i18n-exempt — server-side runtime diagnostics (developer log messages, not UI copy)
 import 'server-only';
 
 /**
@@ -93,7 +94,12 @@ function reactDomServerAbi(): Record<string, unknown> {
       "[frontend-runtime] 'react-dom' 只能在浏览器里使用；服务端渲染请用 react-dom/server。",
     );
   };
-  return { default: notInRsc, createPortal: notInRsc, flushSync: notInRsc, version: '0.0.0-rsc-stub' };
+  return {
+    default: notInRsc,
+    createPortal: notInRsc,
+    flushSync: notInRsc,
+    version: '0.0.0-rsc-stub',
+  };
 }
 import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
@@ -104,7 +110,11 @@ import * as sonner from 'sonner';
 // "createContext only works in Client Components" and every page 500s.
 // If a plugin ever needs charts, publish them from a `'use client'` module the
 // way `frontend-abi-bridge.tsx` publishes the rest of the client ABI.
-import { AutoSubmitForm, CopyLinkButton, RouteProgress } from '@/components/frontend-absorbed-clients';
+import {
+  AutoSubmitForm,
+  CopyLinkButton,
+  RouteProgress,
+} from '@/components/frontend-absorbed-clients';
 import { CartCheckout } from '@/components/cart-checkout';
 import { navigationServerAbi } from './frontend-loader';
 

@@ -27,7 +27,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { PageHeader } from '@stackpanel/ui';
+import { List, ListEmpty, ListItem, PageHeader } from '@stackpanel/ui';
 import {
   Select,
   SelectContent,
@@ -36,14 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { CreateUserForm } from '@/components/create-user-form';
 import { impersonateUserAction, updateUserStatusAction } from '@/lib/user-actions';
 import { kernelAssetUrl } from '@/lib/kernel-asset-url';
@@ -203,8 +195,8 @@ export function UsersManager({
       {error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-background">
-          <div className="flex flex-col items-stretch gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between sm:gap-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col items-stretch gap-4 rounded-2xl bg-muted/25 p-4 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
             <InputGroup className="h-7 w-full rounded-md sm:w-64 sm:shrink-0">
               <InputGroupAddon>
                 <Search />
@@ -297,129 +289,116 @@ export function UsersManager({
             </div>
           </div>
 
-          <Table className="**:data-[slot=table-cell]:px-4 **:data-[slot=table-head]:px-4">
-            <TableHeader className="[&_tr]:border-t">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="py-4 font-normal">{t('admin.users.colUser')}</TableHead>
-                <TableHead className="py-4 font-normal">{t('admin.users.colGroups')}</TableHead>
-                <TableHead className="py-4 font-normal">{t('admin.users.colStatus')}</TableHead>
-                <TableHead className="py-4 text-right font-normal">
-                  {t('admin.users.colServices')}
-                </TableHead>
-                <TableHead className="py-4 text-right font-normal">
-                  {t('admin.users.colBalance')}
-                </TableHead>
-                <TableHead className="py-4 font-normal">{t('admin.users.colJoined')}</TableHead>
-                <TableHead className="py-4 font-normal">{t('admin.users.colLastLogin')}</TableHead>
-                <TableHead className="py-4 text-right font-normal">{t('common.actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                    {q ? t('admin.users.emptyQuery', { q }) : t('admin.users.empty')}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                users.map((user) => (
-                  <TableRow key={user.id} className="border-border/60">
-                    <TableCell className="py-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          {/* Decorative: the address sits immediately next to it, so the
-                              image needs no separate alt text. */}
-                          {user.avatarUrl ? (
-                            <AvatarImage src={kernelAssetUrl(user.avatarUrl)} alt="" />
-                          ) : null}
-                          <AvatarFallback className="font-medium">
-                            {initialsFromEmail(user.email)}
-                          </AvatarFallback>
-                        </Avatar>
+          {users.length === 0 ? (
+            <ListEmpty>{q ? t('admin.users.emptyQuery', { q }) : t('admin.users.empty')}</ListEmpty>
+          ) : (
+            <List>
+              {users.map((user) => (
+                <ListItem key={user.id} className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar>
+                        {/* Decorative: the address sits immediately next to it, so the
+                            image needs no separate alt text. */}
+                        {user.avatarUrl ? (
+                          <AvatarImage src={kernelAssetUrl(user.avatarUrl)} alt="" />
+                        ) : null}
+                        <AvatarFallback className="font-medium">
+                          {initialsFromEmail(user.email)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex min-w-0 flex-col gap-1">
                         <Link
                           href={`/admin/users/${user.id}`}
                           className="truncate text-sm font-medium text-foreground hover:text-primary hover:underline"
                         >
                           {user.email}
                         </Link>
+                        {user.groups.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {user.groups.map((group) => (
+                              <Badge
+                                key={group.id}
+                                variant="secondary"
+                                className="rounded-md font-normal"
+                              >
+                                {group.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
-                    </TableCell>
-                    <TableCell className="py-4">
-                      {user.groups.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {user.groups.map((group) => (
-                            <Badge
-                              key={group.id}
-                              variant="secondary"
-                              className="rounded-sm font-normal"
-                            >
-                              {group.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <StatusBadge status={user.status} />
-                    </TableCell>
-                    <TableCell className="py-4 text-right tabular-nums">
-                      {user.serviceCount ?? <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="py-4 text-right whitespace-nowrap tabular-nums">
-                      {user.balance !== undefined
-                        ? formatMoney(user.balance, user.balanceCurrency ?? 'CNY', locale)
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="py-4 text-sm text-muted-foreground">
-                      {formatDate(new Date(user.createdAt), locale, { dateStyle: 'medium' })}
-                    </TableCell>
-                    <TableCell className="py-4 text-sm text-muted-foreground">
-                      {user.lastLoginAt
-                        ? formatDate(new Date(user.lastLoginAt), locale, {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          })
-                        : t('admin.users.neverLoggedIn')}
-                    </TableCell>
-                    <TableCell className="py-4 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="rounded-md text-muted-foreground"
-                              aria-label={t('admin.users.actionsLabel')}
-                            />
-                          }
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem render={<Link href={`/admin/users/${user.id}`} />}>
-                            {t('admin.users.viewDetail')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toggleStatus(user)} disabled={isPending}>
-                            {user.status === 'ACTIVE'
-                              ? t('admin.users.disableUser')
-                              : t('admin.users.enableUser')}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => impersonate(user)} disabled={isPending}>
-                            {t('admin.users.impersonate')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="rounded-md text-muted-foreground"
+                            aria-label={t('admin.users.actionsLabel')}
+                          />
+                        }
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem render={<Link href={`/admin/users/${user.id}`} />}>
+                          {t('admin.users.viewDetail')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleStatus(user)} disabled={isPending}>
+                          {user.status === 'ACTIVE'
+                            ? t('admin.users.disableUser')
+                            : t('admin.users.enableUser')}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => impersonate(user)} disabled={isPending}>
+                          {t('admin.users.impersonate')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
 
-          <div className="flex flex-col items-start gap-4 border-t border-border/70 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                    <StatusBadge status={user.status} />
+                    <span>
+                      {t('admin.users.colServices')}{' '}
+                      <span className="text-foreground tabular-nums">
+                        {user.serviceCount ?? '—'}
+                      </span>
+                    </span>
+                    <span>
+                      {t('admin.users.colBalance')}{' '}
+                      <span className="text-foreground tabular-nums">
+                        {user.balance !== undefined
+                          ? formatMoney(user.balance, user.balanceCurrency ?? 'CNY', locale)
+                          : '—'}
+                      </span>
+                    </span>
+                    <span>
+                      {t('admin.users.colJoined')}{' '}
+                      <span className="text-foreground">
+                        {formatDate(new Date(user.createdAt), locale, { dateStyle: 'medium' })}
+                      </span>
+                    </span>
+                    <span>
+                      {t('admin.users.colLastLogin')}{' '}
+                      <span className="text-foreground">
+                        {user.lastLoginAt
+                          ? formatDate(new Date(user.lastLoginAt), locale, {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })
+                          : t('admin.users.neverLoggedIn')}
+                      </span>
+                    </span>
+                  </div>
+                </ListItem>
+              ))}
+            </List>
+          )}
+
+          <div className="flex flex-col items-start gap-4 px-1 text-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-4 text-muted-foreground">
               <div className="flex items-center gap-2">
                 <span>{t('admin.users.rowsPerPage')}</span>

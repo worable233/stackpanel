@@ -162,6 +162,14 @@ async function apiTokenUser(
     (!request || (request.url.split('?')[0] !== '/mcp' && !validMcpDispatch(request)))
   )
     return null;
+  // 会话为一次 Agent 运行签发的短命凭证（`agent-run`）：只在内核 Agent 与
+  // `/api/v1` 能力路由上生效。把它当成通用令牌复用去调插件写操作属于越权获取，
+  // 这里 fail-closed。
+  if (resolved.audience === 'agent-run') {
+    if (!request) return null;
+    const pathname = request.url.split('?')[0] ?? request.url;
+    if (pathname !== '/mcp' && !pathname.startsWith('/api/v1/')) return null;
+  }
   const { owner, scopes } = resolved;
   if (owner.status !== 'ACTIVE') return null;
   // 请求签名（对标 #12.6）：凭证登记了公钥就必须带签名，缺失/篡改/过期/重放

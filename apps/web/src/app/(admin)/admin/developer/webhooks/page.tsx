@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { WebhookDeliveryListResponse } from '@stackpanel/sdk';
-import { PageHeader, Select } from '@stackpanel/ui';
+import { List, ListEmpty, ListItem, PageHeader, Select } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { Button } from '@/components/ui/button';
@@ -71,9 +71,7 @@ export default async function AdminDeveloperWebhooksPage({
 
   return (
     <main className="w-full space-y-6">
-      <PageHeader
-        title={t('admin.developer.webhooks.title')}
-      />
+      <PageHeader title={t('admin.developer.webhooks.title')} />
 
       <form className="flex flex-wrap items-end gap-3" method="get">
         <div className="space-y-1">
@@ -111,61 +109,39 @@ export default async function AdminDeveloperWebhooksPage({
       </form>
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.developer.serviceUnavailable')}</p>
       ) : null}
 
       {data ? (
         <div className="space-y-3">
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full min-w-[880px] text-sm">
-              <thead className="bg-muted/50 text-left text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colTime')}</th>
-                  <th className="px-4 py-2 font-medium">
-                    {t('admin.developer.webhooks.colReseller')}
-                  </th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colEvent')}</th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colStatus')}</th>
-                  <th className="px-4 py-2 font-medium">
-                    {t('admin.developer.webhooks.colAttempts')}
-                  </th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colCode')}</th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colError')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.deliveries.map((delivery) => (
-                  <tr key={delivery.id} className="border-t align-top">
-                    <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
+          <List>
+            {data.deliveries.length === 0 ? (
+              <ListEmpty>{t('admin.developer.empty')}</ListEmpty>
+            ) : (
+              data.deliveries.map((delivery) => (
+                <ListItem key={delivery.id} className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span className="font-mono text-xs font-medium">{delivery.event}</span>
+                    <span className="whitespace-nowrap text-xs text-muted-foreground">
                       {formatDate(new Date(delivery.createdAt), locale, {
                         dateStyle: 'medium',
                         timeStyle: 'short',
                       })}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {delivery.resellerName ?? delivery.resellerId}
-                    </td>
-                    <td className="px-4 py-2 font-mono text-xs">{delivery.event}</td>
-                    <td className="px-4 py-2">{statusLabel(delivery.status, t)}</td>
-                    <td className="px-4 py-2 text-muted-foreground">
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span>{delivery.resellerName ?? delivery.resellerId}</span>
+                    <span>{statusLabel(delivery.status, t)}</span>
+                    <span>
                       {delivery.attempts}/{delivery.maxAttempts}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {delivery.responseCode ?? '—'}
-                    </td>
-                    <td className="max-w-xs px-4 py-2 text-muted-foreground">
-                      {delivery.error ?? '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {data.deliveries.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">{t('admin.developer.empty')}</p>
-            ) : null}
-          </div>
+                    </span>
+                    <span>{delivery.responseCode ?? '—'}</span>
+                    <span className="max-w-full truncate">{delivery.error ?? '—'}</span>
+                  </div>
+                </ListItem>
+              ))
+            )}
+          </List>
 
           {data.total > 0 ? (
             <div className="flex items-center justify-between text-sm text-muted-foreground">

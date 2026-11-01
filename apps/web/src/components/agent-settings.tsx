@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { InlineError, SectionTitle } from '@stackpanel/ui';
+import { InlineError, InlineNotice, SectionTitle } from '@stackpanel/ui';
 import { toast } from 'sonner';
 import { agentFetch } from './agent-workspace';
 import { agentErrorText } from '@/lib/agent-errors';
@@ -58,6 +58,34 @@ type Retention = {
   lastCleanup: { completedAt: string; deleted: number; mayHaveMore: boolean } | null;
 };
 
+/** 「测试连接」的服务端结论（`POST /admin/model/test`）。 */
+type ModelProbe = {
+  ok: boolean;
+  result: 'ok' | 'tools_unsupported' | 'auth_failed' | 'not_found' | 'unreachable' | 'unconfigured';
+  toolsSupported: boolean;
+  model: string | null;
+  latencyMs: number;
+  message: string | null;
+};
+
+/** 把探测器结论翻成一句人能照着行动的话。 */
+function probeText(t: (key: string, params?: Record<string, string | number>) => string, probe: ModelProbe): string {
+  switch (probe.result) {
+    case 'ok':
+      return t('agent.admin.probeOk', { model: probe.model ?? '' });
+    case 'tools_unsupported':
+      return t('agent.admin.probeNoTools');
+    case 'auth_failed':
+      return t('agent.admin.probeAuth');
+    case 'not_found':
+      return t('agent.admin.probeNotFound', { model: probe.model ?? '' });
+    case 'unconfigured':
+      return t('agent.admin.probeUnconfigured');
+    default:
+      return t('agent.admin.probeUnreachable', { reason: probe.message ?? '' });
+  }
+}
+
 export function AgentSettings() {
   const t = useTranslator();
   const locale = useLocale();
@@ -74,6 +102,8 @@ export function AgentSettings() {
   const [confirm, setConfirm] = useState<'cleanup' | 'model' | null>(null);
   /** Unsaved picker choice; `null` follows the saved catalog value. */
   const [choice, setChoice] = useState<string | null>(null);
+  /** 「测试连接」结果（B-3）：不刷新页面，就地显示分类结论。 */
+  const [probe, setProbe] = useState<ModelProbe | null>(null);
   const applyRetention = (value: Retention) => {
     setRetention(value);
     setDays(String(value.policy.retentionDays ?? 0));
@@ -228,7 +258,32 @@ export function AgentSettings() {
                   ? t('agent.admin.saving')
                   : t('agent.admin.defaultModelSave')}
               </Button>
+              {/* 只测 chat 200 是无效的：Agent 每一步都依赖 tool calling，
+                  中转站不转发 tools 时表现是「配好了、永远跑不通」。这里发一次
+                  带 dummy tool 的请求，并把结论分成四类明确展示。 */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={Boolean(busy)}
+                onClick={() =>
+                  void act('probe', async () => {
+                    setProbe(
+                      await agentFetch<ModelProbe>('admin/model/test', 'POST', {
+                        ...(defaultModel === AUTO ? {} : { model: defaultModel }),
+                      }),
+                    );
+                  })
+                }
+              >
+                {busy === 'probe' ? t('agent.admin.probing') : t('agent.admin.probe')}
+              </Button>
             </div>
+            {probe ? (
+              <InlineNotice className={probe.ok ? undefined : 'text-destructive'} role={probe.ok ? undefined : 'alert'}>
+                {probeText(t, probe)}
+                {probe.latencyMs > 0 && ` · ${t('agent.admin.probeLatency', { ms: probe.latencyMs })}`}
+              </InlineNotice>
+            ) : null}
           </form>
           <Separator />
           <form

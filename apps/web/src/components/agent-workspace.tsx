@@ -70,12 +70,26 @@ export function AgentWorkspace({ runId, approvalsOnly = false }: { runId?: strin
     void tick(); return () => { active = false; clearTimeout(timer); };
   }, [refresh, failText, runId]);
   async function act(action: () => Promise<unknown>, reload = true) { setBusy(true); setError(''); try { await action(); if(reload) await refresh(); } catch (cause) { setError(failText(cause)); } finally { setBusy(false); } }
+  /**
+   * 发起任务（B-2）。
+   *
+   * 有登录会话时**不再要求手输 API Key**：走 `/workspace/runs`，服务端当场签发
+   * 一枚 5 分钟的 run token 并绑定这次运行。只有填了 Key（BYOK / 第三方）才走
+   * 原来的 `/runs`，那里的「必须是创建它的那把 Key」语义不变。
+   *
+   * 续跑（`runId` 存在）永远需要 Key：运行的归属令牌只对创建者有效，
+   * 而会话所属人未必就是当初用 Key 建这条任务的人。
+   */
   async function start(parentId?: string) {
-    if (!key.trim()) throw new Error(t('agent.workspace.keyRequired'));
+    const typedKey = key.trim();
+    if (runId && !typedKey) throw new Error(t('agent.workspace.keyRequired'));
     const body = { objective, ...(model ? {model} : {}), autonomy, execution, ...(parentId ? {parentId} : {}) };
     const serialized = JSON.stringify(body);
     if (createIntent.current?.body !== serialized) createIntent.current = {body:serialized,id:crypto.randomUUID()};
-    const result = await agentFetch<{run:Run}>('runs', 'POST', body, key.trim(), createIntent.current.id);
+    const path = typedKey ? 'runs' : 'workspace/runs';
+    // 后台执行需要「授权」：会话路径不需要加密保管原 Key，但继续用同一条
+    // execution 语义（request = 本次请求推进；background = 后台持续）。
+    const result = await agentFetch<{run:Run}>(path, 'POST', body, typedKey || undefined, createIntent.current.id);
     createIntent.current = null; setObjective(''); router.push(`/account/agent/runs/${result.run.id}`);
   }
   return <div className="flex flex-col gap-6 p-6">
@@ -85,7 +99,11 @@ export function AgentWorkspace({ runId, approvalsOnly = false }: { runId?: strin
     <FieldError role="alert">{error}</FieldError>
     {!approvalsOnly && <Card><CardHeader><CardTitle>{run ? t('agent.workspace.continueTitle') : t('agent.workspace.newTitle')}</CardTitle><CardDescription>{t('agent.workspace.formHint')}</CardDescription></CardHeader><CardContent>
       <form onSubmit={(event) => { event.preventDefault(); void act(() => start(runId)); }}><FieldGroup>
-        <Field><FieldLabel htmlFor="agent-key">{t('agent.workspace.keyLabel')}</FieldLabel><Input id="agent-key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} /><FieldDescription>{t('agent.workspace.keyHint')}</FieldDescription></Field>
+        {/* 运行归属看的是「谁发起」而不是「谁贴了 Key」：登录会话下服务端当场
+            签发一枚 5 分钟 run token，所以新建任务时这一格不必填（B-2）。
+            只有两种情况还需要它：续跑由 API Key 创建的任务，或调用方想显式
+            以某把 Key 的身份行事的 BYOK 场景。 */}
+        <Field><FieldLabel htmlFor="agent-key">{runId ? t('agent.workspace.keyLabel') : t('agent.workspace.keyOptionalLabel')}</FieldLabel><Input id="agent-key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} /><FieldDescription>{runId ? t('agent.workspace.keyHint') : t('agent.workspace.sessionHint')}</FieldDescription></Field>
         <Field><FieldLabel htmlFor="agent-objective">{run ? t('agent.workspace.subObjectiveLabel') : t('agent.workspace.objectiveLabel')}</FieldLabel><InputGroup><InputGroupTextarea id="agent-objective" value={objective} maxLength={4000} onChange={(e) => setObjective(e.target.value)} /></InputGroup></Field>
         <Field><FieldLabel htmlFor="agent-model">{t('agent.workspace.modelLabel')}</FieldLabel><Input id="agent-model" list="agent-models" value={model} onChange={(e) => setModel(e.target.value)} /><datalist id="agent-models">{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</datalist></Field>
         <Field><FieldLabel>{t('agent.workspace.executionLabel')}</FieldLabel><Select value={execution} onValueChange={(v) => v && setExecution(v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="request">{t('agent.workspace.executionRequest')}</SelectItem><SelectItem value="background">{t('agent.workspace.executionBackground')}</SelectItem></SelectGroup></SelectContent></Select></Field>

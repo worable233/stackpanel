@@ -386,6 +386,19 @@
         "SUSPENDED": "暂停",
         "TERMINATED": "已终止",
         "FAILED": "失败"
+      },
+      "payments": {
+        "title": "支付记录",
+        "description": "余额充值不会生成订单，因此在这里单独列出；也包含订单支付记录。",
+        "empty": "暂无支付记录。",
+        "viewAll": "查看全部",
+        "collected": "已确认收款",
+        "purposeHint": "充值到账后自动记入钱包；订单支付用于解锁所购服务。",
+        "totalCount": "共 {total} 笔支付记录",
+        "purpose": {
+          "TOP_UP": "余额充值",
+          "ORDER": "订单支付"
+        }
       }
     },
     "audit": {
@@ -2159,7 +2172,10 @@
       "unconfigured": "未配置",
       "saveCredential": "保存凭证",
       "clearCredential": "清除凭证",
-      "keyRequired": "请填写本人的权限 API Key"
+      "keyRequired": "请填写本人的权限 API Key",
+      "keyOptionalLabel": "调用方 API Key（可留空）",
+      "sessionHint": "留空即以当前登录身份发起：服务端会为这次任务签发 5 分钟有效的短期凭据，无需手输长期令牌。如需让任务以某把 Key 的权限运行，或续跑由 Key 创建的任务，再填写。",
+      "nameUnified": "权限 API Key（与后台「权限密钥」是同一概念）"
     },
     "chat": {
       "contextDefault": "当前工作区",
@@ -2208,7 +2224,20 @@
       "readFailed": "图片读取失败，请重试。",
       "imageConversation": "图片对话",
       "loadFailed": "无法加载对话，请重试",
-      "saveFailedRetained": "{reason}。输入内容已保留，可重试保存。"
+      "saveFailedRetained": "{reason}。输入内容已保留，可重试保存。",
+      "runStartFailed": "无法启动 Agent 执行",
+      "runModel": "模型 {model}",
+      "runModelUnset": "模型未配置",
+      "runSteps": "{count} 步",
+      "runCancel": "停止",
+      "runNoOutput": "运行结束，没有文本输出。",
+      "runOpenWorkspace": "在工作区查看任务 →",
+      "runStatus.QUEUED": "排队中",
+      "runStatus.RUNNING": "执行中",
+      "runStatus.WAITING_APPROVAL": "等待确认",
+      "runStatus.DONE": "已完成",
+      "runStatus.FAILED": "执行失败",
+      "runStatus.CANCELLED": "已取消"
     },
     "admin": {
       "statusLoading": "加载中",
@@ -2276,7 +2305,16 @@
       "providerNone": "未检测到模型提供方",
       "catalogEmpty": "当前提供方没有返回可用模型，请检查提供方配置。",
       "noToolsModel": "不支持工具调用",
-      "fallbackHintPlugin": "当前由模型提供方插件提供服务，下面的兜底接口仅在插件不可用时生效。"
+      "fallbackHintPlugin": "当前由模型提供方插件提供服务，下面的兜底接口仅在插件不可用时生效。",
+      "probe": "测试连接",
+      "probing": "正在测试…",
+      "probeLatency": "{ms} 毫秒",
+      "probeOk": "工具调用正常：{model} 返回了一次 tool_call，Agent 可以运行。",
+      "probeNoTools": "接口可达，但模型没有按工具调用返回。这类中转/模型通常不转发 tools，Agent 无法可靠执行——换一个支持 function calling 的模型或上游。",
+      "probeAuth": "鉴权失败（401/403）：检查 API Key 是否正确、是否被撤销、是否与接口地址匹配。",
+      "probeNotFound": "404：接口地址或模型名不存在（当前模型 {model}）。",
+      "probeUnconfigured": "尚未配置模型提供方，先保存接口地址、密钥与模型名。",
+      "probeUnreachable": "连不通：{reason}"
     },
     "advanced": {
       "title": "高级设置",
@@ -2584,6 +2622,9 @@
     "description": "全部入金一览。手动收款（银行转账 / 收款码）只有在这里确认收款后才会生效。",
     "filterApply": "筛选",
     "listDescription": "可以按状态筛选。确认收款后订单即完成支付并开始交付。",
-    "listTitle": "收款台账"
+    "listTitle": "收款台账",
+    "openPayment": "打开支付页面",
+    "buyerFilter": "当前只显示该用户的支付记录",
+    "clearBuyerFilter": "显示全部用户"
   }
 }

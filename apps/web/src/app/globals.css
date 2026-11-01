@@ -360,7 +360,13 @@
 }
 
 /* Keep host and previously bundled plugin cards on the same compact geometry. */
-:root :is([data-slot='card'], :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not([data-slot='input-group'])) {
+:root
+  :is(
+    [data-slot='card'],
+    :where(div, section, aside, article).border.bg-card:not(#agent-workspace):not(
+        [data-slot='input-group']
+      )
+  ) {
   position: relative;
   isolation: isolate;
   gap: 0.75rem;
@@ -495,22 +501,37 @@ body:has(.backend-shell) {
 
 .plugin-admin .plugin-table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 0;
+  border-radius: 0;
+}
+
+.plugin-admin .plugin-table-wrap table {
+  border-collapse: separate;
+  border-spacing: 0 0.625rem;
 }
 
 .plugin-admin .plugin-table-head {
-  background: var(--muted);
+  background: transparent;
   color: var(--muted-foreground);
   text-align: left;
 }
 
 .plugin-admin .plugin-table-wrap tbody tr {
-  border-top: 1px solid var(--border);
+  border-top: 0;
 }
 
-.plugin-admin .plugin-table-wrap tbody tr:first-child {
-  border-top: 0;
+.plugin-admin .plugin-table-wrap tbody td {
+  background: color-mix(in oklab, var(--muted) 40%, transparent);
+}
+
+.plugin-admin .plugin-table-wrap tbody td:first-child {
+  border-top-left-radius: 1rem;
+  border-bottom-left-radius: 1rem;
+}
+
+.plugin-admin .plugin-table-wrap tbody td:last-child {
+  border-top-right-radius: 1rem;
+  border-bottom-right-radius: 1rem;
 }
 
 .plugin-admin .plugin-chip {
@@ -524,7 +545,9 @@ body:has(.backend-shell) {
   padding: 0.25rem 0.625rem;
   font-size: 0.75rem;
   line-height: 1rem;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .plugin-admin .plugin-chip:hover {
@@ -604,7 +627,25 @@ body:has(.backend-shell) {
 
 /* Backend follows the borderless surface language: separation comes from
    soft neutral fills and spacing, not from 1px outlines. */
-.backend-shell :where(div, section, article, aside, span, a, table, thead, tbody, tfoot, tr, td, th, ul, ol, li):is(.border, [class*="border-"]) {
+.backend-shell
+  :where(
+    div,
+    section,
+    article,
+    aside,
+    span,
+    a,
+    table,
+    thead,
+    tbody,
+    tfoot,
+    tr,
+    td,
+    th,
+    ul,
+    ol,
+    li
+  ):is(.border, [class*='border-']) {
   border-color: transparent !important;
 }
 
@@ -621,7 +662,7 @@ body:has(.backend-shell) {
   background: color-mix(in oklab, var(--muted) 42%, var(--card));
 }
 
-.backend-shell :is(button, a):is(.border, [class*="border-"]) {
+.backend-shell :is(button, a):is(.border, [class*='border-']) {
   border-color: transparent !important;
 }
 
@@ -629,11 +670,11 @@ body:has(.backend-shell) {
   background-color: color-mix(in oklab, var(--muted) 45%, var(--card));
 }
 
-.backend-shell [data-slot="button"] {
+.backend-shell [data-slot='button'] {
   box-shadow: none !important;
 }
 
-.backend-shell [data-slot="avatar"]::after {
+.backend-shell [data-slot='avatar']::after {
   border-color: transparent !important;
 }
 

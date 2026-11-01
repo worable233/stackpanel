@@ -1,8 +1,18 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { InlineError, SectionTitle } from '@stackpanel/ui';
+import {
+  Badge,
+  InlineError,
+  List,
+  ListEmpty,
+  ListItem,
+  SectionTitle,
+  StatusBadge,
+  type StatusTone,
+} from '@stackpanel/ui';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,7 +24,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import {
   Select,
   SelectTrigger,
@@ -58,6 +68,7 @@ import {
   updateUserStatusAction,
   type UserActionResult,
 } from '@/lib/user-actions';
+import { cancelAdminPaymentAction, confirmAdminPaymentAction } from '@/lib/admin-payment-actions';
 import { useTranslator, useLocale } from '@/i18n/provider';
 import { toast } from '@/components/ui/toast';
 import type { Translator } from '@/i18n/core';
@@ -76,6 +87,19 @@ const SERVICE_STATUS_KEYS: Record<string, string> = {
 function serviceStatusLabel(status: string, t: Translator): string {
   const key = SERVICE_STATUS_KEYS[status];
   return key ? t(key) : status;
+}
+
+const SERVICE_STATUS_TONES: Record<string, StatusTone> = {
+  PENDING_PROVISION: 'warn',
+  PROVISIONING: 'warn',
+  ACTIVE: 'ok',
+  SUSPENDED: 'warn',
+  TERMINATED: 'neutral',
+  FAILED: 'error',
+};
+
+function serviceStatusTone(status: string): StatusTone {
+  return SERVICE_STATUS_TONES[status] ?? 'neutral';
 }
 
 function money(amount: number, currency: string, locale: Locale): string {
@@ -118,8 +142,8 @@ function SectionCard({
   action?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <SectionTitle>{title}</SectionTitle>
           {description ? (
@@ -128,9 +152,37 @@ function SectionCard({
         </div>
         {action}
       </div>
-      <div className="mt-4">{children}</div>
+      <div>{children}</div>
     </section>
   );
+}
+
+const PAYMENT_STATUS_KEYS: Record<string, string> = {
+  PENDING: 'adminPayments.statusPending',
+  PAID: 'adminPayments.statusPaid',
+  REVIEW: 'adminPayments.statusReview',
+  CANCELLED: 'adminPayments.statusCancelled',
+  EXPIRED: 'adminPayments.statusExpired',
+  REFUNDED: 'adminPayments.statusRefunded',
+};
+
+const PAYMENT_STATUS_TONES: Record<string, StatusTone> = {
+  PENDING: 'warn',
+  PAID: 'ok',
+  REVIEW: 'warn',
+  CANCELLED: 'neutral',
+  EXPIRED: 'neutral',
+  REFUNDED: 'neutral',
+  FAILED: 'error',
+};
+
+function paymentStatusLabel(status: string, t: Translator): string {
+  const key = PAYMENT_STATUS_KEYS[status];
+  return key ? t(key) : status;
+}
+
+function paymentTone(status: string): StatusTone {
+  return PAYMENT_STATUS_TONES[status] ?? 'neutral';
 }
 
 function BasicInfoSection({ user }: { user: AdminUserDetailResponse['user'] }) {
@@ -400,37 +452,31 @@ function WalletSection({
       {state?.ok ? <p className="mt-2 text-sm text-muted-foreground">{state.message}</p> : null}
 
       {ledger.length > 0 ? (
-        <div className="mt-4 overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.ledger.time')}</th>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.ledger.change')}</th>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.ledger.type')}</th>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.ledger.note')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ledger.map((entry) => (
-                <tr key={entry.id} className="border-t">
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {formatDate(entry.createdAt, locale)}
-                  </td>
-                  <td
-                    className={
-                      entry.amount > 0 ? 'px-3 py-2 text-success' : 'px-3 py-2 text-destructive'
-                    }
-                  >
-                    {entry.amount > 0 ? '+' : ''}
-                    {money(entry.amount, entry.currency, locale)}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{entry.type}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{entry.note ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <List>
+          {ledger.map((entry) => (
+            <ListItem
+              key={entry.id}
+              className="flex flex-wrap items-start justify-between gap-3 py-3.5"
+            >
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="text-sm font-medium">{entry.type}</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatDate(entry.createdAt, locale)} · {entry.note ?? '—'}
+                </span>
+              </div>
+              <span
+                className={
+                  entry.amount > 0
+                    ? 'shrink-0 text-sm font-medium tabular-nums text-success'
+                    : 'shrink-0 text-sm font-medium tabular-nums text-destructive'
+                }
+              >
+                {entry.amount > 0 ? '+' : ''}
+                {money(entry.amount, entry.currency, locale)}
+              </span>
+            </ListItem>
+          ))}
+        </List>
       ) : null}
     </SectionCard>
   );
@@ -694,49 +740,40 @@ function ServicesSection({
       {state?.ok ? <p className="mb-2 text-sm text-muted-foreground">{state.message}</p> : null}
 
       {services.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          {t('admin.userDetail.services.empty')}
-        </p>
+        <ListEmpty>{t('admin.userDetail.services.empty')}</ListEmpty>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">
-                  {t('admin.userDetail.services.colProduct')}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t('admin.userDetail.services.colStatus')}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t('admin.userDetail.services.colAmount')}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t('admin.userDetail.services.colExpiresAt')}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t('admin.userDetail.services.colCreatedAt')}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t('admin.userDetail.services.colActions')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.map((service) => {
-                const editing = editingId === service.id;
-                const bound = Boolean(service.providerId && service.providerServiceId);
-                return (
-                  <tr key={service.id} className="border-t align-top">
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{service.productName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {bound
-                          ? t('admin.userDetail.services.sourceUpstream')
-                          : service.fulfillmentType}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
+        <List>
+          {services.map((service) => {
+            const editing = editingId === service.id;
+            const bound = Boolean(service.providerId && service.providerServiceId);
+            return (
+              <ListItem key={service.id} className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="font-medium text-foreground">{service.productName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {bound
+                        ? t('admin.userDetail.services.sourceUpstream')
+                        : service.fulfillmentType}
+                    </span>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className="block text-sm font-medium tabular-nums">
+                      {money(service.amount, service.currency, locale)}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {t('admin.userDetail.services.colCreatedAt')}{' '}
+                      {formatDate(service.createdAt, locale)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="flex flex-wrap items-end gap-4">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] text-muted-foreground">
+                        {t('admin.userDetail.services.colStatus')}
+                      </span>
                       {editing ? (
                         <Select
                           value={editStatus}
@@ -756,92 +793,86 @@ function ServicesSection({
                           </SelectContent>
                         </Select>
                       ) : (
-                        serviceStatusLabel(service.status, t)
+                        <StatusBadge tone={serviceStatusTone(service.status)}>
+                          {serviceStatusLabel(service.status, t)}
+                        </StatusBadge>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {money(service.amount, service.currency, locale)}
-                    </td>
-                    <td className="px-3 py-2">
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[11px] text-muted-foreground">
+                        {t('admin.userDetail.services.colExpiresAt')}
+                      </span>
                       {editing ? (
                         <Input
                           type="date"
                           value={editExpiresAt}
                           onChange={(e) => setEditExpiresAt(e.target.value)}
-                          className="w-40"
+                          className="h-9 w-40 bg-background"
                           aria-label={t('admin.userDetail.services.expiresAria')}
                         />
                       ) : (
-                        <span className="text-muted-foreground">
+                        <span className="text-sm text-muted-foreground">
                           {formatDate(service.expiresAt, locale)}
                         </span>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {formatDate(service.createdAt, locale)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {editing ? (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="sm"
-                            onClick={() => void saveEdit(service.id)}
-                            disabled={isPending}
-                          >
-                            {t('common.save')}
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
-                            {t('common.cancel')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <Button size="sm" variant="outline" onClick={() => startEdit(service)}>
-                            {t('common.edit')}
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger
-                              render={
-                                <Button size="sm" variant="destructive" disabled={isPending}>
-                                  {bound
-                                    ? t('admin.userDetail.services.unbind')
-                                    : t('common.delete')}
-                                </Button>
-                              }
-                            />
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  {bound
-                                    ? t('admin.userDetail.services.confirmUnbind')
-                                    : t('admin.userDetail.services.confirmDelete')}
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t('admin.userDetail.services.confirmHint')}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => void remove(service.id)}
-                                  disabled={isPending}
-                                >
-                                  {bound
-                                    ? t('admin.userDetail.services.unbind')
-                                    : t('common.delete')}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  </div>
+
+                  {editing ? (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        onClick={() => void saveEdit(service.id)}
+                        disabled={isPending}
+                      >
+                        {t('common.save')}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                        {t('common.cancel')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="outline" onClick={() => startEdit(service)}>
+                        {t('common.edit')}
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger
+                          render={
+                            <Button size="sm" variant="destructive" disabled={isPending}>
+                              {bound ? t('admin.userDetail.services.unbind') : t('common.delete')}
+                            </Button>
+                          }
+                        />
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              {bound
+                                ? t('admin.userDetail.services.confirmUnbind')
+                                : t('admin.userDetail.services.confirmDelete')}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {t('admin.userDetail.services.confirmHint')}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => void remove(service.id)}
+                              disabled={isPending}
+                            >
+                              {bound ? t('admin.userDetail.services.unbind') : t('common.delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
+                </div>
+              </ListItem>
+            );
+          })}
+        </List>
       )}
 
       <AlertDialog
@@ -910,38 +941,33 @@ function OrdersSection({
   return (
     <SectionCard title={t('admin.userDetail.orders.title')}>
       {orders.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">
-          {t('admin.userDetail.orders.empty')}
-        </p>
+        <ListEmpty>{t('admin.userDetail.orders.empty')}</ListEmpty>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.orders.colId')}</th>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.orders.colAmount')}</th>
-                <th className="px-3 py-2 font-medium">{t('admin.userDetail.orders.colStatus')}</th>
-                <th className="px-3 py-2 font-medium">
-                  {t('admin.userDetail.orders.colCreatedAt')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-t">
-                  <td className="px-3 py-2 font-mono text-xs">{order.id}</td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {money(order.total, order.currency, locale)}
-                  </td>
-                  <td className="px-3 py-2">{order.status}</td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {formatDate(order.createdAt, locale)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <List>
+          {orders.map((order) => (
+            <ListItem
+              key={order.id}
+              className="flex flex-wrap items-center justify-between gap-3 py-3.5"
+            >
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="font-mono text-xs text-foreground">
+                  {t('admin.userDetail.orders.colId')} #{order.id.slice(-8).toUpperCase()}
+                </span>
+                <span className="text-xs text-muted-foreground" title={order.id}>
+                  {formatDate(order.createdAt, locale)}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="text-sm font-medium tabular-nums">
+                  {money(order.total, order.currency, locale)}
+                </span>
+                <StatusBadge tone={paymentTone(order.status)}>
+                  {paymentStatusLabel(order.status, t)}
+                </StatusBadge>
+              </div>
+            </ListItem>
+          ))}
+        </List>
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-busy={pending}>
         <span className="text-sm text-muted-foreground">
@@ -997,6 +1023,151 @@ function OrdersSection({
   );
 }
 
+function PaymentsSection({
+  userId,
+  payments,
+  total,
+}: {
+  userId: string;
+  payments: AdminUserDetailResponse['payments'];
+  total: number;
+}) {
+  const t = useTranslator();
+  const locale = useLocale();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  function run(
+    paymentId: string,
+    work: () => Promise<{ ok?: boolean; error?: string; message?: string }>,
+  ) {
+    setBusyId(paymentId);
+    startTransition(async () => {
+      const result = await work();
+      setBusyId(null);
+      if (result.ok) {
+        toast.success(result.message ?? t('admin.userDetail.payments.collected'));
+        router.refresh();
+      } else {
+        toast.error(result.error ?? t('adminPayments.confirmFailed'));
+      }
+    });
+  }
+
+  return (
+    <SectionCard
+      title={t('admin.userDetail.payments.title')}
+      description={t('admin.userDetail.payments.description')}
+      action={
+        <Button
+          nativeButton={false}
+          render={<Link href={`/admin/payments?userId=${encodeURIComponent(userId)}`} />}
+          variant="secondary"
+          size="sm"
+        >
+          {t('admin.userDetail.payments.viewAll')}
+        </Button>
+      }
+    >
+      {payments.length === 0 ? (
+        <ListEmpty>{t('admin.userDetail.payments.empty')}</ListEmpty>
+      ) : (
+        <List>
+          {payments.map((payment) => {
+            const canSettle = payment.status === 'PENDING' && !payment.paymentUrl;
+            const overdue =
+              payment.status === 'PENDING' &&
+              new Date(payment.createdAt).getTime() + 30 * 60 * 1000 < now;
+            return (
+              <ListItem key={payment.id} className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge>{t(`admin.userDetail.payments.purpose.${payment.purpose}`)}</Badge>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        #{payment.id.slice(-8).toUpperCase()}
+                      </span>
+                      {payment.orderId ? (
+                        <span className="text-xs text-muted-foreground">
+                          {t('adminPayments.orderRef', {
+                            id: payment.orderId.slice(-8).toUpperCase(),
+                          })}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(payment.createdAt, locale)}
+                      {payment.providerId ? ` · ${payment.providerId}` : ''}
+                      {payment.paymentMethod ? ` · ${payment.paymentMethod}` : ''}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="text-base font-semibold tabular-nums">
+                      {money(payment.amount, payment.currency, locale)}
+                    </span>
+                    <StatusBadge tone={paymentTone(payment.status)}>
+                      {paymentStatusLabel(payment.status, t)}
+                    </StatusBadge>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {overdue && payment.status === 'PENDING' ? (
+                    <span className="text-xs text-muted-foreground">
+                      {t('adminPayments.expiredHint')}
+                    </span>
+                  ) : null}
+                  {canSettle ? (
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        disabled={pending && busyId === payment.id}
+                        onClick={() => run(payment.id, () => confirmAdminPaymentAction(payment.id))}
+                      >
+                        <Check className="size-4" />
+                        {t('adminPayments.confirm')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        disabled={pending && busyId === payment.id}
+                        onClick={() => run(payment.id, () => cancelAdminPaymentAction(payment.id))}
+                      >
+                        <X className="size-4" />
+                        {t('adminPayments.cancel')}
+                      </Button>
+                    </div>
+                  ) : payment.paymentUrl && payment.status === 'PENDING' ? (
+                    <Button
+                      nativeButton={false}
+                      render={
+                        <a href={payment.paymentUrl} target="_blank" rel="noreferrer noopener" />
+                      }
+                      variant="secondary"
+                      size="sm"
+                    >
+                      {t('adminPayments.openPayment')}
+                    </Button>
+                  ) : null}
+                </div>
+              </ListItem>
+            );
+          })}
+        </List>
+      )}
+      <p className="mt-3 text-xs text-muted-foreground">
+        {t('admin.userDetail.payments.totalCount', { total })}
+      </p>
+    </SectionCard>
+  );
+}
+
 export function AdminUserDetail({
   userId,
   initial,
@@ -1017,6 +1188,7 @@ export function AdminUserDetail({
       <WalletSection userId={userId} wallet={initial.wallet} ledger={initial.ledger} />
       <ServicesSection userId={userId} services={initial.services} />
       <OrdersSection orders={initial.orders} pagination={initial.ordersPagination} />
+      <PaymentsSection userId={userId} payments={initial.payments} total={initial.paymentsTotal} />
     </div>
   );
 }

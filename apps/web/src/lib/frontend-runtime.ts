@@ -1,3 +1,4 @@
+// @i18n-exempt — server-side runtime diagnostics (developer log messages, not UI copy)
 import 'server-only';
 
 import path from 'node:path';

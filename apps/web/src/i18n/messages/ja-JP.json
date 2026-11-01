@@ -395,6 +395,18 @@
         "SUSPENDED": "Suspended",
         "TERMINATED": "Terminated",
         "FAILED": "Failed"
+      },
+      "payments": {
+        "title": "支払い",
+        "description": "ウォレットへのチャージは注文を作成しないため、ここに別途表示されます。注文の支払いも含まれます。",
+        "empty": "支払いはまだありません。",
+        "viewAll": "すべて表示",
+        "collected": "入金確認済み",
+        "totalCount": "{total} 件の支払い",
+        "purpose": {
+          "TOP_UP": "ウォレットチャージ",
+          "ORDER": "注文の支払い"
+        }
       }
     },
     "audit": {
@@ -2159,7 +2171,10 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key"
+      "keyRequired": "Enter your own permission API key",
+      "keyOptionalLabel": "呼び出し元 API キー（任意）",
+      "sessionHint": "空欄のままならログイン中のユーザーとして実行します。バックエンドがこの実行用に 5 分間有効な短期資格情報を発行するため、長期キーは不要です。",
+      "nameUnified": "呼び出し元 API キー（管理画面の「アクセスキー」と同じものです）"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -2208,7 +2223,20 @@
       "readFailed": "Could not read the image. Please try again.",
       "imageConversation": "Image conversation",
       "loadFailed": "Could not load the conversation. Please try again.",
-      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving."
+      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
+      "runStartFailed": "Agent の実行を開始できませんでした",
+      "runModel": "モデル {model}",
+      "runModelUnset": "モデル未設定",
+      "runSteps": "{count} ステップ",
+      "runCancel": "停止",
+      "runNoOutput": "実行は終了しましたが、テキスト出力はありません。",
+      "runOpenWorkspace": "ワークスペースで実行を開く →",
+      "runStatus.QUEUED": "待機中",
+      "runStatus.RUNNING": "実行中",
+      "runStatus.WAITING_APPROVAL": "承認待ち",
+      "runStatus.DONE": "完了",
+      "runStatus.FAILED": "失敗",
+      "runStatus.CANCELLED": "キャンセル"
     },
     "admin": {
       "statusLoading": "Loading",
@@ -2276,7 +2304,16 @@
       "providerNone": "No model provider detected",
       "catalogEmpty": "The current provider returned no models. Check its configuration.",
       "noToolsModel": "No tool calling",
-      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable."
+      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable.",
+      "probe": "接続をテスト",
+      "probing": "テスト中…",
+      "probeLatency": "{ms} ミリ秒",
+      "probeOk": "ツール呼び出しは正常です：{model} が tool_call を返したため、Agent を実行できます。",
+      "probeNoTools": "エンドポイントには到達しましたが、モデルがツール呼び出しを返しません。この種の中継/モデルは通常 tools を転送しないため、Agent は安定して動作しません。function calling 対応のモデルまたは上流に切り替えてください。",
+      "probeAuth": "認証に失敗しました（401/403）：キーが正しいか、失効していないか、このエンドポイントに有効かを確認してください。",
+      "probeNotFound": "404：エンドポイントまたはモデル名が存在しません（現在のモデル {model}）。",
+      "probeUnconfigured": "モデル提供元が未設定です。先にエンドポイント・キー・モデル名を保存してください。",
+      "probeUnreachable": "接続できません：{reason}"
     },
     "advanced": {
       "title": "Advanced settings",
@@ -2584,6 +2621,9 @@
     "methodWechat": "WeChat Pay",
     "methodWallet": "ウォレット残高",
     "methodStripe": "Stripe",
-    "methodPaypal": "PayPal"
+    "methodPaypal": "PayPal",
+    "openPayment": "支払いページを開く",
+    "buyerFilter": "このユーザーの支払いのみ表示中",
+    "clearBuyerFilter": "すべてのユーザーを表示"
   }
 }

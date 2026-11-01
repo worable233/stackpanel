@@ -1,5 +1,6 @@
 export { StatusBadge } from './status-badge.js';
 export type { StatusBadgeProps, StatusTone } from './status-badge.js';
+export { List, ListItem, ListEmpty } from './list.js';
 export { PageHeader } from './page-header.js';
 export type { PageHeaderProps } from './page-header.js';
 export { Button, buttonVariants } from './button.js';
@@ -129,13 +130,7 @@ export type { ErrorPageContent, ErrorPageKind, ErrorPageProps } from './error-pa
 export { ErrorPageActions } from './error-page-actions.js';
 export type { ErrorPageActionsLabels } from './error-page-actions.js';
 
-export {
-  TabsRoot,
-  TabsList,
-  TabsTab,
-  TabsPanel,
-  TabsIndicator,
-} from './animate-ui/tabs.js';
+export { TabsRoot, TabsList, TabsTab, TabsPanel, TabsIndicator } from './animate-ui/tabs.js';
 export type {
   TabsListProps,
   TabsPanelProps,

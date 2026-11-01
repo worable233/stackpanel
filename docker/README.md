@@ -287,10 +287,25 @@ node scripts/release/smoke-image.mjs --image ghcr.io/<owner>/stackpanel:<version
 它断言的事（对应线上事故清单）：
 
 1. `/` 200，且首页引用的前几个 `/_next/static/chunks/*.js` 都 200（镜像漏打 `.next/static` 会在这里死）；
-2. `/health` 200、`/ready` 200、`/api/v1/me` 401；
-3. 全新数据卷首启后无需人工写 `keyring.json` 就能安装市场包；
-4. 安装一个 isolated（M2）插件 → 最终 `activated`，容器日志出现激活行；
-5. 安装一个主题 → 前台首页 200 且渲染出主题。
+2. `/health` 200、`/ready` 200、`/version` 200（版本 + 提交号 + 信任根计数）；
+3. 全新数据卷首启后无需人工写 `keyring.json`（`/version` 的 `trust.packageKeys ≥ 1`）；
+4. 无浏览器初始化管理员（`POST /setup`），未登录 `/api/v1/me` 仍是 401；
+5. 启用内置 market 插件 → 从市场安装一个 isolated（M2）插件 → 最终 `active`，日志出现激活行；
+6. 安装一个主题 → 前台首页 200 且仍能渲染。
+
+常用参数：
+
+```bash
+# 换端口（同机已有实例时）
+node scripts/release/smoke-image.mjs --image <ref> --web-port 18000 --api-port 18001
+# 跳过需要外网的两步（市场安装），只验静态资源/健康/信任根
+node scripts/release/smoke-image.mjs --image <ref> --offline
+# 失败后保留栈便于排查（会打印 down 命令）
+node scripts/release/smoke-image.mjs --image <ref> --keep
+```
+
+它用独立的 compose 项目名（默认 `stackpanel-smoke`）和一次性密钥，跑完自动
+`down -v`，不会碰宿主上已有的实例与数据卷。
 
 ## 10. 升级：有执行器 / 无执行器两条路
 

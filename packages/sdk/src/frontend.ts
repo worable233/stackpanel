@@ -94,6 +94,18 @@ export interface PluginActionResult {
    * bridge between 「安装失败」 on screen and the exact reason in the server log.
    */
   requestId?: string;
+  /**
+   * Stable failure **code** from the API (`gateway.account.name_taken`,
+   * `market.installFailed`, `validation.invalid`, …), when the failure came from
+   * a request.
+   *
+   * ADR-0012 keeps the server's prose `detail` out of the UI, but the code is
+   * machine-readable and already part of the API contract: a page can use it to
+   * branch (e.g. "已建账号但模型未保存") or to show an actionable hint, and an
+   * operator can search the server log for it. Making pages parse the localized
+   * sentence instead is exactly the bug class C-1 describes.
+   */
+  code?: string;
 }
 
 /** One server-side action executor bound to a declared plugin action. */

@@ -386,6 +386,19 @@
         "SUSPENDED": "暫停",
         "TERMINATED": "已終止",
         "FAILED": "失敗"
+      },
+      "payments": {
+        "title": "支付記錄",
+        "description": "餘額充值不會生成訂單，因此在這裡單獨列出；也包含訂單支付記錄。",
+        "empty": "暫無支付記錄。",
+        "viewAll": "檢視全部",
+        "collected": "已確認收款",
+        "purposeHint": "充值到賬後自動記入錢包；訂單支付用於解鎖所購服務。",
+        "totalCount": "共 {total} 筆支付記錄",
+        "purpose": {
+          "TOP_UP": "餘額充值",
+          "ORDER": "訂單支付"
+        }
       }
     },
     "audit": {
@@ -1093,7 +1106,7 @@
       "upToDateTitle": "已是最新",
       "updateContentTitle": "將會更新什麼",
       "updatedAt": "狀態更新時間",
-      "executorOffline": "未偵測到升級執行器（updater 容器未執行）。現在投遞的任務不會被認領，只會一直停在「已投遞」。請先啟動 updater（docker compose --profile updater up -d），或改用 pull + migrate + up -d 手動升級。"
+      "executorOffline": "未檢測到升級執行器（updater 容器未執行）。現在投遞的任務不會被認領，只會一直停在「已投遞」。請先啟動 updater（docker compose --profile updater up -d），或改用 pull + migrate + up -d 手工升級。"
     }
   },
   "locale": {
@@ -2055,7 +2068,7 @@
     "loadFailed": "外掛頁面載入失敗，請重新整理後重試。",
     "renderFailed": "外掛頁面渲染失敗，請重新整理後重試。",
     "brokenTitle": "外掛前端載入失敗",
-    "brokenHint": "外掛「{pluginId}」的前端包未能載入，因此這個頁面無法顯示。這通常是外掛產物與目前內核版本不相容，重新安裝該外掛通常可以修復。",
+    "brokenHint": "外掛「{pluginId}」的前端包未能載入，因此這個頁面無法顯示。這通常是外掛產物與當前核心版本不相容，重新安裝該外掛通常可以修復。",
     "brokenReason": "原因"
   },
   "plugin": {
@@ -2159,7 +2172,10 @@
       "unconfigured": "未配置",
       "saveCredential": "儲存憑證",
       "clearCredential": "清除憑證",
-      "keyRequired": "請填寫本人的許可權 API Key"
+      "keyRequired": "請填寫本人的許可權 API Key",
+      "keyOptionalLabel": "呼叫方 API Key（可留空）",
+      "sessionHint": "留空即以當前登錄身份發起：服務端會為這次任務簽發 5 分鐘有效的短期憑據，無需手輸長期令牌。如需讓任務以某把 Key 的許可權執行，或續跑由 Key 建立的任務，再填寫。",
+      "nameUnified": "許可權 API Key（與後臺「許可權金鑰」是同一概念）"
     },
     "chat": {
       "contextDefault": "當前工作區",
@@ -2208,7 +2224,20 @@
       "readFailed": "圖片讀取失敗，請重試。",
       "imageConversation": "圖片對話",
       "loadFailed": "無法載入對話，請重試",
-      "saveFailedRetained": "{reason}。輸入內容已保留，可重試儲存。"
+      "saveFailedRetained": "{reason}。輸入內容已保留，可重試儲存。",
+      "runStartFailed": "無法啟動 Agent 執行",
+      "runModel": "模型 {model}",
+      "runModelUnset": "模型未配置",
+      "runSteps": "{count} 步",
+      "runCancel": "停止",
+      "runNoOutput": "執行結束，沒有文本輸出。",
+      "runOpenWorkspace": "在工作區檢視任務 →",
+      "runStatus.QUEUED": "排隊中",
+      "runStatus.RUNNING": "執行中",
+      "runStatus.WAITING_APPROVAL": "等待確認",
+      "runStatus.DONE": "已完成",
+      "runStatus.FAILED": "執行失敗",
+      "runStatus.CANCELLED": "已取消"
     },
     "admin": {
       "statusLoading": "載入中",
@@ -2276,7 +2305,16 @@
       "providerNone": "未檢測到模型提供方",
       "catalogEmpty": "當前提供方沒有返回可用模型，請檢查提供方配置。",
       "noToolsModel": "不支援工具呼叫",
-      "fallbackHintPlugin": "當前由模型提供方外掛提供服務，下面的兜底介面僅在外掛不可用時生效。"
+      "fallbackHintPlugin": "當前由模型提供方外掛提供服務，下面的兜底介面僅在外掛不可用時生效。",
+      "probe": "測試連線",
+      "probing": "正在測試…",
+      "probeLatency": "{ms} 毫秒",
+      "probeOk": "工具呼叫正常：{model} 返回了一次 tool_call，Agent 可以執行。",
+      "probeNoTools": "介面可達，但模型沒有按工具呼叫返回。這類中轉/模型通常不轉發 tools，Agent 無法可靠執行——換一個支援 function calling 的模型或上游。",
+      "probeAuth": "鑑權失敗（401/403）：檢查 API Key 是否正確、是否被撤銷、是否與介面地址匹配。",
+      "probeNotFound": "404：介面地址或模型名不存在（當前模型 {model}）。",
+      "probeUnconfigured": "尚未配置模型提供方，先儲存介面地址、金鑰與模型名。",
+      "probeUnreachable": "連不通：{reason}"
     },
     "advanced": {
       "title": "進階設置",
@@ -2584,6 +2622,9 @@
     "description": "全部入金一覽。手動收款（銀行轉賬 / 收款碼）只有在這裡確認收款後才會生效。",
     "filterApply": "篩選",
     "listDescription": "可以按狀態篩選。確認收款後訂單即完成支付並開始交付。",
-    "listTitle": "收款臺賬"
+    "listTitle": "收款臺賬",
+    "openPayment": "開啟支付頁面",
+    "buyerFilter": "當前只顯示該用戶的支付記錄",
+    "clearBuyerFilter": "顯示全部用戶"
   }
 }

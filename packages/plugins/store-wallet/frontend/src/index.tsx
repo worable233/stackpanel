@@ -8,6 +8,9 @@ import {
   Button,
   Card,
   CardContent,
+  List,
+  ListEmpty,
+  ListItem,
   PageHeader,
   SectionTitle,
   WalletRecharge,
@@ -257,11 +260,11 @@ function Ledger({
         {title}
       </SectionTitle>
       {rows.length ? (
-        <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <List>
           {rows.map((row) => (
-            <li
+            <ListItem
               key={row.id}
-              className="flex items-center justify-between gap-4 px-5 py-3.5 text-sm"
+              className="flex flex-wrap items-center justify-between gap-3 py-3.5 text-sm"
             >
               <div className="min-w-0">
                 <p className="truncate">
@@ -299,11 +302,11 @@ function Ledger({
                   </form>
                 ) : null}
               </div>
-            </li>
+            </ListItem>
           ))}
-        </ul>
+        </List>
       ) : (
-        <Empty text={tr('records.empty')} />
+        <ListEmpty>{tr('records.empty')}</ListEmpty>
       )}
     </section>
   );

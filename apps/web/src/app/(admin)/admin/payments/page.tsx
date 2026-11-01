@@ -22,9 +22,10 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
   REFUNDED: 'adminPayments.statusRefunded',
 };
 
-function hrefFor(status: string | null, page: number): string {
+function hrefFor(status: string | null, page: number, userId: string | null): string {
   const params = new URLSearchParams();
   if (status) params.set('status', status);
+  if (userId) params.set('userId', userId);
   if (page > 1) params.set('page', String(page));
   const qs = params.toString();
   return qs ? `/admin/payments?${qs}` : '/admin/payments';
@@ -40,7 +41,7 @@ function hrefFor(status: string | null, page: number): string {
 export default async function AdminPaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; userId?: string }>;
 }) {
   const sp = await searchParams;
   const t = createTranslator(await getLocale());
@@ -50,6 +51,7 @@ export default async function AdminPaymentsPage({
       ? sp.status
       : null;
   const page = Math.max(1, Number(sp.page) || 1);
+  const userId = typeof sp.userId === 'string' && sp.userId.trim() ? sp.userId.trim() : null;
 
   let data: AdminPaymentListResponse | null = null;
   let failed = false;
@@ -59,6 +61,7 @@ export default async function AdminPaymentsPage({
       page,
       pageSize: PAGE_SIZE,
       ...(status ? { status } : {}),
+      ...(userId ? { userId } : {}),
     });
   } catch (error) {
     console.error('[admin/payments] load failed:', error);
@@ -72,9 +75,12 @@ export default async function AdminPaymentsPage({
     <main className="flex w-full flex-col gap-4">
       <PageHeader title={t('adminPayments.title')} />
 
-      <nav className="flex flex-wrap items-center gap-1" aria-label={t('adminPayments.filterStatus')}>
+      <nav
+        className="flex flex-wrap items-center gap-1"
+        aria-label={t('adminPayments.filterStatus')}
+      >
         <Link
-          href={hrefFor(null, 1)}
+          href={hrefFor(null, 1, userId)}
           aria-current={status === null ? 'page' : undefined}
           className={cn(
             'inline-flex h-8 items-center rounded-md px-3 text-sm transition-colors',
@@ -88,7 +94,7 @@ export default async function AdminPaymentsPage({
         {STATUSES.map((value) => (
           <Link
             key={value}
-            href={hrefFor(value, 1)}
+            href={hrefFor(value, 1, userId)}
             aria-current={status === value ? 'page' : undefined}
             className={cn(
               'inline-flex h-8 items-center rounded-md px-3 text-sm transition-colors',
@@ -101,6 +107,15 @@ export default async function AdminPaymentsPage({
           </Link>
         ))}
       </nav>
+
+      {userId ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-muted/40 px-4 py-3 text-sm">
+          <span className="text-muted-foreground">{t('adminPayments.buyerFilter')}</span>
+          <Link className="text-sm font-medium hover:underline" href={hrefFor(status, 1, null)}>
+            {t('adminPayments.clearBuyerFilter')}
+          </Link>
+        </div>
+      ) : null}
 
       {failed ? (
         <InlineError className="rounded-xl px-4 py-10 text-center">
@@ -119,7 +134,7 @@ export default async function AdminPaymentsPage({
             {page > 1 ? (
               <Link
                 className={buttonVariants({ size: 'sm', variant: 'secondary' })}
-                href={hrefFor(status, page - 1)}
+                href={hrefFor(status, page - 1, userId)}
               >
                 {t('adminPayments.prev')}
               </Link>
@@ -127,7 +142,7 @@ export default async function AdminPaymentsPage({
             {page < pages ? (
               <Link
                 className={buttonVariants({ size: 'sm', variant: 'secondary' })}
-                href={hrefFor(status, page + 1)}
+                href={hrefFor(status, page + 1, userId)}
               >
                 {t('adminPayments.next')}
               </Link>

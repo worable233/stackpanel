@@ -250,6 +250,8 @@ async function request<T>(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body: unknown | undefined;
     token: string | undefined;
+    /** Sent as `Idempotency-Key` when present (mutating retries stay safe). */
+    idempotencyKey?: string;
   },
   timeoutMs: number,
   schema: z.ZodType<T>,
@@ -260,6 +262,7 @@ async function request<T>(
     const headers: Record<string, string> = { accept: 'application/json' };
     if (init.token) headers.authorization = `Bearer ${init.token}`;
     if (init.body !== undefined) headers['content-type'] = 'application/json';
+    if (init.idempotencyKey) headers['idempotency-key'] = init.idempotencyKey;
     const res = await fetchImpl(url, {
       method: init.method,
       headers,
@@ -352,11 +355,18 @@ export class ApiClient {
     );
   }
 
-  post<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+  /**
+   * POST with an optional `Idempotency-Key`.
+   *
+   * The header travels straight to the kernel, where `runIdempotent`
+   * (openApi routes) or the plugin itself (plugin actions) decides what a replay
+   * means. Passing it is always safe: routes that do not look at it ignore it.
+   */
+  post<T>(path: string, body: unknown, schema: z.ZodType<T>, idempotencyKey?: string): Promise<T> {
     return request(
       this.#fetch,
       `${this.baseUrl}${path}`,
-      { method: 'POST', body, token: this.token },
+      { method: 'POST', body, token: this.token, ...(idempotencyKey ? { idempotencyKey } : {}) },
       this.timeoutMs,
       schema,
     );
@@ -1467,6 +1477,7 @@ export class ApiClient {
     const params = new URLSearchParams();
     if (query.status) params.set('status', query.status);
     if (query.mode) params.set('mode', query.mode);
+    if (query.userId) params.set('userId', query.userId);
     if (query.page) params.set('page', String(query.page));
     if (query.pageSize) params.set('pageSize', String(query.pageSize));
     const qs = params.toString();

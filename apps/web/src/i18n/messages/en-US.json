@@ -386,6 +386,19 @@
         "SUSPENDED": "Suspended",
         "TERMINATED": "Terminated",
         "FAILED": "Failed"
+      },
+      "payments": {
+        "title": "Payments",
+        "description": "Wallet top-ups do not create an order, so they are listed here separately. Order payments are included too.",
+        "empty": "No payments yet.",
+        "viewAll": "View all",
+        "collected": "Receipt confirmed",
+        "purposeHint": "Top-ups are credited to the wallet automatically; order payments unlock the purchased service.",
+        "totalCount": "{total} payments",
+        "purpose": {
+          "TOP_UP": "Wallet top-up",
+          "ORDER": "Order payment"
+        }
       }
     },
     "audit": {
@@ -2159,7 +2172,10 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key"
+      "keyRequired": "Enter your own permission API key",
+      "keyOptionalLabel": "Caller API key (optional)",
+      "sessionHint": "Leave blank to run as the signed-in user: the backend issues a 5-minute run credential for this task, so no long-lived key is needed. Fill it in to make the run act as a specific key, or to continue a run created by one.",
+      "nameUnified": "Caller API key (the same thing as “access keys” in the admin nav)"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -2208,7 +2224,20 @@
       "readFailed": "Could not read the image. Please try again.",
       "imageConversation": "Image conversation",
       "loadFailed": "Could not load the conversation. Please try again.",
-      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving."
+      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
+      "runStartFailed": "Could not start the Agent run",
+      "runModel": "Model {model}",
+      "runModelUnset": "No model configured",
+      "runSteps": "{count} steps",
+      "runCancel": "Stop",
+      "runNoOutput": "The run finished without text output.",
+      "runOpenWorkspace": "Open the run in the workspace →",
+      "runStatus.QUEUED": "Queued",
+      "runStatus.RUNNING": "Running",
+      "runStatus.WAITING_APPROVAL": "Waiting for approval",
+      "runStatus.DONE": "Done",
+      "runStatus.FAILED": "Failed",
+      "runStatus.CANCELLED": "Cancelled"
     },
     "admin": {
       "statusLoading": "Loading",
@@ -2276,7 +2305,16 @@
       "providerNone": "No model provider detected",
       "catalogEmpty": "The current provider returned no models. Check its configuration.",
       "noToolsModel": "No tool calling",
-      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable."
+      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable.",
+      "probe": "Test connection",
+      "probing": "Testing…",
+      "probeLatency": "{ms} ms",
+      "probeOk": "Tool calling works: {model} returned a tool_call, so the Agent can run.",
+      "probeNoTools": "Endpoint reachable, but the model did not answer with a tool call. Such relays/models usually do not forward tools, so the Agent cannot run reliably — switch to a model or upstream that supports function calling.",
+      "probeAuth": "Authentication failed (401/403): check that the key is correct, not revoked, and valid for this endpoint.",
+      "probeNotFound": "404: the endpoint or model name does not exist (current model {model}).",
+      "probeUnconfigured": "No model provider is configured yet. Save the endpoint, key and model name first.",
+      "probeUnreachable": "Unreachable: {reason}"
     },
     "advanced": {
       "title": "Advanced settings",
@@ -2584,6 +2622,9 @@
     "description": "Every incoming payment in one place. Manual collections (bank transfer / QR) only settle after you confirm them here.",
     "filterApply": "Apply",
     "listDescription": "Filter by status. Confirming receipt settles the order and starts delivery.",
-    "listTitle": "Collection ledger"
+    "listTitle": "Collection ledger",
+    "openPayment": "Open payment page",
+    "buyerFilter": "Showing payments for this user only",
+    "clearBuyerFilter": "Show all users"
   }
 }

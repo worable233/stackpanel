@@ -1,4 +1,4 @@
-import { SectionTitle } from '@stackpanel/ui';
+import { List, ListEmpty, ListItem, SectionTitle } from '@stackpanel/ui';
 import type { ResellerDetailResponse, WebhookDeliveryView } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
@@ -42,39 +42,33 @@ function DeliveryTable({
     );
   }
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full min-w-[720px] text-sm">
-        <thead className="bg-muted/50 text-left text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colTime')}</th>
-            <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colEvent')}</th>
-            <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colStatus')}</th>
-            <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colAttempts')}</th>
-            <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colCode')}</th>
-            <th className="px-4 py-2 font-medium">{t('admin.developer.webhooks.colError')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {deliveries.map((delivery) => (
-            <tr key={delivery.id} className="border-t align-top">
-              <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
+    <List>
+      {deliveries.length === 0 ? (
+        <ListEmpty>{t('admin.developer.webhooks.empty')}</ListEmpty>
+      ) : (
+        deliveries.map((delivery) => (
+          <ListItem key={delivery.id} className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <span className="font-mono text-xs font-medium">{delivery.event}</span>
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
                 {formatDate(new Date(delivery.createdAt), locale, {
                   dateStyle: 'medium',
                   timeStyle: 'short',
                 })}
-              </td>
-              <td className="px-4 py-2 font-mono text-xs">{delivery.event}</td>
-              <td className="px-4 py-2">{deliveryStatusLabel(delivery.status, t)}</td>
-              <td className="px-4 py-2 text-muted-foreground">
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>{deliveryStatusLabel(delivery.status, t)}</span>
+              <span>
                 {delivery.attempts}/{delivery.maxAttempts}
-              </td>
-              <td className="px-4 py-2 text-muted-foreground">{delivery.responseCode ?? '—'}</td>
-              <td className="max-w-xs px-4 py-2 text-muted-foreground">{delivery.error ?? '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+              </span>
+              <span>{delivery.responseCode ?? '—'}</span>
+              <span className="max-w-full truncate">{delivery.error ?? '—'}</span>
+            </div>
+          </ListItem>
+        ))
+      )}
+    </List>
   );
 }
 
@@ -143,9 +137,7 @@ export default async function AdminDeveloperResellerPage({
       />
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.developer.serviceUnavailable')}</p>
       ) : null}
 
       {data ? (

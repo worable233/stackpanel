@@ -384,6 +384,29 @@ export class UserAdminService {
       ? await this.commerce.listOrders(id, page, pageSize)
       : { items: [] as CommerceOrder[], total: 0 };
     const orders: CommerceOrder[] = orderPageResult.items;
+    // Wallet top-ups create a payment but no commerce order, so an order-only
+    // detail page makes them invisible to operators. Publish the newest payment
+    // rows alongside the orders, with a total so the UI can link to the full list.
+    const [payments, paymentsTotal] = await Promise.all([
+      this.db.payment.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          purpose: true,
+          status: true,
+          amount: true,
+          currency: true,
+          providerId: true,
+          paymentMethod: true,
+          orderId: true,
+          paymentUrl: true,
+          createdAt: true,
+        },
+      }),
+      this.db.payment.count({ where: { userId: id } }),
+    ]);
     return {
       user: {
         ...stripAvatarAttachmentId(toPublicUser(user)),
@@ -400,6 +423,19 @@ export class UserAdminService {
         currency: order.currency,
         createdAt: order.createdAt.toISOString(),
       })),
+      payments: payments.map((payment) => ({
+        id: payment.id,
+        purpose: payment.purpose === 'TOP_UP' ? 'TOP_UP' : 'ORDER',
+        status: payment.status,
+        amount: payment.amount,
+        currency: payment.currency,
+        providerId: payment.providerId ?? null,
+        paymentMethod: payment.paymentMethod ?? null,
+        orderId: payment.orderId ?? null,
+        paymentUrl: payment.paymentUrl ?? null,
+        createdAt: payment.createdAt.toISOString(),
+      })),
+      paymentsTotal,
       ledger: ledger.map((entry) => ({
         id: entry.id,
         amount: entry.amount,
@@ -589,12 +625,7 @@ export class UserAdminService {
     };
   }
 
-  async adjustWallet(
-    id: string,
-    amount: number,
-    note: string,
-    actor: UserAdminActor,
-  ) {
+  async adjustWallet(id: string, amount: number, note: string, actor: UserAdminActor) {
     this.requirePlatformAdmin(actor);
     await this.deps.wallet.adjust({
       userId: id,
@@ -764,12 +795,7 @@ export class UserAdminService {
     return { service: toAdminService(updated) };
   }
 
-  async deleteService(
-    id: string,
-    serviceId: string,
-    audit: UserAdminAudit,
-    actor: UserAdminActor,
-  ) {
+  async deleteService(id: string, serviceId: string, audit: UserAdminAudit, actor: UserAdminActor) {
     this.requirePlatformAdmin(actor);
     const commerce = this.requireCommerce();
     const existing = await commerce.getService(id, serviceId);
@@ -843,10 +869,23 @@ export class UserAdminService {
       const bound = new Map(
         (boundByProvider.get(source.id) ?? [])
           .filter((service) => service.providerServiceId)
-          .map((service) => [JSON.stringify([(service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null, service.providerServiceId]), service]),
+          .map((service) => [
+            JSON.stringify([
+              (service.runtime as { upstreamId?: string } | null)?.upstreamId ?? null,
+              service.providerServiceId,
+            ]),
+            service,
+          ]),
       );
       for (const item of items) {
-        services.push(this.toAdminUpstreamService(source.id, item, bound.get(JSON.stringify([item.sourceRef ?? null, item.id])), id));
+        services.push(
+          this.toAdminUpstreamService(
+            source.id,
+            item,
+            bound.get(JSON.stringify([item.sourceRef ?? null, item.id])),
+            id,
+          ),
+        );
       }
     }
     return {
@@ -895,12 +934,22 @@ export class UserAdminService {
   ) {
     this.requirePlatformAdmin(actor);
     const source = this.upstreamSources().find((candidate) => candidate.id === input.sourceId);
-    if (!await this.deps.prisma.user.findUnique({ where: { id }, select: { id: true } })) throw new PluginError('user.not_found', 404, '用户不存在');
+    if (!(await this.deps.prisma.user.findUnique({ where: { id }, select: { id: true } })))
+      throw new PluginError('user.not_found', 404, '用户不存在');
     if (!source) throw new PluginError('upstream.not_found', 404, '上游不存在或未启用');
     const commerce = this.requireCommerce();
     const items = await source.list();
-    const matches = items.filter((candidate) => candidate.id === input.providerServiceId && (!input.sourceRef || candidate.sourceRef === input.sourceRef));
-    if (matches.length > 1) throw new PluginError('upstream.ambiguous_service', 409, '多个上游账号存在相同实例编号，请指定上游账号');
+    const matches = items.filter(
+      (candidate) =>
+        candidate.id === input.providerServiceId &&
+        (!input.sourceRef || candidate.sourceRef === input.sourceRef),
+    );
+    if (matches.length > 1)
+      throw new PluginError(
+        'upstream.ambiguous_service',
+        409,
+        '多个上游账号存在相同实例编号，请指定上游账号',
+      );
     const item = matches[0];
     if (!item) throw new PluginError('upstream.service_not_found', 404, '上游服务不存在');
 
@@ -917,7 +966,12 @@ export class UserAdminService {
         amount: item.amount ?? 0,
         currency: item.currency ?? 'CNY',
         expiresAt: item.expiresAt ? new Date(item.expiresAt) : null,
-        runtime: { upstreamId: item.sourceRef ?? null, upstreamProductId: item.productId ?? null, host: item.host ?? null, origin: 'upstream-import' },
+        runtime: {
+          upstreamId: item.sourceRef ?? null,
+          upstreamProductId: item.productId ?? null,
+          host: item.host ?? null,
+          origin: 'upstream-import',
+        },
       });
     } catch (error) {
       if (isCommerceError(error) && error.failure === 'service_already_bound') {

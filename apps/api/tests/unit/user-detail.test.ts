@@ -8,12 +8,21 @@ function fixture(orders = 47) {
   const date = new Date('2026-10-01T00:00:00Z');
   const all = Array.from({ length: orders }, (_, i) => ({ id: `order-${i + 1}`, status: 'PAID', total: 100, currency: 'CNY', createdAt: date }));
   const listOrders = vi.fn(async (_id: string, page: number, size: number) => ({ items: all.slice((page - 1) * size, page * size), total: all.length }));
+  const payments = [
+    { id: 'pay-topup', purpose: 'TOP_UP', status: 'PAID', amount: 1000, currency: 'CNY', providerId: 'manual', paymentMethod: 'bank_transfer', orderId: null, paymentUrl: null, createdAt: date },
+    { id: 'pay-order', purpose: 'ORDER', status: 'PAID', amount: 100, currency: 'CNY', providerId: 'epay', paymentMethod: 'alipay', orderId: 'order-1', paymentUrl: null, createdAt: date },
+  ];
+  const listPayments = vi.fn(async () => payments);
+  const countPayments = vi.fn(async () => payments.length);
   const deps = {
-    prisma: { user: { findUnique: vi.fn(async () => ({ id: 'user', email: 'user@example.com', groups: [], passwordHash: 'private' })) } },
+    prisma: {
+      user: { findUnique: vi.fn(async () => ({ id: 'user', email: 'user@example.com', groups: [], passwordHash: 'private' })) },
+      payment: { findMany: listPayments, count: countPayments },
+    },
     wallet: { getAccount: vi.fn(async () => null), listLedger: vi.fn(async () => []) },
     auth: {}, commerce: { listServices: vi.fn(async () => []), listOrders, listBoundServices: vi.fn(async () => []) },
   } as unknown as UserAdminDeps;
-  return { deps, listOrders, service: new UserAdminService(deps) };
+  return { deps, listOrders, listPayments, service: new UserAdminService(deps) };
 }
 
 describe('admin user detail', () => {
@@ -33,6 +42,16 @@ describe('admin user detail', () => {
     expect(pages.flatMap((page) => page.orders).map((order) => order.id)).toEqual(Array.from({ length: 47 }, (_, i) => `order-${i + 1}`));
     expect(pages[2]?.ordersPagination).toEqual({ page: 3, pageSize: 20, total: 47 });
     expect(pages[0]?.user).not.toHaveProperty('passwordHash');
+  });
+  it('lists wallet top-ups and order payments alongside orders', async () => {
+    const { service, listPayments } = fixture();
+    const result = await service.getUserDetail('user');
+    expect(listPayments).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'user' }, take: 20 }));
+    expect(result.payments.map((payment) => [payment.id, payment.purpose])).toEqual([
+      ['pay-topup', 'TOP_UP'],
+      ['pay-order', 'ORDER'],
+    ]);
+    expect(result.paymentsTotal).toBe(2);
   });
   it('returns an explicit empty page when commerce is disabled', async () => {
     const { deps } = fixture();

@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PageHeader } from '@stackpanel/ui';
+import { List, ListItem, PageHeader } from '@stackpanel/ui';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Dialog,
@@ -27,11 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from '@/components/ui/input-group';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import {
   Select,
   SelectContent,
@@ -40,14 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   createPermissionGroupAction,
@@ -245,9 +233,7 @@ function EditGroupDialog({
   // 表单初值直接取自 props，避免用 effect 同步 props 到 state。
   const [name, setName] = useState(group?.name ?? '');
   const [description, setDescription] = useState(group?.description ?? '');
-  const [discount, setDiscount] = useState(
-    group?.discount == null ? '' : String(group.discount),
-  );
+  const [discount, setDiscount] = useState(group?.discount == null ? '' : String(group.discount));
   const [selected, setSelected] = useState<string[]>(
     () => group?.permissions.map((permission) => permission.key) ?? [],
   );
@@ -447,88 +433,49 @@ function PermissionGroupsTable({
   const t = useTranslator();
   const locale = useLocale();
   const sections = [
-    { key: 'system', label: t('admin.rbac.typeSystem'), count: totals.system, rows: groups.filter((g) => g.structural) },
-    { key: 'custom', label: t('admin.rbac.typeCustom'), count: totals.custom, rows: groups.filter((g) => !g.structural) },
+    {
+      key: 'system',
+      label: t('admin.rbac.typeSystem'),
+      count: totals.system,
+      rows: groups.filter((g) => g.structural),
+    },
+    {
+      key: 'custom',
+      label: t('admin.rbac.typeCustom'),
+      count: totals.custom,
+      rows: groups.filter((g) => !g.structural),
+    },
   ].filter((section) => section.rows.length > 0);
 
   return (
-    <div className="overflow-hidden border-t border-border/70 bg-background">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="h-10 px-4">{t('admin.rbac.colGroup')}</TableHead>
-            <TableHead className="px-4 text-center">{t('admin.rbac.colType')}</TableHead>
-            <TableHead className="px-4 text-center">{t('admin.rbac.colMembers')}</TableHead>
-            <TableHead className="px-4">{t('admin.rbac.colPermissions')}</TableHead>
-            <TableHead className="px-4 text-right">{t('admin.rbac.colDiscount')}</TableHead>
-            <TableHead className="w-10 px-2" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sections.length ? (
-            sections.map((section) => (
-              <Fragment key={section.key}>
-                <TableRow className="h-10 bg-muted hover:bg-muted">
-                  <TableCell colSpan={6} className="px-4 text-sm text-foreground/60">
-                    <span className="inline-flex items-center gap-2">
-                      {section.label}
-                      <Badge variant="outline" className="rounded-sm bg-transparent text-xs text-muted-foreground">
-                        {section.count}
-                      </Badge>
-                    </span>
-                  </TableCell>
-                </TableRow>
-                {section.rows.map((group) => (
-                  <TableRow key={group.id} className="h-12">
-                    <TableCell className="px-4">
-                      <div className="font-medium">{group.name}</div>
+    <div className="flex flex-col gap-4">
+      {sections.length ? (
+        sections.map((section) => (
+          <section key={section.key} className="flex flex-col gap-2">
+            <h3 className="flex items-center gap-2 px-1 text-xs font-medium text-muted-foreground">
+              {section.label}
+              <Badge variant="outline" className="rounded-sm bg-transparent text-xs">
+                {section.count}
+              </Badge>
+            </h3>
+            <List>
+              {section.rows.map((group) => (
+                <ListItem key={group.id} className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="font-medium">{group.name}</span>
                       {group.description ? (
-                        <div className="text-xs text-muted-foreground">{group.description}</div>
+                        <span className="text-xs text-muted-foreground">{group.description}</span>
                       ) : null}
-                    </TableCell>
-                    <TableCell className="px-4 text-center">
+                    </div>
+                    <div className="flex items-center gap-2">
                       <Badge variant="outline" className="rounded-sm">
                         {group.structural ? t('admin.rbac.typeSystem') : t('admin.rbac.typeCustom')}
                       </Badge>
-                    </TableCell>
-                    <TableCell className="px-4 text-center tabular-nums">
-                      {formatNumber(group.memberCount, locale)}
-                    </TableCell>
-                    <TableCell className="px-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {group.permissions.slice(0, 3).map((permission) => (
-                          <Badge
-                            key={permission.key}
-                            variant="outline"
-                            className="rounded-sm font-normal"
-                          >
-                            {permission.name}
-                          </Badge>
-                        ))}
-                        {group.permissions.length > 3 ? (
-                          <span className="text-sm tabular-nums text-muted-foreground">
-                            +{group.permissions.length - 3}
-                          </span>
-                        ) : null}
-                        {group.permissions.length === 0 ? (
-                          <span className="text-sm text-muted-foreground">
-                            {t('admin.rbac.permissionNone')}
-                          </span>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 text-right tabular-nums">
-                      {discountLabel(group.discount, t)}
-                    </TableCell>
-                    <TableCell className="px-2 text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={t('common.actions')}
-                            >
+                            <Button variant="ghost" size="icon-sm" aria-label={t('common.actions')}>
                               <MoreVertical className="size-4" />
                             </Button>
                           }
@@ -547,20 +494,51 @@ function PermissionGroupsTable({
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </Fragment>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                {t('admin.rbac.empty')}
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span>
+                      {t('admin.rbac.colMembers')}{' '}
+                      <span className="text-foreground tabular-nums">
+                        {formatNumber(group.memberCount, locale)}
+                      </span>
+                    </span>
+                    <span>
+                      {t('admin.rbac.colDiscount')}{' '}
+                      <span className="text-foreground">{discountLabel(group.discount, t)}</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {group.permissions.slice(0, 3).map((permission) => (
+                      <Badge
+                        key={permission.key}
+                        variant="outline"
+                        className="rounded-sm font-normal"
+                      >
+                        {permission.name}
+                      </Badge>
+                    ))}
+                    {group.permissions.length > 3 ? (
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        +{group.permissions.length - 3}
+                      </span>
+                    ) : null}
+                    {group.permissions.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        {t('admin.rbac.permissionNone')}
+                      </span>
+                    ) : null}
+                  </div>
+                </ListItem>
+              ))}
+            </List>
+          </section>
+        ))
+      ) : (
+        <div className="rounded-2xl bg-muted/25 px-6 py-12 text-center text-sm text-muted-foreground">
+          {t('admin.rbac.empty')}
+        </div>
+      )}
     </div>
   );
 }
@@ -589,10 +567,7 @@ function PermissionList({ permissions }: { permissions: PermissionInfo[] }) {
   return (
     <div className="flex flex-col gap-4">
       {groups.map((group) => (
-        <div
-          key={group.namespace}
-          className="rounded-xl border border-border/70 bg-background p-4"
-        >
+        <div key={group.namespace} className="rounded-xl border border-border/70 bg-background p-4">
           <div className="mb-3 flex items-center gap-2">
             <span className="font-mono text-sm font-medium">{group.namespace}</span>
             <Badge variant="outline" className="rounded-sm text-muted-foreground">
@@ -665,15 +640,10 @@ export function PermissionGroupManager({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title={t('admin.rbac.title')}
-        actions={<CreateGroupForm />}
-      />
+      <PageHeader title={t('admin.rbac.title')} actions={<CreateGroupForm />} />
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.rbac.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.rbac.serviceUnavailable')}</p>
       ) : (
         <Tabs className="gap-4" defaultValue="roles">
           <TabsList

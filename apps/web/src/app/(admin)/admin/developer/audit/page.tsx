@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { AuditLogEntry, AuditLogResponse } from '@stackpanel/sdk';
-import { PageHeader } from '@stackpanel/ui';
+import { List, ListEmpty, ListItem, PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { Button } from '@/components/ui/button';
@@ -70,9 +70,7 @@ export default async function AdminDeveloperAuditPage({
 
   return (
     <main className="w-full space-y-6">
-      <PageHeader
-        title={t('admin.developer.calls.title')}
-      />
+      <PageHeader title={t('admin.developer.calls.title')} />
 
       <form className="flex flex-wrap items-end gap-3" method="get">
         <div className="space-y-1">
@@ -94,59 +92,41 @@ export default async function AdminDeveloperAuditPage({
       </form>
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.developer.serviceUnavailable')}</p>
       ) : null}
 
       {data ? (
         <div className="space-y-3">
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full min-w-[880px] text-sm">
-              <thead className="bg-muted/50 text-left text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.calls.colTime')}</th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.calls.colMethod')}</th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.calls.colPath')}</th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.calls.colReseller')}</th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.calls.colStatus')}</th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.calls.colIp')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.logs.map((entry) => {
-                  const meta = metaOf(entry);
-                  const reseller = asText(meta.resellerName) ?? asText(meta.keyId);
-                  return (
-                    <tr key={entry.id} className="border-t align-top">
-                      <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
+          <List>
+            {data.logs.length === 0 ? (
+              <ListEmpty>{t('admin.developer.empty')}</ListEmpty>
+            ) : (
+              data.logs.map((entry) => {
+                const meta = metaOf(entry);
+                const reseller = asText(meta.resellerName) ?? asText(meta.keyId);
+                return (
+                  <ListItem key={entry.id} className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <span className="font-mono text-xs font-medium">
+                        {asText(meta.method) ?? '—'} {asText(meta.path) ?? '—'}
+                      </span>
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
                         {formatDate(new Date(entry.createdAt), locale, {
                           dateStyle: 'medium',
                           timeStyle: 'medium',
                         })}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs">{asText(meta.method) ?? '—'}</td>
-                      <td className="max-w-md truncate px-4 py-2 font-mono text-xs">
-                        {asText(meta.path) ?? '—'}
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">
-                        {reseller ?? t('admin.developer.calls.anonymous')}
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">
-                        {asText(meta.status) ?? '—'}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
-                        {entry.ip ?? '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {data.logs.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">{t('admin.developer.empty')}</p>
-            ) : null}
-          </div>
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>{reseller ?? t('admin.developer.calls.anonymous')}</span>
+                      <span>{asText(meta.status) ?? '—'}</span>
+                      <span className="font-mono">{entry.ip ?? '—'}</span>
+                    </div>
+                  </ListItem>
+                );
+              })
+            )}
+          </List>
 
           {data.total > 0 ? (
             <div className="flex items-center justify-between text-sm text-muted-foreground">

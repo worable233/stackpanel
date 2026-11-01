@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { ArrowUp, Bot, Folder, ImagePlus, Loader2, MoreHorizontal, Pencil, Trash2, PanelLeft, Plus, Search, ShieldAlert, SquarePen, X } from 'lucide-react';
-import { useAgentConversations, type ChatAttachment as Attachment } from '@/hooks/use-agent-conversations';
+import { useAgentConversations, type ChatAttachment as Attachment, type ChatRun } from '@/hooks/use-agent-conversations';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
@@ -139,13 +140,20 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
       <div className="flex min-w-0 flex-1 items-center gap-3">{!sidebarOpen && <Button variant="ghost" size="icon-sm" aria-label={t('agent.chat.expandSidebar')} aria-expanded={false} onClick={() => setSidebarOpen(true)}><PanelLeft /></Button>}<Folder className="size-4 shrink-0 text-muted-foreground" /><h2 className="truncate text-sm font-medium">{active?.title || 'Agent'}</h2></div>
       <Button variant="ghost" size="icon-sm" aria-label={t('agent.chat.closeAgent')} onClick={close}><X /></Button>
     </>}>
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-5" aria-live="polite" data-agent-conversation>
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-5 select-text" aria-live="polite" data-agent-conversation>
         {history.error && <div className="mb-4 flex items-center gap-2"><FieldError role="alert">{history.error}</FieldError><Button variant="ghost" size="sm" onClick={history.retry}>{t('agent.chat.retryLoad')}</Button></div>}
         {history.loading && !active && <InlineNotice className="py-4">{t('agent.chat.loadingConversation')}</InlineNotice>}
         {history.earlierCursor && <Button variant="ghost" size="sm" disabled={history.loading} onClick={() => void history.loadEarlier()}>{t('agent.chat.loadEarlier')}</Button>}
         {active ? <div className="flex flex-col gap-10">{active.turns.map((turn) => <section key={turn.id} className="flex flex-col gap-7">
           <div className="ml-8 flex max-w-[90%] flex-col gap-2 self-end rounded-3xl bg-muted px-4 py-3 text-sm leading-6 break-words">{turn.attachments.length > 0 && <div className="flex flex-wrap gap-2">{turn.attachments.map((attachment) => <Image key={attachment.id} src={attachment.url} alt={attachment.name} width={80} height={80} unoptimized className="size-20 rounded-lg object-cover" />)}</div>}{turn.objective}</div>
-          <p className="text-xs text-muted-foreground">{t('agent.chat.messageSaved')}</p>
+          {/* 这行以前是写死的「消息已保存 · 尚未启动 Agent 执行」，永远不变成状态。
+              现在它反映真实运行状态（B-1）：运行中显示步数/模型，终态显示结论，
+              失败带原因，未运行只会在「没有发起」时出现。 */}
+          {history.run && active.turns.at(-1)?.id === turn.id ? (
+            <AgentRunTrace run={history.run} onCancel={history.cancelRun} t={t} />
+          ) : (
+            <p className="text-xs text-muted-foreground">{t('agent.chat.messageSaved')}</p>
+          )}
         </section>)}</div> : !activeId && <section className="flex h-full flex-col justify-center gap-6 pb-10"><div><h3 className="text-xl font-medium tracking-tight">{t('agent.chat.emptyTitle')}</h3><p className="mt-2 text-sm text-muted-foreground">{t('agent.chat.emptyHint')}</p></div><div className="flex flex-col items-start gap-1">{suggestions.map((suggestion) => <Button key={suggestion} variant="ghost" className="h-auto max-w-full justify-start py-2" onClick={() => { setObjective(suggestion); input.current?.focus(); }}><span className="truncate">{suggestion}</span></Button>)}</div></section>}
       </div>
       <form className="shrink-0 px-4 pb-4 pt-2" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
@@ -166,4 +174,29 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
       </form>
     </AgentChatWindow>
   </>;
+}
+
+/** 运行进度条：把一次真实运行的步数/模型/结论摊在消息下面。 */
+function AgentRunTrace({ run, onCancel, t }: { run: ChatRun; onCancel: () => void; t: (key: string, params?: Record<string, string | number>) => string }): React.ReactElement {
+  const terminal = run.status === 'DONE' || run.status === 'FAILED' || run.status === 'CANCELLED';
+  // 「默认模型 中」这种截断是 B-4 的原文案：模型名才是排障要看的那一格。
+  const model = run.model ? t('agent.chat.runModel', { model: run.model }) : t('agent.chat.runModelUnset');
+  return (
+    <div className="flex flex-col gap-1 text-xs text-muted-foreground" data-agent-run={run.id} data-agent-run-status={run.status}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 font-medium text-foreground">
+          {terminal ? null : <Loader2 className="size-3 animate-spin" />}
+          {t(`agent.chat.runStatus.${run.status}`, {})}
+        </span>
+        <span>·</span>
+        <span>{model}</span>
+        {run.steps > 0 && <><span>·</span><span>{t('agent.chat.runSteps', { count: run.steps })}</span></>}
+        {!terminal && <Button variant="ghost" size="sm" className="h-6 px-2" onClick={onCancel}>{t('agent.chat.runCancel')}</Button>}
+      </div>
+      {run.latest && !terminal && <p className="line-clamp-3 whitespace-pre-wrap break-words">{run.latest}</p>}
+      {run.error && <p className="break-words text-destructive">{run.error}</p>}
+      {terminal && <p className="whitespace-pre-wrap break-words">{run.latest ?? t('agent.chat.runNoOutput')}</p>}
+      <Link href={`/account/agent/runs/${run.id}`} className="w-fit underline underline-offset-2">{t('agent.chat.runOpenWorkspace')}</Link>
+    </div>
+  );
 }

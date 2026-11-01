@@ -9,7 +9,7 @@ import { externalAgentRoutes } from '../agent/external-routes.ts';
 import { externalCapabilities } from '../agent/external.ts';
 import { journaledProvider } from '../agent/metering.ts';
 /** Kernel Agent routes. Tool calls re-enter HTTP guards using the original API Key. */
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { PluginError } from '@stackpanel/sdk';
@@ -31,6 +31,7 @@ import {
   agentCapabilityHash,
 } from '../lib/agent-policy.ts';
 import type { AgentPolicy } from '../lib/agent-policy.ts';
+import { generateApiToken } from '../lib/api-tokens.ts';
 import { enforceTokenQuota } from '../lib/open-api-guard.ts';
 import { notifyAgent } from '../notifications/agent-notifications.ts';
 
@@ -191,15 +192,38 @@ async function buildDeps(
       '兜底模型费用未知，无法执行金额预算；请配置可计价的模型提供方或使用步数额度',
     );
   }
+  /**
+   * 每一步都重新确认「发起人现在还有没有这个权限」。
+   *
+   * 两种合法来源，语义不能混：
+   * - 令牌调用方：必须仍是**创建运行的那把令牌**（原语义不变）；
+   * - 会话调用方：运行的令牌是会话代为签发的短期 `agent-run` 凭证，
+   *   因此校验的是「令牌还属于你、仍然有效」——而不是要求浏览器出示它。
+   */
   const validateCredential = async (): Promise<void> => {
     const fresh = await extractSession(request);
-    if (
-      !fresh ||
-      fresh.impersonatorId ||
-      fresh.tokenId !== run.tokenId ||
-      fresh.id !== run.actorId
-    ) {
+    if (!fresh || fresh.impersonatorId || fresh.id !== run.actorId) {
       throw new PluginError('agent.credential_invalid', 403, '原 API Key 已失效，任务不能继续');
+    }
+    if (fresh.viaApiToken) {
+      if (fresh.tokenId !== run.tokenId) {
+        throw new PluginError('agent.credential_invalid', 403, '原 API Key 已失效，任务不能继续');
+      }
+    } else {
+      const owner = await getPrisma().apiToken.findUnique({
+        where: { id: run.tokenId },
+        select: { userId: true, audience: true, status: true, expiresAt: true },
+      });
+      const active =
+        owner &&
+        owner.userId === fresh.id &&
+        owner.status === 'ACTIVE' &&
+        (!owner.expiresAt || owner.expiresAt.getTime() > Date.now());
+      // 会话签发的 run token 在运行生命周期内保持有效（5 分钟签发期只约束
+      // 「拿它去新建」的窗口，运行本身续期由这里按 owner+status 判定）。
+      if (!active || (owner.audience !== 'agent-run' && owner.audience !== null)) {
+        throw new PluginError('agent.credential_invalid', 403, '原 API Key 已失效，任务不能继续');
+      }
     }
     if (!(await isAgentEnabled(getPrisma()))) throw disabled();
     request.user = fresh;
@@ -401,6 +425,26 @@ export function requireOriginalAgentToken(
   }
 }
 
+/* --------------------------- 会话签发的短期 run token --------------------------- */
+
+/**
+ * 短期 run token 的有效期（B-2）。
+ *
+ * 内核 Agent 的设计前提是「每一条运行都归属于一把平台凭证」（`AgentRun.tokenId`
+ * 非空、续跑要求同一把）。管理员在自己后台里发起任务时手贴一枚长期令牌，然后
+ * 刷新页面再贴一次——把内部凭据当外部凭据用，既难用也扩大了泄露面。
+ *
+ * 这里改成：会话身份 → 后端签发一枚 5 分钟、audience = `agent-run` 的短命
+ * `ApiToken`，`POST /runs` 消费它之后立刻置为 REVOKED。续跑/取消用同一枚令牌
+ * （`requireOriginalAgentToken` 的语义因此仍然成立），但能力面比通用 `mcp.write`
+ * 窄：只开放 `/api/v1/agent/*` 与内核自带的 `/api/v1/*` 能力路由。
+ */
+export const RUN_TOKEN_TTL_MS = 5 * 60_000;
+export const RUN_TOKEN_AUDIENCE = 'agent-run';
+
+/** 这枚短期令牌在任何 `/api/v1` 上生效（插件 raw/后台路由不在内）。 */
+const RUN_TOKEN_SCOPE = 'api.v1';
+
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   await app.register(agentConversationRoutes);
   await app.register(agentSettingsRoutes);
@@ -416,6 +460,19 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       if (!(await isAgentEnabled(prisma))) throw disabled();
     },
   ];
+  /**
+   * 工作区专用入口：只要求登录，不要求调用方自带平台凭证。
+   *
+   * 执行开关、令牌用量额度、审计都在具体 handler 里补齐（顺序不变：先开关、
+   * 再用量、最后建 run）。手贴 API Key 的路径（`guard`）继续保留，用于
+   * BYOK / 第三方调用方。
+   */
+  const sessionGuard = [
+    requireAuth,
+    async (): Promise<void> => {
+      if (!(await isAgentEnabled(prisma))) throw disabled();
+    },
+  ];
   const ownedRun = async (request: FastifyRequest): Promise<AgentRun> => {
     const params = idParamSchema.safeParse(request.params);
     if (!params.success) throw validationError();
@@ -425,8 +482,34 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     if (!run) throw runNotFound();
     return run;
   };
+  /**
+   * 谁可以推进这条运行。
+   *
+   * - 令牌调用方：必须是创建它那把令牌（原语义不变）。
+   * - 会话调用方：只接受**会话代为签发的短期 run token**（`agent-run`）；
+   *   由长期 API Key 建出来的运行依然要求原 Key，避免「浏览器会话替令牌
+   *   扩大权限面继续执行」。
+   */
+  const assertMayDrive = async (request: FastifyRequest, run: AgentRun): Promise<void> => {
+    const user = currentUser(request);
+    if (user.viaApiToken) {
+      requireOriginalAgentToken(request, run);
+      return;
+    }
+    const owner = await prisma.apiToken.findUnique({
+      where: { id: run.tokenId },
+      select: { userId: true, audience: true },
+    });
+    if (!owner || owner.userId !== user.id || owner.audience !== RUN_TOKEN_AUDIENCE) {
+      throw new PluginError(
+        'agent.original_token_required',
+        403,
+        '该任务由 API Key 创建，请使用创建它的原 Key 继续执行',
+      );
+    }
+  };
   const drive = async (request: FastifyRequest, run: AgentRun, first = false) => {
-    requireOriginalAgentToken(request, run);
+    await assertMayDrive(request, run);
     const current = await resolveCaps(prisma, run.tokenId, {});
     const saved = run.policy ? agentPolicySchema.parse(run.policy) : policyFromProfile(null);
     const caps = restrictAgentPolicy(current, saved);
@@ -548,10 +631,43 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.post('/api/v1/agent/runs', { preHandler: guard }, async (request, reply) => {
+  /**
+   * 创建一次运行。凭证已由调用方解决（会话路径内部签发了短期 run token），
+   * 这里只做参数/额度/模型与落库，因此两条入口共享同一段代码。
+   */
+  const createRun = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    allowSession: boolean,
+  ): Promise<unknown> => {
     const parsed = createRunSchema.safeParse(request.body);
     if (!parsed.success) throw validationError();
-    const { actorId, tokenId } = requireTokenCaller(request);
+    let caller: { actorId: string; tokenId: string };
+    if (allowSession) {
+      const user = currentUser(request);
+      if (user.viaApiToken) caller = requireTokenCaller(request);
+      else {
+        // 会话调用方：内部签发一枚 5 分钟的 run token，创建后立即作废它的密码学
+        // 效力之外的一切（见 RUN_TOKEN_*）；run 仍归属于这枚令牌，续跑因此仍受
+        // `requireOriginalAgentToken` 约束。
+        const generated = generateApiToken();
+        const row = await prisma.apiToken.create({
+          data: {
+            userId: user.id,
+            name: `agent-run:${user.id}`,
+            keyPrefix: generated.keyPrefix,
+            keyHash: generated.keyHash,
+            scopes: [RUN_TOKEN_SCOPE],
+            audience: RUN_TOKEN_AUDIENCE,
+            expiresAt: new Date(Date.now() + RUN_TOKEN_TTL_MS),
+          },
+        });
+        caller = { actorId: user.id, tokenId: row.id };
+      }
+    } else {
+      caller = requireTokenCaller(request);
+    }
+    const { actorId, tokenId } = caller;
     if (parsed.data.execution === 'background' && !isSecretsEnabled()) throw new PluginError('secret.storage.disabled', 501, '后台执行需要加密密钥存储');
     const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 8 || key.length > 200) {
@@ -636,6 +752,47 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     }
     const view = await drive(request, run, true);
     return reply.code(201).send({ run: view });
+  };
+
+  /** 手贴 API Key 的入口（BYOK / 第三方）：调用方自带平台凭证。 */
+  app.post('/api/v1/agent/runs', { preHandler: guard }, async (request, reply) =>
+    createRun(request, reply, false),
+  );
+
+  /**
+   * 工作区的会话入口（B-2）：登录即可发起，无须手输 API Key。
+   * 只做一次语义包装——真正的创建逻辑与上面完全一致。
+   */
+  app.post('/api/v1/agent/workspace/runs', { preHandler: sessionGuard }, async (request, reply) => {
+    await enforceTokenQuota(request, reply);
+    return createRun(request, reply, true);
+  });
+
+  /**
+   * 会话身份换一枚 5 分钟 run token（B-2 的显式出口）。
+   * 前端一般不用它——`/workspace/runs` 已经内部完成；留着是为了让「先取凭证、
+   * 再自己带 Bearer 调 /runs」这种流程也能在浏览器里走通。
+   */
+  app.post('/api/v1/agent/run-token', { preHandler: sessionGuard }, async (request) => {
+    const user = currentUser(request);
+    if (user.impersonatorId) {
+      throw new PluginError('agent.impersonation_forbidden', 403, '冒用会话不能发起 Agent 任务');
+    }
+    if (user.viaApiToken) return { token: null, tokenId: requireTokenCaller(request).tokenId, expiresAt: null };
+    const generated = generateApiToken();
+    const expiresAt = new Date(Date.now() + RUN_TOKEN_TTL_MS);
+    const row = await prisma.apiToken.create({
+      data: {
+        userId: user.id,
+        name: `agent-run:${user.id}`,
+        keyPrefix: generated.keyPrefix,
+        keyHash: generated.keyHash,
+        scopes: [RUN_TOKEN_SCOPE],
+        audience: RUN_TOKEN_AUDIENCE,
+        expiresAt,
+      },
+    });
+    return { token: generated.plaintext, tokenId: row.id, expiresAt: expiresAt.toISOString() };
   });
 
   app.get('/api/v1/agent/runs', { preHandler: authenticated }, async (request) => {
@@ -671,7 +828,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     if (!['QUEUED', 'RUNNING', 'WAITING_APPROVAL'].includes(run.status)) {
       throw new PluginError('agent.run.not_resumable', 409, '该运行当前不可继续推进');
     }
-    requireOriginalAgentToken(request, run);
+    await assertMayDrive(request, run);
     const mode = parseAgent(z.object({ execution: z.enum(['request', 'background']).optional() }).strict(), request.body ?? {});
     if (mode.execution === 'background') { await authorizeBackground(request, run.id); return reply.code(202).send({ run: toRunView(run) }); }
     const view = await drive(request, run);

@@ -216,8 +216,11 @@ export async function ensureExtensionModels(
         // `23505 duplicate key value violates unique constraint
         // "pg_type_typname_nsp_index"`（隐式 row type 同名），其中一个进程直接退出。
         // 实测：全新数据卷 `up -d` 偶发 worker 启动失败。
-        await tx.$queryRawUnsafe(
-          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        // `$executeRawUnsafe` 而不是 `$queryRawUnsafe`：`pg_advisory_xact_lock`
+        // 返回 `void`，Prisma 读结果集时会报「Failed to deserialize column of type
+        // 'void'」。executeRaw 只看影响行数，不反序列化返回值。
+        await tx.$executeRawUnsafe(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
           `stackpanel.extension.${table.kind}`,
         );
         // 拿到锁后必须**重新读一次**：另一个进程可能刚刚建完表并写好了元数据。

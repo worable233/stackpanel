@@ -385,6 +385,21 @@ export const adminUserDetailResponseSchema = z.object({
   ordersPagination: z
     .object({ page: z.number().int(), pageSize: z.number().int(), total: z.number().int() })
     .optional(),
+  payments: z.array(
+    z.object({
+      id: z.string(),
+      purpose: z.enum(['TOP_UP', 'ORDER']),
+      status: z.string(),
+      amount: z.number().int(),
+      currency: z.string(),
+      providerId: z.string().nullable(),
+      paymentMethod: z.string().nullable(),
+      orderId: z.string().nullable(),
+      paymentUrl: z.string().nullable(),
+      createdAt: z.string(),
+    }),
+  ),
+  paymentsTotal: z.number().int(),
   ledger: z.array(
     z.object({
       id: z.string(),
@@ -1387,7 +1402,6 @@ export const signingStatusSchema = z.object({
 export const signingResponseSchema = z.object({
   signing: signingStatusSchema,
 }) satisfies z.ZodType<SigningResponse>;
-
 
 export const platformBrandDisplaySchema = z.enum(['icon', 'name', 'both']);
 

@@ -58,12 +58,13 @@ export async function adminPaymentsRoutes(app: FastifyInstance): Promise<void> {
       .object({
         status: z.string().min(1).max(32).optional(),
         mode: z.enum(['gateway', 'manual']).optional(),
+        userId: z.string().min(1).max(64).optional(),
         page: z.coerce.number().int().min(1).default(1),
         pageSize: z.coerce.number().int().min(1).max(100).default(20),
       })
       .safeParse(request.query);
     if (!query.success) return reply.code(400).send({ error: '请求参数无效' });
-    const { status, mode, page, pageSize } = query.data;
+    const { status, mode, userId, page, pageSize } = query.data;
 
     const prisma = getPrisma();
     const providerModes = request.server.payments.providerModes();
@@ -75,6 +76,7 @@ export async function adminPaymentsRoutes(app: FastifyInstance): Promise<void> {
     // (including provider-less wallet rows) stays visible.
     const where = {
       ...(status ? { status } : {}),
+      ...(userId ? { userId } : {}),
       ...(mode === 'manual'
         ? { providerId: { in: manualProviderIds } }
         : mode === 'gateway'

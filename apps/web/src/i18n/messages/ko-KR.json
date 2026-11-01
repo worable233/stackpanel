@@ -395,6 +395,18 @@
         "SUSPENDED": "Suspended",
         "TERMINATED": "Terminated",
         "FAILED": "Failed"
+      },
+      "payments": {
+        "title": "결제",
+        "description": "지갑 충전은 주문을 생성하지 않으므로 여기에 별도로 표시됩니다. 주문 결제도 포함됩니다.",
+        "empty": "결제 내역이 없습니다.",
+        "viewAll": "전체 보기",
+        "collected": "입금 확인됨",
+        "totalCount": "결제 {total}건",
+        "purpose": {
+          "TOP_UP": "지갑 충전",
+          "ORDER": "주문 결제"
+        }
       }
     },
     "audit": {
@@ -2159,7 +2171,10 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key"
+      "keyRequired": "Enter your own permission API key",
+      "keyOptionalLabel": "호출자 API 키(선택)",
+      "sessionHint": "비워 두면 로그인한 사용자로 실행합니다. 백엔드가 이 실행을 위해 5분짜리 단기 자격 증명을 발급하므로 장기 키가 필요 없습니다.",
+      "nameUnified": "호출자 API 키(관리자 내비게이션의 “접근 키”와 같은 것입니다)"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -2208,7 +2223,20 @@
       "readFailed": "Could not read the image. Please try again.",
       "imageConversation": "Image conversation",
       "loadFailed": "Could not load the conversation. Please try again.",
-      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving."
+      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
+      "runStartFailed": "Agent 실행을 시작할 수 없습니다",
+      "runModel": "모델 {model}",
+      "runModelUnset": "모델이 설정되지 않음",
+      "runSteps": "{count}단계",
+      "runCancel": "중지",
+      "runNoOutput": "실행이 텍스트 출력 없이 종료되었습니다.",
+      "runOpenWorkspace": "워크스페이스에서 실행 보기 →",
+      "runStatus.QUEUED": "대기 중",
+      "runStatus.RUNNING": "실행 중",
+      "runStatus.WAITING_APPROVAL": "승인 대기",
+      "runStatus.DONE": "완료",
+      "runStatus.FAILED": "실패",
+      "runStatus.CANCELLED": "취소됨"
     },
     "admin": {
       "statusLoading": "Loading",
@@ -2276,7 +2304,16 @@
       "providerNone": "No model provider detected",
       "catalogEmpty": "The current provider returned no models. Check its configuration.",
       "noToolsModel": "No tool calling",
-      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable."
+      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable.",
+      "probe": "연결 테스트",
+      "probing": "테스트 중…",
+      "probeLatency": "{ms} 밀리초",
+      "probeOk": "도구 호출 정상: {model} 이(가) tool_call 을 반환했으므로 Agent 를 실행할 수 있습니다.",
+      "probeNoTools": "엔드포인트는 응답하지만 모델이 도구 호출로 답하지 않았습니다. 이런 중계/모델은 보통 tools 를 전달하지 않아 Agent 가 안정적으로 동작하지 않습니다. function calling 을 지원하는 모델이나 업스트림으로 바꾸세요.",
+      "probeAuth": "인증 실패(401/403): 키가 올바른지, 폐기되지 않았는지, 이 엔드포인트에 유효한지 확인하세요.",
+      "probeNotFound": "404: 엔드포인트 또는 모델 이름이 없습니다(현재 모델 {model}).",
+      "probeUnconfigured": "모델 제공자가 설정되지 않았습니다. 먼저 엔드포인트, 키, 모델 이름을 저장하세요.",
+      "probeUnreachable": "연결할 수 없습니다: {reason}"
     },
     "advanced": {
       "title": "Advanced settings",
@@ -2584,6 +2621,9 @@
     "methodWechat": "WeChat Pay",
     "methodWallet": "지갑 잔액",
     "methodStripe": "Stripe",
-    "methodPaypal": "PayPal"
+    "methodPaypal": "PayPal",
+    "openPayment": "결제 페이지 열기",
+    "buyerFilter": "이 사용자의 결제만 표시 중",
+    "clearBuyerFilter": "모든 사용자 표시"
   }
 }

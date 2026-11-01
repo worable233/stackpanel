@@ -13,7 +13,7 @@ export function agentProxyTarget(method: string, segments: string[]): string | n
     return allowed.includes(method) ? `/api/v1/agent/${path}` : null;
   }
   const user =
-    /^(status|models|credential|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:resume|cancel))?)?|approvals(?:\/[A-Za-z0-9_-]+\/decide)?|profiles\/[A-Za-z0-9_-]+|mcp-servers(?:\/[A-Za-z0-9_-]+\/credential)?|oauth\/authorize)$/;
+    /^(status|models|credential|run-token|workspace\/runs|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:resume|cancel))?)?|approvals(?:\/[A-Za-z0-9_-]+\/decide)?|profiles\/[A-Za-z0-9_-]+|mcp-servers(?:\/[A-Za-z0-9_-]+\/credential)?|oauth\/authorize)$/;
   const admin =
     /^admin\/(retention(?:\/cleanup)?|model(?:\/catalog|\/default)?|enabled|runs(?:\/[A-Za-z0-9_-]+)?|profiles\/[A-Za-z0-9_-]+|mcp-servers(?:\/[A-Za-z0-9_-]+(?:\/discover)?)?|oauth-clients(?:\/[A-Za-z0-9_-]+)?|actions(?:\/[A-Za-z0-9_-]+)?)$/;
   if (!['GET', 'POST', 'PUT', 'DELETE'].includes(method)) return null;

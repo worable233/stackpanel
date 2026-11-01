@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { AuditLogResponse } from '@stackpanel/sdk';
-import { PageHeader } from '@stackpanel/ui';
+import { List, ListEmpty, ListItem, PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { Button } from '@/components/ui/button';
@@ -174,47 +174,37 @@ export default async function AdminAuditPage({
         <p className="text-sm text-destructive">{t('admin.audit.serviceUnavailable')}</p>
       ) : null}
       {result ? (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead className="bg-muted/50 text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-medium">{t('admin.audit.colTime')}</th>
-                <th className="px-4 py-2 font-medium">{t('admin.audit.colAction')}</th>
-                <th className="px-4 py-2 font-medium">{t('admin.audit.colResource')}</th>
-                <th className="px-4 py-2 font-medium">{t('admin.audit.colActor')}</th>
-                <th className="px-4 py-2 font-medium">{t('admin.audit.colSource')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.logs.map((log) => {
-                const meta = describeMeta(log.meta);
-                return (
-                  <tr key={log.id} className="border-t align-top">
-                    <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
+        <List>
+          {result.logs.length === 0 ? (
+            <ListEmpty>{t('admin.audit.empty')}</ListEmpty>
+          ) : (
+            result.logs.map((log) => {
+              const meta = describeMeta(log.meta);
+              return (
+                <ListItem key={log.id} className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span className="text-sm font-medium">{actionLabel(log.action, t)}</span>
+                    <span className="whitespace-nowrap text-xs text-muted-foreground">
                       {formatDate(new Date(log.createdAt), locale, {
                         dateStyle: 'medium',
                         timeStyle: 'medium',
                       })}
-                    </td>
-                    <td className="px-4 py-2 font-medium">{actionLabel(log.action, t)}</td>
-                    <td className="px-4 py-2">
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span>
                       {resourceLabel(log.resource, t)}
                       {log.resourceId ? ` / ${log.resourceId.slice(0, 12)}` : ''}
-                      {meta ? <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p> : null}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {formatActor(log.actorId, t)}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">{log.ip ?? '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {result.logs.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">{t('admin.audit.empty')}</p>
-          ) : null}
-        </div>
+                    </span>
+                    <span>{formatActor(log.actorId, t)}</span>
+                    <span>{log.ip ?? '—'}</span>
+                  </div>
+                  {meta ? <p className="text-xs text-muted-foreground">{meta}</p> : null}
+                </ListItem>
+              );
+            })
+          )}
+        </List>
       ) : null}
 
       {result && result.total > 0 ? (

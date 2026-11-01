@@ -1,4 +1,4 @@
-import { SectionTitle } from '@stackpanel/ui';
+import { List, ListEmpty, ListItem, SectionTitle, StatusBadge } from '@stackpanel/ui';
 import Link from 'next/link';
 import type { DeveloperOverviewResponse, ResellerListResponse } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
@@ -43,15 +43,10 @@ export default async function AdminDeveloperPage({
 
   return (
     <main className="w-full space-y-6">
-      <PageHeader
-        title={t('admin.developer.title')}
-        actions={<CreateResellerDialog />}
-      />
+      <PageHeader title={t('admin.developer.title')} actions={<CreateResellerDialog />} />
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('admin.developer.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.developer.serviceUnavailable')}</p>
       ) : null}
 
       {overview ? (
@@ -72,9 +67,7 @@ export default async function AdminDeveloperPage({
           </Card>
           <Card>
             <CardHeader>
-              <CardDescription>
-                {t('admin.developer.overview.pendingDeliveries')}
-              </CardDescription>
+              <CardDescription>{t('admin.developer.overview.pendingDeliveries')}</CardDescription>
               <CardTitle className="text-2xl">
                 {overview.overview.webhookDeliveries.pending}
               </CardTitle>
@@ -140,83 +133,55 @@ export default async function AdminDeveloperPage({
       </div>
 
       <div className="space-y-3">
-        <SectionTitle>
-          {t('admin.developer.overview.channels')}
-        </SectionTitle>
+        <SectionTitle>{t('admin.developer.overview.channels')}</SectionTitle>
         {resellers ? (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full min-w-[840px] text-sm">
-              <thead className="bg-muted/50 text-left text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.resellers.colName')}</th>
-                  <th className="px-4 py-2 font-medium">
-                    {t('admin.developer.resellers.colKeyId')}
-                  </th>
-                  <th className="px-4 py-2 font-medium">
-                    {t('admin.developer.resellers.colScopes')}
-                  </th>
-                  <th className="px-4 py-2 font-medium">
-                    {t('admin.developer.resellers.colRateLimit')}
-                  </th>
-                  <th className="px-4 py-2 font-medium">
-                    {t('admin.developer.resellers.colLastUsed')}
-                  </th>
-                  <th className="px-4 py-2 font-medium">{t('admin.developer.calls.colStatus')}</th>
-                  <th className="px-4 py-2 text-right font-medium">{t('common.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resellers.resellers.map((reseller) => (
-                  <tr key={reseller.id} className="border-t align-top">
-                    <td className="px-4 py-2 font-medium">{reseller.name}</td>
-                    <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
-                      {reseller.keyId}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {reseller.scopes.length > 0 ? reseller.scopes.join(' · ') : '—'}
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">{reseller.rateLimitRpm}</td>
-                    <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
+          <List>
+            {resellers.resellers.length === 0 ? (
+              <ListEmpty>{t('admin.developer.empty')}</ListEmpty>
+            ) : (
+              resellers.resellers.map((reseller) => (
+                <ListItem key={reseller.id} className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="font-medium">{reseller.name}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {reseller.keyId}
+                      </span>
+                    </div>
+                    <StatusBadge tone={reseller.status === 'ACTIVE' ? 'ok' : 'neutral'}>
+                      {reseller.status === 'ACTIVE'
+                        ? t('admin.developer.resellers.statusActive')
+                        : t('admin.developer.resellers.statusDisabled')}
+                    </StatusBadge>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span>{reseller.scopes.length > 0 ? reseller.scopes.join(' · ') : '—'}</span>
+                    <span>
+                      {t('admin.developer.resellers.colRateLimit')} {reseller.rateLimitRpm}
+                    </span>
+                    <span>
                       {reseller.lastUsedAt
                         ? formatDate(new Date(reseller.lastUsedAt), locale, {
                             dateStyle: 'medium',
                             timeStyle: 'short',
                           })
                         : t('admin.developer.resellers.never')}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={
-                          reseller.status === 'ACTIVE'
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-muted-foreground'
-                        }
-                      >
-                        {reseller.status === 'ACTIVE'
-                          ? t('admin.developer.resellers.statusActive')
-                          : t('admin.developer.resellers.statusDisabled')}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          render={<Link href={`/admin/developer/resellers/${reseller.id}`} />}
-                          variant="ghost"
-                          size="sm"
-                        >
-                          {t('admin.developer.resellers.view')}
-                        </Button>
-                        <ResellerRowActions reseller={reseller} />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {resellers.resellers.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">{t('admin.developer.empty')}</p>
-            ) : null}
-          </div>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      render={<Link href={`/admin/developer/resellers/${reseller.id}`} />}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      {t('admin.developer.resellers.view')}
+                    </Button>
+                    <ResellerRowActions reseller={reseller} />
+                  </div>
+                </ListItem>
+              ))
+            )}
+          </List>
         ) : null}
 
         {resellers && resellers.total > 0 ? (

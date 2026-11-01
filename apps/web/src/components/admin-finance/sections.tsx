@@ -50,14 +50,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { List, ListEmpty, ListItem } from '@stackpanel/ui';
 import { formatYuan, type AdminOverviewData } from '@/lib/admin-overview-types';
 import { useLocale, useTranslator } from '@/i18n/provider';
 import { formatMoney } from '@/i18n';
@@ -490,7 +483,10 @@ export function RecentOrdersCard({ data }: { data: AdminOverviewData }) {
         <Separator />
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{t('admin.overview.ordersTotal', { count: data.totals.orderCount })}</span>
-          <Link href="/admin/plugin/store/overview" className="font-medium text-primary hover:underline">
+          <Link
+            href="/admin/plugin/store/overview"
+            className="font-medium text-primary hover:underline"
+          >
             {t('admin.overview.viewDetails')}
           </Link>
         </div>
@@ -552,9 +548,17 @@ export function QuickActions({ data }: { data: AdminOverviewData }) {
     new Set(data.recentOrders.map((order) => order.customer).filter(Boolean)),
   ).slice(0, 4);
   const shortcuts = [
-    { label: t('admin.overview.shortcutOrders'), href: '/admin/plugin/store/overview', icon: Receipt },
+    {
+      label: t('admin.overview.shortcutOrders'),
+      href: '/admin/plugin/store/overview',
+      icon: Receipt,
+    },
     { label: t('admin.overview.shortcutUsers'), href: '/admin/users', icon: Users },
-    { label: t('admin.overview.shortcutProducts'), href: '/admin/plugin/store/products', icon: Package },
+    {
+      label: t('admin.overview.shortcutProducts'),
+      href: '/admin/plugin/store/products',
+      icon: Package,
+    },
     { label: t('admin.overview.shortcutPlugins'), href: '/admin/plugins', icon: Blocks },
     { label: t('admin.overview.shortcutRbac'), href: '/admin/rbac', icon: UserCog },
     { label: t('admin.overview.shortcutAudit'), href: '/admin/audit', icon: ScrollText },
@@ -648,51 +652,45 @@ export function OrdersTable({ data }: { data: AdminOverviewData }) {
         </CardAction>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('admin.overview.colOrderId')}</TableHead>
-              <TableHead>{t('admin.overview.colCustomer')}</TableHead>
-              <TableHead className="text-right">{t('admin.overview.colItems')}</TableHead>
-              <TableHead className="text-right">{t('admin.overview.colAmount')}</TableHead>
-              <TableHead>{t('admin.overview.colStatus')}</TableHead>
-              <TableHead className="text-right">{t('admin.overview.colCreatedAt')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.orderRows.length ? (
-              data.orderRows.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="font-mono text-xs">
-                    {order.id.slice(-8).toUpperCase()}
-                  </TableCell>
-                  <TableCell className="max-w-56 truncate">
+        <List>
+          {data.orderRows.length ? (
+            data.orderRows.map((order) => (
+              <ListItem
+                key={order.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3.5"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="font-mono text-xs font-medium">
+                    #{order.id.slice(-8).toUpperCase()}
+                  </span>
+                  <span className="max-w-56 truncate text-xs text-muted-foreground">
                     {order.customer || t('admin.overview.customerFallback')}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatNumber(order.itemCount, locale)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    {t('admin.overview.colItems')}{' '}
+                    <span className="text-foreground tabular-nums">
+                      {formatNumber(order.itemCount, locale)}
+                    </span>
+                  </span>
+                  <span className="text-sm font-medium tabular-nums text-foreground">
                     {formatYuan(order.total, locale)}
-                  </TableCell>
-                  <TableCell>{orderStatusLabel(order.status, t)}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">
+                  </span>
+                  <span>{orderStatusLabel(order.status, t)}</span>
+                  <span>
                     {formatDate(new Date(order.createdAt), locale, {
                       dateStyle: 'medium',
                       timeStyle: 'short',
                     })}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
-                  {t('admin.overview.noData')}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                  </span>
+                </div>
+              </ListItem>
+            ))
+          ) : (
+            <ListEmpty>{t('admin.overview.noData')}</ListEmpty>
+          )}
+        </List>
       </CardContent>
     </Card>
   );
@@ -724,44 +722,44 @@ export function ProductsTable({ data }: { data: AdminOverviewData }) {
         </CardAction>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('admin.overview.colProduct')}</TableHead>
-              <TableHead className="text-right">{t('admin.overview.colPrice')}</TableHead>
-              <TableHead className="text-right">{t('admin.overview.colStock')}</TableHead>
-              <TableHead>{t('admin.overview.colStatus')}</TableHead>
-              <TableHead className="text-right">{t('admin.overview.colCreatedAt')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.productRows.length ? (
-              data.productRows.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="max-w-64 truncate font-medium">{product.name}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatMoney(product.price, product.currency, locale, {
-                      maximumFractionDigits: 0,
-                    })}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatNumber(product.stock, locale)}
-                  </TableCell>
-                  <TableCell>{productStatusLabel(product.status, t)}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">
+        <List>
+          {data.productRows.length ? (
+            data.productRows.map((product) => (
+              <ListItem
+                key={product.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3.5"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="max-w-64 truncate text-sm font-medium">{product.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {productStatusLabel(product.status, t)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    {t('admin.overview.colPrice')}{' '}
+                    <span className="text-sm font-medium text-foreground tabular-nums">
+                      {formatMoney(product.price, product.currency, locale, {
+                        maximumFractionDigits: 0,
+                      })}
+                    </span>
+                  </span>
+                  <span>
+                    {t('admin.overview.colStock')}{' '}
+                    <span className="text-foreground tabular-nums">
+                      {formatNumber(product.stock, locale)}
+                    </span>
+                  </span>
+                  <span>
                     {formatDate(new Date(product.createdAt), locale, { dateStyle: 'medium' })}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                  {t('admin.overview.noData')}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                  </span>
+                </div>
+              </ListItem>
+            ))
+          ) : (
+            <ListEmpty>{t('admin.overview.noData')}</ListEmpty>
+          )}
+        </List>
       </CardContent>
     </Card>
   );

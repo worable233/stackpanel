@@ -11,6 +11,8 @@ import {
   resolveLlmProvider,
 } from '../../lib/llm-provider.ts';
 import { SECRETS_DISABLED_CODE, SECRETS_DISABLED_MESSAGE } from '../../lib/secrets-policy.ts';
+import { PluginError } from '@stackpanel/sdk';
+import type { LlmTool } from '@stackpanel/sdk';
 import { auditContext, writeAudit } from '../../plugins/audit.ts';
 import { requireAuth, requireRole } from '../../plugins/auth.ts';
 import { getPrisma } from '../../plugins/prisma.ts';
@@ -78,6 +80,11 @@ interface ModelCatalogView {
 
 const setDefaultModelSchema = z
   .object({ model: z.string().trim().min(1).max(191).nullable() })
+  .strict();
+
+/** 「测试连接」入参：可选模型名（不传则用当前默认/提供方第一个）。 */
+const testConnectionSchema = z
+  .object({ model: z.string().trim().min(1).max(191).optional() })
   .strict();
 
 function problemsDisabled(reply: FastifyReply, request: { url: string; id: string }) {
@@ -253,6 +260,108 @@ export async function adminAgentModelRoutes(app: FastifyInstance): Promise<void>
     });
 
     return readModelConfigView();
+  });
+
+  /**
+   * 「测试连接」（B-3）。
+   *
+   * 为什么不能只测 `chat/completions` 返回 200：Agent 的每一步都强依赖
+   * tool calling。第三方中转站很常见「转发普通 chat、不转发 tools」——只测 chat
+   * 会得到一个绿色的「已连通」，然后每一次运行都在第一步静默退化/400。
+   *
+   * 所以这里发一次**带 dummy tool 的请求**，并把结论分成四类：
+   * - `ok`：模型返回了 tool_call，工具面真的可用；
+   * - `tools_unsupported`：通了但没按工具返回（中转降级/模型不支持）；
+   * - `auth_failed` / `not_found`：401/403 与 404（地址或模型名不对）；
+   * - `unreachable`：网络/超时/DNS。
+   *
+   * 只读：不写库、不扣费（`callId` 固定为 probe，插件侧按幂等处理）。
+   */
+  app.post('/admin/agent/model/test', { preHandler: adminOnly }, async (request) => {
+    const body = testConnectionSchema.safeParse(request.body ?? {});
+    if (!body.success) {
+      throw new PluginError('validation.invalid', 422, '测试参数无效');
+    }
+    const provider = await resolveLlmProvider(request.server.pluginRuntime);
+    if (!provider) {
+      return {
+        ok: false,
+        result: 'unconfigured' as const,
+        toolsSupported: false,
+        model: null,
+        latencyMs: 0,
+        message: '尚未配置模型提供方',
+      };
+    }
+    const model = body.data.model ?? (await readDefaultModel(getPrisma())) ?? '';
+    const startedAt = Date.now();
+    const tool: LlmTool = {
+      name: 'stackpanel_probe_echo',
+      description:
+        'Diagnostic tool. Call it once with {"probe": "<any string>"} to prove tool calling works.',
+      parameters: {
+        type: 'object',
+        properties: { probe: { type: 'string' } },
+        required: ['probe'],
+        additionalProperties: false,
+      },
+    };
+    try {
+      const result = await provider.complete(
+        {
+          model,
+          messages: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  type: 'text',
+                  text: 'Call the stackpanel_probe_echo tool with probe="ping". Do not answer in prose.',
+                },
+              ],
+            },
+          ],
+          tools: [tool],
+          toolChoice: 'auto',
+          maxTokens: 64,
+        },
+        {
+          // 固定 callId：测试不产生真实计费流水，重测也是同一条。
+          callId: 'agent-model-probe',
+          runId: 'agent-model-probe',
+          actorId: request.user?.id ?? 'system',
+          timeoutMs: 20_000,
+        },
+      );
+      const toolCalls = result.parts.filter((part) => part.type === 'tool-call');
+      return {
+        ok: toolCalls.length > 0,
+        result: toolCalls.length > 0 ? ('ok' as const) : ('tools_unsupported' as const),
+        toolsSupported: toolCalls.length > 0,
+        model: result.model || model,
+        latencyMs: Date.now() - startedAt,
+        message:
+          toolCalls.length > 0
+            ? null
+            : '接口可达，但模型没有按工具调用返回：该中转/模型可能不转发 tools，Agent 无法可靠运行',
+      };
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      const result =
+        status === 401 || status === 403
+          ? ('auth_failed' as const)
+          : status === 404
+            ? ('not_found' as const)
+            : ('unreachable' as const);
+      return {
+        ok: false,
+        result,
+        toolsSupported: false,
+        model: model || null,
+        latencyMs: Date.now() - startedAt,
+        message: error instanceof Error ? error.message : '测试失败',
+      };
+    }
   });
 
   app.delete('/admin/agent/model', { preHandler: adminOnly }, async (request) => {

@@ -503,6 +503,113 @@ describe.skipIf(!dbAvailable || !gatewayInstalled)(
     expect(second?.models).toEqual(['test-model-2']);
   });
 
+  /**
+   * A-1 / A-2 / A-3 的回归。
+   *
+   * 线上表现：三次点击保存 → 库里三条同名账号、`spec.models` 全是 `[]`，
+   * 而界面上同时出现「上游账户已创建」和「保存失败，请重试」。根因是保存链路
+   * 已经把 `models` 与主体放在同一个 body 里（服务端 schema 接受它），所以这里
+   * 用一次请求验证「落库即完整」，再用重名请求验证「重试不再多建一条」。
+   */
+  it('creates an account with its models in one atomic request', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/llm-gateway/admin/accounts',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        name: 'atomic-upstream',
+        baseUrl: upstreamUrl,
+        apiKey: 'up-secret-3',
+        models: ['test-model', 'test-model-2', 'deepseek-v4.1-flash'],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect((created.json() as { models: number }).models).toBe(3);
+    const rows = await getPrisma().$queryRawUnsafe<Array<{ spec: Record<string, unknown> }>>(
+      `SELECT "spec" FROM "ext_llm-gateway_account" WHERE "spec"->>'name' = $1`,
+      'atomic-upstream',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.spec['models']).toEqual(['test-model', 'test-model-2', 'deepseek-v4.1-flash']);
+  });
+
+  it('rejects a duplicate account name instead of silently creating a second one', async () => {
+    const payload = {
+      name: 'atomic-upstream',
+      baseUrl: upstreamUrl,
+      apiKey: 'up-secret-4',
+      models: ['test-model'],
+    };
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: '/llm-gateway/admin/accounts',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload,
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect((duplicate.json() as { code?: string }).code).toBe('llm_gateway.account_name_taken');
+    const rows = await getPrisma().$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT count(*)::bigint AS count FROM "ext_llm-gateway_account" WHERE "spec"->>'name' = $1`,
+      'atomic-upstream',
+    );
+    expect(Number(rows[0]?.count ?? 0)).toBe(1);
+  });
+
+  it('replays the same account for a retried Idempotency-Key', async () => {
+    const key = `idem-${randomUUID()}`;
+    const payload = {
+      name: 'idempotent-upstream',
+      baseUrl: upstreamUrl,
+      apiKey: 'up-secret-5',
+      models: ['test-model'],
+    };
+    const first = await app.inject({
+      method: 'POST',
+      url: '/llm-gateway/admin/accounts',
+      headers: { authorization: `Bearer ${adminToken}`, 'idempotency-key': key },
+      payload,
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/llm-gateway/admin/accounts',
+      headers: { authorization: `Bearer ${adminToken}`, 'idempotency-key': key },
+      payload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect((replay.json() as { account: { id: string } }).account.id).toBe(
+      (first.json() as { account: { id: string } }).account.id,
+    );
+  });
+
+  it('updates an existing account without dropping its models', async () => {
+    const list = await app.inject({
+      method: 'GET',
+      url: '/llm-gateway/admin/accounts',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const target = (
+      list.json() as { accounts: Array<{ id: string; name: string; models: string[] }> }
+    ).accounts.find((account) => account.name === 'atomic-upstream');
+    expect(target?.models).toHaveLength(3);
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: `/llm-gateway/admin/accounts/${target?.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'atomic-upstream', models: ['test-model'] },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    const after = await app.inject({
+      method: 'GET',
+      url: '/llm-gateway/admin/accounts',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const row = (
+      after.json() as { accounts: Array<{ name: string; models: string[] }> }
+    ).accounts.find((account) => account.name === 'atomic-upstream');
+    expect(row?.models).toEqual(['test-model']);
+  });
+
   it('maps a public model name to its bound upstream model when forwarding', async () => {
     // 对外卖自定义名 `public-alias`，实际绑定上游 `test-model-2`（由 second-upstream 提供）。
     const price = await app.inject({

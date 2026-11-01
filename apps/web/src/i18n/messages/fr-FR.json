@@ -395,6 +395,18 @@
         "SUSPENDED": "Suspended",
         "TERMINATED": "Terminated",
         "FAILED": "Failed"
+      },
+      "payments": {
+        "title": "Paiements",
+        "description": "Les rechargements de portefeuille ne créent pas de commande : ils sont donc listés séparément ici. Les paiements de commande y figurent aussi.",
+        "empty": "Aucun paiement pour le moment.",
+        "viewAll": "Tout voir",
+        "collected": "Encaissement confirmé",
+        "totalCount": "{total} paiements",
+        "purpose": {
+          "TOP_UP": "Rechargement du portefeuille",
+          "ORDER": "Paiement de commande"
+        }
       }
     },
     "audit": {
@@ -2159,7 +2171,10 @@
       "unconfigured": "Not configured",
       "saveCredential": "Save credential",
       "clearCredential": "Clear credential",
-      "keyRequired": "Enter your own permission API key"
+      "keyRequired": "Enter your own permission API key",
+      "keyOptionalLabel": "Clé API de l'appelant (facultatif)",
+      "sessionHint": "Laissez vide pour exécuter en tant qu'utilisateur connecté : le backend émet un identifiant temporaire de 5 minutes pour cette exécution.",
+      "nameUnified": "Clé API de l'appelant (identique aux « clés d'accès » du menu d'administration)"
     },
     "chat": {
       "contextDefault": "Current workspace",
@@ -2208,7 +2223,20 @@
       "readFailed": "Could not read the image. Please try again.",
       "imageConversation": "Image conversation",
       "loadFailed": "Could not load the conversation. Please try again.",
-      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving."
+      "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
+      "runStartFailed": "Impossible de lancer l'exécution de l'Agent",
+      "runModel": "Modèle {model}",
+      "runModelUnset": "Aucun modèle configuré",
+      "runSteps": "{count} étapes",
+      "runCancel": "Arrêter",
+      "runNoOutput": "L'exécution s'est terminée sans sortie texte.",
+      "runOpenWorkspace": "Ouvrir l'exécution dans l'espace de travail →",
+      "runStatus.QUEUED": "En attente",
+      "runStatus.RUNNING": "En cours",
+      "runStatus.WAITING_APPROVAL": "En attente de validation",
+      "runStatus.DONE": "Terminé",
+      "runStatus.FAILED": "Échec",
+      "runStatus.CANCELLED": "Annulé"
     },
     "admin": {
       "statusLoading": "Loading",
@@ -2276,7 +2304,16 @@
       "providerNone": "No model provider detected",
       "catalogEmpty": "The current provider returned no models. Check its configuration.",
       "noToolsModel": "No tool calling",
-      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable."
+      "fallbackHintPlugin": "A model-provider plugin is serving this site; the fallback endpoint below is only used when the plugin is unavailable.",
+      "probe": "Tester la connexion",
+      "probing": "Test en cours…",
+      "probeLatency": "{ms} ms",
+      "probeOk": "L'appel d'outils fonctionne : {model} a renvoyé un tool_call, l'Agent peut donc s'exécuter.",
+      "probeNoTools": "Point d'accès joignable, mais le modèle n'a pas répondu par un appel d'outil. Ces relais/modèles ne transmettent généralement pas tools : l'Agent ne peut pas fonctionner de façon fiable — utilisez un modèle ou un amont compatible function calling.",
+      "probeAuth": "Échec d'authentification (401/403) : vérifiez que la clé est correcte, non révoquée et valide pour ce point d'accès.",
+      "probeNotFound": "404 : le point d'accès ou le nom de modèle n'existe pas (modèle actuel {model}).",
+      "probeUnconfigured": "Aucun fournisseur de modèle n'est configuré. Enregistrez d'abord l'adresse, la clé et le nom du modèle.",
+      "probeUnreachable": "Injoignable : {reason}"
     },
     "advanced": {
       "title": "Advanced settings",
@@ -2584,6 +2621,9 @@
     "methodWechat": "WeChat Pay",
     "methodWallet": "Solde du portefeuille",
     "methodStripe": "Stripe",
-    "methodPaypal": "PayPal"
+    "methodPaypal": "PayPal",
+    "openPayment": "Ouvrir la page de paiement",
+    "buyerFilter": "Affichage des paiements de cet utilisateur uniquement",
+    "clearBuyerFilter": "Afficher tous les utilisateurs"
   }
 }

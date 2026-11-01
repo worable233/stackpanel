@@ -105,6 +105,48 @@ ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine
 RUN node docker/fetch-schema-engine.mjs /app/.prisma-engines/schema-engine \
  && test -x /app/.prisma-engines/schema-engine
 
+# ---- pruned ---------------------------------------------------------------
+# 在**单独一层**里做裁剪，再整体拷进 runtime。
+#
+# 为什么不能直接在 runtime 里 `find -delete`：`COPY` 已经把那 13 MB map 写进
+# 下面一层了，后一层再删只会新增 whiteout，镜像**一点没小**（实测
+# `SOURCE_MAPS=0` 反而 4.09 GB > 4.08 GB）。要让体积真的掉下去，删除必须发生在
+# 拷贝之前。
+FROM prod-deps AS pruned
+
+# Source maps.
+#
+# `apps/api/tsup.config.ts` emits `sourcemap: true`, so `dist/` is 20 MB of JS +
+# **13 MB of `.map`** — 65% of the artifact. Those maps shipped into the image
+# but nothing ever read them: `--enable-source-maps` was not set anywhere, so a
+# production stack trace pointed at tsup's chunk names (`bowser-KGNXATBQ.js:1:2`)
+# while 13 MB of every layer did nothing. Either they are used or they are dead
+# weight — this ARG makes that a decision:
+#
+#   --build-arg STACKPANEL_SOURCE_MAPS=0   → maps dropped (~13 MB smaller image,
+#                                             stack traces lose original lines)
+#   default (1)                            → maps kept **and** enabled by the
+#                                             entrypoints, so traces resolve
+ARG STACKPANEL_SOURCE_MAPS=1
+RUN if [ "$STACKPANEL_SOURCE_MAPS" = "0" ]; then \
+      find /app -name '*.map' -type f -delete && echo "source maps stripped"; \
+    fi
+
+# 裁掉源码与构建期残留：镜像里只需要构建产物。`*.ts` 里含开发注释与内部路径，
+# `*.tsbuildinfo` 是 tsc 的增量缓存，运行时一概不读。
+#
+# 排除 `node_modules` 是必须的：里面有带 `.ts` 源码的包，删掉会打穿依赖。
+# **不能用 `-prune`**：`-delete` 隐含 `-depth`，而 `-depth` 下 `-prune` 完全失效
+# —— 本地实测会连 `node_modules/x/f.ts` 一起删掉。用 `! -path '*/node_modules/*'`。
+#
+# `prisma.config.ts` 必须留下：Prisma 7 把 datasource URL 从 schema.prisma 挪到了
+# 这个**运行时读取**的配置文件里。把它当源码删掉，`prisma migrate deploy` 直接报
+# 「The datasource.url property is required in your Prisma config file」——镜像能起来，
+# 但 `migrate` 服务一次都跑不成功（发布前冒烟抓到的，v0.1.2 差点带着它上线）。
+RUN find /app -type f \( -name '*.ts' ! -name '*.d.ts' ! -name 'prisma.config.ts' \
+        -o -name '*.tsbuildinfo' \) \
+      ! -path '*/node_modules/*' -delete
+
 # ---- runtime ------------------------------------------------------------
 FROM base AS runtime
 ENV NODE_ENV=production
@@ -122,38 +164,7 @@ RUN apt-get update \
  && apt-get update \
  && apt-get install -y --no-install-recommends postgresql-client-16 \
  && rm -rf /var/lib/apt/lists/*
-# Source maps.
-#
-# `apps/api/tsup.config.ts` emits `sourcemap: true`, so `dist/` is 20 MB of JS +
-# **13 MB of `.map`** — 65% of the artifact. Those maps shipped into the image
-# but nothing ever read them: `--enable-source-maps` was not set anywhere, so a
-# production stack trace pointed at tsup's chunk names (`bowser-KGNXATBQ.js:1:2`)
-# while 13 MB of every layer did nothing. Either they are used or they are dead
-# weight — this ARG makes that a decision:
-#
-#   --build-arg STACKPANEL_SOURCE_MAPS=0   → maps deleted (~13 MB smaller image,
-#                                             stack traces lose original lines)
-#   default (1)                            → maps kept **and** enabled, so the
-#                                             stack traces actually resolve
-#
-# Deliberately not `NODE_OPTIONS=--enable-source-maps` in compose: compose sets
-# that variable explicitly (`API_NODE_OPTIONS` / `WORKER_NODE_OPTIONS`) and would
-# **override** anything set here. The entrypoints add the flag themselves instead
-# (`docker/entrypoint-*.sh`), which also keeps it off `pg_dump` child processes.
-ARG STACKPANEL_SOURCE_MAPS=1
-COPY --chown=node:node --from=prod-deps /app /app
-RUN if [ "$STACKPANEL_SOURCE_MAPS" = "0" ]; then \
-      find /app -name '*.map' -type f -delete \
-      && echo "source maps stripped"; \
-    fi
-# 裁掉源码与构建期残留：镜像里只需要构建产物。`*.ts` 里含开发注释与内部路径，
-# `*.tsbuildinfo` 是 tsc 的增量缓存，运行时一概不读。
-#
-# 排除 `node_modules` 是必须的：里面有带 `.ts` 源码的包，删掉会打穿依赖。
-# **不能用 `-prune`**：`-delete` 隐含 `-depth`，而 `-depth` 下 `-prune` 完全失效
-# —— 本地实测会连 `node_modules/x/f.ts` 一起删掉。用 `! -path '*/node_modules/*'`。
-RUN find /app -type f \( -name '*.ts' ! -name '*.d.ts' -o -name '*.tsbuildinfo' \) \
-      ! -path '*/node_modules/*' -delete
+COPY --chown=node:node --from=pruned /app /app
 
 # 镜像身份：写一份与自包含产物同格式的 `RELEASE.json`，让 `GET /version` 直接回答
 # 「这个容器跑的是哪一次构建」。不传参数（本地 `docker build`）时不写文件，代码侧
@@ -186,7 +197,14 @@ RUN chmod +x /usr/local/bin/entrypoint-api /usr/local/bin/entrypoint-web /usr/lo
 # writable directory because pnpm writes its store/cache under `$HOME`.
 # NOTE: named volumes created by an earlier root image keep root ownership; run a
 # one-off `chown -R node:node` on them when upgrading (see docker/README.md).
-RUN mkdir -p /app/data \
+# `/app/data` 必须以**空目录**进镜像。构建过程中它会被播种（prod-deps 阶段跑过
+# 构建脚本），带着 `data/themes/*`、`data/plugins/*` 一起发布；Docker 首次挂载命名卷
+# 时会把镜像里的内容复制进卷，而 api 与 worker 是同时启动的两个容器——两个守护进程
+# 线程并发 `mkdir .../themes` 就会撞 `failed to mkdir .../themes: file exists`，
+# `docker compose up` 直接失败（实测复现）。内置插件与主题在启动时从 `packages/`
+# 播种，不依赖这份快照，所以删干净是安全的。
+RUN rm -rf /app/data \
+ && install -d -o node -g node -m 755 /app/data \
  && chown node:node /app /app/data \
  && chown -R node:node /opt/corepack
 ENV HOME=/home/node

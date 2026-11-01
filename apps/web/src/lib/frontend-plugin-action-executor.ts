@@ -1,6 +1,7 @@
 'use server';
 
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { clearSessionCookie } from './session-cookie.server';
 import { redirect } from 'next/navigation';
@@ -68,10 +69,15 @@ export async function executePluginAction(
     }
     const body = coerceActionInput(action, formData);
     const path = resolveActionPath(action.path, body);
+    // 写操作自动带上幂等键（C-2）：同一表单（同一动作 + 同一 body）在重试窗口内
+    // 命中同一个键，插件侧可以只执行一次。此前 `Idempotency-Key` 只有 openApi
+    // 路由与 Agent 在用，插件 action 完全不发，于是“双击保存 → 两条同名记录”
+    // 只能由每个插件各自打补丁。
+    const idempotency = action.method === 'POST' ? actionIdempotencyKey(action, body) : null;
     result =
       action.method === 'POST'
-        ? await api.post(path, body, z.unknown())
-        : action.method === 'PATCH'
+        ? await api.post(path, body, z.unknown(), idempotency ?? undefined)
+          : action.method === 'PATCH'
           ? await api.patch(path, body, z.unknown())
           : await api.del(path, z.unknown());
     destination = action.redirect ? redirectDestination(action, result) : null;
@@ -84,7 +90,10 @@ export async function executePluginAction(
     // log above. The request id is the bridge an operator needs to find it; "安装
     // 失败" alone gives them nothing to search for.
     const requestId = error instanceof ApiError ? error.requestId : undefined;
-    return actionFailure(message, requestId);
+    // 透出稳定 code（C-1）：页面据此分支/给可操作提示，排障也能直接搜服务端日志。
+    // 服务端英文 `detail` 仍然不上屏（ADR-0012）。
+    const code = error instanceof ApiError ? error.code : undefined;
+    return actionFailure(message, requestId, code);
   }
   await api
     .recordFrontendAudit('frontend.action.execute', pluginId, actionId, { method: action.method })
@@ -114,6 +123,31 @@ export async function executePluginAction(
     }
   }
   return { ok: true };
+}
+
+/**
+ * 为一次插件写操作生成幂等键。
+ *
+ * 键来自「动作 id + 请求路径 + 规范化后的 body」的 sha256：一次点击生成一个键，
+ * 用户再点一次是另一个时间点的同样意图——真正要拦的是“同一个请求被重发”
+ * （双击、浏览器重试、网络抖动重放）。因此由表单内容派生，而不是每次随机。
+ * 随机键只能在同一次点击的重试中使用，而行动是用户手动触发的第二次点击。
+ */
+function actionIdempotencyKey(
+  action: PluginActionDefinition,
+  body: Record<string, string | number | boolean | string[]>,
+): string {
+  return createHash('sha256')
+    .update(`${action.id}|${action.path}|${canonicalBody(body)}`)
+    .digest('hex');
+}
+
+function canonicalBody(value: Record<string, unknown>): string {
+  return JSON.stringify(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, value[key]]),
+  );
 }
 
 /** Resolve declared `:id` path parameters from already validated form fields. */
@@ -242,8 +276,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Domain failure: resolve the reason so the page can render it without losing it. */
-function actionFailure(message: string, requestId?: string): PluginActionResult {
-  return { ok: false, error: message, ...(requestId ? { requestId } : {}) };
+function actionFailure(message: string, requestId?: string, code?: string): PluginActionResult {
+  return {
+    ok: false,
+    error: message,
+    ...(requestId ? { requestId } : {}),
+    ...(code && code !== 'unknown' ? { code } : {}),
+  };
 }
 
 /**

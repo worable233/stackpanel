@@ -435,6 +435,20 @@ export interface AdminUserLedgerItem {
   createdAt: string;
 }
 
+/** A payment row attached to an admin user detail (top-up or order payment). */
+export interface AdminUserPaymentItem {
+  id: string;
+  purpose: 'TOP_UP' | 'ORDER';
+  status: string;
+  amount: number;
+  currency: string;
+  providerId: string | null;
+  paymentMethod: string | null;
+  orderId: string | null;
+  paymentUrl: string | null;
+  createdAt: string;
+}
+
 /** Response of GET /admin/users/:id (full user detail aggregate). */
 export interface AdminUserDetailResponse {
   user: AdminUser;
@@ -442,6 +456,9 @@ export interface AdminUserDetailResponse {
   services: AdminServiceItem[];
   orders: AdminUserOrderItem[];
   ordersPagination?: { page: number; pageSize: number; total: number } | undefined;
+  /** Newest 20 payment records, including wallet top-ups that never create an order. */
+  payments: AdminUserPaymentItem[];
+  paymentsTotal: number;
   ledger: AdminUserLedgerItem[];
 }
 
