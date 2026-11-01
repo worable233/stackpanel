@@ -26,7 +26,7 @@
  * 退出码：0 全部通过；非 0 表示失败（打印 compose ps 与容器日志尾部）。
  */
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -152,6 +152,16 @@ async function waitFor(label, fn, timeoutMs = stepTimeoutMs) {
 }
 
 const authHeaders = (token) => ({ authorization: `Bearer ${token}` });
+
+/**
+ * 写操作必须带 `Idempotency-Key`（`request.idempotency_key_required`）。冒烟里每次
+ * 写都是一次性动作，用新 key；真正的重试语义由内核按 key 去重，冒烟不重复发同一请求。
+ */
+const idempotent = (token) => ({
+  ...authHeaders(token),
+  'content-type': 'application/json',
+  'idempotency-key': randomUUID(),
+});
 
 // ---------------------------------------------------------------- stack
 async function startStack() {
@@ -287,7 +297,7 @@ async function createAdmin() {
 async function enableMarket(token) {
   const patch = await http(`${API}/api/v1/admin/plugins/market`, {
     method: 'PATCH',
-    headers: { ...authHeaders(token), 'content-type': 'application/json' },
+    headers: idempotent(token),
     body: JSON.stringify({ enabled: true }),
   });
   if (patch.status >= 400) {
@@ -315,7 +325,7 @@ async function listCatalog(token) {
 async function installPlugin(token, pluginId) {
   const response = await http(`${API}/api/v1/market/admin/plugins/${pluginId}/install`, {
     method: 'POST',
-    headers: authHeaders(token),
+    headers: idempotent(token),
   });
   if (response.status >= 400) {
     throw new Error(`安装 ${pluginId} = ${response.status}：${response.text.slice(0, 400)}`);
@@ -339,7 +349,7 @@ async function installTheme(token, themeIds) {
   for (const themeId of themeIds) {
     const response = await http(`${API}/api/v1/market/admin/themes/${themeId}/install`, {
       method: 'POST',
-      headers: authHeaders(token),
+      headers: idempotent(token),
     });
     if (response.status < 400) {
       const home = await http(`${WEB}/`);

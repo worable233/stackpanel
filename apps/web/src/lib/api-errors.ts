@@ -58,6 +58,16 @@ export interface ApiErrorView {
   code?: string;
   /** Seconds until a retry can succeed (present on throttled responses). */
   retryAfterSeconds?: number;
+  /**
+   * 服务端的原始 `detail`（诊断子原因）。
+   *
+   * 为什么不直接拼进 `error`：`detail` 是英文技术文本（`fetch failed`、
+   * `SignatureDoesNotMatch`、`信任根缺少 keyId pkg-2026-11`），既未本地化也可能
+   * 带内部标识。默认**不上屏**，但也不能直接丢掉：安装失败只有
+   * 「安装失败，请稍后再试」时，用户分不清是下载、sha256、验签、解包还是启动失败，
+   * 只能来问人。调用方把它放进可折叠的「详情」里，需要时再看。
+   */
+  detail?: string;
 }
 
 export function apiErrorViewFor(
@@ -80,7 +90,21 @@ export function apiErrorViewFor(
     error: message,
     code: error.code,
     ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    ...(diagnosticDetail(error) ? { detail: diagnosticDetail(error) } : {}),
   };
+}
+
+/**
+ * 从 problem-details body 里取服务端 `detail`。
+ *
+ * 只接受非空字符串：`details` 是 `unknown`，契约里也可能是数组/对象（字段级错误），
+ * 那些已经通过 `errors[]` 单独暴露，不能拿 `String()` 拼出 `[object Object]`。
+ */
+function diagnosticDetail(error: ApiError): string | undefined {
+  const details = error.details;
+  if (typeof details !== 'object' || details === null) return undefined;
+  const detail = (details as { detail?: unknown }).detail;
+  return typeof detail === 'string' && detail.trim() ? detail : undefined;
 }
 
 /** Request-scoped variant of {@link apiErrorViewFor}. */
