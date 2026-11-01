@@ -7,15 +7,28 @@ import { checkDbAvailable } from '../helpers.ts';
 const dbAvailable = await checkDbAvailable();
 
 /**
- * First-run setup wizard, open mode (no claim token). Each test file runs
- * against a freshly recreated database (see tests/setup.ts), so the instance
- * starts unclaimed. Exercises the state probe, the single-use claim under the
- * shared first-user advisory lock, and the permanent self-disable afterwards.
+ * First-run setup wizard, open mode (no claim token). Exercises the state probe,
+ * the single-use claim under the shared first-user advisory lock, and the
+ * permanent self-disable afterwards.
+ *
+ * The suite **must not** assume a freshly recreated database. `tests/setup.ts`
+ * recreates it once per *run*, not once per file (recreating per file is what
+ * made 190 workers DROP each other's database — see that file). Setup state is
+ * derived from the number of `group_admin` members, so any earlier suite that
+ * created an admin leaves the instance `complete` and every assertion here
+ * fails — green when run alone, red in a full run. Clear the admins first.
  */
 describe.skipIf(!dbAvailable)('setup wizard (real DB)', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
+    // Put the instance back into the unclaimed state this suite describes.
+    // Deleting the admin *users* cascades their memberships, which is what
+    // `setupStatus()` counts. `deleteMany` on the join table alone would leave
+    // orphan users behind for later suites.
+    await getPrisma().user.deleteMany({
+      where: { groups: { some: { groupId: 'group_admin' } } },
+    });
     app = buildApp();
     await app.ready();
     await app.pluginRuntime.activate('login');

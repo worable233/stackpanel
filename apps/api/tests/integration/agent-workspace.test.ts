@@ -211,8 +211,9 @@ describe('workspace runs without a hand-pasted API key (B-1/B-2)', () => {
 });
 
 describe('model connectivity probe (B-3)', () => {
-  it('probes with a dummy tool and reports tool support', async () => {
-    script = [toolAnswer()];
+  it('probes with a dummy tool across both tool turns and reports tool support', async () => {
+    // 两步：第一步拿到 tool_call，第二步回灌 tool-result 后模型收尾。
+    script = [toolAnswer(), answer()];
     seenTools = [];
     const before = toolCallsSeen;
     const res = await app.inject({
@@ -221,7 +222,9 @@ describe('model connectivity probe (B-3)', () => {
       headers: auth(),
       payload: { model: 'test-model' },
     });
-    expect(seenTools.at(-1)?.map((tool) => tool.name)).toEqual(['stackpanel_probe_echo']);
+    // 两次请求都必须带 dummy tool（只测第一步会给出假的绿灯）。
+    expect(seenTools).toHaveLength(2);
+    for (const tools of seenTools) expect(tools.map((tool) => tool.name)).toEqual(['stackpanel_probe_echo']);
     expect(res.json()).toMatchObject({ ok: true, result: 'ok', toolsSupported: true });
     expect(toolCallsSeen).toBe(before + 1);
   });
