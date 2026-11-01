@@ -402,6 +402,7 @@
         "empty": "결제 내역이 없습니다.",
         "viewAll": "전체 보기",
         "collected": "입금 확인됨",
+        "purposeHint": "충전 금액은 입금 후 자동으로 지갑에 반영됩니다. 주문 결제는 구매한 서비스를 이용할 수 있게 합니다.",
         "totalCount": "결제 {total}건",
         "purpose": {
           "TOP_UP": "지갑 충전",
@@ -2231,12 +2232,14 @@
       "runCancel": "중지",
       "runNoOutput": "실행이 텍스트 출력 없이 종료되었습니다.",
       "runOpenWorkspace": "워크스페이스에서 실행 보기 →",
-      "runStatus.QUEUED": "대기 중",
-      "runStatus.RUNNING": "실행 중",
-      "runStatus.WAITING_APPROVAL": "승인 대기",
-      "runStatus.DONE": "완료",
-      "runStatus.FAILED": "실패",
-      "runStatus.CANCELLED": "취소됨"
+      "runStatus": {
+        "QUEUED": "대기 중",
+        "RUNNING": "실행 중",
+        "WAITING_APPROVAL": "승인 대기",
+        "DONE": "완료",
+        "FAILED": "실패",
+        "CANCELLED": "취소됨"
+      }
     },
     "admin": {
       "statusLoading": "Loading",

@@ -402,6 +402,7 @@
         "empty": "支払いはまだありません。",
         "viewAll": "すべて表示",
         "collected": "入金確認済み",
+        "purposeHint": "チャージは入金後に自動でウォレットへ反映されます。注文の支払いは購入したサービスを利用可能にします。",
         "totalCount": "{total} 件の支払い",
         "purpose": {
           "TOP_UP": "ウォレットチャージ",
@@ -2231,12 +2232,14 @@
       "runCancel": "停止",
       "runNoOutput": "実行は終了しましたが、テキスト出力はありません。",
       "runOpenWorkspace": "ワークスペースで実行を開く →",
-      "runStatus.QUEUED": "待機中",
-      "runStatus.RUNNING": "実行中",
-      "runStatus.WAITING_APPROVAL": "承認待ち",
-      "runStatus.DONE": "完了",
-      "runStatus.FAILED": "失敗",
-      "runStatus.CANCELLED": "キャンセル"
+      "runStatus": {
+        "QUEUED": "待機中",
+        "RUNNING": "実行中",
+        "WAITING_APPROVAL": "承認待ち",
+        "DONE": "完了",
+        "FAILED": "失敗",
+        "CANCELLED": "キャンセル"
+      }
     },
     "admin": {
       "statusLoading": "Loading",

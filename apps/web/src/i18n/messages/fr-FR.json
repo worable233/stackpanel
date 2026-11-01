@@ -402,6 +402,7 @@
         "empty": "Aucun paiement pour le moment.",
         "viewAll": "Tout voir",
         "collected": "Encaissement confirmé",
+        "purposeHint": "Les recharges sont créditées automatiquement sur le portefeuille ; les paiements de commande débloquent le service acheté.",
         "totalCount": "{total} paiements",
         "purpose": {
           "TOP_UP": "Rechargement du portefeuille",
@@ -2231,12 +2232,14 @@
       "runCancel": "Arrêter",
       "runNoOutput": "L'exécution s'est terminée sans sortie texte.",
       "runOpenWorkspace": "Ouvrir l'exécution dans l'espace de travail →",
-      "runStatus.QUEUED": "En attente",
-      "runStatus.RUNNING": "En cours",
-      "runStatus.WAITING_APPROVAL": "En attente de validation",
-      "runStatus.DONE": "Terminé",
-      "runStatus.FAILED": "Échec",
-      "runStatus.CANCELLED": "Annulé"
+      "runStatus": {
+        "QUEUED": "En attente",
+        "RUNNING": "En cours",
+        "WAITING_APPROVAL": "En attente de validation",
+        "DONE": "Terminé",
+        "FAILED": "Échec",
+        "CANCELLED": "Annulé"
+      }
     },
     "admin": {
       "statusLoading": "Loading",

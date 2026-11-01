@@ -2232,12 +2232,14 @@
       "runCancel": "停止",
       "runNoOutput": "运行结束，没有文本输出。",
       "runOpenWorkspace": "在工作区查看任务 →",
-      "runStatus.QUEUED": "排队中",
-      "runStatus.RUNNING": "执行中",
-      "runStatus.WAITING_APPROVAL": "等待确认",
-      "runStatus.DONE": "已完成",
-      "runStatus.FAILED": "执行失败",
-      "runStatus.CANCELLED": "已取消"
+      "runStatus": {
+        "QUEUED": "排队中",
+        "RUNNING": "执行中",
+        "WAITING_APPROVAL": "等待确认",
+        "DONE": "已完成",
+        "FAILED": "执行失败",
+        "CANCELLED": "已取消"
+      }
     },
     "admin": {
       "statusLoading": "加载中",

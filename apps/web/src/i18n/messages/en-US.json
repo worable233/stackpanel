@@ -2232,12 +2232,14 @@
       "runCancel": "Stop",
       "runNoOutput": "The run finished without text output.",
       "runOpenWorkspace": "Open the run in the workspace →",
-      "runStatus.QUEUED": "Queued",
-      "runStatus.RUNNING": "Running",
-      "runStatus.WAITING_APPROVAL": "Waiting for approval",
-      "runStatus.DONE": "Done",
-      "runStatus.FAILED": "Failed",
-      "runStatus.CANCELLED": "Cancelled"
+      "runStatus": {
+        "QUEUED": "Queued",
+        "RUNNING": "Running",
+        "WAITING_APPROVAL": "Waiting for approval",
+        "DONE": "Done",
+        "FAILED": "Failed",
+        "CANCELLED": "Cancelled"
+      }
     },
     "admin": {
       "statusLoading": "Loading",

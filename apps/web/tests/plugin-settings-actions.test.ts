@@ -76,7 +76,14 @@ it('clears explicit empty string defaults while preserving write-only secrets, a
   form.set('endpoint', '');
   form.set('secret', '');
   await executePluginAction('storage', 'save', '/admin/settings#plugin-storage-%2Fconfig', form);
-  expect(mocks.post).toHaveBeenCalledWith('/storage/config', { endpoint: '' }, expect.anything());
+  // 第三个参数是 `post` 的 zod schema + 幂等键。用 `toHaveBeenCalledWith` 的
+  // `expect.anything()` 不行（它不匹配 Zod 的类实例），也不该断言 Zod 内部字段
+  // （`_def` → `def` 已经改过一次）。直接取实参检查。
+  const [path, body, schema, idempotencyKey] = mocks.post.mock.calls[0] as unknown[];
+  expect(path).toBe('/storage/config');
+  expect(body).toEqual({ endpoint: '' });
+  expect(schema).toBeDefined();
+  expect(typeof idempotencyKey).toBe('string');
   expect(mocks.revalidate).toHaveBeenCalledWith('/admin/settings');
   expect(mocks.redirect).not.toHaveBeenCalled();
 });
@@ -165,7 +172,7 @@ it('keeps the local session when a plugin returns an upstream 401', async () => 
   // 本地会话保留，且不把上游文案直接上屏：按 ADR-0012 只给稳定错误码的本地文案。
   await expect(
     executePluginAction('storage', 'save', '/admin/settings#plugin-storage-%2Fconfig', new FormData()),
-  ).resolves.toEqual({ ok: false, error: '保存失败' });
+  ).resolves.toEqual({ ok: false, error: '保存失败', code: 'zjmf.client.credentials_rejected' });
 
   expect(mocks.deleteCookie).not.toHaveBeenCalled();
   expect(mocks.redirect).not.toHaveBeenCalled();
@@ -184,5 +191,10 @@ it('carries the kernel request id so the inline failure can be traced', async ()
   // 「安装失败」 on screen and the cause in the server log.
   await expect(
     executePluginAction('storage', 'save', '/admin/settings#storage', new FormData()),
-  ).resolves.toEqual({ ok: false, error: '保存失败', requestId: 'req-abc123' });
+  ).resolves.toEqual({
+    ok: false,
+    error: '保存失败',
+    requestId: 'req-abc123',
+    code: 'market.installFailed',
+  });
 });
