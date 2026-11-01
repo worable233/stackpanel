@@ -8,6 +8,51 @@ import { fallbackBootReport, getBootReport } from '../lib/boot-report.ts';
 import { memoryPressure, memoryReport } from '../lib/memory-report.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 
+/** `/ready` 里那段只读的 Agent 自检结果（C-3）。 */
+export interface AgentHealth {
+  /** 管理员开关（`Setting['agent.enabled']`）。 */
+  enabled: boolean;
+  /** 是否已配置模型提供方（插件或兜底 `agent.llm`）。 */
+  llmConfigured: boolean;
+  /** 最近一次运行的时间；`null` = 从未跑过，这正是要暴露的信号。 */
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  runCount: number;
+  /** 运行里出现过的最后一个错误（便于一眼看出「配了但没通」）。 */
+  lastError: string | null;
+}
+
+/**
+ * 汇总 Agent 的实际可用状态。
+ *
+ * 只读：不改开关、不调模型、不写审计。放在 `/ready` 里是因为运维第一眼看的就是
+ * 它；「enabled=true 但 runCount=0」这种状态必须在这里显形，而不是要人翻数据库。
+ */
+export async function readAgentHealth(): Promise<AgentHealth> {
+  const prisma = getPrisma();
+  const [enabledRow, llmRow, lastRun, runCount] = await Promise.all([
+    prisma.setting.findUnique({ where: { key: 'agent.enabled' } }),
+    prisma.setting.findUnique({ where: { key: 'agent.llm' } }),
+    prisma.agentRun.findFirst({ orderBy: { createdAt: 'desc' } }),
+    prisma.agentRun.count(),
+  ]);
+  const enabledValue: unknown = enabledRow?.value;
+  const enabled =
+    enabledValue === true ||
+    (enabledValue !== null &&
+      typeof enabledValue === 'object' &&
+      (enabledValue as Record<string, unknown>)['enabled'] === true);
+  const llm = llmRow?.value as Record<string, unknown> | undefined;
+  return {
+    enabled,
+    llmConfigured: Boolean(llm && typeof llm['baseUrl'] === 'string' && typeof llm['model'] === 'string'),
+    lastRunAt: lastRun ? lastRun.createdAt.toISOString() : null,
+    lastRunStatus: lastRun?.status ?? null,
+    runCount,
+    lastError: lastRun?.error ?? null,
+  };
+}
+
 /**
  * Liveness + readiness probes.
  * `/ready` performs real round-trips against every required dependency and
@@ -72,6 +117,17 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
     // replica that is still localizing a revision.
     let frontendOk: boolean;
     let frontend: Awaited<ReturnType<typeof frontendReadiness>> | null = null;
+    // C-3：「Agent 开了但从未跑过」必须可观测。一个建站至今 0 条 run 的实例
+    // 在旧版 `/ready` 里是彻底隐形的——开关是 true、模型也配了，可谁也没发现
+    // 它一次都没成功执行过。这里只读、不扣费，也不改变就绪判定。
+    let agent: AgentHealth | null = null;
+    if (databaseOk) {
+      try {
+        agent = await readAgentHealth();
+      } catch {
+        agent = null;
+      }
+    }
     try {
       frontend = await frontendReadiness();
       frontendOk = frontend.ok;
@@ -86,6 +142,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
         ...checks,
         memory,
         ...(memoryPressure(memory) ? { memoryPressure: true } : {}),
+        ...(agent ? { agent } : {}),
       };
     }
     return reply.code(503).send({
@@ -94,6 +151,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       memory,
       ...(memoryPressure(memory) ? { memoryPressure: true } : {}),
       ...(frontend && !frontend.ok ? { pendingFrontends: frontend.pending } : {}),
+      ...(agent ? { agent } : {}),
     });
   });
 
