@@ -38,3 +38,23 @@ export function secretsPolicy(key: string | undefined): SecretsPolicy {
   const configured = typeof key === 'string' && key.trim().length > 0;
   return configured ? { enabled: true } : { enabled: false, reason: SECRETS_DISABLED_MESSAGE };
 }
+
+/** `plugin.<id>.<key>` — the namespace `pluginSecrets()` enforces. */
+const PLUGIN_SECRET_PREFIX = /^plugin\.([a-z0-9_-]{1,64})\.[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/**
+ * 一个 secret key 影响哪些**已加载**插件的运行期状态。
+ *
+ * 通用 `/admin/secrets/:key` 接口只写库，不知道谁在读它。插件的 `ctx.secrets`
+ * 是「激活时读一次」的语义（`onActivate` 里 `await ctx.secrets.get(...)`），于是
+ * 保存完这条 secret 后插件仍在用旧值——实测表现是配置页显示「已保存」，充值却
+ * 一直报「易支付尚未配置」，因为 epay 的 `this.config` 仍是激活时的 `null`。
+ *
+ * 规则故意做得很窄：只认 `plugin.<id>.<key>` 命名空间，未知的 id 直接忽略。
+ * 内核自己的 secret（`agent.llm.apiKey` 等）是**每次请求重读**的，不需要重启
+ * 插件，也就不会被这条规则牵连成一次无谓的重载。
+ */
+export function pluginsAffectedBySecret(key: string): string[] {
+  const match = PLUGIN_SECRET_PREFIX.exec(key);
+  return match?.[1] ? [match[1]] : [];
+}

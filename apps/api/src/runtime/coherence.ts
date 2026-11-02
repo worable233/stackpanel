@@ -80,6 +80,11 @@ export class RuntimeCoherence {
 
   constructor(private readonly options: RuntimeCoherenceOptions) {}
 
+  /** 本副本的插件运行时（只读访问，供“改动已生效吗”这类判断使用）。 */
+  get runtime(): PluginRuntime {
+    return this.options.runtime;
+  }
+
   private channel(): string {
     return this.options.channel ?? runtimeInvalidateChannel();
   }
