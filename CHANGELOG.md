@@ -76,6 +76,22 @@ worker 打错入口」拦住。这个版本修掉四条阻断项，并把「拉�
   一个 upstream —— 事故 A 那一整类「前缀漏配 / 被 `^~ /` 吞掉」直接消失。默认关闭
   （它移动了两个上游的边界）。
 
+### 修复
+
+- **对象存储镜像换成 Silo**：`minio/minio:RELEASE.2025-09-07T16-13-09Z` 在 v0.1.1
+  发版时还能拉，到 v0.1.2 时已被 MinIO 从 Docker Hub / quay / ghcr **全部撤下**
+  （许可证变更后不再提供公开镜像，三处实测均 401/403，同网络下 postgres、
+  prometheus/node-exporter 等对照仓库均正常）。`docker compose up` 会卡在拉镜像
+  这一步，CI 冒烟因此红 —— 而镜像、签名、产物、Release 其实都已发布成功，这种
+  「只有一条门禁红、与代码无关」的状态最容易被当成偶发放过。
+  现在改用 **Silo**（`pgsty/silo`，PGSTY 维护的 MinIO 分支）：保留 S3 API 与
+  `MINIO_*` 环境变量契约，**数据目录、桶、凭据、客户端代码全都不变**，可直接替换；
+  需要自建实现时用 `MINIO_IMAGE=<your image>` 覆盖。
+- **健康检查修正**：原来 `mc ready local` 里的 `local` 别名是在 `minio-init`
+  容器里才 `mc alias set` 的，而健康检查跑在对象存储容器里根本看不到它 —— 那个
+  healthcheck 从来没有真正验证过任何东西。改用镜像自带的
+  `silo healthcheck ready`。
+
 ### 变化
 
 - `API_TRUST_PROXY` 在 compose 里默认 `loopback,linklocal,uniquelocal`（所有 RFC1918

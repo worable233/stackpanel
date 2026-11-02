@@ -45,8 +45,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # 对象存储：Silo（PGSTY 维护的 MinIO 分支）。
+  #
+  # 为什么不是 minio/minio：MinIO 在 2025 年的许可证变更后把公开镜像**全部撤下**
+  # （Docker Hub / quay / ghcr 均已不可匿名拉取，实测三处都 401/403，而对照的
+  # postgres、prometheus/node-exporter 等同网络下均正常）。继续钉那个 tag 会让
+  # `docker compose up` 与 CI 冒烟在拉镜像这一步就失败。
+  #
+  # Silo 保留 MinIO 的 S3 API 与 `MINIO_*` 环境变量契约，所以**数据目录、桶、
+  # 凭据、客户端代码全都不变**；它同时提供 `silo healthcheck ready` 与 `mc`
+  # 入口，健康检查与建桶命令照旧可用。
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: ${MINIO_IMAGE:-pgsty/silo:RELEASE.2026-10-26T00-00-00Z}
     restart: unless-stopped
     command: ['server', '/data', '--console-address', ':9001']
     environment:
@@ -57,16 +67,19 @@ services:
     networks:
       - stackpanel
     healthcheck:
-      test: ['CMD', 'mc', 'ready', 'local']
+      # 用 Silo 自带的探针而不是 `mc ready local`：`mc` 的 `local` 别名是在
+      # minio-init 里才 set 的，健康检查跑在另一个容器里根本看不到它 —— 那正是
+      # 原配置一直「healthy」得很可疑的原因。
+      test: ['CMD', 'silo', 'healthcheck', 'ready']
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
 
-  # One-shot: create the object-storage bucket once MinIO is healthy. The API
+  # One-shot: create the object-storage bucket once the store is healthy. The API
   # also ensures the bucket on boot; this makes it ready for first-run seeding.
   minio-init:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: ${MINIO_IMAGE:-pgsty/silo:RELEASE.2026-10-26T00-00-00Z}
     restart: 'no'
     depends_on:
       minio:

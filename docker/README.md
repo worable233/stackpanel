@@ -10,7 +10,7 @@
 # 直接构建 runtime 阶段（最终镜像）
 docker build --target runtime -t stackpanel:local .
 
-# 或用 compose（默认档会顺带起 PG/Redis/MinIO）
+# 或用 compose（默认档会顺带起 PG/Redis/对象存储）
 # 推荐：用 deploy.sh 自动生成随机密钥，无需手填
 bash scripts/deploy.sh
 # 手动方式（必须自己填 JWT_SECRET / SETTINGS_ENCRYPTION_KEY 等 >=32 位随机值，
@@ -260,8 +260,18 @@ curl -fsS -X POST http://127.0.0.1:3001/api/v1/setup \
 | `themes/` | 已安装主题 | 前台回到默认外观 |
 | `distribution/` | 目录缓存、分发源配置 | 需重新拉取目录（不致命） |
 
-数据库与对象存储分别在 `stackpanel-postgres` / `stackpanel-minio` 卷里，用
-「系统设置 → 备份」导出（`pg_dump` + 对象存储清单）比 `docker cp` 更可靠。示例：
+数据库与对象存储分别在 `stackpanel-postgres` / `stackpanel-minio` 卷里（卷名沿用
+MinIO 时代的名字，内容是纯 S3 数据，换实现不影响）。用「系统设置 → 备份」导出
+（`pg_dump` + 对象存储清单）比 `docker cp` 更可靠。
+
+> **对象存储镜像是 Silo**（PGSTY 维护的 MinIO 分支，`pgsty/silo`），不是
+> `minio/minio`：后者在 2025 年的许可证变更后把公开镜像全部撤下（Docker Hub /
+> quay / ghcr 三处都已不可匿名拉取），继续钉那个 tag 会让 `docker compose up`
+> 在拉镜像这一步就失败。Silo 保留 S3 API 与 `MINIO_*` 环境变量契约，**数据目录、
+> 桶、凭据、客户端代码全都不变**，可以直接替换。需要换回自建/第三方实现时用
+> `MINIO_IMAGE=<your image>` 覆盖。
+
+示例：
 
 ```bash
 # 停写期间冷备（最稳）
