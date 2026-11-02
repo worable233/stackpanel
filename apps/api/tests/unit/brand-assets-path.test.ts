@@ -39,6 +39,28 @@ describe('default brand assets', () => {
     const empty = path.join(REPO_ROOT, '.does-not-exist');
     expect(defaultAssetsDir(empty)).toBe(path.join(empty, 'assets', 'brand'));
   });
+
+  it('finds a default icon whatever its extension is, not just .png', async () => {
+    // 运维常用「挂载/覆盖默认图」的方式换图标（重建容器不丢）。原来这里硬编码
+    // `${kind}.png`：默认图如果是 .ico/.svg，回退静默返回 null，接口继续 404，
+    // 而文件确实放进去了。favicon 最常见的格式恰好就是 ico。
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(path.join(tmpdir(), 'brand-'))
+      .catch(() => path.join(tmpdir(), 'brand-x'));
+    // 真实函数读 defaultAssetsDir(cwd) → `apps/api/assets/brand`，所以把
+    // cwd 指向一个只有 apps/api/assets/brand 的临时目录。
+    const assets = path.join(dir, 'apps', 'api', 'assets', 'brand');
+    await (await import('node:fs/promises')).mkdir(assets, { recursive: true });
+    await writeFile(path.join(assets, 'favicon.ico'), Buffer.from('00000100', 'hex'));
+
+    const { readDefaultBrandFileForTest } = await import('../../src/lib/platform-brand.ts');
+    const data = await readDefaultBrandFileForTest('favicon', dir);
+    expect(data).not.toBeNull();
+    expect(data?.length).toBe(4);
+
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  });
 });
 
 describe('client and kernel brand rules cannot drift', () => {

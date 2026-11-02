@@ -144,10 +144,32 @@ export async function seedDefaultBrand(): Promise<void> {
   }
 }
 
-async function readDefaultBrandFile(kind: BrandKind): Promise<Buffer> {
-  const defaultPath = path.join(defaultAssetsDir(), `${kind}.png`);
-  return readFile(defaultPath);
+/**
+ * Read a built-in default icon.
+ *
+ * 按**所有允许的扩展名**依次找，不写死 `.png`。
+ *
+ * 运维经常用挂载/覆盖的方式换默认图标（把一个 `.ico` 放进版本库或挂到镜像里，
+ * 而不是走后台上传——这样重建容器也不丢）。这里之前硬编码 `${kind}.png`：
+ * 只要默认图不是 PNG，回退就静默返回 null，`/platform/brand/favicon` 继续
+ * 404，而运维确定“文件确实放进去了，重启也不丢”。favicon 最常见的格式恰好
+ * 就是 ico。
+ */
+async function readDefaultBrandFile(
+  kind: BrandKind,
+  cwd?: string,
+): Promise<Buffer | null> {
+  const dir = defaultAssetsDir(cwd);
+  for (const ext of BRAND_IMAGE_EXTENSIONS) {
+    const candidate = path.join(dir, `${kind}${ext}`);
+    if (!existsSync(candidate)) continue;
+    return readFile(candidate);
+  }
+  return null;
 }
+
+/** 测试入口：在不 setup 存储的前提下验证「默认图回退」的扩展名探测。 */
+export const readDefaultBrandFileForTest = readDefaultBrandFile;
 
 /**
  * Detect an image content type from leading magic bytes.
