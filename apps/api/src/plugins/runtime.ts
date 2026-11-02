@@ -61,7 +61,27 @@ import { OutboxEventBus, outboxOrigin, serializeOutboxBody } from './events.ts';
 
 /** Tracks an in-flight `ctx.tx` so nested calls fail with a clear error. */
 const txContext = new AsyncLocalStorage<ExtensionTransaction>();
-const ISOLATED_WORKER_FAILURE_THRESHOLD = 3;
+
+/**
+ * 隔离 worker 崩溃后的自动重启策略。
+ *
+ * 改造前：worker 一旦退出就只打一行 `quarantined`，随后**永久失败且没有任何
+ * 重试**——`state='failed'` 一直留在内存里，只有人手动激活才会重新拉起。对
+ * `epay` 这类支付插件，一次崩溃（顶层 import 抖动、临时 OOM、子进程被信号杀掉）
+ * 就等于此后所有支付请求都返回「插件未就绪」，而日志里只有一句话。
+ *
+ * 现在：按指数退避自动重启，**连续**崩溃达到阈值才熔断（停止重启并需人工介入）。
+ * 稳定性窗口是「熔断」与「一次偶发崩溃」的分界线：worker 稳定运行超过
+ * {@link ISOLATED_WORKER_STABLE_MS} 后再崩，视为新的一次事故，计数重新开始，
+ * 否则一个稳定的插件会被上一次的旧账拖进熔断。
+ */
+const ISOLATED_WORKER_FAILURE_THRESHOLD = 5;
+/** 第一次重启的等待时间；此后每次翻倍。 */
+const ISOLATED_WORKER_RESTART_BASE_MS = 1_000;
+/** 退避上限：超过它就不再拉开间隔，但仍继续按上限重试。 */
+const ISOLATED_WORKER_RESTART_MAX_MS = 60_000;
+/** 稳定运行这么久之后再次崩溃，算作新的一次事故（不累计到上一次）。 */
+const ISOLATED_WORKER_STABLE_MS = 60_000;
 
 /** True when the bound event bus is the durable outbox bus (kernel default). */
 function isOutboxBus(events: EventBus): events is OutboxEventBus {
@@ -266,8 +286,16 @@ interface ManagedPlugin {
   effects: DisposableList;
   inFlight: number;
   drainWaiters: Array<() => void>;
+  /** 上一次成功激活的时间点；用于判断崩溃是否属于「稳定运行后的新事故」。 */
+  activeSince: number | undefined;
+  /** 本次事故内的连续崩溃次数（一次成功激活会清零）。 */
   workerFailures: number;
+  /** 连续崩溃达到阈值后置位：停止自动重启，等人工介入。 */
   workerCircuitOpen: boolean;
+  /** 已排期的自动重启定时器（已 `unref()`，不会拖住进程退出）。 */
+  workerRestartTimer: NodeJS.Timeout | undefined;
+  /** 下一次自动重启的时间点（毫秒时间戳），后台用于红标倒计时。 */
+  workerNextRestartAt: number | undefined;
   activating: boolean;
 }
 
@@ -318,17 +346,25 @@ export class PluginRuntime {
     }
   }
 
-  private async handleWorkerExit(id: string): Promise<void> {
+  /**
+   * 隔离 worker 退出的唯一入口（由 `setIsolatedWorkerExitHandler` 回调）。
+   *
+   * `public` 不是疏忽：这是 host 与 runtime 之间的内部契约，也是唯一能干净地
+   * 驱动「崩溃 → 退避重启 → 熔断」三种状态的地方；授权它比在测试里真的 fork 一个
+   * 子进程再搞死它稳定得多。插件侧拿不到 runtime 实例（`PluginContext` 不暴露它）。
+   */
+  async handleWorkerExit(id: string): Promise<void> {
     const plugin = this.plugins.get(id);
     if (!plugin || (plugin.state === 'registered' && !plugin.activating)) return;
+    const now = Date.now();
+    // 稳定运行之后才崩的，算新的一次事故：不把旧账累计到这次头上。
+    // `activeSince` 记录的是**最近一次成功激活**的时刻，崩溃时故意不清它：
+    // 它就是判断「这次崩之前已经稳定跑了多久」的唯一依据。下一次成功激活会刷新它。
+    if (plugin.activeSince !== undefined && now - plugin.activeSince >= ISOLATED_WORKER_STABLE_MS) {
+      plugin.workerFailures = 0;
+    }
     plugin.state = 'failed';
     plugin.workerFailures += 1;
-    if (plugin.workerFailures >= ISOLATED_WORKER_FAILURE_THRESHOLD) {
-      plugin.workerCircuitOpen = true;
-      this.options.logger.error(
-        `Plugin worker circuit opened after ${plugin.workerFailures} failures: ${id}`,
-      );
-    }
     plugin.effects.dispose();
     await this.options.jobs
       .removeByOwner(id)
@@ -338,7 +374,91 @@ export class PluginRuntime {
         ),
       );
     this.options.extensions.unregisterModels(id);
-    this.options.logger.error(`Plugin worker exited; plugin quarantined: ${id}`);
+    if (plugin.workerCircuitOpen) {
+      // 已经熔断：保持静默，只留一条错误；再启动就回到重启循环。
+      this.options.logger.error(`Plugin worker exited again while circuit is open: ${id}`);
+      return;
+    }
+    if (plugin.workerFailures >= ISOLATED_WORKER_FAILURE_THRESHOLD) {
+      plugin.workerCircuitOpen = true;
+      plugin.workerNextRestartAt = undefined;
+      this.options.logger.error(
+        `Plugin worker circuit opened after ${plugin.workerFailures} consecutive failures: ${id}`,
+      );
+      return;
+    }
+    this.scheduleWorkerRestart(id, plugin);
+  }
+
+  /**
+   * 排一次自动重启（指数退避）。
+   *
+   * 定时器 `unref()` 过：测试与短命进程不会因为一个待重启的插件而挂住。
+   * 重启失败不改 `state`——它已经是 `failed`，真正的状态会在
+   * `restartIsolatedPlugin` 成功后由 `activate` 重新拉起。
+   */
+  private scheduleWorkerRestart(id: string, plugin: ManagedPlugin): void {
+    if (plugin.workerRestartTimer) clearTimeout(plugin.workerRestartTimer);
+    const attempt = Math.max(0, plugin.workerFailures - 1);
+    const delay = Math.min(
+      ISOLATED_WORKER_RESTART_BASE_MS * 2 ** attempt,
+      ISOLATED_WORKER_RESTART_MAX_MS,
+    );
+    plugin.workerNextRestartAt = Date.now() + delay;
+    this.options.logger.error(
+      `Plugin worker exited; scheduling restart in ${delay}ms ` +
+        `(attempt ${plugin.workerFailures}/${ISOLATED_WORKER_FAILURE_THRESHOLD}): ${id}`,
+    );
+    const timer = setTimeout(() => {
+      plugin.workerRestartTimer = undefined;
+      plugin.workerNextRestartAt = undefined;
+      void this.restartAfterExit(id).catch((error) => {
+        this.options.logger.error(`Plugin ${id} automatic restart failed: ${String(error)}`);
+      });
+    }, delay);
+    timer.unref?.();
+    plugin.workerRestartTimer = timer;
+  }
+
+  /**
+   * 取消一个已排期的自动重启。
+   *
+   * 卸载/停用插件时必须调：定时器闭包里持有的是旧的 `ManagedPlugin`，而重启依赖
+   * `plugins` 里的注册。不清掉就会在插件已被移除后拉起一个孤儿 worker。
+   */
+  abortWorkerRestart(id: string): void {
+    const plugin = this.plugins.get(id);
+    if (!plugin) return;
+    if (plugin.workerRestartTimer) {
+      clearTimeout(plugin.workerRestartTimer);
+      plugin.workerRestartTimer = undefined;
+    }
+    plugin.workerNextRestartAt = undefined;
+  }
+
+  /**
+   * 子进程退出后的自动恢复。
+   *
+   * 走 `activate()` 而不是直接 `restartIsolatedPlugin()`：激活是**完整**的重建
+   * （重跑 `onActivate`、重新注册扩展、重新发布服务快照）。只重启子进程会得到
+   * 一个活着的 worker 却没有任何插件登记，对外表现为「插件在，但没有支付渠道」。
+   */
+  private async restartAfterExit(id: string): Promise<void> {
+    const plugin = this.plugins.get(id);
+    if (!plugin || plugin.workerCircuitOpen || plugin.state === 'active') return;
+    try {
+      await this.activate(id);
+    } catch (error) {
+      // 重启失败也算一次失败：子进程没起来时 `handleWorkerExit` 可能根本不会被
+      // 调用（hoster 的 ready 超时就直接 reject），不在这里计次就会退化成
+      // “无限快速重试”而永远不会熔断。
+      this.options.logger.error(`Plugin ${id} automatic restart failed: ${String(error)}`);
+      await this.handleWorkerExit(id);
+      return;
+    }
+    if (!this.isActive(id)) {
+      await this.handleWorkerExit(id);
+    }
   }
 
   /**
@@ -419,6 +539,20 @@ export class PluginRuntime {
     frontendExecutions: 'declarative' | 'server';
     /** Whether an operator may uninstall the package. */
     removable: boolean;
+    /**
+     * Worker health, so the admin UI can show a red badge instead of pretending
+     * a quarantined plugin is fine.
+     *
+     * `failures` is the consecutive-crash counter since the last successful
+     * activation; `restartAt` is when the automatic restart fires (null when
+     * none is scheduled); `circuitOpen` means the runtime gave up and needs
+     * operator action.
+     */
+    worker: {
+      failures: number;
+      circuitOpen: boolean;
+      nextRestartAt: string | null;
+    };
   }> {
     return [...this.plugins.values()].map((p) => ({
       id: p.definition.manifest.id,
@@ -446,6 +580,13 @@ export class PluginRuntime {
       // Fallback keeps pre-field installs on the old behaviour (`builtin` ⇒
       // not removable) instead of making every shipped package deletable.
       removable: p.definition.manifest.removable ?? p.definition.manifest.builtin !== true,
+      worker: {
+        failures: p.workerFailures,
+        circuitOpen: p.workerCircuitOpen,
+        nextRestartAt: p.workerNextRestartAt
+          ? new Date(p.workerNextRestartAt).toISOString()
+          : null,
+      },
     }));
   }
 
@@ -466,6 +607,9 @@ export class PluginRuntime {
       drainWaiters: [],
       workerFailures: 0,
       workerCircuitOpen: false,
+      activeSince: undefined,
+      workerRestartTimer: undefined,
+      workerNextRestartAt: undefined,
       activating: false,
     };
     this.plugins.set(id, plugin);
@@ -623,6 +767,9 @@ export class PluginRuntime {
     if (plugin.state === 'active') {
       await this.deactivate(id);
     }
+    // 卸载后不能再自动重启：定时器里持有的是旧 plugin 对象，而重启依赖
+    // `plugins` 里的注册。不清掉就会在插件消失后拉起一个孤儿 worker。
+    this.abortWorkerRestart(id);
     plugin.effects.dispose();
     plugin.registrations.dispose();
     this.options.removeRoutes(id);
@@ -710,6 +857,16 @@ export class PluginRuntime {
         throw new Error(`插件 ${id} worker 在激活过程中退出`);
       }
       plugin.state = 'active';
+      // 一次成功激活就是本次事故的终点：清掉连续计次与待重启定时器，
+      // 否则一个曾经崩过几次的插件即使恢复了也仍会很快撞上熔断阈值。
+      plugin.workerFailures = 0;
+      plugin.workerCircuitOpen = false;
+      plugin.activeSince = Date.now();
+      if (plugin.workerRestartTimer) {
+        clearTimeout(plugin.workerRestartTimer);
+        plugin.workerRestartTimer = undefined;
+      }
+      plugin.workerNextRestartAt = undefined;
     } catch (err) {
       plugin.effects.dispose();
       if ((plugin as ManagedPlugin).state !== 'failed') plugin.state = 'registered';

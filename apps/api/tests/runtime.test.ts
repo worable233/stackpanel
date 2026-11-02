@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { definePlugin } from '@stackpanel/sdk';
 import type { PluginContext } from '@stackpanel/sdk';
 import { EventEmitterEventBus } from '../src/plugins/events.ts';
@@ -6,6 +6,52 @@ import { PluginRuntime } from '../src/plugins/runtime.ts';
 import { stubExtensionRuntime } from './helpers.ts';
 
 const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+
+/**
+ * Minimal runtime for the worker-restart tests.
+ *
+ * `handleWorkerExit` is driven directly (no child process): the point under test
+ * is the *policy* — backoff, the consecutive-failure counter, and the circuit
+ * breaker — not the fork plumbing, which `isolated-*` tests already cover.
+ */
+function workerTestRuntime() {
+  const runtime = new PluginRuntime({
+    events: new EventEmitterEventBus(),
+    logger: silentLogger,
+    db: null,
+    registerRoute: () => () => undefined,
+    removeRoutes: () => undefined,
+    extensions: stubExtensionRuntime(),
+    payments: {} as PluginContext['payments'],
+    wallet: {} as PluginContext['wallet'],
+    fx: {} as PluginContext['fx'],
+    auth: {} as PluginContext['auth'],
+    notifications: {} as PluginContext['notifications'],
+    state: {} as PluginContext['state'],
+    jobs: {
+      enqueue: async () => '',
+      schedule: async () => undefined,
+      handle: () => () => undefined,
+      removeByOwner: async () => undefined,
+    } as never,
+  });
+  return runtime;
+}
+
+async function registeredPlugin(runtime: PluginRuntime, onActivate: () => void) {
+  let activations = 0;
+  await runtime.register(
+    definePlugin({
+      manifest: { id: 'flaky', name: 'Flaky', version: '1.0.0' },
+      onActivate: () => {
+        activations += 1;
+        onActivate();
+      },
+    }),
+  );
+  return () => activations;
+}
 
 describe('PluginRuntime', () => {
   it('runs lifecycle hooks in order and wires routes/events', async () => {
@@ -688,5 +734,65 @@ describe('PluginRuntime', () => {
     expect(runtime.list().find((plugin) => plugin.id === 'rbac')?.permissions).toEqual([
       'orders:read',
     ]);
+  });
+});
+
+describe('isolated worker crash recovery', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('schedules a backoff restart instead of quarantining forever', async () => {
+    const runtime = workerTestRuntime();
+    const activations = await registeredPlugin(runtime, () => undefined);
+    await runtime.activate('flaky');
+    expect(activations()).toBe(1);
+
+    await runtime.handleWorkerExit('flaky');
+    const listed = runtime.list().find((plugin) => plugin.id === 'flaky');
+    // The bug: after one exit the plugin was `failed` with nothing scheduled and
+    // no retry, so every later request failed until a human toggled it.
+    expect(listed?.state).toBe('failed');
+    expect(listed?.worker.failures).toBe(1);
+    expect(listed?.worker.circuitOpen).toBe(false);
+    expect(listed?.worker.nextRestartAt).not.toBeNull();
+    runtime.abortWorkerRestart('flaky');
+  });
+
+  it('opens the circuit only after consecutive failures and stops scheduling', async () => {
+    const runtime = workerTestRuntime();
+    await registeredPlugin(runtime, () => undefined);
+    await runtime.activate('flaky');
+
+    for (let i = 0; i < 5; i += 1) {
+      await runtime.handleWorkerExit('flaky');
+      runtime.abortWorkerRestart('flaky');
+    }
+
+    const listed = runtime.list().find((plugin) => plugin.id === 'flaky');
+    expect(listed?.worker.failures).toBe(5);
+    expect(listed?.worker.circuitOpen).toBe(true);
+    expect(listed?.worker.nextRestartAt).toBeNull();
+  });
+
+  it('starts a fresh accident after a stable run', async () => {
+    vi.useFakeTimers();
+    const runtime = workerTestRuntime();
+    await registeredPlugin(runtime, () => undefined);
+    await runtime.activate('flaky');
+    for (let i = 0; i < 3; i += 1) {
+      await runtime.handleWorkerExit('flaky');
+      runtime.abortWorkerRestart('flaky');
+    }
+    expect(runtime.list()[0]?.worker.failures).toBe(3);
+
+    // Pretend the worker then ran for ten minutes: the next crash is a new
+    // accident, so the counter restarts instead of tripping the breaker.
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    await runtime.handleWorkerExit('flaky');
+    const listed = runtime.list()[0];
+    expect(listed?.worker.failures).toBe(1);
+    expect(listed?.worker.circuitOpen).toBe(false);
+    runtime.abortWorkerRestart('flaky');
   });
 });
