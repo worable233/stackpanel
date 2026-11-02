@@ -27,6 +27,17 @@ import type {
   UpdatePolicyView,
 } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { BRAND_IMAGE_ACCEPT } from '@stackpanel/sdk';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -361,6 +372,18 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
     {},
   );
   const [isMutating, startTransition] = useTransition();
+  /**
+   * 「恢复默认」必须二次确认。
+   *
+   * 这个按钮一次性删掉 logo **和** favicon 两个对象，但界面文案只有一个
+   * 「恢复默认」，读起来像是只影响当前那个框。实测事故：运营只想改回默认
+   * favicon，一点之后 logo 也没了，`/platform/brand/*` 双双变 404，首页标签页
+   * 图标变成损坏状态。
+   *
+   * 用 AlertDialog 而不是 `window.confirm`：后者无法本地化按钮文案，也不能被
+   * 测试点中。
+   */
+  const [confirmReset, setConfirmReset] = useState(false);
 
   return (
     <section className="flex flex-col gap-6">
@@ -409,26 +432,18 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
           <div className="flex flex-col gap-2">
             <Label htmlFor="brand-logo">{t('admin.settings.brand.uploadLogo')}</Label>
             {/*
-              列出具体格式而不是 `image/*`：文件选择器里能用 `image/*` 挑中 .ico，
-              但浏览器对它的类型判定不稳定（有些系统报 `image/x-icon`，有些干脆
-              不给），服务端 415 要等到上传完才知道。同时把 `.ico` 显式写上，
-              因为部分平台（主要看扩展名）不会把它归到 `image/*` 里。
+              `accept` 来自 SDK，与内核白名单是**同一份**。
+
+              之前两处各写一份：`accept` 没列 `.ico`，内核也没列——于是浏览器
+              把用户选的 .ico 静默剔除（`<input type="file">` 对被 accept 排除的
+              文件不报错，只是 `files` 里不出现），请求体只剩 logo，接口回 200，
+              界面弹“保存成功”。现在两边读 `BRAND_IMAGE_ACCEPT`，不可能再分叉。
             */}
-            <Input
-              id="brand-logo"
-              name="logo"
-              type="file"
-              accept=".svg,.png,.jpg,.jpeg,.webp,.gif,.ico,image/svg+xml,image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon"
-            />
+            <Input id="brand-logo" name="logo" type="file" accept={BRAND_IMAGE_ACCEPT} />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="brand-favicon">{t('admin.settings.brand.uploadFavicon')}</Label>
-            <Input
-              id="brand-favicon"
-              name="favicon"
-              type="file"
-              accept=".svg,.png,.jpg,.jpeg,.webp,.gif,.ico,image/svg+xml,image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon"
-            />
+            <Input id="brand-favicon" name="favicon" type="file" accept={BRAND_IMAGE_ACCEPT} />
           </div>
         </div>
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
@@ -450,9 +465,41 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
         {clearState.ok && clearState.message ? (
           <p className="text-sm text-muted-foreground">{clearState.message}</p>
         ) : null}
-        <Button type="submit" variant="outline" disabled={clearPending} className="w-fit">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={clearPending}
+          className="w-fit"
+          onClick={() => setConfirmReset(true)}
+        >
           {clearPending ? t('admin.settings.brand.resetting') : t('admin.settings.brand.reset')}
         </Button>
+        <AlertDialog open={confirmReset} onOpenChange={(open) => setConfirmReset(open)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('admin.settings.brand.resetConfirmTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('admin.settings.brand.resetConfirmDescription')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={clearPending}>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={clearPending}
+                onClick={() => {
+                  setConfirmReset(false);
+                  startTransition(() => {
+                    void clearAction(new FormData());
+                    setTimeout(() => router.refresh(), 400);
+                  });
+                }}
+              >
+                {t('admin.settings.brand.reset')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </form>
     </section>
   );

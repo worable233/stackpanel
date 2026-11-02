@@ -792,7 +792,9 @@
         "uploadFavicon": "Upload favicon",
         "submit": "Save brand assets",
         "resetting": "Restoring…",
-        "reset": "Restore default"
+        "reset": "Restore default",
+        "resetConfirmTitle": "브랜드 아이콘을 기본값으로 되돌릴까요?",
+        "resetConfirmDescription": "사용자 지정 logo와 favicon이 모두 삭제되고 내장 기본 이미지로 돌아갑니다. 되돌릴 수 없으며 다시 업로드해야 합니다."
       },
       "signing": {
         "title": "Package signing",
@@ -1166,6 +1168,9 @@
     "platformInfoSaveFailed": "Failed to save platform information",
     "brandImageRequired": "Please choose a logo or favicon image to upload",
     "brandImageTooLarge": "Image must be smaller than 1MB",
+    "brandImageUnsupported": "지원하지 않는 형식입니다. {formats}를 사용하세요.",
+    "brandImagePartial": "저장됨: {saved}. 업로드되지 않음(변경 없음): {skipped}.",
+    "brandImageNothingChanged": "이미지 파일이 전달되지 않아 변경된 내용이 없습니다.",
     "brandImageSaved": "Brand icon saved.",
     "brandImageCleared": "Brand icon restored to default.",
     "brandImageUploadFailed": "Upload failed",

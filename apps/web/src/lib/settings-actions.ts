@@ -1,5 +1,10 @@
 'use server';
-import { ApiError, platformBrandResponseSchema } from '@stackpanel/sdk';
+import {
+  ApiError,
+  BRAND_IMAGE_SUMMARY,
+  platformBrandResponseSchema,
+  rejectBrandFile,
+} from '@stackpanel/sdk';
 import type { ProblemDetails } from '@stackpanel/sdk';
 import { revalidatePath } from 'next/cache';
 import { getLocale } from '@/i18n/locale';
@@ -82,9 +87,36 @@ export async function savePlatformBrandAction(
   if (!hasLogo && !hasFavicon) {
     return { error: translate(locale, 'action.brandImageRequired') };
   }
-  if ((hasLogo && logo.size > 1024 * 1024) || (hasFavicon && favicon.size > 1024 * 1024)) {
-    return { error: translate(locale, 'action.brandImageTooLarge') };
+
+  // 在**离开浏览器之前**就把不合格的文件报出来。
+  //
+  // 这里曾经只看体积，格式全交给服务端 415：而 `<input accept>` 会把不在名单里
+  // 的文件**静默**从 `files` 里剔除（不报错、不提示），于是请求体只剩另一半，
+  // 接口回 200，界面弹「保存成功」，而用户以为传上去的那个文件一次都没发出去。
+  // 前端不校验就等于把假成功写进流程。
+  const rejected: string[] = [];
+  for (const [field, file] of [
+    ['logo', hasLogo ? logo : null],
+    ['favicon', hasFavicon ? favicon : null],
+  ] as const) {
+    if (!(file instanceof File) || file.size === 0) continue;
+    const rejection = rejectBrandFile(file.name, file.size);
+    if (rejection === 'unsupported_type') {
+      return {
+        error: translate(locale, 'action.brandImageUnsupported', {
+          formats: BRAND_IMAGE_SUMMARY,
+        }),
+      };
+    }
+    if (rejection === 'too_large') {
+      return { error: translate(locale, 'action.brandImageTooLarge') };
+    }
+    if (rejection === 'empty') rejected.push(field);
   }
+  if ((hasLogo && rejected.includes('logo')) || (hasFavicon && rejected.includes('favicon'))) {
+    return { error: translate(locale, 'action.brandImageRequired') };
+  }
+
   const token = await getSessionToken();
   const apiBase = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
   try {
@@ -113,6 +145,31 @@ export async function savePlatformBrandAction(
       };
     }
     revalidatePath('/', 'layout');
+
+    // 回显「本次实际更新了哪几项」。
+    //
+    // 内核的响应里带 `updated`（它实际写到存储的字段）。把请求意项与实际结果对比，
+    // 一旦不相等就不能只说「已保存」：那种情况意味着某一个文件根本没进请求体
+    // （被 `accept` 剔除、被代理丢掉、字段名写错），而用户会以为看到了新图标。
+    const payload = (await res.json().catch(() => null)) as { updated?: string[] } | null;
+    const updated = Array.isArray(payload?.updated) ? payload.updated : null;
+    const requested = [hasLogo ? 'logo' : null, hasFavicon ? 'favicon' : null].filter(
+      (item): item is string => item !== null,
+    );
+    if (updated) {
+      const skipped = requested.filter((item) => !updated.includes(item));
+      if (skipped.length > 0) {
+        return {
+          error: translate(locale, 'action.brandImagePartial', {
+            saved: updated.join(', ') || '-',
+            skipped: skipped.join(', '),
+          }),
+        };
+      }
+      if (updated.length === 0) {
+        return { error: translate(locale, 'action.brandImageNothingChanged') };
+      }
+    }
     return { ok: true, message: translate(locale, 'action.brandImageSaved') };
   } catch {
     return { error: translate(locale, 'action.brandImageUploadFailed') };

@@ -122,6 +122,22 @@ describe.skipIf(!dbAvailable)('platform brand HTTP surface (real DB)', () => {
     expect(after.logo?.equals(logoBefore ?? Buffer.alloc(0))).toBe(true);
   });
 
+  it('reports which kinds it actually wrote, so the UI cannot claim success blindly', async () => {
+    // 「假成功」的另一半：前端只能根据这个字段判断请求意图是否真的落地。
+    const { payload, boundary } = multipart('logo', ICO, 'logo.ico');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/platform/brand',
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { updated: string[] }).updated).toEqual(['logo']);
+  });
+
   it('rejects a real non-image with a stable code, not a vague prose-only body', async () => {
     const { payload, boundary } = multipart('logo', Buffer.from('not an image'), 'logo.bmp');
     const res = await app.inject({

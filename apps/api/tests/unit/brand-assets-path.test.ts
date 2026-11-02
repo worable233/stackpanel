@@ -1,0 +1,69 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { BRAND_IMAGE_ACCEPT, BRAND_IMAGE_EXTENSIONS } from '@stackpanel/sdk';
+import { defaultAssetsDir } from '../../src/lib/platform-brand.ts';
+
+/**
+ * 内置品牌图标的**查找路径**，以及前后端规则不能漂移。
+ *
+ * 这条断言对应一次线上 404：容器工作目录是 `/app`，而图标在
+ * `/app/apps/api/assets/brand/`。原来的候选列表只有 `assets/brand` 与
+ * `../assets/brand`，两者都不命中，`seedDefaultBrand()` 又用
+ * `.catch(() => null)` 把失败吞了 —— 于是 `brand/favicon` 从第一次启动就不存在，
+ * 首页输出 `<link rel="icon" href="/api/plugins/platform/brand/favicon">`，
+ * 浏览器拿到 404，显示「损坏的图标」。日志全绿，配置页「保存成功」。
+ *
+ * 直接调用真实实现（它接受 `cwd` 参数），不复刻逻辑。
+ */
+const REPO_ROOT = path.resolve(__dirname, '../../../..');
+const API_DIR = path.resolve(__dirname, '../..');
+
+describe('default brand assets', () => {
+  it('finds apps/api/assets/brand from the repo root (container layout)', () => {
+    // 容器里 cwd=/app，图标在 /app/apps/api/assets/brand。
+    expect(defaultAssetsDir(REPO_ROOT)).toBe(path.join(REPO_ROOT, 'apps', 'api', 'assets', 'brand'));
+  });
+
+  it('still finds assets/brand when run from apps/api (dev layout)', () => {
+    expect(defaultAssetsDir(API_DIR)).toBe(path.join(API_DIR, 'assets', 'brand'));
+  });
+
+  it('has both built-in files on disk', () => {
+    const dir = defaultAssetsDir(REPO_ROOT);
+    expect(existsSync(path.join(dir, 'logo.png'))).toBe(true);
+    expect(existsSync(path.join(dir, 'favicon.png'))).toBe(true);
+  });
+
+  it('falls back to a path rather than throwing when nothing exists', () => {
+    const empty = path.join(REPO_ROOT, '.does-not-exist');
+    expect(defaultAssetsDir(empty)).toBe(path.join(empty, 'assets', 'brand'));
+  });
+});
+
+describe('client and kernel brand rules cannot drift', () => {
+  it('accept list contains every allowed extension', () => {
+    for (const ext of BRAND_IMAGE_EXTENSIONS) {
+      expect(BRAND_IMAGE_ACCEPT).toContain(ext);
+    }
+  });
+
+  it('accept list carries no extension the kernel would reject', () => {
+    // 反向断言：`accept` 里出现的扩展名必须都在白名单里，否则用户又会挑中一个
+    // 注定被 415 的文件。
+    const fromAccept = BRAND_IMAGE_ACCEPT.split(',')
+      .map((part) => part.trim())
+      .filter((part) => part.startsWith('.'))
+      .map((part) => part.toLowerCase());
+    expect(fromAccept.length).toBeGreaterThan(0);
+    for (const ext of fromAccept) {
+      expect(BRAND_IMAGE_EXTENSIONS as readonly string[]).toContain(ext);
+    }
+  });
+
+  it('includes .ico on both sides (the original failure)', () => {
+    expect(BRAND_IMAGE_EXTENSIONS as readonly string[]).toContain('.ico');
+    expect(BRAND_IMAGE_ACCEPT).toContain('.ico');
+    expect(BRAND_IMAGE_ACCEPT).toContain('image/x-icon');
+  });
+});

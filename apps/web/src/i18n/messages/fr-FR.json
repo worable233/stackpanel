@@ -792,7 +792,9 @@
         "uploadFavicon": "Upload favicon",
         "submit": "Save brand assets",
         "resetting": "Restoring…",
-        "reset": "Restore default"
+        "reset": "Restore default",
+        "resetConfirmTitle": "Rétablir les icônes de marque par défaut ?",
+        "resetConfirmDescription": "Cela supprime à la fois le logo et le favicon personnalisés : les deux reviennent aux images par défaut. Action irréversible — il faudra les téléverser à nouveau."
       },
       "signing": {
         "title": "Package signing",
@@ -1166,6 +1168,9 @@
     "platformInfoSaveFailed": "Failed to save platform information",
     "brandImageRequired": "Please choose a logo or favicon image to upload",
     "brandImageTooLarge": "Image must be smaller than 1MB",
+    "brandImageUnsupported": "Format non pris en charge. Utilisez {formats}.",
+    "brandImagePartial": "Enregistré : {saved}. Non téléversé (inchangé) : {skipped}.",
+    "brandImageNothingChanged": "Aucun fichier image reçu : rien n'a été modifié.",
     "brandImageSaved": "Brand icon saved.",
     "brandImageCleared": "Brand icon restored to default.",
     "brandImageUploadFailed": "Upload failed",

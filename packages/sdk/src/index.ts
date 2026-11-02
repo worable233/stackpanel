@@ -487,3 +487,4 @@ export type {
   PackageTranslator,
 } from './i18n.js';
 export * from './proxy.js';
+export * from './brand.js';

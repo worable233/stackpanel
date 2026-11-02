@@ -792,7 +792,9 @@
         "uploadFavicon": "Upload favicon",
         "submit": "Save brand assets",
         "resetting": "Restoring…",
-        "reset": "Restore default"
+        "reset": "Restore default",
+        "resetConfirmTitle": "ブランドアイコンを既定に戻しますか？",
+        "resetConfirmDescription": "カスタムの logo と favicon の両方が削除され、どちらも内蔵の既定画像に戻ります。元に戻せません（再アップロードが必要です）。"
       },
       "signing": {
         "title": "Package signing",
@@ -1166,6 +1168,9 @@
     "platformInfoSaveFailed": "Failed to save platform information",
     "brandImageRequired": "Please choose a logo or favicon image to upload",
     "brandImageTooLarge": "Image must be smaller than 1MB",
+    "brandImageUnsupported": "対応していない形式です。{formats} をご利用ください。",
+    "brandImagePartial": "保存済み: {saved}。未アップロード（未反映）: {skipped}。",
+    "brandImageNothingChanged": "画像ファイルを受け取っていないため、変更はありません。",
     "brandImageSaved": "Brand icon saved.",
     "brandImageCleared": "Brand icon restored to default.",
     "brandImageUploadFailed": "Upload failed",

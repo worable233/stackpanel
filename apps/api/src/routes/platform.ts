@@ -75,7 +75,13 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     if (kind !== 'logo' && kind !== 'favicon') return reply.code(404).send({ error: '资源不存在' });
     const files = await readBrandFiles();
     const data = files[kind];
-    if (!data) return reply.code(404).send({ error: '资源不存在' });
+    if (!data) {
+      // 缺文件时返回 404，让部署问题**立即显形**，而不是静默给一张假图。
+      // 但绝不缓存这份 404：补齐文件后浏览器/CDN 还拿着它，运维会误以为
+      // 仍然缺失（首页的 `<link rel="icon">` 就会持续显示损坏图标）。
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(404).send({ error: '资源不存在' });
+    }
     reply.header('Cache-Control', 'public, max-age=3600');
     return sendBrandFile(reply, data);
   });
@@ -135,6 +141,9 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
       ...auditContext(request),
     });
     return {
+      // 本次**实际**写到存储的字段。前端拿它与请求意图对比，不相等就不能
+      // 说「已保存」——否则一个没进请求体的文件会被一句成功提示掩盖。
+      updated: changes,
       brand: {
         logo: brandFileUrl('logo'),
         favicon: brandFileUrl('favicon'),

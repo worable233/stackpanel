@@ -783,7 +783,9 @@
         "uploadFavicon": "Upload favicon",
         "submit": "Save brand assets",
         "resetting": "Restoring…",
-        "reset": "Restore default"
+        "reset": "Restore default",
+        "resetConfirmTitle": "Restore the default brand icons?",
+        "resetConfirmDescription": "This deletes both the custom logo and the custom favicon, and both go back to the built-in defaults. It cannot be undone — you would have to upload them again."
       },
       "signing": {
         "title": "Package signing",
@@ -1166,6 +1168,9 @@
     "platformInfoSaveFailed": "Failed to save platform information",
     "brandImageRequired": "Please choose a logo or favicon image to upload",
     "brandImageTooLarge": "Image must be smaller than 1MB",
+    "brandImageUnsupported": "Unsupported format. Use {formats}.",
+    "brandImagePartial": "Saved: {saved}. Not uploaded (unchanged): {skipped}.",
+    "brandImageNothingChanged": "No image files were received, so nothing changed.",
     "brandImageSaved": "Brand icon saved.",
     "brandImageCleared": "Brand icon restored to default.",
     "brandImageUploadFailed": "Upload failed",

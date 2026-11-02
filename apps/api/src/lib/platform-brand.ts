@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import {
+  BRAND_IMAGE_EXTENSIONS,
+  BRAND_IMAGE_SUMMARY,
+  rejectBrandFile,
+} from '@stackpanel/sdk';
 import { getStorage } from '../infra.ts';
 
 /**
@@ -28,31 +33,11 @@ export interface BrandFiles {
 /**
  * Allowed image extensions.
  *
- * `.ico` is here because a favicon is *usually* an ICO: a 64×64 ICO holding 16/32/48
- * sub-images is the single most common thing an operator uploads, and it was the
- * one format the upload rejected.
+ * 这份名单**不在本文件定义**：它来自 `@stackpanel/sdk` 的 `BRAND_IMAGE_EXTENSIONS`，
+ * 前端 `<input accept>` 读的是同一份。两边各写一份就会出现「前端剔掉、后端
+ * 收不到、接口还回 200」的假成功。
  */
-const ALLOWED_IMAGE_EXTENSIONS = new Set([
-  '.svg',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.gif',
-  '.ico',
-]);
-const MAX_BRAND_FILE_BYTES = 1024 * 1024;
-
-/**
- * Human-readable list of the formats an upload actually accepts.
- *
- * Built from the set above on purpose: the old copy just said 「仅支持图片文件」
- * while rejecting a plain `.ico`, so the message told the operator nothing about
- * what to convert to. A list that is generated cannot drift from the check.
- */
-const ALLOWED_IMAGE_SUMMARY = [...ALLOWED_IMAGE_EXTENSIONS]
-  .map((ext) => ext.slice(1))
-  .join('/');
+const ALLOWED_IMAGE_EXTENSIONS = new Set<string>(BRAND_IMAGE_EXTENSIONS);
 
 export type BrandKind = 'logo' | 'favicon';
 
@@ -60,12 +45,23 @@ function storageKey(kind: BrandKind): string {
   return `brand/${kind}`;
 }
 
-/** Directory where the built-in default icons live in the API package. */
-function defaultAssetsDir(): string {
-  const cwd = process.cwd();
+/**
+ * Directory where the built-in default icons live in the API package.
+ *
+ * Exported for tests: this path resolution is the difference between 「首页有图标」
+ * and 「首页的 <link rel="icon"> 指向 404」, and it can only be verified by
+ * pointing it at each real working directory.
+ */
+export function defaultAssetsDir(cwd: string = process.cwd()): string {
   for (const candidate of [
     path.join(cwd, 'assets', 'brand'),
     path.join(cwd, '..', 'assets', 'brand'),
+    // Bundled layout：`tsup` 把源码打进了 `dist/index.js`，但 `assets/` 是按
+    // 目录相对位置读的。容器里的工作目录是 `/app`，脚本在 `/app/apps/api/dist/`，
+    // 所以 `assets/brand` 在 `apps/api/assets/brand`——不列这一条，容器启动时
+    // **种子永远静默失败**，`brand/favicon` 从头到尾不存在，首页的
+    // `<link rel="icon">` 指向 404。
+    path.join(cwd, 'apps', 'api', 'assets', 'brand'),
   ]) {
     if (existsSync(candidate)) return candidate;
   }
@@ -80,14 +76,21 @@ export function brandFileUrl(kind: BrandKind): string {
 export function validateBrandFile(kind: BrandKind, name: string, data: Buffer): string {
   const label = kind === 'logo' ? 'logo' : 'favicon';
   const ext = path.extname(name).toLowerCase();
-  if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+  // 与前端共用同一份 `rejectBrandFile`：前端能选中的，这里必须放行。
+  const rejection = rejectBrandFile(name, data.length);
+  if (rejection === 'unsupported_type') {
     // Name the formats instead of saying 「仅支持图片文件」: .ico *is* an image, so the
     // vague version left the operator with nothing actionable.
-    throw new BrandError(415, `${label} 仅支持 ${ALLOWED_IMAGE_SUMMARY}，且小于 1MB`);
+    throw new BrandError(415, `${label} 仅支持 ${BRAND_IMAGE_SUMMARY}`);
   }
-  if (data.length === 0) throw new BrandError(400, '文件为空');
-  if (data.length > MAX_BRAND_FILE_BYTES) {
+  if (rejection === 'empty') throw new BrandError(400, '文件为空');
+  if (rejection === 'too_large') {
     throw new BrandError(413, `${label} 必须小于 1MB`);
+  }
+  if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+    // 双保险：`rejectBrandFile` 与这里的集合必须始终一致，不一致说明有人的
+    // 扩展名规则改了却只改一边。宁可报错也不要静默写入一个非法扩展名。
+    throw new BrandError(415, `${label} 仅支持 ${BRAND_IMAGE_SUMMARY}`);
   }
   return ext;
 }
@@ -117,12 +120,25 @@ export async function readBrandFiles(): Promise<BrandFiles> {
   return result;
 }
 
-/** Seed the built-in default icons into storage so they are always present. */
+/**
+ * Seed the built-in default icons into storage so they are always present.
+ *
+ * 失败必须留下痕迹。这里原来是 `readDefaultBrandFile(...).catch(() => null)` +
+ * `continue`：容器里找不到 `assets/brand` 时，种子**一声不喷**地跳过，于是
+ * `/platform/brand/favicon` 从第一次启动就是 404、首页的 `<link rel="icon">`
+ * 指向一个不存在的文件，而所有日志都是绿的。
+ */
 export async function seedDefaultBrand(): Promise<void> {
   const storage = getStorage();
   for (const kind of ['logo', 'favicon'] as const) {
     if (await storage.exists(storageKey(kind))) continue;
-    const defaults = await readDefaultBrandFile(kind).catch(() => null);
+    const defaults = await readDefaultBrandFile(kind).catch((error: unknown) => {
+      console.error(
+        `[brand] 内置 ${kind} 读取失败，${storageKey(kind)} 将保持缺失：` +
+          `${error instanceof Error ? error.message : String(error)}（查找目录 ${defaultAssetsDir()}）`,
+      );
+      return null;
+    });
     if (!defaults) continue;
     await storage.put(storageKey(kind), defaults, { contentType: detectContentType(defaults) });
   }

@@ -783,7 +783,9 @@
         "uploadFavicon": "上传 Favicon",
         "submit": "保存品牌图标",
         "resetting": "恢复中…",
-        "reset": "恢复默认"
+        "reset": "恢复默认",
+        "resetConfirmTitle": "恢复默认品牌图标？",
+        "resetConfirmDescription": "这会同时删除自定义的 logo 与 favicon，两个都会回到内置默认图。此操作无法撤销，需要重新上传。"
       },
       "signing": {
         "title": "包签名",
@@ -1166,6 +1168,9 @@
     "platformInfoSaveFailed": "保存平台信息失败",
     "brandImageRequired": "请选择要上传的 logo 或 favicon 图片",
     "brandImageTooLarge": "图片必须小于 1MB",
+    "brandImageUnsupported": "不支持该格式，请改用 {formats}",
+    "brandImagePartial": "已保存：{saved}。未上传（未生效）：{skipped}",
+    "brandImageNothingChanged": "没有收到任何图片文件，未做任何修改。",
     "brandImageSaved": "品牌图标已保存。",
     "brandImageCleared": "品牌图标已恢复为默认。",
     "brandImageUploadFailed": "上传失败",
