@@ -2261,6 +2261,7 @@
       "loadFailed": "Could not load the conversation. Please try again.",
       "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
       "runStartFailed": "Impossible de lancer l'exécution de l'Agent",
+      "runStartFailedWithReason": "« {reason} » — le message est enregistré, mais l'agent n'a pas démarré.",
       "runModel": "Modèle {model}",
       "runModelUnset": "Aucun modèle configuré",
       "runSteps": "{count} étapes",
@@ -2274,7 +2275,9 @@
         "DONE": "Terminé",
         "FAILED": "Échec",
         "CANCELLED": "Annulé"
-      }
+      },
+      "blockedDisabled": "L'agent est désactivé dans l'administration. Activez-le pour envoyer.",
+      "blockedNoModel": "Aucun modèle n'est disponible. Choisissez-en un dans Réglages → Agent → Modèle par défaut."
     },
     "admin": {
       "statusLoading": "Loading",

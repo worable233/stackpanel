@@ -2261,6 +2261,7 @@
       "loadFailed": "無法載入對話，請重試",
       "saveFailedRetained": "{reason}。輸入內容已保留，可重試儲存。",
       "runStartFailed": "無法啟動 Agent 執行",
+      "runStartFailedWithReason": "「{reason}」——訊息已儲存，Agent 沒有開始執行。",
       "runModel": "模型 {model}",
       "runModelUnset": "模型未配置",
       "runSteps": "{count} 步",
@@ -2274,7 +2275,9 @@
         "DONE": "已完成",
         "FAILED": "執行失敗",
         "CANCELLED": "已取消"
-      }
+      },
+      "blockedDisabled": "Agent 已在後臺關閉，啟用後才能傳送。",
+      "blockedNoModel": "還沒有可用的模型：請在「系統設置 → Agent → 默認模型」裡選一個。"
     },
     "admin": {
       "statusLoading": "載入中",

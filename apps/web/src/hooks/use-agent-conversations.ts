@@ -67,6 +67,19 @@ export function useAgentConversations(open: boolean, search: string) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [run, setRun] = useState<ChatRun | null>(null);
+  /**
+   * 本回合**发起运行失败**的原因。
+   *
+   * 与 `error` 分开：`error` 是“对话加载/保存失败”，渲染在抽屉顶部；而“消息
+   * 存住了、但 Agent 没跑起来”是**这一回合**的事，必须显示在对应消息下面——
+   * 即用户正看着的那一行，否则它就被「消息已保存」盖住了。
+   *
+   * 事故：管理员已启用 Agent、已选默认模型，但模型提供方解析为 null，内核
+   * 返回 503 `agent.llm_unconfigured`。`run` 始终为 null → 界面显示“消息已
+   * 保存 · 尚未启动 Agent 执行”，而真正的原因在顶部一条被当作“加载失败”的
+   * 红字里，没人会去那里找。
+   */
+  const [runError, setRunError] = useState('');
   const runGeneration = useRef(0);
   const [refresh, setRefresh] = useState(0);
   const restore = useRef(true);
@@ -112,6 +125,8 @@ export function useAgentConversations(open: boolean, search: string) {
     if (locked.current) return;
     restore.current = false; selection.current = id; pending.current = null;
     setActiveId(id); setDetail(null); setLoading(false); setError('');
+    // 切换对话时上一回合的失败原因不属于新对话。
+    setRunError('');
   }, []);
 
   async function submit(content: string, attachments: ChatAttachment[], reasoning: string) {
@@ -137,6 +152,7 @@ export function useAgentConversations(open: boolean, search: string) {
       setActiveId(conversation.id); pending.current = null;
       // 消息落库之后**真的发起一次运行**（B-1）。失败不回滚消息：用户写下的
       // 内容必须保住，用它已保存的事实让用户决定是重试还是改目标。
+      setRunError('');
       void startRun(content);
       return true;
     } catch (cause) { setError(t('agent.chat.saveFailedRetained', { reason: errorText(cause, t('common.operationFailed')) })); return false; }
@@ -147,6 +163,7 @@ export function useAgentConversations(open: boolean, search: string) {
   async function startRun(objective: string) {
     const generation = ++runGeneration.current;
     setRun(null);
+    setRunError('');
     try {
       const response = await fetch('/api/agent/workspace/runs', {
         method: 'POST',
@@ -167,7 +184,8 @@ export function useAgentConversations(open: boolean, search: string) {
       void pollRun(created.id, generation);
     } catch (cause) {
       if (generation !== runGeneration.current) return;
-      setError(agentErrorText(t, cause, t('agent.chat.runStartFailed')));
+      // 连运行都没建起来：原因必须留在**这一回合**下面。
+      setRunError(agentErrorText(t, cause, t('agent.chat.runStartFailed')));
     }
   }
 
@@ -248,7 +266,7 @@ export function useAgentConversations(open: boolean, search: string) {
     conversations, activeId, active: detail?.conversation.id === activeId ? { ...detail.conversation, turns: detail.turns } : null,
     nextCursor, earlierCursor: detail?.conversation.id === activeId ? detail.nextCursor : null,
     loading, listLoading, saving, error, submit, select, loadMore, loadEarlier, rename, remove,
-    run, cancelRun: () => {
+    run, runError, cancelRun: () => {
       const id = run?.id;
       runGeneration.current += 1;
       setRun(null);

@@ -2261,6 +2261,7 @@
       "loadFailed": "无法加载对话，请重试",
       "saveFailedRetained": "{reason}。输入内容已保留，可重试保存。",
       "runStartFailed": "无法启动 Agent 执行",
+      "runStartFailedWithReason": "「{reason}」——消息已保存，Agent 没有开始执行。",
       "runModel": "模型 {model}",
       "runModelUnset": "模型未配置",
       "runSteps": "{count} 步",
@@ -2274,7 +2275,9 @@
         "DONE": "已完成",
         "FAILED": "执行失败",
         "CANCELLED": "已取消"
-      }
+      },
+      "blockedDisabled": "Agent 已在后台关闭，启用后才能发送。",
+      "blockedNoModel": "还没有可用的模型：请在「系统设置 → Agent → 默认模型」里选一个。"
     },
     "admin": {
       "statusLoading": "加载中",

@@ -2261,6 +2261,7 @@
       "loadFailed": "Could not load the conversation. Please try again.",
       "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
       "runStartFailed": "Agent の実行を開始できませんでした",
+      "runStartFailedWithReason": "「{reason}」— メッセージは保存されましたが、Agent は実行を開始していません。",
       "runModel": "モデル {model}",
       "runModelUnset": "モデル未設定",
       "runSteps": "{count} ステップ",
@@ -2274,7 +2275,9 @@
         "DONE": "完了",
         "FAILED": "失敗",
         "CANCELLED": "キャンセル"
-      }
+      },
+      "blockedDisabled": "Agent は管理画面で無効になっています。有効にすると送信できます。",
+      "blockedNoModel": "利用できるモデルがありません。「設定 → Agent → 既定モデル」で選択してください。"
     },
     "admin": {
       "statusLoading": "Loading",

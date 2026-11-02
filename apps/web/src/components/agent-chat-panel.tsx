@@ -21,6 +21,28 @@ import { useTranslator } from '@/i18n/provider';
 type AgentSidebarProps = { open: boolean; onOpenChange: (open: boolean) => void; contextLabel?: string };
 
 /** Server-backed user conversations; saving history does not execute a platform action. */
+/**
+ * 一条消息下面该显示什么。
+ *
+ * 抽成纯函数是因为这是**分支优先级**：`runError` 必须排在「消息已保存」之前。
+ * 写反了，界面就会在一句“已保存”里把失败原因彻底盖掉 —— 而这正是用户看到的
+ * 那句「消息已保存 · 尚未启动 Agent 执行」。断言字符串出现顺序是没用的门禁
+ * （把条件改成 `false && runError` 它照样通过），所以这里把判定本身暴露出来。
+ *
+ * - `run`     —— 有真实运行（进行中或已终态）；
+ * - `failed`  —— 没跑起来 / 跑失败了，且这一回合就是最后一条消息；
+ * - `saved`   —— 本来就只是保存，用户没要求执行。
+ */
+export function turnTraceKind(input: {
+  isLatest: boolean;
+  hasRun: boolean;
+  hasRunError: boolean;
+}): 'run' | 'failed' | 'saved' {
+  if (input.hasRun) return 'run';
+  if (input.hasRunError && input.isLatest) return 'failed';
+  return 'saved';
+}
+
 export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSidebarProps) {
   const t = useTranslator();
   const [objective, setObjective] = useState('');
@@ -35,6 +57,26 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
   const [editing, setEditing] = useState<{ id: string; title: string; action: 'rename' | 'delete' } | null>(null);
   const history = useAgentConversations(open, search);
   const { active, activeId, conversations } = history;
+  /**
+   * 站点 Agent 开关与模型提供方状态。
+   *
+   * 工作区（`agent-workspace.tsx`）一直用它禁用「开始」按钮，但**聊天抽屉从不
+   * 检查**。于是配好一半（开了开关、没选模型，或模型提供方临时不可用）时，
+   * 抽屉仍然允许发送：消息落库成功 → 发起运行 503 → 用户看到“消息已保存”。
+   *
+   * 现在两者用同一个判据：不能跑就先把“为什么不能跑”说清楚，而不是让用户
+   * 发一条不可能执行的消息。
+   */
+  const [agentStatus, setAgentStatus] = useState<
+    { enabled: boolean; modelConfigured: boolean; provider: { name: string } | null } | null
+  >(null);
+  const blockedReason = !agentStatus
+    ? null
+    : !agentStatus.enabled
+      ? t('agent.chat.blockedDisabled')
+      : !agentStatus.modelConfigured
+        ? t('agent.chat.blockedNoModel')
+        : null;
   const busy = history.saving || uploading;
   const trigger = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -50,6 +92,23 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
 
   useEffect(() => {
     if (!open) return;
+    let live = true;
+    void fetch('/api/agent/status', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (live && data && typeof data.enabled === 'boolean') setAgentStatus(data);
+      })
+      .catch(() => {
+        // 自检失败不代表不能发（可能只是这个只读端点被代理拦了）；保持 null，
+        // 让发送路径照常走，真失败了也会由 runError 解释原因。
+      });
+    return () => {
+      live = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="menu"], [role="dialog"]')) {
         onOpenChange(false); trigger.current?.focus();
@@ -62,7 +121,7 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
   function close() { onOpenChange(false); trigger.current?.focus(); }
   function newChat() { if (busy) return; history.select(null); setObjective(''); setAttachments([]); setAttachmentError(''); if (innerWidth < 820) setSidebarOpen(false); input.current?.focus(); }
   async function submit() {
-    if (busy || history.loading || (!objective.trim() && !attachments.length)) return;
+    if (busy || history.loading || !objective.trim() && !attachments.length) return;
     if (await history.submit(objective.trim(), attachments, reasoning)) {
       setObjective(''); setAttachments([]); setAttachmentError('');
     }
@@ -147,10 +206,27 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
         {active ? <div className="flex flex-col gap-10">{active.turns.map((turn) => <section key={turn.id} className="flex flex-col gap-7">
           <div className="ml-8 flex max-w-[90%] flex-col gap-2 self-end rounded-3xl bg-muted px-4 py-3 text-sm leading-6 break-words">{turn.attachments.length > 0 && <div className="flex flex-wrap gap-2">{turn.attachments.map((attachment) => <Image key={attachment.id} src={attachment.url} alt={attachment.name} width={80} height={80} unoptimized className="size-20 rounded-lg object-cover" />)}</div>}{turn.objective}</div>
           {/* 这行以前是写死的「消息已保存 · 尚未启动 Agent 执行」，永远不变成状态。
-              现在它反映真实运行状态（B-1）：运行中显示步数/模型，终态显示结论，
-              失败带原因，未运行只会在「没有发起」时出现。 */}
-          {history.run && active.turns.at(-1)?.id === turn.id ? (
+              现在它反映真实运行状态（B-1）：运行中显示步数/模型，终态显示结论。
+
+              关键：**运行没能建起来**（503 模型未配置、网络错误、配额耗尽）时，
+              `run` 恒为 null。此处以前一律回退到「消息已保存 · 尚未启动 Agent 执行」
+              ——一句只适用于「用户本来就没要跑」的中性文案，恰好把失败原因完全
+              盖住。用户看到的是“已保存”，而真正的 503 原因被写进了抽屉顶部的
+              `error`（那个位置的语义是“对话加载失败”），没有人会去那里找。 */}
+          {turnTraceKind({
+            isLatest: active.turns.at(-1)?.id === turn.id,
+            hasRun: Boolean(history.run),
+            hasRunError: Boolean(history.runError),
+          }) === 'run' && history.run ? (
             <AgentRunTrace run={history.run} onCancel={history.cancelRun} t={t} />
+          ) : turnTraceKind({
+            isLatest: active.turns.at(-1)?.id === turn.id,
+            hasRun: Boolean(history.run),
+            hasRunError: Boolean(history.runError),
+          }) === 'failed' ? (
+            <InlineError role="alert" className="ml-8 text-xs">
+              {t('agent.chat.runStartFailedWithReason', { reason: history.runError })}
+            </InlineError>
           ) : (
             <p className="text-xs text-muted-foreground">{t('agent.chat.messageSaved')}</p>
           )}
@@ -166,11 +242,14 @@ export function AgentChatPanel({ open, onOpenChange, contextLabel }: AgentSideba
             <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t('agent.chat.executionPermission')} />}><ShieldAlert /></DropdownMenuTrigger><DropdownMenuContent side="top" className="w-56"><DropdownMenuGroup><DropdownMenuLabel>{t('agent.chat.executionPermission')}</DropdownMenuLabel><DropdownMenuItem disabled><ShieldAlert />{t('agent.chat.saveOnly')}</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
             <div className="flex-1" />
             <AgentEffortPicker value={reasoning} onChange={setReasoning} disabled={busy} />
-            <Button type="submit" size="icon" disabled={busy || history.loading || (!objective.trim() && !attachments.length)} aria-label={t('agent.chat.send')} className="rounded-full bg-foreground text-background hover:bg-foreground/85">{busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}</Button>
+            <Button type="submit" size="icon" disabled={busy || history.loading || blockedReason !== null || (!objective.trim() && !attachments.length)} aria-label={t('agent.chat.send')} className="rounded-full bg-foreground text-background hover:bg-foreground/85">{busy ? <Loader2 className="animate-spin" /> : <ArrowUp />}</Button>
           </InputGroupAddon>
         </InputGroup>
         {uploading && <InlineNotice className="mt-2 px-2 text-xs">{t('agent.chat.uploading')}</InlineNotice>}
         {attachmentError && <InlineError className="mt-2 px-2 text-xs">{attachmentError}</InlineError>}
+        {/* 不能跑的时候把原因放在输入框下面（用户正在看的地方），而不是让
+            他先发一条不可能执行的消息、再从 503 里反推。 */}
+        {blockedReason && <InlineNotice className="mt-2 px-2 text-xs">{blockedReason}</InlineNotice>}
       </form>
     </AgentChatWindow>
   </>;
