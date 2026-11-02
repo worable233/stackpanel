@@ -75,6 +75,8 @@ services:
       STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
       STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
       STACKPANEL_DATA_DIR: /app/data
+      # 自定义默认品牌图标目录（可空，见 docker/README.md §7）。
+      STACKPANEL_BRAND_DIR: ${STACKPANEL_BRAND_DIR:-}
       WOWID_MOCK: 'false'
       WOWID_ISSUER: ${WOWID_ISSUER:-https://account.wowcraft.cn}
       WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
@@ -96,6 +98,8 @@ services:
       - stackpanel-data:/app/data
       # Read/write: submit update tasks + read updater status projection.
       - stackpanel-updater-state:/var/lib/stackpanel-updater
+      # 自定义默认品牌图标（宿主目录 → 容器内 /app/brand，只读）。空变量不挂载。
+      - ${STACKPANEL_BRAND_DIR:+${STACKPANEL_BRAND_DIR}:/app/brand:ro}
     networks:
       - stackpanel
     deploy:

@@ -89,3 +89,50 @@ describe('client and kernel brand rules cannot drift', () => {
     expect(BRAND_IMAGE_ACCEPT).toContain('image/x-icon');
   });
 });
+
+/**
+ * `STACKPANEL_BRAND_DIR` —— 自定义默认图标的受支持入口。
+ *
+ * 曾经的「长期方案」是手工把宿主目录挂到 `apps/api/assets/brand`：那是**遮蔽**
+ * 镜像里的文件，宿主目录为空时 logo 和 favicon 一起 404。独立变量 + 独立挂载点
+ * 不会，因为没配置时根本不覆盖任何东西。
+ */
+describe('STACKPANEL_BRAND_DIR', () => {
+  it('wins over the bundled assets and reads an ico favicon', async () => {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(path.join(tmpdir(), 'brand-env-'));
+    await writeFile(path.join(dir, 'favicon.ico'), Buffer.from('00000100', 'hex'));
+    process.env['STACKPANEL_BRAND_DIR'] = dir;
+    try {
+      expect(defaultAssetsDir('/app')).toBe(dir);
+      const { readDefaultBrandFileForTest } = await import('../../src/lib/platform-brand.ts');
+      expect((await readDefaultBrandFileForTest('favicon'))?.length).toBe(4);
+    } finally {
+      delete process.env['STACKPANEL_BRAND_DIR'];
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it('does not silently fall back to the bundled icons when misconfigured', () => {
+    process.env['STACKPANEL_BRAND_DIR'] = '/nonexistent/brand';
+    try {
+      // 显式配错就该立刻暴露（种子会打日志、接口 404），而不是悄悄用镜像内置图
+      // 让人以为改动已经生效——那正是这个变量存在的目的。
+      expect(defaultAssetsDir('/app')).toBe('/nonexistent/brand');
+    } finally {
+      delete process.env['STACKPANEL_BRAND_DIR'];
+    }
+  });
+
+  it('is ignored when blank (compose passes an empty string)', () => {
+    process.env['STACKPANEL_BRAND_DIR'] = '   ';
+    try {
+      expect(defaultAssetsDir(REPO_ROOT)).toBe(
+        path.join(REPO_ROOT, 'apps', 'api', 'assets', 'brand'),
+      );
+    } finally {
+      delete process.env['STACKPANEL_BRAND_DIR'];
+    }
+  });
+});

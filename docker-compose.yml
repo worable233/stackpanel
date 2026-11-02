@@ -188,6 +188,11 @@ services:
       STACKPANEL_PUBLIC_URL: ${STACKPANEL_PUBLIC_URL:-http://localhost:3000}
       STACKPANEL_API_PUBLIC_URL: ${STACKPANEL_API_PUBLIC_URL:-http://localhost:3001}
       STACKPANEL_DATA_DIR: /app/data
+      # 自定义默认品牌图标目录（可空）。长期部署用它替代「手动挂载到镜像内部
+      # 路径」：挂到 `apps/api/assets/brand` 会**遮蔽**镜像自带的 logo/favicon，
+      # 宿主目录为空时两个图标立刻双双 404。这里是独立目录，没配置就用镜像
+      # 内置的，配置了才覆盖。留空 = 不启用。
+      STACKPANEL_BRAND_DIR: ${STACKPANEL_BRAND_DIR:-}
       WOWID_MOCK: 'false'
       WOWID_ISSUER: ${WOWID_ISSUER:-https://account.wowcraft.cn}
       WOWID_CLIENT_ID: ${WOWID_CLIENT_ID:-stackpanel}
@@ -213,6 +218,12 @@ services:
       - stackpanel-data:/app/data
       # Read/write: submit update tasks + read updater status projection.
       - stackpanel-updater-state:/var/lib/stackpanel-updater
+      # 可选：自定义默认品牌图标目录（宿主上放 logo.png / favicon.ico …）。
+      # 只读挂载到**独立**路径 `/app/brand`，不碰镜像里的 assets/brand——
+      # 遮蔽那个目录会让内置图标一起消失。未设置时不挂载，用镜像内置图。
+      # `${VAR:-}` 为空时 compose 会挂一个空目录，所以这里用 `:+` 条件展开：
+      # 只有变量非空才产生这一项。
+      - ${STACKPANEL_BRAND_DIR:+${STACKPANEL_BRAND_DIR}:/app/brand:ro}
     ports:
       # Published for host-side curl / external API clients. The browser never
       # needs it: every browser call goes through the web BFF on :3000.

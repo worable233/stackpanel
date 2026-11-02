@@ -82,6 +82,17 @@ const envSchema = z.object({
   // Server-side per-statement ceiling. 0 disables it (not recommended).
   DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(0).default(30_000),
   STACKPANEL_DATA_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
+  /**
+   * 可选的自定义默认品牌图标目录（logo/favicon）。
+   *
+   * 用于「不想让默认图标随镜像重建而丢失」的部署：把目录挂进容器并指到这里，
+   * 内核启动时用它作为种子来源。存储里已有对象时仍以**存储为准**，所以要换成
+   * 自定义图标要么清掉已上传的，要么直接上传一次。
+   *
+   * 支持任意允许的扩展名（png/svg/ico/…），不写死 .png——favicon 最常见的格式
+   * 恰好就是 ico。
+   */
+  STACKPANEL_BRAND_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
   // Stable replica identity used as the key for per-replica durable consumption
   // cursors (`replica:<id>`). A replica must keep the same id across restarts to
   // resume its cursor instead of replaying from "now"; a cluster deployment

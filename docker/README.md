@@ -283,6 +283,31 @@ docker compose start api worker web
 
 注意 `docker compose down -v` 会**删除全部卷**（含上面这些）；升级只用 `up -d`。
 
+### 自定义默认品牌图标（可持久、无需每次上传）
+
+后台上传的 logo/favicon 存在对象存储里，会随备份保留。如果想让它**随镜像/代码
+一起版本化**（例如自有品牌发行版），用宿主目录 + `STACKPANEL_BRAND_DIR`：
+
+```bash
+mkdir -p ./brand
+cp your-logo.png ./brand/logo.png
+cp your-favicon.ico ./brand/favicon.ico   # 扩展名任意：png/svg/jpg/webp/gif/ico
+
+echo 'STACKPANEL_BRAND_DIR=./brand' >> docker/.env
+# 若写绝对路径，compose 会把它挂到容器内 /app/brand 并设好同一个变量。
+docker compose up -d api
+```
+
+优先级：**对象存储里已上传的 > `STACKPANEL_BRAND_DIR` > 镜像内置图**。所以已经
+上传过的实例要额外做一次「系统设置 → 平台品牌 → 恢复默认」才会回落到这个目录。
+
+> **不要**把目录挂到镜像内部的 `apps/api/assets/brand`：那是**遮蔽**内置文件，
+> 宿主目录为空时 logo 与 favicon 会一起 404。`STACKPANEL_BRAND_DIR` 是独立路径，
+> 没配置时完全不覆盖任何东西。
+
+配错（目录不存在、里面没有对应文件）不会静默回退：api 启动日志会打印
+`[brand] 找不到内置 logo（目录 …）`，`/platform/brand/*` 返回 404，可据此定位。
+
 ## 8. 健康检查端点
 
 | 端点 | 用途 | 期望 |

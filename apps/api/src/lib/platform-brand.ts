@@ -46,13 +46,25 @@ function storageKey(kind: BrandKind): string {
 }
 
 /**
- * Directory where the built-in default icons live in the API package.
+ * Directory where the built-in default icons live.
+ *
+ * 查找顺序：`STACKPANEL_BRAND_DIR` → 工作目录附近的 `assets/brand`。
+ *
+ * 为什么不直接把宿主目录挂到 `apps/api/assets/brand`：那个挂载会**遮蔽**镜像里的
+ * `logo.png`/`favicon.png`——宿主目录为空时，两个图标立刻双双 404，正是刚修好的
+ * 那个坑。独立目录 + 显式变量则不会：没配置就用镜像自带的，配置了才覆盖。
  *
  * Exported for tests: this path resolution is the difference between 「首页有图标」
  * and 「首页的 <link rel="icon"> 指向 404」, and it can only be verified by
  * pointing it at each real working directory.
  */
-export function defaultAssetsDir(cwd: string = process.cwd()): string {
+export function defaultAssetsDir(
+  cwd: string = process.cwd(),
+  override: string | undefined = process.env['STACKPANEL_BRAND_DIR'],
+): string {
+  // 运维显式指定的目录优先，且**不再回退**：配错了就应该报错（种子会打日志），
+  // 而不是静默地用镜像自带的替换掉他以为已经生效的那份。
+  if (override && override.trim()) return override.trim();
   for (const candidate of [
     path.join(cwd, 'assets', 'brand'),
     path.join(cwd, '..', 'assets', 'brand'),
@@ -130,16 +142,26 @@ export async function readBrandFiles(): Promise<BrandFiles> {
  */
 export async function seedDefaultBrand(): Promise<void> {
   const storage = getStorage();
+  const dir = defaultAssetsDir();
+  const explicit = Boolean(process.env['STACKPANEL_BRAND_DIR']?.trim());
   for (const kind of ['logo', 'favicon'] as const) {
     if (await storage.exists(storageKey(kind))) continue;
+    // 读不到时不再只依赖抛错：`readDefaultBrandFile` 找不到文件时返回 null
+    // （不是抛异常），旧日志只在异常时打，所以“文件不存在”依旧静默。
     const defaults = await readDefaultBrandFile(kind).catch((error: unknown) => {
       console.error(
         `[brand] 内置 ${kind} 读取失败，${storageKey(kind)} 将保持缺失：` +
-          `${error instanceof Error ? error.message : String(error)}（查找目录 ${defaultAssetsDir()}）`,
+          `${error instanceof Error ? error.message : String(error)}（查找目录 ${dir}）`,
       );
       return null;
     });
-    if (!defaults) continue;
+    if (!defaults) {
+      console.error(
+        `[brand] 找不到内置 ${kind}（目录 ${dir}${explicit ? '，来自 STACKPANEL_BRAND_DIR' : ''}）。` +
+          `/${storageKey(kind)} 将返回 404——请确认目录里有 ${kind}.png|svg|ico。`,
+      );
+      continue;
+    }
     await storage.put(storageKey(kind), defaults, { contentType: detectContentType(defaults) });
   }
 }
