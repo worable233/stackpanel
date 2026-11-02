@@ -37,10 +37,16 @@ export function wrapPluginActions(
       const result = (await action(formData)) as PluginActionResult | undefined;
       if (result && result.ok === false) {
         toast.error(actionFeedbackTitle(actionId, t), {
-          // 没有诊断子原因时仍然是一个普通字符串：toast 描述保持一行文本，
-          // 不为了一个不存在的「详情」多套一层节点。
-          description: result.detail ? <ActionFailureDescription result={result} /> : result.error,
-          id: `action-feedback:${actionId}:${result.error ?? ''}`,
+          // 只要有 code / reqId / detail 任一项，就走结构化描述：
+          // 以前只看 `detail`，所以“操作未完成，请稍后重试”这种兑底文案配上
+          // 一个现成的 reqId 也不会显示——运维手里没有任何可搜的标识。
+          description:
+            result.detail || result.requestId || result.code ? (
+              <ActionFailureDescription result={result} />
+            ) : (
+              result.error
+            ),
+          id: `action-feedback:${actionId}:${result.code ?? ''}:${result.requestId ?? result.error ?? ''}`,
         });
         return result;
       }
@@ -69,6 +75,19 @@ function ActionFailureDescription({ result }: { result: PluginActionResult }) {
   return (
     <span className="flex flex-col gap-1">
       <span className="whitespace-pre-wrap break-words">{result.error}</span>
+      {/*
+        请求 ID 必须能看见。ADR-0012 不允许把服务端 `detail` 当主文案，但运维
+        需要一个能在服务端日志里**搜得到**的东西——否则「操作未完成」等于让
+        人猜。reqId 本身就是为这个用途存在的。
+      */}
+      {result.requestId ? (
+        <span className="select-all font-mono text-xs opacity-70">
+          {t('action.feedback.requestId', { id: result.requestId })}
+        </span>
+      ) : null}
+      {result.code ? (
+        <span className="select-all font-mono text-xs opacity-70">{result.code}</span>
+      ) : null}
       {result.detail ? (
         <details className="text-xs opacity-80">
           <summary className="cursor-pointer select-none">

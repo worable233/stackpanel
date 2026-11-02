@@ -36,7 +36,9 @@
     "statusDisabled": "停用",
     "notLoggedIn": "未登錄",
     "forbidden": "無許可權",
-    "invalidRequest": "請求引數無效"
+    "invalidRequest": "請求引數無效",
+    "serviceUnavailableTitle": "服務暫時不可用",
+    "serviceUnavailableHint": "後臺正在重啟或短時過載。你的登錄狀態沒有丟失，稍等片刻重新整理即可繼續。"
   },
   "adminShell": {
     "groupUsers": "用戶與許可權",
@@ -1156,7 +1158,8 @@
       "upstreamSyncFailed": "上游同步失敗",
       "upstreamSyncSucceeded": "上游同步完成",
       "upstreamCreateFailed": "新增上游失敗",
-      "upstreamDeleteFailed": "刪除上游失敗"
+      "upstreamDeleteFailed": "刪除上游失敗",
+      "requestId": "請求 ID：{id}"
     },
     "save": "儲存",
     "publicKeyRequired": "請填寫公鑰",

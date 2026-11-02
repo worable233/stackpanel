@@ -87,3 +87,33 @@ describe('wrapPluginActions', () => {
     expect(error.mock.calls[0]?.[1]).toMatchObject({ description: expect.anything() });
   });
 });
+
+describe('插件失败的诊断信息必须能到达用户', () => {
+  const t = (key: string) => key;
+
+  it('shows the request id instead of only「操作未完成」', async () => {
+    // 事故现场：只显示「操作未完成，请稍后重试」，而服务端已经给了 reqId。
+    // 运维手里没有任何能在日志里搜到的东西，排障只能靠翻反代日志对时间。
+    const result = {
+      ok: false as const,
+      error: '操作未完成，请稍后重试',
+      code: 'plugin.internal',
+      requestId: 'req-2jj',
+    };
+    const wrapped = wrapPluginActions({ 'x.save': async () => result }, t);
+    await expect(wrapped['x.save']!(new FormData())).resolves.toBe(result);
+    // 有 reqId / code 时必须走结构化描述（而不是一行纯文本）。
+    const options = (error as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)?.[1];
+    expect(options).toMatchObject({ description: expect.anything() });
+    expect(Object.keys(options as object)).toContain('description');
+  });
+
+  it('keeps a plain string when there is nothing extra to show', async () => {
+    const result = { ok: false as const, error: '请检查网络' };
+    const wrapped = wrapPluginActions({ 'y.save': async () => result }, t);
+    await wrapped['y.save']!(new FormData());
+    const options = (error as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)?.[1];
+    // 没有任何额外信息时不必套一层节点——保持一行文本。
+    expect((options as { description: unknown }).description).toBe('请检查网络');
+  });
+});

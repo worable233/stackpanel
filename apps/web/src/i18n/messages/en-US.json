@@ -36,7 +36,9 @@
     "statusDisabled": "Disabled",
     "notLoggedIn": "Not signed in",
     "forbidden": "Forbidden",
-    "invalidRequest": "Invalid request"
+    "invalidRequest": "Invalid request",
+    "serviceUnavailableTitle": "Service temporarily unavailable",
+    "serviceUnavailableHint": "The back end is restarting or briefly overloaded. You are still signed in — wait a moment and refresh to continue."
   },
   "adminShell": {
     "groupUsers": "Users & Permissions",
@@ -1156,7 +1158,8 @@
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",
       "upstreamCreateFailed": "Add upstream failed",
-      "upstreamDeleteFailed": "Delete upstream failed"
+      "upstreamDeleteFailed": "Delete upstream failed",
+      "requestId": "Request ID: {id}"
     },
     "save": "Save",
     "publicKeyRequired": "Please enter a public key",

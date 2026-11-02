@@ -45,7 +45,9 @@
     "statusDisabled": "비활성",
     "notLoggedIn": "로그인하지 않음",
     "forbidden": "접근 거부",
-    "invalidRequest": "잘못된 요청"
+    "invalidRequest": "잘못된 요청",
+    "serviceUnavailableTitle": "서비스를 일시적으로 사용할 수 없습니다",
+    "serviceUnavailableHint": "백엔드가 재시작 중이거나 잠시 과부하 상태입니다. 로그인 상태는 유지됩니다. 잠시 후 새로고침하세요."
   },
   "adminShell": {
     "groupUsers": "Users & Permissions",
@@ -1156,7 +1158,8 @@
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",
       "upstreamCreateFailed": "Add upstream failed",
-      "upstreamDeleteFailed": "Delete upstream failed"
+      "upstreamDeleteFailed": "Delete upstream failed",
+      "requestId": "요청 ID: {id}"
     },
     "save": "Save",
     "publicKeyRequired": "Please enter a public key",

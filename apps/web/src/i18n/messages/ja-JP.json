@@ -45,7 +45,9 @@
     "statusDisabled": "無効",
     "notLoggedIn": "サインインしていません",
     "forbidden": "アクセス拒否",
-    "invalidRequest": "無効なリクエスト"
+    "invalidRequest": "無効なリクエスト",
+    "serviceUnavailableTitle": "サービスが一時的に利用できません",
+    "serviceUnavailableHint": "バックエンドが再起動中、または一時的に過負荷です。ログイン状態は保たれています。少し待って再読み込みしてください。"
   },
   "adminShell": {
     "groupUsers": "Users & Permissions",
@@ -1156,7 +1158,8 @@
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",
       "upstreamCreateFailed": "Add upstream failed",
-      "upstreamDeleteFailed": "Delete upstream failed"
+      "upstreamDeleteFailed": "Delete upstream failed",
+      "requestId": "リクエスト ID: {id}"
     },
     "save": "Save",
     "publicKeyRequired": "Please enter a public key",

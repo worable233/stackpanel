@@ -36,7 +36,9 @@
     "statusDisabled": "停用",
     "notLoggedIn": "未登录",
     "forbidden": "无权限",
-    "invalidRequest": "请求参数无效"
+    "invalidRequest": "请求参数无效",
+    "serviceUnavailableTitle": "服务暂时不可用",
+    "serviceUnavailableHint": "后台正在重启或短时过载。你的登录状态没有丢失，稍等片刻刷新即可继续。"
   },
   "adminShell": {
     "groupUsers": "用户与权限",
@@ -1156,7 +1158,8 @@
       "upstreamSyncFailed": "上游同步失败",
       "upstreamSyncSucceeded": "上游同步完成",
       "upstreamCreateFailed": "添加上游失败",
-      "upstreamDeleteFailed": "删除上游失败"
+      "upstreamDeleteFailed": "删除上游失败",
+      "requestId": "请求 ID：{id}"
     },
     "save": "保存",
     "publicKeyRequired": "请填写公钥",

@@ -45,7 +45,9 @@
     "statusDisabled": "Inactif",
     "notLoggedIn": "Non connecté",
     "forbidden": "Accès refusé",
-    "invalidRequest": "Requête invalide"
+    "invalidRequest": "Requête invalide",
+    "serviceUnavailableTitle": "Service temporairement indisponible",
+    "serviceUnavailableHint": "Le service redémarre ou est brièvement surchargé. Vous êtes toujours connecté : patientez un instant et actualisez pour continuer."
   },
   "adminShell": {
     "groupUsers": "Users & Permissions",
@@ -1156,7 +1158,8 @@
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",
       "upstreamCreateFailed": "Add upstream failed",
-      "upstreamDeleteFailed": "Delete upstream failed"
+      "upstreamDeleteFailed": "Delete upstream failed",
+      "requestId": "ID de requête : {id}"
     },
     "save": "Save",
     "publicKeyRequired": "Please enter a public key",

@@ -4,9 +4,14 @@ import { AFFILIATE_COOKIE, normalizeAffiliateCode } from './lib/affiliate';
 import { readCaptchaCspSources, type CaptchaCspSources } from './lib/captcha-csp';
 import { sessionCookieName, sessionCookieSecure } from './lib/session-cookie';
 import { kernelRewriteTarget, singlePortEnabled } from './lib/single-port';
+import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale } from './i18n/config';
+import { translate } from './i18n/core';
+import { negotiateLocale } from './i18n/negotiate';
 
 const COOKIE_NAME = sessionCookieName();
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
+/** 会话核对的最长等待。超时按「问不到」处理（503），不按「未登录」处理。 */
+const SESSION_CHECK_TIMEOUT_MS = 5_000;
 
 /**
  * Referral attribution cookie. A visitor arriving on `?affid=<code>` keeps the
@@ -145,7 +150,40 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   );
   requestHeaders.set('Content-Security-Policy', csp);
 
+  /**
+   * 标记 server action 请求。
+   *
+   * Next 的 server action 以 `POST <当前页面 URL>` 发送（带 `Next-Action` 头），
+   * 所以反代/容器日志里它和普通页面请求一模一样：`POST /admin/plugin/x/connections`
+   * 看起来就像有人打开了那个页面。排查「到底是页面渲染还是业务提交失败了」
+   * 时，这一点非常要命——本次就是靠翻 OpenResty 日志逐条对时间才看出来的。
+   *
+   * 这里给这类请求打上一个可搜索的标记：
+   *   - 响应头 `x-stackpanel-request-kind: action|page`（日志与浏览器面板都看得到）
+   *   - 环境变量 `STACKPANEL_ACCESS_LOG_ACTIONS=1` 时额外在 stdout 打一行，
+   *     适合看不到响应头的反代（或根本没有日志采集）的部署。
+   */
+  const isServerAction = request.headers.has('next-action') || request.headers.has('Next-Action');
+
   const { pathname } = request.nextUrl;
+
+  /**
+   * 每个响应都带上请求类型，让“页面渲染”和“业务提交”在日志里可区分。
+   *
+   * 抽成独立函数是因为**两条返回路径**都要经过它：普通页面（`withAffiliate`）
+   * 和单端口模式的 kernel rewrite。只挂在其中一条上，单端口部署就还是瞎的。
+   */
+  const markRequestKind = <T extends NextResponse>(response: T): T => {
+    response.headers.set('x-stackpanel-request-kind', isServerAction ? 'action' : 'page');
+    if (isServerAction && process.env['STACKPANEL_ACCESS_LOG_ACTIONS'] === '1') {
+      // 只能看到 stdout 的部署（大多数反代/容器默认如此）靠这一行定位。
+      console.log(
+        `[action] ${request.method} ${pathname}${request.nextUrl.search}` +
+          ` ua=${request.headers.get('user-agent') ?? '-'}`,
+      );
+    }
+    return response;
+  };
 
   // 单端口模式：内核拥有的前缀在这里转发。放在 CSP/nonce 之后、前台/后台门禁
   // 之前 —— 这些路径本来就不是页面，不需要 nonce 也不需要登录门禁（内核自己
@@ -157,7 +195,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       // （目标 URL 的 host 与本站不同），所以不会无限递归。
       const rewritten = NextResponse.rewrite(target, { request: { headers: requestHeaders } });
       rewritten.headers.set('Content-Security-Policy', csp);
-      return rewritten;
+      return markRequestKind(rewritten);
     }
   }
 
@@ -168,6 +206,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const shouldSetAffiliate = affid !== null && !request.cookies.get(AFFILIATE_COOKIE)?.value;
 
   const withAffiliate = <T extends NextResponse>(response: T): T => {
+    markRequestKind(response);
     response.headers.set('X-Frame-Options', pathname === '/preview' ? 'SAMEORIGIN' : 'DENY');
     if (shouldSetAffiliate && affid) {
       response.cookies.set(AFFILIATE_COOKIE, affid, {
@@ -198,10 +237,22 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     const res = await fetch(`${API_BASE_URL}/auth/session`, {
       headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
       cache: 'no-store',
+      // 内核不可用时不要让请求悬着：超时按 5xx 处理（见下方 catch 的 nil 分支）。
+      signal: AbortSignal.timeout(SESSION_CHECK_TIMEOUT_MS),
     });
+    // 5xx：内核自己出问题了，不能据此判定会话无效。
+    //
+    // 这里以前不区分状态码：只要 body 里没有 `user` 就 `redirect('/login')`。
+    // 于是 api 重启、数据库连接池打满、或反代回 502 的几十秒里，所有已登录
+    // 管理员都被踢出后台——他们的会话完全正常。重定向还会丢掉正在提交的表单。
+    if (res.status >= 500) return withAffiliate(serviceUnavailable(request, csp));
     const body = (await res.json().catch(() => null)) as {
       user?: { role?: string } | null;
     } | null;
+    if (!res.ok && !body) {
+      // 无法解析的 4xx：会话真的不认了。
+      return withAffiliate(NextResponse.redirect(new URL('/login', request.url)));
+    }
     const user = body?.user ?? null;
     if (!user) {
       return withAffiliate(NextResponse.redirect(new URL('/login', request.url)));
@@ -213,8 +264,45 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     response.headers.set('Content-Security-Policy', csp);
     return withAffiliate(response);
   } catch {
-    return withAffiliate(NextResponse.redirect(new URL('/login', request.url)));
+    // 网络失败 / 超时：同样是“问不到”，不是“未登录”。
+    return withAffiliate(serviceUnavailable(request, csp));
   }
+}
+
+/**
+ * 内核暂时答不上来时的 503 页面。
+ *
+ * 故意**不**重定向：重定向会把用户扔到一个看起来像“掉登录”的页面，而他其实
+ * 仍然登录着。保留原地址，刷新即继续。
+ */
+function serviceUnavailable(request: NextRequest, csp: string): NextResponse {
+  // 文案走消息目录，不硬编码：这是给用户看的界面文案（ADR-0016）。
+  // middleware 里拿不到 `next/headers`，所以用同一套纯函数直接协商：
+  // cookie → Accept-Language → 默认语言，与 `getLocale()` 的优先级一致。
+  const saved = request.cookies.get(LOCALE_COOKIE)?.value;
+  const locale = saved
+    ? normalizeLocale(saved)
+    : negotiateLocale(request.headers.get('accept-language'), undefined, DEFAULT_LOCALE);
+  const escape = (value: string): string =>
+    value.replace(/[&<>"']/g, (ch) =>
+      ch === '&' ? '&amp;' : ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '"' ? '&quot;' : '&#39;',
+    );
+  const title = escape(translate(locale, 'common.serviceUnavailableTitle'));
+  const hint = escape(translate(locale, 'common.serviceUnavailableHint'));
+  const retry = escape(translate(locale, 'common.retry'));
+  const html =
+    `<!doctype html><meta charset="utf-8"><title>503</title>` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<div style="font:15px/1.6 system-ui,sans-serif;max-width:32rem;margin:20vh auto;padding:0 1.5rem">` +
+    `<h1 style="font-size:1.1rem;margin:0 0 .6rem">${title}</h1>` +
+    `<p style="margin:0 0 1rem;color:#666">${hint}</p>` +
+    `<a href="" style="color:inherit">${retry}</a></div>`;
+  const response = new NextResponse(html, {
+    status: 503,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+  });
+  response.headers.set('Content-Security-Policy', csp);
+  return response;
 }
 
 export const config = {
