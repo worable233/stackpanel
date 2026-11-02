@@ -66,9 +66,9 @@
     "globals": "^17.13.0",
     "license-checker": "^25.0.1",
     "opencc-js": "^1.4.2",
-    "pm2": "^7.0.4",
+    "pm2": "^7.1.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.2"
+    "typescript-eslint": "^8.72.1"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -80,8 +80,8 @@
     "@stackpanel/ui": "workspace:*",
     "emoji-picker-react": "^4.19.1",
     "esbuild": "^0.28.2",
-    "lucide-react": "^1.31.0",
-    "next": "16.4.2",
+    "lucide-react": "^1.64.0",
+    "next": "16.4.3",
     "prettier": "^3.9.10",
     "react": "19.3.1",
     "react-dom": "19.3.1",
