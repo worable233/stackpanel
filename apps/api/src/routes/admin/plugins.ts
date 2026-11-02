@@ -155,6 +155,10 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           roleTemplates: p.roleTemplates,
           locales: p.locales,
           signed: existsSync(path.join(pluginPackageDir(p.id), 'signature.json')),
+          // Worker health (see `PluginRuntime.list()`): a quarantined isolated
+          // plugin used to look identical to a healthy one here — `enabled: true`,
+          // no badge — while every request through it failed.
+          worker: p.worker,
         })),
       );
       // Records whose package directory is gone. They are invisible to the

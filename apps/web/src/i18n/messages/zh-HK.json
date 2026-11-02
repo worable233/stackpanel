@@ -706,6 +706,11 @@
       "toggled": "外掛狀態已更新",
       "deleted": "外掛已刪除",
       "mutationFailed": "外掛操作失敗，請稍後再試",
+      "worker": {
+        "circuitOpen": "已停用（反覆崩潰）",
+        "restarting": "重啟中…",
+        "circuitOpenHint": "隔離程序連續崩潰達到上限，已停止自動重啟。修復原因後請先停用再啟用該外掛。"
+      },
       "deleteConfirmTitle": "刪除外掛？",
       "deleteConfirmDescription": "將移除外掛「{name}」及其前端資源，此操作不可撤銷。",
       "stale": {
@@ -938,6 +943,29 @@
           "audit": "審計日誌",
           "agent": "Agent"
         }
+      },
+      "proxyCheck": {
+        "title": "反代自檢",
+        "intro": "檢查反向代理是否把訪客的真實 IP 與協議正確傳給核心。三項常見故障全在這裡顯形：後臺儲存設置報「請求來源無效」、所有訪客被認成同一個 IP（整站被限流）、外掛前端與主題資源 404。",
+        "refresh": "重新檢查",
+        "loading": "正在檢查…",
+        "failed": "檢查失敗",
+        "allGood": "配置正常",
+        "hasIssues": "發現配置問題",
+        "clientIp": "核心採信的客戶端 IP",
+        "peer": "實際對端",
+        "warnings": "需要處理",
+        "docHint": "參考文件",
+        "forwardedProto": "X-Forwarded-Proto",
+        "forwardedHost": "Host / X-Forwarded-Host",
+        "forwardedFor": "X-Forwarded-For",
+        "originGuard": "同源寫請求判定",
+        "item": {
+          "proto": "協議透傳（X-Forwarded-Proto）",
+          "realIp": "真實客戶端 IP",
+          "originGuard": "同源判定（後臺 POST 是否會被 403）",
+          "route": "字首路由"
+        }
       }
     },
     "themes": {
@@ -1121,6 +1149,7 @@
   "action": {
     "feedback": {
       "failed": "操作失敗",
+      "detail": "詳情",
       "succeeded": "操作已完成",
       "upstreamSyncFailed": "上游同步失敗",
       "upstreamSyncSucceeded": "上游同步完成",

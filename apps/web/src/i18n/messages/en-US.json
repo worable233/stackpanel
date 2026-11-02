@@ -706,6 +706,11 @@
       "toggled": "Plugin status updated.",
       "deleted": "Plugin deleted.",
       "mutationFailed": "Plugin operation failed. Please try again.",
+      "worker": {
+        "circuitOpen": "Stopped (repeated crashes)",
+        "restarting": "Restarting…",
+        "circuitOpenHint": "The isolated process crashed too many times in a row, so automatic restarts stopped. Fix the cause, then disable and enable this plugin again."
+      },
       "deleteConfirmTitle": "Delete this plugin?",
       "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone.",
       "stale": {
@@ -938,6 +943,29 @@
           "audit": "Audit log",
           "agent": "Agent"
         }
+      },
+      "proxyCheck": {
+        "title": "Reverse proxy check",
+        "intro": "Verifies that the reverse proxy forwards the visitor’s real IP and protocol to the kernel. The three classic failures all surface here: admin saves rejected with “invalid request origin”, every visitor collapsed into one IP (whole site rate-limited), and plugin frontend / theme assets returning 404.",
+        "refresh": "Check again",
+        "loading": "Checking…",
+        "failed": "Check failed",
+        "allGood": "Configuration looks correct",
+        "hasIssues": "Configuration problems found",
+        "clientIp": "Client IP the kernel trusts",
+        "peer": "Immediate peer",
+        "warnings": "Needs attention",
+        "docHint": "See",
+        "forwardedProto": "X-Forwarded-Proto",
+        "forwardedHost": "Host / X-Forwarded-Host",
+        "forwardedFor": "X-Forwarded-For",
+        "originGuard": "Same-origin write check",
+        "item": {
+          "proto": "Protocol forwarding (X-Forwarded-Proto)",
+          "realIp": "Real client IP",
+          "originGuard": "Same-origin check (will admin POSTs get a 403?)",
+          "route": "Prefix routing"
+        }
       }
     },
     "themes": {
@@ -1121,6 +1149,7 @@
   "action": {
     "feedback": {
       "failed": "Operation failed",
+      "detail": "Details",
       "succeeded": "Operation completed",
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",

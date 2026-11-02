@@ -125,6 +125,18 @@ export function PluginManager({
                       {t('admin.plugins.signed')}
                     </span>
                   ) : null}
+                  {plugin.worker.circuitOpen ? (
+                    <span
+                      className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive"
+                      title={t('admin.plugins.worker.circuitOpenHint')}
+                    >
+                      {t('admin.plugins.worker.circuitOpen')}
+                    </span>
+                  ) : plugin.worker.nextRestartAt ? (
+                    <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
+                      {t('admin.plugins.worker.restarting')}
+                    </span>
+                  ) : null}
                 </p>
                 {plugin.description ? (
                   <p className="mt-1 text-sm text-muted-foreground">{plugin.description}</p>

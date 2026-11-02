@@ -715,6 +715,11 @@
       "toggled": "Plugin status updated.",
       "deleted": "Plugin deleted.",
       "mutationFailed": "Plugin operation failed. Please try again.",
+      "worker": {
+        "circuitOpen": "停止（クラッシュ多発）",
+        "restarting": "再起動中…",
+        "circuitOpenHint": "分離プロセスが連続してクラッシュしたため、自動再起動を停止しました。原因を修正してから、このプラグインを無効化して再度有効化してください。"
+      },
       "deleteConfirmTitle": "Delete this plugin?",
       "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone.",
       "stale": {
@@ -947,6 +952,29 @@
           "audit": "監査ログ",
           "agent": "エージェント"
         }
+      },
+      "proxyCheck": {
+        "title": "リバースプロキシ診断",
+        "intro": "リバースプロキシが訪問者の実際の IP とプロトコルをカーネルへ正しく転送しているかを確認します。よくある 3 つの障害がここに現れます: 管理画面の保存が「リクエスト送信元が不正」で拒否される、全訪問者が同一 IP と見なされる（サイト全体がレート制限）、プラグインのフロントエンドやテーマ資産が 404 になる。",
+        "refresh": "再確認",
+        "loading": "確認中…",
+        "failed": "確認に失敗しました",
+        "allGood": "設定は正常です",
+        "hasIssues": "設定の問題が見つかりました",
+        "clientIp": "カーネルが信頼するクライアント IP",
+        "peer": "実際の対向先",
+        "warnings": "対応が必要",
+        "docHint": "参照ドキュメント",
+        "forwardedProto": "X-Forwarded-Proto",
+        "forwardedHost": "Host / X-Forwarded-Host",
+        "forwardedFor": "X-Forwarded-For",
+        "originGuard": "同一オリジン書き込み判定",
+        "item": {
+          "proto": "プロトコル転送（X-Forwarded-Proto）",
+          "realIp": "実際のクライアント IP",
+          "originGuard": "同一オリジン判定（管理画面の POST が 403 になるか）",
+          "route": "プレフィックスルーティング"
+        }
       }
     },
     "themes": {
@@ -1121,6 +1149,7 @@
   "action": {
     "feedback": {
       "failed": "Operation failed",
+      "detail": "詳細",
       "succeeded": "Operation completed",
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",

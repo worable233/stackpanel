@@ -21,6 +21,7 @@ import type {
   AdminPaymentConfirmResult,
   AdminPaymentListResponse,
 } from './payments.js';
+import type { ProxyCheckResponse } from './types.js';
 import type {
   AdminDashboardWidget,
   ApiTokenCreateResponse,
@@ -1173,6 +1174,14 @@ export const adminPluginSchema = z.object({
   roleTemplates: z.array(pluginRoleTemplateSchema),
   locales: z.array(z.string()).default([]),
   signed: z.boolean(),
+  /** 隔离 worker 健康状态；缺失时按健康处理（向后兼容旧版本内核）。 */
+  worker: z
+    .object({
+      failures: z.number().int().nonnegative(),
+      circuitOpen: z.boolean(),
+      nextRestartAt: z.string().nullable(),
+    })
+    .default({ failures: 0, circuitOpen: false, nextRestartAt: null }),
 }) as z.ZodType<AdminPlugin>;
 
 export const frontendAuditResponseSchema = z.object({
@@ -1825,3 +1834,39 @@ export const adminPaymentCancelResultSchema = z.discriminatedUnion('cancelled', 
     reason: z.enum(['NOT_FOUND', 'NOT_MANUAL', 'NOT_PENDING']),
   }),
 ]) satisfies z.ZodType<AdminPaymentCancelResult>;
+
+/**
+ * 反代自检。字段全部可选地宽松解析：内核版本可能比 SDK 旧（没有这个端点），
+ * 也可能更新（多几个 item）。诊断数据渲染失败比不渲染更糟。
+ */
+export const proxyCheckResponseSchema = z.object({
+  ok: z.boolean(),
+  peer: z.string(),
+  clientIp: z.string(),
+  forwardedProto: z.string().nullable(),
+  forwardedHost: z.string().nullable(),
+  forwardedFor: z.string().nullable(),
+  trustProxy: z.string(),
+  originGuard: z.object({
+    hasOrigin: z.boolean(),
+    origin: z.string().nullable(),
+    host: z.string().nullable(),
+    forwardedProto: z.string().nullable(),
+    originProto: z.string().nullable(),
+    hostMatches: z.boolean(),
+    protoMatches: z.boolean(),
+    passes: z.boolean(),
+  }),
+  originGuardWouldPass: z.boolean(),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      ok: z.boolean(),
+      detail: z.string(),
+      fix: z.string().optional(),
+      doc: z.string().optional(),
+    }),
+  ),
+  warnings: z.array(z.string()),
+  checkedAt: z.string(),
+}) as unknown as z.ZodType<ProxyCheckResponse>;

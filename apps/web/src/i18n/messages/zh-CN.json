@@ -706,6 +706,11 @@
       "toggled": "插件状态已更新",
       "deleted": "插件已删除",
       "mutationFailed": "插件操作失败，请稍后再试",
+      "worker": {
+        "circuitOpen": "已停用（反复崩溃）",
+        "restarting": "重启中…",
+        "circuitOpenHint": "隔离进程连续崩溃达到上限，已停止自动重启。修复原因后请先停用再启用该插件。"
+      },
       "deleteConfirmTitle": "删除插件？",
       "deleteConfirmDescription": "将移除插件「{name}」及其前端资源，此操作不可撤销。",
       "stale": {
@@ -938,6 +943,29 @@
           "audit": "审计日志",
           "agent": "Agent"
         }
+      },
+      "proxyCheck": {
+        "title": "反代自检",
+        "intro": "检查反向代理是否把访客的真实 IP 与协议正确传给内核。三项常见故障全在这里显形：后台保存设置报「请求来源无效」、所有访客被认成同一个 IP（整站被限流）、插件前端与主题资源 404。",
+        "refresh": "重新检查",
+        "loading": "正在检查…",
+        "failed": "检查失败",
+        "allGood": "配置正常",
+        "hasIssues": "发现配置问题",
+        "clientIp": "内核采信的客户端 IP",
+        "peer": "实际对端",
+        "warnings": "需要处理",
+        "docHint": "参考文档",
+        "forwardedProto": "X-Forwarded-Proto",
+        "forwardedHost": "Host / X-Forwarded-Host",
+        "forwardedFor": "X-Forwarded-For",
+        "originGuard": "同源写请求判定",
+        "item": {
+          "proto": "协议透传（X-Forwarded-Proto）",
+          "realIp": "真实客户端 IP",
+          "originGuard": "同源判定（后台 POST 是否会被 403）",
+          "route": "前缀路由"
+        }
       }
     },
     "themes": {
@@ -1121,6 +1149,7 @@
   "action": {
     "feedback": {
       "failed": "操作失败",
+      "detail": "详情",
       "succeeded": "操作已完成",
       "upstreamSyncFailed": "上游同步失败",
       "upstreamSyncSucceeded": "上游同步完成",

@@ -853,6 +853,21 @@ export interface AdminPlugin {
   /** Interface locales this plugin ships messages for (ADR-0016 §5). */
   locales: string[];
   signed: boolean;
+  /**
+   * 隔离 worker 的健康状况。
+   *
+   * `state` 只说明插件生命周期的“预期”状态，不说明 worker 是否还活着。一个
+   * 被熔断的支付插件在改造前看上去和健康的一模一样（`enabled: true`、无任何
+   * 标记），而所有经过它的请求都在失败。
+   */
+  worker: {
+    /** 本次事故内的连续崩溃次数（成功激活后清零）。 */
+    failures: number;
+    /** 已达阈值，停止自动重启，需人工停用再启用。 */
+    circuitOpen: boolean;
+    /** 下一次自动重启的时间点（ISO），未排期时为 null。 */
+    nextRestartAt: string | null;
+  };
 }
 
 /** Frontend runtime events recorded through the audit API. */
@@ -1645,4 +1660,51 @@ export interface AdminSalesChannelListResponse {
 
 export interface AdminPaymentMethodMutationResponse {
   method: AdminPaymentMethod;
+}
+
+// ---------------------------------------------------------------------------
+// 反代自检（`GET /api/v1/system/proxy-check`）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一条反代自检结论。
+ *
+ * `fix` 是**可执行**的修复动作（不是「请检查配置」这类废话）；`doc` 指向
+ * `docs/DEPLOY-REVERSE-PROXY.md` 的对应小节。后台直接渲染成绿/红列表。
+ */
+export interface ProxyCheckItem {
+  id: string;
+  ok: boolean;
+  detail: string;
+  fix?: string;
+  doc?: string;
+}
+
+/** 同源判定的逐项分解（与 Web BFF 共用 `@stackpanel/sdk` 的同一实现）。 */
+export interface ProxyCheckOriginBreakdown {
+  hasOrigin: boolean;
+  origin: string | null;
+  host: string | null;
+  forwardedProto: string | null;
+  originProto: string | null;
+  hostMatches: boolean;
+  protoMatches: boolean;
+  passes: boolean;
+}
+
+export interface ProxyCheckResponse {
+  ok: boolean;
+  /** 内核实际看到的对端地址。 */
+  peer: string;
+  /** 内核相信的客户端地址（受 `API_TRUST_PROXY` 影响）。 */
+  clientIp: string;
+  forwardedProto: string | null;
+  forwardedHost: string | null;
+  forwardedFor: string | null;
+  trustProxy: string;
+  originGuard: ProxyCheckOriginBreakdown;
+  originGuardWouldPass: boolean;
+  items: ProxyCheckItem[];
+  warnings: string[];
+  checkedAt: string;
 }

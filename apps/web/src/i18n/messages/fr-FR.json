@@ -715,6 +715,11 @@
       "toggled": "Plugin status updated.",
       "deleted": "Plugin deleted.",
       "mutationFailed": "Plugin operation failed. Please try again.",
+      "worker": {
+        "circuitOpen": "Arrêté (plantages répétés)",
+        "restarting": "Redémarrage…",
+        "circuitOpenHint": "Le processus isolé a planté trop de fois d'affilée : les redémarrages automatiques sont arrêtés. Corrigez la cause, puis désactivez et réactivez ce plugin."
+      },
       "deleteConfirmTitle": "Delete this plugin?",
       "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone.",
       "stale": {
@@ -947,6 +952,29 @@
           "audit": "Journal d'audit",
           "agent": "Agent"
         }
+      },
+      "proxyCheck": {
+        "title": "Diagnostic du proxy inverse",
+        "intro": "Vérifie que le proxy inverse transmet au noyau l'IP réelle et le protocole du visiteur. Les trois pannes classiques apparaissent ici : les enregistrements d'administration rejetés avec « origine de la requête invalide », tous les visiteurs ramenés à une seule IP (site entier limité en débit), et les ressources du frontend de plugin ou du thème en 404.",
+        "refresh": "Revérifier",
+        "loading": "Vérification…",
+        "failed": "Échec de la vérification",
+        "allGood": "Configuration correcte",
+        "hasIssues": "Problèmes de configuration détectés",
+        "clientIp": "IP client à laquelle le noyau se fie",
+        "peer": "Pair immédiat",
+        "warnings": "À traiter",
+        "docHint": "Voir la documentation",
+        "forwardedProto": "X-Forwarded-Proto",
+        "forwardedHost": "Host / X-Forwarded-Host",
+        "forwardedFor": "X-Forwarded-For",
+        "originGuard": "Contrôle de même origine (écriture)",
+        "item": {
+          "proto": "Transmission du protocole (X-Forwarded-Proto)",
+          "realIp": "IP réelle du client",
+          "originGuard": "Contrôle de même origine (les POST d'admin renverront-ils 403 ?)",
+          "route": "Routage des préfixes"
+        }
       }
     },
     "themes": {
@@ -1121,6 +1149,7 @@
   "action": {
     "feedback": {
       "failed": "Operation failed",
+      "detail": "Détails",
       "succeeded": "Operation completed",
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",

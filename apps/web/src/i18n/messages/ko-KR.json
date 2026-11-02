@@ -715,6 +715,11 @@
       "toggled": "Plugin status updated.",
       "deleted": "Plugin deleted.",
       "mutationFailed": "Plugin operation failed. Please try again.",
+      "worker": {
+        "circuitOpen": "중지됨 (반복 충돌)",
+        "restarting": "재시작 중…",
+        "circuitOpenHint": "격리 프로세스가 연속으로 충돌해 자동 재시작을 중단했습니다. 원인을 해결한 뒤 이 플러그인을 비활성화했다가 다시 활성화하세요."
+      },
       "deleteConfirmTitle": "Delete this plugin?",
       "deleteConfirmDescription": "This removes \"{name}\" and its frontend assets. This cannot be undone.",
       "stale": {
@@ -947,6 +952,29 @@
           "audit": "감사 로그",
           "agent": "에이전트"
         }
+      },
+      "proxyCheck": {
+        "title": "리버스 프록시 점검",
+        "intro": "리버스 프록시가 방문자의 실제 IP와 프로토콜을 커널로 올바르게 전달하는지 확인합니다. 흔한 세 가지 장애가 모두 여기에서 드러납니다: 관리자 저장이 \"요청 출처가 올바르지 않음\"으로 거부됨, 모든 방문자가 하나의 IP로 인식됨(사이트 전체 속도 제한), 플러그인 프런트엔드와 테마 자산 404.",
+        "refresh": "다시 점검",
+        "loading": "점검 중…",
+        "failed": "점검 실패",
+        "allGood": "설정이 정상입니다",
+        "hasIssues": "설정 문제가 발견되었습니다",
+        "clientIp": "커널이 신뢰하는 클라이언트 IP",
+        "peer": "실제 피어",
+        "warnings": "조치 필요",
+        "docHint": "참고 문서",
+        "forwardedProto": "X-Forwarded-Proto",
+        "forwardedHost": "Host / X-Forwarded-Host",
+        "forwardedFor": "X-Forwarded-For",
+        "originGuard": "동일 출처 쓰기 판정",
+        "item": {
+          "proto": "프로토콜 전달(X-Forwarded-Proto)",
+          "realIp": "실제 클라이언트 IP",
+          "originGuard": "동일 출처 판정(관리자 POST가 403이 되는지)",
+          "route": "접두사 라우팅"
+        }
       }
     },
     "themes": {
@@ -1121,6 +1149,7 @@
   "action": {
     "feedback": {
       "failed": "Operation failed",
+      "detail": "상세",
       "succeeded": "Operation completed",
       "upstreamSyncFailed": "Upstream sync failed",
       "upstreamSyncSucceeded": "Upstream sync completed",
