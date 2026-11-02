@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import { ChevronRight, type LucideIcon } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -58,7 +58,16 @@ export function SettingsSections({
       <aside className="shrink-0 lg:w-40 lg:pt-1">
         <div className="md:hidden">
           <Select value={selected?.id} onValueChange={(value) => value && select(value)}>
-            <SelectTrigger className="h-12 w-full" aria-label={label}>
+            <SelectTrigger
+              className="group/select-trigger h-12 w-full"
+              aria-label={label}
+              indicator={
+                <ChevronRight
+                  aria-hidden="true"
+                  className="pointer-events-none size-4 text-muted-foreground transition-transform duration-200 ease-out group-data-[popup-open]/select-trigger:rotate-90 motion-reduce:transition-none"
+                />
+              }
+            >
               <SelectValue>{selected?.title}</SelectValue>
             </SelectTrigger>
             <SelectContent alignItemWithTrigger={false}>
@@ -93,10 +102,7 @@ export function SettingsSections({
       </aside>
       <TabsContent value={selected?.id ?? ''} className="min-w-0 flex-1 p-1">
         {selected && (
-          <div
-            id={`settings-panel-${selected.id}`}
-            className="w-full max-w-xl pb-12"
-          >
+          <div id={`settings-panel-${selected.id}`} className="w-full max-w-xl pb-12">
             {selected.content}
           </div>
         )}

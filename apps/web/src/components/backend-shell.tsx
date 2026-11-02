@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   BrainCircuit,
+  Check,
   ChevronRight,
   CreditCard,
   FileText,
@@ -199,7 +200,7 @@ function UserDropdown({
   rootHref: string;
 }) {
   const t = useTranslator();
-  const { setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const initial = user.email.charAt(0).toUpperCase();
   const displayName = user.email.split('@')[0] || user.email;
   const isAdminArea = rootHref === '/admin';
@@ -271,14 +272,17 @@ function UserDropdown({
           <DropdownMenuItem onClick={() => setTheme('system')}>
             <Monitor className="size-4" />
             {t('theme.system')}
+            {theme === 'system' ? <Check className="ml-auto size-4" /> : null}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setTheme('light')}>
             <Sun className="size-4" />
             {t('theme.light')}
+            {theme === 'light' ? <Check className="ml-auto size-4" /> : null}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setTheme('dark')}>
             <Moon className="size-4" />
             {t('theme.dark')}
+            {theme === 'dark' ? <Check className="ml-auto size-4" /> : null}
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />

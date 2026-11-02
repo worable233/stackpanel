@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Select as SelectPrimitive } from '@animate-ui/react/primitives/base-ui/select';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
+import type { ReactElement } from 'react';
 import { useFrontendPortalContainer } from '@/components/frontend-scope';
 
 function Select<Value, Multiple extends boolean | undefined = false>({
@@ -37,9 +38,11 @@ function SelectTrigger({
   className,
   size = 'default',
   children,
+  indicator,
   ...props
 }: SelectPrimitive.Trigger.Props & {
   size?: 'sm' | 'default';
+  indicator?: ReactElement;
 }) {
   return (
     <SelectPrimitive.Trigger
@@ -53,7 +56,11 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon
-        render={<ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />}
+        render={
+          indicator ?? (
+            <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
+          )
+        }
       />
     </SelectPrimitive.Trigger>
   );
