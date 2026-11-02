@@ -3,15 +3,57 @@
 # 放进你现有的 Traefik dynamic configuration（file provider），或把 routers/services
 # 段并进静态 file config。两个上游：web:3000（UI + BFF）与 api:3001（机器面）。
 #
-# 与 nginx 模板同理：API 独占 13 个路径前缀，漏一个就是「插件前端 404 / 回调 404」。
+# 与 nginx 模板同理，但**失败方式不同**，须知：
+#
+# - Traefik 没有 nginx 那种 `^~` 优先级陷阱（它按 `priority` 与规则长度选路由），
+#   所以模板本身不会被面板「吞掉」；
+# - 但 Traefik 默认**丢弃**上游传来的 `X-Forwarded-For`（`forwardedHeaders.trustedIPs`
+#   为空时它不信任任何上游），这与 nginx 的默认行为相反；
+# - 它**总是**设置 `X-Forwarded-Proto`（按 entryPoint 的 `asDefault` 语义），所以
+#   「后台所有 POST 403 / 请求来源无效」这类事故在 Traefik 上更少见，但一旦你把它
+#   放在**另一个**反代之后（CDN / 面板），上游的 proto 会被它覆盖成 `http`，
+#   症状与 nginx 版本完全相同。
+#
+# 生成器不覆盖 Traefik（它的拓扑通过 labels 表达，逐环境不同）；这份文件请当作
+# 「可粘贴的起点」，改动后必须跑 `node scripts/proxy-verify.mjs` 验一遍。
 
 http:
   routers:
-    # API：优先级更高（比如 100），路径匹配必须原样透传。
+    # ---- 内核：`/api/v1/*` ------------------------------------------------
+    # 内核的**全部**路由都在 `/api/v1/` 下；`/api/` 下不带 v1 的路径都是 Web 的
+    # 路由处理器（BFF）。这一条必须排在 BFF 规则之上（priority 更高）。
+    stackpanel-api-v1:
+      rule: 'Host(`panel.example.com`) && PathPrefix(`/api/v1`)'
+      priority: 120
+      service: stackpanel-api
+      entryPoints: [websecure]
+      tls: {}
+
+    # ---- Web BFF：`/api/` 下这些子前缀是 Next 自己的路由处理器 -------------
+    # 逐条列出而不是用 `/api/` 兜底：Traefik 按 priority + 规则长度选路由，
+    # 一条 `PathPrefix('/api')` 的兜底一旦 priority 算高了，就会把 `/api/v1/*`
+    # 抢走（症状同样是「所有 API 401/404」，页面却正常）。
+    #
+    # 新增 BFF 路由时，这里与 nginx 模板要一起改；`apps/web/tests/proxy-template-routing.test.ts`
+    # 会检查 nginx 那份是否漏了。
+    stackpanel-bff:
+      rule: >-
+        Host(`panel.example.com`) && (
+          PathPrefix(`/api/account/avatar`) || PathPrefix(`/api/action-flash`) ||
+          PathPrefix(`/api/admin/notifications`) || PathPrefix(`/api/agent`) ||
+          PathPrefix(`/api/frontend-abi`) || PathPrefix(`/api/notifications`) ||
+          PathPrefix(`/api/plugins`) || PathPrefix(`/api/store`)
+        )
+      priority: 110
+      service: stackpanel-web
+      entryPoints: [websecure]
+      tls: {}
+
+    # ---- 内核：非 `/api/` 前缀（少一个就是「某类资源 404」）--------------
     stackpanel-api:
       rule: >-
         Host(`panel.example.com`) && (
-          PathPrefix(`/api/v1`) || PathPrefix(`/api/product`) ||
+          PathPrefix(`/api/product`) ||
           Path(`/mcp`) ||
           PathPrefix(`/sp/v1`) || PathPrefix(`/llm-gateway`) ||
           PathPrefix(`/callbacks`) || Path(`/zjmf_api_login`) ||
@@ -25,7 +67,7 @@ http:
       entryPoints: [websecure]
       tls: {}
 
-    # Web：兜底。
+    # ---- Web：兜底 -------------------------------------------------------
     stackpanel-web:
       rule: Host(`panel.example.com`)
       priority: 10
@@ -37,6 +79,8 @@ http:
     stackpanel-api:
       loadBalancer:
         passHostHeader: true
+        # SSE / 流式（LLM 网关、进度、备份下载）：Traefik 默认不缓冲，无需额外设置；
+        # 但不要给它加 compress 中间件 —— 压缩 text/event-stream 会把事件攒住。
         servers:
           - url: http://api:3001
     stackpanel-web:
@@ -45,11 +89,11 @@ http:
         servers:
           - url: http://web:3000
 
-# ---------------------------------------------------------------------------
-# 真实客户端 IP
-#
-# Traefik 默认**不**信任上游传来的 X-Forwarded-For。前面还有 CDN / 云 LB 时，要在
-# 静态配置里声明它们的回源网段，否则内核看到的永远是那个代理的地址：
+# ============================================================================
+# 真实客户端 IP（静态配置，不是这份 dynamic 文件）
+# ============================================================================
+# Traefik 默认**不**信任上游传来的 X-Forwarded-For。前面还有 CDN / 云 LB / 面板反代
+# 时，必须在**静态配置**里声明它们的回源网段，否则内核看到的永远是那个代理的地址：
 #
 #   entryPoints:
 #     websecure:
@@ -57,10 +101,20 @@ http:
 #       forwardedHeaders:
 #         trustedIPs:
 #           - 173.245.48.0/20   # Cloudflare 示例
-#           - 10.0.0.0/8        # 内网 SLB 示例
+#           - 172.18.0.0/16     # 1Panel / 宝塔 反代容器所在网段
+#           - 10.0.0.0/8        # 内网 SLB
+#         # insecure: true 只在「Traefik 是唯一入口、前面什么都没有」时才可以开；
+#         # 开了就等于信任任何客户端自己写的 X-Forwarded-For（限流可被绕过）。
 #
-# 内核侧的 `API_TRUST_PROXY` 默认信任 `loopback,linklocal,uniquelocal`（所有 RFC1918
-# 私网）——容器网络里 Traefik 的地址就在私网，所以不用改；公网伪造的 XFF 仍然无效。
+# 内核侧 `API_TRUST_PROXY` 默认 `loopback,linklocal,uniquelocal`（loopback + 链路本地
+# + 所有 RFC1918 私网）：Traefik 在私网里，所以通常不用改。反代在**公网**时必须显式
+# 加上它的地址。配完用 `GET /api/v1/system/proxy-check` 或
+# `node scripts/proxy-verify.mjs` 验证，不要凭感觉。
 #
-# 若把 api 直接暴露在公网（不推荐），把 API_TRUST_PROXY 收窄到反代所在网段。
-# ---------------------------------------------------------------------------
+# ============================================================================
+# 另外两个 Traefik 特有的坑
+# ============================================================================
+# 1. 上传 413：Traefik 不限制请求体大小（由内核的插件包上限决定），但中间的 CDN
+#    常常限制。插件包可达数十 MB，CDN 侧要放开。
+# 2. `PathPrefix('/plugins')` 必须存在：插件前端资源（`/plugins/<id>/dist/admin.js`）
+#    由 API 提供，不是 Web。漏了它的症状是「后台插件页面 404，但主站完全正常」。

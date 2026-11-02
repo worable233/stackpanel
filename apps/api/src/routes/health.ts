@@ -7,6 +7,7 @@ import { frontendReadiness } from '../lib/frontend-readiness.ts';
 import { fallbackBootReport, getBootReport } from '../lib/boot-report.ts';
 import { memoryPressure, memoryReport } from '../lib/memory-report.ts';
 import { getPrisma } from '../plugins/prisma.ts';
+import { readProxyHealth } from '../lib/proxy-check.ts';
 
 /** `/ready` 里那段只读的 Agent 自检结果（C-3）。 */
 export interface AgentHealth {
@@ -76,13 +77,17 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/version', async () => getBootReport() ?? fallbackBootReport(KERNEL_VERSION));
 
-  app.get('/ready', async (_request, reply) => {
+  app.get('/ready', async (request, reply) => {
     const checks: Record<string, 'ok' | 'unreachable' | 'disabled'> = {};
     // 内存放进 readiness 响应（v0.1.1 的 OOM 盲区）：运维在容器被反复重启、连
     // `docker exec` 都进不去时，仍能从外部轮询看到堆占用与上限的趋势。
     // `memoryPressure` 不参与 503 判定：高水位不等于不可用，把正在服务的副本摘掉
     // 只会把压力推给剩下的实例。
     const memory = memoryReport();
+    // 反代自检的精简版：面板健康检查、编排探针、同机 curl 都能看到，不需要管理员
+    // 登录。`trusted=false` 且报了 X-Forwarded-For 就是「全员共用一个 IP」的现场。
+    // 与 `/error`/`memory` 一样**不参与** 503 判定：配置不对仍然能服务。
+    const proxy = readProxyHealth(request);
 
     let databaseOk = false;
     try {
@@ -141,6 +146,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
         status: 'ready',
         ...checks,
         memory,
+        proxy,
         ...(memoryPressure(memory) ? { memoryPressure: true } : {}),
         ...(agent ? { agent } : {}),
       };
@@ -149,6 +155,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
       status: 'degraded',
       ...checks,
       memory,
+      proxy,
       ...(memoryPressure(memory) ? { memoryPressure: true } : {}),
       ...(frontend && !frontend.ok ? { pendingFrontends: frontend.pending } : {}),
       ...(agent ? { agent } : {}),

@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { AFFILIATE_COOKIE, normalizeAffiliateCode } from './lib/affiliate';
 import { readCaptchaCspSources, type CaptchaCspSources } from './lib/captcha-csp';
 import { sessionCookieName, sessionCookieSecure } from './lib/session-cookie';
+import { kernelRewriteTarget, singlePortEnabled } from './lib/single-port';
 
 const COOKIE_NAME = sessionCookieName();
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
@@ -146,6 +147,20 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const { pathname } = request.nextUrl;
 
+  // 单端口模式：内核拥有的前缀在这里转发。放在 CSP/nonce 之后、前台/后台门禁
+  // 之前 —— 这些路径本来就不是页面，不需要 nonce 也不需要登录门禁（内核自己
+  // 有鉴权）。见 src/lib/single-port.ts 说明为什么不能在 next.config.ts 里做。
+  if (singlePortEnabled()) {
+    const target = kernelRewriteTarget(pathname, request.nextUrl.search, API_BASE_URL);
+    if (target) {
+      // `NextResponse.rewrite` 会重新走一遍路由解析，但不会再进 middleware
+      // （目标 URL 的 host 与本站不同），所以不会无限递归。
+      const rewritten = NextResponse.rewrite(target, { request: { headers: requestHeaders } });
+      rewritten.headers.set('Content-Security-Policy', csp);
+      return rewritten;
+    }
+  }
+
   // Capture `?affid=` on any landing page. First click wins: an existing
   // attribution cookie is never overwritten, so a second code cannot steal a
   // visitor who already arrived through someone else's link.
@@ -203,14 +218,20 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
+  /*
+   * Run on every page route so the nonce reaches the renderer, but skip Next
+   * static/image assets and link prefetches (which do not need a CSP and would
+   * otherwise waste a nonce).
+   *
+   * `/api/` is **not** excluded: single-port mode has to forward the kernel's
+   * `/api/v1/*` from here (`rewrites()` is resolved at build time, so it cannot
+   * serve this). Web's own BFF handlers stay out of the way because
+   * `kernelRewriteTarget` returns `null` for them; the extra middleware pass costs
+   * one function call for local routes.
+   */
   matcher: [
-    /*
-     * Run on every page route so the nonce reaches the renderer, but skip API
-     * routes, Next static/image assets, and link prefetches (which do not need a
-     * CSP and would otherwise waste a nonce).
-     */
     {
-      source: '/((?!api|_next/static|_next/image|favicon.ico).*)',
+      source: '/((?!_next/static|_next/image|favicon.ico).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },

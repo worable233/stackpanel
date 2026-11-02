@@ -1,142 +1,217 @@
-# StackPanel 反代模板（nginx）
+# ===== TEMPLATE-HEADER-BEGIN（生成器会整段剔除，因为生成器自己写头部）=====
+# StackPanel 反向代理模板（nginx）—— 唯一真源，由 `scripts/proxy-config.mjs` 展开。
 #
-# 为什么需要这份模板：Web（3000）与 API（3001）是两个上游，**API 独占 13 个路径
-# 前缀**。少写一个就会出现「插件前端 404 / 主题资源 404 / 支付回调 404」，而且
-# 页面本身是好的，非常难看出是路由问题。1Panel、宝塔、群晖这类面板自带 nginx，
-# 用户不会用仓库里的 Caddy，所以这份模板把前缀列表固定下来。
+# ⚠️ 用 1Panel / 宝塔 / 群晖这类面板的用户先读 `docs/DEPLOY-REVERSE-PROXY.md`。
+#    这份文件**不是**可以随手 include 的片段：它有 `__SP_*__` 占位符，必须先生成。
 #
-# 用法：把 upstream 的地址改成实际地址（同机 compose 用 127.0.0.1:3000/3001，
-# 或容器名 web:3000 / api:3001），再在站点配置里 include。
+#    生成（推荐）：
+#      node scripts/proxy-config.mjs --topology same-host --domain sp.example.com \
+#        --out /etc/nginx/conf.d/stackpanel.conf
+#    生成后：`nginx -t && nginx -s reload`，再跑 `node scripts/proxy-verify.mjs --base https://sp.example.com`
+#
+#    手改也可以：把下面所有 `__SP_*__` 按注释替换即可。
+#
+# ---------------------------------------------------------------------------
+# 为什么这份模板能被面板用户用（这是这次改版的全部要点）
+# ---------------------------------------------------------------------------
+# 1Panel / 宝塔 / 群晖自己会生成一条 `location ^~ / { include proxy/*; }`。nginx 的
+# 路由优先级是 `=` > `^~`（最长前缀，命中即止）> 正则 `~`（按出现顺序）> 普通前缀。
+# 所以只要面板的 `^~ /` 存在，文件里所有 `location ~ ^/(api/v1|mcp|…)` 正则**永远
+# 不会被尝试**，而且没有任何告警。
+#
+# 症状：页面完全正常，但 `/api/v1/*`、`/themes/*`、`/plugins/*`（插件前端）、
+# `/callbacks/*`（支付回调）全部落到 Web 上游 → 404。看起来像「插件坏了」。
+#
+# 根治：本文件里**一条正则都没有**。全部用 `^~`，与面板的 `^~ /` 同类竞争，按最长
+# 前缀判定：`^~ /api/` 比 `^~ /` 更长，仍然优先。这一条不要改回去。
 
-# WebSocket（插件前端实时刷新、部分流式接口）需要的升级头映射。
-map $http_upgrade $connection_upgrade {
+# ===== TEMPLATE-HEADER-END =====
+
+# ============================================================================
+# 1. 对外协议与端口（`$scheme` 是错的，见下）
+# ============================================================================
+map $http_x_forwarded_proto $sp_forwarded_proto {
+    default $http_x_forwarded_proto;
+    ''      __SP_EDGE_PROTO__;
+}
+
+map $http_x_forwarded_port $sp_forwarded_port {
+    default $http_x_forwarded_port;
+    ''      __SP_EDGE_PORT__;
+}
+
+map $http_upgrade $sp_connection_upgrade {
     default upgrade;
     ''      close;
 }
 
+# `X-Forwarded-Proto` 必须是**访客看到的**协议，不能写 `$scheme`。
+# CDN / 面板终止 TLS、回源到 `listen 80` 时 `$scheme` 永远是 `http`，而浏览器的
+# `Origin` 是 `https://…`；Web BFF 的同源守卫（`apps/web/src/lib/request-origin.ts`）
+# 比对不上就 403 —— 界面显示「请求来源无效」，后台所有 POST 失效（GET 不受影响，
+# 所以页面看着是好的，非常难联想到反代）。
+#
+# __SP_EDGE_PROTO__ 由生成器按拓扑替换：
+#   same-host / container（TLS 在 nginx 或上游代理终止）  → $scheme
+#   cdn（TLS 在 CDN 终止，回源 http）                     → https
+#   passthrough（完全信任上游已写好的值）                  → $http_x_forwarded_proto
+
 # ---------------------------------------------------------------------------
-# 对外协议：**不能用 `$scheme`**。
+# 共享的 proxy 指令块（Web 与 API 各一份，生成器展开进每个 location）
 #
-# `$scheme` 是 nginx 自己这一跳的协议。面板 / CDN / 云负载均衡在 TLS 终止后再回源
-# 到 `listen 80` 时它永远是 `http`，而浏览器的 `Origin` 是 `https://…`。Web BFF 的
-# 同源守卫（`apps/web/src/lib/request-origin.ts`）会拿 `Origin` 的 scheme 与这个头
-# 比对，不等就 403 —— 表现是「请求来源无效」，**后台所有 POST 全部失效**，而页面
-# 本身完全正常（GET 不受影响），极难联想到反代。
-#
-# 优先透传上游给的 X-Forwarded-Proto（CDN 会写）；没有时才用 `$scheme` 兜底。
-# 本站只经 CDN 的 TLS 暴露、且 CDN 不回写这个头时，把兜底那一行改成 `https`。
-map $http_x_forwarded_proto $sp_forwarded_proto {
-    default $http_x_forwarded_proto;
-    ''      $scheme;
-}
+# 为什么把它抽出来而不是在每个 location 里重复 12 行：`X-Forwarded-*` 与
+# `proxy_buffering` 一旦漏写一个 location，就会变成「某个前缀的表现不一样」这种
+# 极难排查的故障。列在这里，模板读者能一眼看到「这些头是全局约定」。
+# __SP_PROXY_HEADERS_WEB__ / __SP_PROXY_HEADERS_API__ 由生成器按上游替换。
+# ---------------------------------------------------------------------------
 
-# 对外端口同理：`$server_port` 是回源端口（80），不是访客看到的 443。
-map $http_x_forwarded_port $sp_forwarded_port {
-    default $http_x_forwarded_port;
-    ''      $server_port;
-}
-
+# ============================================================================
+# 2. 上游
+# ============================================================================
 upstream stackpanel_web {
-    server 127.0.0.1:3000;
+    server __SP_WEB_UPSTREAM__;
     keepalive 16;
 }
 
 upstream stackpanel_api {
-    server 127.0.0.1:3001;
+    server __SP_API_UPSTREAM__;
     keepalive 16;
 }
 
+# ============================================================================
+# 3. 真实客户端 IP
+# ============================================================================
+# 前面还有 CDN / 云 LB / 面板反代容器时**必须**写它们的回源网段。否则内核看到的
+# 所有访客都是同一个 IP：按 IP 的限流、验证码冷却、封禁、审计与登录日志全部失真
+# —— 症状是「整站被限流」「换个浏览器也提示频繁」，几乎不可能联想到反代。
+#
+# __SP_REAL_IP_FROM__ 由生成器替换：
+#   同机反代：留空（对端本身就是私网，客户端 IP 由 X-Forwarded-For 正确追加）
+#   CDN：展开各官方回源 CIDR（`--cdn cloudflare,cloudfront`）
+#   内网 SLB / 面板反代容器：写成它的网段（`--real-ip-from 172.18.0.0/16`）
+#
+# `real_ip_recursive on` 从右往左解析，与内核 `API_TRUST_PROXY` 方向一致：
+# 左边可伪造，右边才可信。
+__SP_REAL_IP_FROM__
+
+# ============================================================================
+# 4. 站点
+# ============================================================================
 server {
-    listen 80;
-    server_name panel.example.com;
+    listen __SP_LISTEN__;
+    server_name __SP_SERVER_NAME__;
 
-    # ------------------------------------------------------------------------
-    # 真实客户端 IP
-    #
-    # 前面还有 CDN / 云负载均衡时，**必须**写它们的回源网段：否则 nginx 拿到的
-    # $remote_addr 是 CDN 节点，内核看到的所有访客都是同一个 IP，按 IP 的限流、
-    # 验证码冷却、封禁与审计全部失真。
-    #
-    # `real_ip_recursive on` 从右往左解析 X-Forwarded-For，和内核
-    # `API_TRUST_PROXY` 的方向一致：左边可以伪造，右边才可信。
-    # ------------------------------------------------------------------------
-    # set_real_ip_from 173.245.48.0/20;   # 例：Cloudflare
-    # set_real_ip_from 10.0.0.0/8;        # 例：内网 SLB
-    # real_ip_header X-Forwarded-For;
-    # real_ip_recursive on;
-
-    # 插件/主题包、备份恢复都是大文件上行。默认 1m 会让上传在 nginx 侧 413，
-    # 而内核日志里什么都不会出现。
+    # 上传插件包 / 主题包 / 备份文件。面板默认 1m 会让上传直接 413，而内核收不到
+    # 请求，所以内核日志里什么都看不到 —— 只会在浏览器里得到一句 413。
     client_max_body_size 512m;
+    proxy_send_timeout 300s;
 
-    # ------------------------------------------------------------------------
-    # API：机器面（OpenAPI / MCP / SP v1 / 智简魔方兼容 / 支付回调 / 资产）
-    #
-    # 前缀必须**原样保留**：`/api/v1/platform` 到上游还是 `/api/v1/platform`。
-    # 用 `proxy_pass http://upstream;`（不带 URI）即可；写成
-    # `proxy_pass http://upstream/;` 会剥掉前缀，全部 404。
-    #
-    # Web 自己的 BFF 路由（`/api/notifications`、`/api/llm-gateway/*`、
-    # `/api/catalog/*`、`/api/store/*`）不在这个列表里，走下面的 Web 段。
-    # ------------------------------------------------------------------------
-    # 用 `^~` 而不是裸正则：面板（1Panel / 宝塔）的站点配置里常有
-    # `location ^~ /api/` 之类的规则，nginx **先**匹配 `^~` 再考虑正则，于是下面
-    # 这段正则会被静默吞掉，`/api/v1/*` 全部落到 Web 上游 → 404。
-    #
-    # 头部统一写在这里（nginx 的 `include` 需要额外文件，模板只该是单文件可复制）。
+    # ---- 内核：`/api/v1/*` ------------------------------------------------
+    # **内核的全部路由都在 `/api/v1/` 下**；`/api/` 下不带 v1 的路径都是 Web 的
+    # 路由处理器。所以这一条必须显式写出来，不能靠 `/api/` 兜底去碰运气 ——
+    # 兜底一旦被判给 Web，症状是「所有 API 401/404」，而页面完全正常。
+    location ^~ /api/v1/ {
+        __SP_PROXY_API__
+    }
+
+    # ---- Web BFF 占用的 `/api/` 子前缀 -----------------------------------
+    # 这些是 Next 自己的路由处理器（见 `apps/web/src/app/api/*/route.ts`）。
+    # 更长的前缀天然赢过 `/api/`，这里逐条列出是为了**可审计**：新增一个 BFF
+    # 路由时，看一眼这份清单就知道要不要加。
+    location ^~ /api/account/avatar {
+        __SP_PROXY_WEB__
+    }
+    location ^~ /api/action-flash {
+        __SP_PROXY_WEB__
+    }
+    location ^~ /api/admin/notifications {
+        __SP_PROXY_WEB__
+    }
+    location ^~ /api/agent/ {
+        __SP_PROXY_WEB__
+    }
+    location ^~ /api/frontend-abi/ {
+        __SP_PROXY_WEB__
+    }
+    location ^~ /api/notifications {
+        __SP_PROXY_WEB__
+    }
+    location ^~ /api/plugins/ {
+        __SP_PROXY_WEB__
+    }
+    location ^~ /api/store/ {
+        __SP_PROXY_WEB__
+    }
+
+    # ---- 其余 `/api/*`：只有 BFF 才会到这里 -------------------------------
+    # 保留兜底是为了让「多了一个没登记的 BFF 路由」仍然能用；转发到 API 只会 404。
     location ^~ /api/ {
-        proxy_pass http://stackpanel_api;
-        proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        # **不要写 `$scheme`**：TLS 在 CDN/面板终止、回源是 80 时它永远是 http，
-        # 而浏览器 Origin 是 https → BFF 同源守卫 403「请求来源无效」，后台所有
-        # POST 失效。见文件顶部的 `$sp_forwarded_proto` 映射。
-        proxy_set_header X-Forwarded-Proto $sp_forwarded_proto;
-        proxy_set_header X-Forwarded-Port  $sp_forwarded_port;
-        proxy_set_header X-Forwarded-Host  $host;
-        proxy_set_header Upgrade           $http_upgrade;
-        proxy_set_header Connection        $connection_upgrade;
-
-        # SSE（llm-gateway / 任务进度 / 备份流）不能被缓冲，否则客户端收不到事件。
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 3600s;
+        __SP_PROXY_WEB__
     }
 
-    # API 的非 `/api/` 前缀（MCP、SP v1、支付回调、资产与探针）。
-    location ~ ^/(api/product|mcp|sp/v1|llm-gateway|callbacks|zjmf_api_login|cart|host|provision|themes|plugins|media|platform|health|ready)(/|$) {
-        proxy_pass http://stackpanel_api;
-        proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $sp_forwarded_proto;
-        proxy_set_header X-Forwarded-Port  $sp_forwarded_port;
-        proxy_set_header X-Forwarded-Host  $host;
-        proxy_set_header Upgrade           $http_upgrade;
-        proxy_set_header Connection        $connection_upgrade;
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 3600s;
+    # ---- API 的非 `/api/` 前缀 -------------------------------------------
+    # 少写一个就会出现「某类资源 404」，且页面本身是好的：
+    #   /mcp /sp/v1            开放平台（MCP 传输层、SP v1 兼容层）
+    #   /llm-gateway           LLM 网关（SSE 流式，不能缓冲）
+    #   /callbacks             支付回调（第三方直连，不经浏览器）
+    #   /zjmf_api_login        智简魔方兼容登录
+    #   /cart /host /provision 商店 / 主机 / 开通
+    #   /themes /plugins /media 主题与插件前端资产、媒体文件（404 事故重灾区）
+    #   /platform              平台信息
+    #   /health /ready /version 探针与构建身份（面板健康检查、proxy-verify 会查）
+    location ^~ /mcp/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /mcp {
+        __SP_PROXY_API__
+    }
+    location ^~ /sp/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /llm-gateway/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /callbacks/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /zjmf_api_login {
+        __SP_PROXY_API__
+    }
+    location ^~ /cart/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /host/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /provision/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /themes/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /plugins/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /media/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /platform/ {
+        __SP_PROXY_API__
+    }
+    location ^~ /health {
+        __SP_PROXY_API__
+    }
+    location ^~ /ready {
+        __SP_PROXY_API__
+    }
+    location ^~ /version {
+        __SP_PROXY_API__
     }
 
-    # ------------------------------------------------------------------------
-    # Web：UI + BFF。兜底规则，必须放在 API 段之后。
-    # ------------------------------------------------------------------------
+    # ---- 兜底：Web（UI + BFF）-------------------------------------------
+    # **不要**改成正则，也**不要**提到上面去：在面板的 `^~ /` 之下，只有 `^~`
+    # 规则能稳定赢过它。
     location / {
-        proxy_pass http://stackpanel_web;
-        proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $sp_forwarded_proto;
-        proxy_set_header X-Forwarded-Port  $sp_forwarded_port;
-        proxy_set_header X-Forwarded-Host  $host;
-        proxy_set_header Upgrade           $http_upgrade;
-        proxy_set_header Connection        $connection_upgrade;
-        proxy_buffering off;
-        proxy_read_timeout 3600s;
+        __SP_PROXY_WEB__
     }
 }

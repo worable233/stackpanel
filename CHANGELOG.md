@@ -39,11 +39,50 @@ worker 打错入口」拦住。这个版本修掉四条阻断项，并把「拉�
   （含 API 的 13 个路径前缀与真实 IP 配置）；`docker/README.md` 补「必须备份的路径」、
   headless 初始化、健康检查端点说明。
 
+### 反向代理（本次的重点）
+
+线上四条事故里有三条的症状都伪装成了别的问题（「请求来源无效」「操作太频繁」
+「插件坏了」），所以这批改动的目标不是「再给一份模板」，而是把「反代配得对不对」
+从**靠读文档 + 猜症状**变成**一条命令生成、一条命令自检、错误在后台一眼可见**。
+
+- **模板里一条正则都没有了**。面板（1Panel / 宝塔 / 群晖）会生成
+  `location ^~ / { include proxy/*.conf; }`，nginx 的 `^~` 命中后不再尝试正则 ——
+  旧模板的 `location ~ ^/(api/v1|mcp|…)` 因此**静默失效**，`/api/v1/*`、`/themes/*`、
+  `/plugins/*`、`/callbacks/*` 全部落到 Web 上游 → 404，而页面完全正常。现在全部改用
+  `^~` 前缀，并把手写/面板两种来源合并成 `docker/proxy/sp-common.conf` 单一真源。
+  `apps/web/tests/proxy-template-routing.test.ts` 会真起 nginx + 一个「面板形态」的
+  server，逐条断言 16 个前缀的归属 —— 改回正则 CI 立刻红。
+- **协议的兜底不再用 `$scheme`**：`map $http_x_forwarded_proto` 优先透传上游写的值，
+  缺失时才按对外协议兜底。TLS 在 CDN/面板终止时 `$scheme` 恒为 `http`，浏览器
+  `Origin` 是 `https`，同源守卫必然 403（界面文案「请求来源无效」，**后台所有 POST
+  失效**，GET 不受影响所以页面看着是好的）。
+- **`scripts/proxy-config.mjs` 生成器**：按拓扑（`same-host` / `container` / `cdn` /
+  `passthrough`）产出可直接粘贴的完整配置，自动展开各家 CDN 的官方回源段
+  （Cloudflare / CloudFront / Fastly / Akamai，15 天缓存 + `--cdn-update` 刷新），
+  并在文件头写明该拓扑的陷阱。
+- **`scripts/proxy-verify.mjs` 自检**：从外部打你部署好的站点，断言静态资源、API
+  前缀、主题前缀、`/version`、`/ready` 的真实 IP、同源判定、SSE 未被缓冲。每条失败
+  都给出「根因 → 修复」而不是一句「检查配置」。
+- **`GET /api/v1/system/proxy-check`（管理员）+ 系统设置 → 反代自检面板**：把内核
+  实际看到的对端地址、转发头、同源判定结果摊开，每条不通过项给出可执行修复与文档
+  锚点。判定逻辑**与 Web BFF 是同一份实现**（`@stackpanel/sdk` 的 `checkOrigin`），
+  不会出现「诊断说通过、真实请求 403」。面板由浏览器**直接**请求内核，因为要观测的
+  正是「浏览器 → 反代 → 内核」这一跳。
+- **`/ready` 增加 `proxy` 子项**（`trusted` / `clientIp` / `peer` / `proto`）：不需要
+  登录，面板健康检查与同机 curl 都能看到「全员共用一个 IP」。
+- **`docs/DEPLOY-REVERSE-PROXY.md`**：三种拓扑、五种面板的插入位置与陷阱、以及一页
+  「症状 → 根因 → 修复」速查表（把这次四条事故全部收进去）。
+- **`STACKPANEL_SINGLE_PORT=1` 单端口模式**：Web 把内核的机器面前缀也转发，反代只需
+  一个 upstream —— 事故 A 那一整类「前缀漏配 / 被 `^~ /` 吞掉」直接消失。默认关闭
+  （它移动了两个上游的边界）。
+
 ### 变化
 
 - `API_TRUST_PROXY` 在 compose 里默认 `loopback,linklocal,uniquelocal`（所有 RFC1918
   私网），不再写死 `172.28.0.0/16`——1Panel / 宝塔等环境的 `172.18.x` 网段从此也认得出
   访客真实 IP；公网伪造的 `X-Forwarded-For` 依旧无效。
+  `docker/.env.example` 也同步改成这个默认值：它被每个运维复制成 `.env`，写死
+  `172.28.0.0/16` 会在反代换到别的网络时**静默失效**（正是事故 C）。
 - compose 的 Web / API 宿主端口可覆盖（`STACKPANEL_WEB_PORT` / `STACKPANEL_API_PORT`），
   同机跑多实例与冒烟都不再撞端口。
 - isolated 插件子进程的 stderr 进日志（环形缓冲 200 行 / 8 KB），启动失败的错误里带

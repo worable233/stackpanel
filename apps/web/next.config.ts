@@ -51,6 +51,12 @@ const nextConfig: NextConfig = {
    */
   async rewrites() {
     const api = (process.env.API_BASE_URL ?? 'http://127.0.0.1:3001').replace(/\/+$/, '');
+    // 内核对外的 `/media` 直链（头像以外的媒体上传/对象存储回源）。
+    //
+    // 单端口模式（`STACKPANEL_SINGLE_PORT=1`）**不在这里**实现：`rewrites()` 在
+    // `next build` 时就把结果内联进 `.next/routes-manifest.json`，运行时再设环境
+    // 变量完全没有效果（实测：镜像里 manifest 只有这一条）。那个模式在
+    // `src/proxy.ts` 的 middleware 里做，见 `src/lib/single-port.ts`。
     return [{ source: '/media/:path*', destination: `${api}/media/:path*` }];
   },
   async headers() {

@@ -44,6 +44,7 @@ import {
   updateStatusResponseSchema,
   updatePolicyResponseSchema,
   updatePlanResponseSchema,
+  proxyCheckResponseSchema,
   updateSubmitResponseSchema,
   updateResultsResponseSchema,
   updateResultResponseSchema,
@@ -221,6 +222,7 @@ import type {
   ResellerListResponse,
   ResellerMutationResponse,
   WebhookDeliveryListResponse,
+  ProxyCheckResponse,
 } from './types.js';
 import type {
   DistributionRefreshResult,
@@ -481,6 +483,15 @@ export class ApiClient {
       this.timeoutMs,
       updatePolicyResponseSchema,
     );
+  }
+
+  /**
+   * 反代自检（管理员）：内核实际看到的对端、转发头、同源判定结果。
+   *
+   * 不缓存、不碰网络之外的东西 —— 它的全部价值在于「现在这一跳」的事实。
+   */
+  getProxyCheck(): Promise<ProxyCheckResponse> {
+    return this.get('/system/proxy-check', proxyCheckResponseSchema);
   }
 
   /**

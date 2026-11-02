@@ -54,6 +54,7 @@ import { authOAuthRoutes } from './routes/auth-oauth.ts';
 import { setupRoutes } from './routes/setup.ts';
 import { apiTokenRoutes } from './routes/api-tokens.ts';
 import { healthRoutes } from './routes/health.ts';
+import { systemProxyRoutes } from './routes/system-proxy.ts';
 import { registerMediaRoutes } from './media/index.ts';
 import { mcpRoutes } from './mcp/index.ts';
 import { navRoutes } from './routes/nav.ts';
@@ -74,42 +75,12 @@ export interface BuildAppOptions {
   redis?: RedisClient | null;
 }
 
-/**
- * Translate `API_TRUST_PROXY` into Fastify's `trustProxy` option.
- *
- * Unset means **loopback**: the web BFF (and any same-host reverse proxy) talks to
- * the kernel from `127.0.0.1`, and only local processes can reach that peer, so
- * trusting it cannot be spoofed from the network. The previous default (`false`)
- * discarded the address the BFF forwards, which made every visitor share one
- * rate-limit bucket (audit M-4).
- *
- * `true` trusts the immediate peer; a comma-separated list of addresses/CIDRs (or
- * the `loopback` / `linklocal` / `uniquelocal` presets) selects explicitly.
- */
-export function trustProxyOption(): boolean | string | string[] {
-  const raw = env.API_TRUST_PROXY?.trim();
-  if (!raw) return 'loopback';
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  return raw
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-}
+// `API_TRUST_PROXY` 的解析搬到了 `lib/trust-proxy.ts`：反代自检路由要用它，而
+// 自检路由是 `app.ts` 注册的 —— 留在本文件会形成 app.ts ↔ routes 的循环依赖。
+// 这里再导出，保持既有调用点（`normal-start.ts`、测试）不变。
+import { describeTrustProxy, trustProxyOption } from './lib/trust-proxy.ts';
 
-/**
- * 生效的反代信任配置（给启动横幅与 `/version` 用）。
- *
- * 「反代后面所有访客共用一个 IP」这类故障，看日志永远只能看到反代地址，猜不出
- * 是配置问题还是网络问题；把归一化后的值打出来，运维一眼就能对上。
- */
-export function describeTrustProxy(): string {
-  const option = trustProxyOption();
-  if (Array.isArray(option)) return option.join(',');
-  if (option === true) return 'true';
-  if (option === false) return 'false';
-  return option;
-}
+export { describeTrustProxy, trustProxyOption };
 
 /** Build a configured Fastify instance. Register all plugins/routes here. */
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -475,6 +446,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.addHook('onResponse', async (request, reply) => {
     recordTokenUsage(request, reply, runtime.listCapabilities());
   });
+  void app.register(systemProxyRoutes);
   void app.register(pluginRoutes);
   void app.register(themeRoutes);
   app.addHook('onReady', async () => {

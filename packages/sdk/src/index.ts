@@ -486,3 +486,4 @@ export type {
   PackageMessageParams,
   PackageTranslator,
 } from './i18n.js';
+export * from './proxy.js';

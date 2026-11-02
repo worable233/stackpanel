@@ -1,41 +1,22 @@
 /**
  * Same-origin guard for cookie-authenticated BFF mutations.
  *
- * `request.nextUrl.origin` must not be used for this. Next normalizes it to the
- * host the dev server was configured with, so it disagrees with the browser's
- * `Origin` whenever the app is reached under another name — `127.0.0.1` versus
- * `localhost`, a LAN address, a proxied public domain. The result is a 403 on
- * legitimate same-origin requests (observed: `POST /api/account/avatar` from a
- * `127.0.0.1:3000` tab) with no added protection, since `Origin` and `Host` are
- * both attacker-influenced only to the extent that they disagree.
+ * 判定逻辑本身在 `@stackpanel/sdk`（`isSameOriginRequest`）—— 内核的
+ * `/api/v1/system/proxy-check` 用的是**同一份**实现。两处各写一份会导致最坏的
+ * 结果：诊断说「通过」，真实请求仍然 403，运维顺着错误结论去改反代越改越乱。
  *
- * The request's own `Host` header is the authority the browser actually talked
- * to, so that is what `Origin`'s host must equal. When a proxy tells us the
- * external scheme, it must match too; TLS termination in front of a plain-http
- * app is the common reason not to require it unconditionally.
+ * 历史背景（保留，因为它是这个守卫存在的理由）：不能用 `request.nextUrl.origin`。
+ * Next 会把它归一化成 dev server 配置的 host，只要访客从另一个名字进来
+ * （`127.0.0.1` 与 `localhost`、LAN 地址、反代的公网域名）就会不一致，导致合法请求
+ * 被 403（实测：从 `127.0.0.1:3000` 的标签页发 `POST /api/account/avatar`）。
+ * 用请求自己的 `Host` 才是浏览器实际连的权威。
  */
-export function isSameOriginRequest(request: {
-  /** Only `get` is used, so a plain header bag satisfies this too. */
+import { isSameOriginRequest } from '@stackpanel/sdk';
+
+export { isSameOriginRequest };
+
+/** 只为保持既有调用点的类型可读性；行为完全由 spec 决定。 */
+export type SameOriginRequest = {
+  /** 只用到 `get`，所以普通 header bag 也满足。 */
   headers: { get(name: string): string | null };
-}): boolean {
-  const origin = request.headers.get('origin');
-  // Browsers always send `Origin` on non-GET/HEAD requests, and a caller that
-  // omits it is not a browser making a legitimate form/fetch call.
-  if (!origin) return false;
-  const firstValue = (value: string | null): string | undefined =>
-    value?.split(',')[0]?.trim() || undefined;
-  const host = firstValue(request.headers.get('x-forwarded-host')) ?? request.headers.get('host');
-  if (!host) return false;
-  let url: URL;
-  try {
-    url = new URL(origin);
-  } catch {
-    return false;
-  }
-  if (url.host !== host) return false;
-  const proto = firstValue(request.headers.get('x-forwarded-proto'));
-  // `Origin` also carries the scheme (e.g. `https://host`), so compare it against
-  // what the proxy reports rather than the server's own `req.protocol`.
-  if (proto && url.protocol !== `${proto}:`) return false;
-  return true;
-}
+};

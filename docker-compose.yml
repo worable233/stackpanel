@@ -312,6 +312,10 @@ services:
       NODE_OPTIONS: ${WEB_NODE_OPTIONS:---max-old-space-size=1536}
       API_BASE_URL: ${API_BASE_URL:-http://api:3001}
       WEB_PORT: '3000'
+      # 单端口模式：Web 把内核的全部机器面前缀（/api/v1、/themes、/plugins…）也
+      # 转发给 API，于是反代只需要一个 upstream。默认关闭（见
+      # docs/DEPLOY-REVERSE-PROXY.md §4）。
+      STACKPANEL_SINGLE_PORT: ${STACKPANEL_SINGLE_PORT:-0}
       JWT_SECRET: ${JWT_SECRET}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-sp_session}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-43200}

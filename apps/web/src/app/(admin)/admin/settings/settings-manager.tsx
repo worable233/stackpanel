@@ -10,6 +10,7 @@ import { SectionTitle } from '@stackpanel/ui';
 
 import { useActionState, useId, useState, useTransition, type ReactNode } from 'react';
 import { SettingsSections } from '@/components/settings-sections';
+import { ProxyCheckSettings } from './proxy-check-settings';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type {
@@ -44,6 +45,7 @@ import {
   ArrowUpCircle,
   SlidersHorizontal,
   PanelsTopLeft,
+  Network,
 } from 'lucide-react';
 import {
   clearPlatformBrandAction,
@@ -167,6 +169,12 @@ export function SettingsManager({
         ]
       : []),
     ...pluginSections.map((section) => ({ ...section, Icon: Plug })),
+    {
+      id: 'proxyCheck',
+      title: t('admin.settings.proxyCheck.title'),
+      Icon: Network,
+      content: <ProxyCheckSettings />,
+    },
     {
       id: 'advanced',
       title: t('admin.settings.advanced.title'),

@@ -145,8 +145,21 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel:1.2.3
 
 ## 5. 反代模板（自建 nginx / Traefik / 面板）
 
+> **⚠️ 用 1Panel / 宝塔 / 群晖这类面板，先读 [`docs/DEPLOY-REVERSE-PROXY.md`](../docs/DEPLOY-REVERSE-PROXY.md)。**
+>
+> 面板会在站点配置里生成 `location ^~ / { include proxy/*.conf; }`，它会让仓库里
+> **旧版**模板的正则 `location ~ ^/(api/v1|…)` **静默失效** —— 语法完全合法、
+> `nginx -t` 也通绿，症状却是「页面正常，插件前端 / 主题资源 / 支付回调全 404」。
+> 现在的模板一条正则都没有（全 `^~`），并且由生成器按拓扑产出：
+>
+> ```bash
+> node scripts/proxy-config.mjs --topology container --domain sp.example.com \
+>   --real-ip-from 172.18.0.0/16 --out /etc/nginx/conf.d/stackpanel.conf
+> node scripts/proxy-verify.mjs --base https://sp.example.com
+> ```
+
 仓库自带的 Caddy（`docker/Caddyfile`，compose 的 `https` profile）已经处理好路由。
-自己挂反代（1Panel、宝塔、群晖、K8s Ingress）时**必须把 API 的 13 个前缀单独转发**，
+自己挂反代（1Panel、宝塔、群晖、K8s Ingress）时**必须把 API 的这些前缀单独转发**，
 漏一个就是「页面正常但插件前端 / 主题资源 / 支付回调 404」：
 
 ```
@@ -155,8 +168,9 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel:1.2.3
 /health   /ready         /version
 ```
 
-其余（含 Web 自己的 BFF：`/api/notifications`、`/api/llm-gateway/*`、`/api/catalog/*`、
-`/api/store/*`）转发到 web(3000)。现成模板：
+`/api/v1/` 是内核的**全部**路由；`/api/` 下不带 v1 的路径（`account`、`agent`、
+`notifications`、`plugins`、`store`、`frontend-abi`、`action-flash`、
+`admin/notifications`）是 Web 自己的 BFF，必须转发到 web(3000)。现成模板：
 
 - `docker/proxy/nginx.conf.example`
 - `docker/proxy/traefik.yml.example`
@@ -171,24 +185,48 @@ bash scripts/deploy.sh --cluster --image ghcr.io/<owner>/stackpanel:1.2.3
 
 ```nginx
 map $http_x_forwarded_proto $sp_forwarded_proto {
-    default $http_x_forwarded_proto;   # 优先透传 CDN 写的
-    ''      $scheme;                   # 上游没写时才兜底
+    default $http_x_forwarded_proto;   # 优先透传 CDN / 上一跳写的
+    ''      https;                     # 上游没写时按**对外**协议兜底
+}
+map $http_forwarded_port $sp_forwarded_port {
+    default $http_forwarded_port;
+    ''      443;
 }
 proxy_set_header X-Forwarded-Proto $sp_forwarded_proto;
-proxy_set_header X-Forwarded-Port  $server_port;
+proxy_set_header X-Forwarded-Port  $sp_forwarded_port;
 ```
 
-（本站**只**经 CDN 的 TLS 暴露、且 CDN 不回写这个头时，把兜底那一行改成 `https`。）
-Caddy 与 Traefik 自动处理这一项，只有手写 nginx 会错。
+兜底那一行取 `https` 还是 `$scheme` 取决于**你自己这一跳**是不是 TLS 终点：TLS 在
+本机 nginx 终止 → `$scheme`；TLS 在 CDN / 面板终止（回源 http）→ 必须是 `https`。
+生成器按 `--topology` 自动选（`same-host`/`container` → `$scheme`，`cdn` → `https`）。
 
-**API 前缀用 `^~`**：1Panel / 宝塔 的站点配置里常有 `location ^~ /api/`，nginx
-先匹配 `^~` 再看正则，裸正则版本会被静默吞掉，`/api/v1/*` 全部落到 Web 上游 → 404。
+Caddy 与 Traefik 会自动设置这个头，只有手写 nginx 需要留神 —— 但**只要它们自己
+也被另一个反代挡在后面**，上游的 proto 会被它们覆盖，症状与手写版完全相同。
+
+**API 前缀用 `^~`**：面板站点配置里的 `location ^~ /` 会先匹配 `^~` 再看正则，裸正则
+版本会被静默吞掉，`/api/v1/*` 全部落到 Web 上游 → 404。仓库模板与 `sp-common.conf`
+已全用 `^~`，并由 `apps/web/tests/proxy-template-routing.test.ts` 真起 nginx 逐条断言。
+
+**反代网段必须被信任**：反代在另一个 docker 网络（1Panel 的 `172.18.0.0/16`）时，
+内核默认不采信它带来的 `X-Forwarded-For`，于是**所有访客共用一个 IP** —— 按 IP 的
+限流、验证码冷却、封禁、审计全部失真。反代侧加 `set_real_ip_from`，内核侧把网段写进
+`API_TRUST_PROXY`（§3.3 / 部署文档 §2.3）。
+
+**配完必须验证**：`GET /ready` 的 `proxy` 子项、后台「系统设置 → 反代自检」、
+或一条命令 `node scripts/proxy-verify.mjs --base https://你的域名`。不要凭感觉。
 
 **真实客户端 IP**：反代前面还有 CDN / 云负载均衡时，必须让反代信任那些回源网段
 （nginx：`set_real_ip_from` + `real_ip_recursive on`；Traefik：`forwardedHeaders.trustedIPs`），
 否则内核看到的所有访客都是同一个地址——按 IP 的限流、验证码冷却、封禁与审计会全部失真。
-内核侧 `API_TRUST_PROXY` 默认 `loopback,linklocal,uniquelocal`（所有 RFC1918 私网），
-容器网络里的反代本来就落在私网，因此通常不用改；公网伪造的 `X-Forwarded-For` 依旧无效。
+内核侧 `API_TRUST_PROXY` 默认 `loopback,linklocal,uniquelocal`（loopback + 链路本地 +
+所有 RFC1918 私网）。Docker 与常见面板网络（1Panel 的 `172.18.x`、宝塔、群晖）都落在
+这些段里，所以常见布局**不需要改**；但反代在公网（CDN / 云 LB / 另一台机器）时**必须**
+显式加上它的地址，否则所有访客会被识别成同一个 IP，按 IP 的限流、验证码冷却、封禁与
+审计全部失真（症状是「整站被限流」，几乎不会联想到反代）。
+
+不要信「配了就一定对」：配完用 `GET /api/v1/system/proxy-check` 验一遍（需要管理员），
+或用 `node scripts/proxy-verify.mjs` 一条命令跑完整的断言矩阵 —— 它会告诉你协议头、
+真实 IP、前缀路由是否真的生效，而不是让你去猜。
 
 ## 6. 首次启动：管理员、信任根、版本
 
@@ -242,14 +280,20 @@ docker compose start api worker web
 | `GET /health` | 存活探针（不碰依赖） | 200 `{"status":"ok","version":"…"}` |
 | `GET /ready` | 就绪探针（真连 DB / Redis / 存储 / 待生成前端） | 200；任一不可用 → 503，body 里带具体项 |
 | `GET /version` | 构建身份 + 信任根 + 反代配置 | 200 |
+| `GET /api/v1/system/proxy-check` | 反代自检（管理员） | 200；每条不通过项带可执行修复文案 |
 
 `/ready` 的响应里带 `memory: { heapUsed, heapTotal, heapLimit, rss }`（单位 MiB）。
 容器被 OOM 打出 500 时往往连 `docker exec` 都进不去，这是唯一还能从外部看到的
 内存视角；堆用到 `heapLimit` 的 85% 以上时会额外带 `memoryPressure: true`，
 监控据此在 OOM **之前**报警。
 
+`/ready` 还带 `proxy: { trusted, clientIp, peer, proto }`：反代有没有把访客真实 IP
+传进来，**不需要登录**就能一眼看到。`trusted=false` 且实际有 `X-Forwarded-For` 就是
+「全员共用一个 IP」的现场（见 §5）。
+
 编排里建议：`livenessProbe` 用 `/health`（快、不依赖下游），`readinessProbe` 用 `/ready`
-（失败就把流量摘掉，而不是重启容器）。
+（失败就把流量摘掉，而不是重启容器）。`proxy` 与 `memory` 都**不参与** 503 判定 ——
+配置不对仍然能服务，摘流量只会让故障扩大。
 
 ### 内存：默认值与扩容公式
 
