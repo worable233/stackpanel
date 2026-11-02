@@ -1328,6 +1328,7 @@
     },
     "request": {
       "invalid": "Invalid request",
+      "unsupported_media_type": "このファイル形式には対応していません。一般的な形式でお試しください。",
       "not_found": "Resource not found",
       "conflict": "Operation conflict, please refresh and retry",
       "rate_limited": "Too many requests, please try again later",

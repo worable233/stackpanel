@@ -408,11 +408,27 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label htmlFor="brand-logo">{t('admin.settings.brand.uploadLogo')}</Label>
-            <Input id="brand-logo" name="logo" type="file" accept="image/*" />
+            {/*
+              列出具体格式而不是 `image/*`：文件选择器里能用 `image/*` 挑中 .ico，
+              但浏览器对它的类型判定不稳定（有些系统报 `image/x-icon`，有些干脆
+              不给），服务端 415 要等到上传完才知道。同时把 `.ico` 显式写上，
+              因为部分平台（主要看扩展名）不会把它归到 `image/*` 里。
+            */}
+            <Input
+              id="brand-logo"
+              name="logo"
+              type="file"
+              accept=".svg,.png,.jpg,.jpeg,.webp,.gif,.ico,image/svg+xml,image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon"
+            />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="brand-favicon">{t('admin.settings.brand.uploadFavicon')}</Label>
-            <Input id="brand-favicon" name="favicon" type="file" accept="image/*" />
+            <Input
+              id="brand-favicon"
+              name="favicon"
+              type="file"
+              accept=".svg,.png,.jpg,.jpeg,.webp,.gif,.ico,image/svg+xml,image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon"
+            />
           </div>
         </div>
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}

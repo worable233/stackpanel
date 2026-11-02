@@ -1328,6 +1328,7 @@
     },
     "request": {
       "invalid": "Invalid request",
+      "unsupported_media_type": "지원하지 않는 파일 형식입니다. 일반적인 형식으로 다시 시도하세요.",
       "not_found": "Resource not found",
       "conflict": "Operation conflict, please refresh and retry",
       "rate_limited": "Too many requests, please try again later",

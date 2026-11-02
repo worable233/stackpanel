@@ -1,14 +1,17 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
+  type BrandKind,
   brandFileUrl,
   BrandError,
   clearBrandFile,
+  detectContentType,
   readBrandFiles,
   validateBrandFile,
   writeBrandFile,
 } from '../lib/platform-brand.ts';
 import { getPlatformInfo, setPlatformInfo } from '../lib/platform-info.ts';
+import { buildProblem } from '../lib/problem.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { requireAuth, requireRole } from '../plugins/auth.ts';
 
@@ -81,11 +84,21 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
   app.post('/admin/platform/brand', { preHandler: adminOnly }, async (request, reply) => {
     const changes: string[] = [];
     try {
-      for (const kind of ['logo', 'favicon'] as const) {
-        const part = await request.file();
-        if (!part) continue;
+      // 与**表单字段名**对齐，而不是拿循环变量当类型。原来的写法把
+      // `kind` 当作存储目标，而 `kind` 只是循环下标：只传 favicon 时，第一个
+      // part 的 `fieldname` 是 `favicon`，但 `kind` 是 `logo`，于是 favicon
+      // 的字节被写进了 `brand/logo`，而 `brand/favicon` 保持默认——
+      // 用户上传成功、看到「已保存」，图标却根本没变。
+      while (true) {
+        const part = await request.file().catch(() => null);
+        if (!part) break;
         const field = part.fieldname;
-        if (field !== 'logo' && field !== 'favicon') continue;
+        if (field !== 'logo' && field !== 'favicon') {
+          // 排空丢弃，否则 multipart 流会卡在下一个 part。
+          await part.toBuffer().catch(() => undefined);
+          continue;
+        }
+        const kind: BrandKind = field;
         const data = await part.toBuffer();
         const ext = validateBrandFile(kind, part.filename, data);
         await writeBrandFile(kind, ext, data);
@@ -93,7 +106,22 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
       }
     } catch (err) {
       if (err instanceof BrandError) {
-        return reply.code(err.status).send({ error: err.message });
+        // 走 problem-details 而不是 `{ error }`：只有带稳定 `code` 的那一半能到
+        // 用户眼前（ADR-0012），`detail` 里的中文原文只进日志。原来这里回的是
+        // 裸 `{ error }`，经 `onSend` 归一化后 code 只剩通用 `request.invalid`，
+        // 用户永远看不到「为什么被拒」。
+        return reply.code(err.status).send(
+          buildProblem({
+            status: err.status,
+            // 415 → 格式不支持；413/400 各自都有自己的稳定 code（`codeForStatus`
+            // 的默认表已经包含它们）。把三种错误都塞进 415 的 code 会让「文件太大」
+            // 也提示「格式不支持」。
+            ...(err.status === 415 ? { code: 'request.unsupported_media_type' } : {}),
+            detail: err.message,
+            instance: request.url,
+            requestId: request.id,
+          }),
+        );
       }
       throw err;
     }
@@ -134,12 +162,10 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
 }
 
 async function sendBrandFile(reply: FastifyReply, data: Buffer) {
-  // All seeded/validated uploads are PNG at minimum; detect from magic bytes.
-  const isSvg = data.length > 4 && data.subarray(0, 5).toString('ascii') === '<?xml';
-  const isPng = data.length > 8 && data.subarray(0, 8).toString('hex') === '89504e470d0a1a0a';
-  if (isSvg) return reply.type('image/svg+xml').send(data);
-  if (isPng) return reply.type('image/png').send(data);
-  return reply.type('image/webp').send(data);
+  // 与写入对象时用的是**同一个**探测函数。这条分支以前写着「非 SVG 非 PNG 就当
+  // webp」，于是 GIF/JPEG/ICO 都以 `image/webp` 发出去：浏览器拿到一个它解不了
+  // 的 MIME，表现就是图标不显示。
+  return reply.type(detectContentType(data)).send(data);
 }
 
 function isHttpUrl(value: string): boolean {

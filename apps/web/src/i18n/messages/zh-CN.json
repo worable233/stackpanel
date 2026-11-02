@@ -1328,6 +1328,7 @@
     },
     "request": {
       "invalid": "请求无效",
+      "unsupported_media_type": "不支持该文件格式，请换用常见格式后重试",
       "not_found": "资源不存在",
       "conflict": "操作冲突，请刷新后重试",
       "rate_limited": "操作太频繁，请稍后再试",

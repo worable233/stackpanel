@@ -1328,6 +1328,7 @@
     },
     "request": {
       "invalid": "請求無效",
+      "unsupported_media_type": "不支援該文件格式，請換用常見格式後重試",
       "not_found": "資源不存在",
       "conflict": "操作衝突，請重新整理後重試",
       "rate_limited": "操作太頻繁，請稍後再試",

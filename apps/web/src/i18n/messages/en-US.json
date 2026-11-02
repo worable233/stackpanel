@@ -1328,6 +1328,7 @@
     },
     "request": {
       "invalid": "Invalid request",
+      "unsupported_media_type": "That file format is not supported. Try a common format instead.",
       "not_found": "Resource not found",
       "conflict": "Operation conflict, please refresh and retry",
       "rate_limited": "Too many requests, please try again later",
