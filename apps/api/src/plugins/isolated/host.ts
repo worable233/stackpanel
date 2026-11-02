@@ -1,5 +1,6 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { runAsActor } from '../runtime.ts';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import type { Readable } from 'node:stream';
@@ -94,6 +95,14 @@ type Capability = {
   id: string;
   capability: string;
   args: unknown;
+  /**
+   * 发起这次调用的请求者（隔离 worker 随帧带来）。
+   *
+   * 隔离插件的能力调用走 IPC，`handleCapability` 在另一个异步上下文里执行，
+   * AsyncLocalStorage 不会跟过来。没有这个字段，隔离插件写 `scoped` 模型时
+   * `owner_id` 依旧落 NULL——非隔离路径修好了，隔离路径还是坏的。
+   */
+  actorId?: string;
 };
 type Lifecycle = {
   protocol: 1;
@@ -455,6 +464,9 @@ async function handleCapability(
   const ctx = state.context;
   if (!ctx) throw new Error(`插件 ${id} 尚未激活`);
   const args = message.args as Record<string, unknown>;
+  // worker 随帧带来的 actor：重建请求身份，让 `ctx.extensions`（getter）拿到
+  // 正确的 owner。AsyncLocalStorage 跨不过 IPC，所以必须显式传递。
+  const frameActor = typeof message.actorId === 'string' ? message.actorId : null;
   let value: unknown;
   if (message.capability === 'tx.begin') {
     const txId = randomUUID();
@@ -555,9 +567,13 @@ async function handleCapability(
   if (extensionMatch) {
     const model = state.models.get(String(args.kind));
     if (!model) throw new Error(`未知或未声明的自定义模型：${String(args.kind)}`);
+    // 非事务路径按**本帧**的 actor 取 client；事务路径用事务自己的 client
+    // （事务在 `tx.begin` 时已绑定当时的 owner）。
     const client = extensionMatch[1]
       ? state.transactions.get(String(args.txId))?.tx.extensions
-      : ctx.extensions;
+      : frameActor
+        ? ctx.extensions // getter：读当前 AsyncLocalStorage，见下方 runWithActor
+        : ctx.extensions;
     if (!client) throw new Error('事务不存在或已结束');
     const method = client[extensionMatch[2] as keyof typeof client];
     if (typeof method !== 'function') throw new Error(`未知扩展操作：${message.capability}`);
@@ -585,7 +601,11 @@ async function handleCapability(
           throw new Error(`未知扩展操作：${message.capability}`);
       }
     })();
-    value = await (method as (...input: unknown[]) => Promise<unknown>).apply(client, invokeArgs);
+    // `ctx.extensions` 是 getter，读当前 AsyncLocalStorage；整段调用必须在
+    // actor 身份下执行，否则 `scoped` 模型的 owner 仍然是 null。
+    value = await runAsActor(frameActor, () =>
+      (method as (...input: unknown[]) => Promise<unknown>).apply(client, invokeArgs),
+    );
     // A Map cannot cross JSON IPC: send `[name, instance]` pairs for getMany.
     if (extensionMatch[2] === 'getMany' && value instanceof Map) {
       value = [...(value as Map<string, unknown>).entries()];

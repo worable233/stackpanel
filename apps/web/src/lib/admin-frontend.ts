@@ -5,7 +5,7 @@ import type {
   FrontendActionExecutors,
   FrontendManifest,
 } from '@stackpanel/sdk';
-import { matchFrontendPagePath } from '@stackpanel/sdk';
+import { ApiError, matchFrontendPagePath } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
 import {
   candidateAdmitsServerExecution,
@@ -37,6 +37,8 @@ export type PluginAdminRouteResult =
       componentId: string;
       settings: FrontendSettings;
       data: Record<string, unknown>;
+      /** 数据需求的真失败；缺席表示全部成功（见 AdminPageComponentProps）。 */
+      dataErrors?: Array<{ as: string; code?: string; requestId?: string }>;
       actions: FrontendActionExecutors;
       params: Record<string, string>;
       /**
@@ -150,14 +152,34 @@ export async function resolvePluginAdminRoute(
     pluginId,
     componentId: route.component,
     settings,
-    data: await executePageData(route.data ?? [], {
-      finders: mergedFinders,
-      params,
-      settings,
-      session: { role: 'ADMIN' },
-      api,
-      isAllowed: (permission) => isAllowed(api, permission),
-    }),
+    // 与 pages.ts 一致：真失败收集成 `dataErrors`，让插件页面能区分
+    // “真的没有数据”和“读失败了”——否则页面只能 `?? []`，把报错渲染成空态。
+    ...(await (async () => {
+      const dataErrors: Array<{ as: string; code?: string; requestId?: string }> = [];
+      const data = await executePageData(route.data ?? [], {
+        finders: mergedFinders,
+        params,
+        settings,
+        session: { role: 'ADMIN' },
+        api,
+        isAllowed: (permission) => isAllowed(api, permission),
+        onFailure: (failure) => {
+          const error = failure.error;
+          const code = error instanceof ApiError ? error.code : undefined;
+          const requestId = error instanceof ApiError ? error.requestId : undefined;
+          dataErrors.push({
+            as: failure.as,
+            ...(code ? { code } : {}),
+            ...(requestId ? { requestId } : {}),
+          });
+          if (error instanceof Error) {
+            // i18n-exempt: server-side diagnostic log, never rendered to a user.
+        console.error(`[page-data] ${failure.as} failed: ${error.message}`);
+          }
+        },
+      });
+      return { data, ...(dataErrors.length > 0 ? { dataErrors } : {}) };
+    })()),
     actions: bindPluginActions(
       pluginId,
       candidate.manifest.actions,

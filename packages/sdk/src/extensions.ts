@@ -114,6 +114,16 @@ export interface ExtensionCreateOptions {
   labels?: Record<string, string>;
   annotations?: Record<string, string>;
   ownerId?: string | null;
+  /**
+   * Initial status for resources that model a lifecycle.
+   *
+   * 没有它，`create` 只能把 `status` 写成 NULL：插件想表达「新建即 IDLE /
+   * PENDING」时**没有任何途径**，只能先 create 再 update——而两步之间那条
+   * 记录对读者就是“没有状态”的，状态机初始化因此缺失。
+   *
+   * 值为 `null` 与“不传”等价（保持历史行为）；传对象时按 JSONB 原样存。
+   */
+  status?: Record<string, unknown> | null;
 }
 
 export interface ExtensionUpdateOptions {

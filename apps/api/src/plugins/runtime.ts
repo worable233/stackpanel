@@ -63,6 +63,30 @@ import { OutboxEventBus, outboxOrigin, serializeOutboxBody } from './events.ts';
 const txContext = new AsyncLocalStorage<ExtensionTransaction>();
 
 /**
+ * 当前请求的操作者。
+ *
+ * 为什么需要它：插件的 `ctx.extensions` 是**激活时**绑定一次的固定 client，
+ * 它的 `ownerId` 恒为 `null`（系统上下文）。于是插件在响应 HTTP 请求时写
+ * `scoped` 模型，`owner_id` 会落成 NULL——而同一个模型的列表又是按当前用户
+ * 过滤的，于是用户看到「添加成功」+「列表空」，数据静默变孤儿。
+ *
+ * 内核不能在激活时就固定一个 owner（激活是全局行为，与谁在操作无关），所以
+ * 只能按**请求**注入。用 AsyncLocalStorage 而不是把 actor 塞进每个插件方法
+ * 签名：后者要改插件 ABI，而这里的信息（谁发的这个请求）本来就是内核已知的。
+ *
+ * 只在插件路由分发期间生效；定时任务/事件回调没有请求上下文，保持 null（即
+ * 系统上下文），这与它们本来就不该代表某个用户相符。
+ */
+const actorContext = new AsyncLocalStorage<string>();
+
+/** 在某个 actor 的身份下运行 `fn`（插件路由分发用）。 */
+export function runAsActor<T>(actorId: string | null, fn: () => T): T {
+  // null 时不建立上下文：保留“系统上下文”语义，避免把匿名访客当成某个 owner。
+  if (!actorId) return fn();
+  return actorContext.run(actorId, fn);
+}
+
+/**
  * 隔离 worker 崩溃后的自动重启策略。
  *
  * 改造前：worker 一旦退出就只打一行 `quarantined`，随后**永久失败且没有任何
@@ -901,11 +925,30 @@ export class PluginRuntime {
     if (dependents.length > 0) {
       throw new Error(`插件 ${id} 被已启用的插件依赖：${dependents.join(', ')}`);
     }
+    /**
+     * 先关闸门，再拆内部状态。
+     *
+     * `isActive()` 是 dispatcher 判定路由能不能进的唯一依据（`>plugin.state
+     * === 'active'`）。之前 `onDeactivate` 在 `state = 'registered'` **之前**
+     * 执行，而那些钩子会 `resetContext()`（插件侧清掉 bind 的 ctx、extensions、
+     * tx）—— 于是中间存在一个窗口：插件已经“卸下内部装备”，但对外的路由还
+     * 判定为 active。落进这个窗口的请求会拿到 `zjmf.not_ready` 这类“未就绪”
+     * 错误，而不是干净的 404。
+     *
+     * 实测现场：一次创建操作之后，接下来十几分钟内所有 GET 都是 not_ready，
+     * 页面把错误渲染成「还没有上游」——数据在库里，用户却看不到。
+     *
+     * 顺序改为：
+     *  1. 先把 state 改成 registered（新请求立刻被挡成 404）；
+     *  2. 再等已经进来的请求跑完（waitForDrain）；
+     *  3. 最后跑 `onDeactivate` 拆自己。
+     * 这样「拆装备」发生在**确认没人还在用**之后。
+     */
+    plugin.state = 'registered';
+    await this.waitForDrain(plugin);
     if (plugin.definition.onDeactivate) {
       await plugin.definition.onDeactivate(this.context(plugin.definition));
     }
-    plugin.state = 'registered';
-    await this.waitForDrain(plugin);
     plugin.effects.dispose();
     this.options.events.publish('plugin.deactivated', { pluginId: id });
     this.options.extensions.unregisterModels(id);
@@ -1077,6 +1120,8 @@ export class PluginRuntime {
 
   private context(definition: PluginDefinition): PluginContext {
     const pluginId = definition.manifest.id;
+    // getter 里需要 `this`：`ctx` 在激活期内是同一对象，而 owner 随请求变化。
+    const self = this;
     const base = this.options.logger;
     const logger: PluginLogger = {
       info: (message: string) => base.info(`[plugin:${pluginId}] ${message}`),
@@ -1087,7 +1132,12 @@ export class PluginRuntime {
       manifest: definition.manifest,
       logger,
       events: this.options.events,
-      extensions: this.options.extensions.client(pluginId, null),
+      // `scoped` 模型的 owner 取**当前请求的操作者**，而不是激活时固定的 null。
+      // getter 而不是快照值：`ctx` 在整个激活期内是同一个对象，而 actor 随
+      // 每个请求变化；写成固定值就等于把第一个请求的身份烙死。
+      get extensions(): PluginContext['extensions'] {
+        return self.options.extensions.client(pluginId, actorContext.getStore() ?? null);
+      },
       tx: <T>(fn: (tx: ExtensionTransaction) => Promise<T>): Promise<T> => {
         // 允许嵌套：已经有外层事务时直接「加入」它（join 语义），而不是报错。
         // 报错会让所有在事务内触发的插件钩子必然失败一次——例如 outbox relay 在

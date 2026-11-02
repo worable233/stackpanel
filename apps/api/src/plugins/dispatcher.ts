@@ -15,6 +15,7 @@ import { normalizeErrorBody } from '../lib/problem.ts';
 import { runIdempotent } from '../lib/idempotency.ts';
 import { enforceTokenQuota } from '../lib/open-api-guard.ts';
 import { invokeRouteHandler } from '../lib/route-handler.ts';
+import { runAsActor } from './runtime.ts';
 
 /** Open-platform metadata carried by a `/api/v1` alias route. */
 export interface DispatcherOpenApi {
@@ -209,7 +210,12 @@ export class PluginDispatcher {
           : {}),
         ...(request.sessionToken ? { sessionToken: request.sessionToken } : {}),
       };
-      const result = await (match.route.handler as RouteHandler)(req, reply);
+      // 在操作者身份下分发：插件写 `scoped` 模型时 `ctx.extensions` 会拿到
+      // 这个 owner，而不是恒为 null（那会让 `owner_id` 落成 NULL，数据静默
+      // 变孤儿）。
+      const result = await runAsActor(request.user?.id ?? null, () =>
+        (match.route.handler as RouteHandler)(req, reply),
+      );
       if (!reply.sent && !reply.raw.headersSent) {
         reply.send(result);
       }

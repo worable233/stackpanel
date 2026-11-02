@@ -761,6 +761,16 @@ export interface AdminPageComponentProps {
   params: Record<string, string>;
   settings: FrontendSettings;
   data: Record<string, unknown>;
+  /**
+   * 数据需求的**真失败**（不是“没权限”也不是“不存在”）。
+   *
+   * 没有这个字段时，接口报错会让 `data[as]` 直接缺席，而页面只能写
+   * `data?.upstreams ?? []` —— 于是「读失败」被渲染成「还没有上游」。用户
+   * 看到的是一个合法空态，实际上数据就在库里。
+   *
+   * 只有稳定 code 与 reqId（ADR-0012），原文进服务端日志。缺席 = 全部成功。
+   */
+  dataErrors?: Array<{ as: string; code?: string; requestId?: string }>;
   actions: FrontendActionExecutors;
   /** Resolved interface locale as a BCP 47 tag (ADR-0016 §6). */
   locale?: string;

@@ -69,6 +69,7 @@ export function AdminPluginPage({
           componentId: result.componentId,
           settings: result.settings as unknown as Record<string, unknown>,
           data: result.data,
+          ...(result.dataErrors ? { dataErrors: result.dataErrors } : {}),
           actions: result.actions as unknown as Record<string, unknown>,
           params: result.params,
         }}
@@ -91,6 +92,7 @@ export function AdminPluginPage({
     params: result.params,
     settings: result.settings,
     data: result.data,
+    ...(result.dataErrors ? { dataErrors: result.dataErrors } : {}),
     // Same wrapping as the runtime-loading path: one host-side toast, and the
     // page still gets `{ ok, error }` back from the action it awaits.
     actions: wrapPluginActions(result.actions, t),

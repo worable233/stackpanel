@@ -9,6 +9,7 @@ import type {
   FrontendSettings,
   FrontendPageSource,
 } from '@stackpanel/sdk';
+import { ApiError } from '@stackpanel/sdk';
 import {
   captureFrontendPathParams,
   resolveFrontendPageSource,
@@ -35,6 +36,11 @@ export interface PageResolution {
   layout: FrontendLayoutComponent | null;
   settings: FrontendSettings;
   data: Record<string, unknown>;
+  /**
+   * 数据需求的真失败（见 `AdminPageComponentProps.dataErrors`）。
+   * 缺席 = 全部成功，保持旧行为。
+   */
+  dataErrors?: Array<{ as: string; code?: string; requestId?: string }>;
   params: Record<string, string>;
   source: FrontendPageSource;
   actions: FrontendActionExecutors;
@@ -105,14 +111,14 @@ export async function resolveFrontendRoute(
         component,
         layout: definition.layout ? (themePkg?.layouts?.[definition.layout] ?? null) : null,
         settings,
-        data: await resolvePageData(
+        ...(await resolvePageData(
           definition,
           finders,
           routeParams,
           settings,
           fallback,
           searchParams,
-        ),
+        )),
         params: routeParams,
         source,
         fallback: isFallbackPagePattern(definition.path),
@@ -164,14 +170,14 @@ export async function resolveFrontendRoute(
           themePkg?.layouts?.['theme'] ??
           (definition.layout ? (pkg.layouts?.[definition.layout] ?? null) : null),
         settings,
-        data: await resolvePageData(
+        ...(await resolvePageData(
           definition,
           finders,
           routeParams,
           settings,
           fallback,
           searchParams,
-        ),
+        )),
         params: routeParams,
         source,
         fallback: isFallbackPagePattern(definition.path),
@@ -341,40 +347,66 @@ async function resolvePageData(
   settings: FrontendSettings,
   fallback: Record<string, unknown>,
   searchParams: Record<string, string | string[] | undefined>,
-): Promise<Record<string, unknown>> {
-  if (!definition.data || definition.data.length === 0) return { ...fallback };
+): Promise<{ data: Record<string, unknown>; dataErrors?: Array<{ as: string; code?: string; requestId?: string }> }> {
+  if (!definition.data || definition.data.length === 0) return { data: { ...fallback } };
   const [api, session] = await Promise.all([getAuthedApiClient(), getSessionUser()]);
   // `session` 是 `AccountUser`，比 finder 要求的 `FinderSession` 更宽；只取 role。
   const finderProviders: Record<string, FinderProvider> = Object.fromEntries(
     Object.entries(finders).map(([name, entry]) => [name, entry.provider]),
   );
+  /**
+   * 收集数据需求的真错误，最终以 `dataErrors` 交给插件页面。
+   *
+   * 不把失败伪装成“空数据”：插件前端只能写 `data?.upstreams ?? []`，于是接口
+   * 报错被渲染成「还没有上游」——用户看到的是一个合法空态，而数据就在库里。
+   * 有了这个键，页面能区分“真的没有”与“读失败”。
+   */
+  const dataErrors: Array<{ as: string; code?: string; requestId?: string }> = [];
+  const resolved = await executePageData(definition.data, {
+    finders: finderProviders,
+    params,
+    searchParams,
+    settings,
+    session: session ? { role: session.role } : null,
+    api,
+    isAllowed: async (permission) => {
+      if (!session) return false;
+      try {
+        return (await api.checkPermission(permission)).allowed;
+      } catch {
+        return false;
+      }
+    },
+    onFailure: (failure) => {
+      // 只上稳定 code 与 reqId（ADR-0012）：原文进日志，界面自己决定文案。
+      const error = failure.error;
+      const code =
+        error instanceof ApiError ? error.code : error instanceof Error ? 'unknown' : undefined;
+      const requestId = error instanceof ApiError ? error.requestId : undefined;
+      dataErrors.push({
+        as: failure.as,
+        ...(code ? { code } : {}),
+        ...(requestId ? { requestId } : {}),
+      });
+      if (error instanceof Error) {
+        // i18n-exempt: server-side diagnostic log, never rendered to a user.
+        console.error(`[page-data] ${failure.as} failed: ${error.message}`);
+      }
+    },
+    onFinderSettled: (finderId, ok) => {
+      const pluginId = finders[finderId]?.pluginId;
+      if (!pluginId) return;
+      void api
+        .recordFrontendAudit('frontend.finder.call', pluginId, finderId, {
+          status: ok ? 'ok' : 'error',
+        })
+        .catch(() => undefined);
+    },
+  });
   return {
-    ...fallback,
-    ...(await executePageData(definition.data, {
-      finders: finderProviders,
-      params,
-      searchParams,
-      settings,
-      session: session ? { role: session.role } : null,
-      api,
-      isAllowed: async (permission) => {
-        if (!session) return false;
-        try {
-          return (await api.checkPermission(permission)).allowed;
-        } catch {
-          return false;
-        }
-      },
-      onFinderSettled: (finderId, ok) => {
-        const pluginId = finders[finderId]?.pluginId;
-        if (!pluginId) return;
-        void api
-          .recordFrontendAudit('frontend.finder.call', pluginId, finderId, {
-            status: ok ? 'ok' : 'error',
-          })
-          .catch(() => undefined);
-      },
-    })),
+    data: { ...fallback, ...resolved },
+    // 只有确实失败时才出现这个键：插件据此区分“真的没有数据”与“读失败了”。
+    ...(dataErrors.length > 0 ? { dataErrors } : {}),
   };
 }
 

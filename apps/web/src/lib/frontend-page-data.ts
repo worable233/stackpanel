@@ -139,6 +139,18 @@ function kernelFetchRunner(api: ApiClient): FetchRunner {
  * 失败语义：单条需求失败**不影响**其它需求，该键直接从结果里缺席——页面据此渲染
  * 「暂无数据」。整页 500 会让「某个小部件没权限」变成「整页打不开」。
  */
+/**
+ * 一条页面数据需求失败。
+ *
+ * `as` 是对应到 `props.data[as]` 的键；插件可以据此区分「这个键缺席是因为
+ * 权限/不存在」还是「读失败了」。
+ */
+export interface PageDataFailure {
+  as: string;
+  finder?: string;
+  error: unknown;
+}
+
 export async function executePageData(
   requirements: readonly FrontendPageDataRequirement[],
   options: {
@@ -160,6 +172,18 @@ export async function executePageData(
     isAllowed: (permission: string) => Promise<boolean>;
     /** 测试注入点；默认走内核 API 客户端。 */
     fetchJson?: FetchRunner;
+    /**
+     * 数据需求失败的收集器（只用于**真错误**，不含权限门禁）。
+     *
+     * 为什么需要：失败时 `data` 里那条需求直接缺席，而插件前端只能写成
+     * `data?.upstreams ?? []` —— 于是接口报错被渲染成「还没有上游」。
+     * 用户看到的是一个**合法空态**，而实际上数据就在库里，只是读失败了。
+     *
+     * 不能简单地“失败就抛”：权限门禁（`isAllowed` 返回 false）与“包内没有
+     * 这个 finder”都属于**策略性缺席**，抛出去会把正常的受限页面变成 500。
+     * 所以只把真异常（网络/5xx/插件报错）报到 `failures`，由渲染层决定怎么显。
+     */
+    onFailure?: (failure: PageDataFailure) => void;
   },
 ): Promise<Record<string, unknown>> {
   const searchParams = options.searchParams ?? {};
@@ -200,11 +224,20 @@ export async function executePageData(
             return [requirement.as, value] as const;
           } catch (error) {
             options.onFinderSettled?.(finderId, false);
-            throw error;
+            // 在这里**消费**掉：下面那个 catch 是给 fetch 路径兜底的，同一次
+            // 失败不能报两遍（否则页面会显示两条一模一样的“读取失败”）。
+            options.onFailure?.({ as: requirement.as, finder: finderId, error });
+            return null;
           }
         }
         return null;
-      } catch {
+      } catch (error) {
+        // 非 finder 的失败（fetch 路径）也要报上去，否则同样被 `?? []` 洗成空态。
+        options.onFailure?.({
+          as: requirement.as,
+          ...(requirement.finder ? { finder: requirement.finder } : {}),
+          error,
+        });
         return null;
       }
     }),

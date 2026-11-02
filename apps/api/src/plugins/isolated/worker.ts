@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Readable } from 'node:stream';
 import { z } from 'zod';
 import { formatMinorCurrency, toMinorUnits } from '@stackpanel/sdk';
@@ -231,6 +232,23 @@ sendHost({
   ...(unsupported.length > 0 ? { unsupported } : {}),
 });
 
+/**
+ * 当前请求的操作者（仅隔离 worker 内）。
+ *
+ * host 侧的 `ctx.extensions` 现在按请求取 owner，但隔离插件的能力调用走 IPC：
+ * `handleCapability` 在**另一个异步上下文**里执行，AsyncLocalStorage 不会跟过去。
+ * 所以 actor 必须随 capability 消息一起传，在 host 侧重建。
+ *
+ * 没有它，隔离插件写 `scoped` 模型时 `owner_id` 依旧落 NULL——非隔离路径修好了，
+ * 隔离路径还是坏的。
+ */
+const actorId = new AsyncLocalStorage<string | null>();
+
+/** 在某个 actor 身份下执行 `fn`。 */
+function runAsActor<T>(id: string | null | undefined, fn: () => T): T {
+  return actorId.run(id ?? null, fn);
+}
+
 function callHost(capability: string, args: unknown): Promise<unknown> {
   if (pending.size >= MAX_IN_FLIGHT)
     return Promise.reject(new Error('isolated plugin RPC concurrency limit exceeded'));
@@ -252,7 +270,16 @@ function callHost(capability: string, args: unknown): Promise<unknown> {
     }, RPC_TIMEOUT_MS);
     pending.set(id, { resolve, reject, timer });
     try {
-      sendHost({ protocol: RPC_PROTOCOL, pluginId, type: 'capability', id, capability, args });
+      sendHost({
+        protocol: RPC_PROTOCOL,
+        pluginId,
+        type: 'capability',
+        id,
+        capability,
+        args,
+        // host 侧用它重建 owner 上下文（见上面的 `actorId`）。
+        ...(actorId.getStore() ? { actorId: actorId.getStore() } : {}),
+      });
     } catch (error) {
       clearTimeout(timer);
       pending.delete(id);
@@ -1552,7 +1579,12 @@ process.on('message', async (raw: unknown) => {
         payload = next;
       },
     };
-    const value = await route.handler(message.request as never, replyView as never);
+    // 在请求者身份下跑 handler：其内部的 `ctx.extensions.*` 会把 owner 一起
+    // 发给 host，否则 `scoped` 模型的 `owner_id` 落成 NULL。
+    const requestUser = (message.request as { user?: { id?: string } } | undefined)?.user;
+    const value = await runAsActor(requestUser?.id, () =>
+      route.handler(message.request as never, replyView as never),
+    );
     sendHost({
       protocol: 1,
       pluginId,

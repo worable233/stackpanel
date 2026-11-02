@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   CustomModelDefinition,
   ExtensionClient,
+  ExtensionCreateOptions,
   ExtensionFinalizer,
   ExtensionInstance,
   ExtensionListResult,
@@ -528,12 +529,8 @@ class ExtensionClientImpl implements ExtensionClient {
   async create<T>(
     model: CustomModelDefinition,
     spec: T,
-    opts?: {
-      name?: string;
-      labels?: Record<string, string>;
-      annotations?: Record<string, string>;
-      ownerId?: string | null;
-    },
+    // 直接用 SDK 的选项类型，避免两处内联定义漂移（`status` 就是漏在这里）。
+    opts?: ExtensionCreateOptions,
   ): Promise<ExtensionInstance<T>> {
     const registered = this.resolve(model);
     const parsed = this.validate(model, spec);
@@ -566,7 +563,8 @@ class ExtensionClientImpl implements ExtensionClient {
       push(ownerId),
       '1',
       `${push(JSON.stringify(parsed))}::jsonb`,
-      'NULL',
+      // 允许调用方给出初始状态；不传时保持历史行为（NULL）。
+      opts?.status == null ? 'NULL' : `${push(JSON.stringify(opts.status))}::jsonb`,
       `${push(JSON.stringify(opts?.labels ?? {}))}::jsonb`,
       `${push(JSON.stringify(opts?.annotations ?? {}))}::jsonb`,
       `${push(JSON.stringify(model.finalizers ?? []))}::jsonb`,
