@@ -17,6 +17,7 @@
 import type { PluginActionResult } from '@stackpanel/sdk';
 import { toast } from '@/components/ui/toast';
 import { actionFeedbackTitle, actionSuccessTitle } from '@/components/action-feedback-toaster';
+import { useTranslator } from '@/i18n/provider';
 
 type RawAction = (formData: FormData) => Promise<unknown>;
 
@@ -36,7 +37,9 @@ export function wrapPluginActions(
       const result = (await action(formData)) as PluginActionResult | undefined;
       if (result && result.ok === false) {
         toast.error(actionFeedbackTitle(actionId, t), {
-          description: result.error,
+          // 没有诊断子原因时仍然是一个普通字符串：toast 描述保持一行文本，
+          // 不为了一个不存在的「详情」多套一层节点。
+          description: result.detail ? <ActionFailureDescription result={result} /> : result.error,
           id: `action-feedback:${actionId}:${result.error ?? ''}`,
         });
         return result;
@@ -51,6 +54,31 @@ export function wrapPluginActions(
     };
   }
   return wrapped;
+}
+
+/**
+ * 失败正文：主文案是已本地化的句子，原始原因放在可展开的「详情」里。
+ *
+ * 为什么不能直接把 `detail` 拼进句子：它是服务端/上游的原文（`支付网关返回了
+ * HTTP 502`、`商户未开通该支付方式`、`SignatureDoesNotMatch`），未本地化、可带
+ * 内部标识，不能当作面向用户的句子（ADR-0012）。也不能丢掉它：像充值这种
+ * 「支付状态无法确认」的兜底失败，没有原文就分不清是自己没配好还是网关挂了。
+ */
+function ActionFailureDescription({ result }: { result: PluginActionResult }) {
+  const t = useTranslator();
+  return (
+    <span className="flex flex-col gap-1">
+      <span className="whitespace-pre-wrap break-words">{result.error}</span>
+      {result.detail ? (
+        <details className="text-xs opacity-80">
+          <summary className="cursor-pointer select-none">
+            {t('action.feedback.detail')}
+          </summary>
+          <p className="mt-1 whitespace-pre-wrap break-words">{result.detail}</p>
+        </details>
+      ) : null}
+    </span>
+  );
 }
 
 /** Props shape shared by the admin and public render paths. */

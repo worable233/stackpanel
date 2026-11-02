@@ -106,6 +106,19 @@ export interface PluginActionResult {
    * sentence instead is exactly the bug class C-1 describes.
    */
   code?: string;
+  /**
+   * 服务端给出的**诊断子原因**（未本地化，直接来自上游或内核域服务）。
+   *
+   * 典型来源是 payment-service 的 `providerReason`：支付网关自己吐的拒绝理由
+   * （`商户未开通该支付方式`、`Payment gateway returned HTTP 502`、`签名校验失败`）。
+   * 它不能替代 `error`——那是已本地化的句子，且 ADR-0012 不允许把英文 `detail`
+   * 当作主文案上屏。但当 `error` 只能是「支付状态无法确认，订单已挂起待对账」
+   * 这种兜底句时，用户无法判断是自己没配好还是网关挂了；`detail` 就是那个
+   * 「需要时再看」的桥梁，由页面决定放在可折叠「详情」里。
+   *
+   * 为空时宁可不给：绝不把 `[object Object]` 或空字符串传给界面。
+   */
+  detail?: string;
 }
 
 /** One server-side action executor bound to a declared plugin action. */

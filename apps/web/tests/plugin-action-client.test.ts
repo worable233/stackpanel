@@ -70,4 +70,20 @@ describe('wrapPluginActions', () => {
     expect(success).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
   });
+
+  it('passes the diagnostic reason through instead of swallowing it', async () => {
+    // P1：兜底文案（「支付状态无法确认」）必须能和网关原文一起给出来，否则用户
+    // 分不清是自己没配好还是网关挂了。原文走 `detail`，主文案仍是本地化句子。
+    const result = {
+      ok: false as const,
+      error: '支付状态无法确认，订单已挂起待对账',
+      code: 'payment.undetermined',
+      detail: '支付网关返回了 HTTP 502',
+    };
+    const wrapped = wrapPluginActions({ 'wallet.create-topup': async () => result }, t);
+
+    await expect(wrapped['wallet.create-topup']!(new FormData())).resolves.toBe(result);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error.mock.calls[0]?.[1]).toMatchObject({ description: expect.anything() });
+  });
 });

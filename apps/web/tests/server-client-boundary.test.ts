@@ -158,7 +158,9 @@ describe('服务端渲染边界', () => {
   });
 
   it('客户端 action 包装层不再导出会把组件跨边界的 PluginActionScope', () => {
-    const source = readFileSync(path.join(webSrc, 'lib/plugin-action-client.ts'), 'utf8');
+    // `.tsx`：包装层现在渲染一个带「详情」折叠的 JSX 节点，所以文件后缀必须
+    // 允许 JSX。文件名变过一次，这里跟着改，否则这条门禁就是对着空文件断言。
+    const source = readFileSync(path.join(webSrc, 'lib/plugin-action-client.tsx'), 'utf8');
     expect(source).toContain('export function wrapPluginActions');
     expect(source).not.toContain('export function PluginActionScope');
   });

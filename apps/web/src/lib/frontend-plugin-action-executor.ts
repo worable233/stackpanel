@@ -93,7 +93,11 @@ export async function executePluginAction(
     // 透出稳定 code（C-1）：页面据此分支/给可操作提示，排障也能直接搜服务端日志。
     // 服务端英文 `detail` 仍然不上屏（ADR-0012）。
     const code = error instanceof ApiError ? error.code : undefined;
-    return actionFailure(message, requestId, code);
+    // 上游给出的**原始原因**（支付网关的拒绝原因、渠道返回的 message）走 `detail`。
+    // 它不能拼进 `error`（未本地化、可能带内部标识），但必须能拿到：否则
+    // 「支付状态无法确认」这种兜底句子会让用户分不清是自己没配好还是网关挂了。
+    const detail = error instanceof ApiError ? diagnosticDetail(error) : undefined;
+    return actionFailure(message, requestId, code, detail);
   }
   await api
     .recordFrontendAudit('frontend.action.execute', pluginId, actionId, { method: action.method })
@@ -276,13 +280,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Domain failure: resolve the reason so the page can render it without losing it. */
-function actionFailure(message: string, requestId?: string, code?: string): PluginActionResult {
+function actionFailure(
+  message: string,
+  requestId?: string,
+  code?: string,
+  detail?: string,
+): PluginActionResult {
   return {
     ok: false,
     error: message,
     ...(requestId ? { requestId } : {}),
     ...(code && code !== 'unknown' ? { code } : {}),
+    ...(detail ? { detail } : {}),
   };
+}
+
+/**
+ * 从 problem-details body 里取服务端 `detail`（诊断子原因）。
+ *
+ * 与 `lib/api-errors.ts` 的同名逻辑一致：只接受非空字符串，避免把对象拼成
+ * `[object Object]`。这里单独写一份是因为 `api-errors.ts` 是 `server-only`
+ * 且返回已本地化文案，而 action 需要把原文交给页面自行决定怎么展示。
+ */
+function diagnosticDetail(error: ApiError): string | undefined {
+  const details = error.details;
+  if (typeof details !== 'object' || details === null) return undefined;
+  const detail = (details as { detail?: unknown }).detail;
+  return typeof detail === 'string' && detail.trim() ? detail.trim() : undefined;
 }
 
 /**
