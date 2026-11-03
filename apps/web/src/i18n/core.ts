@@ -1,9 +1,12 @@
+// 全部来自 SDK 的 currency 子路径。从桶导入会把 zod（911 KB）拖进每个
+// 引用 translator 的 client 组件 —— 这个文件被 i18n/provider 使用，而
+// provider 挂在根 layout 上。
 import {
   formatMinorCurrency,
   minorUnitFor,
   minorUnitsToPlainString,
   toMinorUnits,
-} from '@stackpanel/sdk';
+} from '@stackpanel/sdk/currency';
 import { CATALOGS, DEFAULT_LOCALE, LOCALES, type Locale } from './config';
 
 export type MessageParams = Record<string, string | number>;

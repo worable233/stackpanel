@@ -197,11 +197,51 @@ Turbopack 当前不支持 webpack 那套 `splitChunks` 配置；退一步用 web
    验证 adapter URL 带 `?names=` 且能装载。
 5. 更新迁移文档。
 
+## 6b. 已实施（第二轮）：zod 也走了同一条路
+
+recharts 落地后继续测量，发现**真正的 zod 也是搭车成本**，成因与图表完全同构：
+
+```
+frontend-abi-bridge.tsx  import * as sdk from '@stackpanel/sdk'   // 挂在根 layout
+packages/sdk/dist/client.js  → zod
+```
+
+`@stackpanel/sdk` 的桶把 zod（911 KB 未压缩）一起带出，而这个 bridge 在**根
+layout** 上，于是每个页面首屏都有 zod。两处改动：
+
+1. bridge 里 sdk 与 ui 一起改 `await import()`（`Promise.all`）。
+2. `formatMinorCurrency` / `minorUnitFor` / `toMinorUnits` / `minorUnitsToPlainString`
+   这四个纯格式化函数加 `@stackpanel/sdk/currency` 子路径导出，
+   `cart-checkout.tsx` 与 `i18n/core.ts` 改从子路径导入（后者被
+   `i18n/provider` 使用，同样挂在根 layout 上）。
+
+`currency.ts` 只依赖 `errors.js`，不含 zod，所以子路径入口是干净的。
+
+### 累计效果
+
+| 阶段 | 未压缩 | gzip |
+|---|---|---|
+| 起点 | 3360 KB | 1028 KB |
+| 拆 recharts | 2987 KB | 916 KB |
+| 拆 zod | **2787 KB** | **862 KB** |
+
+`/login`、`/`、`/account` 三个页面的 chunk 里 zod 与 recharts 均为 0。
+chunk 数 31 → 30。
+
+### 一个差点误判的地方
+
+排查时 `grep zod` 在一个 614 KB 的 chunk 里命中 14 次，看起来 zod 还在。
+逐条看上下文才发现全是 **lucide 的星座图标名**（`zodiac-aquarius`、
+`zodiac-aries`、…）。判断「某个库是否还在 bundle 里」必须匹配库的**特征
+符号**（`ZodType` / `ZodObject` / `safeParse` / `_zod`），不能只 grep 名字。
+
 ## 7. 未纳入本方案的
 
-- **`zod`（911 KB）**：不在 ABI 白名单里，是各插件自己打包的。web 侧的 zod
-  使用是真实的（schema 校验），不能简单拆。若要继续瘦身，应单独审计 web
-  自己哪些页面真的需要 zod。
+- **`zod`（911 KB）**：**已拆**，见 §6b。仍有 6 个 admin/auth 页面从 sdk 桶
+  做运行时导入（`settings-manager`、`reseller-manager`、`setup-form`、
+  `register-form`、`reset-password-form`、`account-settings`），那些页面各自的
+  首屏会带 zod。这是按页成本，不是全局首屏问题 —— 若要继续优化，可逐个改用
+  sdk 子路径。
 - **`lucide-react`（359 KB）**：它是宿主 ABI 槽（UI 包大量依赖），拆开会导致
   图标树两份。除非改用按需图标导入，否则不动。
 - **`/admin/settings` 的 54 次内核 fan-out**：与本方案无关，属另一条优化线

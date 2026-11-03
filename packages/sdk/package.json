@@ -28,6 +28,11 @@
       "types": "./dist/sanitize.d.ts",
       "import": "./dist/sanitize.js",
       "default": "./dist/sanitize.js"
+    },
+    "./currency": {
+      "types": "./dist/currency.d.ts",
+      "import": "./dist/currency.js",
+      "default": "./dist/currency.js"
     }
   },
   "files": [

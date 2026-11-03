@@ -17,7 +17,6 @@ import * as ReactDOM from 'react-dom';
 import Link from 'next/link';
 import * as form from 'next/form';
 import * as navigation from 'next/navigation';
-import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
 import * as sonner from '@/components/ui/toast';
 
@@ -69,8 +68,12 @@ export function publishHostClientAbi(): Promise<void> {
   const g = globalThis as unknown as ClientAbiGlobal;
   if (g.__STACKPANEL_CLIENT_ABI__) return Promise.resolve();
   publishing ??= (async () => {
-    // 动态 import 让 UI 桶落到**独立的懒加载 chunk**，不再阻塞首屏。
-    const ui = await import('@stackpanel/ui');
+    // 动态 import 让 UI 桶与 SDK 桶落到**独立的懒加载 chunk**，不再阻塞首屏。
+    //
+    // `@stackpanel/sdk` 静态导入会把 zod（911 KB）拖进**每个页面**的首屏：
+    // 这个 bridge 挂在根 layout 上。实测 /login 的 zod chunk 就来自这里。
+    // SDK 只有运行期插件模块才需要，跟着插件装载一起按需解析。
+    const [ui, sdk] = await Promise.all([import('@stackpanel/ui'), import('@stackpanel/sdk')]);
     if (g.__STACKPANEL_CLIENT_ABI__) return;
     g.__STACKPANEL_CLIENT_ABI__ = {
       react: React,

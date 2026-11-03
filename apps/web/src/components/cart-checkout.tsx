@@ -17,7 +17,10 @@ import { Button } from '@stackpanel/ui/button';
 import { Field, FieldGroup } from '@stackpanel/ui/field';
 import { InlineError } from '@stackpanel/ui/inline-error';
 import { Select } from '@stackpanel/ui/select';
-import { formatMinorCurrency, type FrontendActionExecutor } from '@stackpanel/sdk';
+// `formatMinorCurrency` 走子路径入口：从桶导入会把 zod（911 KB）拖进
+// 这个 client 组件的 bundle，而这里只用一个纯格式化函数。
+import { formatMinorCurrency } from '@stackpanel/sdk/currency';
+import type { FrontendActionExecutor } from '@stackpanel/sdk';
 import { resolveLocale } from '@/i18n/config';
 import { createTranslator } from '@/i18n/core';
 
