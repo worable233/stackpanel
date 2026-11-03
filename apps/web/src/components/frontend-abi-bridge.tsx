@@ -17,48 +17,79 @@ import * as ReactDOM from 'react-dom';
 import Link from 'next/link';
 import * as form from 'next/form';
 import * as navigation from 'next/navigation';
-import * as ui from '@stackpanel/ui';
 import * as sdk from '@stackpanel/sdk';
 import * as lucide from 'lucide-react';
 import * as sonner from '@/components/ui/toast';
+
+/**
+ * `@stackpanel/ui` **不在这里静态导入**。
+ *
+ * 它是整个桶（101 个导出），其中 `MetricsExplorer` 依赖 recharts。静态
+ * `import * as ui` 会把它拖进**每个页面**的首屏 chunk —— 实测首页未登录就
+ * 同步加载 3.4MB（recharts 647KB + zod 911KB + lucide 359KB + …）。
+ *
+ * 改成按需 `import()`：只有真正要装载运行期插件模块时才解析这份命名空间。
+ * 插件前端没有任何一个直接 `import 'recharts'`，它们用 UI 包里的
+ * `MetricsExplorer` 封装，所以延迟加载不影响任何插件。
+ */
 
 interface ClientAbiGlobal {
   __STACKPANEL_CLIENT_ABI__?: unknown;
 }
 
+let publishing: Promise<void> | null = null;
+
 /**
- * 发布（幂等）宿主客户端 ABI。返回发布对象（供 `useSyncExternalStore` 之外的
- * 一次性调用断言）。必须在任何运行期 `import()` 之前调用——`FrontendAbiBridge`
- * 挂在根布局，任何页面/组件渲染前即已执行。
+ * 发布（幂等）宿主客户端 ABI。
+ *
+ * 返回 Promise：`@stackpanel/ui` 是按需 `import()` 的，所以发布是异步的。
+ * 调用方**必须** await 它之后再 `import()` 插件模块，否则适配器会读到未
+ * 发布的 ABI。
+ *
+ * 幂等性靠两个检查：全局已发布则直接返回；并发的调用共享同一个 Promise
+ * （`publishing`），避免重复解析 UI 桶。
  */
-export function publishHostClientAbi(): void {
+export function publishHostClientAbi(): Promise<void> {
   const g = globalThis as unknown as ClientAbiGlobal;
-  if (g.__STACKPANEL_CLIENT_ABI__) return;
-  g.__STACKPANEL_CLIENT_ABI__ = {
-    react: React,
-    'react-dom': ReactDOM,
-    'react/jsx-runtime': { jsx, jsxs, Fragment },
-    'next/link': { default: Link },
-    'next/form': form,
-    'next/navigation': navigation,
-    '@stackpanel/ui': ui,
-    // Packages format money and resolve their own catalogs through the SDK
-    // (`createPackageTranslator`), so runtime-loaded client modules need the
-    // host's SDK namespace too.
-    '@stackpanel/sdk': sdk,
-    'lucide-react': lucide,
-    // Imported by runtime admin bundles. Publishing the host instance keeps
-    // plugin `toast()` calls wired to the single host `<Toaster />`.
-    sonner,
-  };
+  if (g.__STACKPANEL_CLIENT_ABI__) return Promise.resolve();
+  publishing ??= (async () => {
+    // 动态 import 让 UI 桶落到**独立的懒加载 chunk**，不再阻塞首屏。
+    const ui = await import('@stackpanel/ui');
+    if (g.__STACKPANEL_CLIENT_ABI__) return;
+    g.__STACKPANEL_CLIENT_ABI__ = {
+      react: React,
+      'react-dom': ReactDOM,
+      'react/jsx-runtime': { jsx, jsxs, Fragment },
+      'next/link': { default: Link },
+      'next/form': form,
+      'next/navigation': navigation,
+      '@stackpanel/ui': ui,
+      // Packages format money and resolve their own catalogs through the SDK
+      // (`createPackageTranslator`), so runtime-loaded client modules need the
+      // host's SDK namespace too.
+      '@stackpanel/sdk': sdk,
+      'lucide-react': lucide,
+      // Imported by runtime admin bundles. Publishing the host instance keeps
+      // plugin `toast()` calls wired to the single host `<Toaster />`.
+      sonner,
+    };
+  })();
+  // 失败时释放，让下一次调用可以重试（一次网络抖动不该永久卡住插件装载）。
+  publishing.catch(() => {
+    publishing = null;
+  });
+  return publishing;
 }
 
 /**
- * 根布局挂载的宿主 ABI 桥接：只做「发布」这一件事。浏览器里发布本身就是进口
- * `globalThis`，因此无需渲染任何 DOM（返回 `null`）。它存在的意义是**强制 Next
- * 把上述 ABI 模块打进客户端 bundle**，让宿主实例在适配器被 `import()` 时已就绪。
+ * 根布局挂载的宿主 ABI 桥接。
+ *
+ * 它**不再在首屏发布**：发布只在「运行期装载插件模块」之前才有意义，而那条
+ * 路径（`use-runtime-module.ts` 的 `loadModule`）已经会在 `import()` 前 await
+ * `publishHostClientAbi()`。所以这里不做任何事，只保留组件位置以免根布局改动。
+ *
+ * 渲染返回 `null`，不产生 DOM。
  */
 export function FrontendAbiBridge(): null {
-  publishHostClientAbi();
   return null;
 }

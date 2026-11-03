@@ -1,5 +1,10 @@
 import type { Metadata } from 'next';
-import { getClarityMotionBootstrapScript } from '@stackpanel/ui';
+// 从**子路径**导入，不要走 `@stackpanel/ui` 的桶文件。
+//
+// 桶文件有 101 个导出，其中 MetricsExplorer / UsageTrendChart 依赖 recharts。
+// 为了拿一个内联脚本字符串而导入整个桶，会把 recharts(647KB)、lucide(359KB)、
+// zod(911KB) 全打进**每个页面**的首屏 bundle —— 实测首页未登录就加载 3.4MB。
+import { getClarityMotionBootstrapScript } from '@stackpanel/ui/early-motion';
 import localFont from 'next/font/local';
 import { headers } from 'next/headers';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';

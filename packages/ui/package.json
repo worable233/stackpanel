@@ -9,6 +9,51 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./early-motion": {
+      "types": "./dist/early-motion.d.ts",
+      "import": "./dist/early-motion.js",
+      "default": "./dist/early-motion.js"
+    },
+    "./error-page": {
+      "types": "./dist/error-page.d.ts",
+      "import": "./dist/error-page.js",
+      "default": "./dist/error-page.js"
+    },
+    "./document-scrollbar": {
+      "types": "./dist/document-scrollbar.d.ts",
+      "import": "./dist/document-scrollbar.js",
+      "default": "./dist/document-scrollbar.js"
+    },
+    "./inline-error": {
+      "types": "./dist/inline-error.d.ts",
+      "import": "./dist/inline-error.js",
+      "default": "./dist/inline-error.js"
+    },
+    "./page-header": {
+      "types": "./dist/page-header.d.ts",
+      "import": "./dist/page-header.js",
+      "default": "./dist/page-header.js"
+    },
+    "./section-title": {
+      "types": "./dist/section-title.d.ts",
+      "import": "./dist/section-title.js",
+      "default": "./dist/section-title.js"
+    },
+    "./button": {
+      "types": "./dist/button.d.ts",
+      "import": "./dist/button.js",
+      "default": "./dist/button.js"
+    },
+    "./select": {
+      "types": "./dist/select.d.ts",
+      "import": "./dist/select.js",
+      "default": "./dist/select.js"
+    },
+    "./field": {
+      "types": "./dist/field.d.ts",
+      "import": "./dist/field.js",
+      "default": "./dist/field.js"
     }
   },
   "files": [
@@ -46,5 +91,6 @@
     "react-dom": "^19.3.1",
     "typescript": "^6.0.3"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "sideEffects": false
 }

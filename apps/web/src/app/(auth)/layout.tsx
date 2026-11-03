@@ -1,4 +1,5 @@
-import { DocumentScrollbar } from '@stackpanel/ui';
+// 子路径导入：避免把整个 UI 桶（含 recharts）拉进登录页 bundle。
+import { DocumentScrollbar } from '@stackpanel/ui/document-scrollbar';
 import { isProvisioningMode } from '@/lib/provisioning';
 import { activeThemeCandidate } from '@/lib/slots';
 import { getLocale } from '@/i18n/locale';

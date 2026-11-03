@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Field, FieldError, FieldGroup } from '@/components/ui/field';
 import { AgentEffortPicker } from '@/components/agent-effort-picker';
-import { InlineError, InlineNotice } from '@stackpanel/ui';
+import { InlineError, InlineNotice } from '@stackpanel/ui/inline-error';
 import { AgentChatWindow } from '@/components/agent-chat-window';
 import { agentErrorFromBody, agentErrorText } from '@/lib/agent-errors';
 import { Button } from '@/components/ui/button';

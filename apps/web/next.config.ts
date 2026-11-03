@@ -41,6 +41,24 @@ const nextConfig: NextConfig = {
     root: path.join(__dirname, '../..'),
   },
   /**
+   * 按需编译 workspace 里的 UI 包。
+   *
+   * `@stackpanel/ui` 是单一入口桶（101 个导出），其中 `MetricsExplorer` 依赖
+   * recharts。没有这条配置时，打包器会把整个桶当一个模块处理 —— 任何页面
+   * `import { Button } from '@stackpanel/ui'` 都会把 recharts(647KB)、
+   * zod(911KB)、lucide(359KB) 拖进首屏 chunk。
+   *
+   * 实测（本地，gzip 后）：`/login` 首屏 **1028 KB / 31 个请求**。
+   * 按 4G 一般网络（5 Mbps / RTT 100ms）估算首屏 ≈ 1.9s，3G ≈ 6s。
+   * 这才是"页面加载慢"的主因 —— 服务端渲染只要 46ms。
+   *
+   * 开启后 Next 把 `import { X } from '@stackpanel/ui'` 改写成
+   * `import X from '@stackpanel/ui/X'` 的按需形式，未使用的导出不再打包。
+   */
+  experimental: {
+    optimizePackageImports: ['@stackpanel/ui'],
+  },
+  /**
    * Kernel media URLs are same-origin paths (`/media/<id>/content`) returned by
    * the API and rendered by plugin frontends. Under the bundled Caddy profile
    * `/media/*` is proxied to the API, but a plain `http://host:3000` deployment

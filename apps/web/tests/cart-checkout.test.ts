@@ -15,14 +15,12 @@ vi.mock('react', async (original) => ({
     ];
   },
 }));
-vi.mock('@stackpanel/ui', () => ({
-  Button: 'button',
-  Select: 'select',
-  Field: 'div',
-  FieldGroup: 'div',
-  // 内联提示统一走 `InlineError`；本套件只调用组件函数、不渲染子组件，所以在元素层面断言。
-  InlineError: 'p',
-}));
+// 组件按**子路径**导入（避免桶文件把 recharts 拖进首屏），所以逐个 mock。
+vi.mock('@stackpanel/ui/button', () => ({ Button: 'button' }));
+vi.mock('@stackpanel/ui/select', () => ({ Select: 'select' }));
+vi.mock('@stackpanel/ui/field', () => ({ Field: 'div', FieldGroup: 'div' }));
+// 内联提示统一走 `InlineError`；本套件只调用组件函数、不渲染子组件，所以在元素层面断言。
+vi.mock('@stackpanel/ui/inline-error', () => ({ InlineError: 'p' }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('next/link', () => ({ default: 'a' }));
 import { CartCheckout, type CartCheckoutProps } from '@/components/cart-checkout';

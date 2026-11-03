@@ -22,11 +22,14 @@ const moduleCache = new Map<string, Promise<unknown>>();
 function loadModule(url: string): Promise<unknown> {
   let pending = moduleCache.get(url);
   if (!pending) {
-    publishHostClientAbi();
-    pending = import(/* turbopackIgnore: true */ /* webpackIgnore: true */ url).catch((error) => {
-      moduleCache.delete(url);
-      throw error;
-    });
+    // 必须先 await 发布：`@stackpanel/ui` 是按需 import 的（见
+    // frontend-abi-bridge.tsx），不 await 会让适配器读到未发布的 ABI 并抛错。
+    pending = publishHostClientAbi()
+      .then(() => import(/* turbopackIgnore: true */ /* webpackIgnore: true */ url))
+      .catch((error) => {
+        moduleCache.delete(url);
+        throw error;
+      });
     moduleCache.set(url, pending);
   }
   return pending;

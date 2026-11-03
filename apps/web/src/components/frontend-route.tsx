@@ -7,7 +7,6 @@ import {
 } from '@/lib/slots';
 import type { ReactElement } from 'react';
 import { z } from 'zod';
-import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import type { FrontendSettings } from '@stackpanel/sdk';
 import { notFound } from 'next/navigation';
 import { FrontendScopeRoot } from '@/components/frontend-scope';
@@ -18,7 +17,8 @@ import { resolveFallbackRoute, resolveFrontendRoute, type PageResolution } from 
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
-import { ErrorPage } from '@stackpanel/ui';
+// 子路径导入：桶文件带 recharts，会污染首页首屏 bundle。
+import { ErrorPage } from '@stackpanel/ui/error-page';
 
 const categoryNodeSchema: z.ZodType<unknown> = z.lazy(() =>
   z.object({

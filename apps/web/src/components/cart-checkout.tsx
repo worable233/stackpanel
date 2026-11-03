@@ -12,7 +12,11 @@ import {
   Loader2,
   Package,
 } from 'lucide-react';
-import { Button, Field, FieldGroup, InlineError, Select } from '@stackpanel/ui';
+// 子路径导入：桶文件会把 recharts 带进首屏 chunk。
+import { Button } from '@stackpanel/ui/button';
+import { Field, FieldGroup } from '@stackpanel/ui/field';
+import { InlineError } from '@stackpanel/ui/inline-error';
+import { Select } from '@stackpanel/ui/select';
 import { formatMinorCurrency, type FrontendActionExecutor } from '@stackpanel/sdk';
 import { resolveLocale } from '@/i18n/config';
 import { createTranslator } from '@/i18n/core';

@@ -1,7 +1,8 @@
 'use client';
 
 import { Component, type ReactElement, type ReactNode } from 'react';
-import { InlineError } from '@stackpanel/ui';
+// 子路径导入：桶文件带 recharts，会污染首屏 bundle。
+import { InlineError } from '@stackpanel/ui/inline-error';
 import { useTranslator } from '@/i18n/provider';
 
 /**
