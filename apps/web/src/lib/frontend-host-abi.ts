@@ -64,6 +64,30 @@ const CLIENT_ONLY_REACT_NAMES = [
 ] as const;
 
 /**
+ * `@stackpanel/ui/charts` 在 RSC 图里的链接期桩。
+ *
+ * 为什么不能发布真实实现：recharts 在**模块作用域**调 `React.createContext`，
+ * 而服务端 React 构建没有它 —— 一旦 import 真实 charts，整个 RSC 图 500。
+ *
+ * 为什么不能发布空对象：插件的 `dist/index.js` 写着
+ * `import { MetricsExplorer } from "@stackpanel/ui/charts"`，ESM 链接是静态的，
+ * 缺一个具名导出就抛 `does not provide an export named`，整包加载失败（这正是
+ * 之前 llm-gateway 报 `UsageTrendChart` 那次事故的形态）。
+ *
+ * 所以：每个导出名给一个**被调用才抛**的桩。顶层 import 不抛，链接能过。
+ */
+function chartsServerAbi(): Record<string, unknown> {
+  const notInRsc = (): never => {
+    throw new Error(
+      '[frontend-runtime] @stackpanel/ui/charts 只能在浏览器里渲染。' +
+        '图表组件依赖 recharts，它在模块作用域调用 React.createContext，' +
+        '服务端 RSC 图里不可用。请把使用它的组件放进客户端入口。',
+    );
+  };
+  return { MetricsExplorer: notInRsc, UsageTrendChart: notInRsc };
+}
+
+/**
  * 把 react-server 构建里缺失的客户端名字补成链接期桩（存在的不动）。
  *
  * 桩**不在加载时抛**：`dist/index.js` 顶层只 import 名字、不调用，所以抛错会让
@@ -166,6 +190,13 @@ export function publishHostServerAbi(): HostServerAbi {
     'next/form': form,
     'next/navigation': navigationServerAbi(navigation as unknown as Record<string, unknown>),
     '@stackpanel/ui': ui,
+    // 图表组件的独立槽。服务端**不发布真实实现**：recharts 在模块作用域调
+    // `React.createContext`，在 RSC 图里会直接抛（见上方 NOTE）。
+    //
+    // 给一组链接期桩，与 `reactServerAbi` 同一个理由：插件 `dist/index.js`
+    // 顶层只 import 名字、不调用，所以能链接就不该让整包死掉；真被调用时才
+    // 抛，把「客户端组件在服务端执行」这个真实 bug 暴露在正确位置。
+    '@stackpanel/ui/charts': chartsServerAbi(),
     '@stackpanel/sdk': sdk,
     'lucide-react': lucide,
     sonner,

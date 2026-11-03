@@ -17,7 +17,6 @@ import * as ReactDOM from 'react-dom';
 import Link from 'next/link';
 import * as form from 'next/form';
 import * as navigation from 'next/navigation';
-import * as lucide from 'lucide-react';
 import * as sonner from '@/components/ui/toast';
 
 /**
@@ -64,6 +63,20 @@ function chartsSlot(): Promise<unknown> {
   return chartsPromise;
 }
 
+/**
+ * lucide 图标槽的惰性句柄。
+ *
+ * `import * as lucide from 'lucide-react'` 会把**整个图标库**（614 KB，1700+
+ * 图标）打进首屏 —— 这个 bridge 挂在根 layout 上，于是每个页面都付这份成本。
+ * web 自己用的是按名导入（`import { Eye, EyeOff }`），会被 tree-shake；
+ * 只有插件需要完整命名空间。推迟到插件装载时再解析。
+ */
+let lucidePromise: Promise<unknown> | null = null;
+function lucideSlot(): Promise<unknown> {
+  lucidePromise ??= import('lucide-react');
+  return lucidePromise;
+}
+
 export function publishHostClientAbi(): Promise<void> {
   const g = globalThis as unknown as ClientAbiGlobal;
   if (g.__STACKPANEL_CLIENT_ABI__) return Promise.resolve();
@@ -89,7 +102,8 @@ export function publishHostClientAbi(): Promise<void> {
       // (`createPackageTranslator`), so runtime-loaded client modules need the
       // host's SDK namespace too.
       '@stackpanel/sdk': sdk,
-      'lucide-react': lucide,
+      // 惰性：图标库 614 KB，只在插件真的取用时加载。
+      'lucide-react': lucideSlot,
       // Imported by runtime admin bundles. Publishing the host instance keeps
       // plugin `toast()` calls wired to the single host `<Toaster />`.
       sonner,

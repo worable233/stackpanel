@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { resolveFrontendSpecifier } from '@/lib/frontend-loader';
 
 /**
@@ -17,8 +19,18 @@ const g = globalThis as unknown as AbiGlobal;
 const next = vi.fn((specifier: string) => ({ url: `node:${specifier}` }));
 const context = {};
 
-const decode = (url: string): string =>
-  Buffer.from(url.split(',')[1] ?? '', 'base64').toString('utf8');
+/**
+ * 读出 shim 源码。
+ *
+ * 历史上 shim 是 `data:text/javascript;base64,…`，但 React 命名空间有 50+ 个
+ * 导出，编码后约 2.9 KB —— 超过 macOS 的 `ENAMETOOLONG`（单路径 1024 字节），
+ * `import()` 直接抛错，所有运行时装载的前端包都加载失败。现在写成临时文件，
+ * 这里两种形式都支持（便于断言实现细节时不必关心存储形态）。
+ */
+const decode = (url: string): string => {
+  if (url.startsWith('file://')) return readFileSync(fileURLToPath(url), 'utf8');
+  return Buffer.from(url.split(',')[1] ?? '', 'base64').toString('utf8');
+};
 
 afterEach(() => {
   delete g.__STACKPANEL_SERVER_ABI__;
@@ -31,7 +43,9 @@ describe('resolveFrontendSpecifier (stage 4 runtime bridge)', () => {
     g.__STACKPANEL_SERVER_ABI__ = { '@stackpanel/ui': { Button: 'HOST_BUTTON' } };
     const result = resolveFrontendSpecifier('@stackpanel/ui', context, next);
     expect(result.shortCircuit).toBe(true);
-    expect(result.url.startsWith('data:text/javascript;base64,')).toBe(true);
+    // 必须是 file:// —— data: URL 在 macOS 上会因路径过长而 ENAMETOOLONG。
+    expect(result.url.startsWith('file://')).toBe(true);
+    expect(result.url).not.toContain('data:text/javascript');
     expect(decode(result.url)).toContain('globalThis.__STACKPANEL_SERVER_ABI__');
     expect(decode(result.url)).toContain('export const Button = ns["Button"];');
     expect(next).not.toHaveBeenCalled();

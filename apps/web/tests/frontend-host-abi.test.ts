@@ -79,3 +79,35 @@ describe('reactServerAbi', () => {
     expect(abi['useState']).not.toBe('HOST_CREATE_ELEMENT');
   });
 });
+
+describe('charts server slot', () => {
+  it('publishes link-time stubs for every charts export', async () => {
+    // 事故形态：插件 dist 里写着
+    //   import { MetricsExplorer } from "@stackpanel/ui/charts"
+    // 服务端 ABI 若没有这个槽，resolve hook 会落到真实包 → recharts 在模块
+    // 作用域调 React.createContext → RSC 图直接抛，整页 500。
+    //
+    // 反之，若发布**空对象**，ESM 静态链接缺具名导出 → 抛
+    // "does not provide an export named"，整包加载失败。
+    //
+    // 所以必须是「名字齐全、被调用才抛」的桩。
+    const { publishHostServerAbi } = await import('@/lib/frontend-host-abi');
+    const abi = publishHostServerAbi();
+    const charts = abi['@stackpanel/ui/charts'] as Record<string, unknown>;
+
+    expect(charts).toBeTruthy();
+    expect(typeof charts.MetricsExplorer).toBe('function');
+    expect(typeof charts.UsageTrendChart).toBe('function');
+  });
+
+  it('never throws at link time — only when a charts stub is invoked', async () => {
+    const { publishHostServerAbi } = await import('@/lib/frontend-host-abi');
+    const charts = publishHostServerAbi()['@stackpanel/ui/charts'] as Record<string, unknown>;
+
+    // 取名字不抛（顶层 import 只做这件事）。
+    expect(() => charts.MetricsExplorer).not.toThrow();
+
+    // 真被当成组件调用才抛 —— 把「客户端组件在服务端执行」暴露在正确位置。
+    expect(() => (charts.MetricsExplorer as () => never)()).toThrow(/charts/);
+  });
+});

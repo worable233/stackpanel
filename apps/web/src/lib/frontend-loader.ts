@@ -19,6 +19,11 @@ import 'server-only';
  * 不共享，桥接会失效（SPIKE-results §0）。
  */
 import * as nodeModule from 'node:module';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /**
  * Node 22.20+ `module.registerHooks`. The installed `@types/node` predates it, so
@@ -163,7 +168,38 @@ export function navigationServerAbi(navigation: Record<string, unknown>): Record
  */
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-/** 合成一个 ESM shim（data: URL），逐名重导宿主命名空间。 */
+const shimDir = mkdtempSync(path.join(tmpdir(), 'stackpanel-abi-'));
+
+/**
+ * 把一个 shim 源码写到临时文件，返回 `file://` URL。
+ *
+ * 文件名用内容哈希，这样同一个 shim 复用同一个文件（多次 `import()` 命中
+ * Node 的模块缓存，不会重复求值）；不同 shim 之间也不会撞名。
+ */
+function writeShimFile(cacheKey: string, src: string): string {
+  const hash = createHash('sha256').update(cacheKey).digest('hex').slice(0, 16);
+  const file = path.join(shimDir, `${hash}.mjs`);
+  writeFileSync(file, src, 'utf8');
+  return pathToFileURL(file).href;
+}
+
+/**
+ * 合成一个 ESM shim，逐名重导宿主命名空间。
+ *
+ * ## 为什么写到临时文件而不是 `data:` URL
+ *
+ * 原实现用 `data:text/javascript;base64,…`。React 的命名空间有 50+ 个导出，
+ * 编码后约 2.9 KB —— 超过 macOS 的 `ENAMETOOLONG`（单路径 1024 字节），
+ * `import()` 直接抛错：
+ *
+ *     Error: ENAMETOOLONG: name too long, open 'data:text/javascript;base64,…'
+ *
+ * 于是**所有**运行时装载的前端包都加载失败（`[frontend-runtime] failed to
+ * load plugins/store`），整页 500。Linux 的上限高得多，所以这个问题只在
+ * macOS 上暴露 —— 属于「本地开发环境全挂、CI 全绿」的典型盲区。
+ *
+ * 临时文件没有长度限制，且天然带进程级缓存（同一个 shim 只写一次）。
+ */
 function shimUrl(ns: Record<string, unknown>, key: string): string {
   const names = Object.keys(ns).filter((name) => name !== 'default' && IDENTIFIER.test(name));
   const cacheKey = `${key}:${names.slice().sort().join(',')}`;
@@ -178,7 +214,7 @@ function shimUrl(ns: Record<string, unknown>, key: string): string {
     src += `export const ${name} = ns[${JSON.stringify(name)}];\n`;
   }
   src += 'export default ns.default;\n';
-  const url = `data:text/javascript;base64,${Buffer.from(src, 'utf8').toString('base64')}`;
+  const url = writeShimFile(cacheKey, src);
   cache.set(cacheKey, url);
   return url;
 }
