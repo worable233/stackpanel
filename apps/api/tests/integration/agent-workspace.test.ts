@@ -163,6 +163,58 @@ describe('workspace runs without a hand-pasted API key (B-1/B-2)', () => {
     expect(token.userId).toBe(userId);
   });
 
+  it('replays a session run instead of minting a second token and run', async () => {
+    // 会话路径以前**先**签一枚新的 run token、再按 `(tokenId, requestKey)` 查幂等，
+    // 而 tokenId 刚刚变过 → 查找永远 miss。抽屉的 idempotency-key 每回合是稳定的
+    // （`chat:<len>:<prefix>`），所以一次丢失响应的重试会建出**第二条运行**和
+    // 第二枚孤儿令牌。
+    script = [answer()];
+    const key = `chat:${'重复提交'.length}:${'重复提交'.slice(0, 64)}`;
+    const payload = { objective: '重复提交', model: 'test-model' };
+    const tokensBefore = await db.apiToken.count({ where: { userId } });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/workspace/runs',
+      headers: { ...auth(), 'idempotency-key': key },
+      payload,
+    });
+    expect(first.statusCode, first.body).toBe(201);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/workspace/runs',
+      headers: { ...auth(), 'idempotency-key': key },
+      payload,
+    });
+    expect(second.statusCode, second.body).toBe(200);
+    expect(second.headers['idempotency-replayed']).toBe('true');
+    expect(second.json().run.id).toBe(first.json().run.id);
+
+    // 重放不能再签一枚令牌。
+    expect(await db.apiToken.count({ where: { userId } })).toBe(tokensBefore + 1);
+  });
+
+  it('rejects a replayed key whose payload differs', async () => {
+    script = [answer()];
+    const key = createKey();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/workspace/runs',
+      headers: { ...auth(), 'idempotency-key': key },
+      payload: { objective: '第一个目标', model: 'test-model' },
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const conflict = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/workspace/runs',
+      headers: { ...auth(), 'idempotency-key': key },
+      payload: { objective: '换了个目标', model: 'test-model' },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json().code).toBe('agent.idempotency_conflict');
+  });
+
   it('rejects a session run when the operation switch is off', async () => {
     await db.setting.update({ where: { key: 'agent.enabled' }, data: { value: { enabled: false } } });
     const res = await app.inject({

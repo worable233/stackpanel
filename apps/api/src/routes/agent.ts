@@ -677,14 +677,49 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   ): Promise<unknown> => {
     const parsed = createRunSchema.safeParse(request.body);
     if (!parsed.success) throw validationError();
+
+    // The idempotency key is validated **before** any token is minted or any row
+    // is written: a request that is going to be rejected must not leave a
+    // credential behind.
+    if (parsed.data.execution === 'background' && !isSecretsEnabled()) throw new PluginError('secret.storage.disabled', 501, '后台执行需要加密密钥存储');
+    const key = request.headers['idempotency-key'];
+    if (typeof key !== 'string' || key.length < 8 || key.length > 200) {
+      throw new PluginError(
+        'request.idempotency_key_required',
+        400,
+        '创建任务必须携带 Idempotency-Key',
+      );
+    }
+    const requestKey = createHash('sha256').update(key).digest('hex');
+    const requestHash = createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex');
+
     let caller: { actorId: string; tokenId: string };
     if (allowSession) {
       const user = currentUser(request);
       if (user.viaApiToken) caller = requireTokenCaller(request);
       else {
-        // 会话调用方：内部签发一枚 5 分钟的 run token，创建后立即作废它的密码学
-        // 效力之外的一切（见 RUN_TOKEN_*）；run 仍归属于这枚令牌，续跑因此仍受
-        // `requireOriginalAgentToken` 约束。
+        // Session caller: the run must hang off *some* platform credential, so a
+        // 5-minute `agent-run` token is minted on the fly (see RUN_TOKEN_*).
+        //
+        // **Replay first.** Every session call used to mint a *fresh* token and
+        // then look the idempotency key up under `(tokenId, requestKey)` — a key
+        // that had just changed, so the lookup could never hit. The drawer's
+        // `idempotency-key` is stable per turn (`chat:<len>:<prefix>`), so a
+        // retry after a lost response created a **second run** and a second
+        // orphan token. Looking the key up under `(actorId, requestKey)` first
+        // both restores idempotency and avoids minting anything on a replay.
+        const replay = await prisma.agentRun.findFirst({
+          where: { actorId: user.id, requestKey },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (replay) {
+          if (replay.requestHash !== requestHash)
+            throw new PluginError('agent.idempotency_conflict', 409, '该幂等键已用于不同任务参数');
+          if (parsed.data.execution === 'background' && !['DONE', 'FAILED', 'CANCELLED'].includes(replay.status))
+            await authorizeBackground(request, replay.id);
+          reply.header('idempotency-replayed', 'true');
+          return { run: toRunView(replay) };
+        }
         const generated = generateApiToken();
         const row = await prisma.apiToken.create({
           data: {
@@ -703,17 +738,6 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       caller = requireTokenCaller(request);
     }
     const { actorId, tokenId } = caller;
-    if (parsed.data.execution === 'background' && !isSecretsEnabled()) throw new PluginError('secret.storage.disabled', 501, '后台执行需要加密密钥存储');
-    const key = request.headers['idempotency-key'];
-    if (typeof key !== 'string' || key.length < 8 || key.length > 200) {
-      throw new PluginError(
-        'request.idempotency_key_required',
-        400,
-        '创建任务必须携带 Idempotency-Key',
-      );
-    }
-    const requestKey = createHash('sha256').update(key).digest('hex');
-    const requestHash = createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex');
     const existing = await prisma.agentRun.findUnique({
       where: { tokenId_requestKey: { tokenId, requestKey } },
     });
