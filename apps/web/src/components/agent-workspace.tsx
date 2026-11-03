@@ -64,11 +64,21 @@ export function AgentWorkspace({ runId, approvalsOnly = false }: { runId?: strin
       const available = await agentFetch<{models:Array<{id:string;label:string}>}>('models'); setModels(available.models);
     }
   }, [runId, approvalsOnly]);
+  /**
+   * 轮询只在**运行还会变**的时候继续。
+   *
+   * 以前的条件是「页面有 runId」就每 5 秒 refresh()，而 refresh() 一次发三个
+   * 请求（status + approvals + runs/:id）。运行到了 DONE / FAILED / CANCELLED
+   * 之后这些数据不会再变，可页面一直开着就一直发 —— 每小时 2160 个请求，纯粹
+   * 白烧服务端与浏览器。终态后停轮询；用户点「继续」/「取消」后由 `act()` 主动
+   * 刷一次，新状态又会把轮询带起来。
+   */
+  const terminal = run ? ['DONE', 'FAILED', 'CANCELLED'].includes(run.status) : false;
   useEffect(() => {
     let active = true; let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => { try { if (active) await refresh(); } catch (cause) { if (active) setError(failText(cause)); } finally { if (active && runId) timer = setTimeout(tick, 5000); } };
+    const tick = async () => { try { if (active) await refresh(); } catch (cause) { if (active) setError(failText(cause)); } finally { if (active && runId && !terminal) timer = setTimeout(tick, 5000); } };
     void tick(); return () => { active = false; clearTimeout(timer); };
-  }, [refresh, failText, runId]);
+  }, [refresh, failText, runId, terminal]);
   async function act(action: () => Promise<unknown>, reload = true) { setBusy(true); setError(''); try { await action(); if(reload) await refresh(); } catch (cause) { setError(failText(cause)); } finally { setBusy(false); } }
   /**
    * 发起任务（B-2）。

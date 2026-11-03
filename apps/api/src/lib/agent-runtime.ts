@@ -1043,9 +1043,17 @@ async function withExecution(deps: AgentRuntimeDeps, single = false): Promise<Ag
       checking = false;
     }
   };
+  // Every 5s, not 1s.
+  //
+  // `check()` re-validates the caller's credential (a session lookup or an
+  // `apiToken` read), reloads the run, and renews both leases — two to three
+  // database round-trips per pass. At 1s a 10-minute run paid ~600 of those
+  // passes (~1200+ queries) to keep a **30-second** lease alive, which is 30x
+  // more often than needed. 5s still leaves a 6x margin on the lease and bounds
+  // how long a revoked token or a cancelled run can keep executing.
   const timer = setInterval(() => {
     void check();
-  }, 1000);
+  }, 5_000);
   timer.unref();
   const externalAbort = (): void => controller.abort(deps.signal?.reason);
   deps.signal?.addEventListener('abort', externalAbort, { once: true });
