@@ -11,6 +11,8 @@ vi.mock('@/lib/slots', () => ({
   listPluginFrontendCandidates: async () => mocks.candidates,
   importFrontendPackage: async () => ({ finders: { config: { handler: mocks.finder } } }),
   readPluginSettings: async () => ({}),
+  // admin 页现在复用请求级合并表（原先每次自己遍历全部插件）。
+  mergedPluginFinders: async () => ({ config: { handler: mocks.finder } }),
 }));
 vi.mock('@/lib/api', () => ({
   apiAssetUrl: (path: string) => path,

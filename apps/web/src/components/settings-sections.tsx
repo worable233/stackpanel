@@ -28,7 +28,19 @@ export function SettingsSections({
   sections: SettingsSection[];
   label: string;
 }) {
-  const [active, setActive] = useState(sections[0]?.id ?? '');
+  /**
+   * 初始选中项必须**在首帧就正确**。
+   *
+   * 原先 `useState(sections[0].id)` 把初始值钉在第一个分区，hash 只在
+   * `useEffect` 里读 —— 而 effect 在水合之后才跑。于是直接访问
+   * `/admin/settings#payment` 会先画出第一个分区，再跳过去，视觉上就是
+   * 「闪一下」。
+   *
+   * 服务端渲染时读不到 hash（它不参与请求），所以用 `useState` 的惰性初始化
+   * 在**客户端首次渲染**时就读：客户端首帧即正确，服务端首帧与之一致的情况
+   * （无 hash）不受影响。
+   */
+  const [active, setActive] = useState(() => initialSectionId(sections));
   const ids = sections.map(({ id }) => id).join(',');
   useEffect(() => {
     const sync = () => {
@@ -144,4 +156,17 @@ export function SettingsSelect({
       </SelectContent>
     </Select>
   );
+}
+
+/**
+ * 从 URL hash 解析初始分区；无 hash 或 hash 无效时退回第一个分区。
+ *
+ * 导出以便测试：这里错了的表现就是「先闪第一个再跳」。
+ */
+export function initialSectionId(sections: Array<{ id: string }>): string {
+  const fallback = sections[0]?.id ?? '';
+  if (typeof window === 'undefined') return fallback;
+  const id = window.location.hash.slice(1);
+  if (!id) return fallback;
+  return sections.some((section) => section.id === id) ? id : fallback;
 }

@@ -25,6 +25,7 @@ vi.mock('@/lib/slots', () => ({
   listPluginFrontendCandidates: async () => mocks.candidates,
   importFrontendPackage: async () => ({ finders: { config: mocks.finder } }),
   readPluginSettings: async () => ({}),
+  mergedPluginFinders: async () => ({ config: { handler: mocks.finder } }),
 }));
 vi.mock('@/lib/api', () => ({
   apiAssetUrl: (path: string) => `/api${path}`,

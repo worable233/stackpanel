@@ -11,7 +11,9 @@ import { getAuthedApiClient } from './api';
 import { runtimeFrontendFailure } from './frontend-runtime';
 import {
   candidateAdmitsServerExecution,
+  finderOwnerPlugin as finderOwner,
   importFrontendPackage,
+  mergedPluginFinders,
   listPluginFrontendCandidates,
   readPluginSettings,
 } from './slots';
@@ -96,33 +98,33 @@ export async function executeAccountFinder(
   finderId: string,
   user: AccountUser,
 ): Promise<unknown | null> {
-  const candidates = await listPluginFrontendCandidates();
-  for (const candidate of candidates) {
-    if (!candidateAdmitsServerExecution(candidate)) continue;
-    const pkg = await importFrontendPackage(
-      'plugins',
-      candidate.id,
-      candidate.manifest,
-      candidate.revision,
+  /**
+   * 用按请求合并的 finders 表，而不是每次重新遍历插件。
+   *
+   * 原先每个 finder 都完整走一遍「列出候选 → 逐个 import 包 → 逐个读设置」。
+   * `/account` 首页一次要 4 个 finder（待付订单、我的服务、工单、身份绑定），
+   * 于是同一个全量扫描重复 4 次 —— 这就是该页慢的主因之一。
+   */
+  const finders = await mergedPluginFinders();
+  const finder = finders[finderId];
+  if (!finder) return null;
+  const owner = await finderOwner(finderId);
+  try {
+    return await finder.handler(
+      {},
+      {
+        params: {},
+        settings: owner ? await readPluginSettings(owner) : {},
+        api: await getAuthedApiClient(),
+        session: { role: user.role },
+      },
     );
-    if (!pkg?.finders || !pkg.finders[finderId]) continue;
-    const settings = await readPluginSettings(candidate.id);
-    try {
-      return await pkg.finders[finderId].handler(
-        {},
-        {
-          params: {},
-          settings,
-          api: await getAuthedApiClient(),
-          session: { role: user.role },
-        },
-      );
-    } catch {
-      return null;
-    }
+  } catch {
+    return null;
   }
-  return null;
 }
+
+
 
 /** Resolve a user-facing plugin account page and its declared finder data. */
 export async function resolvePluginAccountRoute(

@@ -1,8 +1,13 @@
 import 'server-only';
 
-import type { FrontendManifest, FrontendPackage, FrontendSettings } from '@stackpanel/sdk';
+import type {
+  FinderProvider,
+  FrontendManifest,
+  FrontendPackage,
+  FrontendSettings,
+} from '@stackpanel/sdk';
 import { getApiClient, apiAssetUrl } from './api';
-import { pinInSnapshot } from './frontend-snapshot';
+import { frontendSnapshot, pinInSnapshot } from './frontend-snapshot';
 import { getFrontendPackage } from './frontend-bundles';
 import { loadRuntimeFrontend, runtimeFrontendLoadingEnabled } from './frontend-runtime';
 import { cacheKey, invalidate, remember } from './server-cache';
@@ -195,6 +200,70 @@ export async function readPluginSettings(id: string): Promise<FrontendSettings> 
  * In both cases the resolved value is validated against the manifest so a stale or
  * partial artifact is treated as "no package" rather than crashing a render.
  */
+/**
+ * 合并所有「允许在 web 进程执行」的插件 finders（`name → provider`）。
+ *
+ * 结果按请求缓存：同一个渲染里多个数据需求共用一次扫描。
+ *
+ * 为什么必须合并去重：原先每个 finder 需求各自遍历全部插件候选、逐个
+ * `import()` 前端包、逐个读插件设置。`/account` 首页一次要 4 个 finder，
+ * 于是同一个全量扫描做了 4 遍 —— 插件数量直接乘在首屏耗时上。
+ */
+export async function mergedPluginFinders(): Promise<Record<string, FinderProvider>> {
+  return (await finderRegistry()).finders;
+}
+
+/**
+ * finder 名 → 提供它的插件 id。设置必须取自**提供者**，用错插件的设置会让
+ * finder 读到别人的配置（例如把 ticket 的开关当成 store 的）。
+ */
+export async function finderOwnerPlugin(finderId: string): Promise<string | null> {
+  return (await finderRegistry()).owners[finderId] ?? null;
+}
+
+/**
+ * 一次扫描得到「合并 finders + 归属插件」。
+ *
+ * 两者必须同源：分开各扫一遍就等于没优化。结果按请求缓存在快照上。
+ */
+async function finderRegistry(): Promise<{
+  finders: Record<string, FinderProvider>;
+  owners: Record<string, string>;
+}> {
+  const snapshot = frontendSnapshot();
+  const cached = snapshot.finders;
+  if (cached) return cached;
+  const pending = (async () => {
+    const candidates = await listPluginFrontendCandidates();
+    const finders: Record<string, FinderProvider> = {};
+    const owners: Record<string, string> = {};
+    for (const candidate of candidates) {
+      // Trust boundary (contract 03 §3.1): 未获准入的包不得在 web 进程执行。
+      if (!candidateAdmitsServerExecution(candidate)) continue;
+      const pkg = await importFrontendPackage(
+        'plugins',
+        candidate.id,
+        candidate.manifest,
+        candidate.revision,
+      );
+      if (!pkg?.finders) continue;
+      for (const [name, finder] of Object.entries(pkg.finders)) {
+        // 先到先得：与原先「遍历顺序第一个胜出」的语义保持一致。
+        if (!finders[name]) {
+          finders[name] = finder;
+          owners[name] = candidate.id;
+        }
+      }
+    }
+    return { finders, owners };
+  })();
+  snapshot.finders = pending;
+  pending.catch(() => {
+    if (snapshot.finders === pending) delete snapshot.finders;
+  });
+  return pending;
+}
+
 export async function importFrontendPackage(
   kind: 'themes' | 'plugins',
   id: string,

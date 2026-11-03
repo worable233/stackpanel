@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { FinderProvider, FrontendPackage } from '@stackpanel/sdk';
 import type { FrontendCandidate } from './slots';
 
 /**
@@ -25,6 +26,17 @@ import type { FrontendCandidate } from './slots';
 export interface FrontendSnapshot {
   theme?: Promise<FrontendCandidate | null>;
   plugins?: Promise<FrontendCandidate[]>;
+  /**
+   * 所有可服务端执行的插件 finders 合并表（`name → FinderProvider`）。
+   *
+   * 一次渲染里可能有多个 finder 需求（`/account` 首页就要 4 个）。原先每个
+   * 需求都重新遍历全部插件候选、逐个 `import()` 包并读设置 —— 4 个需求就是
+   * 4 遍全量扫描，插件越多越慢，而结果在同一个请求里完全一样。
+   */
+  finders?: Promise<{
+    finders: Record<string, FinderProvider>;
+    owners: Record<string, string>;
+  }>;
 }
 
 const storage = new AsyncLocalStorage<FrontendSnapshot>();

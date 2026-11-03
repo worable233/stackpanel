@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import type { AccountUser } from '@stackpanel/sdk';
 import { getAuthedApiClient } from '@/lib/api';
 import { executeAccountFinder, getPluginAccountWidgets } from '@/lib/account-frontend';
+import { getSessionUser } from '@/lib/auth';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 import { FrontendScopeRoot } from '@/components/frontend-scope';
@@ -29,21 +30,32 @@ export default async function AccountHomePage() {
   const locale = await getLocale();
   const t = createTranslator(locale);
   const api = await getAuthedApiClient();
-  const [userResult, widgets] = await Promise.all([
-    api.getCurrentUser(),
-    getPluginAccountWidgets(),
-  ]);
+  /**
+   * 两段 `await` 合并成一段。
+   *
+   * 原先先等 `getCurrentUser()` 拿到 user，再用它去跑 4 个 finder —— 第二段
+   * 的每个请求都白白等第一段结束。而 finder 只用得到 `role`，那个值来自
+   * 会话（`getSessionState` 已被 React `cache()` 去重，不会多打一次）。
+   *
+   * 结果：首页 4 个 finder + 身份绑定与用户信息**同时**发起，而不是串成两波。
+   */
+  const sessionUser = await getSessionUser();
+  // finder 只读 `role`；`id`/`email` 以 `getCurrentUser()` 的结果为准（会话
+  // 载荷里没有 email）。这里先给一个可用的占位，避免为拿 role 而串行等待。
   const user: AccountUser = {
-    id: userResult.user.id,
-    email: userResult.user.email,
-    role: userResult.user.role,
+    id: sessionUser?.sub ?? '',
+    email: '',
+    role: sessionUser?.role ?? 'USER',
   };
-  const [ordersData, servicesData, ticketSummary, identities] = await Promise.all([
-    executeAccountFinder('store.pendingOrderCount', user),
-    executeAccountFinder('store.myServices', user),
-    executeAccountFinder('ticket.pendingCount', user),
-    api.getConnectedIdentities().catch(() => null),
-  ]);
+  const [userResult, widgets, ordersData, servicesData, ticketSummary, identities] =
+    await Promise.all([
+      api.getCurrentUser(),
+      getPluginAccountWidgets(),
+      executeAccountFinder('store.pendingOrderCount', user),
+      executeAccountFinder('store.myServices', user),
+      executeAccountFinder('ticket.pendingCount', user),
+      api.getConnectedIdentities().catch(() => null),
+    ]);
   const services = (servicesData as ServiceItem[] | null) ?? [];
   const now = currentTimestamp();
   const sevenDays = now + 7 * 24 * 60 * 60 * 1000;

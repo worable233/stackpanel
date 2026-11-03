@@ -10,6 +10,7 @@ import { getAuthedApiClient } from './api';
 import {
   candidateAdmitsServerExecution,
   importFrontendPackage,
+  mergedPluginFinders,
   listPluginFrontendCandidates,
   readPluginSettings,
 } from './slots';
@@ -118,24 +119,14 @@ export async function resolvePluginAdminRoute(
     if (reason) return { status: 'broken', pluginId, reason };
     return { status: 'not-found' };
   }
-  // 合并所有已加载插件的前端 finders，使 admin 页面可跨插件复用数据提供者
-  // （例如 store 的商品管理页读取 catalog 的分类数据）。
-  const mergedFinders: Record<string, FinderProvider> = {};
-  for (const item of candidates) {
-    // Trust boundary (contract 03 §3.1): an unauthorized package's finder must
-    // not be registered for execution in the web process.
-    if (!candidateAdmitsServerExecution(item)) continue;
-    const candidatePkg = await importFrontendPackage(
-      'plugins',
-      item.id,
-      item.manifest,
-      item.revision,
-    );
-    if (!candidatePkg?.finders) continue;
-    for (const [name, finder] of Object.entries(candidatePkg.finders)) {
-      if (!mergedFinders[name]) mergedFinders[name] = finder;
-    }
-  }
+  /**
+   * 合并 finders 走请求级缓存（见 `mergedPluginFinders`）。
+   *
+   * admin 页面同样要跨插件复用数据提供者（store 的商品管理页读 catalog 的
+   * 分类）。原先这里自己再遍历一遍全部插件、逐个 import 包 —— 与 finders
+   * 解析、菜单构建各扫一次，一个后台页面要重复装载好几次全部插件前端。
+   */
+  const mergedFinders = await mergedPluginFinders();
   const settings = await readPluginSettings(pluginId);
   const params = capturePathParams(route.path, path);
   try {
