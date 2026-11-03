@@ -87,3 +87,33 @@ export function installObservability(app: Parameters<typeof installHttpMetrics>[
 export function observabilityRegistry(): Metrics {
   return getMetrics();
 }
+
+/**
+ * 包住一次上游调用并记录耗时。
+ *
+ * 插件不直接依赖 `prom-client`：内核暴露这一个函数，插件的 HTTP 客户端在
+ * 每次出站请求外包一层即可。`outcome` 只有 ok/error 两值，保持低基数 ——
+ * 上游错误详情进日志，不进标签。
+ *
+ * 失败也要记：上游慢通常伴随超时，「只统计成功」会让最该看的那部分消失。
+ */
+export async function observeUpstream<T>(
+  plugin: string,
+  upstream: string,
+  call: () => Promise<T>,
+): Promise<T> {
+  const metrics = getMetrics();
+  const started = process.hrtime.bigint();
+  const record = (outcome: 'ok' | 'error'): void => {
+    const seconds = Number(process.hrtime.bigint() - started) / 1e9;
+    metrics.upstreamRequestDurationSeconds.observe({ plugin, upstream, outcome }, seconds);
+  };
+  try {
+    const result = await call();
+    record('ok');
+    return result;
+  } catch (error) {
+    record('error');
+    throw error;
+  }
+}

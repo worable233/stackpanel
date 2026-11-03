@@ -23,7 +23,7 @@ import { loadRuntimeConfig } from './config/runtime-config.ts';
 import type { FastifyInstance } from 'fastify';
 import { initInfra } from './infra.ts';
 import { startOutboxConsumption } from './plugins/events.ts';
-import { getJobRuntime } from './jobs/index.ts';
+import { getJobRuntime, startJobConsumption } from './jobs/index.ts';
 import { startRuntimeCoherence, stopRuntimeCoherence } from './runtime/coherence.ts';
 import { startTracing, stopTracing } from './observability/index.ts';
 import { peekRedis } from '@stackpanel/db';
@@ -56,6 +56,16 @@ async function main(): Promise<void> {
   await workerApp.pluginHost.syncEnabledPlugins();
   // W3 (audit 4B · B-1): durable consumption only after plugins subscribed.
   startOutboxConsumption();
+  /**
+   * 任务消费同样必须等插件激活完成。
+   *
+   * `initInfra()` 只 attach backend 不再自动开始消费（见 `deferConsumption`）。
+   * 之前这里是最大的坑：worker 一启动就开始消费，而插件的 `onActivate`
+   * （注册 `scheduled-sync` 等 handler）要等上面这行才跑。窗口内到达的任务
+   * 找不到处理器 → 被判「本副本无处理器」→ 重试耗尽进死信。现场表现就是
+   * 「定时同步从不执行」，而日志里只有一堆无关的未知任务。
+   */
+  await startJobConsumption();
 
   // S8: keep plugin runtime state coherent when an API replica (or another
   // worker) activates/deactivates/reloads a plugin. The worker consumes jobs,

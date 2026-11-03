@@ -128,6 +128,8 @@ export async function initInfra(): Promise<void> {
   // start consuming. Kernel sweeps were registered synchronously in buildApp().
   await initJobs({
     redisUrl: getInfraConfig().redisUrl ?? null,
+    // 消费延后到插件激活之后：见 `startJobConsumption` 的说明。
+    deferConsumption: true,
     // 进程内后端靠数据库租约保证「一个 tick 只有一个副本执行」；BullMQ 下不用。
     lease: new DbJobLease(getPrisma() as unknown as LeaseDb),
     logger: {

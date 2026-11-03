@@ -220,6 +220,11 @@ export interface OutboxOptions {
    */
   catchUpIntervalMs?: number;
   /**
+   * 空转时的最大轮询间隔（见 `startConsumption` 的自适应退避）。
+   * 默认 30s —— 事件延迟上限就是这个值，对站内通知类事件足够。
+   */
+  catchUpMaxIntervalMs?: number;
+  /**
    * On first boot (no cursor) replay at most this far back. Default 0 = only
    * events created from now on, so a fresh replica never storms history.
    */
@@ -243,7 +248,8 @@ export interface OutboxStats {
 export class OutboxEventBus implements EventBus {
   private readonly local = new EventEmitterEventBus();
   private relayTimer: ReturnType<typeof setInterval> | null = null;
-  private catchUpTimer: ReturnType<typeof setInterval> | null = null;
+  /** 自适应退避用的是 `setTimeout`（见 `startConsumption`），不是 `setInterval`。 */
+  private catchUpTimer: ReturnType<typeof setTimeout> | null = null;
   private subscriber: RedisClient | null = null;
   private running = false;
   private catchingUp = false;
@@ -373,13 +379,43 @@ export class OutboxEventBus implements EventBus {
   startConsumption(): boolean {
     if (!this.options || this.consuming) return false;
     this.consuming = true;
-    const catchUpInterval = this.options.catchUpIntervalMs ?? 2000;
-    this.catchUpTimer = setInterval(() => {
-      void this.catchUp().catch((err) => {
-        this.options?.logger?.warn(`[outbox] catch-up pass failed: ${String(err)}`);
-      });
-    }, catchUpInterval);
-    this.catchUpTimer.unref?.();
+    /**
+     * 自适应轮询间隔。
+     *
+     * 固定 2s 在**空表**上等于忙轮询：实测 `event_cursors` 只有 11 行却被
+     * 全表扫描 158,949 次、`outbox_events` 601 行扫 169,098 次。没有事件时
+     * 每 2 秒一次全表扫描是纯粹的 CPU 与日志噪音。
+     *
+     * 规则：有交付 → 立即回到快节奏；连续空转 → 指数退避到上限（默认 30s）。
+     * 一旦有新事件，退避立刻重置，所以延迟上限就是那个上限，不会丢消息
+     * （消费者靠游标补齐，不依赖轮询频率）。
+     */
+    const baseInterval = this.options.catchUpIntervalMs ?? 2000;
+    const maxInterval = this.options.catchUpMaxIntervalMs ?? 30_000;
+    let currentInterval = baseInterval;
+    let idlePasses = 0;
+
+    const schedule = (): void => {
+      this.catchUpTimer = setTimeout(() => {
+        void this.catchUp()
+          .then((delivered) => {
+            if (delivered > 0) {
+              idlePasses = 0;
+              currentInterval = baseInterval;
+            } else {
+              idlePasses += 1;
+              currentInterval = Math.min(maxInterval, baseInterval * 2 ** Math.min(idlePasses, 8));
+            }
+            if (this.consuming) schedule();
+          })
+          .catch((err) => {
+            this.options?.logger?.warn(`[outbox] catch-up pass failed: ${String(err)}`);
+            if (this.consuming) schedule();
+          });
+      }, currentInterval);
+      this.catchUpTimer.unref?.();
+    };
+    schedule();
     // Resume immediately so a restarting replica catches up without waiting.
     void this.catchUp().catch(() => undefined);
     return true;
@@ -391,7 +427,7 @@ export class OutboxEventBus implements EventBus {
       this.relayTimer = null;
     }
     if (this.catchUpTimer) {
-      clearInterval(this.catchUpTimer);
+      clearTimeout(this.catchUpTimer);
       this.catchUpTimer = null;
     }
     this.consuming = false;

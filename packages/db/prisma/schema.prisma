@@ -700,6 +700,11 @@ model OutboxEvent {
   @@index([publishedAt, createdAt])
   @@index([publishedAt, lockedAt])
   @@index([publishedAt, nextAttemptAt])
+  /// relay 的扫描条件是 publishedAt IS NULL AND parkedAt IS NULL AND
+  /// (lockedAt 空/过期) AND (nextAttemptAt 空/到期)。前三个索引都不含
+  /// parkedAt，空表时规划器仍可能退化成顺序扫描 —— 实测 outbox_events
+  /// 只有 601 行却被扫了 169,098 次。
+  @@index([publishedAt, parkedAt, nextAttemptAt])
 }
 
 /// 消费幂等原语（ADR-0013：消费幂等）。同一 consumer 对同一 eventId 只处理一次。

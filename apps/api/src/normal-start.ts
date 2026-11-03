@@ -8,6 +8,7 @@
  * 迁移由 runner 执行，本入口不做 `migrate deploy`（ADR-0025）。
  */
 
+import { startJobConsumption } from './jobs/index.ts';
 import path from 'node:path';
 import { buildApp, describeTrustProxy } from './app.ts';
 import { loadCatalogSourceConfig } from './distribution/source-config.ts';
@@ -126,6 +127,9 @@ async function start(): Promise<void> {
     // this replica's cursor with zero local listeners and lose a restarting
     // replica's missed events.
     startOutboxConsumption();
+    // 与 outbox 同理：任务的 handler 由插件在 onActivate 里注册，消费必须等
+    // 插件都激活完毕。`initInfra()` 只 attach backend，这里才真正开始跑。
+    await startJobConsumption();
     // S8: subscribe to cross-replica runtime invalidation once the runtime has
     // registered all installed plugins (after ready/plugin discovery).
     await startRuntimeCoherence();

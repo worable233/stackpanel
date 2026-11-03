@@ -19,6 +19,12 @@ import {
 } from 'prom-client';
 
 /** Latency buckets in seconds, tuned for an HTTP API (5ms .. 10s). */
+/**
+ * 上游调用明显比内核内部慢一个量级（实测单次 1.8~2.3s），所以桶要一直铺到
+ * 30s，否则最长的那批调用会全部堆在 `+Inf`，看不到退化。
+ */
+const UPSTREAM_DURATION_BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 20, 30];
+
 const HTTP_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 
 /** The metric instruments the kernel records into. */
@@ -28,6 +34,7 @@ export interface Metrics {
   httpRequestsTotal: Counter<'method' | 'route' | 'status'>;
   /** HTTP request latency in seconds by method / route template / status. */
   httpRequestDurationSeconds: Histogram<'method' | 'route' | 'status'>;
+  upstreamRequestDurationSeconds: Histogram<'plugin' | 'upstream' | 'outcome'>;
   /** In-flight HTTP requests by method. */
   httpRequestsInFlight: Gauge<'method'>;
   /** Requests rejected by a limiter, by scope (`http`, `open_api_token`). */
@@ -67,6 +74,22 @@ export function createMetrics(options: CreateMetricsOptions = {}): Metrics {
     help: 'HTTP 请求耗时（秒）',
     labelNames: ['method', 'route', 'status'] as const,
     buckets: HTTP_DURATION_BUCKETS,
+    registers: [registry],
+  });
+  /**
+   * 上游调用耗时（审计 P1-3）。
+   *
+   * 现状只有 `responseTime` 行，一次页面 TTFB 1.37s 到底花在内核还是上游，
+   * 只能靠临时脚本聚合日志才看得出来。上游实测单次 1.8~2.3s / 4.47MB，这
+   * 个数必须能直接看到，否则「页面慢」永远只能靠猜。
+   *
+   * `plugin` 标签是发起调用的插件，`upstream` 是上游标识（域名或 id）。
+   */
+  const upstreamRequestDurationSeconds = new Histogram({
+    name: 'stackpanel_upstream_request_duration_seconds',
+    help: '插件调用上游接口的耗时（秒）',
+    labelNames: ['plugin', 'upstream', 'outcome'] as const,
+    buckets: UPSTREAM_DURATION_BUCKETS,
     registers: [registry],
   });
   const httpRequestsInFlight = new Gauge({
@@ -112,6 +135,7 @@ export function createMetrics(options: CreateMetricsOptions = {}): Metrics {
     registry,
     httpRequestsTotal,
     httpRequestDurationSeconds,
+    upstreamRequestDurationSeconds,
     httpRequestsInFlight,
     rateLimitRejectionsTotal,
     jobQueueDepth,

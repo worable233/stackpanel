@@ -31,6 +31,11 @@ export interface InitJobsOptions {
    * 缺省时进程内后端退化为「每个副本各跑一份」。
    */
   lease?: JobLease;
+  /**
+   * 推迟开始消费，等调用方注册完插件 handler 后显式启动
+   * （见 `startJobConsumption`）。worker 进程必须用它。
+   */
+  deferConsumption?: boolean;
   logger: { info: (m: string) => void; warn: (m: string) => void };
 }
 
@@ -70,7 +75,23 @@ export async function initJobs(options: InitJobsOptions): Promise<void> {
       }),
     );
   }
-  await runtime.start();
+  // 不用 `start()`：消费必须等插件把自己的 handler 注册好，否则先到的任务
+  // 会因为「本副本无处理器」而死信（audit Z-4）。调用方在插件激活完成后
+  // 显式调用 `startJobConsumption()`。
+  if (!options.deferConsumption) await runtime.start();
+}
+
+/**
+ * 开始消费任务。只有在插件激活完成、handler 注册齐全之后才可调用。
+ *
+ * 为什么必须能推迟：worker 进程里 `initInfra()` 会attach job backend 并**立即
+ * 开始消费**，而插件的 `onActivate`（注册 `scheduled-sync` 等 handler）要等到
+ * `syncEnabledPlugins()` 才跑。两者之间的窗口里到达的任务找不到处理器，被
+ * 当作「本副本无处理器」退回重试，重试耗尽后进死信 —— 现场表现就是
+ * 「定时同步从不执行，死信里全是未知任务」。
+ */
+export async function startJobConsumption(): Promise<void> {
+  await getJobRuntime().start();
 }
 
 /** One recurring job as reported by the diagnostics surface. */
