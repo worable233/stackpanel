@@ -2303,6 +2303,7 @@
       "loadFailed": "无法加载对话，请重试",
       "saveFailedRetained": "{reason}。输入内容已保留，可重试保存。",
       "runStartFailed": "无法启动 Agent 执行",
+      "runPollFailed": "任务状态更新中断：连续多次拉取失败。任务可能仍在后台执行，请稍后刷新页面查看结果。",
       "runStartFailedWithReason": "「{reason}」——消息已保存，Agent 没有开始执行。",
       "runModel": "模型 {model}",
       "runModelUnset": "模型未配置",

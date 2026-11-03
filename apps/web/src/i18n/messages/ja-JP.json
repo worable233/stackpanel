@@ -2303,6 +2303,7 @@
       "loadFailed": "Could not load the conversation. Please try again.",
       "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
       "runStartFailed": "Agent の実行を開始できませんでした",
+      "runPollFailed": "状態の更新が中断しました。取得に連続して失敗しています。タスクはバックグラウンドで実行中の可能性があります。しばらくしてからページを再読み込みしてください。",
       "runStartFailedWithReason": "「{reason}」— メッセージは保存されましたが、Agent は実行を開始していません。",
       "runModel": "モデル {model}",
       "runModelUnset": "モデル未設定",

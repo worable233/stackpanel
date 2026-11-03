@@ -2303,6 +2303,7 @@
       "loadFailed": "無法載入對話，請重試",
       "saveFailedRetained": "{reason}。輸入內容已保留，可重試儲存。",
       "runStartFailed": "無法啟動 Agent 執行",
+      "runPollFailed": "任務狀態更新中斷：連續多次拉取失敗。任務可能仍在背景執行，請稍後重新整理頁面查看結果。",
       "runStartFailedWithReason": "「{reason}」——訊息已儲存，Agent 沒有開始執行。",
       "runModel": "模型 {model}",
       "runModelUnset": "模型未配置",

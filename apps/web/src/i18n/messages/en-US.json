@@ -2303,6 +2303,7 @@
       "loadFailed": "Could not load the conversation. Please try again.",
       "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
       "runStartFailed": "Could not start the Agent run",
+      "runPollFailed": "Live status updates stopped: several refreshes failed in a row. The task may still be running in the background; reload the page later to check.",
       "runStartFailedWithReason": "“{reason}” — the message was saved, but the agent never started.",
       "runModel": "Model {model}",
       "runModelUnset": "No model configured",

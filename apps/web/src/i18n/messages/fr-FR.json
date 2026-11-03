@@ -2303,6 +2303,7 @@
       "loadFailed": "Could not load the conversation. Please try again.",
       "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
       "runStartFailed": "Impossible de lancer l'exécution de l'Agent",
+      "runPollFailed": "Mise à jour de l'état interrompue : plusieurs actualisations ont échoué d'affilée. La tâche peut encore s'exécuter en arrière-plan ; rechargez la page plus tard.",
       "runStartFailedWithReason": "« {reason} » — le message est enregistré, mais l'agent n'a pas démarré.",
       "runModel": "Modèle {model}",
       "runModelUnset": "Aucun modèle configuré",

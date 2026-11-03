@@ -2303,6 +2303,7 @@
       "loadFailed": "Could not load the conversation. Please try again.",
       "saveFailedRetained": "{reason}. Your input was kept; you can retry saving.",
       "runStartFailed": "Agent 실행을 시작할 수 없습니다",
+      "runPollFailed": "상태 업데이트가 중단되었습니다. 여러 번 연속으로 가져오지 못했습니다. 작업이 백그라운드에서 계속 실행 중일 수 있으니 잠시 후 페이지를 새로 고쳐 확인하세요.",
       "runStartFailedWithReason": "“{reason}” — 메시지는 저장되었지만 Agent가 실행되지 않았습니다.",
       "runModel": "모델 {model}",
       "runModelUnset": "모델이 설정되지 않음",

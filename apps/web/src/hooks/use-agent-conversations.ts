@@ -218,6 +218,8 @@ export function useAgentConversations(open: boolean, search: string) {
    */
   async function pollRun(runId: string, generation: number) {
     const terminal = new Set(['DONE', 'FAILED', 'CANCELLED']);
+    /** 连续失败次数。单次失败照常重试；连续失败到上限才报。 */
+    let failures = 0;
     for (let attempt = 0; attempt < 150; attempt += 1) {
       if (generation !== runGeneration.current || !openRef.current) return;
       await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 800 : 2000));
@@ -225,11 +227,18 @@ export function useAgentConversations(open: boolean, search: string) {
       try {
         const detail = await chatFetch<RunDetail>(`/runs/${runId}`);
         if (generation !== runGeneration.current || !openRef.current) return;
+        failures = 0;
         const last = detail.steps.at(-1);
         setRun({ ...detail.run, latest: runSummary(last) });
         if (terminal.has(detail.run.status)) return;
       } catch {
-        // 轮询失败不打断输入；下一次重试。
+        // 单次轮询失败不打断输入，下一次重试。但**连续**失败到循环耗尽时不能
+        // 静默退出：界面会永远停在「运行中」，用户既看不到失败也不知道该刷新。
+        failures += 1;
+        if (failures >= 5 && generation === runGeneration.current && openRef.current) {
+          setRunError(t('agent.chat.runPollFailed'));
+          return;
+        }
       }
     }
   }

@@ -33,6 +33,18 @@ describe('useAgentConversations 的轮询生命周期', () => {
     expect(source).toMatch(/if \(!open\) runGeneration\.current \+= 1/);
   });
 
+  it('surfaces a failure instead of silently giving up after the last attempt', () => {
+    // 150 次全部失败后以前是静默退出：界面永远停在「运行中」，用户既看不到失败
+    // 也不知道该刷新。连续失败到阈值必须给出提示。
+    const poll = source.slice(source.indexOf('async function pollRun'));
+    const body = poll.slice(0, poll.indexOf('async function loadMore'));
+    expect(body).toMatch(/let failures = 0/);
+    expect(body).toMatch(/failures \+= 1/);
+    expect(body).toMatch(/setRunError\(t\('agent\.chat\.runPollFailed'\)\)/);
+    // 成功一次就清零，避免偶发抖动累积成误报。
+    expect(body).toMatch(/failures = 0;/);
+  });
+
   it('checks the drawer in every poll iteration, not only the generation', () => {
     const poll = source.slice(source.indexOf('async function pollRun'));
     const body = poll.slice(0, poll.indexOf('async function loadMore'));
