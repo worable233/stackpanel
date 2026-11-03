@@ -81,6 +81,21 @@ export function useAgentConversations(open: boolean, search: string) {
    */
   const [runError, setRunError] = useState('');
   const runGeneration = useRef(0);
+  /**
+   * 抽屉当前是否打开。
+   *
+   * `pollRun` 里只看 `runGeneration` 是不够的：那个计数只在**切换回合**时自增，
+   * 关闭抽屉不会碰它。于是一条后台运行的轮询会一直跑到 150 次上限（≈5 分钟），
+   * 每次一个 `/runs/:id` 请求——用户早就把抽屉关了，网络面板里却还在每 2 秒
+   * 响一次，服务端也照样被敲。用 ref 而不是 state：轮询循环要读到**当前值**，
+   * 而 state 在闭包里是旧的。
+   */
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+    // 重新打开时让上一轮还在跑的循环自停，避免两个循环同时写 `run`。
+    if (!open) runGeneration.current += 1;
+  }, [open]);
   const [refresh, setRefresh] = useState(0);
   const restore = useRef(true);
   const locked = useRef(false);
@@ -199,12 +214,12 @@ export function useAgentConversations(open: boolean, search: string) {
   async function pollRun(runId: string, generation: number) {
     const terminal = new Set(['DONE', 'FAILED', 'CANCELLED']);
     for (let attempt = 0; attempt < 150; attempt += 1) {
-      if (generation !== runGeneration.current) return;
+      if (generation !== runGeneration.current || !openRef.current) return;
       await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 800 : 2000));
-      if (generation !== runGeneration.current) return;
+      if (generation !== runGeneration.current || !openRef.current) return;
       try {
         const detail = await chatFetch<RunDetail>(`/runs/${runId}`);
-        if (generation !== runGeneration.current) return;
+        if (generation !== runGeneration.current || !openRef.current) return;
         const last = detail.steps.at(-1);
         setRun({ ...detail.run, latest: runSummary(last) });
         if (terminal.has(detail.run.status)) return;

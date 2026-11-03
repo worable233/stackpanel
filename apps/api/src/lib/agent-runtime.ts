@@ -357,11 +357,42 @@ function buildMessages(ctx: RunContext): LlmMessage[] {
       messages.push({
         role: 'tool',
         toolCallId,
-        parts: [{ type: 'tool-result', id: toolCallId, content: text, isError: step.isError }],
+        parts: [
+          {
+            type: 'tool-result',
+            id: toolCallId,
+            content: toolResultContent(text, payload?.['statusCode'], step.isError),
+            isError: step.isError,
+          },
+        ],
       });
     }
   }
   return messages;
+}
+
+/**
+ * 工具结果回灌给模型时的正文。
+ *
+ * 很多能力以 `204 No Content` 表示成功（`DELETE /admin/users/:id/services/:id`、
+ * 插件卸载、通知已读…），`inject()` 的 `body` 就是空字符串。把空字符串直接当作
+ * `role: 'tool'` 的 `content` 会被 OpenAI 兼容端点判为非法请求（400
+ * `invalid_request_error`）——内核把它当「模型调用失败」，整条运行 FAILED，而
+ * 真实情况是**工具已经执行成功**。用户看到的是「模型调用失败」，去查网关、查
+ * 密钥、查配额，没人会想到是一次成功的删除返回了空体。
+ *
+ * 所以空结果要换成一句明确的话，并把状态码带上，让模型知道「做完了，没有正文」。
+ */
+export function toolResultContent(
+  text: string,
+  statusCode: unknown,
+  isError: boolean | undefined,
+): string {
+  if (text.trim() !== '') return text;
+  const status = typeof statusCode === 'number' ? statusCode : null;
+  if (isError) return status === null ? '工具执行失败（无错误正文）' : `工具执行失败（HTTP ${status}，无错误正文）`;
+  if (status === null) return '工具已执行，没有返回正文';
+  return `工具已执行（HTTP ${status}），没有返回正文`;
 }
 
 /** Persist the run counters + terminal state. */
@@ -773,7 +804,14 @@ async function stepOnce(ctx: RunContext, run: AgentRun): Promise<void> {
 
   if (!isModelAllowed(ctx.model, ctx.deps.allowedModels)) throw new StopRun('模型已不在允许名单内');
   const calls = result.parts.filter(isToolCallPart);
-  if (calls.length) await checkpoint(ctx, 'tool', 0);
+  // No `checkpoint('tool', 0)` here. `handleToolCall` runs one immediately for
+  // each call, with the *real* reserve (1 or 2 step rows) — a second pass with
+  // `reserve: 0` would only re-run the same eight-odd queries (credential,
+  // caps, ancestor chain, root, family, daily totals, capability lists) without
+  // being able to reject anything the per-call checkpoint accepts. A model
+  // returning N tool calls used to cost N+1 of those passes; the `reserve: 0`
+  // one carried no extra authority, because step-count and budget are enforced
+  // inside `handleToolCall` before each effect.
   if (
     new Set(calls.map((call) => call.id)).size !== calls.length ||
     calls.some((call) => !call.id)

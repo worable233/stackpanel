@@ -5,6 +5,7 @@ import { actionRoutes, actionCapabilities } from '../agent/actions.ts';
 import { agentOAuthRoutes } from '../agent/oauth.ts';
 import { isSecretsEnabled } from '../lib/crypto.ts';
 import { authorizeBackground, revokeBackground, registerAgentJobs } from '../agent/background.ts';
+import { RUN_TOKEN_AUDIENCE, RUN_TOKEN_SCOPE, RUN_TOKEN_TTL_MS } from '../agent/run-token.ts';
 import { externalAgentRoutes } from '../agent/external-routes.ts';
 import { externalCapabilities } from '../agent/external.ts';
 import { journaledProvider } from '../agent/metering.ts';
@@ -439,11 +440,7 @@ export function requireOriginalAgentToken(
  * （`requireOriginalAgentToken` 的语义因此仍然成立），但能力面比通用 `mcp.write`
  * 窄：只开放 `/api/v1/agent/*` 与内核自带的 `/api/v1/*` 能力路由。
  */
-export const RUN_TOKEN_TTL_MS = 5 * 60_000;
-export const RUN_TOKEN_AUDIENCE = 'agent-run';
-
-/** 这枚短期令牌在任何 `/api/v1` 上生效（插件 raw/后台路由不在内）。 */
-const RUN_TOKEN_SCOPE = 'api.v1';
+export { RUN_TOKEN_TTL_MS, RUN_TOKEN_AUDIENCE };
 
 export async function agentRoutes(app: FastifyInstance): Promise<void> {
   await app.register(agentConversationRoutes);

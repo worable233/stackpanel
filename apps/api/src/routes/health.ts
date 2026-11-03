@@ -8,13 +8,31 @@ import { fallbackBootReport, getBootReport } from '../lib/boot-report.ts';
 import { memoryPressure, memoryReport } from '../lib/memory-report.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 import { readProxyHealth } from '../lib/proxy-check.ts';
+import { resolveLlmProvider } from '../lib/llm-provider.ts';
 
 /** `/ready` 里那段只读的 Agent 自检结果（C-3）。 */
 export interface AgentHealth {
   /** 管理员开关（`Setting['agent.enabled']`）。 */
   enabled: boolean;
-  /** 是否已配置模型提供方（插件或兜底 `agent.llm`）。 */
+  /**
+   * 是否真的**能调到模型**。
+   *
+   * 必须与 `resolveLlmProvider()` 同口径：那个函数才是所有 Agent 请求的实际
+   * 闸门。以前这里只看 `Setting['agent.llm']` 里有没有 `baseUrl`/`model` 两个
+   * 字符串，于是两种状态都会报错：
+   *
+   * - **假绿**：管理员填了地址和模型、但保存密钥失败（或密钥被删），
+   *   `Setting` 仍然完整，`/ready` 说已配置，而每一次运行都在建 run 之前就抛
+   *   `agent.llm_unconfigured`。运维看着「一切正常」的探针去查权限和网络。
+   * - **假红**：插件通过 `llmProvider` 扩展点提供模型时根本没有 `agent.llm`
+   *   这个设置，`/ready` 说未配置，实际完全可用。
+   *
+   * 现在直接问 `resolveLlmProvider()`：它按「插件扩展点 → 兜底配置（含密钥解密）」
+   * 的顺序解析，返回 `null` 才代表真的调不到模型。
+   */
   llmConfigured: boolean;
+  /** 提供模型的来源：`plugin` / `configured`；未配置时为 `null`。 */
+  llmProvider: string | null;
   /** 最近一次运行的时间；`null` = 从未跑过，这正是要暴露的信号。 */
   lastRunAt: string | null;
   lastRunStatus: string | null;
@@ -29,11 +47,12 @@ export interface AgentHealth {
  * 只读：不改开关、不调模型、不写审计。放在 `/ready` 里是因为运维第一眼看的就是
  * 它；「enabled=true 但 runCount=0」这种状态必须在这里显形，而不是要人翻数据库。
  */
-export async function readAgentHealth(): Promise<AgentHealth> {
+export async function readAgentHealth(
+  runtime?: Parameters<typeof resolveLlmProvider>[0],
+): Promise<AgentHealth> {
   const prisma = getPrisma();
-  const [enabledRow, llmRow, lastRun, runCount] = await Promise.all([
+  const [enabledRow, lastRun, runCount] = await Promise.all([
     prisma.setting.findUnique({ where: { key: 'agent.enabled' } }),
-    prisma.setting.findUnique({ where: { key: 'agent.llm' } }),
     prisma.agentRun.findFirst({ orderBy: { createdAt: 'desc' } }),
     prisma.agentRun.count(),
   ]);
@@ -43,10 +62,21 @@ export async function readAgentHealth(): Promise<AgentHealth> {
     (enabledValue !== null &&
       typeof enabledValue === 'object' &&
       (enabledValue as Record<string, unknown>)['enabled'] === true);
-  const llm = llmRow?.value as Record<string, unknown> | undefined;
+  // 解析失败（例如密钥密文损坏）不能把探针整个打挂：那会让 `/ready` 变成 500，
+  // 而真正要传达的是「Agent 不可用」。按未配置处理并把原因留在 lastError 之外
+  // —— 密钥损坏在管理员保存/测试连接时已经有明确错误码。
+  let provider: Awaited<ReturnType<typeof resolveLlmProvider>> = null;
+  if (runtime) {
+    try {
+      provider = await resolveLlmProvider(runtime);
+    } catch {
+      provider = null;
+    }
+  }
   return {
     enabled,
-    llmConfigured: Boolean(llm && typeof llm['baseUrl'] === 'string' && typeof llm['model'] === 'string'),
+    llmConfigured: provider !== null,
+    llmProvider: provider?.id ?? null,
     lastRunAt: lastRun ? lastRun.createdAt.toISOString() : null,
     lastRunStatus: lastRun?.status ?? null,
     runCount,
@@ -128,7 +158,9 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
     let agent: AgentHealth | null = null;
     if (databaseOk) {
       try {
-        agent = await readAgentHealth();
+        // 传 runtime：`llmConfigured` 必须与 `resolveLlmProvider()` 同口径，
+        // 否则插件提供的模型会被误报为「未配置」。
+        agent = await readAgentHealth(app.pluginRuntime);
       } catch {
         agent = null;
       }

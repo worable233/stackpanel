@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { PrismaClient } from '@stackpanel/db';
 import { PluginError, type AgentRunStatus } from '@stackpanel/sdk';
 import { getPrisma } from '../plugins/prisma.ts';
 import { currentUser } from '../plugins/auth.ts';
 import { decryptSecret, encryptSecret, isSecretsEnabled } from '../lib/crypto.ts';
 import { getJobRuntime } from '../jobs/kernel-jobs.ts';
 import { notifyAgent, retryAgentNotices } from '../notifications/agent-notifications.ts';
+import { RUN_TOKEN_AUDIENCE } from './run-token.ts';
 
 const keyFor = (runId: string) => `agent.dispatch.${runId}`;
 const terminal: AgentRunStatus[] = ['DONE', 'FAILED', 'CANCELLED'];
@@ -71,6 +73,65 @@ export async function advanceBackground(app: FastifyInstance, runId: string): Pr
   } finally { clearInterval(renewal); await db.agentDispatch.updateMany({ where: { runId, lockedUntil: lease }, data: { lockedUntil: null } }); }
 }
 
+/**
+ * 清理会话代为签发的短期 `agent-run` 令牌。
+ *
+ * 每条从抽屉发出的消息都会在 `createRun` 里新建一枚 5 分钟有效期的
+ * `audience='agent-run'` ApiToken（`AgentRun.tokenId` 非空，运行必须挂在某枚
+ * 凭证上）。这些令牌**没有别的地方会删**：
+ *
+ * - `resolveApiTokenWithOwner` 只是拒绝过期令牌，不删行；
+ * - 用户自己删不了（`/me/api-tokens` 不列它们，也没有 UI）；
+ * - 系统里唯一的 `apiToken.deleteMany` 是用户主动吊销单枚令牌。
+ *
+ * 于是 `api_tokens` 随对话量线性增长，每行还带 `keyHash`（唯一索引）。50 条
+ * 消息/天 = 每天 50 行，一年 1.8 万行；对话多的工作区更糟。这不是正确性 bug
+ * （过期令牌一律被拒），但是没人会去清的增长，且会拖慢该表上的索引扫描。
+ *
+ * 只删**满足全部条件**的行：
+ * - `audience = 'agent-run'` —— 用户自己建的长效令牌绝不能碰；
+ * - 已过期超过一个宽限期 —— 给「刚过期但仍在推进的运行」留余量；
+ * - 名下**没有任何未终结的运行** —— `AgentRun.tokenId` 是 `onDelete: Cascade`，
+ *   删掉令牌会把运行记录（以及步骤、审批）一起抹掉，那是审计轨迹。
+ *
+ * 最后一条是关键：后台运行的 `expiresAt` 只约束「拿它去新建」的窗口，运行本身
+ * 由 `validateCredential` 按 owner+status 判定，可以活很久。所以「过期」不等于
+ * 「没人再用」。批量上限防止一次清扫拖住 sweep。
+ */
+const RUN_TOKEN_GRACE_MS = 24 * 60 * 60_000;
+const RUN_TOKEN_PRUNE_BATCH = 200;
+/**
+ * `kernel.agent.sweep` 每 5 秒跑一次（审批超时与调度恢复需要这个频率）。
+ * 令牌清理不需要——它删的是**过期 24 小时以上**的行，多等几分钟毫无区别。
+ * 按轮次节流，避免每 5 秒多一次 `api_tokens` 扫描（那是个随对话量增长的表）。
+ */
+const RUN_TOKEN_PRUNE_EVERY = Math.max(1, Math.round((60 * 60_000) / 5000));
+
+export async function pruneRunTokens(
+  db: PrismaClient,
+  now = new Date(),
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - RUN_TOKEN_GRACE_MS);
+  const stale = await db.apiToken.findMany({
+    where: {
+      audience: RUN_TOKEN_AUDIENCE,
+      expiresAt: { lt: cutoff },
+      // 仍有未终结的运行 → 留着，删它会级联抹掉运行记录。
+      runs: { none: { status: { notIn: terminal } } },
+    },
+    select: { id: true },
+    take: RUN_TOKEN_PRUNE_BATCH,
+  });
+  if (stale.length === 0) return 0;
+  const removed = await db.apiToken.deleteMany({
+    where: { id: { in: stale.map((row) => row.id) } },
+  });
+  return removed.count;
+}
+
+/** 已执行的 sweep 轮次，用于按轮次节流低频工作（见 RUN_TOKEN_PRUNE_EVERY）。 */
+let sweepPasses = 0;
+
 export async function sweepAgents(app: FastifyInstance): Promise<void> {
   const db = getPrisma();
   await db.agentApproval.updateMany({ where: { status: 'PENDING', expiresAt: { lte: new Date() } }, data: { status: 'EXPIRED', decidedAt: new Date(), reason: '审批超时' } });
@@ -82,6 +143,12 @@ export async function sweepAgents(app: FastifyInstance): Promise<void> {
   const rows = await db.agentDispatch.findMany({ where: { pending: true, OR: [{ lockedUntil: null }, { lockedUntil: { lt: new Date() } }] }, orderBy: { createdAt: 'asc' }, take: 20 });
   await Promise.allSettled(rows.map((row) => advanceBackground(app, row.runId)));
   await db.agentOAuthGrant.deleteMany({where:{expiresAt:{lt:new Date(Date.now()-86400_000)}}});
+  sweepPasses += 1;
+  if (sweepPasses % RUN_TOKEN_PRUNE_EVERY === 0) {
+    await pruneRunTokens(db).catch(() => {
+      // 清理失败不能拖垮审批超时与后台推进：下一轮再试。
+    });
+  }
   await retryAgentNotices(app.notifications);
   // Reconstruct notices after a process died between terminal persistence and enqueue.
   const missing = await db.$queryRaw<Array<{id: string}>>`SELECT r.id FROM agent_runs r WHERE r.status IN ('DONE','FAILED','CANCELLED') AND NOT EXISTS (SELECT 1 FROM agent_deliveries d WHERE d."runId" = r.id AND d.payload->>'key' = 'terminal:' || r.status::text) ORDER BY r."endedAt" ASC LIMIT 100`;

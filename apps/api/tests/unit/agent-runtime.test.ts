@@ -33,6 +33,7 @@ const {
   toRunView,
 } = await import('../../src/lib/agent-runtime.ts');
 import type { AgentRuntimeDeps } from '../../src/lib/agent-runtime.ts';
+import { toolResultContent } from '../../src/lib/agent-runtime.ts';
 const { approvalEligibility } = await import('../../src/routes/agent.ts');
 
 /* ------------------------------------------------------------------ *
@@ -860,4 +861,45 @@ it('refuses an unpriced write when a monetary budget is active',async()=>{
   const h=await harness({autonomy:'act',budgetMinor:100,script:[completion([toolCall('risk','order_cancel',{params:{id:'o_1'}})],'tool_calls')]});
   const result=await runAgentUntilBlocked(h.deps);
   expect(result.status).toBe('FAILED');expect(h.exec.calls).toHaveLength(0);
+});
+
+describe('toolResultContent (204 空体的工具结果)', () => {
+  /**
+   * 很多能力以 `204 No Content` 表示成功：`DELETE /admin/users/:id/services/:id`、
+   * 插件卸载、通知已读……`inject()` 的 `body` 就是空字符串。
+   *
+   * 把空字符串直接当作 `role: 'tool'` 的 `content` 会被 OpenAI 兼容端点判为非法
+   * 请求（400 invalid_request_error）。内核把它当「模型调用失败」，整条运行
+   * FAILED —— 而工具其实**已经执行成功**（删除是不可回滚的）。用户看到「模型
+   * 调用失败」，去查网关、密钥、配额，没人会想到是一次成功的删除返回了空体。
+   */
+  it('replaces an empty success body with an explicit statement', () => {
+    const text = toolResultContent('', 204, false);
+    expect(text).not.toBe('');
+    expect(text).toContain('204');
+    expect(text).toContain('已执行');
+  });
+
+  it('replaces an empty error body too, and says it failed', () => {
+    const text = toolResultContent('', 500, true);
+    expect(text).not.toBe('');
+    expect(text).toContain('失败');
+    expect(text).toContain('500');
+  });
+
+  it('handles a whitespace-only body as empty', () => {
+    // 有的端点返回 "\n" 而不是空串；对模型来说同样是空 content。
+    expect(toolResultContent('   \n', 200, false)).toContain('已执行');
+  });
+
+  it('leaves a real body untouched', () => {
+    const body = '{"ok":true,"deleted":1}';
+    expect(toolResultContent(body, 200, false)).toBe(body);
+    expect(toolResultContent('boom', 500, true)).toBe('boom');
+  });
+
+  it('degrades gracefully when the status code is missing or not a number', () => {
+    expect(toolResultContent('', undefined, false)).toContain('已执行');
+    expect(toolResultContent('', 'oops', true)).toContain('失败');
+  });
 });
