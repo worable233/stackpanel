@@ -640,7 +640,7 @@ export function BackendShell({
         </aside>
 
 
-        <main className="min-h-0 min-w-0 flex-1 p-2 md:p-3 md:pl-0">
+        <main className="min-h-0 min-w-0 flex-1 p-2 md:p-3">
           <div className="h-full overflow-y-auto rounded-[22px] bg-background px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
             <div
               key={pathname}

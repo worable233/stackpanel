@@ -114,7 +114,7 @@ export function SettingsSections({
       </aside>
       <TabsContent value={selected?.id ?? ''} className="min-w-0 flex-1 p-1">
         {selected && (
-          <div id={`settings-panel-${selected.id}`} className="w-full pb-12">
+          <div id={`settings-panel-${selected.id}`} className="w-full">
             {selected.content}
           </div>
         )}
