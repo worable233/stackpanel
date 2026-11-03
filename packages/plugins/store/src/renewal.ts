@@ -77,8 +77,20 @@ export async function renewService(ctx: PluginContext, req: HttpRequest): Promis
   if (!service || service.userId !== userId) throw new StoreError(404, '服务不存在');
   if (!RENEWABLE_STATES.has(service.status)) throw new StoreError(409, '该服务当前状态不可续费');
 
+  /**
+   * 幽灵实例（0.1.3 之前的后台直连绑定产生）没有对应的本地商品。
+   *
+   * 直接报「商品不存在」会让用户以为是商品被下架了，而实际上是这条实例
+   * 从一开始就没有商品 —— 它不能续费、不能退款、不能对账。给出能解释现状
+   * 的文案，比一个准确的 404 更有用。
+   */
   const product = await getProduct(service.productId);
-  if (!product) throw new StoreError(404, '商品不存在');
+  if (!product) {
+    throw new StoreError(
+      409,
+      '该服务来自后台导入，没有对应的本地商品，无法续费。请联系管理员重新绑定商品后再试',
+    );
+  }
 
   const months = resolveMonths(product, input.cycle, input.months);
   // 续费与首购走同一套折扣规则（discount.ts）：否则用户首期享受折扣、续费却

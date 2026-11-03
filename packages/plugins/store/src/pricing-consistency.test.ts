@@ -317,6 +317,40 @@ describe('跨路径定价一致性（展示价 = 实付价）', () => {
     expect(result.order.total).toBe(10800);
   });
 
+  it('reports an explainable error when the service has no local product', async () => {
+    /**
+     * 幽灵实例（0.1.3 之前后台「直接绑定上游服务」产生）没有对应本地商品。
+     * 续费必须给出能解释现状的原因，而不是一句「商品不存在」—— 后者会让用户
+     * 以为商品被下架了，而实际上是这条实例从一开始就没有商品。
+     */
+    const seed: Seed = { price: 9900, discount: null, groupDiscount: null };
+    const stores = createStores(seed);
+    bindContext(makeCtx(stores, seed));
+    const ghost = await stores.client.create({ kind: 'store/service-instance' } as never, {
+      userId: USER_ID,
+      orderId: null,
+      // 这个商品 id 在本地商品表里查不到 —— 正是幽灵实例的特征。
+      productId: 'upstream-only-product',
+      productName: 'S93z7tkBNkRxq',
+      state: 'ACTIVE',
+      providerId: 'zjmf',
+      providerServiceId: '33363',
+      fulfillmentType: 'upstream_service',
+      expiresAt: new Date('2026-06-01T00:00:00Z'),
+      runtime: { origin: 'admin-migration' },
+    });
+
+    await expect(
+      renewService(makeCtx(stores, seed), {
+        params: { id: ghost.name },
+        query: {},
+        body: { paymentMode: 'wallet', cycle: 'monthly' },
+        headers: {},
+        user: { id: USER_ID, role: 'USER' },
+      } as never),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
   it('购物车合计与单件试算一致', async () => {
     const seed: Seed = { price: 9900, discount: 10, groupDiscount: null };
     const stores = createStores(seed);
