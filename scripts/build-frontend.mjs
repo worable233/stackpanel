@@ -34,6 +34,10 @@ const HOST_ABI_ADAPTER_ALIASES = [
   '--alias:next/link=/api/frontend-abi/next/link',
   '--alias:next/form=/api/frontend-abi/next/form',
   '--alias:next/navigation=/api/frontend-abi/next/navigation',
+  // `@stackpanel/ui/charts` **必须**排在 `@stackpanel/ui` 前面：alias 是前缀
+  // 匹配，顺序反了会被改写成错误 URL（运行期 404）。这是图表组件的独立槽，
+  // 主桶不含 recharts —— 见 docs/design/frontend-bundle-slimming.md。
+  '--alias:@stackpanel/ui/charts=/api/frontend-abi/@stackpanel/ui/charts',
   '--alias:@stackpanel/ui=/api/frontend-abi/@stackpanel/ui',
   '--alias:@stackpanel/sdk=/api/frontend-abi/@stackpanel/sdk',
   '--alias:lucide-react=/api/frontend-abi/lucide-react',
@@ -289,6 +293,10 @@ async function buildFrontendPackageFromSource(pkg) {
       `--alias:next/navigation=${probeLinkStub}`,
       `--alias:react/jsx-runtime=${path.join(root, 'apps', 'web', 'node_modules', 'react', 'jsx-runtime.js')}`,
       `--alias:react=${path.join(root, 'apps', 'web', 'node_modules', 'react')}`,
+      // 同样要注意前缀匹配：`@stackpanel/ui/charts` 必须排在 `@stackpanel/ui`
+      // 之前，且指向具体文件 `dist/charts.js`（probe 阶段 alias 指向文件，
+      // 不是包名，所以子路径不会被 Node 的 exports 解析接管）。
+      `--alias:@stackpanel/ui/charts=${path.join(root, 'packages', 'ui', 'dist', 'charts.js')}`,
       `--alias:@stackpanel/ui=${path.join(root, 'packages', 'ui', 'dist', 'index.js')}`,
       `--alias:lucide-react=${path.join(root, 'apps', 'web', 'node_modules', 'lucide-react')}`,
       `--alias:recharts=${path.join(root, 'apps', 'web', 'node_modules', 'recharts')}`,

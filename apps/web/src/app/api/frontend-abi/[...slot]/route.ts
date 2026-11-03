@@ -30,10 +30,11 @@ const HOST_ABI_SLOTS = new Set([
   'next/form',
   'next/navigation',
   '@stackpanel/ui',
+  // 图表组件的独立槽。主桶不含 recharts（见 docs/design/frontend-bundle-slimming.md）。
+  '@stackpanel/ui/charts',
   '@stackpanel/sdk',
   'lucide-react',
   'sonner',
-  'recharts',
 ]);
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -43,7 +44,11 @@ function adapterSource(slot: string, names: string[]): string {
     '// StackPanel host ABI adapter (contract 02 §5). Generated; do not edit.',
     'const A = globalThis.__STACKPANEL_CLIENT_ABI__;',
     `if (!A || !A[${JSON.stringify(slot)}]) throw new Error('StackPanel host ABI not published for ${slot}');`,
-    `const ns = A[${JSON.stringify(slot)}];`,
+    `const raw = A[${JSON.stringify(slot)}];`,
+    // 惰性槽（例如 `@stackpanel/ui/charts`，依赖 recharts）发布的是一个返回
+    // Promise 的函数：等它解析出真正的命名空间。这样重依赖只在插件**真的
+    // 取用**时才加载，不会因为 ABI 发布本身进入每个页面的模块图。
+    `const ns = typeof raw === 'function' ? await raw() : raw;`,
   ];
   for (const name of names) {
     if (name === 'default') continue;

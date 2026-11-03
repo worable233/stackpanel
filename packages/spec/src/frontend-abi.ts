@@ -34,6 +34,9 @@ export const HOST_FRONTEND_ABI_SLOTS: readonly string[] = Object.freeze([
   'next/form',
   'next/navigation',
   '@stackpanel/ui',
+  // 图表组件的独立槽。主桶不含 recharts（559 KB），拆分理由见
+  // docs/design/frontend-bundle-slimming.md。
+  '@stackpanel/ui/charts',
   '@stackpanel/sdk',
   'lucide-react',
   'sonner',
@@ -54,6 +57,8 @@ export const HOST_FRONTEND_ABI: Readonly<Record<string, string>> = Object.freeze
   'next/form': '16.4.2',
   'next/navigation': '16.4.2',
   '@stackpanel/ui': '0.2.0',
+  // charts 是同一个包的第二入口，版本必须与 @stackpanel/ui 一致。
+  '@stackpanel/ui/charts': '0.2.0',
   '@stackpanel/sdk': '0.4.0',
   'lucide-react': '1.31.0',
   sonner: '2.0.8',

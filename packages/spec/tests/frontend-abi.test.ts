@@ -31,6 +31,20 @@ describe('host frontend ABI table', () => {
     }
   });
 
+  it('declares the charts slot at the same version as the ui barrel', () => {
+    // `@stackpanel/ui/charts` 是同一个包的第二入口（图表组件，依赖 recharts）。
+    // 版本必须与主桶一致，否则 frontendExternals 门禁会对插件报出无法满足的 range。
+    expect(HOST_FRONTEND_ABI_SLOTS).toContain('@stackpanel/ui/charts');
+    expect(HOST_FRONTEND_ABI['@stackpanel/ui/charts']).toBe(HOST_FRONTEND_ABI['@stackpanel/ui']);
+  });
+
+  it('does not expose a bare recharts slot', () => {
+    // 图表能力只通过 `@stackpanel/ui/charts` 暴露。裸 `recharts` 槽会让插件
+    // 直接绑死图表库版本，且没有任何宿主侧实现发布它（历史上声明过但从未
+    // 实现，属于半成品）。
+    expect(HOST_FRONTEND_ABI_SLOTS).not.toContain('recharts');
+  });
+
   it('keeps react/react-dom/jsx-runtime pinned to the same version', () => {
     expect(HOST_FRONTEND_ABI['react']).toBe(installedVersion('react') ?? HOST_FRONTEND_ABI['react']);
     expect(HOST_FRONTEND_ABI['react-dom']).toBe(HOST_FRONTEND_ABI['react']);

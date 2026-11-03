@@ -43,8 +43,9 @@ import {
   SheetTrigger,
   CopyButton,
   SecretValue,
-  MetricsExplorer,
 } from '@stackpanel/ui';
+// 图表组件走独立 ABI 槽：主桶不再导出它（recharts 559 KB，会拖慢宿主首屏）。
+import { MetricsExplorer } from '@stackpanel/ui/charts';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';

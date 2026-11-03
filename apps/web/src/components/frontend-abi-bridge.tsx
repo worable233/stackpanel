@@ -49,6 +49,22 @@ let publishing: Promise<void> | null = null;
  * 幂等性靠两个检查：全局已发布则直接返回；并发的调用共享同一个 Promise
  * （`publishing`），避免重复解析 UI 桶。
  */
+/**
+ * 图表槽的惰性句柄。
+ *
+ * `@stackpanel/ui/charts` 依赖 recharts（未压缩 559 KB）。这里用 getter
+ * **推迟到插件真的取用时才 import** —— 若在发布时无条件加载，recharts 会
+ * 重新进入每个页面的模块图，拆分就白做了。
+ *
+ * getter 返回 Promise：适配器（`/api/frontend-abi/*`）取到的就是这个句柄，
+ * 它 await 之后拿到真正的命名空间。
+ */
+let chartsPromise: Promise<unknown> | null = null;
+function chartsSlot(): Promise<unknown> {
+  chartsPromise ??= import('@stackpanel/ui/charts');
+  return chartsPromise;
+}
+
 export function publishHostClientAbi(): Promise<void> {
   const g = globalThis as unknown as ClientAbiGlobal;
   if (g.__STACKPANEL_CLIENT_ABI__) return Promise.resolve();
@@ -64,6 +80,8 @@ export function publishHostClientAbi(): Promise<void> {
       'next/form': form,
       'next/navigation': navigation,
       '@stackpanel/ui': ui,
+      // 惰性：getter 只在插件取图表组件时才触发 import()。
+      '@stackpanel/ui/charts': chartsSlot,
       // Packages format money and resolve their own catalogs through the SDK
       // (`createPackageTranslator`), so runtime-loaded client modules need the
       // host's SDK namespace too.

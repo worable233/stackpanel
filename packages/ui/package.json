@@ -54,6 +54,11 @@
       "types": "./dist/field.d.ts",
       "import": "./dist/field.js",
       "default": "./dist/field.js"
+    },
+    "./charts": {
+      "types": "./dist/charts.d.ts",
+      "import": "./dist/charts.js",
+      "default": "./dist/charts.js"
     }
   },
   "files": [

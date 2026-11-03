@@ -55,14 +55,16 @@ export { CopyButton } from './copy-button.js';
 export type { CopyButtonProps } from './copy-button.js';
 export { SecretValue } from './secret-value.js';
 export type { SecretValueProps } from './secret-value.js';
-export { MetricsExplorer } from './metrics-explorer.js';
-export { UsageTrendChart } from './usage-trend-chart.js';
-export type { UsageTrendPoint, UsageTrendFormat } from './usage-trend-chart.js';
-export type {
-  MetricsExplorerLabels,
-  MetricPointLike,
-  MetricSeriesLike,
-} from './metrics-explorer.js';
+// 图表组件**不在这里导出**。
+//
+// 它们依赖 recharts（未压缩 559 KB）。Turbopack 会把同一批 client 组件合并
+// 进一个 chunk，于是任何页面用基础组件都会连带下载 recharts —— 实测 /login
+// 首屏 3360 KB。移到独立入口 `@stackpanel/ui/charts` 后降到 2991 KB。
+//
+// 需要图表的只有运行期装载的插件（当前是 store 的监控面板），走宿主 ABI
+// 槽 `@stackpanel/ui/charts`。web 自己的组件不要引用它。
+//
+// 详见 docs/design/frontend-bundle-slimming.md。
 export { AnimatedGridPattern } from './magicui/animated-grid-pattern.js';
 export type { AnimatedGridPatternProps } from './magicui/animated-grid-pattern.js';
 export { BorderBeam } from './magicui/border-beam.js';
