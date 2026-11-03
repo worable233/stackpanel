@@ -47,13 +47,11 @@ export default async function AdminPluginSettingsPage({
             save={savePluginSettingsAction.bind(null, id)}
           />
         ) : (
-          <div className="flex max-w-xl flex-col items-center gap-3 rounded-2xl bg-muted/40 px-6 py-12 text-center">
+          <div className="mx-auto flex max-w-xl flex-col items-center gap-3 rounded-2xl bg-muted/40 px-6 py-12 text-center">
             <span className="flex size-11 items-center justify-center rounded-full bg-background text-muted-foreground">
               <Settings2 className="size-5" aria-hidden="true" />
             </span>
-            <p className="text-sm text-muted-foreground">
-              {t('admin.pluginSettings.noSettings')}
-            </p>
+            <p className="text-sm text-muted-foreground">{t('admin.pluginSettings.noSettings')}</p>
           </div>
         )}
       </div>

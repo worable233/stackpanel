@@ -73,9 +73,7 @@ export default async function AdminPluginDetailPage({
           backLabel={t('admin.plugins.detail.back')}
           title={t('admin.plugins.detail.title')}
         />
-        <p className="text-sm text-destructive">
-          {t('admin.plugins.detail.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('admin.plugins.detail.serviceUnavailable')}</p>
       </main>
     );
   }
@@ -93,7 +91,7 @@ export default async function AdminPluginDetailPage({
   }
 
   return (
-    <main className="w-full max-w-3xl space-y-6">
+    <main className="mx-auto w-full max-w-3xl space-y-6">
       <PageHeader
         backHref="/admin/plugins"
         backLabel={t('admin.plugins.detail.back')}

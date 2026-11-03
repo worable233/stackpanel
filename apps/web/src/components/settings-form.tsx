@@ -51,7 +51,7 @@ export function SettingsForm({ schema, initial, save }: SettingsFormProps) {
           setState(await save(values));
         });
       }}
-      className="flex flex-col gap-5"
+      className="mx-auto flex w-full max-w-4xl flex-col gap-5"
     >
       <div className="flex flex-wrap items-center justify-end gap-3">
         {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
@@ -85,7 +85,7 @@ export function SettingsForm({ schema, initial, save }: SettingsFormProps) {
 
         <div className="min-w-0 flex-1">
           {schema.groups.map((group) => (
-            <TabsContent key={group.id} value={group.id} className="m-0 max-w-3xl">
+            <TabsContent key={group.id} value={group.id} className="m-0 mx-auto max-w-3xl">
               <SettingsGroup group={group} values={values[group.id] ?? {}} onChange={update} />
             </TabsContent>
           ))}

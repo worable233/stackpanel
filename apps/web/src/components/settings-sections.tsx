@@ -65,7 +65,7 @@ export function SettingsSections({
       value={selected?.id}
       onValueChange={select}
       orientation="vertical"
-      className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-6"
+      className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-6 lg:flex-row lg:gap-6"
     >
       <aside className="shrink-0 lg:w-40 lg:pt-1">
         <div className="md:hidden">
@@ -114,7 +114,7 @@ export function SettingsSections({
       </aside>
       <TabsContent value={selected?.id ?? ''} className="min-w-0 flex-1 p-1">
         {selected && (
-          <div id={`settings-panel-${selected.id}`} className="w-full max-w-xl pb-12">
+          <div id={`settings-panel-${selected.id}`} className="w-full pb-12">
             {selected.content}
           </div>
         )}
