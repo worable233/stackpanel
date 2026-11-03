@@ -12,6 +12,7 @@ import {
   requestNav,
   requestPluginAccountMenus,
 } from '@/lib/shell-request-cache';
+import { requestPlatformBrand } from '@/lib/platform-request-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,10 +34,8 @@ export default async function AccountLayout({ children }: { children: React.Reac
   // 同上：`null` 是“导航拉不到”，不一定是“你没登录”。
   if (!account) return <ServiceUnavailable />;
 
-  const brand = await getApiClient()
-    .getPlatformBrand()
-    .then((result) => result.brand)
-    .catch(() => null);
+  // 走请求级缓存：根 layout 的 metadata 已经读过一次，这里不该再打一遍。
+  const brand = await requestPlatformBrand();
   const brandLogoUrl = brand?.logo ? apiAssetUrl(brand.logo) : null;
 
   return (

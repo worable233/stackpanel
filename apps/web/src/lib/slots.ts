@@ -12,6 +12,7 @@ import { getFrontendPackage } from './frontend-bundles';
 import { loadRuntimeFrontend, runtimeFrontendLoadingEnabled } from './frontend-runtime';
 import { cacheKey, invalidate, remember } from './server-cache';
 import { cache } from 'react';
+import { requestActiveTheme, requestThemeFrontend } from './platform-request-cache';
 
 export interface FrontendCandidate {
   kind: 'themes' | 'plugins';
@@ -40,18 +41,17 @@ export async function activeThemeCandidate(): Promise<FrontendCandidate | null> 
 
 async function resolveActiveThemeCandidate(): Promise<FrontendCandidate | null> {
   try {
-    // /themes/active 线上 1111 次、p50 136ms；主题切换是低频运维动作，缓存 10s
-    // 让每次渲染省掉这一跳。
-    const { theme } = await remember(cacheKey('active-theme'), () => getApiClient().getActiveTheme(), {
-      ttlMs: 10_000,
-    });
+    // /themes/active 线上 1111 次、p50 136ms。
+    //
+    // 走请求级缓存（`requestActiveTheme`）而不是另开一层进程级 TTL：
+    // `theme-stylesheet.tsx` 和 `frontend-stylesheets.tsx` 也要读同一个主题，
+    // 两套缓存各存一份的结果就是「同一请求仍然打两次内核」。统一到请求级后，
+    // 一次渲染只读一次，且切主题立刻生效（不用等 TTL）。
+    const { theme } = await requestActiveTheme();
     if (!theme) return null;
-    const manifest = await remember(
-      cacheKey('theme-frontend', { id: theme.id }),
-      () => getApiClient().getThemeFrontend(theme.id),
-      { ttlMs: 10_000 },
-    );
-    if (!manifest.available || !manifest.manifest) return null;
+    // 同样统一到请求级：`frontend-stylesheets.tsx` 也要读这份描述。
+    const manifest = await requestThemeFrontend(theme.id);
+    if (!manifest?.available || !manifest.manifest) return null;
     return {
       kind: 'themes',
       id: theme.id,

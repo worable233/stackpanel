@@ -2,14 +2,12 @@ import 'server-only';
 import { cache } from 'react';
 import type { FrontendSettings } from '@stackpanel/sdk';
 import type {
-  FinderProvider,
   FrontendActionExecutors,
   FrontendManifest,
 } from '@stackpanel/sdk';
 import { ApiError, matchFrontendPagePath } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
 import {
-  candidateAdmitsServerExecution,
   importFrontendPackage,
   mergedPluginFinders,
   listPluginFrontendCandidates,
@@ -21,6 +19,7 @@ import { DEFAULT_LOCALE } from '@/i18n/config';
 import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
 import { bindPluginActions } from './frontend-plugin-actions';
 import { executePageData } from './frontend-page-data';
+import { requestPermission } from './shell-request-cache';
 
 export interface PluginAdminMenu {
   pluginId: string;
@@ -59,7 +58,6 @@ export type PluginAdminRouteResult =
 export const getPluginAdminMenus = cache(async (): Promise<PluginAdminMenu[]> => {
   const candidates = await listPluginFrontendCandidates();
   const menus: PluginAdminMenu[] = [];
-  const api = await getAuthedApiClient();
   const locale = await getLocale();
   for (const candidate of candidates) {
     const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
@@ -67,7 +65,7 @@ export const getPluginAdminMenus = cache(async (): Promise<PluginAdminMenu[]> =>
       if (
         route.systemSettings ||
         !route.nav ||
-        (route.permission && !(await isAllowed(api, route.permission)))
+        (route.permission && !(await isAllowed(route.permission)))
       )
         continue;
       // Labels are resolved through the package's own catalog (ADR-0016 §5).
@@ -105,8 +103,7 @@ export async function resolvePluginAdminRoute(
   if (!route) return { status: 'not-found' };
   const api = await getAuthedApiClient();
   if (route.permission) {
-    const check = await api.checkPermission(route.permission);
-    if (!check.allowed) return { status: 'denied', permission: route.permission };
+    if (!(await requestPermission(route.permission))) return { status: 'denied', permission: route.permission };
   }
   const pkg = await importFrontendPackage(
     'plugins',
@@ -154,7 +151,7 @@ export async function resolvePluginAdminRoute(
         settings,
         session: { role: 'ADMIN' },
         api,
-        isAllowed: (permission) => isAllowed(api, permission),
+        isAllowed: (permission) => isAllowed(permission),
         onFailure: (failure) => {
           const error = failure.error;
           const code = error instanceof ApiError ? error.code : undefined;
@@ -212,12 +209,9 @@ function capturePathParams(pattern: string, path: string): Record<string, string
 }
 
 
-async function isAllowed(
-  api: Awaited<ReturnType<typeof getAuthedApiClient>>,
-  permission: string,
-): Promise<boolean> {
+async function isAllowed(permission: string): Promise<boolean> {
   try {
-    return (await api.checkPermission(permission)).allowed;
+    return await requestPermission(permission);
   } catch {
     return false;
   }

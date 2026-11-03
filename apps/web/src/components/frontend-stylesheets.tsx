@@ -6,6 +6,7 @@ import {
 } from '@/lib/frontend-style-links';
 import FrontendStyleLinks from '@/components/frontend-style-links';
 import { isProvisioningMode } from '@/lib/provisioning';
+import { requestActiveTheme, requestThemeFrontend } from '@/lib/platform-request-cache';
 
 /**
  * Contract 05 §3.6/§3.8 — the single controlled `<link>` injection point.
@@ -39,17 +40,19 @@ export default async function FrontendStylesheets() {
 
   // 1. Active theme: token channel + its own styles[].
   try {
-    const active = await client.getActiveTheme();
+    const active = await requestActiveTheme();
     if (active.theme) {
-      const descriptor = await client.getThemeFrontend(active.theme.id);
-      theme = {
-        id: active.theme.id,
-        descriptor: {
-          available: descriptor.available,
-          manifest: descriptor.manifest,
-          ...(descriptor.revision ? { revision: descriptor.revision } : {}),
-        },
-      };
+      const descriptor = await requestThemeFrontend(active.theme.id);
+      if (descriptor) {
+        theme = {
+          id: active.theme.id,
+          descriptor: {
+            available: descriptor.available,
+            manifest: descriptor.manifest,
+            ...(descriptor.revision ? { revision: descriptor.revision } : {}),
+          },
+        };
+      }
     }
   } catch {
     // A missing active theme degrades to host-only styling (contract 06 §4).

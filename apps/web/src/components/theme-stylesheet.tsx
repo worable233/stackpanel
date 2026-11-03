@@ -1,5 +1,6 @@
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { isProvisioningMode } from '@/lib/provisioning';
+import { requestActiveTheme } from '@/lib/platform-request-cache';
 
 /**
  * Injects a <link> to the active theme's stylesheet from the API. Theming is
@@ -19,7 +20,7 @@ export default async function ThemeStylesheet() {
   // would always 404. Serve the built-in stylesheet without asking (R10).
   if (isProvisioningMode()) return href ? <link rel="stylesheet" href={href} /> : null;
   try {
-    const { theme } = await getApiClient().getActiveTheme();
+    const { theme } = await requestActiveTheme();
     if (theme) {
       href = apiAssetUrl(`/themes/${theme.id}/theme.css`);
     }

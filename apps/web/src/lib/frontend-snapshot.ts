@@ -37,20 +37,6 @@ export interface FrontendSnapshot {
     finders: Record<string, FinderProvider>;
     owners: Record<string, string>;
   }>;
-  /**
-   * 布局与页面共享的 shell 只读数据（用户、导航、插件菜单）。
-   *
-   * 见 `shell-request-cache.ts`：Next 的 layout 和 page 是两个独立组件，
-   * 各自读同一份数据，不去重就是每次渲染多打 2~4 次内核。
-   */
-  currentUser?: Promise<unknown>;
-  pluginAccountMenus?: Promise<unknown>;
-  pluginAdminMenus?: Promise<unknown>;
-  /** 平台身份与品牌（每个页面渲染都要读，见 platform-request-cache.ts）。 */
-  platformInfo?: Promise<unknown>;
-  platformBrand?: Promise<unknown>;
-  /** 按 surface 区分：`nav:public` / `nav:account` / `nav:admin`。 */
-  [key: `nav:${string}`]: Promise<unknown> | undefined;
 }
 
 const storage = new AsyncLocalStorage<FrontendSnapshot>();

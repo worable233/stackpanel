@@ -23,6 +23,7 @@ import { executePageData } from './frontend-page-data';
 import { getLocale } from '@/i18n/locale';
 import { DEFAULT_LOCALE } from '@/i18n/config';
 import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
+import { requestPermission } from './shell-request-cache';
 
 export interface PluginAccountMenu {
   pluginId: string;
@@ -65,13 +66,12 @@ export interface PluginAccountWidget {
 /** Discover visible signed-in account menus from active plugin frontend packages. */
 export const getPluginAccountMenus = cache(async (): Promise<PluginAccountMenu[]> => {
   const candidates = await listPluginFrontendCandidates();
-  const api = await getAuthedApiClient();
   const locale = await getLocale();
   const menus: PluginAccountMenu[] = [];
   for (const candidate of candidates) {
     const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const route of candidate.manifest.accountRoutes) {
-      if (!route.nav || !(await isAllowed(api, route.permission))) continue;
+      if (!route.nav || !(await isAllowed(route.permission))) continue;
       const group = packageLabel(messages, locale, route.nav.groupKey, route.nav.group, [
         DEFAULT_LOCALE,
       ]);
@@ -144,7 +144,7 @@ export async function resolvePluginAccountRoute(
 
   const { candidate, route } = matched;
   const api = await getAuthedApiClient();
-  if (!(await isAllowed(api, route.permission))) {
+  if (!(await isAllowed(route.permission))) {
     return { status: 'denied', permission: route.permission ?? 'account.permission' };
   }
   const pkg = await importFrontendPackage(
@@ -175,7 +175,7 @@ export async function resolvePluginAccountRoute(
     settings,
     session: { role: user.role },
     api,
-    isAllowed: (permission) => isAllowed(api, permission),
+    isAllowed: (permission) => isAllowed(permission),
   });
   try {
     await api.recordFrontendAudit('frontend.account.route.render', candidate.id, path, {
@@ -202,7 +202,6 @@ export async function resolvePluginAccountRoute(
 /** Resolve compact account overview modules from active plugin packages. */
 export const getPluginAccountWidgets = cache(async (): Promise<PluginAccountWidget[]> => {
   const candidates = await listPluginFrontendCandidates();
-  const api = await getAuthedApiClient();
   const locale = await getLocale();
   const widgets: PluginAccountWidget[] = [];
   for (const candidate of candidates) {
@@ -216,7 +215,7 @@ export const getPluginAccountWidgets = cache(async (): Promise<PluginAccountWidg
     if (!pkg) continue;
     const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
     for (const definition of candidate.manifest.accountWidgets) {
-      if (!(await isAllowed(api, definition.permission))) continue;
+      if (!(await isAllowed(definition.permission))) continue;
       const component = pkg.ui?.accountWidgetComponents?.[definition.component];
       if (!component) continue;
       widgets.push({
@@ -237,13 +236,10 @@ function accountHref(routePath: string): string {
   return routePath === '/' ? '/account' : `/account${routePath}`;
 }
 
-async function isAllowed(
-  api: Awaited<ReturnType<typeof getAuthedApiClient>>,
-  permission: string | undefined,
-): Promise<boolean> {
+async function isAllowed(permission: string | undefined): Promise<boolean> {
   if (!permission) return true;
   try {
-    return (await api.checkPermission(permission)).allowed;
+    return await requestPermission(permission);
   } catch {
     return false;
   }
