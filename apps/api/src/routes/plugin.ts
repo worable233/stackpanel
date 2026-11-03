@@ -24,6 +24,16 @@ import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { extractSession, requireAuth } from '../plugins/auth.ts';
 import { getPrisma } from '../plugins/prisma.ts';
 
+/** One active plugin's compiled frontend descriptor. */
+interface FrontendEntry {
+  id: string;
+  manifest: FrontendManifest;
+  builtin: boolean;
+  execution: 'trusted' | 'isolated';
+  serverExecution: 'allowed' | 'declarative';
+  revision?: string;
+}
+
 const pluginIdSchema = z.object({ id: z.string().min(1).max(64) });
 const permissionQuerySchema = z.object({ permission: z.string().min(1) });
 const frontendAuditSchema = z.object({
@@ -40,15 +50,37 @@ const frontendAuditSchema = z.object({
 
 /** Public compiled frontend endpoints for installed plugins. */
 export async function pluginRoutes(app: FastifyInstance): Promise<void> {
+  /**
+   * `/plugins/frontends` 的结果快照。
+   *
+   * 实测 p95 8.9s、max 10s：23 个 active 插件，每个要 stat 目录、读 manifest、
+   * 读 revision 指针，必要时还会重建产物 —— 一次请求上百次文件系统操作，而这个
+   * 列表在两次插件变更之间是**完全不变的**。它还是每个页面渲染都要拉的公共
+   * 依赖，所以 IO 抖动会直接放大成页面卡顿。
+   *
+   * 失效靠 `pluginRuntime.combinedGeneration`：插件激活/停用即变，比在 9 处
+   * 生命周期出口各写一次 `clear()` 可靠得多（漏一处就是长期脏读）。同时设一个
+   * 短 TTL 兜底：插件目录里的文件可能在插件集合不变的情况下被替换（升级、
+   * 手工修产物），那时代际号不会变。
+   */
+  const FRONTENDS_CACHE_TTL_MS = 30_000;
+  let frontendsCache: {
+    generation: number;
+    at: number;
+    body: { plugins: FrontendEntry[] };
+  } | null = null;
+
   app.get('/plugins/frontends', async () => {
-    const frontends: Array<{
-      id: string;
-      manifest: FrontendManifest;
-      builtin: boolean;
-      execution: 'trusted' | 'isolated';
-      serverExecution: 'allowed' | 'declarative';
-      revision?: string;
-    }> = [];
+    const generation = app.pluginRuntime.combinedGeneration;
+    const now = Date.now();
+    if (
+      frontendsCache &&
+      frontendsCache.generation === generation &&
+      now - frontendsCache.at < FRONTENDS_CACHE_TTL_MS
+    ) {
+      return frontendsCache.body;
+    }
+    const frontends: FrontendEntry[] = [];
     for (const plugin of app.pluginRuntime.list()) {
       if (plugin.state !== 'active') continue;
       const packageDir = pluginPackageDir(plugin.id);
@@ -79,7 +111,11 @@ export async function pluginRoutes(app: FastifyInstance): Promise<void> {
         ...(current ? { revision: current.revision } : {}),
       });
     }
-    return { plugins: frontends.sort((left, right) => left.id.localeCompare(right.id)) };
+    const body = {
+      plugins: frontends.sort((left, right) => left.id.localeCompare(right.id)),
+    };
+    frontendsCache = { generation, at: now, body };
+    return body;
   });
 
   app.get('/permissions/check', { preHandler: requireAuth }, async (request, reply) => {

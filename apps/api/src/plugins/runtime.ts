@@ -341,6 +341,16 @@ export class PluginRuntime {
   /** Open-platform capabilities contributed by this runtime's plugins. */
   private readonly capabilityEntries = new Map<string, PluginCapabilityEntry>();
   private readonly lifecycleLocks = new Map<string, Promise<void>>();
+  /**
+   * 活跃插件集合的代际号。任何一次 activate / deactivate / 卸载都会 +1。
+   *
+   * `/plugins/frontends` 要为每个插件做多次文件系统操作（stat、读 manifest、
+   * 读 revision 指针），23 个插件就是上百次 IO，而这个列表**几乎不变**。缓存
+   * 本身容易写，难的是失效：插件集合变了却不失效，前端会拿到已经不存在的
+   * revision，或者漏掉刚装上的插件。用一个单调递增的代际号作缓存键的一半，
+   * 就不必在 9 处生命周期出口各写一遍 `cache.clear()`（漏一处就是长期脏读）。
+   */
+  private generation = 0;
 
   constructor(private readonly options: PluginRuntimeOptions) {
     setIsolatedWorkerExitHandler((id) => {
@@ -535,6 +545,14 @@ export class PluginRuntime {
 
   isActive(id: string): boolean {
     return this.plugins.get(id)?.state === 'active';
+  }
+
+  /**
+   * 当前活跃集合的代际号。随 activate/deactivate 单调递增，用于让派生缓存
+   * （如 `/plugins/frontends` 的列表快照）自然失效。
+   */
+  get combinedGeneration(): number {
+    return this.generation;
   }
 
   list(): Array<{
@@ -881,6 +899,8 @@ export class PluginRuntime {
         throw new Error(`插件 ${id} worker 在激活过程中退出`);
       }
       plugin.state = 'active';
+      // 活跃集合变了：派生缓存（前端清单）必须重新计算。
+      this.generation += 1;
       // 一次成功激活就是本次事故的终点：清掉连续计次与待重启定时器，
       // 否则一个曾经崩过几次的插件即使恢复了也仍会很快撞上熔断阈值。
       plugin.workerFailures = 0;
@@ -894,6 +914,7 @@ export class PluginRuntime {
     } catch (err) {
       plugin.effects.dispose();
       if ((plugin as ManagedPlugin).state !== 'failed') plugin.state = 'registered';
+      this.generation += 1;
       plugin.activating = false;
       this.options.extensions.unregisterModels(id);
       throw err;
@@ -945,6 +966,8 @@ export class PluginRuntime {
      * 这样「拆装备」发生在**确认没人还在用**之后。
      */
     plugin.state = 'registered';
+    // 关闸即失效：这一步之后该插件不该再出现在前端清单里。
+    this.generation += 1;
     await this.waitForDrain(plugin);
     if (plugin.definition.onDeactivate) {
       await plugin.definition.onDeactivate(this.context(plugin.definition));
