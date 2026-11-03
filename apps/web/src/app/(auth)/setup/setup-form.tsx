@@ -72,7 +72,7 @@ export function SetupForm({
           {logoSrc ? (
             // The logo is a same-origin authenticated BFF asset, matching the existing auth shell.
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoSrc} alt="" className="size-7 object-contain" />
+            <img src={logoSrc} alt="" className="size-7 rounded-[var(--platform-logo-radius)] object-contain" />
           ) : (
             <Layers className="size-7 text-primary" aria-hidden />
           )}

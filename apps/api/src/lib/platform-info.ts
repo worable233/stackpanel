@@ -74,7 +74,14 @@ function parsePlatformInfo(value: unknown): PlatformInfo {
     candidate.brandDisplay === 'both'
       ? candidate.brandDisplay
       : 'both';
-  return { name, description, url: url || null, brandDisplay };
+  const brandLogoRadius =
+    typeof candidate.brandLogoRadius === 'number' &&
+    Number.isInteger(candidate.brandLogoRadius) &&
+    candidate.brandLogoRadius >= 0 &&
+    candidate.brandLogoRadius <= 64
+      ? candidate.brandLogoRadius
+      : 10;
+  return { name, description, url: url || null, brandDisplay, brandLogoRadius };
 }
 
 function isPublicHttpUrl(value: string): boolean {

@@ -802,7 +802,9 @@
         "brandDisplayNameHint": "Show only the platform name, without the logo.",
         "brandDisplayBoth": "Icon + name",
         "brandDisplayBothHint": "Show both the platform logo and name.",
-        "submit": "Save platform info"
+        "submit": "Save platform info",
+        "brandLogoRadius": "Logo radius",
+        "brandLogoRadiusHint": "0 for square corners, up to 64px. Applies to the admin top bar, sign-in pages and theme navigation."
       },
       "saving": "Saving…",
       "brand": {

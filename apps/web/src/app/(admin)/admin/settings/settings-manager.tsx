@@ -216,6 +216,7 @@ function PlatformInfoSettings({
   const [brandDisplay, setBrandDisplay] = useState<PlatformBrandDisplay>(
     platform.brandDisplay ?? 'both',
   );
+  const [brandLogoRadius, setBrandLogoRadius] = useState(platform.brandLogoRadius ?? 10);
   const brandOptions: { value: PlatformBrandDisplay; label: string; hint: string }[] = [
     {
       value: 'icon',
@@ -317,7 +318,8 @@ function PlatformInfoSettings({
                     <img
                       src={brand.logoUrl}
                       alt=""
-                      className="size-8 shrink-0 rounded-lg object-contain"
+                      className="size-8 shrink-0 object-contain"
+                      style={{ borderRadius: `${brandLogoRadius}px` }}
                     />
                   ) : (
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
@@ -332,6 +334,30 @@ function PlatformInfoSettings({
                 ) : null}
               </span>
             </div>
+          </div>
+          <div className="mt-1 flex flex-wrap items-end justify-between gap-4 rounded-xl bg-muted/30 p-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="brandLogoRadius">{t('admin.settings.platform.brandLogoRadius')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="brandLogoRadius"
+                  name="brandLogoRadius"
+                  type="number"
+                  min={0}
+                  max={64}
+                  value={brandLogoRadius}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    setBrandLogoRadius(Number.isFinite(next) ? Math.min(64, Math.max(0, next)) : 0);
+                  }}
+                  className="w-24"
+                />
+                <span className="text-xs text-muted-foreground">px</span>
+              </div>
+            </div>
+            <p className="max-w-md text-xs leading-5 text-muted-foreground">
+              {t('admin.settings.platform.brandLogoRadiusHint')}
+            </p>
           </div>
           <RadioGroup
             value={brandDisplay}
@@ -423,7 +449,7 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
                 <img
                   src={brand.logoUrl}
                   alt={t('admin.settings.brand.currentLogo')}
-                  className="size-full object-contain"
+                  className="size-full rounded-[var(--platform-logo-radius)] object-contain"
                 />
               ) : (
                 <ImageIcon className="size-5 text-muted-foreground" />

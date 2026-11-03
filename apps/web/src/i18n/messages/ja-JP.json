@@ -811,7 +811,9 @@
         "brandDisplayNameHint": "プラットフォーム名のみを表示し、ロゴは表示しません。",
         "brandDisplayBoth": "アイコン + 名前",
         "brandDisplayBothHint": "プラットフォームのロゴと名前を表示します。",
-        "submit": "Save platform info"
+        "submit": "Save platform info",
+        "brandLogoRadius": "ロゴの角丸",
+        "brandLogoRadiusHint": "0 で直角、最大 64px。管理画面のトップバー、ログインページ、テーマのナビゲーションに適用されます。"
       },
       "saving": "Saving…",
       "brand": {

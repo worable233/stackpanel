@@ -29,6 +29,7 @@ const platformInfoSchema = z
       .transform((value) => value || null)
       .refine((value) => value === null || isHttpUrl(value), 'Platform URL must use HTTP or HTTPS'),
     brandDisplay: z.enum(['icon', 'name', 'both']).default('both'),
+    brandLogoRadius: z.number().int().min(0).max(64).default(10),
   })
   .strict();
 
@@ -50,7 +51,12 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     await writeAudit({
       action: 'platform.info.update',
       resource: 'platform',
-      meta: { name: platform.name, url: platform.url, brandDisplay: platform.brandDisplay },
+      meta: {
+        name: platform.name,
+        url: platform.url,
+        brandDisplay: platform.brandDisplay,
+        brandLogoRadius: platform.brandLogoRadius,
+      },
       ...auditContext(request),
     });
     return { platform };

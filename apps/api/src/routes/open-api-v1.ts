@@ -49,6 +49,7 @@ const platformInfoSchema = z
         'Platform URL must use HTTP or HTTPS',
       ),
     brandDisplay: z.enum(['icon', 'name', 'both']).default('both'),
+    brandLogoRadius: z.number().int().min(0).max(64).default(10),
   })
   .strict();
 
@@ -139,6 +140,7 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
             name: platform.name,
             url: platform.url,
             brandDisplay: platform.brandDisplay,
+            brandLogoRadius: platform.brandLogoRadius,
             surface: 'api/v1',
             via: request.user?.viaApiToken ? 'api_token' : 'session',
           },

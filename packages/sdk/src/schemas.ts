@@ -1419,6 +1419,7 @@ export const platformInfoSchema = z.object({
   description: z.string().min(1).max(280),
   url: z.string().url().nullable(),
   brandDisplay: platformBrandDisplaySchema.default('both'),
+  brandLogoRadius: z.number().int().min(0).max(64).default(10),
 });
 
 export const platformInfoResponseSchema = z.object({

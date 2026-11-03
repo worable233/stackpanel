@@ -802,7 +802,9 @@
         "brandDisplayNameHint": "僅展示平臺名稱，不顯示圖示。",
         "brandDisplayBoth": "圖示 + 名稱",
         "brandDisplayBothHint": "同時展示平臺 Logo 與名稱。",
-        "submit": "儲存平臺資訊"
+        "submit": "儲存平臺資訊",
+        "brandLogoRadius": "Logo 圓角",
+        "brandLogoRadiusHint": "0 為直角，最大 64px。後臺頂部欄、登入頁與主題導航統一使用。"
       },
       "saving": "儲存中…",
       "brand": {

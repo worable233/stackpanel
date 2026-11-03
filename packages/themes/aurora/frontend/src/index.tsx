@@ -264,7 +264,10 @@ function BrandMark({
   brand?: FrontendLayoutProps['brand'];
   size?: 'md' | 'lg';
 }): ReactElement {
-  const box = size === 'lg' ? 'size-10 rounded-2xl' : 'size-9 rounded-xl';
+  const box =
+    size === 'lg'
+      ? 'size-10 rounded-[var(--platform-logo-radius)]'
+      : 'size-9 rounded-[var(--platform-logo-radius)]';
   if (brand?.logoUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element

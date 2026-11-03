@@ -165,7 +165,7 @@ export function AuthShell({
             >
               {logoSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoSrc} alt="" className="size-9 object-contain" />
+                <img src={logoSrc} alt="" className="size-9 rounded-[var(--platform-logo-radius)] object-contain" />
               ) : (
                 <Layers className="size-8 text-primary" aria-hidden />
               )}

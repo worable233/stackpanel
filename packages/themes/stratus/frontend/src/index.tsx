@@ -450,7 +450,11 @@ function BrandLogo({
     return (
       <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden ${box}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={brand.logoUrl} alt="" className="h-full w-full object-contain" />
+        <img
+          src={brand.logoUrl}
+          alt=""
+          className="h-full w-full rounded-[var(--platform-logo-radius)] object-contain"
+        />
       </span>
     );
   }

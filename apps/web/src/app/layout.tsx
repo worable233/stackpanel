@@ -3,6 +3,7 @@ import { getClarityMotionBootstrapScript } from '@stackpanel/ui';
 import localFont from 'next/font/local';
 import { headers } from 'next/headers';
 import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
+import type { CSSProperties } from 'react';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ThemeInitScript } from '@/components/theme-init-script';
 import { Toaster } from '@/components/ui/sonner';
@@ -68,9 +69,14 @@ export default async function RootLayout({
 }>) {
   const locale = await getLocale();
   const nonce = (await headers()).get('x-nonce') ?? undefined;
+  const platform = await requestPlatformInfo();
+  const brandingStyle = {
+    '--platform-logo-radius': `${platform.brandLogoRadius ?? 10}px`,
+  } as CSSProperties;
   return (
     <html
       lang={locale}
+      style={brandingStyle}
       className={`h-full overflow-y-scroll antialiased [scrollbar-gutter:stable_both-edges] has-[.clarity-surface]:bg-[var(--clarity-background)] has-[.clarity-surface]:[color-scheme:dark]! [@media(pointer:fine)]:has-[.clarity-surface]:[scrollbar-width:none] [@media(pointer:fine)]:has-[.clarity-surface]:[&::-webkit-scrollbar]:hidden ${geistSans.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >

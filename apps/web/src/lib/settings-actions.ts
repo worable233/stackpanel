@@ -54,17 +54,27 @@ export async function savePlatformInfoAction(
   const description = formData.get('description');
   const url = formData.get('url');
   const brandDisplay = formData.get('brandDisplay');
+  const brandLogoRadius = Number(formData.get('brandLogoRadius'));
   if (
     typeof name !== 'string' ||
     typeof description !== 'string' ||
     typeof url !== 'string' ||
-    (brandDisplay !== 'icon' && brandDisplay !== 'name' && brandDisplay !== 'both')
+    (brandDisplay !== 'icon' && brandDisplay !== 'name' && brandDisplay !== 'both') ||
+    !Number.isInteger(brandLogoRadius) ||
+    brandLogoRadius < 0 ||
+    brandLogoRadius > 64
   ) {
     return { error: translate(locale, 'action.platformInfoRequired') };
   }
   try {
     const api = await getAuthedApiClient();
-    await api.updatePlatformInfo({ name, description, url: url || null, brandDisplay });
+    await api.updatePlatformInfo({
+      name,
+      description,
+      url: url || null,
+      brandDisplay,
+      brandLogoRadius,
+    });
     revalidatePath('/', 'layout');
     return { ok: true, message: translate(locale, 'action.platformInfoSaved') };
   } catch (err) {

@@ -811,7 +811,9 @@
         "brandDisplayNameHint": "플랫폼 이름만 표시하고 로고는 표시하지 않습니다.",
         "brandDisplayBoth": "아이콘 + 이름",
         "brandDisplayBothHint": "플랫폼 로고와 이름을 함께 표시합니다.",
-        "submit": "Save platform info"
+        "submit": "Save platform info",
+        "brandLogoRadius": "로고 모서리 반경",
+        "brandLogoRadiusHint": "0이면 직각, 최대 64px. 관리자 상단 바, 로그인 페이지, 테마 탐색에 적용됩니다."
       },
       "saving": "Saving…",
       "brand": {

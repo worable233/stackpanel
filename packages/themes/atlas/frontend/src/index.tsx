@@ -304,7 +304,7 @@ function AtlasLayout({
           <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label={platformName}>
             {showBrandIcon ? (
               logoUrl ? (
-                <img src={logoUrl} alt="" className="size-8 rounded-[10px]" />
+                <img src={logoUrl} alt="" className="size-8 rounded-[var(--platform-logo-radius)]" />
               ) : (
                 <BrandMark />
               )
@@ -376,7 +376,7 @@ function AtlasLayout({
               <a href="/" className="flex items-center gap-2.5" aria-label={platformName}>
                 {showBrandIcon ? (
                   logoUrl ? (
-                    <img src={logoUrl} alt="" className="size-8 rounded-[10px]" />
+                    <img src={logoUrl} alt="" className="size-8 rounded-[var(--platform-logo-radius)]" />
                   ) : (
                     <BrandMark />
                   )

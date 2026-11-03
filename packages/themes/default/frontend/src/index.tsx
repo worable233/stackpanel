@@ -707,7 +707,7 @@ function Footer({
               {showBrandIcon ? (
                 brandLogoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={brandLogoUrl} alt="" className="size-10 rounded-lg object-contain" />
+                  <img src={brandLogoUrl} alt="" className="size-10 rounded-[var(--platform-logo-radius)] object-contain" />
                 ) : (
                   <Layers3 className="size-10 text-primary" />
                 )
@@ -867,7 +867,7 @@ function DefaultLayout({
             {showBrandIcon ? (
               brand?.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={brand.logoUrl} alt="" className="size-7 rounded-md object-contain" />
+                <img src={brand.logoUrl} alt="" className="size-7 rounded-[var(--platform-logo-radius)] object-contain" />
               ) : (
                 <Layers3 className="size-7 text-primary" />
               )

@@ -811,7 +811,9 @@
         "brandDisplayNameHint": "Afficher uniquement le nom de la plateforme, sans logo.",
         "brandDisplayBoth": "Icône + nom",
         "brandDisplayBothHint": "Afficher le logo et le nom de la plateforme.",
-        "submit": "Save platform info"
+        "submit": "Save platform info",
+        "brandLogoRadius": "Arrondi du logo",
+        "brandLogoRadiusHint": "0 pour des angles droits, jusqu’à 64 px. S’applique à la barre supérieure, aux pages de connexion et à la navigation du thème."
       },
       "saving": "Saving…",
       "brand": {
