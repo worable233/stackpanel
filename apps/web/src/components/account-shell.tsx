@@ -60,7 +60,7 @@ export function AccountShell({ user, items, children, brandLogoUrl }: AccountShe
       navigationIcons={NAVIGATION_ICONS}
       defaultIcon={FileText}
       groupIcons={GROUP_ICONS}
-      contentMaxWidth="max-w-[1440px]"
+      contentMaxWidth="max-w-[1120px]"
       backLink={{ label: '', href: '/', messageKey: 'nav.backToSite' }}
       brandLogoUrl={brandLogoUrl}
     >

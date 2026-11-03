@@ -58,7 +58,7 @@ export function AdminShell({
       rootHref="/admin"
       navigationIcons={NAVIGATION_ICONS}
       defaultIcon={Box}
-      contentMaxWidth="max-w-[1440px]"
+      contentMaxWidth="max-w-[1120px]"
       backLink={{ label: '', href: '/', messageKey: 'nav.backToSite' }}
       brandLogoUrl={brandLogoUrl}
       brandName={brandName}
