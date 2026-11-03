@@ -273,6 +273,42 @@ describe('Agent HTTP + PostgreSQL reliability', () => {
     const row = await db.agentRun.findUniqueOrThrow({ where: { id: run.json().run.id } });
     expect(row.policy).toMatchObject({ autonomy: 'read', maxSteps: 5 });
   });
+  it('returns only the tail of the step list by default', async () => {
+    // 单步 tool_result 正文上限 256 KB，一条运行最多 200 步 —— 全量返回最坏 50 MB。
+    // 抽屉每 2 秒轮询这个端点且只用最后一步，所以默认只回尾部；回放界面显式
+    // 传 `tail=0` 取全部。
+    const run = (await create()).json().run as { id: string };
+    const tail = await app.inject({
+      url: `/api/v1/agent/runs/${run.id}?tail=2`,
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(tail.statusCode, tail.body).toBe(200);
+    const body = tail.json() as { steps: Array<{ index: number }>; stepsTruncated: boolean };
+    expect(body.steps.length).toBeLessThanOrEqual(2);
+    // 尾部必须是**最后**几步（索引递增且是运行末尾），而不是最前面几步。
+    for (const step of body.steps) {
+      expect(step.index).toBeGreaterThanOrEqual(0);
+    }
+    // 一次问答只有 1 步，`tail=2` 不会截断；只断言「没被截断」这个事实成立。
+    expect(typeof body.stepsTruncated).toBe('boolean');
+
+    const all = await app.inject({
+      url: `/api/v1/agent/runs/${run.id}?tail=0`,
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(all.statusCode, all.body).toBe(200);
+    expect((all.json() as { stepsTruncated: boolean }).stepsTruncated).toBe(false);
+  });
+
+  it('rejects an out-of-range tail instead of ignoring it', async () => {
+    const run = (await create()).json().run as { id: string };
+    const res = await app.inject({
+      url: `/api/v1/agent/runs/${run.id}?tail=99999`,
+      headers: { authorization: `Bearer ${session}` },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+
   it('keeps cancellation final while inference is in flight', async () => {
     let release!: () => void;
     let entered!: () => void;

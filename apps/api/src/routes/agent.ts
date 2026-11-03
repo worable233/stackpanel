@@ -882,16 +882,37 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
     };
   });
+  /**
+   * 一条运行的详情。
+   *
+   * `steps` 默认只回**尾部**若干条（`tail`，默认 50），因为每一步的
+   * `tool_result` 可以带最多 256 KB 正文（`truncateToolBody` 的阈值），而一条
+   * 运行最多 200 步 —— 全量返回最坏是 50 MB 的单次响应。抽屉每 2 秒轮询这个
+   * 端点，且只用到 `steps.at(-1)` 来渲染进度摘要，全量传输纯属浪费带宽与内存。
+   *
+   * 回放界面需要完整历史时显式传 `tail=0`（全部）或更大的 `tail`。倒序取再翻转，
+   * 这样即使运行很长也只扫索引尾部。
+   */
+  const runDetailQuerySchema = z.object({
+    tail: z.coerce.number().int().min(0).max(500).default(50),
+  });
   app.get('/api/v1/agent/runs/:id', { preHandler: authenticated }, async (request) => {
     const run = await ownedRun(request);
-    const steps = await prisma.agentStep.findMany({
+    const query = runDetailQuerySchema.safeParse(request.query);
+    if (!query.success) throw validationError();
+    const tail = query.data.tail;
+    const rows = await prisma.agentStep.findMany({
       where: { runId: run.id },
-      orderBy: { index: 'asc' },
+      orderBy: { index: 'desc' },
+      ...(tail > 0 ? { take: tail } : {}),
     });
+    const steps = tail > 0 ? rows.reverse() : rows;
     return {
       run: toRunView(run),
       family: await prisma.agentRun.findMany({ where: { OR: [{ id: run.rootId ?? run.id }, { rootId: run.rootId ?? run.id }] }, select: { id: true, parentId: true, status: true, objective: true } }),
       steps: steps.map((step) => ({ ...step, createdAt: step.createdAt.toISOString() })),
+      // 告诉调用方这是否只是尾部，避免把「只看到 50 步」误读成「运行只有 50 步」。
+      stepsTruncated: tail > 0 && run.steps > steps.length,
     };
   });
   app.post('/api/v1/agent/runs/:id/resume', { preHandler: guard }, async (request, reply) => {

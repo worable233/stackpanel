@@ -56,7 +56,9 @@ export function AgentWorkspace({ runId, approvalsOnly = false }: { runId?: strin
     const current = await agentFetch<typeof status>('status'); setStatus(current);
     const pending = await agentFetch<{approvals:Approval[];nextCursor:string|null}>('approvals'); setApprovals(pending.approvals); setApprovalNext(pending.nextCursor);
     if (runId) {
-      const detail = await agentFetch<{run:Run;steps:Step[];family:Array<{id:string;objective:string;status:string}>}>(`runs/${runId}`);
+      // 回放要完整历史：服务端默认只回尾部 50 步（单步正文可达 256 KB，
+      // 全量最坏 50 MB）。这里显式要全部，因为用户就是来看每一步的。
+      const detail = await agentFetch<{run:Run;steps:Step[];family:Array<{id:string;objective:string;status:string}>}>(`runs/${runId}?tail=0`);
       setRun(detail.run); setSteps(detail.steps); setFamily(detail.family);
     } else if (!approvalsOnly) {
       const list = await agentFetch<{runs:Run[];nextCursor:string|null}>('runs'); setRuns(list.runs); setNext(list.nextCursor);
