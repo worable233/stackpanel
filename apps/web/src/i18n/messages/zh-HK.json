@@ -720,6 +720,34 @@
         "cleanup": "刪除記錄",
         "description": "這些記錄還在資料庫裡，但包已經不在了，執行期載入不到。清理會移除它們的能力宣告；重新安裝外掛即可恢復。",
         "title": "殘留的外掛記錄"
+      },
+      "tabs": {
+        "installed": "已安裝",
+        "discover": "發現外掛"
+      },
+      "searchPlaceholder": "搜尋外掛，或輸入外掛 ID",
+      "noMatch": "沒有匹配的外掛。",
+      "installedEmpty": "還沒有安裝外掛。",
+      "market": {
+        "title": "外掛目錄",
+        "refresh": "重新整理目錄",
+        "loading": "正在載入外掛目錄…",
+        "error": "暫時無法載入外掛目錄，請稍後重試。",
+        "empty": "沒有匹配的外掛。",
+        "install": "安裝",
+        "upgrade": "升級",
+        "installedBadge": "已安裝",
+        "upgradableBadge": "可升級到 v{version}",
+        "installing": "處理中…",
+        "installed": "已安裝「{name}」",
+        "upgraded": "已升級「{name}」",
+        "installFailed": "安裝失敗，請稍後重試。",
+        "noDescription": "暫無介紹",
+        "version": "v{version}",
+        "installedVersion": "已安裝 v{version}",
+        "author": "作者 {author}",
+        "kindPlugin": "外掛",
+        "kindTheme": "主題"
       }
     },
     "users": {
@@ -1138,7 +1166,15 @@
       "upToDateTitle": "已是最新",
       "updateContentTitle": "將會更新什麼",
       "updatedAt": "狀態更新時間",
-      "executorOffline": "未檢測到升級執行器（updater 容器未執行）。現在投遞的任務不會被認領，只會一直停在「已投遞」。請先啟動 updater（docker compose --profile updater up -d），或改用 pull + migrate + up -d 手工升級。"
+      "executorOffline": "未檢測到升級執行器（updater 容器未執行）。現在投遞的任務不會被認領，只會一直停在「已投遞」。請先啟動 updater（docker compose --profile updater up -d），或改用 pull + migrate + up -d 手工升級。",
+      "newVersion": "最新版本",
+      "kernelUpdatePending": "可升級到 v{version}。更新期間服務會短暫重啟。",
+      "kernelLatest": "系統核心已是最新。",
+      "pluginUpdatesAvailable": "有 {count} 個外掛或主題可更新",
+      "managePlugins": "前往外掛管理",
+      "updateNow": "立即更新",
+      "updating": "正在更新…",
+      "checkingUpdates": "正在檢查更新…"
     }
   },
   "locale": {
@@ -1682,7 +1718,7 @@
     "service": {
       "already_bound": "該服務已繫結",
       "not_found": "服務不存在",
-      "product_unmapped": "該上游商品尚未映射到本地商品，請先建立商品映射後再綁定"
+      "product_unmapped": "該上游商品尚未對映到本地商品，請先建立商品對映後再繫結"
     },
     "sp_v1": {
       "body_too_large": "請求體過大"

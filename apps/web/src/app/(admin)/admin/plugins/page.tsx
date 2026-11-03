@@ -1,4 +1,3 @@
-import { AdminActionsOverview } from '@/components/admin-actions';
 import type { AdminPlugin, StalePluginRecord } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
@@ -8,8 +7,13 @@ import { PluginUploadDialog } from './plugin-upload-dialog';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 
-export default async function AdminPluginsPage() {
+export default async function AdminPluginsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; updates?: string }>;
+}) {
   const t = createTranslator(await getLocale());
+  const params = await searchParams;
   let plugins: AdminPlugin[] = [];
   let stale: StalePluginRecord[] = [];
   let error: string | null = null;
@@ -24,19 +28,18 @@ export default async function AdminPluginsPage() {
 
   return (
     <main className="w-full space-y-6">
-      <PageHeader
-        title={t('admin.plugins.title')}
-        actions={<PluginUploadDialog />}
-      />
+      <PageHeader title={t('admin.plugins.title')} actions={<PluginUploadDialog />} />
       {error ? (
         <p className="text-sm text-destructive">
           {t('admin.plugins.serviceUnavailable')}
         </p>
       ) : (
-        <div className="space-y-8">
-          <PluginManager plugins={plugins} stale={stale} />
-          <AdminActionsOverview />
-        </div>
+        <PluginManager
+          plugins={plugins}
+          stale={stale}
+          initialTab={params.tab === 'market' ? 'market' : 'installed'}
+          onlyUpgradable={params.updates === '1'}
+        />
       )}
     </main>
   );

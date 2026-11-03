@@ -1,12 +1,20 @@
 'use client';
-import { SectionTitle } from '@stackpanel/ui';
 
-import { useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from '@/components/ui/toast';
-import type { AdminPlugin, PluginDependencyStatus, StalePluginRecord } from '@stackpanel/sdk';
+import { Info, MoreHorizontal, Settings, Trash2 } from 'lucide-react';
+import type { AdminPlugin, StalePluginRecord } from '@stackpanel/sdk';
+import { Badge, List, ListEmpty, ListItem, SectionTitle } from '@stackpanel/ui';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,64 +24,45 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { toast } from '@/components/ui/toast';
 import { deletePluginAction, togglePluginAction } from '@/lib/plugin-actions';
 import { useTranslator } from '@/i18n/provider';
-import type { Translator } from '@/i18n/core';
+import { PluginMarket, PluginSearch } from './plugin-market';
 
-function DependencyBadge({
-  dependency,
-  t,
-}: {
-  dependency: PluginDependencyStatus;
-  t: Translator;
-}) {
-  const range = dependency.range ? `@${dependency.range}` : '';
-  if (dependency.satisfied) {
-    return (
-      <span className="rounded-full bg-muted px-2 py-0.5">
-        {dependency.id}
-        {range}
-      </span>
-    );
-  }
-  if (dependency.installed) {
-    return (
-      <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-destructive">
-        {dependency.id}
-        {range}
-        {t('admin.plugins.detail.depConflict')}
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-destructive">
-      {dependency.id}
-      {range}
-      {dependency.optional
-        ? t('admin.plugins.detail.depOptionalMissing')
-        : t('admin.plugins.detail.depMissing')}
-    </span>
-  );
-}
-
-/** Interactive plugin manager: enable/disable or remove a plugin. */
+/** Interactive plugin manager: discover, install, enable/disable or remove. */
 export function PluginManager({
   plugins,
   stale = [],
+  initialTab = 'installed',
+  onlyUpgradable = false,
 }: {
   plugins: AdminPlugin[];
   /**
    * Rows whose package directory is gone. They are not loaded, so they cannot be
    * listed as plugins — but until they are removed the database keeps claiming
-   * their capabilities/capabilities-providers exist.
+   * their capabilities exist.
    */
   stale?: StalePluginRecord[];
+  initialTab?: 'installed' | 'market';
+  onlyUpgradable?: boolean;
 }) {
   const router = useRouter();
   const t = useTranslator();
+  const [tab, setTab] = useState(initialTab);
+  const [query, setQuery] = useState('');
   const [isMutating, startTransition] = useTransition();
+  const [deleteTarget, setDeleteTarget] = useState<AdminPlugin | null>(null);
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return plugins;
+    return plugins.filter((plugin) =>
+      [plugin.name, plugin.id, plugin.description].some((value) =>
+        value?.toLocaleLowerCase().includes(normalized),
+      ),
+    );
+  }, [plugins, query]);
 
   const mutate = async (form: FormData) => {
     startTransition(async () => {
@@ -93,209 +82,217 @@ export function PluginManager({
     });
   };
 
+  function toggle(plugin: AdminPlugin): void {
+    const form = new FormData();
+    form.set('_op', 'toggle');
+    form.set('id', plugin.id);
+    form.set('enabled', plugin.enabled ? 'false' : 'true');
+    void mutate(form);
+  }
+
+  function confirmDelete(): void {
+    if (!deleteTarget) return;
+    const form = new FormData();
+    form.set('_op', 'delete');
+    form.set('id', deleteTarget.id);
+    setDeleteTarget(null);
+    void mutate(form);
+  }
+
   return (
-    <div className="space-y-6">
-      <section>
-        <SectionTitle>{t('admin.plugins.installed')}</SectionTitle>
-        <ul className="mt-3 space-y-2">
-          {plugins.map((plugin) => (
-            <li
-              key={plugin.id}
-              className="flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground"
-            >
-              <div>
-                <p className="font-medium">
-                  {plugin.name}
-                  {plugin.enabled ? (
-                    <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                      {t('admin.plugins.enabled')}
-                    </span>
-                  ) : (
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {t('admin.plugins.disabled')}
-                    </span>
-                  )}
-                  {plugin.source === 'builtin' ? (
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {t('admin.plugins.builtin')}
-                    </span>
-                  ) : null}
-                  {plugin.signed ? (
-                    <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                      {t('admin.plugins.signed')}
-                    </span>
-                  ) : null}
-                  {plugin.worker.circuitOpen ? (
-                    <span
-                      className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive"
-                      title={t('admin.plugins.worker.circuitOpenHint')}
-                    >
-                      {t('admin.plugins.worker.circuitOpen')}
-                    </span>
-                  ) : plugin.worker.nextRestartAt ? (
-                    <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
-                      {t('admin.plugins.worker.restarting')}
-                    </span>
-                  ) : null}
-                </p>
-                {plugin.description ? (
-                  <p className="mt-1 text-sm text-muted-foreground">{plugin.description}</p>
-                ) : null}
-                <p className="text-xs text-muted-foreground">
-                  {plugin.id} · v{plugin.version}
-                  {plugin.frontend.available
-                    ? ` · ${t('admin.plugins.frontendPages', { count: plugin.frontend.pages.length })}`
-                    : ''}
-                </p>
-                {plugin.dependencies.length > 0 ? (
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{t('admin.plugins.dependencies')}</span>
-                    {plugin.dependencies.map((dep) => (
-                      <DependencyBadge key={dep.id} dependency={dep} t={t} />
-                    ))}
-                  </p>
-                ) : null}
-                {plugin.consumesStatus.length > 0 ? (
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{t('admin.plugins.extensionPoints')}</span>
-                    {plugin.consumesStatus.map((entry) => {
-                      const key = `${entry.pluginId}:${entry.extensionPoint}`;
-                      const bad = !entry.satisfied && !entry.optional;
-                      return (
+    <div className="flex flex-col gap-5">
+      <Tabs value={tab} onValueChange={(value) => setTab(value as 'installed' | 'market')}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <TabsList>
+            <TabsTrigger value="installed">
+              {t('admin.plugins.tabs.installed')}
+              <Badge>{plugins.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="market">{t('admin.plugins.tabs.discover')}</TabsTrigger>
+          </TabsList>
+          <PluginSearch value={query} onChange={setQuery} />
+        </div>
+
+        <TabsContent value="installed" className="mt-4 flex flex-col gap-5">
+          {filtered.length === 0 ? (
+            <ListEmpty>
+              {query ? t('admin.plugins.noMatch') : t('admin.plugins.installedEmpty')}
+            </ListEmpty>
+          ) : (
+            <List>
+              {filtered.map((plugin) => (
+                <ListItem
+                  key={plugin.id}
+                  className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 pr-10 sm:pr-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-medium">{plugin.name}</p>
+                      <Badge className={plugin.enabled ? 'bg-primary/10 text-primary' : undefined}>
+                        {plugin.enabled ? t('admin.plugins.enabled') : t('admin.plugins.disabled')}
+                      </Badge>
+                      {plugin.source === 'builtin' ? (
+                        <Badge>{t('admin.plugins.builtin')}</Badge>
+                      ) : null}
+                      {plugin.dependencies.some((dependency) => !dependency.satisfied) ? (
                         <span
-                          key={key}
-                          className={
-                            bad
-                              ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-destructive'
-                              : 'rounded-full bg-muted px-2 py-0.5'
-                          }
+                          title={plugin.dependencies
+                            .filter((dependency) => !dependency.satisfied)
+                            .map(
+                              (dependency) =>
+                                `${dependency.id}${dependency.range ? `@${dependency.range}` : ''}`,
+                            )
+                            .join('\n')}
                         >
-                          {entry.pluginId}:{entry.extensionPoint}
-                          {bad ? t('admin.plugins.detail.consumesMissing') : ''}
+                          <Badge variant="destructive">
+                            {plugin.dependencies.some(
+                              (dependency) => !dependency.satisfied && dependency.installed,
+                            )
+                              ? t('admin.plugins.detail.depConflict')
+                              : t('admin.plugins.detail.depMissing')}
+                          </Badge>
                         </span>
-                      );
-                    })}
-                  </p>
-                ) : null}
-                {plugin.provides.length > 0 ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t('admin.plugins.provides')}
-                    {plugin.provides.join(', ')}
-                  </p>
-                ) : null}
-                {plugin.locales.length > 0 ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t('admin.plugins.locales', { locales: plugin.locales.join(', ') })}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  render={<Link href={`/admin/plugins/${plugin.id}`} />}
-                  variant="outline"
-                  size="sm"
-                >
-                  {t('admin.plugins.detailTrigger')}
-                </Button>
-                {plugin.frontend.available ? (
-                  <Button
-                    render={<Link href={`/admin/plugins/${plugin.id}/settings`} />}
-                    variant="outline"
-                    size="sm"
+                      ) : null}
+                      {plugin.worker.circuitOpen ? (
+                        <span title={t('admin.plugins.worker.circuitOpenHint')}>
+                          <Badge variant="destructive" className="cursor-help">
+                            {t('admin.plugins.worker.circuitOpen')}
+                          </Badge>
+                        </span>
+                      ) : null}
+                    </div>
+                    {plugin.description ? (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                        {plugin.description}
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span className="font-mono">{plugin.id}</span>
+                      <span>v{plugin.version}</span>
+                      {plugin.frontend.available && plugin.frontend.pages.length > 0 ? (
+                        <span>
+                          {t('admin.plugins.frontendPages', {
+                            count: plugin.frontend.pages.length,
+                          })}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="absolute top-3 right-3 flex shrink-0 items-center sm:static">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={plugin.name}
+                            disabled={isMutating}
+                          />
+                        }
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem render={<Link href={`/admin/plugins/${plugin.id}`} />}>
+                          <Info className="size-4" />
+                          {t('admin.plugins.detailTrigger')}
+                        </DropdownMenuItem>
+                        {plugin.frontend.available ? (
+                          <DropdownMenuItem
+                            render={<Link href={`/admin/plugins/${plugin.id}/settings`} />}
+                          >
+                            <Settings className="size-4" />
+                            {t('admin.plugins.settings')}
+                          </DropdownMenuItem>
+                        ) : null}
+                        <DropdownMenuItem onClick={() => toggle(plugin)}>
+                          {plugin.enabled ? t('admin.plugins.disable') : t('admin.plugins.enable')}
+                        </DropdownMenuItem>
+                        {plugin.removable ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => setDeleteTarget(plugin)}
+                            >
+                              <Trash2 className="size-4" />
+                              {t('common.delete')}
+                            </DropdownMenuItem>
+                          </>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </ListItem>
+              ))}
+            </List>
+          )}
+
+          {stale.length > 0 ? (
+            <section className="flex flex-col gap-3">
+              <SectionTitle>{t('admin.plugins.stale.title')}</SectionTitle>
+              <List>
+                {stale.map((record) => (
+                  <ListItem
+                    key={record.id}
+                    className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    {t('admin.plugins.settings')}
-                  </Button>
-                ) : null}
-                <form
-                  action={async () => {
-                    const form = new FormData();
-                    form.set('_op', 'toggle');
-                    form.set('id', plugin.id);
-                    form.set('enabled', plugin.enabled ? 'false' : 'true');
-                    await mutate(form);
-                  }}
-                >
-                  <Button type="submit" variant="outline" size="sm" disabled={isMutating}>
-                    {plugin.enabled ? t('admin.plugins.disable') : t('admin.plugins.enable')}
-                  </Button>
-                </form>
-                {plugin.removable ? (
-                  <AlertDialog>
-                    <AlertDialogTrigger
-                      render={<Button variant="destructive" size="sm" disabled={isMutating} />}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {record.name}
+                        <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
+                          {record.id}@{record.version}
+                        </span>
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t('admin.plugins.stale.body')}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isMutating}
+                      onClick={() => {
+                        const form = new FormData();
+                        form.set('_op', 'delete');
+                        form.set('id', record.id);
+                        void mutate(form);
+                      }}
                     >
-                      {t('common.delete')}
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>{t('admin.plugins.deleteConfirmTitle')}</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {t('admin.plugins.deleteConfirmDescription', { name: plugin.name })}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                        <AlertDialogAction
-                          variant="destructive"
-                          onClick={() => {
-                            const form = new FormData();
-                            form.set('_op', 'delete');
-                            form.set('id', plugin.id);
-                            void mutate(form);
-                          }}
-                        >
-                          {t('common.delete')}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-      {stale.length > 0 ? (
-        <section>
-          <SectionTitle>{t('admin.plugins.stale.title')}</SectionTitle>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {t('admin.plugins.stale.description')}
-          </p>
-          <ul className="mt-3 space-y-2">
-            {stale.map((record) => (
-              <li
-                key={record.id}
-                className="flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground"
-              >
-                <div>
-                  <p className="font-medium">
-                    {record.name}
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {record.id}@{record.version}
-                    </span>
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t('admin.plugins.stale.body')}
-                  </p>
-                </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={isMutating}
-                  onClick={() => {
-                    const form = new FormData();
-                    form.set('_op', 'delete');
-                    form.set('id', record.id);
-                    void mutate(form);
-                  }}
-                >
-                  {t('admin.plugins.stale.cleanup')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+                      {t('admin.plugins.stale.cleanup')}
+                    </Button>
+                  </ListItem>
+                ))}
+              </List>
+            </section>
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="market" className="mt-4">
+          <PluginMarket query={query} onlyUpgradable={onlyUpgradable} />
+        </TabsContent>
+      </Tabs>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin.plugins.deleteConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('admin.plugins.deleteConfirmDescription', {
+                name: deleteTarget?.name ?? '',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t('common.delete')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

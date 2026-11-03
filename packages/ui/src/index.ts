@@ -1,6 +1,12 @@
 export { StatusBadge } from './status-badge.js';
 export type { StatusBadgeProps, StatusTone } from './status-badge.js';
 export { List, ListItem, ListEmpty } from './list.js';
+export { Textarea } from './textarea.js';
+export { GatewayPlayground } from './gateway-playground.js';
+export type {
+  GatewayPlaygroundLabels,
+  GatewayPlaygroundModel,
+} from './gateway-playground.js';
 export { PageHeader } from './page-header.js';
 export type { PageHeaderProps } from './page-header.js';
 export { Button, buttonVariants } from './button.js';
@@ -195,4 +201,5 @@ export type {
   SidebarTriggerIconProps,
 } from './animate-ui/sidebar.js';
 export { Badge } from './badge.js';
+export { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from './tooltip.js';
 export type { BadgeVariant } from './badge.js';

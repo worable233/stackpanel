@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 import type { ApiTokenScope, ApiTokenView } from '@stackpanel/sdk';
+import { Badge, List, ListEmpty, ListItem, SectionTitle } from '@stackpanel/ui';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CopyButton, CopyButtonIcon } from '@animate-ui/react/primitives/buttons/copy';
 import {
   Dialog,
@@ -213,59 +215,73 @@ export function ApiTokenManager({
 
   return (
     <>
-      <div className="flex justify-end">
-        <Button onClick={() => setCreateOpen(true)} disabled={scopes.length === 0}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <SectionTitle>{t('account.settings.access.apiKeys')}</SectionTitle>
+          <p className="text-sm text-muted-foreground">
+            {t('account.settings.access.apiKeysHint')}
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setCreateOpen(true)} disabled={scopes.length === 0}>
           <Plus className="size-4" />
           {t('apiToken.new')}
         </Button>
       </div>
 
       {tokens.length === 0 ? (
-        <div className="rounded-lg border py-16 text-center text-sm text-muted-foreground">
-          {t('apiToken.empty')}
-        </div>
+        <ListEmpty>{t('apiToken.empty')}</ListEmpty>
       ) : (
-        <ul className="divide-y rounded-lg border bg-card">
+        <List>
           {tokens.map((token) => (
-            <li key={token.id} className="flex flex-wrap items-start gap-3 p-4">
-              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <KeyRound className="size-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium">{token.name}</p>
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                      token.status === 'ACTIVE'
-                        ? 'bg-primary/10 text-primary'
-                        : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {token.status === 'ACTIVE'
-                      ? t('apiToken.statusActive')
-                      : t('apiToken.statusDisabled')}
-                  </span>
-                  {token.signingEnabled ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      <ShieldCheck className="size-3" />
-                      {t('apiToken.signingBadge')}
+            <ListItem
+              key={token.id}
+              className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground">
+                  <KeyRound className="size-4" />
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-medium">{token.name}</p>
+                    <Badge
+                      className={cn(
+                        token.status === 'ACTIVE'
+                          ? 'bg-primary/10 text-primary'
+                          : 'bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {token.status === 'ACTIVE'
+                        ? t('apiToken.statusActive')
+                        : t('apiToken.statusDisabled')}
+                    </Badge>
+                    {token.signingEnabled ? (
+                      <Badge>
+                        <ShieldCheck className="size-3" />
+                        {t('apiToken.signingBadge')}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span
+                      className="break-all font-mono text-foreground/80"
+                      title={token.keyPrefix}
+                    >
+                      {token.keyPrefix}
                     </span>
-                  ) : null}
+                    <span>
+                      {token.scopes.length > 0
+                        ? t('apiToken.scopeCount', { count: token.scopes.length })
+                        : t('apiToken.noScopes')}
+                    </span>
+                    <span>{t('apiToken.lastUsed', { time: lastUsed(token.lastUsedAt) })}</span>
+                  </div>
                 </div>
-                <p className="mt-1 font-mono text-xs text-muted-foreground">{token.keyPrefix}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {token.scopes.length > 0
-                    ? t('apiToken.scopeCount', { count: token.scopes.length })
-                    : t('apiToken.noScopes')}
-                  {' · '}
-                  {t('apiToken.lastUsed', { time: lastUsed(token.lastUsedAt) })}
-                </p>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
                 <Button variant="ghost" size="sm" onClick={() => openSigning(token)}>
                   <ShieldCheck className="size-4" />
-                  {t('apiToken.signing')}
+                  <span className="hidden sm:inline">{t('apiToken.signing')}</span>
                 </Button>
                 <Button
                   variant="ghost"
@@ -274,12 +290,12 @@ export function ApiTokenManager({
                   className="text-destructive hover:text-destructive"
                 >
                   <Trash2 className="size-4" />
-                  {t('apiToken.revoke')}
+                  <span className="hidden sm:inline">{t('apiToken.revoke')}</span>
                 </Button>
               </div>
-            </li>
+            </ListItem>
           ))}
-        </ul>
+        </List>
       )}
 
       {/* Create dialog */}
@@ -351,11 +367,10 @@ export function ApiTokenManager({
                             key={scope.key}
                             className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-0.5 text-sm"
                           >
-                            <input
-                              type="checkbox"
-                              className="mt-0.5 size-4 shrink-0 accent-primary"
+                            <Checkbox
+                              className="mt-0.5"
                               checked={selected.has(scope.key)}
-                              onChange={() => toggleScope(scope.key)}
+                              onCheckedChange={() => toggleScope(scope.key)}
                             />
                             <span className="min-w-0">
                               <span className="block">{labelOf(scope, t)}</span>

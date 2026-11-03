@@ -6,7 +6,7 @@ import { DistributionSourceSettings } from '@/components/distribution-source-set
 import { UpdatePolicySettings } from '@/components/update-policy-settings';
 import { AgentSettings } from '@/components/agent-settings';
 import { RuntimeConfigSettings } from '@/components/runtime-config-settings';
-import { SectionTitle } from '@stackpanel/ui';
+import { SectionTitle, Textarea } from '@stackpanel/ui';
 
 import { useActionState, useId, useState, useTransition, type ReactNode } from 'react';
 import { SettingsSections } from '@/components/settings-sections';
@@ -236,11 +236,27 @@ function PlatformInfoSettings({
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 pb-2">
-        <SectionTitle>{t('admin.settings.platform.title')}</SectionTitle>
-        <p className="text-sm text-muted-foreground">{t('admin.settings.platform.description')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3 pb-2">
+        <div className="flex flex-col gap-1">
+          <SectionTitle>{t('admin.settings.platform.title')}</SectionTitle>
+          <p className="text-sm text-muted-foreground">
+            {t('admin.settings.platform.description')}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+          {state.ok && state.message ? (
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+          ) : null}
+          <Button type="submit" form="platform-info-form" disabled={pending || isMutating}>
+            {pending || isMutating
+              ? t('admin.settings.saving')
+              : t('admin.settings.platform.submit')}
+          </Button>
+        </div>
       </div>
       <form
+        id="platform-info-form"
         action={(formData) => {
           startTransition(async () => {
             await action(formData);
@@ -337,23 +353,10 @@ function PlatformInfoSettings({
                   <RadioGroupItem id={`${id}-${option.value}`} value={option.value} />
                   {option.label}
                 </span>
-                <span className="pl-6 text-xs leading-5 text-muted-foreground">
-                  {option.hint}
-                </span>
+                <span className="pl-6 text-xs leading-5 text-muted-foreground">{option.hint}</span>
               </label>
             ))}
           </RadioGroup>
-        </div>
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok && state.message ? (
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-        ) : null}
-        <div>
-          <Button type="submit" disabled={pending || isMutating}>
-            {pending || isMutating
-              ? t('admin.settings.saving')
-              : t('admin.settings.platform.submit')}
-          </Button>
         </div>
       </form>
     </section>
@@ -387,11 +390,23 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 pb-2">
-        <SectionTitle>{t('admin.settings.brand.title')}</SectionTitle>
-        <p className="text-sm text-muted-foreground">{t('admin.settings.brand.description')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3 pb-2">
+        <div className="flex flex-col gap-1">
+          <SectionTitle>{t('admin.settings.brand.title')}</SectionTitle>
+          <p className="text-sm text-muted-foreground">{t('admin.settings.brand.description')}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+          {state.ok && state.message ? (
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+          ) : null}
+          <Button type="submit" form="brand-assets-form" disabled={pending || isMutating}>
+            {pending || isMutating ? t('admin.settings.saving') : t('admin.settings.brand.submit')}
+          </Button>
+        </div>
       </div>
       <form
+        id="brand-assets-form"
         action={(formData) => {
           startTransition(async () => {
             await action(formData);
@@ -445,15 +460,6 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
             <Label htmlFor="brand-favicon">{t('admin.settings.brand.uploadFavicon')}</Label>
             <Input id="brand-favicon" name="favicon" type="file" accept={BRAND_IMAGE_ACCEPT} />
           </div>
-        </div>
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok && state.message ? (
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-        ) : null}
-        <div>
-          <Button type="submit" disabled={pending || isMutating}>
-            {pending || isMutating ? t('admin.settings.saving') : t('admin.settings.brand.submit')}
-          </Button>
         </div>
       </form>
       <form
@@ -517,18 +523,36 @@ function SigningSettings({ signing }: { signing: SigningStatus | null }) {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 pb-2">
-        <SectionTitle>{t('admin.settings.signing.title')}</SectionTitle>
-        <p className="text-sm text-muted-foreground">
-          {envManaged
-            ? t('admin.settings.signing.envManaged')
-            : signing?.configured
-              ? t('admin.settings.signing.configured', { fingerprint: signing.fingerprint ?? '' })
-              : t('admin.settings.signing.unconfigured')}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3 pb-2">
+        <div className="flex flex-col gap-1">
+          <SectionTitle>{t('admin.settings.signing.title')}</SectionTitle>
+          <p className="text-sm text-muted-foreground">
+            {envManaged
+              ? t('admin.settings.signing.envManaged')
+              : signing?.configured
+                ? t('admin.settings.signing.configured', { fingerprint: signing.fingerprint ?? '' })
+                : t('admin.settings.signing.unconfigured')}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+          {state.ok && state.message ? (
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+          ) : null}
+          <Button
+            type="submit"
+            form="signing-settings-form"
+            disabled={pending || isMutating || envManaged}
+          >
+            {pending || isMutating
+              ? t('admin.settings.saving')
+              : t('admin.settings.signing.submit')}
+          </Button>
+        </div>
       </div>
 
       <form
+        id="signing-settings-form"
         action={(formData) => {
           startTransition(async () => {
             await action(formData);
@@ -539,26 +563,15 @@ function SigningSettings({ signing }: { signing: SigningStatus | null }) {
       >
         <div className="flex flex-col gap-2">
           <Label htmlFor="publicKey">{t('admin.settings.signing.publicKey')}</Label>
-          <textarea
+          <Textarea
             id="publicKey"
             name="publicKey"
             rows={7}
             defaultValue={signing?.publicKey ?? ''}
             disabled={envManaged}
-            className="w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            className="font-mono text-xs"
             placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"
           />
-        </div>
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok && state.message ? (
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-        ) : null}
-        <div className="flex items-center gap-2">
-          <Button type="submit" disabled={pending || isMutating || envManaged} className="w-fit">
-            {pending || isMutating
-              ? t('admin.settings.saving')
-              : t('admin.settings.signing.submit')}
-          </Button>
         </div>
       </form>
     </section>

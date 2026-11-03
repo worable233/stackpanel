@@ -729,6 +729,34 @@
         "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
         "body": "The package files are missing, so the runtime never loaded this plugin.",
         "cleanup": "Remove record"
+      },
+      "tabs": {
+        "installed": "Installés",
+        "discover": "Découvrir"
+      },
+      "searchPlaceholder": "Rechercher un plugin ou saisir un ID",
+      "noMatch": "Aucun plugin correspondant.",
+      "installedEmpty": "Aucun plugin installé pour le moment.",
+      "market": {
+        "title": "Catalogue de plugins",
+        "refresh": "Actualiser",
+        "loading": "Chargement du catalogue…",
+        "error": "Impossible de charger le catalogue. Réessayez plus tard.",
+        "empty": "Aucun plugin correspondant.",
+        "install": "Installer",
+        "upgrade": "Mettre à jour",
+        "installedBadge": "Installé",
+        "upgradableBadge": "Mise à jour vers v{version}",
+        "installing": "En cours…",
+        "installed": "« {name} » installé",
+        "upgraded": "« {name} » mis à jour",
+        "installFailed": "Échec de l’installation. Réessayez plus tard.",
+        "noDescription": "Pas de description",
+        "version": "v{version}",
+        "installedVersion": "Installé v{version}",
+        "author": "par {author}",
+        "kindPlugin": "Plugin",
+        "kindTheme": "Thème"
       }
     },
     "users": {
@@ -1147,7 +1175,15 @@
       "errorDetails": "Technical details",
       "beforeCheckTitle": "Checking for updates does not affect the running service",
       "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours.",
-      "executorOffline": "Aucun exécuteur de mise à jour détecté (le conteneur updater ne tourne pas). Une tâche soumise maintenant ne serait jamais prise en charge et resterait indéfiniment « soumise ». Démarrez d’abord l’updater (docker compose --profile updater up -d) ou mettez à jour manuellement avec pull + migrate + up -d."
+      "executorOffline": "Aucun exécuteur de mise à jour détecté (le conteneur updater ne tourne pas). Une tâche soumise maintenant ne serait jamais prise en charge et resterait indéfiniment « soumise ». Démarrez d’abord l’updater (docker compose --profile updater up -d) ou mettez à jour manuellement avec pull + migrate + up -d.",
+      "newVersion": "Version disponible",
+      "kernelUpdatePending": "La mise à jour v{version} est disponible. Le service redémarrera brièvement.",
+      "kernelLatest": "Le noyau système est à jour.",
+      "pluginUpdatesAvailable": "{count} extensions ou thèmes peuvent être mis à jour",
+      "managePlugins": "Gérer les extensions",
+      "updateNow": "Mettre à jour",
+      "updating": "Mise à jour…",
+      "checkingUpdates": "Recherche de mises à jour…"
     }
   },
   "action": {

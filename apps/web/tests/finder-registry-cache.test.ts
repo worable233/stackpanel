@@ -150,7 +150,7 @@ describe('finder registry is scanned once per request', () => {
     await runWithFrontendSnapshot(async () => {
       const merged = await mergedPluginFinders();
       // 与原先「遍历顺序第一个胜出」一致，否则同名 finder 会静默换实现。
-      expect(await merged.shared.handler()).toBe('store');
+      expect(await merged.shared.handler({}, { settings: {}, api: {} as never, params: {} })).toBe('store');
       expect(await finderOwnerPlugin('shared')).toBe('store');
     });
   });

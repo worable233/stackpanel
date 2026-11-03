@@ -1,6 +1,6 @@
 'use client';
 
-import { SectionTitle, Select } from '@stackpanel/ui';
+import { SectionTitle, Select, Textarea } from '@stackpanel/ui';
 import { useActionState, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DistributionSourceConfig } from '@stackpanel/sdk';
@@ -51,22 +51,59 @@ export function DistributionSourceSettings({
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <SectionTitle>{t('admin.settings.distribution.title')}</SectionTitle>
-        <p className="text-sm text-muted-foreground">
-          {t('admin.settings.distribution.description')}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {source.source === 'stored'
-            ? t('admin.settings.distribution.sourceStored')
-            : t('admin.settings.distribution.sourceEnv')}
-          {source.envRepository
-            ? ` · ${t('admin.settings.distribution.envHint', { repository: source.envRepository })}`
-            : ''}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <SectionTitle>{t('admin.settings.distribution.title')}</SectionTitle>
+          <p className="text-sm text-muted-foreground">
+            {t('admin.settings.distribution.description')}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {source.source === 'stored'
+              ? t('admin.settings.distribution.sourceStored')
+              : t('admin.settings.distribution.sourceEnv')}
+            {source.envRepository
+              ? ` · ${t('admin.settings.distribution.envHint', { repository: source.envRepository })}`
+              : ''}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+          {state.ok && state.message ? (
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+          ) : null}
+          {refreshState.error ? (
+            <p className="text-sm text-destructive">{refreshState.error}</p>
+          ) : null}
+          {refreshState.ok && refreshState.message ? (
+            <p className="text-sm text-muted-foreground">{refreshState.message}</p>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="submit" form="distribution-source-form" disabled={pending || isMutating}>
+              {pending || isMutating
+                ? t('admin.settings.saving')
+                : t('admin.settings.distribution.submit')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={refreshing}
+              onClick={() => {
+                startRefresh(async () => {
+                  setRefreshState(await refreshDistributionAction());
+                  router.refresh();
+                });
+              }}
+            >
+              {refreshing
+                ? t('admin.settings.distribution.refreshing')
+                : t('admin.settings.distribution.refresh')}
+            </Button>
+          </div>
+        </div>
       </div>
 
       <form
+        id="distribution-source-form"
         action={(formData) => {
           startTransition(async () => {
             await action(formData);
@@ -78,11 +115,7 @@ export function DistributionSourceSettings({
         className="flex flex-col gap-6"
       >
         <div className="flex items-center gap-2">
-          <Checkbox
-            id="remoteEnabled"
-            name="remoteEnabled"
-            defaultChecked={remoteEnabled}
-          />
+          <Checkbox id="remoteEnabled" name="remoteEnabled" defaultChecked={remoteEnabled} />
           <Label htmlFor="remoteEnabled">{t('admin.settings.distribution.remoteEnabled')}</Label>
         </div>
 
@@ -105,12 +138,7 @@ export function DistributionSourceSettings({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label htmlFor="channel">{t('admin.settings.distribution.channel')}</Label>
-            <Select
-              id="channel"
-              name="channel"
-              defaultValue={source.channel}
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-            >
+            <Select id="channel" name="channel" defaultValue={source.channel}>
               <option value="stable">{t('admin.settings.distribution.channelStable')}</option>
               <option value="beta">{t('admin.settings.distribution.channelBeta')}</option>
             </Select>
@@ -140,39 +168,6 @@ export function DistributionSourceSettings({
             </p>
           ) : null}
         </div>
-
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok && state.message ? (
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" disabled={pending || isMutating}>
-            {pending || isMutating
-              ? t('admin.settings.saving')
-              : t('admin.settings.distribution.submit')}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={refreshing}
-            onClick={() => {
-              startRefresh(async () => {
-                setRefreshState(await refreshDistributionAction());
-                router.refresh();
-              });
-            }}
-          >
-            {refreshing
-              ? t('admin.settings.distribution.refreshing')
-              : t('admin.settings.distribution.refresh')}
-          </Button>
-        </div>
-        {refreshState.error ? (
-          <p className="text-sm text-destructive">{refreshState.error}</p>
-        ) : null}
-        {refreshState.ok && refreshState.message ? (
-          <p className="text-sm text-muted-foreground">{refreshState.message}</p>
-        ) : null}
       </form>
 
       <form
@@ -198,12 +193,12 @@ export function DistributionSourceSettings({
           <Label htmlFor="catalogPublicKey">
             {t('admin.settings.distribution.catalogKeyLabel')}
           </Label>
-          <textarea
+          <Textarea
             id="catalogPublicKey"
             name="publicKey"
             rows={6}
             defaultValue={source.publicKey ?? ''}
-            className="w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:ring-2 focus:ring-ring"
+            className="font-mono text-xs"
             placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"
           />
         </div>

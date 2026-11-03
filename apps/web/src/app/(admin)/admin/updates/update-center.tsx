@@ -8,18 +8,14 @@ import type {
   UpdateStatusResponse,
   UpdateTaskResultView,
 } from '@stackpanel/sdk';
-import { ArrowUpCircle, Info, RefreshCw, Settings2 } from 'lucide-react';
+import { ArrowRight, ArrowUpCircle, CheckCircle2, Info, RefreshCw, Settings2 } from 'lucide-react';
+import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useTranslator } from '@/i18n/provider';
 import {
   cancelSelfUpdateAction,
@@ -138,8 +134,8 @@ export function UpdateCenter({
     });
   }
 
-  function onCheck() {
-    setFeedback(null);
+  function onCheck(silent = false) {
+    if (!silent) setFeedback(null);
     run('check', async () => {
       const next = await checkUpdateCatalogAction();
       if (next.error) {
@@ -171,11 +167,12 @@ export function UpdateCenter({
         });
         return;
       }
+      if (silent) return;
       const upgradable = solved?.ok ? (solved.plan?.packages.length ?? 0) : 0;
       setFeedback({
         kind: 'ok',
         text:
-          solved?.ok && upgradable > 0
+          solved?.ok && (solved.includesKernel || upgradable > 0)
             ? t('admin.updates.checkSucceeded', {
                 sequence: String(result.catalog.sequence ?? 0),
               })
@@ -246,264 +243,165 @@ export function UpdateCenter({
   const needsExpiredOverride = plan?.ok === true && plan.catalogExpired === true;
   const needsConfirm = needsAck || needsExpiredOverride;
   const packages = plan?.ok ? (plan.plan?.packages ?? []) : [];
-  const hasUpdates = Boolean(plan?.ok && (plan.includesKernel || packages.length > 0));
   const targetVersion = plan?.ok ? plan.plan?.kernel.version : undefined;
+  const hasKernelUpdate = Boolean(
+    plan?.ok && plan.includesKernel && targetVersion && targetVersion !== currentVersion,
+  );
+  // `fromVersion === null` 表示目录里新增的包，不是「可更新」；
+  // 把它算进去会让人以为已装的东西过期了。
+  const pluginUpdates = packages.filter((item) => item.fromVersion !== null);
+  const pluginUpdateCount = pluginUpdates.length;
+  const checked = plan?.ok === true;
+  const canSubmit =
+    hasKernelUpdate &&
+    (!needsAck || acknowledge) &&
+    (!needsExpiredOverride || allowExpired) &&
+    !executorOffline;
+  const autoChecked = useRef(false);
+
+  useEffect(() => {
+    if (autoChecked.current || plan || activeTask) return;
+    if (status.catalogState === 'unconfigured') return;
+    autoChecked.current = true;
+    onCheck(true);
+    // 只在首屏自动检查一次；后续由用户显式触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <section className="rounded-3xl bg-muted/40 p-6 sm:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <div className="flex flex-col gap-2">
-            <span className="text-sm text-muted-foreground">
-              {t('admin.updates.currentVersion')}
-            </span>
-            <span className="text-4xl font-semibold tracking-tight tabular-nums">
-              v{currentVersion}
-            </span>
-            <p className="max-w-xl text-sm text-muted-foreground">
-              {hasUpdates
-                ? t('admin.updates.availableSummary', {
-                    version: targetVersion ?? '',
-                    count: packages.length,
-                  })
-                : plan
-                  ? t('admin.updates.upToDateSummary')
-                  : t('admin.updates.checkPrompt')}
-            </p>
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      <section className="rounded-[28px] bg-muted/35 p-6 sm:p-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-5">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-muted-foreground">
+                {t('admin.updates.currentVersion')}
+              </span>
+              <span className="text-4xl font-semibold tracking-tight tabular-nums">
+                v{currentVersion}
+              </span>
+            </div>
+            {hasKernelUpdate ? (
+              <>
+                <ArrowRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm text-muted-foreground">
+                    {t('admin.updates.newVersion')}
+                  </span>
+                  <span className="text-4xl font-semibold tracking-tight tabular-nums">
+                    v{targetVersion}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 rounded-full bg-background px-3 py-1.5 text-sm font-medium">
+                <CheckCircle2 className="size-4" aria-hidden="true" />
+                {checked ? t('admin.updates.upToDateBadge') : t('admin.updates.notCheckedBadge')}
+              </div>
+            )}
           </div>
-          <Badge variant={hasUpdates ? 'default' : 'secondary'} className="mt-1">
-            {hasUpdates
-              ? t('admin.updates.availableBadge')
-              : plan
-                ? t('admin.updates.upToDateBadge')
-                : t('admin.updates.notCheckedBadge')}
-          </Badge>
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <Button type="button" onClick={onCheck} disabled={busy !== null}>
-            <RefreshCw className="size-4" aria-hidden="true" />
-            {busy === 'check' ? t('admin.updates.checking') : t('admin.updates.checkAction')}
-          </Button>
-          {hasUpdates && !needsConfirm ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {hasKernelUpdate ? (
+              <Button onClick={onSubmit} disabled={busy !== null || !canSubmit}>
+                {busy === 'submit' ? t('admin.updates.updating') : t('admin.updates.updateNow')}
+              </Button>
+            ) : null}
             <Button
               type="button"
-              onClick={onSubmit}
-              disabled={busy !== null || executorOffline}
-              title={executorOffline ? t('admin.updates.executorOffline') : undefined}
+              variant={hasKernelUpdate ? 'outline' : 'default'}
+              onClick={() => onCheck()}
+              disabled={busy !== null || activeTask !== null}
             >
-              <ArrowUpCircle className="size-4" aria-hidden="true" />
-              {t('admin.updates.submit')}
+              <RefreshCw
+                className={busy === 'check' ? 'size-4 animate-spin' : 'size-4'}
+                aria-hidden="true"
+              />
+              {busy === 'check' ? t('admin.updates.checking') : t('admin.updates.checkAction')}
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setAdvancedOpen(true)}
-          >
-            <Settings2 className="size-4" aria-hidden="true" />
-            {t('admin.updates.advancedInfo')}
-          </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label={t('admin.updates.advancedInfo')}
+              onClick={() => setAdvancedOpen(true)}
+            >
+              <Settings2 className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
+
+        {hasKernelUpdate || !checked ? (
+          <p className="mt-5 text-sm text-muted-foreground">
+            {hasKernelUpdate
+              ? t('admin.updates.kernelUpdatePending', {
+                  version: targetVersion ?? '',
+                })
+              : t('admin.updates.checkingUpdates')}
+          </p>
+        ) : null}
+
+        {pluginUpdateCount > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-background px-4 py-3 text-sm">
+            <span>{t('admin.updates.pluginUpdatesAvailable', { count: pluginUpdateCount })}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              render={<Link href="/admin/plugins?tab=market&updates=1" />}
+            >
+              {t('admin.updates.managePlugins')}
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+
+        {activeTask ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            {t('admin.updates.progressPhase', { phase: activePhase(results, activeTask) ?? '—' })}
+          </p>
+        ) : null}
       </section>
 
-      {feedback ? (
-        feedback.kind === 'error' ? (
-          <div className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <p>{t('admin.updates.actionFailed')}</p>
-            <details className="mt-2 text-xs text-destructive/80">
-              <summary className="cursor-pointer">{t('admin.updates.errorDetails')}</summary>
-              <p className="mt-1 break-words">{feedback.text}</p>
-            </details>
-          </div>
-        ) : (
-          <div className="rounded-xl bg-muted px-4 py-3 text-sm text-foreground">
-            {feedback.text}
-          </div>
-        )
-      ) : null}
-
-      {!plan && !activeTask ? (
-        <section className="flex items-start gap-3 rounded-2xl bg-muted/40 p-5">
-          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground">
-            <Info className="size-4" aria-hidden="true" />
-          </span>
-          <div className="flex flex-col gap-1.5 text-sm">
-            <p className="font-medium">{t('admin.updates.beforeCheckTitle')}</p>
-            <p className="text-muted-foreground">{t('admin.updates.beforeCheckBody')}</p>
-          </div>
-        </section>
-      ) : null}
-
-      {plan && !plan.ok ? (
-        <section className="flex flex-col gap-2 rounded-2xl bg-destructive/10 p-5">
-          <p className="text-sm font-medium text-destructive">{t('admin.updates.planBlocked')}</p>
-          <ul className="list-disc pl-5 text-sm text-muted-foreground">
-            {(plan.blocks ?? []).map((block, index) => (
-              <li key={`${block.code}-${index}`}>
-                {block.component
-                  ? t('admin.updates.blockDetail', {
-                      component: `${block.component.kind}/${block.component.id}`,
-                      detail: block.detail,
-                    })
-                  : block.detail}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {hasUpdates ? (
-        <section className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-base font-semibold">{t('admin.updates.updateContentTitle')}</h2>
-              {targetVersion ? (
-                <p className="text-sm text-muted-foreground">
-                  {t('admin.updates.targetVersion', { version: targetVersion })}
-                </p>
-              ) : null}
-            </div>
-            <span className="text-sm text-muted-foreground">
-              {t('admin.updates.componentCount', { count: packages.length })}
-            </span>
-          </div>
-
-          <ul className="flex flex-col gap-2">
-            {plan?.includesKernel ? (
-              <li className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/40 px-4 py-3">
-                <span className="text-sm font-medium">{t('admin.updates.kernelComponent')}</span>
-                <span className="text-sm text-muted-foreground tabular-nums">
-                  v{currentVersion}
-                  {targetVersion ? ` → v${targetVersion}` : ''}
-                </span>
-              </li>
-            ) : null}
-            {packages.map((pkg) => (
-              <li
-                key={`${pkg.kind}/${pkg.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-muted/40 px-4 py-3"
-              >
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-sm font-medium">{pkg.id}</span>
-                  <span className="text-xs text-muted-foreground">{pkg.kind}</span>
-                </div>
-                <span className="text-sm text-muted-foreground tabular-nums">
-                  {pkg.fromVersion ?? '—'} → {pkg.toVersion}
-                </span>
-              </li>
-            ))}
-          </ul>
-
+      {needsConfirm ? (
+        <section className="flex flex-col gap-3 rounded-2xl bg-muted/40 p-5">
+          <h2 className="text-sm font-semibold">{t('admin.updates.authorizationTitle')}</h2>
+          <p className="text-sm text-muted-foreground">{t('admin.updates.authorizationBody')}</p>
+          {needsAck ? (
+            <label className="flex items-start gap-2.5 text-sm">
+              <Checkbox
+                checked={acknowledge}
+                onCheckedChange={(value) => setAcknowledge(value === true)}
+              />
+              <span>{t('admin.updates.acknowledgeLabel')}</span>
+            </label>
+          ) : null}
           {needsExpiredOverride ? (
-            <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {t('admin.updates.expiredWarning')}
-            </p>
+            <label className="flex items-start gap-2.5 text-sm">
+              <Checkbox
+                checked={allowExpired}
+                onCheckedChange={(value) => setAllowExpired(value === true)}
+              />
+              <span>{t('admin.updates.allowExpiredLabel')}</span>
+            </label>
           ) : null}
-
-          {needsConfirm ? (
-            <div className="flex flex-col gap-3 rounded-2xl bg-destructive/10 p-5">
-              <p className="text-sm font-semibold">{t('admin.updates.authorizationTitle')}</p>
-              <p className="text-sm text-muted-foreground">
-                {t('admin.updates.authorizationBody')}
-              </p>
-              <ul className="list-disc pl-5 text-sm">
-                {packages
-                  .filter((pkg) => pkg.addsPermissions || !pkg.reversible)
-                  .map((pkg) => (
-                    <li key={`auth-${pkg.kind}/${pkg.id}`}>
-                      {pkg.addsPermissions
-                        ? t('admin.updates.authorizationPermissions', {
-                            component: `${pkg.kind}/${pkg.id}`,
-                          })
-                        : t('admin.updates.authorizationIrreversible', {
-                            component: `${pkg.kind}/${pkg.id}`,
-                          })}
-                    </li>
-                  ))}
-              </ul>
-              {needsAck ? (
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="acknowledge"
-                    checked={acknowledge}
-                    onCheckedChange={(checked) => setAcknowledge(checked === true)}
-                  />
-                  <Label htmlFor="acknowledge">{t('admin.updates.acknowledgeLabel')}</Label>
-                </div>
-              ) : null}
-              {needsExpiredOverride ? (
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="allowExpired"
-                    checked={allowExpired}
-                    onCheckedChange={(checked) => setAllowExpired(checked === true)}
-                  />
-                  <Label htmlFor="allowExpired">{t('admin.updates.allowExpiredLabel')}</Label>
-                </div>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  onClick={onSubmit}
-                  disabled={
-                    busy !== null ||
-                    (needsAck && !acknowledge) ||
-                    (needsExpiredOverride && !allowExpired)
-                  }
-                >
-                  {t('admin.updates.confirmSubmit')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setAcknowledge(false);
-                    setAllowExpired(false);
-                  }}
-                  disabled={busy !== null}
-                >
-                  {t('admin.updates.cancel')}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={onSubmit}
-                disabled={busy !== null || executorOffline}
-                title={executorOffline ? t('admin.updates.executorOffline') : undefined}
-              >
-                <ArrowUpCircle className="size-4" aria-hidden="true" />
-                {t('admin.updates.submit')}
-              </Button>
-            </div>
-          )}
-        </section>
-      ) : plan ? (
-        <section className="flex flex-col items-center gap-2 rounded-2xl bg-muted/40 px-6 py-10 text-center">
-          <p className="text-sm font-medium">{t('admin.updates.upToDateTitle')}</p>
-          <p className="text-sm text-muted-foreground">{t('admin.updates.upToDateSummary')}</p>
         </section>
       ) : null}
 
-      {activeTask ? (
-        <section className="flex flex-col gap-2 rounded-2xl bg-muted/40 p-5">
-          <h2 className="text-sm font-semibold">{t('admin.updates.progressTitle')}</h2>
-          {activePhase(history, activeTask) ? (
-            <p className="text-sm">
-              {t('admin.updates.progressPhase', {
-                phase: activePhase(history, activeTask) as string,
-              })}
-            </p>
-          ) : null}
-          <p className="text-xs text-muted-foreground">
-            {t('admin.updates.progressHint', {
-              seconds: String(POLL_INTERVAL_MS / 1000),
-            })}
-          </p>
-        </section>
+      {executorOffline && (hasKernelUpdate || activeTask) ? (
+        <p className="rounded-2xl bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
+          {t('admin.updates.executorOffline')}
+        </p>
+      ) : null}
+
+      {feedback ? (
+        <p
+          className={
+            feedback.kind === 'error'
+              ? 'rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive'
+              : 'rounded-2xl bg-muted/35 px-4 py-3 text-sm text-muted-foreground'
+          }
+        >
+          {feedback.text}
+        </p>
       ) : null}
 
       <Sheet open={advancedOpen} onOpenChange={setAdvancedOpen}>
@@ -522,7 +420,9 @@ export function UpdateCenter({
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-muted-foreground">{t('admin.updates.digest')}</dt>
-                    <dd className="max-w-[16rem] truncate font-mono">{status.status.digest ?? '—'}</dd>
+                    <dd className="max-w-[16rem] truncate font-mono">
+                      {status.status.digest ?? '—'}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-muted-foreground">{t('admin.updates.carrier')}</dt>
@@ -595,10 +495,8 @@ export function UpdateCenter({
                 </p>
               ) : null}
               <div>
-                <Button type="button" size="sm" onClick={onCheck} disabled={busy !== null}>
-                  {busy === 'check'
-                    ? t('admin.updates.checking')
-                    : t('admin.updates.checkAction')}
+                <Button type="button" size="sm" onClick={() => onCheck()} disabled={busy !== null}>
+                  {busy === 'check' ? t('admin.updates.checking') : t('admin.updates.checkAction')}
                 </Button>
               </div>
             </section>
@@ -610,9 +508,7 @@ export function UpdateCenter({
               </p>
               {selfUpdate ? (
                 <div className="flex flex-col gap-2 rounded-xl bg-muted/40 p-3 text-sm">
-                  <span className="break-all font-mono text-xs">
-                    {selfUpdate.candidateDigest}
-                  </span>
+                  <span className="break-all font-mono text-xs">{selfUpdate.candidateDigest}</span>
                   <span className="text-xs text-muted-foreground">
                     {t('admin.updates.selfUpdatePending', {
                       digest: selfUpdate.candidateDigest,
@@ -632,9 +528,7 @@ export function UpdateCenter({
                 </div>
               ) : null}
               <div className="flex flex-col gap-2">
-                <Label htmlFor="candidateDigest">
-                  {t('admin.updates.selfUpdateDigestLabel')}
-                </Label>
+                <Label htmlFor="candidateDigest">{t('admin.updates.selfUpdateDigestLabel')}</Label>
                 <Input
                   id="candidateDigest"
                   value={digest}
@@ -689,7 +583,6 @@ export function UpdateCenter({
       </Sheet>
     </div>
   );
-
 }
 
 /** `unconfigured` → `Unconfigured`，用于拼接 `catalogState*` 消息 id。 */

@@ -1,6 +1,6 @@
 'use client';
 
-import { SectionTitle, Select } from '@stackpanel/ui';
+import { SectionTitle, Select, Textarea } from '@stackpanel/ui';
 import { useActionState, useState } from 'react';
 import type { UpdatePolicyView } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
@@ -32,23 +32,39 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <SectionTitle>{t('admin.settings.updates.title')}</SectionTitle>
-        <p className="text-sm text-muted-foreground">{t('admin.settings.updates.description')}</p>
-        <p className="text-xs text-muted-foreground">
-          {policy.updatedAt
-            ? t('admin.settings.updates.updatedBy', {
-                at: new Date(policy.updatedAt).toLocaleString(),
-                by: policy.updatedBy ?? '—',
-              })
-            : t('admin.settings.updates.neverUpdated')}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <SectionTitle>{t('admin.settings.updates.title')}</SectionTitle>
+          <p className="text-sm text-muted-foreground">{t('admin.settings.updates.description')}</p>
+          <p className="text-xs text-muted-foreground">
+            {policy.updatedAt
+              ? t('admin.settings.updates.updatedBy', {
+                  at: new Date(policy.updatedAt).toLocaleString(),
+                  by: policy.updatedBy ?? '—',
+                })
+              : t('admin.settings.updates.neverUpdated')}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
+          {state.ok && state.message ? (
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+          ) : null}
+          <Button type="submit" form="update-policy-form" disabled={pending}>
+            {pending ? t('admin.settings.updates.saving') : t('admin.settings.updates.submit')}
+          </Button>
+        </div>
       </div>
 
-      <form action={action} className="flex flex-col gap-6">
+      <form id="update-policy-form" action={action} className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-2">
-            <Checkbox className="mt-0.5" id="autoUpdate" name="autoUpdate" defaultChecked={policy.autoUpdate} />
+            <Checkbox
+              className="mt-0.5"
+              id="autoUpdate"
+              name="autoUpdate"
+              defaultChecked={policy.autoUpdate}
+            />
             <Label htmlFor="autoUpdate">{t('admin.settings.updates.autoUpdate')}</Label>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -74,7 +90,8 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex items-start gap-2">
-              <Checkbox className="mt-0.5"
+              <Checkbox
+                className="mt-0.5"
                 id="autoUpdateKernel"
                 name="autoUpdateKernel"
                 defaultChecked={policy.autoUpdateKernel}
@@ -91,7 +108,8 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
 
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-2">
-            <Checkbox className="mt-0.5"
+            <Checkbox
+              className="mt-0.5"
               id="windowEnabled"
               name="windowEnabled"
               checked={windowEnabled}
@@ -134,13 +152,13 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="excluded">{t('admin.settings.updates.excluded')}</Label>
-          <textarea
+          <Textarea
             id="excluded"
             name="excluded"
             rows={4}
             defaultValue={policy.excluded.join('\n')}
             placeholder={'plugin/referral\ntheme/atlas'}
-            className="w-full rounded-[10px] border border-border/80 bg-background px-3.5 py-2 font-mono text-sm text-foreground outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+            className="font-mono text-sm"
           />
           <p className="text-xs text-muted-foreground">
             {t('admin.settings.updates.excludedHint')}
@@ -149,7 +167,7 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="pinned">{t('admin.settings.updates.pinned')}</Label>
-          <textarea
+          <Textarea
             id="pinned"
             name="pinned"
             rows={4}
@@ -157,14 +175,15 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
               .map(([key, version]) => `${key} ${version}`)
               .join('\n')}
             placeholder={'plugin/referral 1.2.0'}
-            className="w-full rounded-[10px] border border-border/80 bg-background px-3.5 py-2 font-mono text-sm text-foreground outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+            className="font-mono text-sm"
           />
           <p className="text-xs text-muted-foreground">{t('admin.settings.updates.pinnedHint')}</p>
         </div>
 
         <div className="flex flex-col gap-3 rounded-2xl bg-destructive/10 p-4">
           <div className="flex items-start gap-2">
-            <Checkbox className="mt-0.5"
+            <Checkbox
+              className="mt-0.5"
               id="allowPermissionIncrease"
               name="allowPermissionIncrease"
               defaultChecked={policy.allowPermissionIncrease}
@@ -177,7 +196,8 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
             {t('admin.settings.updates.allowPermissionIncreaseHint')}
           </p>
           <div className="flex items-start gap-2">
-            <Checkbox className="mt-0.5"
+            <Checkbox
+              className="mt-0.5"
               id="allowIrreversibleMigration"
               name="allowIrreversibleMigration"
               defaultChecked={policy.allowIrreversibleMigration}
@@ -189,17 +209,6 @@ export function UpdatePolicySettings({ policy }: { policy: UpdatePolicyView }) {
           <p className="text-xs text-muted-foreground">
             {t('admin.settings.updates.allowIrreversibleMigrationHint')}
           </p>
-        </div>
-
-        {state.error ? <p className="text-sm text-destructive">{state.error}</p> : null}
-        {state.ok && state.message ? (
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" disabled={pending}>
-            {pending ? t('admin.settings.updates.saving') : t('admin.settings.updates.submit')}
-          </Button>
         </div>
       </form>
     </section>

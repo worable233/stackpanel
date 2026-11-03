@@ -720,6 +720,34 @@
         "cleanup": "Remove record",
         "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
         "title": "Leftover plugin records"
+      },
+      "tabs": {
+        "installed": "Installed",
+        "discover": "Discover"
+      },
+      "searchPlaceholder": "Search plugins or enter an ID",
+      "noMatch": "No matching plugins.",
+      "installedEmpty": "No plugins installed yet.",
+      "market": {
+        "title": "Plugin catalog",
+        "refresh": "Refresh",
+        "loading": "Loading plugin catalog…",
+        "error": "Unable to load the plugin catalog. Try again later.",
+        "empty": "No matching plugins.",
+        "install": "Install",
+        "upgrade": "Upgrade",
+        "installedBadge": "Installed",
+        "upgradableBadge": "Upgrade to v{version}",
+        "installing": "Working…",
+        "installed": "Installed “{name}”",
+        "upgraded": "Upgraded “{name}”",
+        "installFailed": "Install failed. Try again later.",
+        "noDescription": "No description",
+        "version": "v{version}",
+        "installedVersion": "Installed v{version}",
+        "author": "by {author}",
+        "kindPlugin": "Plugin",
+        "kindTheme": "Theme"
       }
     },
     "users": {
@@ -1138,7 +1166,15 @@
       "upToDateTitle": "You are up to date",
       "updateContentTitle": "What will be updated",
       "updatedAt": "Status updated at",
-      "executorOffline": "No upgrade executor detected (the updater container is not running). A task submitted now would never be claimed and would stay at “submitted” forever. Start the updater first (docker compose --profile updater up -d), or upgrade manually with pull + migrate + up -d."
+      "executorOffline": "No upgrade executor detected (the updater container is not running). A task submitted now would never be claimed and would stay at “submitted” forever. Start the updater first (docker compose --profile updater up -d), or upgrade manually with pull + migrate + up -d.",
+      "newVersion": "Latest version",
+      "kernelUpdatePending": "Update to v{version} is available. The service restarts briefly during the update.",
+      "kernelLatest": "The system kernel is up to date.",
+      "pluginUpdatesAvailable": "{count} plugins or themes can be updated",
+      "managePlugins": "Manage plugins",
+      "updateNow": "Update now",
+      "updating": "Updating…",
+      "checkingUpdates": "Checking for updates…"
     }
   },
   "locale": {

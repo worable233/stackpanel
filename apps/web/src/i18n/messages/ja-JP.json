@@ -729,6 +729,34 @@
         "description": "These records are still in the database, but the package is gone and the runtime cannot load them. Cleaning up removes their capability claims; reinstalling the plugin restores it.",
         "body": "The package files are missing, so the runtime never loaded this plugin.",
         "cleanup": "Remove record"
+      },
+      "tabs": {
+        "installed": "インストール済み",
+        "discover": "見つける"
+      },
+      "searchPlaceholder": "プラグインを検索、または ID を入力",
+      "noMatch": "一致するプラグインはありません。",
+      "installedEmpty": "インストール済みのプラグインはありません。",
+      "market": {
+        "title": "プラグインカタログ",
+        "refresh": "更新",
+        "loading": "カタログを読み込み中…",
+        "error": "カタログを読み込めません。しばらくしてから再試行してください。",
+        "empty": "一致するプラグインはありません。",
+        "install": "インストール",
+        "upgrade": "アップグレード",
+        "installedBadge": "インストール済み",
+        "upgradableBadge": "v{version} にアップグレード可能",
+        "installing": "処理中…",
+        "installed": "「{name}」をインストールしました",
+        "upgraded": "「{name}」をアップグレードしました",
+        "installFailed": "インストールに失敗しました。しばらくしてから再試行してください。",
+        "noDescription": "説明はありません",
+        "version": "v{version}",
+        "installedVersion": "インストール済み v{version}",
+        "author": "作者 {author}",
+        "kindPlugin": "プラグイン",
+        "kindTheme": "テーマ"
       }
     },
     "users": {
@@ -1147,7 +1175,15 @@
       "errorDetails": "Technical details",
       "beforeCheckTitle": "Checking for updates does not affect the running service",
       "beforeCheckBody": "The check only reads version information. Review what changed before installing; installing restarts services, so prefer off-peak hours.",
-      "executorOffline": "アップグレード実行基盤（updater コンテナ）が動作していません。いま投入したタスクは引き取られず、「投入済み」のまま残ります。先に updater を起動する（docker compose --profile updater up -d）か、pull + migrate + up -d で手動アップグレードしてください。"
+      "executorOffline": "アップグレード実行基盤（updater コンテナ）が動作していません。いま投入したタスクは引き取られず、「投入済み」のまま残ります。先に updater を起動する（docker compose --profile updater up -d）か、pull + migrate + up -d で手動アップグレードしてください。",
+      "newVersion": "最新バージョン",
+      "kernelUpdatePending": "v{version} に更新できます。更新中はサービスが一時的に再起動します。",
+      "kernelLatest": "システムカーネルは最新です。",
+      "pluginUpdatesAvailable": "{count} 個のプラグインまたはテーマを更新できます",
+      "managePlugins": "プラグイン管理へ",
+      "updateNow": "今すぐ更新",
+      "updating": "更新中…",
+      "checkingUpdates": "更新を確認中…"
     }
   },
   "action": {

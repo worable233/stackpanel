@@ -499,15 +499,7 @@ function AccessSettings({
   return (
     <section className="flex flex-col gap-6">
       <Heading>{t('account.settings.sections.access')}</Heading>
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <SectionTitle>{t('account.settings.access.apiKeys')}</SectionTitle>
-          <p className="text-sm text-muted-foreground">
-            {t('account.settings.access.apiKeysHint')}
-          </p>
-        </div>
-        {apiKeys}
-      </div>
+      <div className="flex flex-col gap-4">{apiKeys}</div>
       <Separator />
       <SectionTitle>{t('account.settings.access.linkedMethods')}</SectionTitle>
       {identities === null ? (
