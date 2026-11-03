@@ -95,9 +95,8 @@ export default async function AdminSettingsPage() {
     : null;
 
   return (
-    <main className="w-full">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
       <PageHeader title={t('admin.settings.title')} />
-      <div className="h-5 lg:h-6" />
       {error ? (
         <p className="text-sm text-destructive">{t('admin.settings.serviceUnavailable')}</p>
       ) : (

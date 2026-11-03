@@ -29,7 +29,7 @@ function UploadForm() {
 
   return (
     <form action={action} className="mt-4 flex flex-col gap-3">
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <Label htmlFor="plugin-zip">{t('upload.pluginFile')}</Label>
         <Input id="plugin-zip" name="file" type="file" accept=".zip" required />
       </div>

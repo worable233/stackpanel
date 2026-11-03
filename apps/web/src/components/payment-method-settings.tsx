@@ -141,7 +141,7 @@ export function PaymentMethodSettings({
       ) : null}
 
       {methods.length === 0 && !creating ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted/40 py-10 text-center">
           <CreditCard className="size-6 text-muted-foreground" />
           <p className="text-sm font-medium">{t('admin.settings.payment.empty')}</p>
           <p className="max-w-md text-sm text-muted-foreground">
@@ -424,13 +424,13 @@ function PaymentMethodForm({
          * anyway invites operators to "fill them in", and the values would then
          * be ignored by the provider.
          */
-        <div className="border-t pt-4">
+        <div className="mt-2 rounded-xl bg-muted/30 p-4">
           <p className="text-sm text-muted-foreground">
             {t('admin.settings.payment.gatewayConfigNote')}
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3 border-t pt-4">
+        <div className="mt-2 flex flex-col gap-3 rounded-xl bg-muted/30 p-4">
           <p className="text-sm font-medium">{t('admin.settings.payment.collectionTitle')}</p>
           <p className="text-sm text-muted-foreground">
             {t('admin.settings.payment.collectionHint')}

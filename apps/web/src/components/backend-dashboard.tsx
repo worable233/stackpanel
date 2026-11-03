@@ -62,7 +62,7 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
         }
       />
       <Tabs defaultValue="overview" className="gap-6">
-        <TabsList variant="line">
+        <TabsList>
           <TabsTrigger value="overview">{t('admin.overview.tabOverview')}</TabsTrigger>
           <TabsTrigger value="orders">{t('admin.overview.tabOrders')}</TabsTrigger>
           <TabsTrigger value="products">{t('admin.overview.tabProducts')}</TabsTrigger>
@@ -76,10 +76,10 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
                 className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 aria-label={`${title}：${value}`}
               >
-                <Card className="backend-dashboard__metric h-full gap-1 py-1.5 transition-colors hover:border-primary/40">
+                <Card className="backend-dashboard__metric h-full gap-1 py-1.5 transition-colors hover:bg-muted/55">
                   <CardHeader className="flex flex-row items-center justify-between gap-2 px-4">
                     <CardTitle className="text-sm font-medium">{title}</CardTitle>
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary/15 bg-primary/5 text-primary">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-background text-primary">
                       <Icon className="size-3.5" />
                     </span>
                   </CardHeader>
@@ -154,13 +154,13 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
                   {t('admin.overview.usersTotal', { count: data.totals.userCount })}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-col divide-y divide-border/60">
+              <CardContent className="flex flex-col gap-1">
                 {data.recentUsers.length ? (
                   data.recentUsers.slice(0, 5).map((user) => (
                     <Link
                       href={`/admin/users/${user.id}`}
                       key={user.id}
-                      className="flex items-center gap-3 rounded-md py-3 outline-none first:pt-0 last:pb-0 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex items-center gap-3 rounded-xl px-2 py-2.5 outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <Avatar className="size-9">
                         <AvatarFallback>{user.email.slice(0, 2).toUpperCase()}</AvatarFallback>

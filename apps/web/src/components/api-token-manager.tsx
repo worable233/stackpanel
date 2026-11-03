@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import { toast } from 'sonner';
 import type { ApiTokenScope, ApiTokenView } from '@stackpanel/sdk';
-import { Badge, List, ListEmpty, ListItem, SectionTitle } from '@stackpanel/ui';
+import { Badge, List, ListEmpty, ListItem, SectionTitle, Textarea } from '@stackpanel/ui';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CopyButton, CopyButtonIcon } from '@animate-ui/react/primitives/buttons/copy';
@@ -311,8 +311,8 @@ export function ApiTokenManager({
             <DialogTitle>{t('apiToken.createTitle')}</DialogTitle>
             <DialogDescription>{t('apiToken.createDescription')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="api-token-name">{t('apiToken.name')}</Label>
               <Input
                 id="api-token-name"
@@ -322,33 +322,33 @@ export function ApiTokenManager({
                 onChange={(event) => setName(event.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="api-token-public-key">
                 {t('apiToken.publicKey')}
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
                   {t('apiToken.optional')}
                 </span>
               </Label>
-              <textarea
+              <Textarea
                 id="api-token-public-key"
                 value={publicKey}
                 rows={3}
                 spellCheck={false}
                 placeholder={t('apiToken.publicKeyPlaceholder')}
                 onChange={(event) => setPublicKey(event.target.value)}
-                className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:border-ring"
+                className="font-mono text-xs"
               />
               <p className="text-xs text-muted-foreground">{t('apiToken.publicKeyHint')}</p>
             </div>
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <p className="text-sm font-medium">{t('apiToken.scopes')}</p>
               <p className="text-xs text-muted-foreground">{t('apiToken.scopesHint')}</p>
-              <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg border p-3">
+              <div className="flex max-h-72 flex-col gap-3 overflow-y-auto rounded-xl bg-muted/40 p-3">
                 {grouped.map(([head, items]) => {
                   const keys = items.map((item) => item.key);
                   const allOn = keys.every((key) => selected.has(key));
                   return (
-                    <div key={head} className="space-y-2">
+                    <div key={head} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-semibold text-muted-foreground">
                           {groupLabel(head, t)}
@@ -442,16 +442,16 @@ export function ApiTokenManager({
             <DialogTitle>{t('apiToken.signingTitle')}</DialogTitle>
             <DialogDescription>{t('apiToken.signingDescription')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="api-token-signing-key">{t('apiToken.publicKey')}</Label>
-            <textarea
+            <Textarea
               id="api-token-signing-key"
               value={signingKey}
               rows={5}
               spellCheck={false}
               placeholder={t('apiToken.publicKeyPlaceholder')}
               onChange={(event) => setSigningKey(event.target.value)}
-              className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:border-ring"
+              className="font-mono text-xs"
             />
             <p className="text-xs text-muted-foreground">{t('apiToken.signingHint')}</p>
           </div>

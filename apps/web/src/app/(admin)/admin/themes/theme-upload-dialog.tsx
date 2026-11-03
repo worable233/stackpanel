@@ -33,7 +33,7 @@ export function ThemeUploadDialog() {
           <DialogDescription>{t('upload.themeDescription')}</DialogDescription>
         </DialogHeader>
         <form action={action} className="mt-4 flex flex-col gap-3">
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             <Label htmlFor="theme-zip">{t('upload.themeFile')}</Label>
             <Input id="theme-zip" name="file" type="file" accept=".zip" required />
           </div>

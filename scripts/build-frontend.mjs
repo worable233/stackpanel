@@ -134,6 +134,8 @@ async function buildFrontendPackageFromSource(pkg) {
       '--external:./route-progress.js',
       // Host-absorbed behaviour used by SSR account pages.
       '--external:./auto-submit.js',
+      // Host-absorbed chart references (Recharts cannot run in RSC).
+      '--external:./charts.js',
       '--external:@stackpanel/sdk',
       '--external:@stackpanel/ui',
       // lucide-react is host ABI (contract 02 §5); zod is bundled by the
@@ -183,6 +185,26 @@ async function buildFrontendPackageFromSource(pkg) {
         '--banner:js="use client";',
         '--external:react',
         '--external:react/jsx-runtime',
+      ],
+      { cwd: pkg.source, stdio: 'inherit' },
+    );
+  }
+  if (existsSync(path.join(pkg.source, 'src', 'charts.tsx'))) {
+    execFileSync(
+      esbuildBin,
+      [
+        'src/charts.tsx',
+        '--bundle',
+        '--format=esm',
+        '--outdir=dist',
+        '--platform=neutral',
+        '--target=es2020',
+        '--jsx=automatic',
+        ...sourcemapArgs,
+        '--banner:js="use client";',
+        '--external:react',
+        '--external:react/jsx-runtime',
+        '--external:@stackpanel/ui/charts',
       ],
       { cwd: pkg.source, stdio: 'inherit' },
     );

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
 import type { SeoPageView } from '@stackpanel/sdk';
+import { Textarea } from '@stackpanel/ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -115,7 +116,7 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <form action="/admin/seo" method="get" className="flex items-center gap-2">
           <Input
@@ -136,11 +137,11 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
       </div>
 
       {pages.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+        <p className="rounded-2xl bg-muted/30 p-8 text-sm text-muted-foreground">
           {t('adminSeo.empty')}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-2xl bg-muted/30 p-2">
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
               <tr>
@@ -153,7 +154,7 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
             </thead>
             <tbody>
               {pages.map((row) => (
-                <tr key={row.id} className="border-t">
+                <tr key={row.id} className="odd:bg-background/60 hover:bg-muted/40">
                   <td className="px-3 py-2 font-mono text-xs">{row.path}</td>
                   <td className="px-3 py-2">
                     {row.title ?? <span className="text-muted-foreground">—</span>}
@@ -225,8 +226,8 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
             <DialogTitle>{editing ? t('adminSeo.editTitle') : t('adminSeo.newTitle')}</DialogTitle>
             <DialogDescription>{t('adminSeo.formHint')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="seo-path">{t('adminSeo.path')}</Label>
               <Input
                 id="seo-path"
@@ -237,7 +238,7 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
               />
               <p className="text-xs text-muted-foreground">{t('adminSeo.pathHint')}</p>
             </div>
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="seo-title">{t('adminSeo.titleField')}</Label>
               <Input
                 id="seo-title"
@@ -246,19 +247,18 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
                 onChange={(event) => setDraft({ ...draft, title: event.target.value })}
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="seo-description">{t('adminSeo.descriptionField')}</Label>
-              <textarea
+              <Textarea
                 id="seo-description"
                 value={draft.description}
                 rows={3}
                 maxLength={500}
                 onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-                className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring"
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="seo-og">{t('adminSeo.ogImage')}</Label>
                 <Input
                   id="seo-og"
@@ -267,7 +267,7 @@ export function SeoPageManager({ pages, total, page, pageSize, query }: Props) {
                   onChange={(event) => setDraft({ ...draft, ogImage: event.target.value })}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="seo-canonical">{t('adminSeo.canonical')}</Label>
                 <Input
                   id="seo-canonical"

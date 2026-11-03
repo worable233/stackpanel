@@ -337,7 +337,9 @@ function PlatformInfoSettings({
           </div>
           <div className="mt-1 flex flex-wrap items-end justify-between gap-4 rounded-xl bg-muted/30 p-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="brandLogoRadius">{t('admin.settings.platform.brandLogoRadius')}</Label>
+              <Label htmlFor="brandLogoRadius">
+                {t('admin.settings.platform.brandLogoRadius')}
+              </Label>
               <div className="flex items-center gap-2">
                 <Input
                   id="brandLogoRadius"
@@ -443,7 +445,7 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
       >
         <div className="flex items-center gap-4">
           <div className="flex flex-col items-center gap-1.5">
-            <div className="flex size-16 items-center justify-center rounded-md border bg-muted/30 p-2">
+            <div className="flex size-16 items-center justify-center rounded-xl bg-muted/40 p-2">
               {brand?.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -458,7 +460,7 @@ function BrandSettings({ brand }: { brand: BrandAssets | null }) {
             <span className="text-xs text-muted-foreground">Logo</span>
           </div>
           <div className="flex flex-col items-center gap-1.5">
-            <div className="flex size-16 items-center justify-center rounded-md border bg-muted/30 p-2">
+            <div className="flex size-16 items-center justify-center rounded-xl bg-muted/40 p-2">
               {brand?.faviconUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={brand.faviconUrl} alt="Favicon" className="size-full object-contain" />

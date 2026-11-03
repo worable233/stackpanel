@@ -59,7 +59,7 @@ export function BackendSearch({
         aria-keyshortcuts="Meta+K Control+K"
         onClick={() => setOpen(true)}
         className={cn(
-          'h-9 min-w-0 justify-start gap-2 rounded-lg border border-border/70 bg-background px-3 text-muted-foreground shadow-none hover:bg-background has-[>svg]:px-3',
+          'h-9 min-w-0 justify-start gap-2 rounded-lg bg-background px-3 text-muted-foreground shadow-none hover:bg-background has-[>svg]:px-3',
           compact ? 'w-9 shrink-0 justify-center px-0 sm:w-44 sm:justify-start sm:px-3' : 'w-full',
         )}
       >

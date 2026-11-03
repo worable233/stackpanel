@@ -172,7 +172,7 @@ export function CreateUserForm({ groups }: { groups: PermissionGroupInfo[] }) {
           </div>
 
           {state?.ok && state.generatedPassword ? (
-            <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+            <div className="rounded-2xl bg-primary/10 px-4 py-3 text-sm">
               <span className="font-medium">{t('createUser.generatedPassword')}</span>
               <code className="mt-1 block rounded bg-background px-1.5 py-0.5 font-mono">
                 {state.generatedPassword}

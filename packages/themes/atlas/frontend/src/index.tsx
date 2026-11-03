@@ -804,7 +804,7 @@ function ShopPage(props: FrontendPageProps): ReactElement {
         <div className="mt-8 grid gap-6 lg:grid-cols-[220px_1fr]">
           <aside className="flex flex-col gap-4">
             <form action="/shop">
-              <div className="flex h-10 items-center gap-2 rounded-[10px] border border-border/80 bg-background px-3 transition-[border-color,box-shadow] focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/15">
+              <div className="flex h-10 items-center gap-2 rounded-[10px] bg-muted/55 px-3 transition-colors focus-within:bg-background">
                 <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <Input
                   name="q"

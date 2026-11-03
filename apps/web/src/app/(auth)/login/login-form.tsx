@@ -102,7 +102,7 @@ export function LoginForm({
       posts={posts}
       registrationEnabled={registrationEnabled}
     >
-      <form action={action} className="space-y-5">
+      <form action={action} className="flex flex-col gap-5">
         <input type="hidden" name="next" value={nextPath ?? ''} />
         {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
         {resetSuccess ? (
@@ -110,7 +110,7 @@ export function LoginForm({
             {t('auth.reset.done')}
           </p>
         ) : null}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="email">{t('auth.login.email')}</Label>
           <Input
             id="email"
@@ -122,7 +122,7 @@ export function LoginForm({
             {...field('email')}
           />
         </div>
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="password">{t('auth.login.password')}</Label>
             {passwordResetSupported ? (

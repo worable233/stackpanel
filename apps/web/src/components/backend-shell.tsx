@@ -223,7 +223,7 @@ function UserDropdown({
         }
       />
       <DropdownMenuContent align="end" className="w-64 min-w-0 p-1">
-        <div className="border-b px-2 py-2.5">
+        <div className="px-2 py-2.5">
           <p className="truncate text-sm font-semibold leading-tight text-muted-foreground">
             {displayName}
           </p>

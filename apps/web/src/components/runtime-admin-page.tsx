@@ -90,7 +90,7 @@ export function RuntimeAdminPage({
       {bridge}
       <FrontendScopeRoot
         scope={`plugins:${result.pluginId}`}
-        className="plugin-admin block space-y-6"
+        className="plugin-admin flex flex-col gap-6"
       >
         <RuntimeErrorBoundary>
           {createElement(Component, props as never) as unknown as ReactElement}
@@ -115,7 +115,7 @@ function PluginPageSkeleton({ label }: { label: string }): ReactElement {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-10 shrink-0 animate-pulse rounded-xl bg-muted" />
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <div className="h-6 w-44 animate-pulse rounded-md bg-muted" />
             <div className="h-3.5 w-64 max-w-[60vw] animate-pulse rounded-md bg-muted/70" />
           </div>
@@ -144,7 +144,7 @@ function PluginPageSkeleton({ label }: { label: string }): ReactElement {
               key={row}
               className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-background p-4"
             >
-              <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <div className="h-4 w-2/5 animate-pulse rounded bg-muted" />
                 <div className="h-3 w-1/3 animate-pulse rounded bg-muted/70" />
               </div>

@@ -69,9 +69,9 @@ export function ResetPasswordForm({
 
   return (
     <AuthShell mode="reset" platformName={platformName} logoSrc={logoSrc}>
-      <form action={action} onSubmit={handleSubmit} className="space-y-5">
+      <form action={action} onSubmit={handleSubmit} className="flex flex-col gap-5">
         {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="email">{t('auth.reset.email')}</Label>
           <Input
             id="email"
@@ -83,7 +83,7 @@ export function ResetPasswordForm({
             {...field('email')}
           />
         </div>
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="code">{t('auth.reset.code')}</Label>
           <div className="flex gap-2">
             <Input
@@ -110,7 +110,7 @@ export function ResetPasswordForm({
           ) : null}
           {codeState.error ? <p className="text-sm text-destructive">{codeState.error}</p> : null}
         </div>
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="password">{t('auth.reset.newPassword')}</Label>
           <div className="relative">
             <Input
@@ -141,7 +141,7 @@ export function ResetPasswordForm({
           </p>
           {passwordError ? <p className="text-sm text-destructive">{passwordError}</p> : null}
         </div>
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="confirmPassword">{t('auth.reset.confirmPassword')}</Label>
           <Input
             id="confirmPassword"

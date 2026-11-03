@@ -1,5 +1,5 @@
 'use client';
-import { SectionTitle } from '@stackpanel/ui';
+import { Badge, List, ListItem, SectionTitle } from '@stackpanel/ui';
 
 import { useTransition } from 'react';
 import Link from 'next/link';
@@ -39,9 +39,9 @@ export function ThemeManager({
   const [isMutating, startTransition] = useTransition();
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-6">
       {previewThemeId ? (
-        <section className="flex items-center justify-between rounded-lg border bg-accent/40 p-4">
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-accent/40 p-4">
           <div>
             <p className="text-sm font-medium">
               {t('admin.themes.previewing', {
@@ -71,24 +71,21 @@ export function ThemeManager({
       ) : null}
       <section>
         <SectionTitle>{t('admin.themes.installed')}</SectionTitle>
-        <ul className="mt-3 space-y-2">
+        <List className="mt-3">
           {themes.map((theme) => (
-            <li
-              key={theme.id}
-              className="flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground"
-            >
+            <ListItem key={theme.id} className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="font-medium">
                   {theme.name}
                   {theme.active ? (
-                    <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                    <Badge variant="secondary" className="ml-2">
                       {t('admin.themes.active')}
-                    </span>
+                    </Badge>
                   ) : null}
                   {theme.isDefault ? (
-                    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                    <Badge variant="outline" className="ml-2">
                       {t('admin.themes.default')}
-                    </span>
+                    </Badge>
                   ) : null}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -107,7 +104,7 @@ export function ThemeManager({
                   </p>
                 ) : null}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {theme.frontend.available ? (
                   <>
                     <Button
@@ -195,9 +192,9 @@ export function ThemeManager({
                   </AlertDialog>
                 ) : null}
               </div>
-            </li>
+            </ListItem>
           ))}
-        </ul>
+        </List>
       </section>
     </div>
   );

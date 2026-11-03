@@ -63,9 +63,7 @@ export function WalletRecharge({
     <form action={submit} className="flex flex-col gap-8">
       <FieldGroup>
         <Field>
-          <Label htmlFor="topup-amount">
-            {labels.amountLabel.replace('{currency}', currency)}
-          </Label>
+          <Label htmlFor="topup-amount">{labels.amountLabel.replace('{currency}', currency)}</Label>
           <Input
             id="topup-amount"
             name="amount"
@@ -97,7 +95,7 @@ export function WalletRecharge({
               <Toggle
                 key={value}
                 value={String(value / 100)}
-                className="inline-flex h-9 min-w-20 items-center justify-center rounded-lg border border-input px-4 text-sm font-medium transition-colors hover:bg-muted data-pressed:border-primary/30 data-pressed:bg-primary/10 data-pressed:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="inline-flex h-10 min-w-20 items-center justify-center rounded-xl bg-muted/50 px-4 text-sm font-medium transition-colors hover:bg-muted data-pressed:bg-background data-pressed:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {(value / 100).toFixed(2)}
               </Toggle>
@@ -117,7 +115,7 @@ export function WalletRecharge({
               {methods.map((option, index) => (
                 <label
                   key={option.providerId + ':' + option.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-input p-5 transition-colors has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5 hover:bg-muted/50"
+                  className="flex cursor-pointer items-center gap-3 rounded-2xl bg-muted/40 p-4 transition-colors hover:bg-muted/60 has-[[data-checked]]:bg-background"
                 >
                   <CreditCard
                     className="size-5 shrink-0 text-muted-foreground"
@@ -137,7 +135,7 @@ export function WalletRecharge({
               ))}
             </RadioGroup>
           ) : (
-            <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-muted-foreground">
+            <div className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-2xl bg-muted/30 text-muted-foreground">
               <Wallet className="size-5 opacity-50" aria-hidden="true" />
               <p className="text-sm">{labels.noMethods}</p>
             </div>
@@ -150,7 +148,7 @@ export function WalletRecharge({
           <input type="hidden" name="paymentMethod" value={method.id} />
         </>
       )}
-      <div className="flex items-center gap-3 border-t pt-6">
+      <div className="flex items-center gap-3 pt-2">
         <Button type="submit" disabled={!method || !action || pending}>
           {pending && <LoaderCircle data-icon="inline-start" className="animate-spin" />}
           {pending ? labels.submitting : labels.submit}

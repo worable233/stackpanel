@@ -22,7 +22,7 @@ export default async function AdminThemesPage() {
   }
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader
         title={t('admin.themes.title')}
         actions={<ThemeUploadDialog />}

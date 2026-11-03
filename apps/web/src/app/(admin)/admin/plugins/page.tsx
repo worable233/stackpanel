@@ -27,7 +27,7 @@ export default async function AdminPluginsPage({
   }
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader title={t('admin.plugins.title')} actions={<PluginUploadDialog />} />
       {error ? (
         <p className="text-sm text-destructive">

@@ -7,6 +7,7 @@ import type { PermissionGroupView, PermissionInfo } from '@stackpanel/sdk';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List, ListItem, PageHeader } from '@stackpanel/ui';
@@ -182,12 +183,10 @@ function PermissionCheckboxes({
           className="flex items-center gap-2 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50"
         >
           <label className="flex flex-1 cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={selected.includes(permission.key)}
-              onChange={() => onToggle(permission.key)}
+              onCheckedChange={() => onToggle(permission.key)}
               disabled={disabled}
-              className="size-4 rounded border-input accent-primary"
             />
             <span className="font-mono text-xs text-muted-foreground">{permission.key}</span>
             <span>{permission.name}</span>
@@ -567,7 +566,7 @@ function PermissionList({ permissions }: { permissions: PermissionInfo[] }) {
   return (
     <div className="flex flex-col gap-4">
       {groups.map((group) => (
-        <div key={group.namespace} className="rounded-xl border border-border/70 bg-background p-4">
+        <div key={group.namespace} className="rounded-2xl bg-muted/40 p-4">
           <div className="mb-3 flex items-center gap-2">
             <span className="font-mono text-sm font-medium">{group.namespace}</span>
             <Badge variant="outline" className="rounded-sm text-muted-foreground">
@@ -646,23 +645,20 @@ export function PermissionGroupManager({
         <p className="text-sm text-destructive">{t('admin.rbac.serviceUnavailable')}</p>
       ) : (
         <Tabs className="gap-4" defaultValue="roles">
-          <TabsList
-            variant="line"
-            className="w-full justify-start gap-2 border-b ps-0 *:data-[slot=tabs-trigger]:flex-none"
-          >
+          <TabsList className="w-fit">
             <TabsTrigger value="roles">{t('admin.rbac.tabRoles')}</TabsTrigger>
             <TabsTrigger value="permission-sets">{t('admin.rbac.tabPermissionSets')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="roles">
-            <div className="overflow-hidden rounded-xl border border-border/70 bg-background">
+            <div className="overflow-hidden rounded-2xl bg-muted/30 p-2">
               <div className="flex flex-col items-stretch gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                <InputGroup className="h-7 w-full rounded-md sm:w-80">
+                <InputGroup className="h-10 w-full rounded-[10px] sm:w-80">
                   <InputGroupAddon>
                     <Search />
                   </InputGroupAddon>
                   <InputGroupInput
-                    className="h-7"
+                    className="h-10"
                     placeholder={t('admin.rbac.searchPlaceholder')}
                     value={search}
                     onChange={(e) => {
@@ -680,7 +676,7 @@ export function PermissionGroupManager({
                       setPage(1);
                     }}
                   >
-                    <SelectTrigger size="sm">
+                    <SelectTrigger>
                       <span className="text-muted-foreground">{t('admin.rbac.typeLabel')}</span>
                       <SelectValue>
                         {(value) =>
@@ -711,7 +707,7 @@ export function PermissionGroupManager({
               />
 
               {paged ? (
-                <div className="flex items-center justify-between border-t border-border/70 p-4 text-sm">
+                <div className="flex items-center justify-between px-2 py-3 text-sm">
                   <div className="text-muted-foreground">
                     {t('admin.rbac.showing', { start, end, total: filtered.length })}
                   </div>

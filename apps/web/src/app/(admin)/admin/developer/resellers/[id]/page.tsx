@@ -3,7 +3,6 @@ import type { ResellerDetailResponse, WebhookDeliveryView } from '@stackpanel/sd
 import { PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { getLocale } from '@/i18n/locale';
 import type { Locale } from '@/i18n/config';
 import { createTranslator, formatDate, type Translator } from '@/i18n/core';
@@ -34,17 +33,10 @@ function DeliveryTable({
   locale: Locale;
   t: Translator;
 }) {
-  if (deliveries.length === 0) {
-    return (
-      <p className="p-4 text-sm text-muted-foreground">
-        {t('admin.developer.detail.noDeliveries')}
-      </p>
-    );
-  }
   return (
     <List>
       {deliveries.length === 0 ? (
-        <ListEmpty>{t('admin.developer.webhooks.empty')}</ListEmpty>
+        <ListEmpty>{t('admin.developer.detail.noDeliveries')}</ListEmpty>
       ) : (
         deliveries.map((delivery) => (
           <ListItem key={delivery.id} className="flex flex-col gap-2">
@@ -129,7 +121,7 @@ export default async function AdminDeveloperResellerPage({
     : [];
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader
         backHref="/admin/developer"
         backLabel={t('admin.developer.detail.backToList')}
@@ -142,23 +134,19 @@ export default async function AdminDeveloperResellerPage({
 
       {data ? (
         <>
-          <Card>
-            <CardHeader>
-              <SectionTitle as="h3">{t('admin.developer.detail.identity')}</SectionTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid gap-4 sm:grid-cols-2">
-                {fields.map((field) => (
-                  <div key={field.label} className="space-y-1">
-                    <dt className="text-xs text-muted-foreground">{field.label}</dt>
-                    <dd className="text-sm">{field.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </CardContent>
-          </Card>
+          <section className="rounded-2xl bg-muted/40 p-5">
+            <SectionTitle as="h3">{t('admin.developer.detail.identity')}</SectionTitle>
+            <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+              {fields.map((field) => (
+                <div key={field.label} className="flex flex-col gap-1">
+                  <dt className="text-xs text-muted-foreground">{field.label}</dt>
+                  <dd className="text-sm">{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
 
-          <div className="space-y-3">
+          <div className="flex flex-col gap-3">
             <SectionTitle>{t('admin.developer.detail.recentDeliveries')}</SectionTitle>
             <DeliveryTable deliveries={data.deliveries} locale={locale} t={t} />
           </div>

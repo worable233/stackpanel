@@ -31,7 +31,7 @@ export function PluginFrontendBroken({
       <p className="text-sm text-muted-foreground">
         {t('pluginPage.brokenHint', { pluginId })}
       </p>
-      <div className="rounded-lg border border-border bg-muted/40 p-3">
+      <div className="rounded-2xl bg-muted/40 p-3">
         <p className="text-xs font-medium text-muted-foreground">
           {t('pluginPage.brokenReason')}
         </p>

@@ -59,7 +59,7 @@ export async function AdminActions({
     ? await importFrontendPackage('plugins', pluginId, candidate.manifest)
     : null;
   return (
-    <section className="mt-6 rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+    <section className="rounded-2xl bg-muted/40 p-4 text-card-foreground">
       <h2 className="text-sm font-semibold">{t('admin.pluginActions')}</h2>
       <div className="mt-3 flex flex-wrap gap-2">
         {actions.map((action) => {
@@ -104,11 +104,11 @@ export async function AdminActionsOverview(): Promise<ReactElement | null> {
   }
 
   return (
-    <section className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+    <section className="rounded-2xl bg-muted/40 p-4 text-card-foreground">
       <h2 className="text-sm font-semibold">{t('admin.pluginActions')}</h2>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[...byPlugin.entries()].map(([pluginId, items]) => (
-          <div key={pluginId} className="space-y-2">
+          <div key={pluginId} className="flex flex-col gap-2">
             <a
               href={`/admin/plugin/${encodeURIComponent(pluginId)}`}
               className="text-sm font-medium hover:underline"

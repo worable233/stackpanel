@@ -42,7 +42,7 @@ export default async function AdminDeveloperPage({
     nextPage > 1 ? `/admin/developer?page=${nextPage}` : '/admin/developer';
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader title={t('admin.developer.title')} actions={<CreateResellerDialog />} />
 
       {error ? (
@@ -132,7 +132,7 @@ export default async function AdminDeveloperPage({
         </Card>
       </div>
 
-      <div className="space-y-3">
+      <div className="flex flex-col gap-3">
         <SectionTitle>{t('admin.developer.overview.channels')}</SectionTitle>
         {resellers ? (
           <List>

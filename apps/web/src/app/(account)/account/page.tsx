@@ -138,7 +138,7 @@ export default async function AccountHomePage() {
             secondary={{ label: t('account.home.newTicket'), href: '/account/tickets/new' }}
           />
         ) : null}
-        <Card>
+        <Card className={pendingTickets === undefined ? 'lg:col-span-2' : undefined}>
           <CardHeader className="pb-1">
             <CardTitle className="flex items-center gap-2 text-sm">
               <ShieldCheck className="size-4 text-success" />
@@ -168,7 +168,7 @@ export default async function AccountHomePage() {
             </dl>
             <Link
               href="/account/settings#security"
-              className="flex items-center justify-between border-t pt-3 text-xs text-muted-foreground hover:text-foreground"
+              className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
             >
               {t('account.home.securityCenter')} <ArrowRight className="size-4" />
             </Link>
@@ -176,7 +176,7 @@ export default async function AccountHomePage() {
         </Card>
       </div>
       {widgets.length > 0 ? (
-        <section className="grid gap-4 lg:grid-cols-2">
+        <section className="grid gap-3 lg:grid-cols-2">
           {widgets.map((widget) => (
             <FrontendScopeRoot
               key={`${widget.pluginId}:${widget.id}`}
@@ -232,13 +232,16 @@ function SummaryCard({
         <p className={`text-3xl font-semibold tabular-nums ${tone}`}>
           {value} {unit ? <span className="text-base text-foreground">{unit}</span> : null}
         </p>
-        <div className="flex items-center justify-between gap-3 border-t pt-3 text-xs text-muted-foreground">
+        <div className="mt-1 flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-4">
             <Link href={href} className="hover:text-foreground">
               {footer}
             </Link>
             {secondary ? (
-              <Link href={secondary.href} className="border-l pl-4 hover:text-foreground">
+              <Link
+                href={secondary.href}
+                className="rounded-md bg-background/60 px-2 py-1 hover:text-foreground"
+              >
                 {secondary.label}
               </Link>
             ) : null}

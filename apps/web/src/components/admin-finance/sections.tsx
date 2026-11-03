@@ -157,7 +157,7 @@ export function OverviewKpis({ data }: { data: AdminOverviewData }) {
               <CardTitle>{card.title}</CardTitle>
             </CardHeader>
             <CardContent className="flex items-end justify-between gap-3">
-              <div className="space-y-1">
+              <div className="flex flex-col gap-1">
                 <div className="text-3xl leading-none tracking-tight">{card.value}</div>
                 <p className="text-xs text-muted-foreground">{card.hint}</p>
               </div>

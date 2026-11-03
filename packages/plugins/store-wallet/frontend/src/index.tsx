@@ -121,7 +121,7 @@ function formatDate(value: string, locale?: string): string {
 
 function Empty({ text }: { text: string }): ReactElement {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border bg-card px-6 py-16 text-center text-muted-foreground">
+    <div className="flex flex-col items-center gap-3 rounded-2xl bg-muted/25 px-6 py-12 text-center text-muted-foreground">
       <span className="size-5 opacity-50">
         <Icon name="wallet" />
       </span>
@@ -172,7 +172,11 @@ function WalletAccountBalancePage(props: AccountPageComponentProps): ReactElemen
               action={props.actions?.['wallet.create-topup']}
               currency={wallet.account.currency}
               labels={{
-                amountLabel: tr('recharge.amountLabel'),
+                amountLabel: `${tr('recharge.amountLabel')} · ${tr('overview.rowBalance')} ${money(
+                  wallet.account.balance,
+                  wallet.account.currency,
+                  props.locale,
+                )}`,
                 presetsAria: tr('recharge.presetsAria'),
                 paymentMethod: tr('recharge.paymentMethod'),
                 noMethods: tr('recharge.noMethods'),

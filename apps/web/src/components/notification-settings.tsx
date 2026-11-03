@@ -173,7 +173,7 @@ function SettingsPanel({
       className="flex flex-col gap-6"
       aria-busy={state.status === 'loading' || state.status === 'saving'}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-1">
         <SectionTitle>{title}</SectionTitle>
         <div className="flex flex-wrap items-center gap-3">{actions}</div>
       </div>

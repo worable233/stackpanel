@@ -1037,6 +1037,8 @@
     "frontend/dist/admin.runtime.js.map",
     "frontend/dist/auto-submit.js",
     "frontend/dist/auto-submit.js.map",
+    "frontend/dist/charts.js",
+    "frontend/dist/charts.js.map",
     "frontend/dist/index.js",
     "frontend/dist/index.js.map"
   ],

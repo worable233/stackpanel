@@ -17,6 +17,7 @@ import { Button } from '@stackpanel/ui/button';
 import { Field, FieldGroup } from '@stackpanel/ui/field';
 import { InlineError } from '@stackpanel/ui/inline-error';
 import { Select } from '@stackpanel/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 // `formatMinorCurrency` 走子路径入口：从桶导入会把 zod（911 KB）拖进
 // 这个 client 组件的 bundle，而这里只用一个纯格式化函数。
 import { formatMinorCurrency } from '@stackpanel/sdk/currency';
@@ -142,7 +143,7 @@ export function CartCheckout(props: CartCheckoutProps) {
     <div className="flex min-w-0 flex-col gap-8">
       <ol
         aria-label={t('checkout.progress')}
-        className="grid grid-cols-3 border-b pb-6"
+        className="grid grid-cols-3 rounded-2xl bg-muted/30 p-4"
       >
         {c.steps.map((label, i) => (
           <li
@@ -151,7 +152,7 @@ export function CartCheckout(props: CartCheckoutProps) {
             className={`flex items-center gap-2 sm:gap-3 ${current >= i + 1 ? 'text-foreground' : 'text-muted-foreground'}`}
           >
             <span
-              className={`flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold sm:size-9 ${current > i + 1 ? 'bg-primary text-primary-foreground' : current === i + 1 ? 'border-2 border-primary text-primary' : 'border bg-muted/30'}`}
+              className={`flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold sm:size-9 ${current > i + 1 ? 'bg-primary text-primary-foreground' : current === i + 1 ? 'bg-primary/10 text-primary' : 'bg-muted/60'}`}
             >
               {current > i + 1 ? <Check className="size-4" /> : `0${i + 1}`}
             </span>
@@ -188,7 +189,7 @@ export function CartCheckout(props: CartCheckoutProps) {
                   : c.failedHelp}
           </p>
           {result ? (
-            <dl className="w-full rounded-xl border bg-card p-5 text-sm">
+            <dl className="w-full rounded-2xl bg-muted/40 p-5 text-sm">
               <div className="flex flex-wrap justify-between gap-2">
                 <dt className="text-muted-foreground">{c.order}</dt>
                 <dd className="break-all font-mono text-xs">{result.id}</dd>
@@ -207,7 +208,7 @@ export function CartCheckout(props: CartCheckoutProps) {
            * pending state.
            */}
           {result?.status === 'PENDING' && result.paymentInstructions ? (
-            <div className="w-full rounded-xl border bg-card p-5 text-left">
+            <div className="w-full rounded-2xl bg-muted/40 p-5 text-left">
               <h3 className="text-sm font-medium">{t('checkout.payInstructions')}</h3>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {result.paymentInstructions.message}
@@ -251,7 +252,7 @@ export function CartCheckout(props: CartCheckoutProps) {
                   <img
                     src={String(qr)}
                     alt={t('checkout.payQrImage')}
-                    className="mx-auto mt-4 size-48 rounded-lg border object-contain"
+                    className="mx-auto mt-4 size-48 rounded-xl object-contain"
                   />
                 ) : null;
               })()}
@@ -290,22 +291,21 @@ export function CartCheckout(props: CartCheckoutProps) {
               {current === 1 ? c.reviewHelp : c.payHelp}
             </p>
             {current === 1 ? (
-              <ul className="mt-6 divide-y rounded-xl border bg-card">
+              <ul className="mt-6 flex flex-col gap-2.5">
                 {props.lines.map((line) => (
-                  <li key={line.id} className="flex min-w-0 gap-3 p-4 sm:gap-4 sm:p-5">
-                    <input
-                      type="checkbox"
+                  <li key={line.id} className="flex min-w-0 gap-3 rounded-2xl bg-muted/40 p-4 sm:gap-4 sm:p-5">
+                    <Checkbox
                       aria-label={line.name}
                       checked={selected.includes(line.id)}
                       disabled={line.available === false || pending}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         setSelected((previous) =>
-                          event.target.checked
+                          checked
                             ? [...previous, line.id]
                             : previous.filter((id) => id !== line.id),
                         )
                       }
-                      className="mt-1 size-4 shrink-0 accent-primary"
+                      className="mt-1 shrink-0"
                     />
                     <Package className="mt-0.5 hidden size-5 shrink-0 text-muted-foreground sm:block" />
                     <div className="min-w-0 flex-1">
@@ -332,7 +332,7 @@ export function CartCheckout(props: CartCheckoutProps) {
                           })}
                         </dl>
                       ) : null}
-                      <div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
+                      <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-background/60 px-3 py-2">
                         {line.controls ?? (
                           <span className="text-xs text-muted-foreground">
                             {c.quantity} × {line.quantity}
@@ -344,7 +344,7 @@ export function CartCheckout(props: CartCheckoutProps) {
                 ))}
               </ul>
             ) : (
-              <div className="mt-6 flex flex-col gap-5 rounded-xl border bg-card p-5">
+              <div className="mt-6 flex flex-col gap-5 rounded-2xl bg-muted/40 p-5">
                 <h3 className="flex items-center gap-2 text-sm font-medium">
                   <CreditCard className="size-4 text-muted-foreground" />
                   {props.labels.payment}
@@ -372,9 +372,9 @@ export function CartCheckout(props: CartCheckoutProps) {
                 ) : (
                   <InlineError>{props.labels.unavailable}</InlineError>
                 )}
-                <ul className="divide-y border-t">
+                <ul className="flex flex-col gap-1">
                   {lines.map((line) => (
-                    <li key={line.id} className="flex justify-between gap-4 py-4 text-sm">
+                    <li key={line.id} className="flex justify-between gap-4 rounded-lg px-2 py-2 text-sm">
                       <span>
                         {line.name}
                         <span className="ml-2 text-muted-foreground">× {line.quantity}</span>
@@ -386,12 +386,12 @@ export function CartCheckout(props: CartCheckoutProps) {
               </div>
             )}
           </section>
-          <aside className="flex flex-col gap-5 rounded-xl border bg-card p-5 lg:sticky lg:top-24">
+          <aside className="flex flex-col gap-5 rounded-2xl bg-muted/40 p-5 lg:sticky lg:top-24">
             <h2 className="text-sm font-medium">
               {c.selected}
               <span className="ml-2 text-muted-foreground">{lines.length}</span>
             </h2>
-            <dl className="flex items-baseline justify-between border-t pt-5">
+            <dl className="flex items-baseline justify-between rounded-xl bg-background/60 p-4">
               <dt className="text-sm text-muted-foreground">{props.labels.total}</dt>
               <dd className="text-3xl font-semibold tracking-tight tabular-nums">{money(total)}</dd>
             </dl>

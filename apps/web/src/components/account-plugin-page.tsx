@@ -34,7 +34,7 @@ export async function AccountPluginPage({
   }
   const Component = result.component;
   return (
-    <FrontendScopeRoot scope={`plugins:${pluginId}`} className="plugin-admin block space-y-6">
+    <FrontendScopeRoot scope={`plugins:${pluginId}`} className="plugin-admin flex flex-col gap-6">
       {/* Action feedback is toasted globally; an inline copy would duplicate it. */}
       {createElement(Component, {
         pluginId,

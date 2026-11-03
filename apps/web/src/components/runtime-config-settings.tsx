@@ -43,7 +43,7 @@ function RuntimeConfigRow({ entry }: { entry: AdminRuntimeConfigEntry }) {
   return (
     <form
       action={action}
-      className="flex flex-col gap-2 border-b border-border/60 py-3 last:border-b-0"
+      className="flex flex-col gap-2 rounded-xl bg-muted/30 p-3"
     >
       <input type="hidden" name="name" value={entry.name} />
       <div className="flex flex-wrap items-center gap-2">
@@ -62,7 +62,7 @@ function RuntimeConfigRow({ entry }: { entry: AdminRuntimeConfigEntry }) {
           <select
             name="value"
             defaultValue={current}
-            className="h-9 rounded-md border border-input bg-muted/40 px-2 text-sm"
+            className="h-9 rounded-lg bg-background px-2 text-sm"
           >
             <option value="true">true</option>
             <option value="false">false</option>

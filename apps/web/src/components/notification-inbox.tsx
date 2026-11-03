@@ -149,7 +149,7 @@ export function NotificationInbox({ title }: { title: string }) {
   const items = data?.items ?? [];
 
   return (
-    <div ref={visibleRows} className="space-y-6">
+    <div ref={visibleRows} className="flex flex-col gap-5">
       <PageHeader
         title={title}
         actions={
@@ -181,24 +181,22 @@ export function NotificationInbox({ title }: { title: string }) {
       />
 
       {error ? (
-        <p className="text-sm text-destructive">
-          {t('notification.serviceUnavailable')}
-        </p>
+        <p className="text-sm text-destructive">{t('notification.serviceUnavailable')}</p>
       ) : null}
 
       {items.length === 0 && !loading ? (
-        <div className="rounded-lg border py-16 text-center text-sm text-muted-foreground">
+        <div className="rounded-2xl bg-muted/25 px-6 py-12 text-center text-sm text-muted-foreground">
           {filter === 'unread' ? t('notification.emptyUnread') : t('notification.emptyAll')}
         </div>
       ) : (
-        <ul className="overflow-hidden rounded-xl border bg-card">
+        <ul className="flex flex-col gap-2.5">
           {items.map((item) => (
             <li
               key={item.id}
               data-notification-id={item.id}
               className={cn(
-                'grid grid-cols-[16px_minmax(0,1fr)] items-start gap-x-4 gap-y-2 border-b px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/30 sm:grid-cols-[16px_minmax(0,1fr)_auto]',
-                !item.readAt && 'bg-muted/25',
+                'grid grid-cols-[16px_minmax(0,1fr)] items-start gap-x-4 gap-y-2 rounded-2xl bg-muted/40 px-4 py-4 transition-colors hover:bg-muted/55 sm:grid-cols-[16px_minmax(0,1fr)_auto]',
+                !item.readAt && 'bg-muted/55',
               )}
             >
               <InboxGlyph item={item} />
@@ -208,7 +206,10 @@ export function NotificationInbox({ title }: { title: string }) {
                     {item.title}
                   </p>
                   {!item.readAt ? (
-                    <span className="size-1.5 rounded-full bg-primary" aria-label={t('notification.unread')} />
+                    <span
+                      className="size-1.5 rounded-full bg-primary"
+                      aria-label={t('notification.unread')}
+                    />
                   ) : null}
                 </div>
                 {item.body ? (

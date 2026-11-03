@@ -1,7 +1,6 @@
 import { InlineError, PageHeader, SectionTitle } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { AccountSettings } from '@/components/account-settings';
-import { Separator } from '@/components/ui/separator';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 import { ApiTokenManager } from '@/components/api-token-manager';
@@ -25,9 +24,8 @@ export default async function AccountSettingsPage() {
     getCaptchaActions(['change_password', 'change_email', 'api_token_create']),
   ]);
   return (
-    <main className="w-full">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
       <PageHeader title={t('account.settings.title')} />
-      <Separator className="my-4 lg:my-6" />
       <AccountSettings
         user={user}
         emailVerificationRequired={authConfig?.emailVerificationRequired ?? false}

@@ -315,7 +315,7 @@ export function ProvisionForm({
 function Notice({ tone, children }: { tone: 'error' | 'info'; children: React.ReactNode }) {
   const className =
     tone === 'error'
-      ? 'rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive'
+      ? 'rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive'
       : 'rounded-md border px-3 py-2 text-sm text-muted-foreground';
   return <div className={`mb-6 ${className}`}>{children}</div>;
 }

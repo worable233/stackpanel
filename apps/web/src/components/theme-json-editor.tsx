@@ -333,7 +333,7 @@ export function ThemeJsonEditor({
         </InlineNotice>
       )}
       <div className={preview ? 'grid min-w-0 gap-4 xl:grid-cols-2' : 'min-w-0'}>
-        <div className="min-w-0 overflow-hidden rounded-lg border">
+        <div className="min-w-0 overflow-hidden rounded-2xl bg-muted/30 p-2">
           <CodeMirror
             value={text}
             onChange={(value) => {

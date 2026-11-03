@@ -44,8 +44,8 @@ import {
   CopyButton,
   SecretValue,
 } from '@stackpanel/ui';
-// 图表组件走独立 ABI 槽：主桶不再导出它（recharts 559 KB，会拖慢宿主首屏）。
-import { MetricsExplorer } from '@stackpanel/ui/charts';
+// 图表组件的客户端入口由宿主收编（Recharts 不能在 RSC 图里执行）。
+import { MetricsExplorer } from './charts.js';
 import type { ReactElement } from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';

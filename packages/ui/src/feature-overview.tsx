@@ -83,7 +83,7 @@ export function FeatureOverview({
               <Link
                 key={link.href}
                 href={link.href}
-                className="group flex items-center justify-between gap-4 rounded-lg p-3 transition-colors hover:bg-accent focus-visible:outline-ring"
+                className="group flex items-center justify-between gap-4 rounded-xl p-3 transition-colors hover:bg-background focus-visible:outline-ring"
               >
                 <span className="flex flex-col gap-1">
                   <span className="text-sm font-medium">{link.label}</span>
@@ -102,11 +102,11 @@ export function FeatureOverview({
             </CardHeader>
             <CardContent>
               {activity.items.length ? (
-                <ul className="flex flex-col divide-y">
+                <ul className="flex flex-col gap-1">
                   {activity.items.map((item, index) => (
                     <li
                       key={index}
-                      className="flex min-w-0 items-center justify-between gap-4 py-3 text-sm"
+                      className="flex min-w-0 items-center justify-between gap-4 rounded-xl px-2 py-2.5 text-sm transition-colors hover:bg-background/60"
                     >
                       {item.href ? (
                         <Link className="truncate hover:underline" href={item.href}>

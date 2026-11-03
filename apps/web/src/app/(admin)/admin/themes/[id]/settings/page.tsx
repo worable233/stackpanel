@@ -39,7 +39,7 @@ export default async function AdminThemeSettingsPage({
     : null;
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader
         backHref="/admin/themes"
         backLabel={t('admin.themeSettings.back')}

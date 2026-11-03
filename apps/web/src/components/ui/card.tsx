@@ -18,7 +18,7 @@ const Card = React.forwardRef<
     ref={ref}
     data-slot="card"
     className={cn(
-      'relative flex flex-col gap-3 rounded-xl border border-border bg-card py-4 text-card-foreground',
+      'relative flex flex-col gap-3 rounded-2xl bg-muted/40 py-4 text-card-foreground',
       interactive &&
         'cursor-pointer transition-colors hover:bg-muted/40 motion-reduce:transition-none',
       className,

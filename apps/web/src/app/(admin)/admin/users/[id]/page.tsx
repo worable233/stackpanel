@@ -41,7 +41,7 @@ export default async function AdminUserDetailPage({
 
   if (error || !detail) {
     return (
-      <main className="space-y-4">
+      <main className="flex flex-col gap-4">
         <PageHeader
           backHref="/admin/users"
           backLabel={t('admin.userDetailPage.backToUsers')}
@@ -53,7 +53,7 @@ export default async function AdminUserDetailPage({
   }
 
   return (
-    <main className="space-y-5">
+    <main className="flex flex-col gap-5">
       <PageHeader
         backHref="/admin/users"
         backLabel={t('admin.userDetailPage.backToUsers')}

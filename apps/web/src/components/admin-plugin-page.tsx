@@ -101,7 +101,7 @@ export function AdminPluginPage({
   return (
     <FrontendScopeRoot
       scope={`plugins:${result.pluginId}`}
-      className="plugin-admin block space-y-6"
+      className="plugin-admin flex flex-col gap-6"
     >
       {createElement(Component, props as never) as unknown as ReactElement}
     </FrontendScopeRoot>

@@ -70,11 +70,11 @@ export default async function AdminDeveloperWebhooksPage({
   };
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader title={t('admin.developer.webhooks.title')} />
 
       <form className="flex flex-wrap items-end gap-3" method="get">
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label htmlFor="resellerId">{t('admin.developer.webhooks.filterReseller')}</Label>
           <Input
             id="resellerId"
@@ -84,14 +84,9 @@ export default async function AdminDeveloperWebhooksPage({
             className="w-64"
           />
         </div>
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label htmlFor="status">{t('admin.developer.webhooks.filterStatus')}</Label>
-          <Select
-            id="status"
-            name="status"
-            defaultValue={status}
-            className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-40 rounded-md border px-3 py-1 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-          >
+          <Select id="status" name="status" defaultValue={status}>
             <option value="">{t('admin.developer.webhooks.filterAll')}</option>
             {STATUSES.map((value) => (
               <option key={value} value={value}>
@@ -113,7 +108,7 @@ export default async function AdminDeveloperWebhooksPage({
       ) : null}
 
       {data ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <List>
             {data.deliveries.length === 0 ? (
               <ListEmpty>{t('admin.developer.empty')}</ListEmpty>

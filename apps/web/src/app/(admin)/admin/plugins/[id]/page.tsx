@@ -1,7 +1,6 @@
-import { SectionTitle } from '@stackpanel/ui';
 import Link from 'next/link';
 import type { AdminPlugin, PluginDependencyStatus, PluginConsumesStatus } from '@stackpanel/sdk';
-import { PageHeader } from '@stackpanel/ui';
+import { Badge, List, ListEmpty, ListItem, PageHeader, SectionTitle } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { Button } from '@/components/ui/button';
@@ -12,40 +11,38 @@ export const dynamic = 'force-dynamic';
 
 function DependencyBadge({ dependency, t }: { dependency: PluginDependencyStatus; t: Translator }) {
   const range = dependency.range ? `@${dependency.range}` : '';
-  if (dependency.satisfied) {
-    return (
-      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-        {dependency.id}
-        {range}
-      </span>
-    );
-  }
+  const unsatisfied = !dependency.satisfied;
   return (
-    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
+    <Badge variant={unsatisfied ? 'destructive' : 'outline'} className="font-normal">
       {dependency.id}
       {range}
-      {dependency.installed
-        ? t('admin.plugins.detail.depConflict')
-        : dependency.optional
-          ? t('admin.plugins.detail.depOptionalMissing')
-          : t('admin.plugins.detail.depMissing')}
-    </span>
+      {unsatisfied
+        ? dependency.installed
+          ? t('admin.plugins.detail.depConflict')
+          : dependency.optional
+            ? t('admin.plugins.detail.depOptionalMissing')
+            : t('admin.plugins.detail.depMissing')
+        : null}
+    </Badge>
   );
 }
 
 function ConsumesBadge({ entry, t }: { entry: PluginConsumesStatus; t: Translator }) {
   const bad = !entry.satisfied && !entry.optional;
   return (
-    <span
-      className={
-        bad
-          ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive'
-          : 'rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'
-      }
-    >
+    <Badge variant={bad ? 'destructive' : 'outline'} className="font-normal">
       {entry.pluginId}:{entry.extensionPoint}
       {bad ? t('admin.plugins.detail.consumesMissing') : ''}
-    </span>
+    </Badge>
+  );
+}
+
+function DetailSection({ children, title }: { children: React.ReactNode; title: string }) {
+  return (
+    <section className="rounded-2xl bg-muted/40 p-5">
+      <SectionTitle>{title}</SectionTitle>
+      <div className="mt-3">{children}</div>
+    </section>
   );
 }
 
@@ -60,27 +57,29 @@ export default async function AdminPluginDetailPage({
   let error: string | null = null;
   try {
     const result = await (await getAuthedApiClient()).getAdminPlugins();
-    plugin = result.plugins.find((p) => p.id === id) ?? null;
+    plugin = result.plugins.find((candidate) => candidate.id === id) ?? null;
   } catch (err) {
     error = await apiErrorMessage(err);
   }
 
   if (error) {
     return (
-      <main className="w-full space-y-6">
+      <main className="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <PageHeader
           backHref="/admin/plugins"
           backLabel={t('admin.plugins.detail.back')}
           title={t('admin.plugins.detail.title')}
         />
-        <p className="text-sm text-destructive">{t('admin.plugins.detail.serviceUnavailable')}</p>
+        <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {t('admin.plugins.detail.serviceUnavailable')}
+        </p>
       </main>
     );
   }
 
   if (!plugin) {
     return (
-      <main className="w-full space-y-6">
+      <main className="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <PageHeader
           backHref="/admin/plugins"
           backLabel={t('admin.plugins.detail.back')}
@@ -91,31 +90,23 @@ export default async function AdminPluginDetailPage({
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl space-y-6">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
       <PageHeader
         backHref="/admin/plugins"
         backLabel={t('admin.plugins.detail.back')}
         title={
           <span className="flex flex-wrap items-center gap-2">
             {plugin.name}
-            {plugin.enabled ? (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                {t('admin.plugins.detail.enabled')}
-              </span>
-            ) : (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                {t('admin.plugins.detail.disabled')}
-              </span>
-            )}
+            <Badge variant={plugin.enabled ? 'secondary' : 'outline'}>
+              {plugin.enabled
+                ? t('admin.plugins.detail.enabled')
+                : t('admin.plugins.detail.disabled')}
+            </Badge>
             {plugin.source === 'builtin' ? (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                {t('admin.plugins.detail.builtin')}
-              </span>
+              <Badge variant="outline">{t('admin.plugins.detail.builtin')}</Badge>
             ) : null}
             {plugin.signed ? (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                {t('admin.plugins.detail.signed')}
-              </span>
+              <Badge variant="secondary">{t('admin.plugins.detail.signed')}</Badge>
             ) : null}
           </span>
         }
@@ -131,26 +122,24 @@ export default async function AdminPluginDetailPage({
         }
       />
 
-      <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <SectionTitle>{t('admin.plugins.detail.dependencies')}</SectionTitle>
+      <DetailSection title={t('admin.plugins.detail.dependencies')}>
         {plugin.dependencies.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {plugin.dependencies.map((dep) => (
-              <DependencyBadge key={dep.id} dependency={dep} t={t} />
+          <div className="flex flex-wrap gap-1.5">
+            {plugin.dependencies.map((dependency) => (
+              <DependencyBadge key={dependency.id} dependency={dependency} t={t} />
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
+          <p className="text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
         )}
-      </section>
+      </DetailSection>
 
-      <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <SectionTitle>{t('admin.plugins.detail.extensionPoints')}</SectionTitle>
-        <div className="mt-2 space-y-3">
-          <div>
+      <DetailSection title={t('admin.plugins.detail.extensionPoints')}>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
             <p className="text-xs text-muted-foreground">{t('admin.plugins.detail.consumes')}</p>
             {plugin.consumesStatus.length > 0 ? (
-              <div className="mt-1 flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5">
                 {plugin.consumesStatus.map((entry) => (
                   <ConsumesBadge
                     key={`${entry.pluginId}:${entry.extensionPoint}`}
@@ -160,74 +149,73 @@ export default async function AdminPluginDetailPage({
                 ))}
               </div>
             ) : (
-              <p className="mt-1 text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
+              <p className="text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
             )}
           </div>
-          <div>
+          <div className="flex flex-col gap-2">
             <p className="text-xs text-muted-foreground">{t('admin.plugins.detail.provides')}</p>
             {plugin.provides.length > 0 ? (
-              <div className="mt-1 flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5">
                 {plugin.provides.map((point) => (
-                  <span
-                    key={point}
-                    className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                  >
+                  <Badge key={point} variant="secondary" className="bg-background font-mono font-normal">
                     {point}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             ) : (
-              <p className="mt-1 text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
+              <p className="text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
             )}
           </div>
         </div>
-      </section>
+      </DetailSection>
 
-      <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <SectionTitle>{t('admin.plugins.detail.permissions')}</SectionTitle>
+      <DetailSection title={t('admin.plugins.detail.permissions')}>
         {plugin.permissions.length > 0 ? (
-          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-            {plugin.permissions.map((permission) => (
-              <li key={permission} className="font-mono text-xs">
-                {permission}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
-        )}
-        {plugin.roleTemplates.length > 0 ? (
-          <div className="mt-3 space-y-1">
-            {plugin.roleTemplates.map((template) => (
-              <p key={template.role} className="text-xs text-muted-foreground">
-                {template.role === 'ADMIN'
-                  ? t('admin.plugins.detail.roleAdmin')
-                  : t('admin.plugins.detail.roleUser')}
-                ：{template.permissions.join(', ') || t('admin.plugins.detail.none')}
-              </p>
-            ))}
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {plugin.permissions.map((permission) => (
+                <Badge key={permission} variant="secondary" className="bg-background font-mono font-normal">
+                  {permission}
+                </Badge>
+              ))}
+            </div>
+            {plugin.roleTemplates.length > 0 ? (
+              <div className="flex flex-col gap-2 rounded-xl bg-background/70 p-3">
+                {plugin.roleTemplates.map((template) => (
+                  <p key={template.role} className="text-xs text-muted-foreground">
+                    {template.role === 'ADMIN'
+                      ? t('admin.plugins.detail.roleAdmin')
+                      : t('admin.plugins.detail.roleUser')}
+                    ：{template.permissions.join(', ') || t('admin.plugins.detail.none')}
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </section>
-
-      <section className="rounded-lg border bg-card p-4 text-card-foreground">
-        <SectionTitle>{t('admin.plugins.detail.frontendPages')}</SectionTitle>
-        {plugin.frontend.available && plugin.frontend.pages.length > 0 ? (
-          <ul className="mt-2 space-y-1">
-            {plugin.frontend.pages.map((page) => (
-              <li key={page.path} className="text-sm text-muted-foreground">
-                <span className="font-mono text-xs">{page.path}</span>
-              </li>
-            ))}
-          </ul>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">
-            {plugin.frontend.available
-              ? t('admin.plugins.detail.noPages')
-              : t('admin.plugins.detail.noFrontend')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('admin.plugins.detail.none')}</p>
         )}
-      </section>
+      </DetailSection>
+
+      <DetailSection title={t('admin.plugins.detail.frontendPages')}>
+        {plugin.frontend.available && plugin.frontend.pages.length > 0 ? (
+          <List>
+            {plugin.frontend.pages.map((page) => (
+              <ListItem key={page.path} className="bg-background/70 px-3 py-2.5">
+                <span className="font-mono text-xs text-muted-foreground">{page.path}</span>
+              </ListItem>
+            ))}
+          </List>
+        ) : (
+          <List>
+            <ListEmpty>
+              {plugin.frontend.available
+                ? t('admin.plugins.detail.noPages')
+                : t('admin.plugins.detail.noFrontend')}
+            </ListEmpty>
+          </List>
+        )}
+      </DetailSection>
     </main>
   );
 }

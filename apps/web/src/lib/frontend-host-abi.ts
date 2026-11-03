@@ -140,6 +140,7 @@ import {
   RouteProgress,
 } from '@/components/frontend-absorbed-clients';
 import { CartCheckout } from '@/components/cart-checkout';
+import { MetricsExplorer, UsageTrendChart } from '@/components/frontend-chart-clients';
 import { navigationServerAbi } from './frontend-loader';
 
 /**
@@ -160,6 +161,9 @@ const ABSORBED_CLIENT_CAPABILITIES: Record<string, unknown> = {
   // - referral plugin's `route-progress.js` → CopyLinkButton
   'route-progress': { RouteProgress, CopyLinkButton },
   'auto-submit': { AutoSubmitForm, CartCheckout },
+  // Plugin server pages that render a chart import a relative `./charts.js`;
+  // the loader swaps it for these host client references.
+  charts: { MetricsExplorer, UsageTrendChart },
 };
 
 export type HostServerAbi = Record<string, unknown>;

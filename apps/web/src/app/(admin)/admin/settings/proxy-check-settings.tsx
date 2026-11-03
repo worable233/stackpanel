@@ -50,7 +50,7 @@ export function ProxyCheckSettings() {
   const refresh = () => startTransition(() => void load());
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm text-muted-foreground">{t('admin.settings.proxyCheck.intro')}</p>
         <Button
@@ -107,7 +107,7 @@ function describeFailure(error: unknown, t: (key: string) => string): string {
 function Report({ report }: { report: ProxyCheckResponse }) {
   const t = useTranslator();
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Badge variant={report.ok ? 'secondary' : 'destructive'}>
           {report.ok
@@ -131,7 +131,7 @@ function Report({ report }: { report: ProxyCheckResponse }) {
             ) : (
               <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             )}
-            <div className="min-w-0 space-y-1">
+            <div className="flex min-w-0 flex-col gap-1">
               {/* 未知 id 回落到 id 本身：内核可能比这个前端新，多出一项也不该空着。 */}
               <p className="font-medium">
                 {t(`admin.settings.proxyCheck.item.${item.id}`) ===
@@ -157,7 +157,7 @@ function Report({ report }: { report: ProxyCheckResponse }) {
       </ul>
 
       {report.warnings.length > 0 ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
+        <div className="rounded-xl bg-destructive/10 p-3">
           <p className="mb-1 text-sm font-medium text-destructive">
             {t('admin.settings.proxyCheck.warnings')}
           </p>

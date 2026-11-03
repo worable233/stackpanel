@@ -151,7 +151,7 @@ export function NotificationBell({ inboxHref }: NotificationBellProps) {
           <BackendToolbarButton aria-label={t('notification.ariaLabel')} className="relative">
             <Bell className="size-4" />
             {unreadCount > 0 ? (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-primary/20 bg-background px-1 text-[9px] leading-none font-medium text-primary tabular-nums">
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-background px-1 text-[9px] leading-none font-medium text-primary tabular-nums">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             ) : null}

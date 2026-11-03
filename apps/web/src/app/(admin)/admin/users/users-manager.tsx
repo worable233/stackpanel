@@ -79,8 +79,8 @@ function StatusBadge({ status }: { status: AdminUser['status'] }) {
       variant="outline"
       className={
         active
-          ? 'gap-1.5 border-emerald-500/20 bg-emerald-500/10 px-2 py-1 font-medium text-emerald-600 dark:text-emerald-400'
-          : 'gap-1.5 border-border bg-muted/50 px-2 py-1 font-medium text-muted-foreground'
+          ? 'gap-1.5 rounded-full bg-emerald-500/10 px-2 py-1 font-medium text-emerald-600 dark:text-emerald-400'
+          : 'gap-1.5 rounded-full bg-muted/60 px-2 py-1 font-medium text-muted-foreground'
       }
     >
       <span
@@ -197,7 +197,7 @@ export function UsersManager({
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col items-stretch gap-4 rounded-2xl bg-muted/25 p-4 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <InputGroup className="h-7 w-full rounded-md sm:w-64 sm:shrink-0">
+            <InputGroup className="h-10 w-full rounded-[10px] sm:w-64 sm:shrink-0">
               <InputGroupAddon>
                 <Search />
               </InputGroupAddon>
@@ -217,7 +217,7 @@ export function UsersManager({
                   setParams({ status: value === 'all' ? null : value, page: null })
                 }
               >
-                <SelectTrigger size="sm">
+                <SelectTrigger>
                   <span className="text-muted-foreground">{t('admin.users.colStatus')}</span>
                   <SelectValue>
                     {(value) =>
@@ -244,7 +244,7 @@ export function UsersManager({
                   setParams({ groupId: value === 'all' ? null : value, page: null })
                 }
               >
-                <SelectTrigger size="sm">
+                <SelectTrigger>
                   <span className="text-muted-foreground">{t('admin.users.colGroups')}</span>
                   <SelectValue>
                     {(value) =>
@@ -273,7 +273,7 @@ export function UsersManager({
                   setParams({ sort: value === 'createdAt_desc' ? null : value, page: null })
                 }
               >
-                <SelectTrigger size="sm" aria-label={t('admin.users.sortLabel')}>
+                <SelectTrigger aria-label={t('admin.users.sortLabel')}>
                   <SelectValue>{(value) => t(`admin.users.sort.${value}`)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent align="end" alignItemWithTrigger={false}>

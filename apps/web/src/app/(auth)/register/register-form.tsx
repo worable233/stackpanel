@@ -251,10 +251,10 @@ export function RegisterForm({
       logoSrc={logoSrc}
       providers={providers}
     >
-      <form action={action} onSubmit={handleSubmit} className="space-y-5">
+      <form action={action} onSubmit={handleSubmit} className="flex flex-col gap-5">
         {affid ? <input type="hidden" name="affid" value={affid} /> : null}
         {captchaToken ? <input type="hidden" name="captchaToken" value={captchaToken} /> : null}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="email">{t('auth.register.email')}</Label>
           <Input
             id="email"
@@ -271,7 +271,7 @@ export function RegisterForm({
           />
         </div>
         {emailVerificationRequired ? (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="code">{t('auth.register.code')}</Label>
             <div className="flex gap-2">
               <Input
@@ -328,7 +328,7 @@ export function RegisterForm({
             />
           </div>
         ) : null}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="password">{t('auth.register.password')}</Label>
           <div className="relative">
             <Input
@@ -359,7 +359,7 @@ export function RegisterForm({
           </p>
           {passwordError ? <p className="text-sm text-destructive">{passwordError}</p> : null}
         </div>
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="confirmPassword">{t('auth.register.confirmPassword')}</Label>
           <Input
             id="confirmPassword"

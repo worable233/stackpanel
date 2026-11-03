@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState, useTransition } from 'reac
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Bot, Palette, ShieldCheck, UserRound, Plug, ArrowUpRight, Bell } from 'lucide-react';
-import { InlineNotice, SectionTitle } from '@stackpanel/ui';
+import { CopyButton, InlineNotice, SectionTitle } from '@stackpanel/ui';
 import { type User } from '@stackpanel/sdk';
 import { toast } from '@/components/ui/toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -114,7 +114,7 @@ export function AccountSettings({
 
 function Heading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-b pb-4">
+    <div className="pb-1">
       <SectionTitle>{children}</SectionTitle>
     </div>
   );
@@ -155,11 +155,19 @@ function ProfileSettings({
           <FieldLabel htmlFor="settings-user-id">
             {t('account.settings.profile.accountId')}
           </FieldLabel>
-          <Input id="settings-user-id" value={user.id} readOnly />
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-4 py-2.5">
+            <code className="min-w-0 truncate font-mono text-sm">{user.id}</code>
+            <CopyButton
+              value={user.id}
+              label={t('common.copy')}
+              copiedLabel={t('common.copied')}
+              className="shrink-0"
+            />
+          </div>
           <FieldDescription>{t('account.settings.profile.accountIdHint')}</FieldDescription>
         </Field>
       </FieldGroup>
-      <div className="flex flex-col gap-4 border-t pt-5">
+      <div className="flex flex-col gap-4 rounded-2xl bg-muted/30 p-4">
         <SectionTitle>{t('account.settings.profile.securityTitle')}</SectionTitle>
         <p className="text-sm text-muted-foreground">
           {t('account.settings.profile.securityHint')}

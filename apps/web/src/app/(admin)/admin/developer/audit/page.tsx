@@ -69,11 +69,11 @@ export default async function AdminDeveloperAuditPage({
   };
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader title={t('admin.developer.calls.title')} />
 
       <form className="flex flex-wrap items-end gap-3" method="get">
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label htmlFor="resellerId">{t('admin.developer.calls.filterReseller')}</Label>
           <Input
             id="resellerId"
@@ -96,7 +96,7 @@ export default async function AdminDeveloperAuditPage({
       ) : null}
 
       {data ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <List>
             {data.logs.length === 0 ? (
               <ListEmpty>{t('admin.developer.empty')}</ListEmpty>

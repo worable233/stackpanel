@@ -33,28 +33,26 @@ export default async function AdminPluginSettingsPage({
     : null;
 
   return (
-    <main className="w-full space-y-6">
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
       <PageHeader
         backHref="/admin/plugins"
         backLabel={t('admin.pluginSettings.back')}
         title={t('admin.pluginSettings.title')}
       />
-      <div>
-        {schema ? (
-          <SettingsForm
-            schema={schema}
-            initial={settingsResult.settings}
-            save={savePluginSettingsAction.bind(null, id)}
-          />
-        ) : (
-          <div className="mx-auto flex max-w-xl flex-col items-center gap-3 rounded-2xl bg-muted/40 px-6 py-12 text-center">
+      {schema ? (
+        <SettingsForm
+          schema={schema}
+          initial={settingsResult.settings}
+          save={savePluginSettingsAction.bind(null, id)}
+        />
+      ) : (
+        <div className="flex flex-col items-center gap-3 rounded-2xl bg-muted/40 px-6 py-12 text-center">
             <span className="flex size-11 items-center justify-center rounded-full bg-background text-muted-foreground">
               <Settings2 className="size-5" aria-hidden="true" />
             </span>
-            <p className="text-sm text-muted-foreground">{t('admin.pluginSettings.noSettings')}</p>
-          </div>
-        )}
-      </div>
+          <p className="text-sm text-muted-foreground">{t('admin.pluginSettings.noSettings')}</p>
+        </div>
+      )}
     </main>
   );
 }

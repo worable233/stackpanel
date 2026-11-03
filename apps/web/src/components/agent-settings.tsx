@@ -166,7 +166,7 @@ export function AgentSettings() {
   const defaultModel = choice ?? catalog?.defaultModel ?? AUTO;
   return (
     <section className="flex flex-col gap-8" aria-busy={Boolean(busy)}>
-      <div className="flex items-center justify-between gap-4 border-b pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-1">
         <SectionTitle>{t('agent.admin.serviceTitle')}</SectionTitle>
         <Badge variant="secondary">
           {loaded

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { DeveloperSpScope, ResellerView } from '@stackpanel/sdk';
 import { DEVELOPER_SP_SCOPES } from '@stackpanel/sdk';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -58,12 +59,10 @@ function ScopeCheckboxes({
           key={scope}
           className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50"
         >
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected.includes(scope)}
-            onChange={() => onToggle(scope)}
+            onCheckedChange={() => onToggle(scope)}
             disabled={disabled}
-            className="size-4 rounded border-input accent-primary"
           />
           <span className="font-mono text-xs">{scopeLabel(scope)}</span>
         </label>
@@ -106,18 +105,18 @@ function KeyReveal({
         <DialogDescription>{t('admin.developer.write.keyDescription')}</DialogDescription>
       </DialogHeader>
       <div className="mt-4 flex flex-col gap-4">
-        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+        <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
           {t('admin.developer.write.keyWarning')}
         </p>
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label>{t('admin.developer.write.inboundPrivateKey')}</Label>
-          <pre className="max-h-40 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all">
+          <pre className="max-h-40 overflow-auto rounded-xl bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap break-all">
             {privateKey}
           </pre>
         </div>
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label>{t('admin.developer.detail.publicKey')}</Label>
-          <pre className="max-h-40 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all">
+          <pre className="max-h-40 overflow-auto rounded-xl bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap break-all">
             {publicKey}
           </pre>
         </div>
@@ -194,12 +193,14 @@ export function CreateResellerDialog() {
         if (!next) reset();
       }}
     >
-      <DialogTrigger render={<Button />}>
-        {t('admin.developer.write.createTrigger')}
-      </DialogTrigger>
+      <DialogTrigger render={<Button />}>{t('admin.developer.write.createTrigger')}</DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         {key ? (
-          <KeyReveal privateKey={key.privateKey} publicKey={key.publicKey} onClose={() => setOpen(false)} />
+          <KeyReveal
+            privateKey={key.privateKey}
+            publicKey={key.publicKey}
+            onClose={() => setOpen(false)}
+          />
         ) : (
           <>
             <DialogHeader>
@@ -218,7 +219,9 @@ export function CreateResellerDialog() {
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="reseller-webhook-url">{t('admin.developer.write.webhookUrl')}</Label>
+                <Label htmlFor="reseller-webhook-url">
+                  {t('admin.developer.write.webhookUrl')}
+                </Label>
                 <Input
                   id="reseller-webhook-url"
                   type="url"
@@ -275,8 +278,8 @@ function EditResellerDialog({
   );
   const [rateLimit, setRateLimit] = useState(String(reseller?.rateLimitRpm ?? 240));
   const [webhookUrl, setWebhookUrl] = useState(reseller?.webhookUrl ?? '');
-  const [scopes, setScopes] = useState<DeveloperSpScope[]>(
-    () => (reseller?.scopes ?? []).filter((scope): scope is DeveloperSpScope =>
+  const [scopes, setScopes] = useState<DeveloperSpScope[]>(() =>
+    (reseller?.scopes ?? []).filter((scope): scope is DeveloperSpScope =>
       (DEVELOPER_SP_SCOPES as readonly string[]).includes(scope),
     ),
   );
@@ -352,14 +355,15 @@ function EditResellerDialog({
               id="edit-reseller-status"
               value={status}
               onChange={(e) => setStatus(e.target.value === 'DISABLED' ? 'DISABLED' : 'ACTIVE')}
-              className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
             >
               <option value="ACTIVE">{t('admin.developer.resellers.statusActive')}</option>
               <option value="DISABLED">{t('admin.developer.resellers.statusDisabled')}</option>
             </Select>
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-reseller-webhook-url">{t('admin.developer.write.webhookUrl')}</Label>
+            <Label htmlFor="edit-reseller-webhook-url">
+              {t('admin.developer.write.webhookUrl')}
+            </Label>
             <Input
               id="edit-reseller-webhook-url"
               type="url"
@@ -434,7 +438,11 @@ function RotateKeyDialog({ reseller }: { reseller: ResellerView }) {
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         {key ? (
-          <KeyReveal privateKey={key.privateKey} publicKey={key.publicKey} onClose={() => setOpen(false)} />
+          <KeyReveal
+            privateKey={key.privateKey}
+            publicKey={key.publicKey}
+            onClose={() => setOpen(false)}
+          />
         ) : (
           <>
             <DialogHeader>
@@ -444,7 +452,12 @@ function RotateKeyDialog({ reseller }: { reseller: ResellerView }) {
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpen(false)}
+                disabled={isPending}
+              >
                 {t('common.cancel')}
               </Button>
               <Button type="button" onClick={() => void confirm()} disabled={isPending}>
@@ -499,7 +512,12 @@ function DeleteResellerDialog({ reseller }: { reseller: ResellerView }) {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={isPending}
+          >
             {t('common.cancel')}
           </Button>
           <Button

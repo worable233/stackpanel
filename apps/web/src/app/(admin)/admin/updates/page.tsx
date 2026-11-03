@@ -43,10 +43,10 @@ export default async function AdminUpdatesPage() {
   }
 
   return (
-    <main className="w-full space-y-6">
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <PageHeader title={t('admin.updates.title')} />
       {error ? (
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <p className="text-sm text-destructive">{t('admin.updates.serviceUnavailable')}</p>
           <p className="text-xs text-muted-foreground">{error}</p>
         </div>

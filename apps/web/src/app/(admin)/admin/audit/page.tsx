@@ -126,11 +126,11 @@ export default async function AdminAuditPage({
   };
 
   return (
-    <main className="w-full space-y-6">
+    <main className="flex w-full flex-col gap-6">
       <PageHeader title={t('admin.audit.title')} />
 
       <form method="get" action="/admin/audit" className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label htmlFor="action">{t('admin.audit.filterAction')}</Label>
           <Input
             id="action"
@@ -140,7 +140,7 @@ export default async function AdminAuditPage({
             className="w-52"
           />
         </div>
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label htmlFor="resource">{t('admin.audit.filterResource')}</Label>
           <Input
             id="resource"
@@ -150,7 +150,7 @@ export default async function AdminAuditPage({
             className="w-40"
           />
         </div>
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <Label htmlFor="actorId">{t('admin.audit.filterActor')}</Label>
           <Input
             id="actorId"
