@@ -11,7 +11,8 @@ import type {
 } from '@stackpanel/sdk';
 import { extractSession, requireAuth, requirePermission, requireOpenScope } from './auth.ts';
 import { limitedRawBodyStream } from './body.ts';
-import { normalizeErrorBody } from '../lib/problem.ts';
+import { buildProblem, normalizeErrorBody } from '../lib/problem.ts';
+import { isPluginError } from '@stackpanel/sdk';
 import { runIdempotent } from '../lib/idempotency.ts';
 import { enforceTokenQuota } from '../lib/open-api-guard.ts';
 import { invokeRouteHandler } from '../lib/route-handler.ts';
@@ -354,19 +355,49 @@ async function dispatchRaw(
   } catch (error) {
     request.log.error(error);
     if (!response.headersSent) {
-      const statusCode =
-        typeof error === 'object' && error !== null &&
-        (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
+      /**
+       * 插件抛出的 `PluginError` 必须保住它的 status/code/detail。
+       *
+       * 这里原先只看 `FST_ERR_CTP_BODY_TOO_LARGE`，其余一律 500「服务器内部
+       * 错误」——把插件明确给出的 502 + `zjmf.upstream_login_rejected` +
+       * 「上游拒绝登录」全部丢成一句兑底文案。用户看到「服务器开小差了」
+       * 而真正的原因就在错误对象里，运维手里也没有 code 可搜。
+       *
+       * 非 raw 路径由全局 `setErrorHandler` 处理，它认 `isPluginError`；raw
+       * 路径自己 catch 了，所以必须在这里做同一件事，否则两条路径对同一个
+       * 错误的回答不一致。
+       */
+      const pluginError = isPluginError(error) ? error : null;
+      const statusCode = pluginError
+        ? pluginError.status
+        : typeof error === 'object' && error !== null &&
+            (error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
           ? 413
           : 500;
       response.statusCode = statusCode;
       response.setHeader('content-type', 'application/problem+json; charset=utf-8');
+      if (pluginError && typeof pluginError.retryAfterSeconds === 'number') {
+        response.setHeader('retry-after', String(Math.max(0, Math.ceil(pluginError.retryAfterSeconds))));
+      }
       response.end(
         JSON.stringify(
-          normalizeErrorBody(statusCode, { error: statusCode === 413 ? '请求体过大' : '服务器内部错误' }, {
-            instance: request.url,
-            requestId: request.id,
-          }),
+          pluginError
+            ? buildProblem({
+                status: pluginError.status,
+                code: pluginError.code,
+                ...(pluginError.detail ? { detail: pluginError.detail } : {}),
+                instance: request.url,
+                requestId: request.id,
+                ...(pluginError.errors ? { errors: pluginError.errors } : {}),
+                ...(typeof pluginError.retryAfterSeconds === 'number'
+                  ? { retryAfterSeconds: pluginError.retryAfterSeconds }
+                  : {}),
+              })
+            : normalizeErrorBody(
+                statusCode,
+                { error: statusCode === 413 ? '请求体过大' : '服务器内部错误' },
+                { instance: request.url, requestId: request.id },
+              ),
         ),
       );
     } else {

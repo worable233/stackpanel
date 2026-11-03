@@ -18,7 +18,7 @@
 import { PluginError, brandSdkErrorClass, isSdkErrorClass } from './errors.js';
 import type { CustomModelDefinition } from './models.js';
 import type { PaymentService } from './payments.js';
-import type { EventPayload } from './plugin.js';
+import type { EventPayload, PluginSecrets } from './plugin.js';
 import type { WalletService } from './wallet.js';
 
 /** Max `pageSize` accepted by {@link ExtensionClient.list}. */
@@ -202,6 +202,16 @@ export interface ExtensionTransaction {
     'debit' | 'credit' | 'hold' | 'settleHold' | 'releaseHold'
   >;
   readonly payments: Pick<PaymentService, 'createRecord'>;
+  /**
+   * 同一事务里的密钥存储。
+   *
+   * 插件常需要「建资源 + 存凭证」同时成立（上游配置、连接凭据）。没有它只能
+   * 先建资源再 `ctx.secrets.set`，失败后补偿删除——而补偿本身也可能失败，
+   * 于是留下「有资源、无凭证」的孤儿，用户看到一条点进去就报错的记录。
+   *
+   * 在事务里用它会随同一事务提交/回滚，不存在中间态。
+   */
+  readonly secrets: PluginSecrets;
   /**
    * Register a domain event inside the *same* transaction as the business
    * write. Synchronous: the kernel buffers the event and flushes it into the

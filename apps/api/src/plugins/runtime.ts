@@ -1172,10 +1172,16 @@ export class PluginRuntime {
               extensions: this.options.extensions.clientWith(
                 trx as unknown as RawDatabase,
                 pluginId,
-                null,
+                // 与 `ctx.extensions` 一致：事务内的写入同样按当前操作者归属，
+                // 否则「用事务建资源」会绕过 owner 注入，落回 NULL。
+                actorContext.getStore() ?? null,
               ),
               wallet,
               payments,
+              // 同一事务里的 secrets：插件要「建资源 + 存凭证」原子化，
+              // 只能靠它。否则第二步失败只能事后补偿删除，而补偿本身也可能
+              // 失败——那正是「有资源、无凭证」的孤儿来源。
+              secrets: pluginSecrets(trx as unknown as PrismaClient, pluginId),
               publish: (topic, payload) => {
                 pending.push({
                   topic,
