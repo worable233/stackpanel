@@ -11,6 +11,7 @@ import { frontendSnapshot, pinInSnapshot } from './frontend-snapshot';
 import { getFrontendPackage } from './frontend-bundles';
 import { loadRuntimeFrontend, runtimeFrontendLoadingEnabled } from './frontend-runtime';
 import { cacheKey, invalidate, remember } from './server-cache';
+import { cache } from 'react';
 
 export interface FrontendCandidate {
   kind: 'themes' | 'plugins';
@@ -175,13 +176,20 @@ export async function readThemeSettings(id: string): Promise<FrontendSettings> {
   }
 }
 
-export async function readPluginSettings(id: string): Promise<FrontendSettings> {
+/**
+ * 读插件设置，按请求去重。
+ *
+ * 同一请求里它会被读很多次：resolvePluginAdminRoute 自己要读，
+ * mergedPluginFinders 的每个 finder 又要读一次，账号组件/后台菜单也各读一次。
+ * 而设置在一次渲染里不会变 —— 重复读只是重复打内核。
+ */
+export const readPluginSettings = cache(async (id: string): Promise<FrontendSettings> => {
   try {
     return (await getApiClient().getPluginSettings(id)).settings;
   } catch {
     return {};
   }
-}
+});
 
 /**
  * Import a compiled frontend package.

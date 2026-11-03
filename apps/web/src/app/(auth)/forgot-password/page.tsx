@@ -7,6 +7,7 @@ import { getSessionUser } from '@/lib/auth';
 import { getCaptchaForAction } from '@/lib/captcha';
 import { translate } from '@/i18n/core';
 import { getLocale } from '@/i18n/locale';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 
 export default async function ForgotPasswordPage() {
   // A signed-in visitor has no reason to be here, and letting them reset would
@@ -17,14 +18,8 @@ export default async function ForgotPasswordPage() {
   const setup = await api.getSetupStatus().catch(() => null);
   if (setup?.required) redirect('/setup');
   const [platform, brand, authConfig, captcha] = await Promise.all([
-    api
-      .getPlatformInfo()
-      .then((result) => result.platform)
-      .catch(() => DEFAULT_PLATFORM_INFO),
-    api
-      .getPlatformBrand()
-      .then((result) => result.brand)
-      .catch(() => null),
+    requestPlatformInfo(),
+    requestPlatformBrand(),
     // Authoritative answer to "can a code even be delivered?". Best-effort: an
     // unreachable login plugin keeps the form (the submit reports the real
     // error), which is friendlier than a dead end.

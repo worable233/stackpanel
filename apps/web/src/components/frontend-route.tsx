@@ -17,6 +17,7 @@ import { getSessionToken } from '@/lib/auth';
 import { resolveFallbackRoute, resolveFrontendRoute, type PageResolution } from '@/lib/pages';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 import { ErrorPage } from '@stackpanel/ui';
 
 const categoryNodeSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -168,18 +169,12 @@ async function renderPublicLayout(
         .then((result) => result.items.map(({ label, href }) => ({ label, href })))
         .catch(() => []),
       getSessionToken(),
-      getApiClient()
-        .getPlatformInfo()
-        .then((result) => result.platform)
-        .catch(() => DEFAULT_PLATFORM_INFO),
+      requestPlatformInfo(),
       getApiClient()
         .get('/catalog/categories', catalogCategoriesSchema)
         .then((result) => result.categories)
         .catch(() => []),
-      getApiClient()
-        .getPlatformBrand()
-        .then((result) => result.brand)
-        .catch(() => null),
+      requestPlatformBrand(),
       settingsOverride
         ? Promise.resolve(settingsOverride)
         : themeId

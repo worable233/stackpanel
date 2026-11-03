@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import type {
   AccountPageComponent,
   AccountUser,
@@ -62,7 +63,7 @@ export interface PluginAccountWidget {
 }
 
 /** Discover visible signed-in account menus from active plugin frontend packages. */
-export async function getPluginAccountMenus(): Promise<PluginAccountMenu[]> {
+export const getPluginAccountMenus = cache(async (): Promise<PluginAccountMenu[]> => {
   const candidates = await listPluginFrontendCandidates();
   const api = await getAuthedApiClient();
   const locale = await getLocale();
@@ -87,7 +88,7 @@ export async function getPluginAccountMenus(): Promise<PluginAccountMenu[]> {
     }
   }
   return menus;
-}
+});
 
 /**
  * Execute a finder contributed by any active plugin frontend package. Used by
@@ -199,7 +200,7 @@ export async function resolvePluginAccountRoute(
 }
 
 /** Resolve compact account overview modules from active plugin packages. */
-export async function getPluginAccountWidgets(): Promise<PluginAccountWidget[]> {
+export const getPluginAccountWidgets = cache(async (): Promise<PluginAccountWidget[]> => {
   const candidates = await listPluginFrontendCandidates();
   const api = await getAuthedApiClient();
   const locale = await getLocale();
@@ -230,7 +231,7 @@ export async function getPluginAccountWidgets(): Promise<PluginAccountWidget[]> 
     }
   }
   return widgets;
-}
+});
 
 function accountHref(routePath: string): string {
   return routePath === '/' ? '/account' : `/account${routePath}`;

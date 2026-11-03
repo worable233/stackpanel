@@ -7,6 +7,11 @@ import { getPluginAccountMenus } from '@/lib/account-frontend';
 import type { PluginAccountMenu } from '@/lib/account-frontend';
 import { getSessionState } from '@/lib/auth';
 import { ServiceUnavailable } from '@/components/service-unavailable';
+import {
+  requestCurrentUser,
+  requestNav,
+  requestPluginAccountMenus,
+} from '@/lib/shell-request-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,11 +51,12 @@ async function loadAccountShell(): Promise<{
   items: BackendNavigationItem[];
 } | null> {
   try {
-    const api = await getAuthedApiClient();
+    // 布局与页面共享同一份 shell 数据：走请求级缓存，避免同一次渲染里
+    // 页面（例如 /account/settings）再重复请求一遍用户和导航。
     const [currentUser, navResult, pluginMenus] = await Promise.all([
-      api.getCurrentUser(),
-      api.getNav('account'),
-      getPluginAccountMenus(),
+      requestCurrentUser(),
+      requestNav('account'),
+      requestPluginAccountMenus(),
     ]);
     const items: BackendNavigationItem[] = [
       ...navResult.items.map((item) => ({

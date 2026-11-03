@@ -8,6 +8,7 @@ import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,7 +83,7 @@ export default async function SetupPage() {
   }
 
   const [platform, brand] = await Promise.all([
-    api.getPlatformInfo().then((r) => r.platform).catch(() => DEFAULT_PLATFORM_INFO),
+    requestPlatformInfo(),
     api.getPlatformBrand().then((r) => r.brand).catch(() => null),
   ]);
 

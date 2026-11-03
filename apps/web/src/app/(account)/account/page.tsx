@@ -13,6 +13,7 @@ import { getSessionUser } from '@/lib/auth';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 import { FrontendScopeRoot } from '@/components/frontend-scope';
+import { requestCurrentUser } from '@/lib/shell-request-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export default async function AccountHomePage() {
   };
   const [userResult, widgets, ordersData, servicesData, ticketSummary, identities] =
     await Promise.all([
-      api.getCurrentUser(),
+      requestCurrentUser(),
       getPluginAccountWidgets(),
       executeAccountFinder('store.pendingOrderCount', user),
       executeAccountFinder('store.myServices', user),

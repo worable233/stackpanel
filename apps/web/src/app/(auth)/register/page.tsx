@@ -9,6 +9,7 @@ import { AFFILIATE_COOKIE, normalizeAffiliateCode } from '@/lib/affiliate';
 import { getCaptchaActions } from '@/lib/captcha';
 import { translate } from '@/i18n/core';
 import { getLocale } from '@/i18n/locale';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 
 export default async function RegisterPage({
   searchParams,
@@ -36,14 +37,8 @@ export default async function RegisterPage({
       .getOAuthProviders()
       .then((result) => result.providers)
       .catch(() => []),
-    api
-      .getPlatformInfo()
-      .then((result) => result.platform)
-      .catch(() => DEFAULT_PLATFORM_INFO),
-    api
-      .getPlatformBrand()
-      .then((result) => result.brand)
-      .catch(() => null),
+    requestPlatformInfo(),
+    requestPlatformBrand(),
     // Public auth policy: whether a verified email code is required and the
     // captcha widget config. Never fatal — a missing plugin falls back to the
     // historical mode (no verification).

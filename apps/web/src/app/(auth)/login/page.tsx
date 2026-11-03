@@ -6,6 +6,7 @@ import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
 import { getCaptchaForAction } from '@/lib/captcha';
 import { safeInternalPath } from '@/lib/safe-path';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 
 const postsSchema = z.object({
   items: z.array(
@@ -41,14 +42,8 @@ export default async function LoginPage({
       .getOAuthProviders()
       .then((result) => result.providers)
       .catch(() => []),
-    api
-      .getPlatformInfo()
-      .then((result) => result.platform)
-      .catch(() => DEFAULT_PLATFORM_INFO),
-    api
-      .getPlatformBrand()
-      .then((result) => result.brand)
-      .catch(() => null),
+    requestPlatformInfo(),
+    requestPlatformBrand(),
     api
       .get('/cms/posts?page=1&pageSize=2', postsSchema)
       .then((result) => result.items)

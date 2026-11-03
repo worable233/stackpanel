@@ -12,6 +12,7 @@ import {
 } from '@stackpanel/sdk';
 import { getApiClient } from './api';
 import { activeThemeCandidate, listPluginFrontendCandidates } from './slots';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 
 /**
  * 站点源 SEO 输送（ADR-0011 §3–§4）。
@@ -95,10 +96,7 @@ export type SeoRobots = z.infer<typeof robotsSchema>;
  * 最后回退到本地开发地址。所有绝对 URL（canonical/hreflang/sitemap）都以它为准。
  */
 export async function resolveSiteOrigin(): Promise<string> {
-  const platform = await getApiClient()
-    .getPlatformInfo()
-    .then((result) => result.platform)
-    .catch(() => DEFAULT_PLATFORM_INFO);
+  const platform = await requestPlatformInfo();
   const configured = platform.url ?? process.env.SITE_URL ?? null;
   return (configured ?? 'http://localhost:3000').replace(/\/+$/, '');
 }
@@ -109,10 +107,7 @@ export async function platformSeoDefaults(): Promise<{
   description: string;
   origin: string;
 }> {
-  const platform = await getApiClient()
-    .getPlatformInfo()
-    .then((result) => result.platform)
-    .catch(() => DEFAULT_PLATFORM_INFO);
+  const platform = await requestPlatformInfo();
   return {
     name: platform.name,
     description: platform.description,

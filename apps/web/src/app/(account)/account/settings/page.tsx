@@ -1,4 +1,4 @@
-import { InlineError, PageHeader } from '@stackpanel/ui';
+import { InlineError, PageHeader, SectionTitle } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
 import { AccountSettings } from '@/components/account-settings';
 import { Separator } from '@/components/ui/separator';
@@ -6,6 +6,7 @@ import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
 import { ApiTokenManager } from '@/components/api-token-manager';
 import { getCaptchaActions } from '@/lib/captcha';
+import { requestCurrentUser, requestNav } from '@/lib/shell-request-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +14,9 @@ export default async function AccountSettingsPage() {
   const t = createTranslator(await getLocale());
   const api = await getAuthedApiClient();
   const [{ user }, identities, nav, credentials, authConfig, captcha] = await Promise.all([
-    api.getCurrentUser(),
+    requestCurrentUser(),
     api.getConnectedIdentities().catch(() => null),
-    api.getNav('account'),
+    requestNav('account'),
     Promise.all([api.getApiTokens(), api.getApiTokenScopes()]).catch(() => null),
     api.getAuthConfig().catch(() => null),
     // Account-area guarded actions. Read from the kernel capability (not the
@@ -27,7 +28,7 @@ export default async function AccountSettingsPage() {
     <main className="w-full">
       <PageHeader title={t('account.settings.title')} />
       <Separator className="my-4 lg:my-6" />
-        <AccountSettings
+      <AccountSettings
         user={user}
         emailVerificationRequired={authConfig?.emailVerificationRequired ?? false}
         identities={identities?.identities ?? null}
@@ -44,7 +45,13 @@ export default async function AccountSettingsPage() {
               />
             </div>
           ) : (
-            <InlineError>{t('account.settings.access.keysLoadFailed')}</InlineError>
+            <div className="flex flex-col gap-2">
+              <SectionTitle>{t('account.settings.access.apiKeys')}</SectionTitle>
+              <p className="text-sm text-muted-foreground">
+                {t('account.settings.access.apiKeysHint')}
+              </p>
+              <InlineError>{t('account.settings.access.keysLoadFailed')}</InlineError>
+            </div>
           )
         }
       />

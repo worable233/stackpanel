@@ -12,9 +12,10 @@ import { FrontendAbiBridge } from '@/components/frontend-abi-bridge';
 import { ActionFeedbackToaster } from '@/components/action-feedback-toaster';
 import { I18nProvider } from '@/i18n/provider';
 import { getLocale } from '@/i18n/locale';
-import { apiAssetUrl, getApiClient } from '@/lib/api';
+import { apiAssetUrl } from '@/lib/api';
 import { themeBootstrapScript } from '@/lib/theme';
 import { isProvisioningMode } from '@/lib/provisioning';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 import './globals.css';
 
 const geistSans = localFont({
@@ -40,14 +41,8 @@ export async function generateMetadata(): Promise<Metadata> {
     };
   }
   const [platform, brand] = await Promise.all([
-    getApiClient()
-      .getPlatformInfo()
-      .then((result) => result.platform)
-      .catch(() => DEFAULT_PLATFORM_INFO),
-    getApiClient()
-      .getPlatformBrand()
-      .then((result) => result.brand)
-      .catch(() => null),
+    requestPlatformInfo(),
+    requestPlatformBrand(),
   ]);
   const favicon = brand?.favicon ? apiAssetUrl(brand.favicon) : null;
   return {

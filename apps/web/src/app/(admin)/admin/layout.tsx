@@ -4,6 +4,8 @@ import { apiAssetUrl, getApiClient, getAuthedApiClient } from '@/lib/api';
 import { getPluginAdminMenus } from '@/lib/admin-frontend';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
+import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
+import { requestCurrentUser, requestNav, requestPluginAdminMenus } from '@/lib/shell-request-cache';
 
 const FALLBACK_NAV: BackendNavigationItem[] = [
   { label: 'nav.dashboard', href: '/admin' },
@@ -45,11 +47,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   let user: BackendUser = { email: t('admin.fallbackUser'), role: 'ADMIN' };
 
   try {
-    const api = await getAuthedApiClient();
+    // 与 account 侧同理：后台布局和各 admin 页面共享同一份 shell 数据。
     const [result, menus, currentUser] = await Promise.all([
-      api.getNav('admin'),
-      getPluginAdminMenus(),
-      api.getCurrentUser().catch(() => null),
+      requestNav('admin'),
+      requestPluginAdminMenus(),
+      requestCurrentUser().catch(() => null),
     ]);
     nav = result.items.map((i) => ({ label: i.label, href: i.href }));
     pluginMenus = menus;
@@ -77,14 +79,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       ...item,
       group: item.href === '/admin/payments' ? financeGroup : KERNEL_GROUPS[item.href],
     })),
-    ...pluginMenus.map((item) => ({ ...item, group: item.group ?? item.pluginId })),
+    // 插件市场已并入 `/admin/plugins` 的「发现」页；再保留一条侧栏入口
+    // 只会让同一个功能出现两次。
+    ...pluginMenus
+      .filter((item) => item.href !== '/admin/plugin/market')
+      .map((item) => ({ ...item, group: item.group ?? item.pluginId })),
   ];
 
   const [brand, platformInfo] = await Promise.all([
-    getApiClient()
-      .getPlatformBrand()
-      .then((result) => result.brand)
-      .catch(() => null),
+    requestPlatformBrand(),
     getApiClient()
       .getPlatformInfo()
       .then((result) => result.platform)

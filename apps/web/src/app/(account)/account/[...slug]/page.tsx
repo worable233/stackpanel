@@ -4,6 +4,7 @@ import { AccountPluginPage } from '@/components/account-plugin-page';
 import { getAuthedApiClient } from '@/lib/api';
 import { resolvePluginAccountRoute } from '@/lib/account-frontend';
 import { stripFeedbackParams } from '@/lib/feedback-params';
+import { requestCurrentUser } from '@/lib/shell-request-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,7 @@ export default async function PluginAccountRoute({
   const api = await getAuthedApiClient();
   let currentUser;
   try {
-    currentUser = await api.getCurrentUser();
+    currentUser = await requestCurrentUser();
   } catch {
     redirect(`/login?next=/account/${slug.map(encodeURIComponent).join('/')}`);
   }

@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import type { FrontendSettings } from '@stackpanel/sdk';
 import type {
   FinderProvider,
@@ -55,7 +56,7 @@ export type PluginAdminRouteResult =
   | { status: 'not-found' };
 
 /** Admin sidebar menus contributed by active plugin frontend packages. */
-export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
+export const getPluginAdminMenus = cache(async (): Promise<PluginAdminMenu[]> => {
   const candidates = await listPluginFrontendCandidates();
   const menus: PluginAdminMenu[] = [];
   const api = await getAuthedApiClient();
@@ -87,7 +88,7 @@ export async function getPluginAdminMenus(): Promise<PluginAdminMenu[]> {
     }
   }
   return menus;
-}
+});
 
 /** Resolve a plugin admin route and enforce its declared permission. */
 export async function resolvePluginAdminRoute(
@@ -224,7 +225,7 @@ async function isAllowed(
 
 
 /** Plugin-owned settings reuse the regular route resolver and its authorization gates. */
-export async function getPluginSettingsSections() {
+export const getPluginSettingsSections = cache(async () => {
   const candidates = await listPluginFrontendCandidates();
   const locale = await getLocale();
   const sections = [];
@@ -253,7 +254,7 @@ export async function getPluginSettingsSections() {
     }
   }
   return sections.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-}
+});
 
 function pluginSettingsHref(pluginId: string, path: string): string {
   return `/admin/settings#plugin-${pluginId}-${encodeURIComponent(path)}`;
