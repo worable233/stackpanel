@@ -86,11 +86,20 @@ async function resolveThemeCandidate(themeId: string): Promise<FrontendCandidate
   }
 }
 
-/** Discover every active plugin that contributes a compiled frontend package. */
-export async function listPluginFrontendCandidates(): Promise<FrontendCandidate[]> {
-  // Contract 04 §3: one plugin list (and thus one set of revisions) per request.
-  return pinInSnapshot('plugins', resolvePluginFrontendCandidates);
-}
+/**
+ * Discover every active plugin that contributes a compiled frontend package.
+ *
+ * 用 React `cache()` 而不是 `pinInSnapshot`：实测 `AsyncLocalStorage` 的
+ * `enterWith` 作用域**不跨渲染阶段**（layout 与 page、`generateMetadata` 与
+ * 页面组件之间都不共享），于是同一请求里菜单构建、路由解析、widgets 各建
+ * 一份快照，`/plugins/frontends` 被打多次。`cache()` 由 Next 绑定到同一次
+ * 渲染，跨这些阶段共享。
+ *
+ * 同时保留进程级 5s 缓存（`remember`），省掉跨请求的那一跳。
+ */
+export const listPluginFrontendCandidates = cache(
+  async (): Promise<FrontendCandidate[]> => resolvePluginFrontendCandidates(),
+);
 
 /** 插件清单缓存的作用域前缀（供 `invalidate` 使用）。 */
 export const PLUGIN_FRONTENDS_CACHE = 'plugin-frontends';

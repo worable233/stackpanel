@@ -41,9 +41,10 @@ export default async function AccountHomePage() {
    * 结果：首页 4 个 finder + 身份绑定与用户信息**同时**发起，而不是串成两波。
    */
   const sessionUser = await getSessionUser();
-  // finder 只读 `role`；`id`/`email` 以 `getCurrentUser()` 的结果为准（会话
-  // 载荷里没有 email）。这里先给一个可用的占位，避免为拿 role 而串行等待。
-  const user: AccountUser = {
+  // finder 只读 role；id 用会话里的 sub（就是 user.id）。
+  // email 会话载荷里没有，**不能**留空——下面的问候语会渲染它。
+  // 所以展示用的 user 单独取自 requestCurrentUser()。
+  const finderUser: AccountUser = {
     id: sessionUser?.sub ?? '',
     email: '',
     role: sessionUser?.role ?? 'USER',
@@ -52,11 +53,17 @@ export default async function AccountHomePage() {
     await Promise.all([
       requestCurrentUser(),
       getPluginAccountWidgets(),
-      executeAccountFinder('store.pendingOrderCount', user),
-      executeAccountFinder('store.myServices', user),
-      executeAccountFinder('ticket.pendingCount', user),
+      executeAccountFinder('store.pendingOrderCount', finderUser),
+      executeAccountFinder('store.myServices', finderUser),
+      executeAccountFinder('ticket.pendingCount', finderUser),
       api.getConnectedIdentities().catch(() => null),
     ]);
+  // 展示用的用户：email 以内核返回为准（会话载荷里没有）。
+  const user: AccountUser = {
+    id: userResult.user.id,
+    email: userResult.user.email,
+    role: userResult.user.role,
+  };
   const services = (servicesData as ServiceItem[] | null) ?? [];
   const now = currentTimestamp();
   const sevenDays = now + 7 * 24 * 60 * 60 * 1000;

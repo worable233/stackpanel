@@ -30,6 +30,7 @@ import {
   type FrontendCandidate,
 } from './slots';
 import { bindPluginActions } from './frontend-plugin-actions';
+import { requestPermission } from './shell-request-cache';
 
 export interface PageResolution {
   component: FrontendPageComponent;
@@ -371,11 +372,8 @@ async function resolvePageData(
     api,
     isAllowed: async (permission) => {
       if (!session) return false;
-      try {
-        return (await api.checkPermission(permission)).allowed;
-      } catch {
-        return false;
-      }
+      // 走请求级缓存：同一权限在一次渲染里会被菜单、守卫、action 各查一遍。
+      return requestPermission(permission);
     },
     onFailure: (failure) => {
       // 只上稳定 code 与 reqId（ADR-0012）：原文进日志，界面自己决定文案。
