@@ -235,6 +235,88 @@ chunk 数 31 → 30。
 `zodiac-aries`、…）。判断「某个库是否还在 bundle 里」必须匹配库的**特征
 符号**（`ZodType` / `ZodObject` / `safeParse` / `_zod`），不能只 grep 名字。
 
+## 6c. 已实施（第三轮）：lucide + 一个被掩盖的既有 bug
+
+### lucide 图标库（614 KB）
+
+第三个同类问题：`frontend-abi-bridge.tsx` 的
+
+```ts
+import * as lucide from 'lucide-react';
+```
+
+把**整个图标库**（1700+ 图标，614 KB）打进首屏。web 自己用的是按名导入
+（`import { Eye, EyeOff }`，会被 tree-shake），只有运行期插件需要完整命名
+空间。改成惰性 getter 即可。
+
+### ENAMETOOLONG：本地 macOS 全站 500
+
+排查 lucide 时撞到一个**既有阻塞 bug**（不是本轮引入，`frontend-loader.ts`
+自 10-31 未改）：
+
+```ts
+const url = `data:text/javascript;base64,${Buffer.from(src, 'utf8').toString('base64')}`;
+```
+
+宿主 ABI shim 用 data URL 传给 `import()`。React 命名空间有 50+ 个导出，
+编码后约 **2.9 KB**，超过 macOS 的单路径上限 1024 字节：
+
+```
+Error: ENAMETOOLONG: name too long, open 'data:text/javascript;base64,…'
+```
+
+后果是**所有**运行时装载的前端包都加载失败（`[frontend-runtime] failed to
+load plugins/store`），整页 500。Linux 上限高得多，所以这个问题只在 macOS
+上暴露 —— 「本地全挂、CI 全绿」的典型盲区，也是它一直没被发现的原因。
+
+改为写临时文件（`mkdtempSync` + 内容哈希文件名）后 `file://` URL 没有长度
+限制，同一个 shim 复用同一个文件还能命中 Node 的模块缓存。
+
+> 教训：这个 bug 一直掩盖着下一层错误。修掉 ENAMETOOLONG 之后才看到
+> `createContext` 报错 —— 如果只看「有没有报错」而不追「报的是不是根因」，
+> 很容易把第二层当成第一层。
+
+### 服务端 ABI 的 charts 槽（§6 漏掉的第五处）
+
+§4 方案里写了「五处必须同步改」，实际只做了四处（spec / adapter / bridge /
+构建 alias / store 插件），**漏了服务端 ABI**（`frontend-host-abi.ts`）。
+
+漏掉的后果正是方案里警告的那种「运行期报错而非编译期」：插件的
+`dist/index.js` 写着 `import { MetricsExplorer } from '@stackpanel/ui/charts'`，
+服务端 resolve hook 找不到这个槽 → 落到真实包 → recharts 在模块作用域调
+`React.createContext` → RSC 图 500。
+
+修法上有个两难：
+
+- 发布**真实实现**：`createContext` 直接抛，整页 500。
+- 发布**空对象**：ESM 静态链接缺具名导出 → `does not provide an export named`
+  → 整包加载失败（就是之前 llm-gateway 报 `UsageTrendChart` 那次事故的形态）。
+
+正解是「名字齐全、被调用才抛」的链接期桩，与既有的 `reactServerAbi` /
+`reactDomServerAbi` 完全同一模式：顶层 import 不抛（能链接），真被当成组件
+调用才抛（把「客户端组件在服务端执行」暴露在正确位置）。
+
+### 累计效果
+
+| 阶段 | 未压缩 | gzip |
+|---|---|---|
+| 起点 | 3360 KB | 1028 KB |
+| 拆 recharts | 2987 KB | 916 KB |
+| 拆 zod | 2787 KB | 862 KB |
+| 拆 lucide | — | **703 KB** |
+
+首屏 gzip **1028 → 703 KB（-32%）**，chunk 数 31 → 29，zod 与 recharts 均为 0。
+
+### 顺带修的外部插件
+
+`llm-gateway`（在 `~/Documents/StackPanel-plugins`）也用 `UsageTrendChart`，
+一并改从 `@stackpanel/ui/charts` 导入。外部插件重建需要：
+
+```bash
+STACKPANEL_PLUGIN_SOURCES=~/Documents/StackPanel-plugins/packages/plugins \
+  STACKPANEL_FRONTEND_ONLY=plugins/llm-gateway pnpm build:frontend
+```
+
 ## 7. 未纳入本方案的
 
 - **`zod`（911 KB）**：**已拆**，见 §6b。仍有 6 个 admin/auth 页面从 sdk 桶
@@ -242,7 +324,7 @@ chunk 数 31 → 30。
   `register-form`、`reset-password-form`、`account-settings`），那些页面各自的
   首屏会带 zod。这是按页成本，不是全局首屏问题 —— 若要继续优化，可逐个改用
   sdk 子路径。
-- **`lucide-react`（359 KB）**：它是宿主 ABI 槽（UI 包大量依赖），拆开会导致
-  图标树两份。除非改用按需图标导入，否则不动。
+- **`lucide-react`（359 KB）**：**已拆**，见 §6c。宿主 bridge 改成惰性槽后，
+  插件仍拿到完整命名空间，web 自己的按名导入照旧被 tree-shake。
 - **`/admin/settings` 的 54 次内核 fan-out**：与本方案无关，属另一条优化线
   （需要合并端点），已在 `c088867` 的提交信息里记录。
