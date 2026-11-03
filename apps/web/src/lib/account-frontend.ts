@@ -177,13 +177,12 @@ export async function resolvePluginAccountRoute(
     api,
     isAllowed: (permission) => isAllowed(permission),
   });
-  try {
-    await api.recordFrontendAudit('frontend.account.route.render', candidate.id, path, {
+  // 审计不阻塞渲染（同 admin 侧与 pages.ts）：写失败只丢一条观测。
+  void api
+    .recordFrontendAudit('frontend.account.route.render', candidate.id, path, {
       route: route.path,
-    });
-  } catch {
-    // Observability must not block account access.
-  }
+    })
+    .catch(() => undefined);
   return {
     status: 'ok',
     component,

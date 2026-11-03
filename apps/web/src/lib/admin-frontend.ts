@@ -127,14 +127,19 @@ export async function resolvePluginAdminRoute(
   const mergedFinders = await mergedPluginFinders();
   const settings = await readPluginSettings(pluginId);
   const params = capturePathParams(route.path, path);
-  try {
-    const api = await getAuthedApiClient();
-    await api.recordFrontendAudit('frontend.admin.route.render', pluginId, path, {
-      route: route.path,
-    });
-  } catch {
-    // Rendering should not fail because an audit write was rejected.
-  }
+  // 审计是观测，不是渲染依赖：**不 await**。
+  //
+  // 原先这里 `await` 一次内核写入，于是每个插件后台页渲染都要多等一个
+  // 往返（实测 /admin/settings 单次渲染 6 次审计写入串在关键路径上）。
+  // 与 `pages.ts` 的 finder 审计保持一致的 fire-and-forget 语义：
+  // 写失败只丢一条观测，绝不影响页面。
+  void getAuthedApiClient()
+    .then((api) =>
+      api.recordFrontendAudit('frontend.admin.route.render', pluginId, path, {
+        route: route.path,
+      }),
+    )
+    .catch(() => undefined);
   return {
     status: 'ok',
     settingsHref: route.systemSettings ? pluginSettingsHref(pluginId, route.path) : undefined,
@@ -222,31 +227,49 @@ async function isAllowed(permission: string): Promise<boolean> {
 export const getPluginSettingsSections = cache(async () => {
   const candidates = await listPluginFrontendCandidates();
   const locale = await getLocale();
-  const sections = [];
-  for (const candidate of candidates) {
-    const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
-    for (const route of candidate.manifest.adminRoutes) {
-      if (!route.systemSettings || /[:*]/.test(route.path)) continue;
-      const href = pluginSettingsHref(candidate.id, route.path);
-      const id = href.split('#')[1]!;
+  /**
+   * 先收集所有候选，再**并行**解析。
+   *
+   * 原先是对 candidates 串行 `for ... await resolvePluginAdminRoute(...)`：
+   * 每个插件设置页都要读 settings、查权限、跑 finder，一个接一个排队。
+   * 实测 `/admin/settings` 单次渲染打 54 次内核请求，串行等待是它慢的主因。
+   * 这些解析彼此没有依赖（不同插件的不同路由），并发执行即可。
+   */
+  const targets = candidates.flatMap((candidate) =>
+    candidate.manifest.adminRoutes
+      .filter((route) => route.systemSettings && !/[:*]/.test(route.path))
+      .map((route) => {
+        const href = pluginSettingsHref(candidate.id, route.path);
+        return {
+          candidate,
+          route,
+          href,
+          id: href.split('#')[1]!,
+          messages: readPackageMessages(candidate.id, candidate.manifest.messages).messages,
+        };
+      }),
+  );
+  const resolved = await Promise.all(
+    targets.map(async ({ candidate, route, href, id, messages }) => {
       const result = await resolvePluginAdminRoute(candidate.id, route.path, href);
-      if (result.status !== 'ok') continue;
-      sections.push({
+      if (result.status !== 'ok') return null;
+      return {
         id,
         title: packageLabel(
           messages,
           locale,
-          route.systemSettings.labelKey,
-          route.systemSettings.label,
+          route.systemSettings!.labelKey,
+          route.systemSettings!.label,
           [DEFAULT_LOCALE],
         ),
-        order: route.systemSettings.order ?? 100,
+        order: route.systemSettings!.order ?? 100,
         pluginId: candidate.id,
         path: route.path,
         result,
-      });
-    }
-  }
+      };
+    }),
+  );
+  const sections = resolved.filter((section): section is NonNullable<typeof section> => section !== null);
   return sections.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 });
 
