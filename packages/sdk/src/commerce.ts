@@ -70,7 +70,18 @@ export type CommerceServiceAction = 'suspend' | 'resume' | 'terminate';
 
 /** 领域拒绝原因，由调用方（内核）映射为自己的稳定错误码。 */
 export type CommerceFailure =
-  'product_unavailable' | 'amount_invalid' | 'product_not_found' | 'service_already_bound';
+  | 'product_unavailable'
+  | 'amount_invalid'
+  | 'product_not_found'
+  | 'service_already_bound'
+  /**
+   * 上游商品尚未映射到任何本地商品。
+   *
+   * 与 `product_not_found` 不同：后者是「给的 id 不存在」，这个是「存在但
+   * 没有建立映射」。分开是因为处理方式不同 —— 前者要改请求，后者要去后台
+   * 建映射，而且它绝不能退化成「那就先建一条没商品的实例」。
+   */
+  | 'product_unmapped';
 
 /** HTTP status the kernel error boundary renders for each domain failure. */
 const COMMERCE_FAILURE_STATUS: Record<CommerceFailure, number> = {
@@ -78,6 +89,7 @@ const COMMERCE_FAILURE_STATUS: Record<CommerceFailure, number> = {
   amount_invalid: 400,
   product_not_found: 404,
   service_already_bound: 409,
+  product_unmapped: 409,
 };
 
 /** A deterministic business rejection from the commerce domain. */

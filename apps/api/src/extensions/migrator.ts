@@ -51,6 +51,8 @@ interface ActualIndex {
   name: string;
   columns: string[];
   unique: boolean;
+  /** 部分索引谓词是否为「该列非空」（见 `ModelIndex.where`）。 */
+  whereNotNull: boolean;
 }
 
 /** Serialise per-kind migrations so concurrent activations cannot race. */
@@ -86,10 +88,15 @@ async function readIndexes(
   tableName: string,
 ): Promise<ActualIndex[]> {
   const rows = await db.$queryRawUnsafe<
-    Array<{ name: string; unique: boolean; columns: string[] }>
+    Array<{ name: string; unique: boolean; whereNotNull: boolean; columns: string[] }>
   >(
     `SELECT i.relname::text AS name,
             ix.indisunique AS "unique",
+            -- 只识别内核自己会生成的那种谓词（单列 IS NOT NULL）。其它谓词
+            -- 一律视为「非内核生成」，不参与相等判断 —— 这样不会被误认成
+            -- 我们声明的索引，也不会被悄悄当成没问题。
+            (pg_get_expr(ix.indpred, ix.indrelid) IS NOT NULL
+             AND pg_get_expr(ix.indpred, ix.indrelid) ~ '^\\(?[a-z_][a-z0-9_]* IS NOT NULL\\)?$') AS "whereNotNull",
             array_agg(a.attname::text ORDER BY k.ord) AS columns
        FROM pg_class t
        JOIN pg_index ix ON t.oid = ix.indrelid
@@ -97,19 +104,21 @@ async function readIndexes(
        JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON TRUE
        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
       WHERE t.relname = $1 AND t.relkind = 'r'
-      GROUP BY i.relname, ix.indisunique`,
+      GROUP BY i.relname, ix.indisunique, ix.indpred, ix.indrelid`,
     tableName,
   );
   return rows.map((row) => ({
     name: row.name,
     columns: Array.isArray(row.columns) ? row.columns : [],
     unique: row.unique === true,
+    whereNotNull: row.whereNotNull === true,
   }));
 }
 
 function sameIndex(left: ExtensionIndexSpec, right: ActualIndex): boolean {
   return (
     left.unique === right.unique &&
+    (left.whereNotNull === true) === right.whereNotNull &&
     left.columns.length === right.columns.length &&
     left.columns.every((column, index) => column === right.columns[index])
   );
@@ -174,11 +183,30 @@ async function applyDiff(
   for (const index of table.indexes) {
     const existing = actualIndexes.find((candidate) => candidate.name === index.name);
     if (existing) {
-      if (!sameIndex(index, existing)) {
+      if (sameIndex(index, existing)) continue;
+      /**
+       * 索引定义变了。
+       *
+       * E1 原先一律拒绝重建，因为「收紧唯一性」可能让已有数据无法满足约束。
+       * 但有一类变更是**纯放宽**的：`UNIQUE (col)` → `UNIQUE (col) WHERE col
+       * IS NOT NULL`。新集合是新集合的子集，凡是旧索引能接受的行新索引必然也
+       * 接受，重建不会失败，也不会丢数据。
+       *
+       * 必须支持它，否则「给可空列加部分唯一索引」这个声明在**已部署**的库上
+       * 永远生效不了：升级只是报个错，管理员并不知道该手工删哪个索引。
+       */
+      const isRelaxation =
+        existing.unique &&
+        index.unique &&
+        existing.whereNotNull === false &&
+        index.whereNotNull === true;
+      if (!isRelaxation) {
         throw new ExtensionUnsupportedMigration(
           `模型 ${table.kind} 的索引 ${index.name} 定义已变更（E1 不支持重建索引）`,
         );
       }
+      await db.$executeRawUnsafe(dropIndexSql(existing.name));
+      await db.$executeRawUnsafe(createIndexSql(table.tableName, index));
       continue;
     }
     if (index.unique) await assertNoDuplicates(db, table, index);

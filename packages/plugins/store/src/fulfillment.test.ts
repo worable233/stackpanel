@@ -923,10 +923,53 @@ describe('store fulfillment dispatcher', () => {
     expect(JSON.stringify(result)).not.toContain('never-public');
   });
 
+  it('refuses to bind an upstream service that has no local product mapping', async () => {
+    const fake = createFakeExtensions();
+    const { provider } = makeProvider();
+    bindContext(makeCtx(fake, provider));
+
+    /**
+     * 没有映射就必须 409，绝不隐式建档。
+     *
+     * 旧行为是 `product?.id ?? input.productId` 把**上游**商品 id 当本地商品 id
+     * 落库，配合 `orderId: null` 产出幽灵实例：没有商品、没有订单、没有凭证，
+     * 不能续费/退款/对账，却计入 ACTIVE 统计。
+     */
+    await expect(
+      storeOperations.bindService({
+        userId: 'user-1',
+        productId: 'up-prod-1',
+        productName: '云服务器',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerServiceId: 'svc-x',
+        status: 'active',
+        amount: 9900,
+        currency: 'CNY',
+        runtime: { upstreamId: 'up-1', host: 'node-1' },
+      }),
+    ).rejects.toMatchObject({ failure: 'product_unmapped' });
+    expect(fake.all(SERVICE)).toHaveLength(0);
+  });
+
   it('binds an upstream service once and rejects a second bind globally', async () => {
     const fake = createFakeExtensions();
     const { provider } = makeProvider();
     bindContext(makeCtx(fake, provider));
+    // 先建立映射：绑定要求上游商品已映射到本地商品。
+    fake.seed(
+      PRODUCT,
+      {
+        name: '云服务器',
+        price: 9900,
+        currency: 'CNY',
+        fulfillmentType: 'upstream_service',
+        providerId: 'zjmf',
+        providerProductId: 'up-prod-1',
+        metadata: { upstream: { sourceRef: 'up-1' } },
+      },
+      'local-cloud',
+    );
 
     const created = await storeOperations.bindService({
       userId: 'user-1',
@@ -938,14 +981,15 @@ describe('store fulfillment dispatcher', () => {
       status: 'active',
       amount: 9900,
       currency: 'CNY',
-      runtime: { upstreamId: 'up-1', host: 'node-1' },
+      runtime: { upstreamId: 'up-1', upstreamProductId: 'up-prod-1', host: 'node-1' },
     });
     expect(created.userId).toBe('user-1');
     expect(created.providerId).toBe('zjmf');
     expect(created.providerServiceId).toBe('svc-x');
     expect(created.status).toBe('ACTIVE');
 
-    // 同账号重复绑定
+    // 同账号重复绑定：优先报「已绑定」，而不是「没有映射」——后者会把人引到
+    // 错误的方向去建映射。
     await expect(
       storeOperations.bindService({
         userId: 'user-1',
@@ -957,6 +1001,7 @@ describe('store fulfillment dispatcher', () => {
         status: 'ACTIVE',
         amount: 9900,
         currency: 'CNY',
+        runtime: { upstreamId: 'up-1', upstreamProductId: 'up-prod-1' },
       }),
     ).rejects.toMatchObject({ name: 'CommerceError', failure: 'service_already_bound' });
 
@@ -972,6 +1017,7 @@ describe('store fulfillment dispatcher', () => {
         status: 'ACTIVE',
         amount: 9900,
         currency: 'CNY',
+        runtime: { upstreamId: 'up-1', upstreamProductId: 'up-prod-1' },
       }),
     ).rejects.toBeInstanceOf(CommerceError);
 
@@ -1012,12 +1058,16 @@ describe('store fulfillment dispatcher', () => {
     const imported = await storeOperations.bindService(input);
     expect(imported.productId).toBe('local-product');
     expect(imported.fulfillmentType).toBe('cloud_server');
-    await storeOperations.bindService({
-      ...input,
-      userId: 'user-2',
-      runtime: { upstreamId: 'account-b', upstreamProductId: '7' },
-    });
-    expect(fake.all(SERVICE)).toHaveLength(2);
+    // `account-b` 下同一上游商品没有映射：必须被拒绝，而不是复用
+    // `account-a` 的本地商品给另一个账号建档。
+    await expect(
+      storeOperations.bindService({
+        ...input,
+        userId: 'user-2',
+        runtime: { upstreamId: 'account-b', upstreamProductId: '7' },
+      }),
+    ).rejects.toMatchObject({ failure: 'product_unmapped' });
+    expect(fake.all(SERVICE)).toHaveLength(1);
     expect(provision).not.toHaveBeenCalled();
     expect(fake.all(TASK)).toHaveLength(0);
   });

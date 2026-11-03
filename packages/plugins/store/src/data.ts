@@ -180,6 +180,25 @@ export const serviceInstanceModel = defineModel({
     { fields: ['state'], types: { state: 'string' } },
     { fields: ['providerId'], types: { providerId: 'string' } },
     { fields: ['providerServiceId'], types: { providerServiceId: 'string' } },
+    /**
+     * 一个上游服务实例只能被绑定一次。
+     *
+     * 原先只在应用层 `find` 判重（operations.ts），两个管理员同时点绑定会
+     * 双双通过检查、写出两条实例指向同一个上游服务：一条有凭证、一条没有，
+     * 用户看到的服务时好时坏。唯一索引把并发竞争交给数据库。
+     *
+     * 只约束 `providerServiceId`：同一上游的不同实例本来就该并存。同一实例
+     * 在不同上游账号下理论上编号可能撞车，但那属于上游侧编号设计问题，先用
+     * 最严格的约束把「重复绑定」彻底堵死。
+     */
+    {
+      fields: ['providerServiceId'],
+      types: { providerServiceId: 'string' },
+      unique: true,
+      // 只约束非空值：普通购买产生的实例没有上游服务编号（NULL），它们之间
+      // 不该互相冲突。
+      where: { kind: 'notNull' },
+    },
     { fields: ['expiresAtMs'], types: { expiresAtMs: 'number' } },
     { fields: ['expiryStage'], types: { expiryStage: 'string' } },
   ],

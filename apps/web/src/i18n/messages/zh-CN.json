@@ -1681,7 +1681,8 @@
     },
     "service": {
       "already_bound": "该服务已绑定",
-      "not_found": "服务不存在"
+      "not_found": "服务不存在",
+      "product_unmapped": "该上游商品尚未映射到本地商品，请先创建商品映射后再绑定"
     },
     "sp_v1": {
       "body_too_large": "请求体过大"

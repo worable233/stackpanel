@@ -5,6 +5,7 @@ import { getApiClient, apiAssetUrl } from './api';
 import { pinInSnapshot } from './frontend-snapshot';
 import { getFrontendPackage } from './frontend-bundles';
 import { loadRuntimeFrontend, runtimeFrontendLoadingEnabled } from './frontend-runtime';
+import { cacheKey, invalidate, remember } from './server-cache';
 
 export interface FrontendCandidate {
   kind: 'themes' | 'plugins';
@@ -33,9 +34,17 @@ export async function activeThemeCandidate(): Promise<FrontendCandidate | null> 
 
 async function resolveActiveThemeCandidate(): Promise<FrontendCandidate | null> {
   try {
-    const { theme } = await getApiClient().getActiveTheme();
+    // /themes/active 线上 1111 次、p50 136ms；主题切换是低频运维动作，缓存 10s
+    // 让每次渲染省掉这一跳。
+    const { theme } = await remember(cacheKey('active-theme'), () => getApiClient().getActiveTheme(), {
+      ttlMs: 10_000,
+    });
     if (!theme) return null;
-    const manifest = await getApiClient().getThemeFrontend(theme.id);
+    const manifest = await remember(
+      cacheKey('theme-frontend', { id: theme.id }),
+      () => getApiClient().getThemeFrontend(theme.id),
+      { ttlMs: 10_000 },
+    );
     if (!manifest.available || !manifest.manifest) return null;
     return {
       kind: 'themes',
@@ -77,9 +86,32 @@ export async function listPluginFrontendCandidates(): Promise<FrontendCandidate[
   return pinInSnapshot('plugins', resolvePluginFrontendCandidates);
 }
 
+/** 插件清单缓存的作用域前缀（供 `invalidate` 使用）。 */
+export const PLUGIN_FRONTENDS_CACHE = 'plugin-frontends';
+
+/**
+ * 把 `/plugins/frontends` 的结果在进程内复用一段短时间。
+ *
+ * 请求内已经有 `pinInSnapshot` 去重，但**跨请求**没有：每个页面渲染仍会打
+ * 一次内核。现场该端点 p95 8892ms / max 10025ms（每次要对 23 个插件做全量
+ * 文件系统扫描），而它又是所有页面的公共依赖 —— 一次抖动会同时拖慢所有
+ * 正在渲染的页面。
+ *
+ * 内核侧已经给该端点加了代际缓存，这里是第二层：省掉 web → api 的这一跳。
+ * TTL 取 5s：比内核的 30s 短，插件启停最多延迟 5s 反映到前端，换掉的是每条
+ * 请求都要等的那一跳。
+ */
+export function invalidatePluginFrontends(): void {
+  invalidate(PLUGIN_FRONTENDS_CACHE);
+}
+
 async function resolvePluginFrontendCandidates(): Promise<FrontendCandidate[]> {
   try {
-    const { plugins } = await getApiClient().getPluginFrontends();
+    const { plugins } = await remember(
+      cacheKey(PLUGIN_FRONTENDS_CACHE),
+      () => getApiClient().getPluginFrontends(),
+      { ttlMs: 5_000 },
+    );
     return plugins
       .filter((plugin) => plugin.manifest)
       .map((plugin) => ({

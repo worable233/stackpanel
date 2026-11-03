@@ -53,6 +53,11 @@ export interface ExtensionIndexSpec {
   name: string;
   columns: string[];
   unique: boolean;
+  /**
+   * 部分索引谓词。只支持「非空」这一种，由内核拼成固定 SQL 片段；插件无法
+   * 提供任意表达式（那等于往 DDL 里注入）。
+   */
+  whereNotNull?: boolean;
 }
 
 /** Compiled, SQL-ready shape of one declared model. */
@@ -116,6 +121,9 @@ export function compileTable(definition: CustomModelDefinition): ExtensionTable 
       name: assertIdentifier(`idx_${tableName}_${position + 1}`),
       columns: fields,
       unique: index.unique === true,
+      ...(index.where?.kind === 'notNull' && fields.length === 1
+        ? { whereNotNull: true }
+        : {}),
     });
   });
 
@@ -137,7 +145,15 @@ export function tableHash(table: ExtensionTable): string {
     version: 1,
     scoped: table.scoped,
     columns: table.columns.map((column) => [column.field, column.type]),
-    indexes: table.indexes.map((index) => [index.name, index.columns, index.unique]),
+    // 谓词必须进哈希：否则把 `UNIQUE (x)` 改成 `UNIQUE (x) WHERE x IS NOT NULL`
+    // 时哈希不变，diff 认为索引没变、不重建 —— 数据库里留着的仍是旧索引，
+    // 声明与实际长期不一致，而且没有任何报错。
+    indexes: table.indexes.map((index) => [
+      index.name,
+      index.columns,
+      index.unique,
+      index.whereNotNull === true,
+    ]),
   });
   return createHash('sha256').update(payload).digest('hex');
 }
@@ -172,7 +188,17 @@ export function addColumnSql(tableName: string, column: ExtensionColumn): string
 export function createIndexSql(tableName: string, index: ExtensionIndexSpec): string {
   const kind = index.unique ? 'UNIQUE INDEX' : 'INDEX';
   const columns = index.columns.map(quoteIdentifier).join(', ');
-  return `CREATE ${kind} IF NOT EXISTS ${quoteIdentifier(index.name)} ON ${quoteIdentifier(tableName)} (${columns})`;
+  /**
+   * 部分索引：`WHERE <col> IS NOT NULL`。
+   *
+   * 列名来自已校验的 `index.columns`（走 `assertIdentifier`），谓词结构由内核
+   * 固定，插件只能选择「要不要加这个谓词」，不能决定它长什么样。
+   */
+  const predicate =
+    index.whereNotNull && index.columns.length === 1
+      ? ` WHERE ${quoteIdentifier(index.columns[0] ?? '')} IS NOT NULL`
+      : '';
+  return `CREATE ${kind} IF NOT EXISTS ${quoteIdentifier(index.name)} ON ${quoteIdentifier(tableName)} (${columns})${predicate}`;
 }
 
 export function dropIndexSql(indexName: string): string {

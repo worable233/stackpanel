@@ -349,7 +349,23 @@ export const storeOperations: CommerceOperations = {
         'service_already_bound',
         '上游商品匹配多个本地商品，请先消除重复映射',
       );
+    /**
+     * 没有匹配的本地商品 → 拒绝，绝不隐式建档。
+     *
+     * 之前这里 `product?.id ?? input.productId` 直接把调用方传的**上游**商品
+     * id 当成本地商品 id 落库，配合 `orderId: null`，产出了一批幽灵实例：
+     * 没有商品、没有订单、没有凭证 —— 不能续费、不能退款、不能对账，却计入
+     * ACTIVE 统计，用户点进去还被当成越权 404。
+     *
+     * 唯一正确的做法是先让管理员把商品映射建好，再来绑定。
+     */
     const product = matches[0];
+    if (!product) {
+      throw new CommerceError(
+        'product_unmapped',
+        '该上游商品尚未映射到本地商品，请先在商品管理里创建映射后再绑定',
+      );
+    }
     const identity = `bound-${createHash('sha256')
       .update(JSON.stringify([input.providerId, sourceRef, input.providerServiceId]))
       .digest('hex')}`;
@@ -357,14 +373,23 @@ export const storeOperations: CommerceOperations = {
       {
         userId: input.userId,
         orderId: null,
-        productId: product?.id ?? input.productId,
+        productId: product.id,
         productName: input.productName,
-        fulfillmentType: product?.fulfillmentType ?? input.fulfillmentType,
+        fulfillmentType: product.fulfillmentType || input.fulfillmentType,
         providerId: input.providerId,
         providerServiceId: input.providerServiceId,
         state: normalizeBoundStatus(input.status),
         credentialsRef: null,
-        runtime: input.runtime ?? null,
+        /**
+         * 打上来源标记。`origin != purchase` 的实例必须在续费/退款/发票流程里
+         * 被显式排除，并在后台标注 —— 它们的钱不是走本站订单收的，按普通订单
+         * 处理会让对账和退款彻底错位。
+         */
+        runtime: {
+          ...((input.runtime as Record<string, unknown> | null) ?? {}),
+          // 调用方可以声明更精确的来源（如 `admin-migration`），默认按上游导入记。
+          origin: (input.runtime as { origin?: string } | null)?.origin ?? 'upstream-import',
+        },
         amount: input.amount,
         currency: input.currency,
         provisionedAt: ['ACTIVE', 'SUSPENDED'].includes(normalizeBoundStatus(input.status))

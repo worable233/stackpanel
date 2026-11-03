@@ -27,6 +27,18 @@ export interface ModelIndex {
   fields: string[];
   /** Unique index. The kernel verifies existing rows before applying it. */
   unique?: boolean;
+  /**
+   * 只索引满足条件的行（PostgreSQL partial index），形如 `notNull`。
+   *
+   * 唯一索引 + 可空列是个常见陷阱：PostgreSQL 认为多个 NULL **互不相等**，
+   * 所以 `UNIQUE (provider_service_id)` 并不会阻止出问题，但它会让「把唯一性
+   * 建立在可空列上」变成没约束力。反过来，如果列大多数行都是 NULL，我们真正
+   * 想要的语义是「非空值之间唯一」——这必须写成 `WHERE col IS NOT NULL`。
+   *
+   * 故意只支持 `notNull` 这一种，不接受任意 SQL 片段：插件不能决定索引谓词
+   * 的表达式内容，否则等于让插件往 DDL 里注入。
+   */
+  where?: { kind: 'notNull' };
   /** Explicit column type for every declared field. */
   types: Record<string, ModelFieldType>;
 }

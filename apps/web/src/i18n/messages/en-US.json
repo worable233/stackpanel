@@ -1681,7 +1681,8 @@
     },
     "service": {
       "already_bound": "The service is already bound",
-      "not_found": "Service not found"
+      "not_found": "Service not found",
+      "product_unmapped": "This upstream product is not mapped to a local product yet. Create the mapping first"
     },
     "sp_v1": {
       "body_too_large": "The request body is too large"

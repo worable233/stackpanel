@@ -1681,7 +1681,8 @@
     },
     "service": {
       "already_bound": "The service is already bound",
-      "not_found": "Service not found"
+      "not_found": "Service not found",
+      "product_unmapped": "이 업스트림 상품은 아직 로컬 상품에 매핑되지 않았습니다. 먼저 매핑을 생성하세요"
     },
     "sp_v1": {
       "body_too_large": "The request body is too large"

@@ -977,6 +977,11 @@ export class UserAdminService {
       if (isCommerceError(error) && error.failure === 'service_already_bound') {
         throw new PluginError('service.already_bound', 409, error.message);
       }
+      // 上游商品没有本地映射：这是**可操作**的前置条件，不是系统故障。
+      // 直接冒泡成 500 会让管理员以为绑定功能坏了。
+      if (isCommerceError(error) && error.failure === 'product_unmapped') {
+        throw new PluginError('service.product_unmapped', 409, error.message);
+      }
       throw error;
     }
     await writeAudit({
