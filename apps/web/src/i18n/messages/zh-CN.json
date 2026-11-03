@@ -2442,6 +2442,8 @@
           "dailyBudgetMinor": "每日费用上限（最小货币单位）",
           "allowedModels": "允许使用的模型",
           "allowedModelsHelp": "每行一个模型 ID，留空允许所有可用模型。",
+          "maxTokens": "单次输出上限（token）",
+          "maxTokensHelp": "模型单次回复的最大输出长度。「思考强度」档位会映射到这个上限，管理员可在此收紧；默认 4096。",
           "approvalNotify": "额外审批通知接收人 ID",
           "approvalNotifyHelp": "可选。用户本人仍会收到通知。"
         },

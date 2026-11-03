@@ -52,6 +52,11 @@ const createRunSchema = z
     model: z.string().trim().min(1).max(191).optional(),
     autonomy: z.enum(['read', 'propose', 'act']).optional(),
     maxSteps: z.number().int().min(1).max(200).optional(),
+    /**
+     * 「思考强度」档位。界面用中文枚举（与 `AgentChatMessage.reasoning` 同口径，
+     * 那是持久化值不是文案），在这里翻译成输出上限，否则这个控件完全无效。
+     */
+    reasoning: z.enum(['快速', '均衡', '深入', '极高']).optional(),
   })
   .strict();
 
@@ -70,6 +75,8 @@ const decideSchema = z
   .strict();
 
 type RunCaps = AgentPolicy;
+/** 与 `agent/conversations.ts` 的 `reasoning` 枚举同口径。 */
+export type AgentReasoning = '快速' | '均衡' | '深入' | '极高';
 
 function validationError(): PluginError {
   return new PluginError('validation.invalid', 422, '请求参数无效');
@@ -169,13 +176,42 @@ function callerSatisfiesScope(request: FastifyRequest, scope: string | null): bo
 async function resolveCaps(
   prisma: PrismaClient,
   tokenId: string,
-  body: { autonomy?: AgentAutonomy | undefined; maxSteps?: number | undefined },
+  body: {
+    autonomy?: AgentAutonomy | undefined;
+    maxSteps?: number | undefined;
+    reasoning?: AgentReasoning | undefined;
+  },
 ): Promise<RunCaps> {
   const profile = await prisma.agentProfile.findUnique({ where: { apiTokenId: tokenId } });
   return restrictAgentPolicy(policyFromProfile(profile), {
     ...(body.autonomy !== undefined ? { autonomy: body.autonomy } : {}),
     ...(body.maxSteps !== undefined ? { maxSteps: body.maxSteps } : {}),
+    ...(body.reasoning !== undefined ? { maxTokens: reasoningMaxTokens(body.reasoning) } : {}),
   });
+}
+
+/**
+ * 「思考强度」→ 单次模型调用的输出上限。
+ *
+ * 界面用中文枚举作为**持久化值**（`AgentChatMessage.reasoning`，与
+ * `agent-conversations` 的 zod 同口径），不是展示文案。以前这个值只被存进
+ * 对话消息，从未影响运行：`stepOnce` 的 `maxTokens` 写死 4096，用户选「极高」
+ * 和「快速」得到完全一样的执行。这里把它接到唯一的执行出口上。
+ *
+ * 数值仍受策略上限约束（`restrictAgentPolicy` 取小），所以管理员可以收紧。
+ */
+export function reasoningMaxTokens(reasoning: AgentReasoning): number {
+  switch (reasoning) {
+    case '快速':
+      return 1024;
+    case '深入':
+      return 8192;
+    case '极高':
+      return 16384;
+    case '均衡':
+    default:
+      return 4096;
+  }
 }
 
 /** Assemble the loop's dependencies; the provider is resolved per request. */
@@ -267,6 +303,7 @@ async function buildDeps(
       autonomy: caps.autonomy,
       maxSteps: caps.maxSteps,
       maxRunSeconds: caps.maxRunSeconds,
+    maxTokens: caps.maxTokens,
       budgetMinor: caps.budgetMinor ?? 0,
       allowedModels: caps.allowedModels,
     };
@@ -293,6 +330,7 @@ async function buildDeps(
     allowedModels: caps.allowedModels,
     grantedScopes: mcpGrantedScopes(request),
     maxRunSeconds: caps.maxRunSeconds,
+    maxTokens: caps.maxTokens,
     checkpoint,
     validateCredential,
     notifyApproval: async (approvalId) => {
@@ -789,6 +827,18 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
         expiresAt,
       },
     });
+    // 签发一枚可执行凭证是安全相关事件，必须留痕：出事时唯一能回答「谁在什么
+    // 时候拿到了一枚能在 /api/v1 上代他行事的凭证」的就是这条记录。用户手动建
+    // 令牌走的是同一条审计（`api-tokens.ts` 的 `api_token.create`），会话代签
+    // 的路径以前没有 —— 两条路签出的是同一种凭证，审计不该分叉。
+    // 只记 tokenId 与有效期，不记明文（明文只在这一次响应里出现）。
+    await writeAudit({
+      action: 'agent.run_token.mint',
+      resource: 'api-token',
+      resourceId: row.id,
+      meta: { agent: { audience: RUN_TOKEN_AUDIENCE, expiresAt: expiresAt.toISOString() } },
+      ...auditContext(request),
+    });
     return { token: generated.plaintext, tokenId: row.id, expiresAt: expiresAt.toISOString() };
   });
 
@@ -951,6 +1001,17 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
       action: body.data.approve ? 'agent.approval.approve' : 'agent.approval.deny',
       resource: 'agent.approval',
       resourceId: approval.id,
+      // 只记「谁批准了哪条审批」是不够的：审批记录本身会过期、会被保留策略清掉，
+      // 而审计要能独立回答「当时批准的具体是什么动作、带什么参数」。批准一个
+      // 破坏性操作是整个 Agent 链路上风险最高的决定，参数快照是事后定责的唯一依据。
+      meta: {
+        agent: {
+          runId: approval.runId,
+          capabilityId: approval.capabilityId,
+          ...(approval.args !== null ? { args: approval.args } : {}),
+          ...(body.data.reason !== undefined ? { reason: body.data.reason } : {}),
+        },
+      },
       ...auditContext(request),
     });
     await notifyAgent(app.notifications, approval.run.actorId, approval.runId, {

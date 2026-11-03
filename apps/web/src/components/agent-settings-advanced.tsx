@@ -61,6 +61,7 @@ function definitions(t: Translator): Definition[] {
         budgetMinor: null,
         dailyBudgetMinor: null,
         allowedModels: [],
+        maxTokens: 4096,
         approvalNotify: null,
       },
       fields: [
@@ -108,6 +109,14 @@ function definitions(t: Translator): Definition[] {
           label: d('profiles', 'allowedModels'),
           type: 'lines',
           help: d('profiles', 'allowedModelsHelp'),
+        },
+        {
+          key: 'maxTokens',
+          label: d('profiles', 'maxTokens'),
+          type: 'number',
+          min: 256,
+          max: 32768,
+          help: d('profiles', 'maxTokensHelp'),
         },
         {
           key: 'approvalNotify',

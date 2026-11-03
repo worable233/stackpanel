@@ -2442,6 +2442,8 @@
           "dailyBudgetMinor": "Daily cost limit (minor units)",
           "allowedModels": "Allowed models",
           "allowedModelsHelp": "One model ID per line; leave blank to allow all available models.",
+          "maxTokens": "Output cap per call (tokens)",
+          "maxTokensHelp": "Maximum output length of a single model reply. The 「thinking effort」 setting maps onto this cap, and an administrator can tighten it here. Defaults to 4096.",
           "approvalNotify": "Extra approval notification recipient ID",
           "approvalNotifyHelp": "Optional. The user still receives their own notification."
         },

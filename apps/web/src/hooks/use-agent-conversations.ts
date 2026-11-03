@@ -168,14 +168,19 @@ export function useAgentConversations(open: boolean, search: string) {
       // 消息落库之后**真的发起一次运行**（B-1）。失败不回滚消息：用户写下的
       // 内容必须保住，用它已保存的事实让用户决定是重试还是改目标。
       setRunError('');
-      void startRun(content);
+      void startRun(content, reasoning);
       return true;
     } catch (cause) { setError(t('agent.chat.saveFailedRetained', { reason: errorText(cause, t('common.operationFailed')) })); return false; }
     finally { locked.current = false; setSaving(false); }
   }
 
-  /** 发起一次运行并轮询到终态；只在抽屉里展示，不阻塞输入。 */
-  async function startRun(objective: string) {
+  /**
+   * 发起一次运行并轮询到终态；只在抽屉里展示，不阻塞输入。
+   *
+   * `reasoning` 必须一起带上：它是「思考强度」控件的值，以前只被存进对话消息，
+   * 从未传给运行——于是选「快速」和「极高」执行结果完全一样，控件形同装饰。
+   */
+  async function startRun(objective: string, reasoning: string) {
     const generation = ++runGeneration.current;
     setRun(null);
     setRunError('');
@@ -188,7 +193,7 @@ export function useAgentConversations(open: boolean, search: string) {
           'idempotency-key': `chat:${objective.length}:${objective.slice(0, 64)}`,
         },
         cache: 'no-store',
-        body: JSON.stringify({ objective, execution: 'background' }),
+        body: JSON.stringify({ objective, execution: 'background', reasoning }),
       });
       const data = response.status === 204 ? null : await response.json();
       if (!response.ok) throw agentErrorFromBody(data);

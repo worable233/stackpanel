@@ -13,6 +13,17 @@ export const agentPolicySchema = z
     dailyBudgetMinor: z.number().int().positive().max(2147483647).nullable().default(null),
     dailySteps: z.number().int().min(1).max(10000).default(500),
     allowedModels: z.array(z.string().trim().min(1).max(191)).max(100).default([]),
+    /**
+     * 单次模型调用的输出上限（token）。
+     *
+     * 界面上的「思考强度」（快速 / 均衡 / 深入 / 极高）一直只被**存进对话消息**，
+     * 从来没有影响过运行：`stepOnce` 里 `maxTokens` 是写死的 4096。用户以为选了
+     * 「极高」就得到更长的推理，实际什么都没变——一个彻底无效的控件。
+     *
+     * 这是它落到执行侧的唯一出口。上限仍然受策略约束：管理员可以在配置里把它
+     * 收紧，运行请求只能在策略允许范围内选择（`restrictAgentPolicy` 取小）。
+     */
+    maxTokens: z.number().int().min(256).max(32768).default(4096),
     approvalNotify: z.string().min(1).max(191).nullable().default(null),
   })
   .strict();
@@ -66,6 +77,7 @@ export function restrictAgentPolicy(
     dailyBudgetMinor: minimum(ceiling.dailyBudgetMinor, request.dailyBudgetMinor ?? null),
     dailySteps: Math.min(ceiling.dailySteps, request.dailySteps ?? ceiling.dailySteps),
     allowedModels,
+    maxTokens: Math.min(ceiling.maxTokens, request.maxTokens ?? ceiling.maxTokens),
   };
 }
 

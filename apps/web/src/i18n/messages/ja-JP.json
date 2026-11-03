@@ -2442,6 +2442,8 @@
           "dailyBudgetMinor": "Daily cost limit (minor units)",
           "allowedModels": "Allowed models",
           "allowedModelsHelp": "One model ID per line; leave blank to allow all available models.",
+          "maxTokens": "1 回あたりの出力上限（トークン）",
+          "maxTokensHelp": "モデルの 1 回の返答の最大出力長です。「思考の強さ」の各段階はこの上限に対応し、管理者はここで引き下げられます。既定値は 4096。",
           "approvalNotify": "Extra approval notification recipient ID",
           "approvalNotifyHelp": "Optional. The user still receives their own notification."
         },

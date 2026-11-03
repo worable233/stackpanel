@@ -2442,6 +2442,8 @@
           "dailyBudgetMinor": "Daily cost limit (minor units)",
           "allowedModels": "Allowed models",
           "allowedModelsHelp": "One model ID per line; leave blank to allow all available models.",
+          "maxTokens": "호출당 출력 상한(토큰)",
+          "maxTokensHelp": "모델 응답 한 번의 최대 출력 길이입니다. 「사고 강도」 단계가 이 상한에 대응하며, 관리자가 여기에서 더 낮출 수 있습니다. 기본값은 4096입니다.",
           "approvalNotify": "Extra approval notification recipient ID",
           "approvalNotifyHelp": "Optional. The user still receives their own notification."
         },

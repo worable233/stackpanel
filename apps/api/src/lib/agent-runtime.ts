@@ -99,6 +99,11 @@ export interface AgentRuntimeDeps {
   grantedScopes?: ReadonlySet<string> | null;
   /** Wall-clock cap in seconds; `null`/absent = uncapped. */
   maxRunSeconds?: number | null;
+  /**
+   * 单次模型调用的输出上限。缺省 4096 —— 与「思考强度」控件的默认档一致，
+   * 因此没配策略的老运行行为不变。
+   */
+  maxTokens?: number;
   signal?: AbortSignal;
   /** Revalidate the original credential and administrative policy before each effect. */
   checkpoint?: (
@@ -749,7 +754,7 @@ async function stepOnce(ctx: RunContext, run: AgentRun): Promise<void> {
           model: ctx.model,
           system: AGENT_SYSTEM_PROMPT,
           messages: boundedMessages(ctx),
-          maxTokens: 4096,
+          maxTokens: ctx.deps.maxTokens ?? 4096,
           ...(tools.length > 0 ? { tools, toolChoice: 'auto' as const } : {}),
         },
         {

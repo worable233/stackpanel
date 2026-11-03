@@ -506,6 +506,9 @@ model AgentProfile {
   maxRunSeconds    Int           @default(600)
   /// 允许调用的模型白名单 string[]（映射 llm-gateway 对外模型名）。空 = 不限。
   allowedModels    Json          @default("[]")
+  /// 单次模型调用的输出上限（token）。界面「思考强度」落到执行侧的唯一出口：
+  /// 以前 `stepOnce` 把它写死 4096，控件的值只进对话记录、从未影响运行。
+  maxTokens        Int           @default(4096)
   /// 待审批推给谁（复用 NotificationsService）。null = 不推。
   approvalNotify   String?
   createdAt        DateTime      @default(now())

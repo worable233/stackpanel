@@ -2442,6 +2442,8 @@
           "dailyBudgetMinor": "Daily cost limit (minor units)",
           "allowedModels": "Allowed models",
           "allowedModelsHelp": "One model ID per line; leave blank to allow all available models.",
+          "maxTokens": "Plafond de sortie par appel (jetons)",
+          "maxTokensHelp": "Longueur maximale d'une réponse du modèle. Les niveaux d'« intensité de réflexion » correspondent à ce plafond, qu'un administrateur peut resserrer ici. Valeur par défaut : 4096.",
           "approvalNotify": "Extra approval notification recipient ID",
           "approvalNotifyHelp": "Optional. The user still receives their own notification."
         },

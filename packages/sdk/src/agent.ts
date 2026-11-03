@@ -156,6 +156,12 @@ export interface AgentProfileView {
   maxRunSeconds: number;
   /** Model allowlist, in provider-facing names. Empty = no restriction. */
   allowedModels: string[];
+  /**
+   * Output cap (tokens) for one model call — the execution-side meaning of the
+   * UI's 「思考强度」 control. Defaults to 4096, the value the loop used to
+   * hard-code, so an unconfigured profile behaves exactly as before.
+   */
+  maxTokens: number;
   /** Who to notify when an approval is pending; `null` uses the owner. */
   approvalNotify: string | null;
   createdAt: string;
