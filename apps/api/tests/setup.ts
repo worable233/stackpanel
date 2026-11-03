@@ -153,33 +153,36 @@ if (!(globalThis as { __spTestMigrated?: boolean }).__spTestMigrated) {
       }
     }
 
+    if (needsRebuild) {
+      // Terminate lingering connections so DROP DATABASE does not hang.
+      await admin.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+           WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [dbName],
+      );
+      await admin.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+      await admin.query(`CREATE DATABASE "${dbName}"`);
+      markerExists = false;
+    }
+
+    // **Migrations run on every pass, marker or not.**
+    //
+    // The marker exists to skip the *destructive* DROP+CREATE, and it is correct
+    // for that. But it was also skipping `migrate deploy`, which meant a newly
+    // added migration file was never applied to the test database: the marker
+    // table survived from an earlier run, so every subsequent run reported
+    // "already ready" and the schema silently stayed one revision behind. The
+    // symptom is a `PrismaClientValidationError: Unknown argument …` on a column
+    // that plainly exists in `schema.prisma` — and a *single-file* run passes,
+    // because it hits the same stale marker. `migrate deploy` is idempotent and
+    // reads `_prisma_migrations`; when nothing is pending it costs one round-trip.
+    execSync('pnpm --filter @stackpanel/db migrate:deploy', {
+      cwd: rootDir,
+      stdio: 'ignore',
+      env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+    });
+
     if (!markerExists) {
-      if (!needsRebuild) {
-        // 库存在但没有 marker：可能是旧版本跑过、也可能是上一轮 DROP 后中断。
-        // 迁移是幂等的（`migrate deploy` 只看 `_prisma_migrations`），补跑即可，
-        // 不需要 DROP。
-        execSync('pnpm --filter @stackpanel/db migrate:deploy', {
-          cwd: rootDir,
-          stdio: 'ignore',
-          env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
-        });
-      } else {
-        // Terminate lingering connections so DROP DATABASE does not hang.
-        await admin.query(
-          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-             WHERE datname = $1 AND pid <> pg_backend_pid()`,
-          [dbName],
-        );
-        await admin.query(`DROP DATABASE IF EXISTS "${dbName}"`);
-        await admin.query(`CREATE DATABASE "${dbName}"`);
-
-        execSync('pnpm --filter @stackpanel/db migrate:deploy', {
-          cwd: rootDir,
-          stdio: 'ignore',
-          env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
-        });
-      }
-
       const marker = new Client({ connectionString: TEST_DATABASE_URL });
       await marker.connect();
       try {

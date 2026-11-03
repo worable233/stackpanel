@@ -858,6 +858,10 @@ model AgentConversation {
   messages AgentChatMessage[]
 
   @@index([userId, createdAt, id])
+  /// 保留策略清理按 `(userId, updatedAt)` 分区排序（`retention.ts` 的 ranked CTE：
+  /// `row_number() OVER (PARTITION BY "userId" ORDER BY "updatedAt" DESC, "id" DESC)`）。
+  /// 没有这个索引时每次清理都要对全表做窗口排序，而清理每小时跑一次。
+  @@index([userId, updatedAt, id])
   @@map("agent_conversations")
 }
 
