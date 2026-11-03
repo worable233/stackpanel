@@ -301,7 +301,7 @@
   "content.footer.column4Links.1.href": "/login",
   "content.footer.column4Links.2.label": "註冊賬戶",
   "content.footer.column4Links.2.href": "/register",
-  "content.footer.copyright": "© 2026 StackPanel",
+  "content.footer.copyright": "© {year} {platform}",
   "content.footer.description": "AI 驅動的雲平臺，提供雲伺服器、儲存、資料庫與模型服務，助力業務創新。",
   "content.footer.links.0.label": "選購雲產品",
   "content.footer.links.0.href": "/shop",

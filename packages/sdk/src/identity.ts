@@ -32,6 +32,8 @@ export interface IdentityChallengeMessage {
   expiresAt: Date;
   /** Optional BCP-47 tag so the sender can pick a template language. */
   locale?: string;
+  /** Current platform display name, so mail copy follows renames. */
+  brand?: string;
 }
 
 /**

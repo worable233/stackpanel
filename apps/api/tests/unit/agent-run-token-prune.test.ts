@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { pruneRunTokens } from '../../src/agent/background.ts';
 import { RUN_TOKEN_AUDIENCE } from '../../src/agent/run-token.ts';
 

@@ -123,6 +123,8 @@ export interface NotificationDispatch {
   status: NotificationStatus;
   progress: number | null;
   createdAt: string;
+  /** Current platform display name, so mail copy follows renames. */
+  brand?: string;
 }
 
 /**

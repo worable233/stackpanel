@@ -707,7 +707,11 @@ function Footer({
               {showBrandIcon ? (
                 brandLogoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={brandLogoUrl} alt="" className="size-10 rounded-[var(--platform-logo-radius)] object-contain" />
+                  <img
+                    src={brandLogoUrl}
+                    alt=""
+                    className="size-10 rounded-[var(--platform-logo-radius)] object-contain"
+                  />
                 ) : (
                   <Layers3 className="size-10 text-primary" />
                 )
@@ -767,7 +771,16 @@ function Footer({
           ) : null}
         </div>
         <Reveal className="mt-16 text-center text-sm text-muted-foreground">
-          {setting(settings, 'footer', 'copyright', `© ${new Date().getFullYear()} ${brandName}`)}
+          {(() => {
+            const year = String(new Date().getFullYear());
+            return (setting(settings, 'footer', 'copyright', `© ${year} ${brandName}`) ?? '')
+              .split('{year}')
+              .join(year)
+              .split('{platform}')
+              .join(brandName)
+              .split('StackPanel')
+              .join(brandName);
+          })()}
         </Reveal>
       </div>
     </footer>
@@ -867,7 +880,11 @@ function DefaultLayout({
             {showBrandIcon ? (
               brand?.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={brand.logoUrl} alt="" className="size-7 rounded-[var(--platform-logo-radius)] object-contain" />
+                <img
+                  src={brand.logoUrl}
+                  alt=""
+                  className="size-7 rounded-[var(--platform-logo-radius)] object-contain"
+                />
               ) : (
                 <Layers3 className="size-7 text-primary" />
               )

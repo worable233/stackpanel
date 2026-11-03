@@ -27,6 +27,8 @@ export interface FrontendPageProps<P extends Record<string, unknown> = Record<st
    * negotiation and passes whatever tag it resolved.
    */
   locale?: string;
+  /** Platform identity so page copy can follow a platform rename. */
+  platform?: PlatformInfo;
 }
 
 /** A page component may be stored with the page union and narrowed at render. */

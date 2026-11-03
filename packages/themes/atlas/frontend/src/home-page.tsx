@@ -41,7 +41,7 @@ import {
 import type { ReactElement } from 'react';
 import { t } from './i18n.js';
 import { MOTION_CSS } from './motion-styles.js';
-import { listSetting, numberSetting, safeHref, setting } from './settings.js';
+import { brandText, listSetting, numberSetting, safeHref, setting } from './settings.js';
 
 const INTL_FALLBACK_LOCALE = 'en';
 
@@ -431,9 +431,11 @@ function SolutionsSection({
 function CasesSection({
   locale,
   settings,
+  platformName,
 }: {
   locale: string | undefined;
   settings: FrontendPageProps['settings'];
+  platformName: string;
 }): ReactElement {
   const tr = t(locale);
   const configured = listSetting(settings, 'cases', 'items');
@@ -466,7 +468,10 @@ function CasesSection({
             {setting(settings, 'cases', 'title', tr('home.cases.title'))}
           </h2>
           <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
-            {setting(settings, 'cases', 'text', tr('home.cases.text'))}
+            {brandText(
+              setting(settings, 'cases', 'text', tr('home.cases.text', { platform: platformName })),
+              platformName,
+            )}
           </p>
         </Fade>
 
@@ -739,6 +744,7 @@ function LogoWall({
 
 export function AtlasHomePage(props: FrontendPageProps): ReactElement {
   const tr = t(props.locale);
+  const platformName = props.platform?.name || tr('brand.name');
   const primaryHref = safeHref(setting(props.settings, 'hero', 'primaryHref', '/shop'), '/shop');
   const secondaryHref = safeHref(
     setting(props.settings, 'hero', 'secondaryHref', '/guide'),
@@ -787,7 +793,17 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
               </span>
               <span className="truncate">
                 <ShimmeringText
-                  text={setting(props.settings, 'notice', 'text', tr('home.notice.text')) ?? ''}
+                  text={
+                    brandText(
+                      setting(
+                        props.settings,
+                        'notice',
+                        'text',
+                        tr('home.notice.text', { platform: platformName }),
+                      ),
+                      platformName,
+                    ) ?? ''
+                  }
                   className="font-medium text-foreground"
                 />
               </span>
@@ -921,7 +937,7 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
       ) : null}
 
       <SolutionsSection locale={props.locale} settings={props.settings} />
-      <CasesSection locale={props.locale} settings={props.settings} />
+      <CasesSection locale={props.locale} settings={props.settings} platformName={platformName} />
       <InfrastructureSection locale={props.locale} settings={props.settings} />
       <FaqSection locale={props.locale} settings={props.settings} />
 

@@ -2303,7 +2303,7 @@
       "loadFailed": "無法載入對話，請重試",
       "saveFailedRetained": "{reason}。輸入內容已保留，可重試儲存。",
       "runStartFailed": "無法啟動 Agent 執行",
-      "runPollFailed": "任務狀態更新中斷：連續多次拉取失敗。任務可能仍在背景執行，請稍後重新整理頁面查看結果。",
+      "runPollFailed": "任務狀態更新中斷：連續多次拉取失敗。任務可能仍在後臺執行，請稍後重新整理頁面檢視結果。",
       "runStartFailedWithReason": "「{reason}」——訊息已儲存，Agent 沒有開始執行。",
       "runModel": "模型 {model}",
       "runModelUnset": "模型未配置",
@@ -2444,7 +2444,7 @@
           "allowedModels": "允許使用的模型",
           "allowedModelsHelp": "每行一個模型 ID，留空允許所有可用模型。",
           "maxTokens": "單次輸出上限（token）",
-          "maxTokensHelp": "模型單次回覆的最大輸出長度。「思考強度」檔位會映射到這個上限，管理員可在此收緊；預設 4096。",
+          "maxTokensHelp": "模型單次回覆的最大輸出長度。「思考強度」檔位會對映到這個上限，管理員可在此收緊；默認 4096。",
           "approvalNotify": "額外審批通知接收人 ID",
           "approvalNotifyHelp": "可選。用戶本人仍會收到通知。"
         },

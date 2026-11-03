@@ -8,6 +8,7 @@ import type {
   NotificationPolicyService,
   NotificationView,
 } from '@stackpanel/sdk';
+import { getPlatformBrandName } from '../lib/platform-info.ts';
 
 /**
  * 外部通知渠道分发底座（审计 §5）。
@@ -104,6 +105,7 @@ export class NotificationDispatcher {
     const projection: NotificationDispatch = {
       notificationId: notification.id,
       userId,
+      brand: await getPlatformBrandName(),
       type: notification.type,
       title: notification.title,
       body: notification.body,

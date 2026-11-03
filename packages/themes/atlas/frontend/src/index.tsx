@@ -304,7 +304,11 @@ function AtlasLayout({
           <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label={platformName}>
             {showBrandIcon ? (
               logoUrl ? (
-                <img src={logoUrl} alt="" className="size-8 rounded-[var(--platform-logo-radius)]" />
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="size-8 rounded-[var(--platform-logo-radius)]"
+                />
               ) : (
                 <BrandMark />
               )
@@ -376,7 +380,11 @@ function AtlasLayout({
               <a href="/" className="flex items-center gap-2.5" aria-label={platformName}>
                 {showBrandIcon ? (
                   logoUrl ? (
-                    <img src={logoUrl} alt="" className="size-8 rounded-[var(--platform-logo-radius)]" />
+                    <img
+                      src={logoUrl}
+                      alt=""
+                      className="size-8 rounded-[var(--platform-logo-radius)]"
+                    />
                   ) : (
                     <BrandMark />
                   )
@@ -420,7 +428,12 @@ function AtlasLayout({
           </div>
 
           <div className="mt-12 flex flex-col gap-3 pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <p>{tr('layout.footerRights', { year: String(new Date().getFullYear()) })}</p>
+            <p>
+              {tr('layout.footerRights', {
+                year: String(new Date().getFullYear()),
+                platform: platformName,
+              })}
+            </p>
             <div className="flex flex-wrap items-center gap-4">
               <details className="group/lang relative">
                 <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 marker:hidden hover:text-foreground [&::-webkit-details-marker]:hidden">
@@ -570,6 +583,7 @@ function ProductCard({
 
 function AboutPage(props: FrontendPageProps): ReactElement {
   const tr = t(props.locale);
+  const platformName = props.platform?.name || tr('brand.name');
   return (
     <main className="flex-1">
       <section className="bg-background">
@@ -577,7 +591,7 @@ function AboutPage(props: FrontendPageProps): ReactElement {
           <PageIntro
             kicker={tr('about.kicker')}
             title={tr('about.title')}
-            lead={tr('about.lead')}
+            lead={tr('about.lead', { platform: platformName })}
           />
         </div>
       </section>
@@ -591,7 +605,7 @@ function AboutPage(props: FrontendPageProps): ReactElement {
             <div className="mt-8 flex items-center gap-3  pt-6 text-sm text-muted-foreground">
               <BrandMark />
               <div>
-                <p className="font-medium text-foreground">{tr('brand.name')}</p>
+                <p className="font-medium text-foreground">{platformName}</p>
                 <p className="text-xs">Infrastructure, written down.</p>
               </div>
             </div>

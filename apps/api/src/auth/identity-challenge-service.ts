@@ -12,6 +12,7 @@ import {
   type StateService,
 } from '@stackpanel/sdk';
 import { getConfig } from '../config/runtime-config.ts';
+import { getPlatformBrandName } from '../lib/platform-info.ts';
 
 /**
  * Kernel-owned identity-challenge service (audit §5).
@@ -185,6 +186,7 @@ export class KernelIdentityChallengeService implements IdentityChallengeService 
       email,
       code,
       expiresAt,
+      brand: await getPlatformBrandName(),
       ...(input.locale ? { locale: input.locale } : {}),
     };
 

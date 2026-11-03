@@ -87,6 +87,7 @@ async function renderResolution(
   settingsOverride?: FrontendSettings,
 ): Promise<ReactElement> {
   const locale = await getLocale();
+  const platform = await requestPlatformInfo();
   // The page component is resolved **on the server** by the runtime package
   // loader, so it can only be rendered here.
   //
@@ -105,6 +106,7 @@ async function renderResolution(
     // Same-origin BFF, never the server-only `API_BASE_URL` (see renderPublicLayout).
     assetsBaseUrl: resolved.assetsBaseUrl ?? KERNEL_BFF_PREFIX,
     locale,
+    platform,
   } as never) as unknown as ReactElement;
   const page = content;
   // Contract 05 §3.3: wrap the package's render root in a stable scope marker so

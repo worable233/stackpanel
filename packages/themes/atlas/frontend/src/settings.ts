@@ -87,6 +87,7 @@ export const settingsSchema = {
           type: 'text',
           name: 'text',
           labelKey: 'settings.notice.text.label',
+          helpKey: 'settings.notice.text.help',
           default: zhCN['home.notice.text'],
         },
         {
@@ -202,6 +203,7 @@ export const settingsSchema = {
           type: 'textarea',
           name: 'text',
           labelKey: 'settings.cases.text.label',
+          helpKey: 'settings.cases.text.help',
           default: zhCN['home.cases.text'],
         },
         {
@@ -468,6 +470,16 @@ export function listSetting(
       ? [item as Record<string, unknown>]
       : [],
   );
+}
+
+/**
+ * Fill brand copy that was saved before the platform name became dynamic.
+ * Existing theme settings seeded the literal `Atlas`; new copy uses
+ * `{platform}` and is interpolated here so a rename takes effect immediately.
+ */
+export function brandText(value: string | undefined, platformName: string): string | undefined {
+  if (value === undefined) return undefined;
+  return value.split('{platform}').join(platformName).split('Atlas').join(platformName);
 }
 
 export function setting(

@@ -301,7 +301,7 @@
   "content.footer.column4Links.1.href": "/login",
   "content.footer.column4Links.2.label": "Create an account",
   "content.footer.column4Links.2.href": "/register",
-  "content.footer.copyright": "© 2026 StackPanel",
+  "content.footer.copyright": "© {year} {platform}",
   "content.footer.description": "An AI-driven cloud platform offering cloud servers, storage, databases and model services to help the business innovate.",
   "content.footer.links.0.label": "Shop cloud products",
   "content.footer.links.0.href": "/shop",

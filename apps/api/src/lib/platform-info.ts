@@ -25,6 +25,15 @@ export async function getPlatformInfo(): Promise<PlatformInfo> {
   return cached;
 }
 
+/** Brand name for outbound mail; never fails a delivery on a settings lookup. */
+export async function getPlatformBrandName(): Promise<string> {
+  try {
+    return (await getPlatformInfo()).name;
+  } catch {
+    return DEFAULT_PLATFORM_INFO.name;
+  }
+}
+
 /** 丢弃进程内缓存（写入后调用；测试也用它隔离用例）。 */
 export function invalidatePlatformInfo(): void {
   cached = null;
