@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { cacheKey, invalidate, remember, resetCache } from '@/lib/server-cache';
+import { cacheKey, cacheSize, invalidate, remember, resetCache } from '@/lib/server-cache';
 
 /**
  * 「每次页面渲染重复询问同一个答案」的缓存。
@@ -138,5 +138,48 @@ describe('invalidate', () => {
     invalidate('plugin-frontends');
     await remember('plugin-frontends-extra', async () => (calls += 1));
     expect(calls).toBe(1);
+  });
+});
+
+describe('bounded growth', () => {
+  it('never lets the store grow past its cap', async () => {
+    // 无界 Map 的隐患：缓存键一旦掺进用户输入（语言、主题 id、租户……），
+    // 条目数会随流量单调增长，且没有任何告警 —— 只在 OOM 时才暴露。
+    // 这里塞远超上限的键，断言 size 被压住。
+    for (let i = 0; i < 1200; i += 1) {
+      await remember(`flood:${i}`, async () => i, { ttlMs: 60_000 });
+    }
+    expect(cacheSize()).toBeLessThanOrEqual(500);
+  });
+
+  it('drops expired entries before evicting live ones', async () => {
+    // 过期条目应该先被清掉，而不是把还有效的键挤出去。
+    await remember('live', async () => 'keep-me', { ttlMs: 60_000 });
+    // 塞一批立刻过期的键，把它们挤到 Map 里。
+    for (let i = 0; i < 600; i += 1) {
+      await remember(`gone:${i}`, async () => i, { ttlMs: 0 });
+    }
+    // 有效键仍应命中（没有重新执行 loader）。
+    let reloaded = 0;
+    const value = await remember('live', async () => {
+      reloaded += 1;
+      return 'reloaded';
+    }, { ttlMs: 60_000 });
+    expect(value).toBe('keep-me');
+    expect(reloaded).toBe(0);
+  });
+
+  it('keeps the most recent key when evicting', async () => {
+    // 淘汰必须按插入顺序（最旧先走），否则刚写进去的值会立刻被自己挤掉。
+    for (let i = 0; i < 600; i += 1) {
+      await remember(`seq:${i}`, async () => i, { ttlMs: 60_000 });
+    }
+    let reloaded = 0;
+    const value = await remember('seq:599', async () => {
+      reloaded += 1;
+      return -1;
+    }, { ttlMs: 60_000 });
+    expect(value).toBe(599);
+    expect(reloaded).toBe(0);
   });
 });

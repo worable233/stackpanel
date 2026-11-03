@@ -26,6 +26,7 @@ import { PASSWORD_MAX_LENGTH, PluginError } from '@stackpanel/sdk';
 import { capabilitiesFor } from '../lib/capability-registry.ts';
 import { currentUser, requireAuth, requirePermission, requireOpenScope } from '../plugins/auth.ts';
 import { getPlatformInfo, setPlatformInfo } from '../lib/platform-info.ts';
+import { publishRuntimeChange } from '../runtime/coherence.ts';
 import { runIdempotent } from '../lib/idempotency.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { enforceTokenQuota } from '../lib/open-api-guard.ts';
@@ -133,6 +134,8 @@ export async function openApiV1Routes(app: FastifyInstance): Promise<void> {
       }
       return runIdempotent(request, reply, async () => {
         const platform = await setPlatformInfo(body.data, request.user?.id ?? null);
+        // 与 admin 路由同理：让其它副本丢掉自己的进程内平台信息缓存。
+        await publishRuntimeChange({ kind: 'config', id: '*', action: 'reload' });
         await writeAudit({
           action: 'platform.info.update',
           resource: 'platform',

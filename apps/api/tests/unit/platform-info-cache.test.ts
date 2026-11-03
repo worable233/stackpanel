@@ -128,3 +128,65 @@ describe('platform info caching', () => {
     expect((await getPlatformInfo()).name).toBe('Good');
   });
 });
+
+describe('cross-replica invalidation', () => {
+  /**
+   * 缓存是**进程内**的，而集群默认 2 副本（`docker-compose.cluster.yml`）。
+   *
+   * 真实故障形态：管理员在 A 副本改了平台名 → A 的 `cached` 被替换 → B 的
+   * `cached` 仍是旧值，且**没有 TTL**，于是 B 会一直渲染旧名字直到进程重启。
+   * 用户刷新页面时命中哪个副本决定了看到新名还是旧名。
+   *
+   * 修法是让配置变更走 `coherence` 的 Redis 广播（`kind: 'config'`），
+   * 收到广播的副本调用 `invalidatePlatformInfo()`。这里模拟「另一副本改了库，
+   * 本副本收到广播」的顺序。
+   */
+  it('re-reads the row after a broadcast invalidation', async () => {
+    settings.set(PLATFORM_INFO_SETTING_KEY, {
+      name: 'Before',
+      description: 'desc',
+      url: null,
+      brandDisplay: 'both',
+    });
+
+    const first = await getPlatformInfo();
+    expect(first.name).toBe('Before');
+    expect(findUnique).toHaveBeenCalledTimes(1);
+
+    // 另一副本写了新值（本副本的 cached 不知情）。
+    settings.set(PLATFORM_INFO_SETTING_KEY, {
+      name: 'After',
+      description: 'desc',
+      url: null,
+      brandDisplay: 'both',
+    });
+
+    // 没有广播时，本副本仍读缓存 —— 这正是修复前的行为。
+    const stale = await getPlatformInfo();
+    expect(stale.name).toBe('Before');
+    expect(findUnique).toHaveBeenCalledTimes(1);
+
+    // 广播到达 → 丢弃缓存 → 下一次读取拿到新值。
+    invalidatePlatformInfo();
+    const fresh = await getPlatformInfo();
+    expect(fresh.name).toBe('After');
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the cache warm across unrelated reads after invalidation', async () => {
+    // 失效只该丢一次，不该退化成「每次读都查库」。
+    settings.set(PLATFORM_INFO_SETTING_KEY, {
+      name: 'Warm',
+      description: 'desc',
+      url: null,
+      brandDisplay: 'both',
+    });
+
+    await getPlatformInfo();
+    invalidatePlatformInfo();
+    await getPlatformInfo();
+    await getPlatformInfo();
+
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+});

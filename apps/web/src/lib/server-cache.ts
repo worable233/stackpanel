@@ -22,7 +22,39 @@ interface Entry<T> {
   expiresAt: number;
 }
 
+/**
+ * 条目上限。超过就淘汰最旧的（Map 保持插入顺序，`keys().next()` 即最老）。
+ *
+ * 当前唯一的调用方用的是常量键（`PLUGIN_FRONTENDS_CACHE`），所以这个上限
+ * 平时根本不会触发。但它是一道**结构性**防线：缓存键一旦掺进用户输入
+ * （语言、主题 id、租户……），无界 Map 就是一个随流量缓慢增长的泄漏，
+ * 而且没有任何告警 —— 只在 OOM 时才暴露。
+ */
+const MAX_ENTRIES = 500;
+
 const store = new Map<string, Entry<unknown>>();
+
+/** 清掉已经过期的条目；只在插入时调用，摊销成本可以忽略。 */
+function sweepExpired(now: number): void {
+  for (const [key, entry] of store) {
+    if (now >= entry.expiresAt) store.delete(key);
+  }
+}
+
+/** 插入新条目：先清过期，再按 LRU 顺序淘汰到上限以内。 */
+function storeEntry(key: string, entry: Entry<unknown>, now: number): void {
+  // 先删再插，让这个键移到 Map 末尾（插入顺序即最近使用顺序）。
+  store.delete(key);
+  store.set(key, entry);
+  if (store.size <= MAX_ENTRIES) return;
+  sweepExpired(now);
+  // 清完过期还超限，说明确实是活跃键太多：丢掉最旧的。
+  while (store.size > MAX_ENTRIES) {
+    const oldest = store.keys().next();
+    if (oldest.done) break;
+    store.delete(oldest.value);
+  }
+}
 
 /** 生成稳定的缓存键：对象按 key 排序序列化，避免字面量顺序影响命中。 */
 export function cacheKey(scope: string, parts: unknown = null): string {
@@ -76,7 +108,7 @@ export async function remember<T>(
 
   const pending = load();
   const entry: Entry<T> = { value: pending, expiresAt: now + ttlMs };
-  store.set(key, entry);
+  storeEntry(key, entry, now);
   if (options.cacheFailures !== true) {
     pending.catch(() => {
       // 只删自己：期间可能已经被更新的值替换。

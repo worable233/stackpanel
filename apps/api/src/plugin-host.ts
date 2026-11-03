@@ -56,6 +56,8 @@ import { AttachmentReferenceService } from './media/references.ts';
 import { getStorage, setStorageRuntime, refreshStorageDriver } from './infra.ts';
 import { NotificationDispatcher } from './notifications/dispatcher.ts';
 import { loadRuntimeConfig } from './config/runtime-config.ts';
+import { invalidatePlatformInfo } from './lib/platform-info.ts';
+import { loadCatalogSourceConfig } from './distribution/source-config.ts';
 
 export interface PluginHostLogger {
   info: (message: string) => void;
@@ -249,7 +251,20 @@ export function createPluginHost(options: PluginHostOptions): PluginHost {
     onThemeReload: () => options.onThemeReload?.(),
     // ADR-0026: another replica changed a DB-backed config value; re-read the
     // snapshot so the next request on this replica uses it without a restart.
-    onConfigReload: () => loadRuntimeConfig(),
+    //
+    // 进程内缓存也要一起丢。这两份缓存是**无 TTL** 的纯进程内状态：
+    //
+    // - `platform-info`：`cached` 只在**本副本**写入时被替换，另一副本改了
+    //   平台名后，这边会一直显示旧名字直到进程重启（集群默认 2 副本）。
+    // - `source-config`：同样只在启动时预热一次。
+    //
+    // 只调 `loadRuntimeConfig()` 不够：它重读的是 runtime-config 快照，
+    // 管不到这两个模块各自的模块级变量。
+    onConfigReload: async () => {
+      await loadRuntimeConfig();
+      invalidatePlatformInfo();
+      await loadCatalogSourceConfig().catch(() => undefined);
+    },
     // The isolation frame carries a snapshot of the *synchronous* kernel service
     // values; a config change can invalidate it, so ask every live worker for a
     // refresh instead of waiting for the next activation.

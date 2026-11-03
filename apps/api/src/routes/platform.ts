@@ -11,6 +11,7 @@ import {
   writeBrandFile,
 } from '../lib/platform-brand.ts';
 import { getPlatformInfo, setPlatformInfo } from '../lib/platform-info.ts';
+import { publishRuntimeChange } from '../runtime/coherence.ts';
 import { buildProblem } from '../lib/problem.ts';
 import { auditContext, writeAudit } from '../plugins/audit.ts';
 import { requireAuth, requireRole } from '../plugins/auth.ts';
@@ -48,6 +49,10 @@ export async function platformRoutes(app: FastifyInstance): Promise<void> {
     const body = platformInfoSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: '平台信息参数无效' });
     const platform = await setPlatformInfo(body.data, request.user?.id ?? null);
+    // 平台身份是**进程内无 TTL 缓存**（`lib/platform-info.ts`），`setPlatformInfo`
+    // 只刷新本副本。集群下另一副本会一直显示旧名字直到重启，所以这里要广播：
+    // 其它副本收到 `kind: 'config'` 后清掉自己的缓存。
+    await publishRuntimeChange({ kind: 'config', id: '*', action: 'reload' });
     await writeAudit({
       action: 'platform.info.update',
       resource: 'platform',

@@ -153,6 +153,14 @@ interface MemoryRecord extends SessionRecord {
   expiresAt: number;
 }
 
+/**
+ * 触发清扫的会话数阈值。
+ *
+ * 取一个远高于正常在线量的值：真到这一步说明积累了不少过期记录，
+ * 清扫一次的成本（遍历 Map）远比每条写入都扫要划算。
+ */
+const SWEEP_THRESHOLD = 1_000;
+
 class MemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, MemoryRecord>();
   private readonly userIndex = new Map<string, Set<string>>();
@@ -214,6 +222,8 @@ class MemorySessionStore implements SessionStore {
   }
 
   private write(token: string, record: SessionRecord): void {
+    // 会话数量增长时顺手清扫。只在**写入**路径做，读路径保持 O(1)。
+    if (this.sessions.size >= SWEEP_THRESHOLD) this.sweepExpired();
     this.sessions.set(token, { ...record, expiresAt: Date.now() + ttlSeconds() * 1000 });
     let index = this.userIndex.get(record.userId);
     if (!index) {
@@ -221,6 +231,26 @@ class MemorySessionStore implements SessionStore {
       this.userIndex.set(record.userId, index);
     }
     index.add(token);
+  }
+
+  /**
+   * 丢掉已过期且**再也不会被访问**的会话。
+   *
+   * 为什么需要：`get()` 只对「被再次访问」的 token 做惰性过期，而登出/关浏览器
+   * 之后没人再拿那个 token 来访问 —— 记录就永久留在 Map 里。开发环境长跑时
+   * 这是缓慢但无界的增长（生产强制 Redis，那里靠 TTL 自动过期，所以不受影响）。
+   */
+  private sweepExpired(): void {
+    const now = Date.now();
+    for (const [token, record] of this.sessions) {
+      if (record.expiresAt > now) continue;
+      this.sessions.delete(token);
+      const index = this.userIndex.get(record.userId);
+      if (!index) continue;
+      index.delete(token);
+      // 空 Set 也要删，否则 userIndex 会为每个登出过的用户留一条。
+      if (index.size === 0) this.userIndex.delete(record.userId);
+    }
   }
 }
 
