@@ -1,0 +1,19 @@
+# 可选：把宿主目录里的自定义默认品牌图标挂进容器。
+#
+# 为什么是独立 override 而不是写进主 compose：compose 的短语法在变量为空时
+# 会把 `${STACKPANEL_BRAND_DIR:+...}` 展开成空字符串，但那**仍然是一个列表项**，
+# 于是 `docker compose up` 报 `invalid empty volume spec` —— 任何没设置该变量
+# 的部署都起不来（实测：v0.1.2 之后的默认档全部中招）。
+#
+# 用法（`scripts/deploy.sh` 会在检测到该变量时自动叠加）：
+#   docker compose -f docker-compose.yml -f docker-compose.brand.yml up -d
+#
+# 目录里放 `logo.png` / `favicon.ico` 等；优先级：
+#   对象存储已上传的 > STACKPANEL_BRAND_DIR > 镜像内置图
+services:
+  api:
+    volumes:
+      - ${STACKPANEL_BRAND_DIR:?STACKPANEL_BRAND_DIR 必须非空（本文件只在该变量已设置时才应被叠加）}:/app/brand:ro
+  worker:
+    volumes:
+      - ${STACKPANEL_BRAND_DIR:?STACKPANEL_BRAND_DIR 必须非空（本文件只在该变量已设置时才应被叠加）}:/app/brand:ro

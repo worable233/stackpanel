@@ -194,6 +194,14 @@ if [[ "$CLUSTER" == "1" ]]; then
   grep -qE '^CADDY_IMAGE=.+' "$DOCKER_ENV" || set_env CADDY_IMAGE "caddy:2-alpine"
 fi
 
+# 自定义默认品牌图标是**可选挂载**，放在独立 override 文件里按需叠加。
+# 不能写进主 compose：短语法 `${VAR:+...}` 在变量为空时仍算一个列表项，
+# `docker compose up` 会报 `invalid empty volume spec`（没设该变量的部署全起不来）。
+if grep -qE '^STACKPANEL_BRAND_DIR=.+' "$DOCKER_ENV" 2>/dev/null; then
+  COMPOSE_FILE="$COMPOSE_FILE -f docker-compose.brand.yml"
+  info "启用自定义品牌图标目录：$(sed -n 's/^STACKPANEL_BRAND_DIR=//p' "$DOCKER_ENV" | tail -n1)"
+fi
+
 if [[ -n "$IMAGE" ]]; then
   # 发布镜像模式：用 GHCR 镜像替代本地构建。compose 中 api/worker/web 共用同一镜像。
   export STACKPANEL_IMAGE="$IMAGE"

@@ -98,8 +98,11 @@ services:
       - stackpanel-data:/app/data
       # Read/write: submit update tasks + read updater status projection.
       - stackpanel-updater-state:/var/lib/stackpanel-updater
-      # 自定义默认品牌图标（宿主目录 → 容器内 /app/brand，只读）。空变量不挂载。
-      - ${STACKPANEL_BRAND_DIR:+${STACKPANEL_BRAND_DIR}:/app/brand:ro}
+      # 自定义默认品牌图标 —— 见 `docker-compose.brand.yml`。
+      #
+      # 短语法 `${VAR:+...}` 在变量为空时仍算一个列表项，compose 会报
+      # `invalid empty volume spec`（任何没设该变量的部署都起不来）。可选挂载
+      # 必须放独立 override 文件里按需叠加。
     networks:
       - stackpanel
     deploy:

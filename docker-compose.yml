@@ -218,12 +218,12 @@ services:
       - stackpanel-data:/app/data
       # Read/write: submit update tasks + read updater status projection.
       - stackpanel-updater-state:/var/lib/stackpanel-updater
-      # 可选：自定义默认品牌图标目录（宿主上放 logo.png / favicon.ico …）。
-      # 只读挂载到**独立**路径 `/app/brand`，不碰镜像里的 assets/brand——
-      # 遮蔽那个目录会让内置图标一起消失。未设置时不挂载，用镜像内置图。
-      # `${VAR:-}` 为空时 compose 会挂一个空目录，所以这里用 `:+` 条件展开：
-      # 只有变量非空才产生这一项。
-      - ${STACKPANEL_BRAND_DIR:+${STACKPANEL_BRAND_DIR}:/app/brand:ro}
+      # 可选：自定义默认品牌图标目录 —— 见 `docker-compose.brand.yml`。
+      #
+      # 这里**不能**直接写 `${STACKPANEL_BRAND_DIR:+...}`：compose 的短语法在
+      # 变量为空时会把整项展开成空字符串，仍然算一个列表项，于是 `docker compose
+      # up` 直接报 `invalid empty volume spec`（实测：任何没设该变量的部署都起
+      # 不来）。可选挂载必须放在独立 override 文件里按需叠加。
     ports:
       # Published for host-side curl / external API clients. The browser never
       # needs it: every browser call goes through the web BFF on :3000.
