@@ -27,14 +27,6 @@ afterAll(async () => {
   await closeRedis();
 });
 
-async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
-  const start = Date.now();
-  while (!predicate()) {
-    if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out');
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-}
-
 describe('resolveInstanceId 稳定性与唯一性', () => {
   it('显式 STACKPANEL_INSTANCE_ID 优先，且归一化后可安全用作游标键', () => {
     const original = process.env.STACKPANEL_INSTANCE_ID;
