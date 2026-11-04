@@ -31,6 +31,15 @@ on:
         required: false
         default: 'false'
         type: boolean
+      kernels:
+        description: |
+          内核版本 tag 列表（逗号分隔，如 `v0.1.3` 或 `v0.1.2,v0.1.3`）。
+          每个 tag 必须是一个**已发布**的 GitHub Release，且含 `kernel-ref.json`。
+          留空表示本次目录不含内核引用 —— 那样实例的更新中心只会看到插件更新，
+          **永远看不到内核升级**（这正是 v0.1.3 漏发内核的原因）。
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -96,6 +105,37 @@ jobs:
           fi
           printf '%s\n' "$KEYRING_JSON" > "$RUNNER_TEMP/keys/keyring.json"
 
+      # 下载内核引用。目录只**引用**内核清单（版本 / 来源 Release / 摘要 / keyId），
+      # 不保存清单本体 —— 实例拿到引用后再去 Release 取清单并验签。
+      #
+      # 这一步是「更新中心能看到内核升级」的唯一来源：没有 `kernels[]`，
+      # `catalogKernelRefs()` 返回空数组，`loadKernelCandidates()` 早退，
+      # `buildUpdatePlan()` 拿不到 targetKernel，界面永远只显示插件更新。
+      - name: 下载内核引用（--kernels）
+        if: inputs.kernels != ''
+        env:
+          KERNEL_TAGS: ${{ inputs.kernels }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/kernels"
+          printf '%s' "$KERNEL_TAGS" | tr ',' '\n' | sed '/^$/d' | while read -r tag; do
+            tag="$(printf '%s' "$tag" | tr -d ' ')"
+            [ -z "$tag" ] && continue
+            echo "下载 $tag 的 kernel-ref.json"
+            gh release download "$tag" --repo "$REPOSITORY" \
+              --pattern kernel-ref.json --dir "$RUNNER_TEMP/kernels" --clobber
+            # 重命名成按 tag 唯一的名字：`--kernels <dir>` 会读目录下**所有** json，
+            # 两个 tag 都叫 kernel-ref.json 会互相覆盖。
+            mv "$RUNNER_TEMP/kernels/kernel-ref.json" "$RUNNER_TEMP/kernels/kernel-ref-$tag.json"
+          done
+          count="$(find "$RUNNER_TEMP/kernels" -name '*.json' | wc -l | tr -d ' ')"
+          echo "共取到 $count 条内核引用"
+          if [ "$count" = "0" ]; then
+            echo "::error::指定了 kernels 但一条都没取到（tag 不存在，或该 Release 缺 kernel-ref.json）"
+            exit 1
+          fi
+
       # 条目来源：由市场仓 PR 提供的清单（此处以主仓 `catalog/entries` 为例，
       # 实施时改为 checkout 市场仓的 entries 目录）。配置里的 sequence 必须来自
       # 本次运行输入，否则「发布 sequence N」会签出另一个序号的快照。
@@ -118,6 +158,12 @@ jobs:
           args=(--entries "$RUNNER_TEMP/catalog/entries" --config "$RUNNER_TEMP/catalog/catalog.config.json" --key-file "$RUNNER_TEMP/keys/catalog.private.pem" --out "$RUNNER_TEMP/out/catalog-v1/${{ inputs.sequence }}" --key-id "$KEY_ID")
           if [ -f "$RUNNER_TEMP/keys/keyring.json" ]; then
             args+=(--keyring "$RUNNER_TEMP/keys/keyring.json")
+          fi
+          # 只有真的取到内核引用时才传 --kernels：传一个空目录会让 catalog 里
+          # 出现 `kernels: []`，那和「字段缺失」在消费端是同一个结果，但会让
+          # 人误以为已经配过了。
+          if [ -d "$RUNNER_TEMP/kernels" ] && [ -n "$(find "$RUNNER_TEMP/kernels" -name '*.json' 2>/dev/null)" ]; then
+            args+=(--kernels "$RUNNER_TEMP/kernels")
           fi
           node scripts/release/build-catalog.mjs "${args[@]}"
         env:
