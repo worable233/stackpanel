@@ -138,3 +138,87 @@ describe('migrator can upgrade a plain unique index to a partial one', () => {
     expect(block.slice(0, 400)).toContain('dropIndexSql');
   });
 });
+
+describe('索引声明只允许追加（升级兼容性）', () => {
+  /**
+   * 索引名由**声明位置**生成（`schema.ts`：`idx_${tableName}_${position+1}`），
+   * 而迁移器按**名字**匹配已有索引。
+   *
+   * 于是「把新索引插到数组中间」= 让所有已有索引的编号整体后移一位 = 每个
+   * 位置都被判定为「定义已变更」。而收紧唯一性会被 `isRelaxation` 拒绝，
+   * 结果是**已部署的库升级时 API 启动即崩**。
+   *
+   * 真实事故：给 store/service-instance 加 `providerServiceId` 唯一索引时插在
+   * 了 `expiresAtMs` 之前，本地库报
+   * `模型 store/service-instance 的索引 idx_ext_store_service-instance_7 定义已变更`。
+   * 本地是新建库所以看不出来，生产库一定中招。
+   */
+  const storeData = readFileSync(
+    path.join(root, '../../packages/plugins/store/src/data.ts'),
+    'utf8',
+  );
+
+  it('providerServiceId 的唯一索引必须排在所有既有索引之后', () => {
+    const block = storeData.slice(storeData.indexOf("kind: 'store/service-instance'"));
+    const indexesStart = block.indexOf('indexes: [');
+    const indexesEnd = block.indexOf('  ],', indexesStart);
+    const indexes = block.slice(indexesStart, indexesEnd);
+
+    const positions = [...indexes.matchAll(/\{\s*\n?\s*fields: \['(\w+)'\]/g)].map((m) => m[1]);
+    // 唯一的那个索引必须是最后一个声明
+    expect(indexes.indexOf('unique: true')).toBeGreaterThan(
+      indexes.indexOf("fields: ['expiryStage']"),
+    );
+  });
+
+  it('既有索引的相对顺序没有被重排', () => {
+    const block = storeData.slice(storeData.indexOf("kind: 'store/service-instance'"));
+    const indexesStart = block.indexOf('indexes: [');
+    const indexesEnd = block.indexOf('  ],', indexesStart);
+    const indexes = block.slice(indexesStart, indexesEnd);
+
+    // 这些是 0.1.x 就已存在的声明顺序，任何一个移动都会让已部署库崩掉。
+    const legacy = [
+      'userId',
+      'orderId',
+      'productId',
+      'state',
+      'providerId',
+      'providerServiceId',
+      'expiresAtMs',
+      'expiryStage',
+    ];
+    const seen: string[] = [];
+    for (const m of indexes.matchAll(/fields: \['(\w+)'\]/g)) {
+      const field = m[1]!;
+      if (legacy.includes(field) && !seen.includes(field)) seen.push(field);
+    }
+    expect(seen).toEqual(legacy);
+  });
+});
+
+describe('唯一索引的重复检查必须带上部分索引谓词', () => {
+  const migrator = readFileSync(path.join(root, 'src/extensions/migrator.ts'), 'utf8');
+
+  /**
+   * `assertNoDuplicates` 原来只查 `WHERE deleted_at IS NULL`，把 NULL 行也算进
+   * 重复组。而部分唯一索引 `WHERE col IS NOT NULL` **根本不约束 NULL 行**。
+   *
+   * 真实事故：本地库 4 条 service-instance 里 3 条 `providerServiceId IS NULL`，
+   * 被当成「3 条重复」，迁移抛错，API 启动即崩 —— 而数据其实完全合法。
+   */
+  it('把 whereNotNull 转成 SQL 谓词再查重', () => {
+    const fn = migrator.slice(migrator.indexOf('async function assertNoDuplicates'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+
+    expect(body).toContain('whereNotNull');
+    expect(body).toMatch(/IS NOT NULL/);
+  });
+
+  it('谓词与 createIndexSql 用的是同一组列', () => {
+    const fn = migrator.slice(migrator.indexOf('async function assertNoDuplicates'));
+    const body = fn.slice(0, fn.indexOf('\n}'));
+    // 必须遍历 index.columns 生成谓词，不能写死某个列名
+    expect(body).toMatch(/index\.columns\.map/);
+  });
+});

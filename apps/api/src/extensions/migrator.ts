@@ -124,16 +124,30 @@ function sameIndex(left: ExtensionIndexSpec, right: ActualIndex): boolean {
   );
 }
 
-/** Reject a unique index when existing rows already collide on its columns. */
+/**
+ * Reject a unique index when existing rows already collide on its columns.
+ *
+ * 部分索引（`where: { kind: 'notNull' }`）必须把谓词一并带进检查：它只约束
+ * 非空值，NULL 行根本不参与唯一性。漏掉谓词会把「三条 NULL」当成一组重复，
+ * 于是**任何已部署的库升级时都会误报** —— 而 NULL 行恰恰是最常见的情况
+ * （普通购买产生的实例没有上游服务编号）。
+ *
+ * 这不是理论问题：本地库 4 条实例里有 3 条 `providerServiceId IS NULL`，
+ * 迁移直接抛 `extension.unsupported_migration`，API 启动即崩。
+ */
 async function assertNoDuplicates(
   db: Pick<PrismaClient, '$queryRawUnsafe'>,
   table: ExtensionTable,
   index: ExtensionIndexSpec,
 ): Promise<void> {
   const columns = index.columns.map(quoteIdentifier).join(', ');
+  // 与 `createIndexSql` 的谓词保持一致：部分唯一索引只对满足谓词的行生效。
+  const predicate = index.whereNotNull
+    ? ` AND ${index.columns.map((column) => `${quoteIdentifier(column)} IS NOT NULL`).join(' AND ')}`
+    : '';
   const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
     `SELECT ${columns} FROM ${quoteIdentifier(table.tableName)}
-      WHERE "deleted_at" IS NULL
+      WHERE "deleted_at" IS NULL${predicate}
       GROUP BY ${columns} HAVING COUNT(*) > 1 LIMIT 1`,
   );
   if (rows.length > 0) {

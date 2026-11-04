@@ -180,6 +180,8 @@ export const serviceInstanceModel = defineModel({
     { fields: ['state'], types: { state: 'string' } },
     { fields: ['providerId'], types: { providerId: 'string' } },
     { fields: ['providerServiceId'], types: { providerServiceId: 'string' } },
+    { fields: ['expiresAtMs'], types: { expiresAtMs: 'number' } },
+    { fields: ['expiryStage'], types: { expiryStage: 'string' } },
     /**
      * 一个上游服务实例只能被绑定一次。
      *
@@ -190,6 +192,21 @@ export const serviceInstanceModel = defineModel({
      * 只约束 `providerServiceId`：同一上游的不同实例本来就该并存。同一实例
      * 在不同上游账号下理论上编号可能撞车，但那属于上游侧编号设计问题，先用
      * 最严格的约束把「重复绑定」彻底堵死。
+     *
+     * ## 必须追加在末尾，不能插在中间
+     *
+     * 索引名由**声明位置**生成（`schema.ts`：`idx_${tableName}_${position+1}`），
+     * 而迁移器按**名字**匹配已有索引。把它插到 `expiresAtMs` 之前会让：
+     *
+     *     数据库里的 _7（f_expiresAtMs，非唯一，无谓词）
+     *     对上 新声明的 _7（f_providerServiceId，唯一 + 谓词）
+     *
+     * 于是被判定为「索引定义已变更」，而这是收紧唯一性（非唯一 → 唯一），
+     * `isRelaxation` 只放行「唯一 → 唯一 + 谓词」，于是抛
+     * `extension.unsupported_migration`，**API 启动即崩**。任何已部署的库
+     * 升级上来都会中招 —— 本地是新建库所以看不出来。
+     *
+     * 结论：`indexes` 数组只允许**追加**。已有位置一旦被占用就不能重排。
      */
     {
       fields: ['providerServiceId'],
@@ -199,8 +216,6 @@ export const serviceInstanceModel = defineModel({
       // 不该互相冲突。
       where: { kind: 'notNull' },
     },
-    { fields: ['expiresAtMs'], types: { expiresAtMs: 'number' } },
-    { fields: ['expiryStage'], types: { expiryStage: 'string' } },
   ],
 });
 
