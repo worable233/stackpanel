@@ -355,17 +355,39 @@ const REFINED_SCOPE_PATTERN = /^[a-z][a-z0-9-]*:(read|write)$/;
  * 因为内核能力由内核自己治理，语义不同）。插件仓已全部整改为 refined 形式；
  * 第三方插件若仍用旧写法会在激活时得到明确报错与修法。
  */
-function validateCapabilityScope(pluginId: string, capability: PluginCapability): void {
-  if (capability.scope === undefined) return;
+/**
+ * 检查插件声明的 `capability.scope` 是不是 refined 形式（`资源:read|write`）。
+ *
+ * **只警告，不拒绝激活。**
+ *
+ * 一开始这里是硬失败（`throw`），理由是历史危害是「超级管理员被静默锁在
+ * 门外」——静默的错误比响亮的失败危险。但硬失败会把**已发布生态里的旧插件**
+ * 整个挡在门外：发布冒烟从市场装 `captcha`（市面上的旧版）直接被拒，也就是说
+ * 用户升级内核后**装不上任何旧插件**。那比原来的 bug 更糟。
+ *
+ * 所以改成警告 + 运行期安全降级（见 `mountCapabilities`：非 refined 的
+ * `capability.scope` **不替换** `route.permission`，权限门禁只多不少）。
+ * 这样旧插件仍能装、能跑，行为与修复前等价（它本来就恰好和自己的
+ * `route.permission` 相同），只是不再享受 refined scope 的细粒度收益。
+ *
+ * 返回 `true` 表示合规，`false` 表示已按旧语义降级。
+ */
+function validateCapabilityScope(
+  pluginId: string,
+  capability: PluginCapability,
+  warn: (message: string) => void,
+): boolean {
+  if (capability.scope === undefined) return true;
   const scope = capability.scope;
-  if (typeof scope !== 'string' || !REFINED_SCOPE_PATTERN.test(scope)) {
-    throw new Error(
-      `插件 ${pluginId} 的能力项 ${capability.id} 的 scope 必须是 refined 形式 ` +
-        `「资源:read」或「资源:write」（例如 'store:read'），实际为 ${JSON.stringify(scope)}。` +
-        '权限键（如 store.admin）不是 scope：把它留给 route.permission，' +
-        '并在 permissions 里用 { key, scope: "资源" } 声明治理关系。',
-    );
-  }
+  if (typeof scope === 'string' && REFINED_SCOPE_PATTERN.test(scope)) return true;
+  warn(
+    `插件 ${pluginId} 的能力项 ${capability.id} 的 scope 不是 refined 形式` +
+      `（「资源:read」或「资源:write」，例如 'store:read'），实际为 ${JSON.stringify(scope)}。` +
+      '已按旧语义降级：保留 route.permission 作为门禁，capability.scope 不参与鉴权。' +
+      '权限键（如 store.admin）不是 scope —— 请把它留给 route.permission，' +
+      '并在 permissions 里用 { key, scope: "资源" } 声明治理关系。',
+  );
+  return false;
 }
 
 export class PluginRuntime {
@@ -746,7 +768,7 @@ export class PluginRuntime {
     const entries: PluginCapabilityEntry[] = [];
 
     for (const capability of capabilities) {
-      validateCapabilityScope(id, capability);
+      validateCapabilityScope(id, capability, (message) => this.options.logger?.warn(message));
       const route = routes.find(
         (candidate) =>
           candidate.method === capability.method && candidate.path === capability.route,

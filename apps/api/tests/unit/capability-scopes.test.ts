@@ -317,7 +317,7 @@ describe('加载期校验 capability.scope 的格式', () => {
     const classIdx = runtime.indexOf('export class PluginRuntime');
     expect(fnIdx).toBeGreaterThan(0);
     expect(classIdx).toBeGreaterThan(fnIdx); // 必须在 class 之前
-    expect(runtime).toContain('validateCapabilityScope(id, capability)');
+    expect(runtime).toContain('validateCapabilityScope(id, capability,');
   });
 
   it('只接受 refined 资源:read|write', () => {
@@ -328,14 +328,31 @@ describe('加载期校验 capability.scope 的格式', () => {
     expect(src).toContain(':(read|write)$');
   });
 
-  it('拒绝时给出可操作的报错（指明正确形式）', () => {
+  it('不合规时给出可操作提示（指明正确形式与降级行为）', () => {
     const fn = runtime.slice(
       runtime.indexOf('function validateCapabilityScope'),
-      runtime.indexOf('function validateCapabilityScope') + 1400,
+      runtime.indexOf('function validateCapabilityScope') + 2200,
     );
     expect(fn).toContain('refined 形式');
     expect(fn).toMatch(/read/i);
     expect(fn).toContain('route.permission');
+    // 关键：不抛错，只警告 —— 硬失败会把已发布的旧插件整个挡在门外。
+    expect(fn).not.toContain('throw new Error');
+    expect(fn).toContain('降级');
+  });
+
+  it('不合规的 capability.scope 不会放宽权限（保留 route.permission）', () => {
+    /**
+     * 硬失败改成警告之后，安全性完全依赖这一点：非 refined 的
+     * `capability.scope` **不替换** `route.permission`。否则旧插件的
+     * `scope: 'epay.admin'` 会取代门禁，那才是真正的漏洞。
+     */
+    const mount = runtime.slice(runtime.indexOf('const refinedScope = capability.scope'));
+    expect(mount).toContain('scopeReplacesPermission');
+    expect(mount).toContain('refinedScope !== null');
+    const alias = mount.slice(0, 800);
+    expect(alias).toContain('!scopeReplacesPermission');
+    expect(alias).toContain('permission: route.permission');
   });
 
   it('未知 scope 直接放行（scope 是可选的）', () => {
