@@ -96,7 +96,7 @@ function catalogSnapshot(): CatalogSnapshot {
         },
         artifact: { sha256: 'b'.repeat(64), size: 100 },
         compatibility: {
-          kernel: '>=0.2.0 <0.3.0',
+          kernel: '>=9.0.0',
           kernelApi: '^0.4.0',
           frontendAbi: '^1.0.0',
           packageFormat: 1,

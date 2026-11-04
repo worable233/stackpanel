@@ -126,6 +126,10 @@ describe.skipIf(!dbAvailable)('storage plugin (real kernel + real backend)', () 
   }
 
   it('exposes the admin config route only to holders of storage.admin', async () => {
+    // 这个用例断言的是**鉴权**，不是配置内容。而插件配置会跨用例留存
+    // （`saveConfig` 直接写库），所以必须先显式设回基线，否则它依赖执行顺序：
+    // 单跑通过、全套跑读到上一个用例留下的 `local`/`http` 就红。
+    await saveConfig({ kind: 'env' });
     const anon = await app.inject({ method: 'GET', url: '/storage/admin/config' });
     expect(anon.statusCode).toBe(401);
     const forbidden = await app.inject({

@@ -36,7 +36,7 @@ function entry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     source: { repository: REPO, tag: 'demo-v1.0.0', asset: 'demo-1.0.0.zip' },
     artifact: { sha256: 'a'.repeat(64), size: 100 },
     compatibility: {
-      kernel: '>=0.1.0 <0.2.0',
+      kernel: '>=0.1.0',
       kernelApi: '^0.4.0',
       frontendAbi: '^1.0.0',
       packageFormat: 1,

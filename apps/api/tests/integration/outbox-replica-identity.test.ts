@@ -135,6 +135,12 @@ describe.skipIf(!dbAvailable)('同机多副本不得共用游标', () => {
       production: false,
       instanceId: idA,
       replayWindowMs: 10 * 60 * 1000,
+      // 轮询间隔必须显式给短值。默认是 2s 起步、空转翻倍、封顶 30s
+      // （`plugins/events.ts` 的自适应退避），而这里等的是「一次真实的数据库
+      // 轮询 + 投递」。空转几轮后间隔就到 30s，55s 预算内可能只触发一两次 ——
+      // 并行跑时连接池被 60+ 个集成套件占满，就更容易打穿。
+      catchUpIntervalMs: 50,
+      catchUpMaxIntervalMs: 100,
     });
     const b = new OutboxEventBus();
     b.configure({
@@ -143,6 +149,8 @@ describe.skipIf(!dbAvailable)('同机多副本不得共用游标', () => {
       production: false,
       instanceId: idB,
       replayWindowMs: 10 * 60 * 1000,
+      catchUpIntervalMs: 50,
+      catchUpMaxIntervalMs: 100,
     });
     const seenA: unknown[] = [];
     const seenB: unknown[] = [];
@@ -150,13 +158,22 @@ describe.skipIf(!dbAvailable)('同机多副本不得共用游标', () => {
     b.subscribe(topic, (payload) => seenB.push(payload));
 
     a.publish(topic, { both: true });
-    // 这一行等的是「任一副本被 relay 或 catch-up 投递一次」。`publish` 只负责落库
-    // （outbox 模式下投递归 relay），所以要等一次真实的数据库轮询 + 本地投递。
-    // 单跑约 50ms，但全量并行时 setup 与其它套件抢同一个库，5s 默认预算会偶发
-    // 打穿（实测 193 个文件里 1 个失败，重跑必过）。用例本身给了 30s，这里对齐。
-    await waitFor(() => seenA.length === 1 || seenB.length === 1, 20_000);
-    await a.catchUp();
-    await b.catchUp();
+    /**
+     * 这里**不能**用 `startConsumption()`：它起的自适应轮询会和下面显式的
+     * `catchUp()` 竞争同一个游标 —— 轮询先把游标推到最新，紧接着的手动
+     * catchUp 就什么也读不到，`seenA` 为空而 `seenB` 有值（实测就是这个症状）。
+     *
+     * 这条用例要验证的是「两个副本各自按自己的游标补齐同一行」，所以把投递
+     * 时机完全交给测试控制：反复显式 catchUp 直到两侧都收到。
+     */
+    const deadline = Date.now() + 20_000;
+    while ((seenA.length === 0 || seenB.length === 0) && Date.now() < deadline) {
+      await a.catchUp();
+      await b.catchUp();
+      if (seenA.length === 0 || seenB.length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
 
     expect(seenA).toEqual([{ both: true }]);
     expect(seenB).toEqual([{ both: true }]);
@@ -166,5 +183,5 @@ describe.skipIf(!dbAvailable)('同机多副本不得共用游标', () => {
     await getPrisma().eventCursor.deleteMany({
       where: { consumer: { in: [replicaConsumer(idA), replicaConsumer(idB)] } },
     });
-  }, 30_000);
+  }, 40_000);
 });

@@ -29,6 +29,14 @@ const redisAvailable = await (async (): Promise<boolean> => {
   }
 })();
 
+/**
+ * 每个实例必须带**唯一** `instanceId`。
+ *
+ * 不指定时 `configure` 回落到 `resolveInstanceId()`（主机名），于是同一进程里
+ * 多个测试实例共用一个游标键 `replica:<hostname>`：并行跑时它们互相推进游标，
+ * 后到的实例就再也读不到事件。症状是单跑全绿、`pnpm -r test` 全量并行时随机
+ * 红几个（实测 3/16）。
+ */
 afterAll(async () => {
   await closeRedis();
 });
@@ -45,7 +53,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 4000): Promise<void
 describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
   /** Bind a bus to the real outbox without starting its background relay. */
   const bindLocal = (bus: OutboxEventBus) =>
-    bus.configure({ db: getPrisma(), redis: null, production: false });
+    bus.configure({ db: getPrisma(), redis: null, production: false, instanceId: `unit-${randomUUID()}` });
 
   it('persists published events and relays them to local subscribers', async () => {
     const bus = new OutboxEventBus();
@@ -113,8 +121,8 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
     const redis = await getRedis(REDIS_URL);
     const nodeA = new OutboxEventBus();
     const nodeB = new OutboxEventBus();
-    nodeA.configure({ db: getPrisma(), redis, production: false });
-    nodeB.configure({ db: getPrisma(), redis, production: false });
+    nodeA.configure({ db: getPrisma(), redis, production: false, instanceId: `unit-a-${randomUUID()}` });
+    nodeB.configure({ db: getPrisma(), redis, production: false, instanceId: `unit-b-${randomUUID()}` });
     await nodeA.start();
     await nodeB.start();
     try {
@@ -142,7 +150,7 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
         throw new Error('redis down');
       },
     } as unknown as RedisClient;
-    bus.configure({ db: getPrisma(), redis: failingRedis, production: false, maxAttempts: 3 });
+    bus.configure({ db: getPrisma(), redis: failingRedis, production: false, maxAttempts: 3, instanceId: `unit-fail-${randomUUID()}` });
     const topic = `test.${randomUUID()}`;
     const row = await getPrisma().outboxEvent.create({
       data: { topic, payload: { body: JSON.stringify({ topic, payload: { n: 1 } }) } },
