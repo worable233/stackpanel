@@ -117,13 +117,28 @@ export function compileTable(definition: CustomModelDefinition): ExtensionTable 
       }
       fields.push(column.column);
     }
+    /**
+     * 部分索引谓词只支持**单列**（`WHERE <col> IS NOT NULL`）。
+     *
+     * 多列时**必须报错**，不能静默丢掉谓词：那样声明的是「部分唯一索引」
+     * （NULL 行不参与唯一性），实际建的却是**全表唯一索引**（NULL 行也参与），
+     * 语义正好反过来 —— 会让本来合法的数据被拒绝，而且没有任何报错可追。
+     *
+     * 静默降级是这里最坏的选择：插件作者以为自己声明了宽松约束，线上却拿到
+     * 严格约束，且只有等到某次写入撞上 NULL 重复才发现。
+     */
+    const wantsPredicate = index.where?.kind === 'notNull';
+    if (wantsPredicate && fields.length !== 1) {
+      throw new Error(
+        `模型 ${definition.kind} 的索引 ${fields.join(',')} 声明了 where.notNull，` +
+          '但部分索引谓词只支持单列。请拆成单列索引，或去掉 where 声明。',
+      );
+    }
     indexes.push({
       name: assertIdentifier(`idx_${tableName}_${position + 1}`),
       columns: fields,
       unique: index.unique === true,
-      ...(index.where?.kind === 'notNull' && fields.length === 1
-        ? { whereNotNull: true }
-        : {}),
+      ...(wantsPredicate ? { whereNotNull: true } : {}),
     });
   });
 

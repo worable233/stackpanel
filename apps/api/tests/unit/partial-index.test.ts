@@ -222,3 +222,62 @@ describe('唯一索引的重复检查必须带上部分索引谓词', () => {
     expect(body).toMatch(/index\.columns\.map/);
   });
 });
+
+describe('多列声明部分索引必须报错，不能静默降级', () => {
+  /**
+   * `where: { kind: 'notNull' }` 的谓词只支持单列。原实现写成
+   * `fields.length === 1 ? { whereNotNull: true } : {}` —— 多列时**静默丢掉**
+   * 谓词，于是：
+   *
+   *     声明：UNIQUE (a, b) WHERE a IS NOT NULL   （NULL 行不参与）
+   *     实际：UNIQUE (a, b)                        （NULL 行也参与）
+   *
+   * 语义正好反过来，而且不报错。插件作者以为声明了宽松约束，线上拿到严格
+   * 约束，要等到某次写入撞上 NULL 重复才暴露。
+   */
+  it('多列 + where.notNull 抛错', () => {
+    expect(() =>
+      compileTable({
+        kind: 'test/multi',
+        schema: { a: 'string', b: 'string' },
+        indexes: [
+          {
+            fields: ['a', 'b'],
+            types: { a: 'string', b: 'string' },
+            unique: true,
+            where: { kind: 'notNull' },
+          },
+        ],
+      } as never),
+    ).toThrow(/只支持单列/);
+  });
+
+  it('单列 + where.notNull 仍然生成谓词', () => {
+    const t = compileTable({
+      kind: 'test/single',
+      schema: { a: 'string' },
+      indexes: [
+        {
+          fields: ['a'],
+          types: { a: 'string' },
+          unique: true,
+          where: { kind: 'notNull' },
+        },
+      ],
+    } as never);
+    expect(t.indexes[0]?.whereNotNull).toBe(true);
+    expect(createIndexSql(t.tableName, t.indexes[0]!)).toContain('IS NOT NULL');
+  });
+
+  it('多列但不声明 where 不受影响', () => {
+    const t = compileTable({
+      kind: 'test/plain',
+      schema: { a: 'string', b: 'string' },
+      indexes: [
+        { fields: ['a', 'b'], types: { a: 'string', b: 'string' } },
+      ],
+    } as never);
+    expect(t.indexes[0]?.whereNotNull).toBeUndefined();
+    expect(createIndexSql(t.tableName, t.indexes[0]!)).not.toContain('IS NOT NULL');
+  });
+});
