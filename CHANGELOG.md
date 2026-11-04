@@ -69,16 +69,19 @@
   门禁已被丢弃。现在只有 `资源:read|write` 形式才替换，其他形式保留
   `route.permission`。
 
-### 已知问题（插件侧，未在本版修复）
-
-- 13 个插件把 `capability.scope` 写成了权限键（`epay.admin`、`ticket.admin`
-  等）而不是规范的 `资源:read|write`：alipay、altcha、captcha、catalog、epay、
-  invoice、notice、referral、smtp、ticket、wechatpay、wecom-mail、zjmf-compat。
-  它们恰好与自己 `route.permission` 相同，所以行为正确 —— 但属于「靠巧合
-  安全」，且由于上面第二个缺陷的历史语义，这些端点的内部门禁曾被丢弃。内核侧
-  已收敛为无条件更安全（保留 permission），插件侧改写待办。
-- 内核**没有**校验 `manifest.capabilities` 的 `scope` 格式（`permissions` 有
-  校验）。缺这道校验是上面那个写法错误能长期存在的原因。
+- **`capability.scope` 写成权限键**（13 个插件）：alipay、altcha、captcha、
+  catalog、epay、invoice、notice、referral、smtp、ticket、wechatpay、
+  wecom-mail、zjmf-compat 把它写成了 `epay.admin` 这类权限键，而不是规范的
+  `资源:read|write`。错写法「看起来能跑」纯属巧合（非 refined scope 走精确
+  匹配，恰好等于自己的 `route.permission`）。已全部整改：12 个改成
+  `资源:read|write` 并给 `permissions` 补上 `{ key, scope }`（否则 API token
+  拿不到 refined scope，会凭空丢失访问能力）；referral 借用 store 插件的
+  `store.admin`，不能自造资源，改为删掉 `capability.scope`、回到
+  `route.permission` 单一门禁（与内置 store 插件写法一致）。
+- **内核现在校验 `capability.scope` 格式**：只接受 `资源:read|write`，插件
+  激活时即报错并给出修法。此前 `permissions` 有校验、`capabilities` 完全裸奔
+  —— 这正是上面那个写法错误能长期存在的原因。内核自己的 `CAPABILITIES` 不受
+  影响（由内核治理，确实用权限键形式）。
 
 ### 修复（升级即崩，只在已部署的库上暴露）
 
