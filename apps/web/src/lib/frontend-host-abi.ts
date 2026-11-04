@@ -140,7 +140,6 @@ import {
   RouteProgress,
 } from '@/components/frontend-absorbed-clients';
 import { CartCheckout } from '@/components/cart-checkout';
-import { MetricsExplorer, UsageTrendChart } from '@/components/frontend-chart-clients';
 import { navigationServerAbi } from './frontend-loader';
 
 /**
@@ -162,8 +161,17 @@ const ABSORBED_CLIENT_CAPABILITIES: Record<string, unknown> = {
   'route-progress': { RouteProgress, CopyLinkButton },
   'auto-submit': { AutoSubmitForm, CartCheckout },
   // Plugin server pages that render a chart import a relative `./charts.js`;
-  // the loader swaps it for these host client references.
-  charts: { MetricsExplorer, UsageTrendChart },
+  // the loader swaps it for these host references.
+  //
+  // 用**桩**而不是真实组件：recharts 在模块作用域调 `React.createContext`，
+  // 在 RSC 图里会直接抛（见上方 NOTE）。更要紧的是，静态导入真实组件会把
+  // recharts（373 KB）拖进 web 自己的 bundle —— 那样图表拆分就白做了：
+  // 实测 `/login` 首屏从 703 KB 涨回 815 KB，recharts 出现在 45 个页面的
+  // 共享 chunk 里。
+  //
+  // 真正的渲染走客户端 ABI（`frontend-abi-bridge.tsx` 的 charts 惰性槽），
+  // 那里在浏览器里才解析真实组件。
+  charts: chartsServerAbi(),
 };
 
 export type HostServerAbi = Record<string, unknown>;
