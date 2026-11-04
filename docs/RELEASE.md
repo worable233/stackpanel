@@ -79,8 +79,11 @@ git push origin v0.1.0
 
 `.github/workflows/release.yml` 在 `v*` 标签上：
 
-1. 构建并推送多架构镜像 `ghcr.io/<owner>/stackpanel`（`linux/amd64`、`linux/arm64`），
-   带 SBOM 与 SLSA provenance；
+1. 构建并推送镜像 `ghcr.io/<owner>/stackpanel`（默认 `linux/amd64`；设仓库变量
+   `KERNEL_PLATFORMS=linux/amd64,linux/arm64` 可恢复多架构），带 SBOM 与 SLSA
+   provenance。arm64 走 QEMU 全量模拟，实测把单次发布从 ~15 分钟拖到 50+ 分钟，
+   所以默认关掉；内核清单的 `images` / `supportedPlatforms` 跟着这个变量走，
+   不会出现「清单声称支持 arm64 但镜像里没有」；
 2. cosign **keyless** 签名镜像摘要并自检验签；
 3. 构建自包含产物（ADR-0025）：`stackpanel-<v>-kernel-linux-x64.tar.zst`、
    `stackpanel-<v>-migrate-linux-x64.tar.zst`、upgrade runner；

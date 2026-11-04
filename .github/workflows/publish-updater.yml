@@ -114,7 +114,10 @@ jobs:
           file: ./apps/updater/Dockerfile
           # runtime 才是不带源码与构建器的运行时镜像；build 阶段可以丢掉。
           target: runtime
-          platforms: linux/amd64,linux/arm64
+          # 默认只构建 amd64（arm64 走 QEMU 模拟，很慢）。需要多架构时在仓库
+          # 变量里设 `KERNEL_PLATFORMS=linux/amd64,linux/arm64` —— 与内核镜像
+          # 共用同一个变量，避免两个镜像的平台集合不一致。
+          platforms: ${{ vars.KERNEL_PLATFORMS || 'linux/amd64' }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

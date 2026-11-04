@@ -23,6 +23,14 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: stackpanel
+  # 镜像构建的目标平台。默认**只** linux/amd64。
+  #
+  # 为什么去掉 arm64：它走 QEMU 全量模拟，实测把单次发布从 ~15 分钟拖到
+  # 50+ 分钟，而绝大多数自托管部署是 x86_64。arm64 可以按需开启：
+  # 在仓库变量里设 `KERNEL_PLATFORMS=linux/amd64,linux/arm64` 即可恢复，
+  # 内核清单的 images / supportedPlatforms 会跟着这个值走，不会出现
+  # 「清单声称支持 arm64 但镜像里没有」的错配。
+  KERNEL_PLATFORMS: ${{ vars.KERNEL_PLATFORMS || 'linux/amd64' }}
 
 jobs:
   publish:
@@ -80,7 +88,7 @@ jobs:
           context: .
           file: ./Dockerfile
           target: runtime
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.KERNEL_PLATFORMS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -180,6 +188,13 @@ jobs:
           node scripts/release/build-upgrade-runner.mjs --out kernel-out
           printf '%s' "$SIGNING_KEY" > kernel-signing.pem
           IMAGE_REF="$IMAGE_REPOSITORY@${{ steps.build.outputs.digest }}"
+          # 清单里的平台声明必须与**实际构建的平台**一致，否则 arm64 机器会拉到
+          # 一个清单声称支持、实际没有的镜像。两边都从 KERNEL_PLATFORMS 派生，
+          # 结构上排除漂移。
+          PLATFORM_JSON="$(printf '%s' "$KERNEL_PLATFORMS" | tr ',' '\n' | sed '/^$/d' \
+            | awk -v ref="$IMAGE_REF" 'NF {printf "%s{\"platform\":\"%s\",\"digest\":\"%s\"}", sep, $0, ref; sep=","}')"
+          PLATFORM_LIST="$(printf '%s' "$KERNEL_PLATFORMS" | tr ',' '\n' | sed '/^$/d' \
+            | awk 'NF {printf "%s\"%s\"", sep, $0; sep=","}')"
           cat > kernel.meta.json <<EOF
           {
             "kind": "kernel",
@@ -191,12 +206,9 @@ jobs:
             "upgradeFrom": "${{ vars.KERNEL_UPGRADE_FROM || '>=0.1.0' }}",
             "migrationPath": "direct",
             "schemaRange": "${{ vars.KERNEL_SCHEMA_RANGE || '*' }}",
-            "images": [
-              { "platform": "linux/amd64", "digest": "$IMAGE_REF" },
-              { "platform": "linux/arm64", "digest": "$IMAGE_REF" }
-            ],
+            "images": [$PLATFORM_JSON],
             "corePackages": [],
-            "supportedPlatforms": ["linux/amd64","linux/arm64"],
+            "supportedPlatforms": [$PLATFORM_LIST],
             "smokeProbeVersion": 1,
             "databaseMigration": "${{ vars.KERNEL_DATABASE_MIGRATION || '' }}",
             "source": {

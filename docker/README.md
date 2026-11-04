@@ -62,7 +62,7 @@ docker compose --env-file docker/.env up -d --build
   | `v1.2.3-rc.1`（预发布） | `1.2.3-rc.1`、`1.2`、`1`、`sha-<短哈希>`（**不含 `latest`**） |
   | 手工触发                | 输入的 `tag`、`sha-<短哈希>`（**不含 `latest`**）             |
 
-- **平台**：`linux/amd64`、`linux/arm64`（Buildx + QEMU 多架构清单）。
+- **平台**：默认 `linux/amd64`。arm64 走 QEMU 模拟，很慢，默认不构建；需要时在仓库变量里设 `KERNEL_PLATFORMS=linux/amd64,linux/arm64` 即可恢复多架构清单（内核清单的 `supportedPlatforms` 会同步，不会错配）。
 - **附带证明**：同一 digest 上推送 **SBOM** 与 **SLSA provenance**（BuildKit `sbom: true` / `provenance: true`）。
 - **签名**：cosign **keyless**（GitHub OIDC）。主镜像的签发身份绑定本仓库的 `release.yml`，
   updater 镜像绑定 `publish-updater.yml`——两者**不是同一份工作流**，`scripts/verify-image.sh`
