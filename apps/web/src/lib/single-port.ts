@@ -57,6 +57,9 @@ export const WEB_BFF_PREFIXES = [
   '/api/frontend-abi/',
   '/api/notifications',
   '/api/plugins/',
+  // `/api/public/` 是同源代理（模型服务公开统计）：它是 Web 自己的路由，单端口
+  // 模式下如果不在这里，请求会转给内核，然后 404。
+  '/api/public/',
   '/api/store/',
 ] as const;
 
