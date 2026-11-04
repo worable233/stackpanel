@@ -245,7 +245,7 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
     expect(metas[0]?.eventId).toBe(row?.id);
     // Cursor advanced to that row.
     const cursor = await getPrisma().eventCursor.findUnique({ where: { consumer } });
-    expect(cursor?.lastId).toBe(row?.id);
+    expect(cursor?.lastSeq).toBe(row?.seq);
 
     // A second catch-up must not deliver it again.
     expect(await b.catchUp()).toBe(0);
@@ -260,6 +260,7 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
     const consumer = replicaConsumer(replicaId);
     const order: string[] = [];
     const rows: string[] = [];
+    let lastRowSeq = 0n;
     for (let i = 0; i < 5; i += 1) {
       const row = await getPrisma().outboxEvent.create({
         data: {
@@ -268,6 +269,7 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
         },
       });
       rows.push(row.id);
+      lastRowSeq = row.seq;
     }
 
     const bus = new OutboxEventBus();
@@ -284,11 +286,80 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
     expect(order).toEqual(['0', '1', '2', '3', '4']);
 
     const cursor = await getPrisma().eventCursor.findUnique({ where: { consumer } });
-    expect(cursor?.lastId).toBe(rows[rows.length - 1]);
+    expect(cursor?.lastSeq).toBe(lastRowSeq);
     // Monotonic: a re-run finds nothing new.
     expect(await bus.catchUp()).toBe(0);
 
     await getPrisma().eventCursor.deleteMany({ where: { consumer } });
+  });
+
+  it('T7f 游标按 seq 续位：同毫秒内 id 逆序也不会漏事件', async () => {
+    /**
+     * 这条用例钉的是**真实的静默丢事件**（不是理论问题）。
+     *
+     * 早期游标是 `(lastAt, lastId)`，续位条件 `createdAt > lastAt OR
+     * (createdAt = lastAt AND id > lastId)` —— 依赖「同一毫秒内 id 递增」。
+     * 但 `id` 是 cuid，跨进程并发写同一毫秒时后插入的行可能拿到**更小**的 id。
+     * 实测生产库 601 行里有 36 组逆序。游标一旦越过逆序对中 id 较大的那条，
+     * 另一条就永远满足不了 `id > lastId`：事件静默丢失，无任何报错。
+     *
+     * 这里显式构造那个场景：两条同毫秒、后插入的 id 更小。用 `seq` 续位就必须
+     * 两条都收到。
+     */
+    const topic = `test.${randomUUID()}`;
+    const replicaId = `t7f-${randomUUID()}`;
+    const consumer = replicaConsumer(replicaId);
+    const seen: unknown[] = [];
+
+    // 固定成同一毫秒，绕开 `@default(now())`。
+    const sameMs = new Date('2026-01-01T00:00:00.000Z');
+    // 故意让「先插入」的 id 字典序更大 —— 这正是生产库里观察到的逆序。
+    // id 必须每轮唯一（否则第二次跑会撞主键），所以用固定前缀 + 随机后缀，
+    // 并保证 first 的后缀在字典序上大于 second 的。
+    const tag = randomUUID().slice(0, 8);
+    const firstId = `zz-${tag}-a`;
+    const secondId = `zz-${tag}-b`;
+    expect(secondId > firstId).toBe(true); // 先确认前缀设计有效
+    const first = await getPrisma().outboxEvent.create({
+      data: {
+        id: `${firstId}-zz`,
+        createdAt: sameMs,
+        topic,
+        payload: { body: JSON.stringify({ topic, payload: { order: 1 } }) },
+      },
+    });
+    const second = await getPrisma().outboxEvent.create({
+      data: {
+        id: `${firstId}-aa`,
+        createdAt: sameMs,
+        topic,
+        payload: { body: JSON.stringify({ topic, payload: { order: 2 } }) },
+      },
+    });
+    // 前置断言：确实是「后插入的 id 更小」。
+    expect(second.seq).toBeGreaterThan(first.seq);
+    expect(second.id < first.id).toBe(true); // 后插入的 id 反而更小
+
+    const bus = new OutboxEventBus();
+    bus.configure({
+      db: getPrisma(),
+      redis: null,
+      production: false,
+      instanceId: replicaId,
+      replayWindowMs: 24 * 60 * 60 * 1000,
+    });
+    bus.subscribe(topic, (payload) => seen.push(payload));
+
+    await bus.catchUp();
+
+    // 旧的 (createdAt, id) 游标只会交付 order:1 —— 第二条的 id 更小，被跳过。
+    expect(seen).toEqual([{ order: 1 }, { order: 2 }]);
+
+    const cursor = await getPrisma().eventCursor.findUnique({ where: { consumer } });
+    expect(cursor?.lastSeq).toBe(second.seq);
+
+    await getPrisma().eventCursor.deleteMany({ where: { consumer } });
+    await getPrisma().outboxEvent.deleteMany({ where: { topic } });
   });
 
   it('T7c idempotency: live delivery + catch-up on the same row runs the side effect once', async () => {
@@ -342,8 +413,9 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
     });
     await getPrisma().eventCursor.upsert({
       where: { consumer },
-      create: { consumer, lastId: null, lastAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-      update: { lastAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      // 保留期告警看的是**时间**（lastAt），不是 seq 位置，所以两个都要写。
+      create: { consumer, lastSeq: 0n, lastAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      update: { lastSeq: 0n, lastAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
     });
 
     await bus.cleanup(7 * 24 * 60 * 60 * 1000);
@@ -510,12 +582,14 @@ describe.skipIf(!dbAvailable)('OutboxEventBus', () => {
       where: { consumer: OUTBOX_CLUSTER_CONSUMER },
     });
     const replica = await getPrisma().eventCursor.findUnique({ where: { consumer } });
+    // 集群游标还写 `lastAt`（保留期告警用它判断「多久没动」）；副本游标只写
+    // `lastSeq`（续位只认 seq，时间戳在同毫秒内无法区分先后）。
     expect(cluster?.lastAt).not.toBeNull();
-    expect(replica?.lastAt).not.toBeNull();
+    expect(cluster?.lastSeq).not.toBeNull();
     // Both consumed the same single row here, so the positions coincide; the
     // point is that they are independent rows with independent consumers.
     expect(consumer).not.toBe(OUTBOX_CLUSTER_CONSUMER);
-    expect(replica?.lastId).not.toBeNull();
+    expect(replica?.lastSeq).not.toBeNull();
 
     const stats = await bus.outboxStats();
     expect(stats.cursorLagMs).toBeLessThan(10_000);

@@ -166,9 +166,9 @@ describe.skipIf(!dbAvailable)('#4 故障 / 多节点验收', () => {
     // 就会假失败（本地快，通常看不出来）。所以先等游标落库，再断言。
     const cursor = await waitForValue(async () => {
       const row = await getPrisma().eventCursor.findUnique({ where: { consumer: consumerB } });
-      return row?.lastId ? row : null;
+      return row?.lastSeq !== null && row?.lastSeq !== undefined ? row : null;
     });
-    expect(cursor?.lastId).not.toBeNull();
+    expect(cursor?.lastSeq).not.toBeNull();
 
     // 幂等：再跑一轮不会重投。
     expect(await b.catchUp()).toBe(0);
@@ -373,13 +373,13 @@ describe.skipIf(!dbAvailable)('#4 故障 / 多节点验收', () => {
     // A 已消费；B 此时还没跑，游标必须仍是独立的（不能共享一个全局游标）。
     expect(seenA).toEqual([{ forBoth: true }]);
     const cursorA = await getPrisma().eventCursor.findUnique({ where: { consumer: consumerA } });
-    expect(cursorA?.lastId).not.toBeNull();
+    expect(cursorA?.lastSeq).not.toBeNull();
     expect(await getPrisma().eventCursor.findUnique({ where: { consumer: consumerB } })).toBeNull();
 
     await b.catchUp();
     expect(seenB).toEqual([{ forBoth: true }]);
     const cursorB = await getPrisma().eventCursor.findUnique({ where: { consumer: consumerB } });
-    expect(cursorB?.lastId).toBe(cursorA?.lastId);
+    expect(cursorB?.lastSeq).toBe(cursorA?.lastSeq);
 
     await a.stop();
     await b.stop();
@@ -425,7 +425,11 @@ describe.skipIf(!dbAvailable)('#4 故障 / 多节点验收', () => {
         restarted.subscribe(topic, (payload) => seen.push(payload));
         await restarted.start();
         restarted.startConsumption();
-        await waitFor(() => seen.length === 1);
+        // `startConsumption()` 的首轮 catchUp 是 fire-and-forget（`void`），
+        // 默认 5s 在 CI 的共享 DB 上会偶发打穿（本地/CI 实测：单跑绿、
+        // 全量并行时红）。这条用例的总预算是 40s，把这里显式抬到 20s ——
+        // 它测的是「游标能补齐」，不是「多快补齐」。
+        await waitFor(() => seen.length === 1, 20_000);
 
         expect(seen).toEqual([{ afterBKill: true }]);
         await restarted.stop();

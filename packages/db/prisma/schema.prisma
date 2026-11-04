@@ -681,6 +681,14 @@ model ApiTokenUsage {
 /// 保证「重启不丢、跨副本可达、at-least-once」。
 model OutboxEvent {
   id          String    @id @default(cuid())
+  /// 单调递增的插入序，**消费游标必须用它**。
+  ///
+  /// `id` 是 cuid：它只在**同一生成器实例内**按时间递增，跨进程并发写同一毫秒
+  /// 时后插入的行完全可能拿到更小的 id（实测生产库 601 行里有 36 组逆序）。
+  /// 用 `(createdAt, id)` 做复合游标会因此**静默漏事件**：游标推进到较大的 id
+  /// 之后，同毫秒里 id 更小的那条就永远满足不了 `id > lastId`。
+  /// `createdAt` 也不行——它只到毫秒精度，同毫秒内的先后无法区分。
+  seq         BigInt    @default(autoincrement())
   topic       String
   payload     Json
   /// 发布来源节点，用于跨副本投递时避免回环重复。
@@ -725,9 +733,17 @@ model ProcessedEvent {
 /// 用于「离线副本重启后按游标确认不丢」与「游标落后于保留期」告警。
 model EventCursor {
   consumer  String    @id
+  /// 已消费到的 `OutboxEvent.seq`。**这是唯一的续位依据。**
+  ///
+  /// 早期用 `(lastAt, lastId)` 复合游标，依赖「同毫秒内 id 递增」—— cuid 不
+  /// 保证这一点（实测生产库 36 组逆序），于是游标一旦越过逆序对中 id 较大的
+  /// 那条，另一条就永远读不到：**静默丢事件**。`seq` 由序列在插入时赋值，
+  /// 单调且与提交顺序一致。
+  lastSeq   BigInt?
+  /// 已废弃：保留列是为了让旧版本进程在滚动升级期间还能读到自己写的游标。
+  /// 新代码不再读写它，一个发布周期后可删。
   lastId    String?
-  /// `createdAt` of the last consumed row; used with `lastId` as a composite
-  /// resume point (ids alone are not guaranteed to be monotonic).
+  /// 已废弃，同 `lastId`。
   lastAt    DateTime?
   updatedAt DateTime  @updatedAt
 

@@ -492,28 +492,47 @@ export class OutboxEventBus implements EventBus {
     try {
       let cursor = await options.db.eventCursor.findUnique({ where: { consumer } });
       if (!cursor) {
-        // First boot: start from "now" (minus an optional bounded window) so a
-        // fresh replica never replays the whole history.
+        /**
+         * 首次启动：从「此刻」开始（可减去有界的 replay 窗口），全新副本不会
+         * 把历史全放一遍。
+         *
+         * 起点用**当前最大 seq** 而不是时间：`createdAt` 只到毫秒，同毫秒里
+         * 既有已存在的行也有即将写入的行，用时间做起点会把它们混在一起。
+         */
+        const newest = await options.db.outboxEvent.findFirst({
+          orderBy: { seq: 'desc' },
+          select: { seq: true },
+        });
+        let startSeq = newest?.seq ?? 0n;
+        const windowMs = options.replayWindowMs ?? 0;
+        if (windowMs > 0) {
+          const boundary = await options.db.outboxEvent.findFirst({
+            where: { createdAt: { gte: new Date(Date.now() - windowMs) } },
+            orderBy: { seq: 'asc' },
+            select: { seq: true },
+          });
+          if (boundary) startSeq = boundary.seq - 1n;
+        }
         cursor = await options.db.eventCursor.upsert({
           where: { consumer },
-          create: {
-            consumer,
-            lastId: null,
-            lastAt: new Date(Date.now() - (options.replayWindowMs ?? 0)),
-          },
+          create: { consumer, lastSeq: startSeq },
           update: {},
         });
       }
       for (;;) {
-        const after: Date = cursor.lastAt ?? new Date(0);
-        const lastId: string | null = cursor.lastId ?? null;
+        /**
+         * 续位只用 `seq`。
+         *
+         * 早期版本用 `(createdAt, id)` 复合游标，依赖「同一毫秒内 id 递增」。
+         * `id` 是 cuid，跨进程并发写同一毫秒时**后插入的行可能拿到更小的
+         * id**（实测生产库 601 行里 36 组逆序）。游标一旦越过逆序对里 id 较大
+         * 的那条，另一条就永远满足不了 `id > lastId` —— 静默丢事件，无任何
+         * 报错。`seq` 是 BIGSERIAL，插入时由序列赋值，单调且与提交顺序一致。
+         */
+        const after: bigint = cursor.lastSeq ?? 0n;
         const rows = await options.db.outboxEvent.findMany({
-          where: {
-            OR: lastId
-              ? [{ createdAt: { gt: after } }, { createdAt: after, id: { gt: lastId } }]
-              : [{ createdAt: { gte: after } }],
-          },
-          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          where: { seq: { gt: after } },
+          orderBy: { seq: 'asc' },
           take: CATCH_UP_BATCH,
         });
         if (rows.length === 0) break;
@@ -527,8 +546,7 @@ export class OutboxEventBus implements EventBus {
             this.markDelivered(row.id);
             delivered += 1;
           }
-          cursor =
-            (await this.advanceReplicaCursor(consumer, row, row.createdAt ?? after)) ?? cursor;
+          cursor = (await this.advanceReplicaCursor(consumer, row)) ?? cursor;
         }
         if (rows.length < CATCH_UP_BATCH) break;
       }
@@ -597,9 +615,17 @@ export class OutboxEventBus implements EventBus {
       const replica = await options.db.eventCursor.findUnique({
         where: { consumer: this.replicaConsumerName },
       });
-      const replicaAt = replica?.lastAt ? new Date(replica.lastAt).getTime() : 0;
-      const clusterAt = cursor?.lastAt ? new Date(cursor.lastAt).getTime() : 0;
-      replicaCursorLagMs = Math.max(0, clusterAt - replicaAt);
+      // 副本滞后：本副本已消费到的 seq 与集群游标 seq 之间的**行数**距离，
+      // 换算成毫秒估值。用 seq 而不是时间戳 —— 时间戳只到毫秒，同毫秒内
+      // 的差值恒为 0，会让滞后永远显示成「没落后」。
+      const replicaSeq = replica?.lastSeq ?? null;
+      const clusterSeq = cursor?.lastSeq ?? null;
+      if (replicaSeq !== null && clusterSeq !== null && clusterSeq > replicaSeq) {
+        const behind = await options.db.outboxEvent.count({
+          where: { seq: { gt: replicaSeq, lte: clusterSeq } },
+        });
+        replicaCursorLagMs = behind;
+      }
     }
     return { pending, parked, oldestPendingAgeMs, cursorLagMs, replicaCursorLagMs };
   }
@@ -795,14 +821,23 @@ export class OutboxEventBus implements EventBus {
     }
   }
 
+  /**
+   * 推进集群（relay）游标。
+   *
+   * 同样用 `seq` 而不是 `(createdAt, id)`：这个游标驱动 `outboxStats` 的延迟
+   * 观测与保留期告警，位置偏了会给出错误的「消费滞后」结论。`updateMany` +
+   * 条件是必要的 —— relay 可能被多个副本并发执行。
+   */
   private async advanceCursor(row: OutboxRow, at: Date): Promise<void> {
     const options = this.options;
     if (!options) return;
     try {
-      await options.db.eventCursor.upsert({
-        where: { consumer: OUTBOX_CLUSTER_CONSUMER },
-        create: { consumer: OUTBOX_CLUSTER_CONSUMER, lastId: row.id, lastAt: at },
-        update: { lastId: row.id, lastAt: at },
+      await options.db.eventCursor.updateMany({
+        where: {
+          consumer: OUTBOX_CLUSTER_CONSUMER,
+          OR: [{ lastSeq: null }, { lastSeq: { lt: row.seq } }],
+        },
+        data: { lastSeq: row.seq, lastAt: at },
       });
     } catch {
       // Cursor is observability/bookkeeping; never fail delivery on it.
@@ -813,19 +848,24 @@ export class OutboxEventBus implements EventBus {
    * Persist this replica's consumption position. Called after delivery (never
    * before) so a crash replays rather than skips. Returns the new cursor.
    */
+  /**
+   * 把游标推进到这一行的 `seq`。
+   *
+   * 用 `updateMany` + 条件而不是无条件 `upsert`：`catchUp` 可能被多个并发
+   * 路径触发（定时器 + 手动 `catchUp()`），无条件写会让游标**倒退**。
+   */
   private async advanceReplicaCursor(
     consumer: string,
     row: OutboxRow,
-    at: Date,
-  ): Promise<{ lastId: string | null; lastAt: Date | null } | null> {
+  ): Promise<{ lastSeq: bigint | null } | null> {
     const options = this.options;
     if (!options) return null;
     try {
-      return await options.db.eventCursor.upsert({
-        where: { consumer },
-        create: { consumer, lastId: row.id, lastAt: at },
-        update: { lastId: row.id, lastAt: at },
+      await options.db.eventCursor.updateMany({
+        where: { consumer, OR: [{ lastSeq: null }, { lastSeq: { lt: row.seq } }] },
+        data: { lastSeq: row.seq },
       });
+      return { lastSeq: row.seq };
     } catch {
       // Bookkeeping only; the next pass retries from the previous position.
       return null;
@@ -895,7 +935,7 @@ interface PrismaClientLike {
   outboxEvent: {
     create(args: { data: Record<string, unknown> }): Promise<unknown>;
     findMany(args: unknown): Promise<OutboxRow[]>;
-    findFirst(args: unknown): Promise<{ createdAt: Date } | null>;
+    findFirst(args: unknown): Promise<{ createdAt: Date; seq: bigint } | null>;
     updateMany(args: unknown): Promise<{ count: number }>;
     count(args: unknown): Promise<number>;
     deleteMany(args: unknown): Promise<{ count: number }>;
@@ -904,13 +944,26 @@ interface PrismaClientLike {
     create(args: { data: { consumer: string; eventId: string } }): Promise<unknown>;
   };
   eventCursor: {
-    findUnique(args: unknown): Promise<{ lastId: string | null; lastAt: Date | null } | null>;
-    upsert(args: unknown): Promise<{ lastId: string | null; lastAt: Date | null }>;
+    findUnique(args: unknown): Promise<EventCursorRow | null>;
+    upsert(args: unknown): Promise<EventCursorRow>;
+    updateMany(args: unknown): Promise<{ count: number }>;
   };
+}
+
+/** Shape of a `event_cursors` row as far as the outbox cares. */
+interface EventCursorRow {
+  /** Resume point. `null` = start from the beginning of the outbox. */
+  lastSeq: bigint | null;
+  /** @deprecated superseded by `lastSeq`; kept for rolling upgrades. */
+  lastId?: string | null;
+  /** @deprecated superseded by `lastSeq`; kept for rolling upgrades. */
+  lastAt?: Date | null;
 }
 
 interface OutboxRow {
   id: string;
+  /** Monotonic insertion order; the only valid resume point (see `catchUp`). */
+  seq: bigint;
   topic: string;
   payload: unknown;
   attempts?: number;
