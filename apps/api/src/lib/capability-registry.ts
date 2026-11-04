@@ -168,6 +168,38 @@ export function scopeSatisfied(
   const owned = permissions instanceof Set ? permissions : new Set(permissions);
   if (owned.has(scope)) return true;
   const resource = scopeResource(scope);
+
+  /**
+   * `platform.admin` 满足**所有** refined scope。
+   *
+   * 内核自己的资源在 {@link KERNEL_RESOURCE_PERMISSIONS} 里逐条列了
+   * `platform.admin`，所以看起来「超权自动生效」；但那只是**手工保证**。
+   * 插件资源是运行期聚合的（{@link aggregateScopeGovernance}），它只把
+   * **插件自己声明的权限键**填进去：
+   *
+   *     gateway -> ['llm-gateway.use', 'llm-gateway.admin']
+   *
+   * 于是同一句话在两种资源上结论相反：
+   *
+   *     scopeSatisfied('user:read',    ['platform.admin']) -> true    （内核资源）
+   *     scopeSatisfied('gateway:read', ['platform.admin']) -> false   （插件资源）
+   *
+   * 后果不是「少给一点权限」而是**超级管理员访问插件的开放 API 一律 403**：
+   * `requireOpenScope` 对会话用户直接用这个函数判定（`plugins/auth.ts`）。
+   * 实测：`GET /api/v1/gateway/...`（scope `gateway:read`）对
+   * `platform.admin` 返回 false，而 `llm-gateway.use` 返回 true。
+   *
+   * 为什么这是正确语义而不是放大权限：refined scope 只能**收窄**内部
+   * `route.permission` 这道门（见 `PluginCapability.scope` 的注释——「scope can
+   * only narrow access — the internal `route.permission` remains the admission
+   * gate」）。超权持有者本来就能过内部门，再让 refined scope 挡住他没有任何
+   * 安全收益，只是把他锁在门外。
+   *
+   * 注意非 refined scope（`platform.admin`、`store.admin` 这类权限键）**不走**
+   * 这条路径 —— 它们保持精确匹配，否则「持有 A 就自动持有 B」会真的放大权限。
+   */
+  if (resource && owned.has('platform.admin')) return true;
+
   if (!resource) return false;
   if (owned.has(`${resource}:admin`)) return true;
   return (governance[resource] ?? []).some((permission) => owned.has(permission));

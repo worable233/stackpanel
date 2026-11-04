@@ -164,7 +164,6 @@ describe('索引声明只允许追加（升级兼容性）', () => {
     const indexesEnd = block.indexOf('  ],', indexesStart);
     const indexes = block.slice(indexesStart, indexesEnd);
 
-    const positions = [...indexes.matchAll(/\{\s*\n?\s*fields: \['(\w+)'\]/g)].map((m) => m[1]);
     // 唯一的那个索引必须是最后一个声明
     expect(indexes.indexOf('unique: true')).toBeGreaterThan(
       indexes.indexOf("fields: ['expiryStage']"),

@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   KERNEL_RESOURCE_PERMISSIONS,
   RESOURCE_PERMISSIONS,
@@ -164,5 +169,89 @@ describe('refined open-API scopes', () => {
         (cap) => cap.id,
       ),
     ).not.toContain('user.create');
+  });
+});
+
+describe('plugin resources must not lock out the superuser', () => {
+  /**
+   * 内核资源在 `KERNEL_RESOURCE_PERMISSIONS` 里逐条列了 `platform.admin`，所以
+   * 「超权自动生效」看起来是通用规则 —— 但那只是**手工枚举**的结果。
+   *
+   * 插件资源是运行期聚合的（`aggregateScopeGovernance`），只把插件自己声明的
+   * 权限键填进去，没有 `platform.admin`。于是同一句话在两类资源上结论相反：
+   *
+   *     user:read    + platform.admin -> true    （内核资源）
+   *     gateway:read + platform.admin -> false   （插件资源）
+   *
+   * 后果是超级管理员访问插件开放 API 一律 403：`requireOpenScope` 对会话用户
+   * 直接用 `scopeSatisfied` 判定。
+   */
+  it('aggregated plugin governance omits platform.admin', () => {
+    const gov = aggregateScopeGovernance([
+      [
+        { key: 'llm-gateway.use', scope: 'gateway' },
+        { key: 'llm-gateway.admin', scope: 'gateway' },
+      ],
+    ] as never);
+    expect(gov.gateway).not.toContain('platform.admin');
+  });
+
+  it('platform.admin satisfies a plugin refined scope anyway', () => {
+    expect(scopeSatisfied('gateway:read', new Set(['platform.admin']), PLUGIN_GOVERNANCE)).toBe(true);
+    expect(scopeSatisfied('gateway:write', new Set(['platform.admin']), PLUGIN_GOVERNANCE)).toBe(true);
+    // 内核对照：本来就该通过
+    expect(scopeSatisfied('user:read', new Set(['platform.admin']))).toBe(true);
+  });
+
+  it('does not grant refined scopes to non-superusers', () => {
+    expect(scopeSatisfied('gateway:read', new Set(['store.admin']), PLUGIN_GOVERNANCE)).toBe(false);
+    expect(scopeSatisfied('gateway:read', new Set(), PLUGIN_GOVERNANCE)).toBe(false);
+    expect(scopeSatisfied('gateway:read', new Set(['user.basic']), PLUGIN_GOVERNANCE)).toBe(false);
+  });
+
+  it('keeps coarse (non-refined) scopes exact — no automatic escalation', () => {
+    // `platform.admin` 是权限键，不是 refined scope。放开它会变成
+    // 「持有 A 就自动持有 B」的真正提权。
+    expect(scopeSatisfied('store.admin', new Set(['platform.admin']))).toBe(false);
+    expect(scopeSatisfied('epay.admin', new Set(['platform.admin']))).toBe(false);
+  });
+});
+
+describe('capability.scope may only narrow, never widen', () => {
+  /**
+   * `runtime.ts` 原本无条件用 `capability.scope` 替换 `route.permission`：
+   *
+   *     ...(!capability.scope && route.permission ? { permission: route.permission } : {})
+   *
+   * 于是一个抄错的 scope 就能**放宽**访问：
+   *
+   *     route.permission = 'epay.admin'
+   *     capability.scope = 'user.basic'
+   *     -> 持有 user.basic 的普通用户可访问管理端点
+   *
+   * 现在只有 refined `资源:read|write` 才替换；其他形式保留 `route.permission`。
+   */
+  const runtime = readFileSync(path.join(root, 'src/plugins/runtime.ts'), 'utf8');
+
+  it('decides replacement by scopeResource(), not by truthiness', () => {
+    expect(runtime).toContain('scopeResource(capability.scope)');
+    expect(runtime).toContain('scopeReplacesPermission');
+    // 旧的无条件丢弃必须已经消失。注意注释里仍保留这行作为「以前是什么」的
+    // 说明，所以要排除注释行再看实际代码。
+    const code = runtime
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('//'))
+      .join('\n');
+    expect(code).not.toContain(
+      '!capability.scope && route.permission ? { permission: route.permission }',
+    );
+  });
+
+  it('non-refined scope keeps the internal permission gate', () => {
+    const i = runtime.indexOf('const scopeReplacesPermission');
+    const block = runtime.slice(i, i + 700);
+    expect(block).toMatch(/scopeReplacesPermission\s*=\s*refinedScope !== null/);
+    // permission 只在「不替换」时保留
+    expect(block).toContain('route.permission && !scopeReplacesPermission');
   });
 });

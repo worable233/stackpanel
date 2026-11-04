@@ -47,6 +47,7 @@ import { createStorageService } from '../storage/backend.ts';
 import { getCacheService } from '../cache/index.ts';
 import {
   aggregateScopeGovernance,
+  scopeResource,
   type Capability,
   type PluginCapabilityEntry,
   type ScopeGovernance,
@@ -726,17 +727,44 @@ export class PluginRuntime {
       }
       this.capabilityPaths.add(`${capability.method} ${capability.path}`);
 
-      // The alias inherits the internal guard verbatim — permission and auth are
-      // never widened on the public surface. When the capability declares a
-      // refined `资源:read|write` scope (slice four), the refined scope replaces
-      // the coarse permission as the gate: it is strictly narrower because
-      // issuance requires the owner to hold the coarse resource permission, so
-      // access can only shrink, and a read scope cannot perform a write.
+      /**
+       * `capability.scope` 只有在**是 refined scope**（`资源:read|write`）时才
+       * 允许替换内部门禁。
+       *
+       * 原实现是无条件替换：
+       *
+       *     ...(!capability.scope && route.permission ? { permission: route.permission } : {})
+       *
+       * 也就是说，只要声明了 `capability.scope`，那个值就**取代**了
+       * `route.permission` 这道门。原本的语义是「refined scope 只能收窄访问」，
+       * 但实现上它可以**放宽**：
+       *
+       *     route.permission   = 'epay.admin'     （管理员）
+       *     capability.scope   = 'user.basic'     （打字错误 / 抄错）
+       *     -> 持有 user.basic 的普通用户就能访问管理端点
+       *
+       * 实测 `scopeSatisfied('user.basic', ['user.basic'])` 为 true，而
+       * `route.permission` 已被丢弃 —— 内部门禁完全失效。
+       *
+       * 现在的规则：`资源:read|write` 形式才替换（它确实更窄：签发要求持有者
+       * 本身拥有该资源的粗粒度权限，且 read 不能做 write）；其他任何形式一律
+       * **保留** `route.permission`，让 `capability.scope` 只作为额外的一层。
+       *
+       * 为什么保留而不报错：已有 13 个插件把 `capability.scope` 写成了权限键
+       * （`epay.admin`、`ticket.admin` 等）。它们恰好与自己的 `route.permission`
+       * 相同，所以丢掉内部门禁时行为等价 —— 属于「靠巧合安全」。直接拒绝会让
+       * 这些插件装不上；保留 permission 则是**无条件更安全**的收敛方向：
+       * 认证语义不变，只是多一道等价的检查。
+       */
+      const refinedScope = capability.scope ? scopeResource(capability.scope) : null;
+      const scopeReplacesPermission = refinedScope !== null;
       const alias: PluginRoute = {
         method: capability.method,
         path: capability.path,
         ...(route.auth ? { auth: route.auth } : {}),
-        ...(!capability.scope && route.permission ? { permission: route.permission } : {}),
+        ...(route.permission && !scopeReplacesPermission
+          ? { permission: route.permission }
+          : {}),
         handler: route.handler,
       };
       const dispose = this.options.registerRoute(
