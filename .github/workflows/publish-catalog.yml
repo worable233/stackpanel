@@ -116,19 +116,27 @@ jobs:
         env:
           KERNEL_TAGS: ${{ inputs.kernels }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPOSITORY: ${{ secrets.CATALOG_REPOSITORY || 'worable233/stackpanel' }}
+          # 内核 Release 在**内核仓**（本 workflow 所在仓库），不是目录仓。
+          # 用 `secrets.CATALOG_REPOSITORY`（= 插件/目录仓）会去错仓库找 tag，
+          # `gh release download` 静默失败、循环体不产出任何文件，最后只剩
+          # 「共取到 0 条」—— 实测踩过这个坑。
+          REPOSITORY: ${{ github.repository }}
         run: |
           mkdir -p "$RUNNER_TEMP/kernels"
-          printf '%s' "$KERNEL_TAGS" | tr ',' '\n' | sed '/^$/d' | while read -r tag; do
+          # 用 here-string 而不是管道：`printf ... | while read` 里的循环跑在
+          # **subshell**，里面的 `exit 1` 只退出 subshell —— 外层照样往下走，最后
+          # 只剩一句「共取到 0 条」，看不出真正原因（实测踩过：下载其实失败了，
+          # 但日志里连「下载」那行都没打印）。
+          while read -r tag; do
             tag="$(printf '%s' "$tag" | tr -d ' ')"
             [ -z "$tag" ] && continue
-            echo "下载 $tag 的 kernel-ref.json"
+            echo "下载 $tag 的 kernel-ref.json（仓库 $REPOSITORY）"
             gh release download "$tag" --repo "$REPOSITORY" \
               --pattern kernel-ref.json --dir "$RUNNER_TEMP/kernels" --clobber
             # 重命名成按 tag 唯一的名字：`--kernels <dir>` 会读目录下**所有** json，
             # 两个 tag 都叫 kernel-ref.json 会互相覆盖。
             mv "$RUNNER_TEMP/kernels/kernel-ref.json" "$RUNNER_TEMP/kernels/kernel-ref-$tag.json"
-          done
+          done <<< "$(printf '%s' "$KERNEL_TAGS" | tr ',' '\n')"
           count="$(find "$RUNNER_TEMP/kernels" -name '*.json' | wc -l | tr -d ' ')"
           echo "共取到 $count 条内核引用"
           if [ "$count" = "0" ]; then
