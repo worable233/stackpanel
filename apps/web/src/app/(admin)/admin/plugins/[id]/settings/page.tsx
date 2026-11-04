@@ -1,10 +1,12 @@
+import { Suspense } from 'react';
 import { PageHeader } from '@stackpanel/ui';
 import { Settings2 } from 'lucide-react';
 import { SettingsForm } from '@/components/settings-form';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { getAuthedApiClient } from '@/lib/api';
 import { savePluginSettingsAction } from '@/lib/frontend-settings-actions';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator } from '@/i18n/core';
+import { createTranslator, type Translator } from '@/i18n/core';
 import { DEFAULT_LOCALE } from '@/i18n/config';
 import { localizeSettingsSchema, readPackageMessages } from '@/i18n/package-messages';
 import { listPluginFrontendCandidates } from '@/lib/slots';
@@ -19,6 +21,29 @@ export default async function AdminPluginSettingsPage({
   const { id } = await params;
   const locale = await getLocale();
   const t = createTranslator(locale);
+  return (
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+      <PageHeader
+        backHref="/admin/plugins"
+        backLabel={t('admin.pluginSettings.back')}
+        title={t('admin.pluginSettings.title')}
+      />
+      <Suspense fallback={<DataSkeleton variant="settings" />}>
+        <PluginSettingsData id={id} locale={locale} t={t} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function PluginSettingsData({
+  id,
+  locale,
+  t,
+}: {
+  id: string;
+  locale: Parameters<typeof createTranslator>[0];
+  t: Translator;
+}) {
   const api = await getAuthedApiClient();
   const [schemaResult, settingsResult, candidates] = await Promise.all([
     api.getPluginSettingsSchema(id),
@@ -32,27 +57,22 @@ export default async function AdminPluginSettingsPage({
     ? localizeSettingsSchema(schemaResult.schema, messages, locale, [DEFAULT_LOCALE])
     : null;
 
+  if (!schema) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-2xl bg-muted/40 px-6 py-12 text-center">
+        <span className="flex size-11 items-center justify-center rounded-full bg-background text-muted-foreground">
+          <Settings2 className="size-5" aria-hidden="true" />
+        </span>
+        <p className="text-sm text-muted-foreground">{t('admin.pluginSettings.noSettings')}</p>
+      </div>
+    );
+  }
+
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
-      <PageHeader
-        backHref="/admin/plugins"
-        backLabel={t('admin.pluginSettings.back')}
-        title={t('admin.pluginSettings.title')}
-      />
-      {schema ? (
-        <SettingsForm
-          schema={schema}
-          initial={settingsResult.settings}
-          save={savePluginSettingsAction.bind(null, id)}
-        />
-      ) : (
-        <div className="flex flex-col items-center gap-3 rounded-2xl bg-muted/40 px-6 py-12 text-center">
-            <span className="flex size-11 items-center justify-center rounded-full bg-background text-muted-foreground">
-              <Settings2 className="size-5" aria-hidden="true" />
-            </span>
-          <p className="text-sm text-muted-foreground">{t('admin.pluginSettings.noSettings')}</p>
-        </div>
-      )}
-    </main>
+    <SettingsForm
+      schema={schema}
+      initial={settingsResult.settings}
+      save={savePluginSettingsAction.bind(null, id)}
+    />
   );
 }
