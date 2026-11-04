@@ -1,10 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import type { FrontendSettings } from '@stackpanel/sdk';
-import type {
-  FrontendActionExecutors,
-  FrontendManifest,
-} from '@stackpanel/sdk';
+import type { FrontendActionExecutors, FrontendManifest } from '@stackpanel/sdk';
 import { ApiError, matchFrontendPagePath } from '@stackpanel/sdk';
 import { getAuthedApiClient } from './api';
 import {
@@ -13,7 +10,11 @@ import {
   listPluginFrontendCandidates,
   readPluginSettings,
 } from './slots';
-import { runtimeAdminModuleUrl, runtimeFrontendFailure, runtimeFrontendLoadingEnabled } from './frontend-runtime';
+import {
+  runtimeAdminModuleUrl,
+  runtimeFrontendFailure,
+  runtimeFrontendLoadingEnabled,
+} from './frontend-runtime';
 import { getLocale } from '@/i18n/locale';
 import { DEFAULT_LOCALE } from '@/i18n/config';
 import { packageLabel, readPackageMessages } from '@/i18n/package-messages';
@@ -57,33 +58,46 @@ export type PluginAdminRouteResult =
 /** Admin sidebar menus contributed by active plugin frontend packages. */
 export const getPluginAdminMenus = cache(async (): Promise<PluginAdminMenu[]> => {
   const candidates = await listPluginFrontendCandidates();
-  const menus: PluginAdminMenu[] = [];
   const locale = await getLocale();
-  for (const candidate of candidates) {
+  const entries = candidates.flatMap((candidate) => {
     const { messages } = readPackageMessages(candidate.id, candidate.manifest.messages);
-    for (const route of candidate.manifest.adminRoutes) {
-      if (
-        route.systemSettings ||
-        !route.nav ||
-        (route.permission && !(await isAllowed(route.permission)))
-      )
-        continue;
-      // Labels are resolved through the package's own catalog (ADR-0016 §5).
-      // The literal `label` stays the fallback for locales the package omits.
-      const group = packageLabel(messages, locale, route.nav.groupKey, route.nav.group, [
+    return candidate.manifest.adminRoutes
+      .filter((route) => !route.systemSettings && route.nav)
+      .map((route) => ({ candidate, route, messages }));
+  });
+
+  // Permission lookups are independent. Checking them in series made the shell
+  // wait N × API latency before it could paint (one check per plugin route).
+  const permissions = [
+    ...new Set(
+      entries
+        .map(({ route }) => route.permission)
+        .filter((permission): permission is string => Boolean(permission)),
+    ),
+  ];
+  const permissionResults = await Promise.all(
+    permissions.map(async (permission) => [permission, await isAllowed(permission)] as const),
+  );
+  const allowed = new Map(permissionResults);
+
+  const menus: PluginAdminMenu[] = [];
+  for (const { candidate, route, messages } of entries) {
+    if (route.permission && !allowed.get(route.permission)) continue;
+    // Labels are resolved through the package's own catalog (ADR-0016 §5).
+    // The literal `label` stays the fallback for locales the package omits.
+    const group = packageLabel(messages, locale, route.nav!.groupKey, route.nav!.group, [
+      DEFAULT_LOCALE,
+    ]);
+    menus.push({
+      pluginId: candidate.id,
+      label: packageLabel(messages, locale, route.nav!.labelKey, route.nav!.label, [
         DEFAULT_LOCALE,
-      ]);
-      menus.push({
-        pluginId: candidate.id,
-        label: packageLabel(messages, locale, route.nav.labelKey, route.nav.label, [
-          DEFAULT_LOCALE,
-        ]),
-        href: pluginAdminHref(candidate.id, route.path),
-        order: route.nav.order,
-        activePaths: route.nav.activePaths?.map((path) => pluginAdminHref(candidate.id, path)),
-        ...(group ? { group } : {}),
-      });
-    }
+      ]),
+      href: pluginAdminHref(candidate.id, route.path),
+      order: route.nav!.order,
+      activePaths: route.nav!.activePaths?.map((path) => pluginAdminHref(candidate.id, path)),
+      ...(group ? { group } : {}),
+    });
   }
   return menus;
 });
@@ -103,7 +117,8 @@ export async function resolvePluginAdminRoute(
   if (!route) return { status: 'not-found' };
   const api = await getAuthedApiClient();
   if (route.permission) {
-    if (!(await requestPermission(route.permission))) return { status: 'denied', permission: route.permission };
+    if (!(await requestPermission(route.permission)))
+      return { status: 'denied', permission: route.permission };
   }
   const pkg = await importFrontendPackage(
     'plugins',
@@ -168,7 +183,7 @@ export async function resolvePluginAdminRoute(
           });
           if (error instanceof Error) {
             // i18n-exempt: server-side diagnostic log, never rendered to a user.
-        console.error(`[page-data] ${failure.as} failed: ${error.message}`);
+            console.error(`[page-data] ${failure.as} failed: ${error.message}`);
           }
         },
       });
@@ -213,7 +228,6 @@ function capturePathParams(pattern: string, path: string): Record<string, string
   return params;
 }
 
-
 async function isAllowed(permission: string): Promise<boolean> {
   try {
     return await requestPermission(permission);
@@ -221,7 +235,6 @@ async function isAllowed(permission: string): Promise<boolean> {
     return false;
   }
 }
-
 
 /** Plugin-owned settings reuse the regular route resolver and its authorization gates. */
 export const getPluginSettingsSections = cache(async () => {
@@ -269,7 +282,9 @@ export const getPluginSettingsSections = cache(async () => {
       };
     }),
   );
-  const sections = resolved.filter((section): section is NonNullable<typeof section> => section !== null);
+  const sections = resolved.filter(
+    (section): section is NonNullable<typeof section> => section !== null,
+  );
   return sections.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 });
 

@@ -1,6 +1,6 @@
 import { AdminShell } from '@/components/admin-shell';
 import type { BackendNavigationItem, BackendUser } from '@/components/backend-shell';
-import { apiAssetUrl, getApiClient, getAuthedApiClient } from '@/lib/api';
+import { apiAssetUrl } from '@/lib/api';
 import { getPluginAdminMenus } from '@/lib/admin-frontend';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator } from '@/i18n/core';
@@ -46,15 +46,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   let pluginMenus: Awaited<ReturnType<typeof getPluginAdminMenus>> = [];
   let user: BackendUser = { email: t('admin.fallbackUser'), role: 'ADMIN' };
 
+  let brand = null;
+  let platformInfo = null;
   try {
-    // 与 account 侧同理：后台布局和各 admin 页面共享同一份 shell 数据。
-    const [result, menus, currentUser] = await Promise.all([
+    const [result, menus, currentUser, brandResult, platformResult] = await Promise.all([
       requestNav('admin'),
       requestPluginAdminMenus(),
       requestCurrentUser().catch(() => null),
+      requestPlatformBrand(),
+      requestPlatformInfo(),
     ]);
     nav = result.items.map((i) => ({ label: i.label, href: i.href }));
     pluginMenus = menus;
+    brand = brandResult;
+    platformInfo = platformResult;
     if (currentUser) {
       user = {
         email: currentUser.user.email,
@@ -86,13 +91,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       .map((item) => ({ ...item, group: item.group ?? item.pluginId })),
   ];
 
-  const [brand, platformInfo] = await Promise.all([
-    requestPlatformBrand(),
-    getApiClient()
-      .getPlatformInfo()
-      .then((result) => result.platform)
-      .catch(() => null),
-  ]);
   const brandLogoUrl = brand?.logo ? apiAssetUrl(brand.logo) : null;
 
   return (
