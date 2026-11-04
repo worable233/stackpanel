@@ -106,6 +106,7 @@ export function LiveGatewayStats({
   const hourlyMax = Math.max(...hourly, 1);
   const topModels = stats?.models.slice(0, 5) ?? [];
   const modelMax = Math.max(...topModels.map((item) => item.calls), 1);
+  const hasCalls = hourly.some((value) => value > 0);
   const updated = stats ? timeLabel(stats.updatedAt, locale) : '—';
 
   const metrics = [
@@ -171,20 +172,26 @@ export function LiveGatewayStats({
             <h3 className="text-sm font-medium">{labels.hourly}</h3>
             <span className="text-xs text-muted-foreground">{labels.live}</span>
           </div>
-          <div className="mt-6 flex h-48 items-end gap-1.5">
-            {hourly.map((value, index) => (
-              <div key={index} className="group flex h-full flex-1 flex-col justify-end gap-2">
-                <div
-                  className="w-full rounded-t bg-foreground/80 transition-all group-hover:bg-foreground"
-                  style={{ height: `${Math.max(4, (value / hourlyMax) * 100)}%` }}
-                  title={`${hourlyLabels[index] ?? String(index).padStart(2, '0')}:00 · ${value}`}
-                />
-                <span className="text-center text-[10px] text-muted-foreground/70">
-                  {index % 6 === 0 ? (hourlyLabels[index] ?? String(index).padStart(2, '0')) : ''}
-                </span>
-              </div>
-            ))}
-          </div>
+          {hasCalls ? (
+            <div className="mt-6 flex h-48 items-end gap-1.5">
+              {hourly.map((value, index) => (
+                <div key={index} className="group flex h-full flex-1 flex-col justify-end gap-2">
+                  <div
+                    className="w-full rounded-t bg-foreground/80 transition-all group-hover:bg-foreground"
+                    style={{ height: `${Math.max(4, (value / hourlyMax) * 100)}%` }}
+                    title={`${hourlyLabels[index] ?? String(index).padStart(2, '0')}:00 · ${value}`}
+                  />
+                  <span className="text-center text-[10px] text-muted-foreground/70">
+                    {index % 6 === 0 ? (hourlyLabels[index] ?? String(index).padStart(2, '0')) : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-6 flex h-48 items-center justify-center rounded-xl bg-background/60 text-sm text-muted-foreground">
+              {labels.noStats}
+            </p>
+          )}
         </div>
 
         <div className="rounded-[24px] bg-muted/35 p-5 sm:p-6">
