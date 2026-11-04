@@ -506,6 +506,25 @@ describe.skipIf(!dbAvailable)('Extension 引擎（真实库）', () => {
     });
 
     await getPrisma().$executeRawUnsafe(`DELETE FROM "ext_e1test_widen" WHERE "id" = 'widen-1'`);
+
+    /**
+     * 自己收拾干净。
+     *
+     * `widen` 是在这个用例里临时定义的模型，不在 `afterAll` 的
+     * `applyRetention` 名单里 —— 所以它的表与元数据行会**留到下一次运行**。
+     * 而下次运行时，元数据 hash 与本次的 `narrow` 声明不一致，迁移器就会走
+     * `applyDiff`（而不是建表），在已经加宽成 float8 的表上判定
+     * 「integer → double precision 已是 float8」……
+     *
+     * 实际表现是这条用例**第二次起必然失败**，而且报错指向迁移器的类型分支，
+     * 看起来像产品缺陷。排查时先怀疑 `SQL_TYPES` / `WIDENINGS`，最后才发现
+     * 是测试自己留下的状态。
+     *
+     * 教训：任何在用例内部 `defineModel` 出来的表，必须在该用例里删掉
+     * （元数据行 + 物理表），不能指望 `afterAll` 的保留策略名单。
+     */
+    await getPrisma().extensionSchema.deleteMany({ where: { kind: 'e1test/widen' } });
+    await getPrisma().$executeRawUnsafe('DROP TABLE IF EXISTS "ext_e1test_widen"');
   });
 
   it('保留策略：retain 保留表，delete 删表', async () => {
