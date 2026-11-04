@@ -179,6 +179,15 @@
   主机名游标，并行时互相推进；`outbox-replica-identity` 从不启动消费循环，靠
   `publish` 内部偶然的 catchUp 侥幸通过 —— 改为由测试显式驱动两侧 `catchUp`。
 
+### 修复（发版阻断）
+
+- **未设 `STACKPANEL_BRAND_DIR` 时整栈起不来**：`3f38dd4`（自定义品牌图标）在主
+  compose 里写了 `${STACKPANEL_BRAND_DIR:+...}`，注释断言「只有变量非空才产生这一
+  项」—— 实际 compose 短语法在空值时把整项展开成空字符串，**仍然是一个列表项**，
+  于是 `docker compose up` 报 `invalid empty volume spec`。默认值就是空，所以这是
+  绝大多数部署的路径，不是边缘情况。可选挂载改为独立的
+  `docker-compose.brand.yml`，由 `deploy.sh` 检测到变量非空时叠加。
+
 ### 验证
 
 - **真实插件前端的装载与渲染**（此前是发版前的功能盲区）：新增
