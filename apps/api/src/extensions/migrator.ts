@@ -273,6 +273,20 @@ export async function ensureExtensionModels(
         if (!current) {
           await tx.$executeRawUnsafe(createTableSql(table));
           for (const index of table.indexes) {
+            /**
+             * 建表路径同样要查重。
+             *
+             * `createTableSql` 用 `IF NOT EXISTS` —— 表可能已经存在（元数据行
+             * 丢失、或别的进程刚建好但没来得及写元数据）。此时直接建唯一索引，
+             * 有重复数据就会撞 PostgreSQL 的 `23505`：
+             *
+             *     could not create unique index "idx_ext_store_service-instance_9"
+             *
+             * 这是原始驱动错误，既没有 code 也没有「哪个模型哪个索引」的说明，
+             * 管理员看到的是「API 起不来」加一串 SQL 细节。`applyDiff` 路径
+             * 早就用 `assertNoDuplicates` 给出了可读的拒绝理由，这里对齐。
+             */
+            if (index.unique) await assertNoDuplicates(tx, table, index);
             await tx.$executeRawUnsafe(createIndexSql(table.tableName, index));
           }
           await tx.extensionSchema.create({

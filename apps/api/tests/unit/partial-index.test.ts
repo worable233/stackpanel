@@ -281,3 +281,35 @@ describe('多列声明部分索引必须报错，不能静默降级', () => {
     expect(createIndexSql(t.tableName, t.indexes[0]!)).not.toContain('IS NOT NULL');
   });
 });
+
+describe('建表路径与 applyDiff 路径的查重行为必须一致', () => {
+  const migrator = readFileSync(path.join(root, 'src/extensions/migrator.ts'), 'utf8');
+
+  /**
+   * `createTableSql` 用 `IF NOT EXISTS`，所以「没有元数据行」不等于「没有表」：
+   * 表可能已经存在（元数据丢失、或并发进程刚建好还没来得及写元数据）。
+   *
+   * 原实现只在 `applyDiff` 里查重，建表路径直接 `CREATE UNIQUE INDEX` ——
+   * 有重复数据就撞 PostgreSQL 的 `23505`：
+   *
+   *     could not create unique index "idx_ext_store_service-instance_9"
+   *
+   * 既没有 `code`，也没说清是哪个模型哪个索引。`applyDiff` 早就给出可读的
+   * 「存在重复值，无法建立唯一索引 X」，两条路径不该有这种落差。
+   */
+  it('建表分支也要调 assertNoDuplicates', () => {
+    const branch = migrator.slice(migrator.indexOf('if (!current) {'));
+    const body = branch.slice(0, branch.indexOf('await tx.extensionSchema.create'));
+
+    expect(body).toContain('createTableSql');
+    expect(body).toContain('assertNoDuplicates');
+    // 必须是「唯一索引才查」，非唯一索引查重是纯浪费
+    expect(body).toMatch(/if \(index\.unique\)/);
+  });
+
+  it('两条路径用同一个查重函数', () => {
+    const calls = migrator.match(/assertNoDuplicates\(/g) ?? [];
+    // 一次定义 + 两次调用（建表分支、applyDiff 分支）
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+  });
+});
