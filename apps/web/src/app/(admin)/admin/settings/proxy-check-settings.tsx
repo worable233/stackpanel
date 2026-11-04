@@ -29,8 +29,15 @@ export function ProxyCheckSettings() {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [pending, startTransition] = useTransition();
 
-  const load = useCallback(async () => {
-    setState({ kind: 'loading' });
+  /**
+   * `announce` 为 false 时把 `loading` 状态留给初值。
+   *
+   * 首屏那一次由 `useEffect` 触发，而 `state` 的初值已经是
+   * `{ kind: 'loading' }` —— 再设一次是在 effect 里同步 setState，会触发级联
+   * 渲染。手动「重新检查」时才需要显式回到 loading。
+   */
+  const load = useCallback(async (announce = true) => {
+    if (announce) setState({ kind: 'loading' });
     try {
       // **必须由浏览器直接请求内核**：这个面板要检查的正是「浏览器 → 反代 → 内核」
       // 这一跳的头。走 BFF（服务端转发）测出来的是 `web → api` 那一跳 —— 内网直连、
@@ -44,7 +51,9 @@ export function ProxyCheckSettings() {
 
   useEffect(() => {
     // 首屏自动跑一次：这个面板的全部意义是「打开就看到对不对」，不该还要点一下。
-    void load();
+    // 放进 transition：`load` 内部会 setState，直接在 effect 里同步调用会触发
+    // 级联渲染（React 19 的 set-state-in-effect 规则）。
+    startTransition(() => void load(false));
   }, [load]);
 
   const refresh = () => startTransition(() => void load());

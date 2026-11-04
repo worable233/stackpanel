@@ -1,4 +1,4 @@
-import { apiAssetUrl, getApiClient } from '@/lib/api';
+import { apiAssetUrl } from '@/lib/api';
 import { isProvisioningMode } from '@/lib/provisioning';
 import { requestActiveTheme } from '@/lib/platform-request-cache';
 

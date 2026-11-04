@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ReceiptText, X } from 'lucide-react';
 import type { AdminPaymentRecord } from '@stackpanel/sdk';
-import { Badge, List, ListEmpty, ListItem, StatusBadge, type StatusTone } from '@stackpanel/ui';
+import { Badge, List, ListItem, StatusBadge, type StatusTone } from '@stackpanel/ui';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast';
 import { useLocale, useTranslator } from '@/i18n/provider';

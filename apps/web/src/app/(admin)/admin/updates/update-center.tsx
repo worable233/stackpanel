@@ -8,7 +8,7 @@ import type {
   UpdateStatusResponse,
   UpdateTaskResultView,
 } from '@stackpanel/sdk';
-import { ArrowRight, ArrowUpCircle, CheckCircle2, Info, RefreshCw, Settings2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, RefreshCw, Settings2 } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -263,7 +263,11 @@ export function UpdateCenter({
     if (autoChecked.current || plan || activeTask) return;
     if (status.catalogState === 'unconfigured') return;
     autoChecked.current = true;
-    onCheck(true);
+    // `startTransition` 里调用：`onCheck` 会同步 `setBusy`，直接从 effect 调用
+    // 会在本次渲染刚提交时再触发一次渲染（React 19：「Calling setState
+    // synchronously within an effect can trigger cascading renders」）。放进
+    // transition 后这一批状态更新被标记为可中断的低优先级更新，不会形成级联。
+    startTransition(() => onCheck(true));
     // 只在首屏自动检查一次；后续由用户显式触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

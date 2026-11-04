@@ -36,8 +36,16 @@ export function PluginMarket({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /**
+   * `announce` 为 false 时不动 `loading` 状态。
+   *
+   * 首次加载由 `useEffect` 触发，而此时 `loading` 的初值已经是 `true` —— 再调
+   * 一次 `setLoading(true)` 是在 effect 里同步 setState，会触发一次级联渲染
+   * （React 19 会直接报 "Calling setState synchronously within an effect can
+   * trigger cascading renders"）。手动点刷新时才需要把 loading 打开。
+   */
+  const load = useCallback(async (announce = true) => {
+    if (announce) setLoading(true);
     setError(false);
     try {
       const [pluginsResult, themesResult] = await Promise.allSettled([
@@ -63,7 +71,11 @@ export function PluginMarket({
   }, []);
 
   useEffect(() => {
-    void load();
+    // 放进 transition：`load` 内部会 `setLoading` / `setError` / `setData`，
+    // 直接从 effect 同步调用会在本轮提交后再触发一次渲染（React 19 报
+    // "Calling setState synchronously within an effect can trigger cascading
+    // renders"）。transition 把这些更新标成可中断的低优先级更新。
+    startTransition(() => void load(false));
   }, [load]);
 
   const packages = useMemo(() => {

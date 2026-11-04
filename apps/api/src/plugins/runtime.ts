@@ -1212,6 +1212,8 @@ export class PluginRuntime {
   private context(definition: PluginDefinition): PluginContext {
     const pluginId = definition.manifest.id;
     // getter 里需要 `this`：`ctx` 在激活期内是同一对象，而 owner 随请求变化。
+    // 无法省掉这个别名 —— getter 函数体的 `this` 是**返回对象**，不是 PluginRuntime。
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     const base = this.options.logger;
     const logger: PluginLogger = {

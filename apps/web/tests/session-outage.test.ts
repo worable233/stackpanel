@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -39,8 +41,8 @@ describe('session resolution distinguishes "anonymous" from "cannot tell"', () =
 });
 
 describe('the web entry points never redirect on an outage', () => {
-  const read = (p: string) => require('node:fs').readFileSync(p, 'utf8') as string;
-  const root = require('node:path').resolve(__dirname, '..');
+  const read = (p: string) => readFileSync(p, 'utf8');
+  const root = resolve(__dirname, '..');
 
   it('admin proxy returns 503 instead of bouncing to /login on 5xx', () => {
     const proxy = read(`${root}/src/proxy.ts`);

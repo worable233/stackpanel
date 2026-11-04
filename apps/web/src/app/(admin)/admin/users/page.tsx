@@ -6,7 +6,7 @@ import { CreateUserForm } from '@/components/create-user-form';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator, type Translator } from '@/i18n/core';
+import { createTranslator } from '@/i18n/core';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UsersManager } from './users-manager';
 
@@ -70,7 +70,6 @@ export default async function AdminUsersPage({
           status={status}
           groupId={groupId}
           sort={sort}
-          t={t}
         />
       </Suspense>
     </main>
@@ -89,7 +88,6 @@ async function UsersData({
   status,
   groupId,
   sort,
-  t,
 }: {
   page: number;
   pageSize: number;
@@ -97,14 +95,28 @@ async function UsersData({
   status: StatusFilter;
   groupId: string;
   sort: UserSort;
-  t: Translator;
 }) {
-  let users: Awaited<
+  type UsersPage = Awaited<
     ReturnType<Awaited<ReturnType<typeof getAuthedApiClient>>['listAdminUsers']>
-  > | null = null;
+  >;
+  type Groups = Awaited<ReturnType<typeof getGroups>>;
+
+  /**
+   * 只把**取数**包在 try/catch 里，JSX 放在外面。
+   *
+   * 原写法把 `<UsersManager …>` 也写在 try 内。即使在 async 服务端组件里
+   * 构造元素本身是同步的，这个结构仍然容易被误读成「渲染错误会被捕获」——
+   * 实际不会：子组件的渲染发生在之后，崩溃照样冒泡。lint 规则
+   * `react-hooks/error-boundaries` 正是按这个语义报警。
+   *
+   * 分开之后语义明确：catch 只负责把 API 失败转成错误文案（降级为空列表），
+   * 渲染错误交给上层的 error boundary。
+   */
+  let users: UsersPage | null = null;
+  let groups: Groups = [];
   let error: string | null = null;
   try {
-    const [usersResult, groups] = await Promise.all([
+    [users, groups] = await Promise.all([
       (await getAuthedApiClient()).listAdminUsers({
         page,
         pageSize,
@@ -115,36 +127,22 @@ async function UsersData({
       }),
       getGroups(),
     ]);
-    users = usersResult;
-    return (
-      <UsersManager
-        users={users.users}
-        total={users.total}
-        page={users.page}
-        pageSize={users.pageSize}
-        q={q}
-        status={status}
-        groupId={groupId}
-        sort={sort}
-        groups={groups}
-        error={error}
-      />
-    );
   } catch (err) {
     error = await apiErrorMessage(err);
-    return (
-      <UsersManager
-        users={[]}
-        total={0}
-        page={page}
-        pageSize={pageSize}
-        q={q}
-        status={status}
-        groupId={groupId}
-        sort={sort}
-        groups={[]}
-        error={error}
-      />
-    );
   }
+
+  return (
+    <UsersManager
+      users={users?.users ?? []}
+      total={users?.total ?? 0}
+      page={users?.page ?? page}
+      pageSize={users?.pageSize ?? pageSize}
+      q={q}
+      status={status}
+      groupId={groupId}
+      sort={sort}
+      groups={groups}
+      error={error}
+    />
+  );
 }

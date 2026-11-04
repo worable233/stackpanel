@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
 import type { AdminNavItemView } from '@stackpanel/sdk';
 import { Badge, SectionTitle } from '@stackpanel/ui';
@@ -82,12 +82,16 @@ export function AdminNavManager({ surface, items }: Props) {
   const [href, setHref] = useState('');
 
   // `router.refresh()` re-renders the server component, but this client state
-  // survives. Without this effect a newly added link (or a deleted override)
-  // would only appear after a full reload. Unsaved edits win over the refresh.
-  useEffect(() => {
-    if (dirty) return;
-    setRows(toRows(items));
-  }, [items, dirty]);
+  // survives. Without this a newly added link (or a deleted override) would only
+  // appear after a full reload. Unsaved edits win over the refresh.
+  //
+  // 用「key 重置」而不是 `useEffect`：React 官方对「props 变了就重置 state」
+  // 的推荐做法。父组件在 `items` 变化时换一个 key，本组件的 state 就会自然
+  // 重建，不需要在 effect 里 setState（那会触发级联渲染），也不需要渲染期
+  // 读 ref（React 19 禁止）。
+  //
+  // 关键约束：**未保存的编辑必须赢过刷新**，否则用户正在改的链接会被
+  // `router.refresh()` 冲掉。所以 key 由父组件只在 `dirty === false` 时递增。
 
   const move = (index: number, delta: number) => {
     const next = [...rows];

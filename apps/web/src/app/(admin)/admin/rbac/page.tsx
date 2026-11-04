@@ -5,7 +5,7 @@ import { DataSkeleton } from '@/components/data-skeletons';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator, type Translator } from '@/i18n/core';
+import { createTranslator } from '@/i18n/core';
 import { CreateGroupForm, PermissionGroupManager } from './permission-group-manager';
 
 export const dynamic = 'force-dynamic';
@@ -18,13 +18,13 @@ export default async function AdminRbacPage() {
         <PageHeader title={t('admin.rbac.title')} actions={<CreateGroupForm />} />
       </div>
       <Suspense fallback={<DataSkeleton variant="list" rows={4} rowHeight="rbac" />}>
-        <RbacData t={t} />
+        <RbacData />
       </Suspense>
     </main>
   );
 }
 
-async function RbacData({ t }: { t: Translator }) {
+async function RbacData() {
   let groups: PermissionGroupView[] = [];
   let permissions: PermissionInfo[] = [];
   let error: string | null = null;

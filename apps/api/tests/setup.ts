@@ -134,7 +134,7 @@ if (!(globalThis as { __spTestMigrated?: boolean }).__spTestMigrated) {
       `SELECT 1 FROM pg_database WHERE datname = $1 AND datallowconn`,
       [dbName],
     );
-    let needsRebuild = exists.rowCount !== 1;
+    const needsRebuild = exists.rowCount !== 1;
     let markerExists = false;
     if (!needsRebuild) {
       const probe = new Client({ connectionString: TEST_DATABASE_URL });

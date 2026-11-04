@@ -3,7 +3,6 @@ import { cache } from 'react';
 import { z } from 'zod';
 import type { Metadata } from 'next';
 import {
-  DEFAULT_PLATFORM_INFO,
   mergeSeoMeta,
   resolveFrontendPageSource,
   selectFrontendPageDefinition,
@@ -12,7 +11,7 @@ import {
 } from '@stackpanel/sdk';
 import { getApiClient } from './api';
 import { activeThemeCandidate, listPluginFrontendCandidates } from './slots';
-import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
+import { requestPlatformInfo } from '@/lib/platform-request-cache';
 
 /**
  * 站点源 SEO 输送（ADR-0011 §3–§4）。

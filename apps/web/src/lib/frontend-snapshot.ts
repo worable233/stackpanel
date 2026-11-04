@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { FinderProvider, FrontendPackage } from '@stackpanel/sdk';
+import type { FinderProvider } from '@stackpanel/sdk';
 import type { FrontendCandidate } from './slots';
 
 /**

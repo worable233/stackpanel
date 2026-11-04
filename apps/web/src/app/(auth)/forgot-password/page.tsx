@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { ResetPasswordForm } from './reset-password-form';
 import { ResetUnavailable } from './reset-unavailable';
 import { apiAssetUrl, getApiClient } from '@/lib/api';

@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { LoginForm } from './login-form';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';

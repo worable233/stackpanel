@@ -120,7 +120,7 @@ describe('finder registry is scanned once per request', () => {
 
   it('exposes finder ownership so settings come from the providing plugin', async () => {
     const { runWithFrontendSnapshot } = await import('@/lib/frontend-snapshot');
-    const { mergedPluginFinders, finderOwnerPlugin } = await import('@/lib/slots');
+    const { finderOwnerPlugin } = await import('@/lib/slots');
 
     mocks.importPackage.mockImplementation((_kind: string, id: string) => ({
       ui: {},

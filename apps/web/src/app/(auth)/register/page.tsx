@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { RegisterClosed } from './register-closed';
 import { RegisterForm } from './register-form';
 import { apiAssetUrl, getApiClient } from '@/lib/api';

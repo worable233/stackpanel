@@ -1,14 +1,13 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { DEFAULT_PLATFORM_INFO } from '@stackpanel/sdk';
 import { ProvisionForm } from './provision-form';
 import { SetupForm } from './setup-form';
 import { SetupUnavailable } from './setup-unavailable';
 import { apiAssetUrl, getApiClient } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
+import { requestPlatformInfo } from '@/lib/platform-request-cache';
 import { getLocale } from '@/i18n/locale';
 import { translate } from '@/i18n/core';
-import { requestPlatformInfo, requestPlatformBrand } from '@/lib/platform-request-cache';
 
 export const dynamic = 'force-dynamic';
 

@@ -92,7 +92,7 @@ export async function seedDefaultKeyring(
   const file = path.join(dataDir, KEYRING_FILE);
   const log = options.log ?? ((message: string) => console.info(message));
 
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = await readFile(file, 'utf8');
   } catch {
