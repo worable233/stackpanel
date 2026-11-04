@@ -179,6 +179,21 @@
   主机名游标，并行时互相推进；`outbox-replica-identity` 从不启动消费循环，靠
   `publish` 内部偶然的 catchUp 侥幸通过 —— 改为由测试显式驱动两侧 `catchUp`。
 
+### 发布方式
+
+- **镜像默认只构建 `linux/amd64`**。arm64 走 QEMU 全量模拟，实测把单次发布从
+  **13 分钟拖到 1 小时 10 分**（同一版本、同一代码，只差平台），而绝大多数自托管
+  部署是 x86_64。需要多架构时在仓库变量里设
+  `KERNEL_PLATFORMS=linux/amd64,linux/arm64` 即可恢复，不用改代码。
+- **内核清单的平台声明跟同一个变量走**：`images[]` 与 `supportedPlatforms[]` 都从
+  `KERNEL_PLATFORMS` 派生。否则只构建 amd64 时清单仍会声称支持 arm64 —— arm64
+  机器拉到一个「清单说支持、实际没有」的镜像，比明确不支持更糟。
+
+> **升级提醒（arm64 用户）**：本版官方镜像只有 `linux/amd64`。Apple Silicon 与
+> ARM 服务器需要用 Docker 的 `--platform linux/amd64`（Rosetta/QEMU 模拟）运行，
+> 或自行构建 arm64 镜像。已验证 amd64 镜像在 arm64 主机上经模拟可正常启动
+> （`/version` → `0.1.3`、`/health` 200）。
+
 ### 修复（兼容性）
 
 - **`capability.scope` 不合规不再拒绝激活，改为警告 + 安全降级**：上一轮把它做成
