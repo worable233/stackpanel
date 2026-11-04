@@ -6,6 +6,105 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-04
+
+**首屏瘦身 + 可靠性修复版**：这一版的主线是「页面为什么慢」——实测服务端 HTML
+只要 46 ms，真正的瓶颈是浏览器侧首屏 1028 KB（gzip）/ 31 个 chunk，其中大部分
+是 web 自己从不使用、却被桶导入拖进来的重依赖。三轮拆分把首屏压到 **705 KB**
+（-31%），zod 与 recharts 完全从首屏消失。
+
+同时修掉一批「本地能跑、生产会咬人」的问题：插件签名校验可被一份照抄的
+`.env.example` 关掉、集群下平台信息永不跨副本失效、macOS 上所有运行时插件加载
+失败。
+
+### 性能（首屏）
+
+- **图表组件拆出 UI 桶**：`MetricsExplorer` / `UsageTrendChart` 移到独立 ABI 槽
+  `@stackpanel/ui/charts`。它们依赖 recharts（未压缩 559 KB），而 Turbopack 会把
+  同一批 client 组件合并进一个 chunk —— 任何页面用 `Button` / `Select` 都会连带
+  下载图表库。首屏 3360 KB → 2987 KB（未压缩）。
+- **zod 拆出首屏**：`frontend-abi-bridge` 静态 `import * as sdk` 把 zod（911 KB）
+  拖进**每个页面**（这个 bridge 挂在根 layout 上）。改成惰性 `import()`，并给
+  `formatMinorCurrency` 等四个纯格式化函数加 `@stackpanel/sdk/currency` 子路径。
+- **lucide 惰性化**：`import * as lucide from 'lucide-react'` 把整个图标库
+  （614 KB，1700+ 图标）打进首屏。web 自己用的是按名导入（会被 tree-shake），
+  只有插件需要完整命名空间。
+- **修掉一个把收益抵消回去的静态导入**：服务端 ABI 曾静态导入 charts 真实组件，
+  让 recharts（373 KB）出现在 **45 个页面**的共享 chunk 里。改用链接期桩后，
+  `/login` 从 815 KB 回到 **705 KB**。
+- 请求级去重：`pinInSnapshot`（`AsyncLocalStorage.enterWith`）**不跨渲染阶段**，
+  实测去重无效；改用 React `cache()`。内核请求数：`/platform/info` 2x → 1x、
+  `/platform/brand` 2x → 1x、`/permissions/check` 2x → 1x。
+- `/plugins/frontends` 加代际缓存：p95 **8.9 s → 毫秒级**。
+- `/platform/info` 进程内缓存：稳定 0.7 ms（此前每次查 Setting 表）。
+- 插件设置区块并行解析；审计写入改为 fire-and-forget，不再阻塞渲染。
+
+### 新增
+
+- **路由级骨架屏**：每个页面有与自身布局同构的 `loading.tsx`，切换时不再是空白。
+- **部分唯一索引**：`ModelIndex.where?: { kind: 'notNull' }`，让
+  `UNIQUE (col) WHERE col IS NOT NULL` 成为可声明的能力。`tableHash` 与
+  `sameIndex` 都纳入谓词 —— 否则「加谓词」不触发重建，库里留旧索引且无报错。
+  迁移允许**放宽**型重建（drop + create），收紧仍拒绝。
+- **品牌图标**：支持 `.ico`；`STACKPANEL_BRAND_DIR` 成为受支持的部署能力（显式
+  配置优先、不回退）；logo 圆角可配置。
+- **Agent**：运行详情默认只回尾部步骤（不再传整个 50 MB）；「思考强度」控件
+  终于影响执行；审批审计补上参数快照。
+- **后台**：OS 风格更新中心、统一插件市场、内容画布样式。
+
+### 修复
+
+- **照抄 `.env.example` 会关掉插件签名校验**：根目录那份是「公钥为空 +
+  `PACKAGE_SIGNATURE_REQUIRED=false`」，而 `docker/.env.example` 是 `true`。
+  照抄前者等于完全跳过验签，compose 的 `:-true` 兜不住（变量已被定义）。
+- **集群下平台信息永不跨副本失效**：`platform-info` 缓存**无 TTL**，只在本副本
+  写入时替换。集群默认 2 副本，A 改名后 B 一直显示旧名直到重启。接入既有
+  `coherence` 广播（`kind: 'config'`），`source-config` 同样问题一并处理。
+- **macOS 上所有运行时插件加载失败**：ABI shim 编码成 `data:` URL，React 命名
+  空间 50+ 导出 → 约 2.9 KB，超过 macOS 单路径 1024 字节上限，`import()` 抛
+  `ENAMETOOLONG`，整页 500。改为写临时文件（`file://` 无长度限制）。Linux 上限
+  高得多，所以这个问题只在 macOS 暴露 —— 「本地全挂、CI 全绿」的典型盲区。
+- **`unhandledRejection` 处理器重复注册**：`server.ts` 里同一段代码出现两次
+  （合并时引入），每条未捕获 rejection 打印两遍。
+- **`server-cache` 是无界 Map**：过期条目只在被再次读取时才替换。加 500 条上限
+  + 插入时清过期 + LRU 淘汰。
+- **内存会话存储无清扫**：只在 `get()` 里惰性过期，而登出后那个 token 再没人
+  访问 —— 记录永久留存。加阈值触发清扫。
+- **`/account` 问候语空邮箱**：并行化取数时把 `email` 设成了空串。
+- **worker 定时任务抢跑死信**：根因是启动顺序 —— `initJobs()` 之后 `runtime.start()`
+  立刻消费，而插件 `onActivate`（注册 handler）要等 `syncEnabledPlugins()`。
+  改为插件激活后再 `startJobConsumption()`。
+- **同步「空成功」**：`listBoundProducts()` 返回空时循环零次，却无条件记
+  SUCCEEDED。新增 `isProductiveSync()`，并区分三种「没干活」的原因。
+- **幽灵服务实例**：无商品映射时旧代码会隐式建档，产出无商品/无订单/无凭证的
+  实例，不能续费/退款/对账却计入 ACTIVE。改为 `product_unmapped` 409，绝不隐式
+  建档；已存在的打 `origin=admin-migration` 标记（不删除）。
+- **重复上游**：按 `name` 与（归一化地址 + 协议）查重 → 409。
+- **上游零缓存**：`listProducts` 加 60 s 快照缓存，**同时**按上游复用 client
+  （原每次 `new ZJMFClient(...)`，只加缓存等于白加）。
+- **插件错误被压成「服务器开小差」**：内核 raw 路由的 catch 把插件的 502 /
+  code / detail 全部压成 500。
+- **api 抖动时把人踢出登录**：会话三态 —— 只有内核明确 401/403 才算 anonymous，
+  5xx / 超时 / 网络错误 → unavailable（503）。
+- **Agent 假成功**：运行没起来时用「消息已保存」盖住；轮询连续失败静默放弃；
+  会话路径的幂等键从未生效（重试会建出第二条运行）。
+- **favicon 404 真正根因**：种子找不到内置图，不是缓存。
+- **outbox 忙轮询**：改为自适应退避（有交付 2 s，空转封顶 30 s），并补
+  `[publishedAt, parkedAt, nextAttemptAt]` 索引。
+- **新迁移被测试库静默跳过**；会话清理补排序索引。
+- **`cart-checkout` 测试跟上 Checkbox 组件化**（`onCheckedChange(boolean)` 而非
+  DOM 事件）。
+
+### 内部
+
+- 新增 `stackpanel_upstream_request_duration_seconds{plugin,upstream,outcome}` 指标。
+- `docs/design/frontend-bundle-slimming.md`：首屏瘦身的完整设计、实测数据、
+  以及三个踩过的坑（`esbuild --alias` 前缀匹配、probe 阶段 alias 指向具体文件、
+  re-export 无法阻止 Turbopack 合并 chunk）。
+- `docs/MIGRATION-0.1.3-data-cleanup.sql`：数据清理脚本（只读段先跑，删除类语句
+  全部注释，需人工确认）。
+- 新增 `scripts/measure-request-fanout.py`：数单次渲染打了多少个内核请求。
+
 ## [0.1.2] - 2026-11-01
 
 **镜像可用性修复版**：0.1.0 / 0.1.1 的官方镜像无法开箱跑通——0.1.0 缺前端静态资源，
