@@ -300,3 +300,49 @@ describe('capability.scope 规范（防止再写成权限键）', () => {
     expect(grantable).toContain('epay:write');
   });
 });
+
+describe('加载期校验 capability.scope 的格式', () => {
+  /**
+   * 这个字段历史上完全没有校验（`permissions` 有，`capabilities` 没有），
+   * 于是 13 个插件写成权限键而无人察觉。校验放在 `mountCapabilities` 的循环
+   * 开头，让错误在**插件激活**时暴露。
+   *
+   * 注意范围：只拦**插件声明的能力项**。内核自己的 `CAPABILITIES` 确实用
+   * `platform.admin` 这类权限键（内核能力由内核治理，语义不同），不走这条路径。
+   */
+  const runtime = readFileSync(path.join(root, 'src/plugins/runtime.ts'), 'utf8');
+
+  it('校验函数在 class 之外，且循环里调用', () => {
+    const fnIdx = runtime.indexOf('function validateCapabilityScope');
+    const classIdx = runtime.indexOf('export class PluginRuntime');
+    expect(fnIdx).toBeGreaterThan(0);
+    expect(classIdx).toBeGreaterThan(fnIdx); // 必须在 class 之前
+    expect(runtime).toContain('validateCapabilityScope(id, capability)');
+  });
+
+  it('只接受 refined 资源:read|write', () => {
+    const src = runtime.slice(
+      runtime.indexOf('const REFINED_SCOPE_PATTERN'),
+      runtime.indexOf('const REFINED_SCOPE_PATTERN') + 120,
+    );
+    expect(src).toContain(':(read|write)$');
+  });
+
+  it('拒绝时给出可操作的报错（指明正确形式）', () => {
+    const fn = runtime.slice(
+      runtime.indexOf('function validateCapabilityScope'),
+      runtime.indexOf('function validateCapabilityScope') + 1400,
+    );
+    expect(fn).toContain('refined 形式');
+    expect(fn).toMatch(/read/i);
+    expect(fn).toContain('route.permission');
+  });
+
+  it('未知 scope 直接放行（scope 是可选的）', () => {
+    const fn = runtime.slice(
+      runtime.indexOf('function validateCapabilityScope'),
+      runtime.indexOf('function validateCapabilityScope') + 400,
+    );
+    expect(fn).toContain('capability.scope === undefined');
+  });
+});

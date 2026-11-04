@@ -10,6 +10,7 @@ import type {
   NotificationsService,
   PaymentService,
   StateService,
+  PluginCapability,
   PluginDependency,
   PluginExtensionConsumer,
   PluginContext,
@@ -329,6 +330,44 @@ interface ManagedPlugin {
  * deactivate), extension-point management, and event broadcast. Plugin
  * persistence (enabled flags) lives in the database; the runtime is in-memory.
  */
+/**
+ * refined `资源:read|write` scope 的形状（与 `scopeResource` 的约定一致）。
+ */
+const REFINED_SCOPE_PATTERN = /^[a-z][a-z0-9-]*:(read|write)$/;
+
+/**
+ * Reject a `capability.scope` that is not a refined `资源:read|write`.
+ *
+ * 这个字段历史上**完全没有校验**（`permissions` 有，`capabilities` 没有），
+ * 后果是 13 个插件把它写成了权限键（`epay.admin`、`ticket.admin`、
+ * `store.admin` …）而没人发现。错写法之所以「看起来能跑」纯属巧合：
+ * `scopeSatisfied` 对非 refined scope 走精确匹配，恰好等于它们自己的
+ * `route.permission`。真实危害有两个：
+ *
+ * 1. **超级管理员被挡在门外**：`platform.admin` 只满足 refined scope。写成
+ *    权限键后，管理员访问该插件开放 API 得到 403，而访问内核 API 正常。
+ * 2. **可以放宽访问**：`mountCapabilities` 曾无条件用 `capability.scope`
+ *    替换 `route.permission`，写错就是一个口子（现在只有 refined 才替换，
+ *    但校验让错误在加载期就暴露，而不是靠运行时兜底）。
+ *
+ * 为什么报错而不是警告：作用范围只有**插件声明的能力项**，内核自己的
+ * `CAPABILITIES` 不经过这条路径（它们确实用 `platform.admin` 这类权限键，
+ * 因为内核能力由内核自己治理，语义不同）。插件仓已全部整改为 refined 形式；
+ * 第三方插件若仍用旧写法会在激活时得到明确报错与修法。
+ */
+function validateCapabilityScope(pluginId: string, capability: PluginCapability): void {
+  if (capability.scope === undefined) return;
+  const scope = capability.scope;
+  if (typeof scope !== 'string' || !REFINED_SCOPE_PATTERN.test(scope)) {
+    throw new Error(
+      `插件 ${pluginId} 的能力项 ${capability.id} 的 scope 必须是 refined 形式 ` +
+        `「资源:read」或「资源:write」（例如 'store:read'），实际为 ${JSON.stringify(scope)}。` +
+        '权限键（如 store.admin）不是 scope：把它留给 route.permission，' +
+        '并在 permissions 里用 { key, scope: "资源" } 声明治理关系。',
+    );
+  }
+}
+
 export class PluginRuntime {
   private readonly plugins = new Map<string, ManagedPlugin>();
   private readonly extensions = new Map<
@@ -707,6 +746,7 @@ export class PluginRuntime {
     const entries: PluginCapabilityEntry[] = [];
 
     for (const capability of capabilities) {
+      validateCapabilityScope(id, capability);
       const route = routes.find(
         (candidate) =>
           candidate.method === capability.method && candidate.path === capability.route,
