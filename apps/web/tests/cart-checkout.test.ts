@@ -21,6 +21,9 @@ vi.mock('@stackpanel/ui/select', () => ({ Select: 'select' }));
 vi.mock('@stackpanel/ui/field', () => ({ Field: 'div', FieldGroup: 'div' }));
 // 内联提示统一走 `InlineError`；本套件只调用组件函数、不渲染子组件，所以在元素层面断言。
 vi.mock('@stackpanel/ui/inline-error', () => ({ InlineError: 'p' }));
+// 行选择器现在是 base-ui 的 Checkbox（`onCheckedChange(boolean)`），不再是原生
+// `<input type="checkbox">`。mock 成可识别的元素名，断言点也跟着换。
+vi.mock('@/components/ui/checkbox', () => ({ Checkbox: 'checkbox' }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('next/link', () => ({ default: 'a' }));
 import { CartCheckout, type CartCheckoutProps } from '@/components/cart-checkout';
@@ -41,6 +44,10 @@ interface ElementProps {
   action?: (data: FormData) => unknown;
   onClick?: () => void;
   onChange?: (event: unknown) => void;
+  /** base-ui Checkbox 的回调：直接收 boolean，不是 DOM 事件。 */
+  onCheckedChange?: (checked: boolean) => void;
+  checked?: boolean;
+  'aria-label'?: string;
   onSubmit?: (event: { preventDefault: () => void }) => void;
   disabled?: boolean;
 }
@@ -115,8 +122,8 @@ describe('checkout directly from cart', () => {
   it('prevents checkout when selection is empty', () => {
     const ui = setup();
     ui.render()
-      .find((node) => node.props.type === 'checkbox')!
-      .props.onChange!({ target: { checked: false } });
+      .find((node) => node.type === 'checkbox')!
+      .props.onCheckedChange!(false);
     const tree = ui.render();
     expect(tree.find((node) => node.type === 'button')?.props.disabled).toBe(true);
     expect(tree.some((node) => node.type === 'form')).toBe(false);
@@ -142,7 +149,7 @@ describe('checkout directly from cart', () => {
     expect(ui.render().some((node) => node.type === 'select')).toBe(false);
     const payment = ui.payment();
     payment.find((node) => node.type === 'button' && node.props.onClick)!.props.onClick!();
-    expect(ui.render().some((node) => node.props.type === 'checkbox')).toBe(true);
+    expect(ui.render().some((node) => node.type === 'checkbox')).toBe(true);
     expect(ui.wallet).not.toHaveBeenCalled();
   });
   it.each(['PENDING', 'CANCELLED', 'REFUNDED', 'FAILED'])(
