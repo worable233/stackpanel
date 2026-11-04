@@ -179,6 +179,15 @@
   主机名游标，并行时互相推进；`outbox-replica-identity` 从不启动消费循环，靠
   `publish` 内部偶然的 catchUp 侥幸通过 —— 改为由测试显式驱动两侧 `catchUp`。
 
+### 修复（兼容性）
+
+- **`capability.scope` 不合规不再拒绝激活，改为警告 + 安全降级**：上一轮把它做成
+  硬失败，结果**用户升级后装不上任何旧插件**（发布冒烟从市场装 `captcha` 直接
+  409）。改成：非 refined 形式的 `capability.scope` 不参与鉴权，`route.permission`
+  照旧作为门禁 —— 旧插件行为与修复前等价（它们本来就恰好和自己的
+  `route.permission` 相同），只是不再享受 refined scope 的细粒度收益。安全性不受
+  影响：门禁只多不少。
+
 ### 修复（静默丢事件）
 
 - **副本消费游标会静默丢事件**：`event_cursors` 的 `(lastAt, lastId)` 复合游标
