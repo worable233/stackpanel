@@ -179,6 +179,22 @@
   主机名游标，并行时互相推进；`outbox-replica-identity` 从不启动消费循环，靠
   `publish` 内部偶然的 catchUp 侥幸通过 —— 改为由测试显式驱动两侧 `catchUp`。
 
+### 验证
+
+- **真实插件前端的装载与渲染**（此前是发版前的功能盲区）：新增
+  `apps/web/tests/plugin-frontend-render.test.ts`，一路跑到
+  `renderToStaticMarkup` —— 装载 store/catalog/ticket/notice 四个真实插件产物，
+  确认导出 `pages`/`pageComponents`，并把 store 的三个页面组件真的渲染出 HTML
+  （`shop` 1727 字符，另两个是正常的 `NEXT_REDIRECT`）。之前只验证到「ABI
+  adapter 返回 200」，完全没碰插件真正的产物。
+- **生产库副本升级演练**：把 `stackpanel` 库（94 表、真实数据）完整复制，
+  回退到 0.1.2 状态（删 `_9` 索引、还原 `definitionHash`）、额外插入 3 条
+  `providerServiceId IS NULL` 的行，再让 0.2.0 升级：`_1`..`_8` 原样保留、
+  `_9` 正确建出带 `WHERE ("f_providerServiceId" IS NOT NULL)` 谓词、7 行数据
+  全保留、0 错误。再构造真重复（两条同 `providerServiceId`）验证被友好拒绝
+  （「存在重复值，无法建立唯一索引 …」），**没有裸 SQL `23505`**，服务拒绝
+  启动而不是带病运行。
+
 ### 内部
 
 - 新增 `stackpanel_upstream_request_duration_seconds{plugin,upstream,outcome}` 指标。
