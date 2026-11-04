@@ -80,9 +80,13 @@ describe('内核发布的目录链路（防止更新中心看不到内核升级�
 
     it('取不到任何内核引用时硬失败（不静默发布无内核的目录）', () => {
       const idx = publishCatalog.indexOf('下载内核引用');
-      const step = publishCatalog.slice(idx, idx + 1600);
+      // 窗口要够长：步骤里加了注释，`::error::` 已经在 1600 字符之外了。
+      const step = publishCatalog.slice(idx, idx + 2600);
       expect(step).toContain('::error::');
       expect(step).toContain('exit 1');
+      // 管道里的 while 跑在 subshell，`exit 1` 只退 subshell —— 必须用
+      // here-string，否则失败被静默吞掉（实测：下载失败但日志连「下载」都没有）。
+      expect(step).toContain('done <<<');
     });
   });
 
