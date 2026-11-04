@@ -606,7 +606,7 @@ function AboutPage(props: FrontendPageProps): ReactElement {
               <BrandMark />
               <div>
                 <p className="font-medium text-foreground">{platformName}</p>
-                <p className="text-xs">Infrastructure, written down.</p>
+                <p className="text-xs">{tr('about.signature')}</p>
               </div>
             </div>
           </div>
@@ -1159,7 +1159,10 @@ const frontend: FrontendPackage = {
       path: '/data',
       component: 'modelData',
       layout: 'theme',
-      data: [{ finder: 'llm-gateway.prices', as: 'modelPrices' }],
+      data: [
+        { finder: 'llm-gateway.publicStats', as: 'gatewayStats' },
+        { finder: 'llm-gateway.publicPrices', as: 'modelPrices' },
+      ],
     },
     { path: '/about', component: 'about', layout: 'theme' },
     { path: '/guide', component: 'guide', layout: 'theme' },

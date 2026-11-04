@@ -1,5 +1,9 @@
-import { formatMinorCurrency, PACKAGE_FALLBACK_LOCALE, type FrontendPageProps } from '@stackpanel/sdk';
-import { Badge } from '@stackpanel/ui';
+import {
+  formatMinorCurrency,
+  PACKAGE_FALLBACK_LOCALE,
+  type FrontendPageProps,
+} from '@stackpanel/sdk';
+import { Badge, LiveGatewayStats, type GatewayPublicStats } from '@stackpanel/ui';
 import { ArrowLeft, ArrowUpRight, Gauge } from 'lucide-react';
 import type { ReactElement } from 'react';
 import { t } from './i18n.js';
@@ -29,18 +33,18 @@ function price(amount: number, currency: string, unitTokens: number, locale?: st
   }
 }
 
-export function AtlasDataPage({ data, locale }: FrontendPageProps): ReactElement {
+export function AtlasDataPage({ data, locale, platform }: FrontendPageProps): ReactElement {
   const tr = t(locale);
+  const platformName = platform?.name || tr('brand.name');
   const catalog = data.modelPrices as ModelPriceCatalog | undefined;
   const prices = catalog?.prices ?? [];
+  const liveStats = data.gatewayStats as GatewayPublicStats | undefined;
 
-  if (!catalog || prices.length === 0) {
+  if ((!catalog || prices.length === 0) && !liveStats) {
     return (
       <main className="flex-1">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-start px-4 py-16 sm:px-6 lg:py-24">
-          <span className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-            404
-          </span>
+          <span className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">404</span>
           <h1 className="mt-5 text-3xl font-medium tracking-tight sm:text-4xl">
             {tr('data.unavailableTitle')}
           </h1>
@@ -59,24 +63,6 @@ export function AtlasDataPage({ data, locale }: FrontendPageProps): ReactElement
     );
   }
 
-  const inputPrices = prices.map((item) => item.inputPrice).filter((value) => value > 0);
-  const outputPrices = prices.map((item) => item.outputPrice).filter((value) => value > 0);
-  const capabilities = new Set(prices.flatMap((item) => item.capabilities));
-  const cheapestInput = inputPrices.length ? Math.min(...inputPrices) : 0;
-  const cheapestOutput = outputPrices.length ? Math.min(...outputPrices) : 0;
-  const stats = [
-    { label: tr('data.models'), value: String(prices.length) },
-    { label: tr('data.capabilities'), value: String(capabilities.size) },
-    {
-      label: tr('data.cheapestInput'),
-      value: price(cheapestInput, catalog.currency, catalog.unitTokens, locale),
-    },
-    {
-      label: tr('data.cheapestOutput'),
-      value: price(cheapestOutput, catalog.currency, catalog.unitTokens, locale),
-    },
-  ];
-
   return (
     <main className="flex-1">
       <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-16">
@@ -94,71 +80,91 @@ export function AtlasDataPage({ data, locale }: FrontendPageProps): ReactElement
             {tr('data.title')}
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-            {tr('data.lead')}
+            {tr('data.lead', { platform: platformName })}
           </p>
         </header>
 
-        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => (
-            <div key={stat.label} className="rounded-2xl bg-muted/50 p-5">
-              <p className="text-xs text-muted-foreground">{stat.label}</p>
-              <p className="mt-2 truncate text-xl font-medium tracking-tight tabular-nums">
-                {stat.value}
-              </p>
-            </div>
-          ))}
+        <div className="mt-12">
+          <LiveGatewayStats
+            initial={liveStats ?? null}
+            locale={locale ?? 'zh-CN'}
+            labels={{
+              activeModels: tr('data.activeModels'),
+              avgLatency: tr('data.avgLatency'),
+              calls: tr('data.calls'),
+              hourly: tr('data.hourly'),
+              live: tr('data.live'),
+              noStats: tr('data.noStats'),
+              ranking: tr('data.ranking'),
+              rankingNote: tr('data.rankingNote'),
+              refreshing: tr('data.retry'),
+              share: tr('data.share'),
+              successRate: tr('data.successRate'),
+              tokens: tr('data.tokens'),
+              totalCalls: tr('data.totalCalls'),
+              totalTokens: tr('data.totalTokens'),
+              updated: tr('data.updated'),
+            }}
+          />
         </div>
 
-        <div className="mt-10 overflow-hidden rounded-[24px] bg-muted/35">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <p className="text-sm font-medium">{tr('data.tableTitle')}</p>
-            <p className="text-xs text-muted-foreground">
-              {tr('data.unitNote', { unit: String(catalog.unitTokens) })}
-            </p>
-          </div>
-          <div className="overflow-x-auto bg-background/70">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead>
-                <tr className="text-xs text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">{tr('data.model')}</th>
-                  <th className="px-5 py-3 font-medium">{tr('data.input')}</th>
-                  <th className="px-5 py-3 font-medium">{tr('data.output')}</th>
-                  <th className="px-5 py-3 font-medium">{tr('data.cache')}</th>
-                  <th className="px-5 py-3 font-medium">{tr('data.capability')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {prices.map((item) => (
-                  <tr key={item.model} className="align-top transition-colors hover:bg-muted/40">
-                    <td className="px-5 py-4 font-medium">{item.model}</td>
-                    <td className="px-5 py-4 tabular-nums">
-                      {price(item.inputPrice, catalog.currency, catalog.unitTokens, locale)}
-                    </td>
-                    <td className="px-5 py-4 tabular-nums">
-                      {price(item.outputPrice, catalog.currency, catalog.unitTokens, locale)}
-                    </td>
-                    <td className="px-5 py-4 text-xs text-muted-foreground tabular-nums">
-                      {tr('data.read')}{' '}
-                      {price(item.cacheReadPrice, catalog.currency, catalog.unitTokens, locale)}
-                      <br />
-                      {tr('data.write')}{' '}
-                      {price(item.cacheWritePrice, catalog.currency, catalog.unitTokens, locale)}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {item.capabilities.slice(0, 4).map((capability) => (
-                          <Badge key={capability} className="px-2 py-1">
-                            {capability}
-                          </Badge>
-                        ))}
-                      </div>
-                    </td>
+        {catalog && prices.length > 0 ? (
+          <div className="mt-12 overflow-hidden rounded-[24px] bg-muted/35">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <p className="text-sm font-medium">{tr('data.tableTitle')}</p>
+              <p className="text-xs text-muted-foreground">
+                {tr('data.unitNote', {
+                  unit:
+                    catalog.unitTokens >= 1_000_000
+                      ? `${catalog.unitTokens / 1_000_000}M`
+                      : String(catalog.unitTokens),
+                })}
+              </p>
+            </div>
+            <div className="overflow-x-auto bg-background/70">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead>
+                  <tr className="text-xs text-muted-foreground">
+                    <th className="px-5 py-3 font-medium">{tr('data.model')}</th>
+                    <th className="px-5 py-3 font-medium">{tr('data.input')}</th>
+                    <th className="px-5 py-3 font-medium">{tr('data.output')}</th>
+                    <th className="px-5 py-3 font-medium">{tr('data.cache')}</th>
+                    <th className="px-5 py-3 font-medium">{tr('data.capability')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {prices.map((item) => (
+                    <tr key={item.model} className="align-top transition-colors hover:bg-muted/40">
+                      <td className="px-5 py-4 font-medium">{item.model}</td>
+                      <td className="px-5 py-4 tabular-nums">
+                        {price(item.inputPrice, catalog.currency, catalog.unitTokens, locale)}
+                      </td>
+                      <td className="px-5 py-4 tabular-nums">
+                        {price(item.outputPrice, catalog.currency, catalog.unitTokens, locale)}
+                      </td>
+                      <td className="px-5 py-4 text-xs text-muted-foreground tabular-nums">
+                        {tr('data.read')}{' '}
+                        {price(item.cacheReadPrice, catalog.currency, catalog.unitTokens, locale)}
+                        <br />
+                        {tr('data.write')}{' '}
+                        {price(item.cacheWritePrice, catalog.currency, catalog.unitTokens, locale)}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {item.capabilities.slice(0, 4).map((capability) => (
+                            <Badge key={capability} className="px-2 py-1">
+                              {capability}
+                            </Badge>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
           <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">

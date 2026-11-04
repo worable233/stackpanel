@@ -510,9 +510,11 @@ function CasesSection({
 function InfrastructureSection({
   locale,
   settings,
+  platformName,
 }: {
   locale: string | undefined;
   settings: FrontendPageProps['settings'];
+  platformName: string;
 }): ReactElement {
   const tr = t(locale);
   const stats = [
@@ -558,7 +560,10 @@ function InfrastructureSection({
               {setting(settings, 'infrastructure', 'title', tr('home.infra.title'))}
             </h2>
             <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
-              {setting(settings, 'infrastructure', 'text', tr('home.infra.text'))}
+              {brandText(
+                setting(settings, 'infrastructure', 'text', tr('home.infra.text')),
+                platformName,
+              )}
             </p>
 
             <div className="mt-10 grid grid-cols-2 gap-x-6 gap-y-8">
@@ -700,16 +705,13 @@ function LogoWall({
     configured.length > 0
       ? configured
       : [
-          'OpenAI',
-          'Anthropic',
-          'Google',
-          'AWS',
-          'Azure',
-          'Cloudflare',
-          'Alibaba',
-          'DeepSeek',
-          'vLLM',
-          'Ollama',
+          tr('home.trust.1'),
+          tr('home.trust.2'),
+          tr('home.trust.3'),
+          tr('home.trust.4'),
+          tr('home.trust.5'),
+          tr('home.trust.6'),
+          tr('home.trust.7'),
         ];
   return (
     <section className="bg-background">
@@ -717,25 +719,15 @@ function LogoWall({
         <p className="text-center text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
           {setting(settings, 'logos', 'label', tr('home.logos.label'))}
         </p>
-        <div className="atl-ticker-mask mt-7 overflow-hidden">
-          <div className="atl-ticker">
-            {[0, 1].map((copy) => (
-              <div
-                key={copy}
-                className="flex shrink-0 items-center gap-10 pr-10 sm:gap-14 sm:pr-14"
-                aria-hidden={copy === 1}
-              >
-                {logos.map((logo) => (
-                  <span
-                    key={logo}
-                    className="shrink-0 text-lg font-medium tracking-tight whitespace-nowrap text-muted-foreground/60"
-                  >
-                    {logo}
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-2.5">
+          {logos.map((logo) => (
+            <span
+              key={logo}
+              className="rounded-full bg-muted/45 px-4 py-2 text-sm font-medium tracking-tight text-muted-foreground"
+            >
+              {logo}
+            </span>
+          ))}
         </div>
       </div>
     </section>
@@ -938,7 +930,11 @@ export function AtlasHomePage(props: FrontendPageProps): ReactElement {
 
       <SolutionsSection locale={props.locale} settings={props.settings} />
       <CasesSection locale={props.locale} settings={props.settings} platformName={platformName} />
-      <InfrastructureSection locale={props.locale} settings={props.settings} />
+      <InfrastructureSection
+        locale={props.locale}
+        settings={props.settings}
+        platformName={platformName}
+      />
       <FaqSection locale={props.locale} settings={props.settings} />
 
       <section className="mx-auto w-full max-w-6xl px-4 pb-24 sm:px-6">

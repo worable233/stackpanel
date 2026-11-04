@@ -1,12 +1,15 @@
 export { StatusBadge } from './status-badge.js';
 export type { StatusBadgeProps, StatusTone } from './status-badge.js';
 export { List, ListItem, ListEmpty } from './list.js';
+export { LiveGatewayStats } from './live-gateway-stats.js';
+export type {
+  GatewayPublicStats,
+  GatewayPublicStatsModel,
+  LiveGatewayStatsLabels,
+} from './live-gateway-stats.js';
 export { Textarea } from './textarea.js';
 export { GatewayPlayground } from './gateway-playground.js';
-export type {
-  GatewayPlaygroundLabels,
-  GatewayPlaygroundModel,
-} from './gateway-playground.js';
+export type { GatewayPlaygroundLabels, GatewayPlaygroundModel } from './gateway-playground.js';
 export { PageHeader } from './page-header.js';
 export type { PageHeaderProps } from './page-header.js';
 export { Button, buttonVariants } from './button.js';
