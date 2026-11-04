@@ -52,6 +52,40 @@
   终于影响执行；审批审计补上参数快照。
 - **后台**：OS 风格更新中心、统一插件市场、内容画布样式。
 
+### 修复（升级即崩，只在已部署的库上暴露）
+
+这一批的共同点：**本地新建库完全看不出来**，只有从 0.1.x 升级上来的库才会中招。
+任意一个都让 0.2.0 的 API 启动即崩。
+
+- **索引声明位置导致所有编号整体后移**：索引名由**声明位置**生成
+  （`idx_${tableName}_${position+1}`），迁移器按**名字**匹配。给
+  `store/service-instance` 加 `providerServiceId` 唯一索引时插在了
+  `expiresAtMs` 之前，于是库里的 `_7`（`f_expiresAtMs`，非唯一）对上声明的
+  `_7`（`f_providerServiceId`，唯一 + 谓词），被判定「定义已变更」。而这是
+  **收紧**唯一性，`isRelaxation` 只放行「唯一 → 唯一 + 谓词」，于是抛
+  `extension.unsupported_migration`。修法：新索引追加到末尾；声明处写明
+  「`indexes` 只允许追加」。
+- **部分索引查重把 NULL 行算成重复**：`assertNoDuplicates` 的 SQL 只有
+  `WHERE deleted_at IS NULL`，没带 `whereNotNull` 谓词。而
+  `UNIQUE (col) WHERE col IS NOT NULL` **根本不约束 NULL 行**。本地库 4 条
+  service-instance 里 3 条 `providerServiceId IS NULL`（普通购买本来就没有
+  上游编号），被当成「3 条重复」直接拒绝 —— 数据完全合法。修法：谓词与
+  `createIndexSql` 保持一致。
+- **建表路径跳过唯一索引查重**：`createTableSql` 用 `IF NOT EXISTS`，所以
+  「没有元数据行」不等于「没有表」。原实现只在 `applyDiff` 里查重，建表分支
+  直接 `CREATE UNIQUE INDEX`，有重复数据就撞 PostgreSQL 原始 `23505`：
+  `could not create unique index "..."` —— 既没有 `code` 也没说清哪个模型，
+  而 `applyDiff` 早就给出可读的「存在重复值，无法建立唯一索引 X」。两条路径
+  现在共用同一查重函数。
+- **多列声明部分索引被静默降级成全表唯一索引**：`compileTable` 里
+  `fields.length === 1 ? { whereNotNull: true } : {}` —— 多列时谓词被**静默
+  丢掉**。声明 `UNIQUE (a,b) WHERE a IS NOT NULL`（NULL 行不参与），实际建的
+  是 `UNIQUE (a,b)`（NULL 行也参与），语义正好反过来，而且不报错。改为多列 +
+  `where.notNull` 直接报错。
+
+用真实 0.1.2 库验证过完整升级：`_1`..`_8` 编号原样保留，新增 `_9`（唯一 +
+谓词），3 条 NULL 数据全部保留，迁移错误 0。反向（真有重复数据）仍正确拒绝。
+
 ### 修复
 
 - **照抄 `.env.example` 会关掉插件签名校验**：根目录那份是「公钥为空 +
@@ -104,6 +138,8 @@
 - `docs/MIGRATION-0.1.3-data-cleanup.sql`：数据清理脚本（只读段先跑，删除类语句
   全部注释，需人工确认）。
 - 新增 `scripts/measure-request-fanout.py`：数单次渲染打了多少个内核请求。
+- `extensions` 集成测试自清理：在用例内部临时 `defineModel` 出来的表必须在用例里
+  删掉（元数据行 + 物理表），`afterAll` 的保留策略名单只覆盖顶层声明的模型。
 
 ## [0.1.2] - 2026-11-01
 
