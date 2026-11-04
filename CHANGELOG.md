@@ -179,6 +179,18 @@
   主机名游标，并行时互相推进；`outbox-replica-identity` 从不启动消费循环，靠
   `publish` 内部偶然的 catchUp 侥幸通过 —— 改为由测试显式驱动两侧 `catchUp`。
 
+### 修复（更新中心看不到内核升级）
+
+- **内核发布后更新中心永远只显示插件更新**：`kernel-ref.json` 只上传为 Actions
+  artifact，从未进 Release 资产；而 `publish-catalog.yml` 也没有 `kernels` 输入、
+  没有 `--kernels` 参数。于是 `catalog.json` 里没有 `kernels[]`，
+  `catalogKernelRefs()` 返回空数组，`loadKernelCandidates()` 早退，
+  `buildUpdatePlan()` 拿不到 `targetKernel` —— 内核升级静默消失，没有任何报错。
+  修法：release 把 `kernel-ref.json` 一并上传到 Release；publish-catalog 新增
+  `kernels` 输入，按 tag 从 Release 下载（重命名避免多 tag 互相覆盖）并传给
+  `build-catalog.mjs --kernels`；取不到任何引用时**硬失败**而不是静默发一个无
+  内核的目录。v0.1.3 缺失的 `kernel-ref.json` 已补传（补传前三方摘要核对一致）。
+
 ### 发布方式
 
 - **镜像默认只构建 `linux/amd64`**。arm64 走 QEMU 全量模拟，实测把单次发布从
