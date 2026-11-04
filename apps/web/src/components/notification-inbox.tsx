@@ -6,6 +6,7 @@ import { toast } from '@/components/ui/toast';
 import { useCallback, useEffect, useState } from 'react';
 import type { NotificationListResponse, NotificationView } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -30,7 +31,7 @@ export function NotificationInbox({ title }: { title: string }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [data, setData] = useState<NotificationListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const visibleRows = useVisibleNotificationRead(data?.items ?? EMPTY_ITEMS);
 
   useEffect(() => {
@@ -184,7 +185,9 @@ export function NotificationInbox({ title }: { title: string }) {
         <p className="text-sm text-destructive">{t('notification.serviceUnavailable')}</p>
       ) : null}
 
-      {items.length === 0 && !loading ? (
+      {loading && items.length === 0 ? (
+        <DataSkeleton variant="inbox" rows={6} />
+      ) : items.length === 0 ? (
         <div className="rounded-2xl bg-muted/25 px-6 py-12 text-center text-sm text-muted-foreground">
           {filter === 'unread' ? t('notification.emptyUnread') : t('notification.emptyAll')}
         </div>

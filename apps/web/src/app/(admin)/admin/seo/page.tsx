@@ -1,8 +1,10 @@
+import { Suspense } from 'react';
 import { InlineError, PageHeader } from '@stackpanel/ui';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator } from '@/i18n/core';
+import { createTranslator, type Translator } from '@/i18n/core';
 import { SeoPageManager } from '@/components/seo-page-manager';
 
 export const dynamic = 'force-dynamic';
@@ -25,8 +27,21 @@ export default async function AdminSeoPage({
   const query = typeof params.query === 'string' ? params.query : '';
   const page = Math.max(1, Number(params.page) || 1);
 
-  let data: Awaited<ReturnType<Awaited<ReturnType<typeof getAuthedApiClient>>['listSeoPages']>> | null =
-    null;
+  return (
+    <main className="w-full">
+      <PageHeader title={t('adminSeo.title')} />
+      <p className="mb-4 text-sm text-muted-foreground">{t('adminSeo.description')}</p>
+      <Suspense fallback={<DataSkeleton variant="list" rows={6} />}>
+        <SeoData query={query} page={page} t={t} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function SeoData({ query, page, t }: { query: string; page: number; t: Translator }) {
+  let data: Awaited<
+    ReturnType<Awaited<ReturnType<typeof getAuthedApiClient>>['listSeoPages']>
+  > | null = null;
   let error: string | null = null;
   try {
     const api = await getAuthedApiClient();
@@ -35,21 +50,17 @@ export default async function AdminSeoPage({
     error = await apiErrorMessage(err);
   }
 
+  if (error || !data) {
+    return <InlineError>{error ?? t('adminSeo.loadFailed')}</InlineError>;
+  }
+
   return (
-    <main className="w-full">
-      <PageHeader title={t('adminSeo.title')} />
-      <p className="mb-4 text-sm text-muted-foreground">{t('adminSeo.description')}</p>
-      {error || !data ? (
-        <InlineError>{error ?? t('adminSeo.loadFailed')}</InlineError>
-      ) : (
-        <SeoPageManager
-          pages={data.pages}
-          total={data.total}
-          page={data.page}
-          pageSize={data.pageSize}
-          query={query}
-        />
-      )}
-    </main>
+    <SeoPageManager
+      pages={data.pages}
+      total={data.total}
+      page={data.page}
+      pageSize={data.pageSize}
+      query={query}
+    />
   );
 }

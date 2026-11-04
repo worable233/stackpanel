@@ -1,8 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Users, Wallet, Receipt, Settings2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Users, Wallet, Receipt } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
@@ -12,7 +11,6 @@ import { useTranslator, useLocale } from '@/i18n/provider';
 import { formatYuan, type AdminOverviewData } from '@/lib/admin-overview-types';
 import { formatMoney } from '@/i18n';
 import { OrdersTable, ProductsTable } from '@/components/admin-finance/sections';
-import { PageHeader } from '@stackpanel/ui';
 
 /** Dashboard composition adapted from satnaing/shadcn-admin (MIT). */
 export function BackendDashboard({ data }: { data: AdminOverviewData }) {
@@ -52,15 +50,6 @@ export function BackendDashboard({ data }: { data: AdminOverviewData }) {
   ];
   return (
     <div className="backend-dashboard flex flex-col gap-7">
-      <PageHeader
-        title={t('nav.dashboard')}
-        actions={
-          <Button variant="outline" render={<Link href="/admin/settings" />}>
-            <Settings2 data-icon="inline-start" />
-            {t('admin.overview.settings')}
-          </Button>
-        }
-      />
       <Tabs defaultValue="overview" className="gap-6">
         <TabsList>
           <TabsTrigger value="overview">{t('admin.overview.tabOverview')}</TabsTrigger>

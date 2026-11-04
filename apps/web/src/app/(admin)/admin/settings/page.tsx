@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { AdminPluginPage } from '@/components/admin-plugin-page';
 import { getPluginSettingsSections } from '@/lib/admin-frontend';
 import {
@@ -15,17 +16,29 @@ import {
   type UpdatePolicyView,
 } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { apiAssetUrl, getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { SettingsManager } from './settings-manager';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator } from '@/i18n/core';
+import { createTranslator, type Translator } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminSettingsPage() {
-  const pluginSettings = await getPluginSettingsSections();
   const t = createTranslator(await getLocale());
+  return (
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+      <PageHeader title={t('admin.settings.title')} />
+      <Suspense fallback={<DataSkeleton variant="settings" />}>
+        <SettingsData t={t} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function SettingsData({ t }: { t: Translator }) {
+  const pluginSettings = await getPluginSettingsSections();
   let platform: PlatformInfo = DEFAULT_PLATFORM_INFO;
   let signing: SigningStatus | null = null;
   let brand: PlatformBrand | null = null;
@@ -87,6 +100,10 @@ export default async function AdminSettingsPage() {
     error = await apiErrorMessage(err);
   }
 
+  if (error) {
+    return <p className="text-sm text-destructive">{t('admin.settings.serviceUnavailable')}</p>;
+  }
+
   const brandAssets = brand
     ? {
         logoUrl: brand.logo ? apiAssetUrl(brand.logo) : null,
@@ -95,37 +112,30 @@ export default async function AdminSettingsPage() {
     : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-5">
-      <PageHeader title={t('admin.settings.title')} />
-      {error ? (
-        <p className="text-sm text-destructive">{t('admin.settings.serviceUnavailable')}</p>
-      ) : (
-        <SettingsManager
-          platform={platform}
-          signing={signing}
-          brand={brandAssets}
-          currency={currency}
-          currencyRates={rates}
-          distribution={distribution}
-          distributionDefaults={distributionDefaults}
-          updatePolicy={updatePolicy}
-          runtimeConfig={runtimeConfig}
-          salesChannels={salesChannels}
-          paymentProviders={paymentProviders}
-          pluginSections={pluginSettings.map((section) => ({
-            id: section.id,
-            title: section.title,
-            content: (
-              <AdminPluginPage
-                pluginId={section.pluginId}
-                path={section.path}
-                result={section.result}
-                embedded
-              />
-            ),
-          }))}
-        />
-      )}
-    </main>
+    <SettingsManager
+      platform={platform}
+      signing={signing}
+      brand={brandAssets}
+      currency={currency}
+      currencyRates={rates}
+      distribution={distribution}
+      distributionDefaults={distributionDefaults}
+      updatePolicy={updatePolicy}
+      runtimeConfig={runtimeConfig}
+      salesChannels={salesChannels}
+      paymentProviders={paymentProviders}
+      pluginSections={pluginSettings.map((section) => ({
+        id: section.id,
+        title: section.title,
+        content: (
+          <AdminPluginPage
+            pluginId={section.pluginId}
+            path={section.path}
+            result={section.result}
+            embedded
+          />
+        ),
+      }))}
+    />
   );
 }

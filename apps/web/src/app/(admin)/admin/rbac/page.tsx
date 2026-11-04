@@ -1,11 +1,30 @@
+import { Suspense } from 'react';
 import type { PermissionGroupView, PermissionInfo } from '@stackpanel/sdk';
+import { PageHeader } from '@stackpanel/ui';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
-import { PermissionGroupManager } from './permission-group-manager';
+import { getLocale } from '@/i18n/locale';
+import { createTranslator, type Translator } from '@/i18n/core';
+import { CreateGroupForm, PermissionGroupManager } from './permission-group-manager';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminRbacPage() {
+  const t = createTranslator(await getLocale());
+  return (
+    <main className="w-full">
+      <div className="mb-4">
+        <PageHeader title={t('admin.rbac.title')} actions={<CreateGroupForm />} />
+      </div>
+      <Suspense fallback={<DataSkeleton variant="list" rows={4} />}>
+        <RbacData t={t} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function RbacData({ t }: { t: Translator }) {
   let groups: PermissionGroupView[] = [];
   let permissions: PermissionInfo[] = [];
   let error: string | null = null;
@@ -21,9 +40,5 @@ export default async function AdminRbacPage() {
     error = await apiErrorMessage(err);
   }
 
-  return (
-    <main className="w-full">
-      <PermissionGroupManager groups={groups} permissions={permissions} error={error} />
-    </main>
-  );
+  return <PermissionGroupManager groups={groups} permissions={permissions} error={error} />;
 }

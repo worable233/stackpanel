@@ -1,13 +1,15 @@
+import { Suspense } from 'react';
 import type {
   UpdateResultsResponse,
   UpdateSelfUpdateResponse,
   UpdateStatusResponse,
 } from '@stackpanel/sdk';
 import { PageHeader } from '@stackpanel/ui';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator } from '@/i18n/core';
+import { createTranslator, type Translator } from '@/i18n/core';
 import packageInfo from '../../../../../../../package.json';
 import { UpdateCenter } from './update-center';
 
@@ -23,6 +25,17 @@ import { UpdateCenter } from './update-center';
  */
 export default async function AdminUpdatesPage() {
   const t = createTranslator(await getLocale());
+  return (
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      <PageHeader title={t('admin.updates.title')} />
+      <Suspense fallback={<DataSkeleton variant="updates" />}>
+        <UpdatesData t={t} />
+      </Suspense>
+    </main>
+  );
+}
+
+async function UpdatesData({ t }: { t: Translator }) {
   let initial: UpdateStatusResponse | null = null;
   let results: UpdateResultsResponse['results'] = [];
   let selfUpdate: UpdateSelfUpdateResponse['request'] = null;
@@ -42,22 +55,22 @@ export default async function AdminUpdatesPage() {
     error = await apiErrorMessage(err);
   }
 
+  if (error) {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-sm text-destructive">{t('admin.updates.serviceUnavailable')}</p>
+        <p className="text-xs text-muted-foreground">{error}</p>
+      </div>
+    );
+  }
+  if (!initial) return null;
+
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <PageHeader title={t('admin.updates.title')} />
-      {error ? (
-        <div className="flex flex-col gap-1">
-          <p className="text-sm text-destructive">{t('admin.updates.serviceUnavailable')}</p>
-          <p className="text-xs text-muted-foreground">{error}</p>
-        </div>
-      ) : initial ? (
-        <UpdateCenter
-          currentVersion={packageInfo.version}
-          initial={initial}
-          initialResults={results}
-          initialSelfUpdate={selfUpdate}
-        />
-      ) : null}
-    </main>
+    <UpdateCenter
+      currentVersion={packageInfo.version}
+      initial={initial}
+      initialResults={results}
+      initialSelfUpdate={selfUpdate}
+    />
   );
 }

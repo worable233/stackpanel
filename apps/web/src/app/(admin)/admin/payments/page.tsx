@@ -1,11 +1,13 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { InlineError, PageHeader } from '@stackpanel/ui';
 import type { AdminPaymentListResponse } from '@stackpanel/sdk';
 import { buttonVariants } from '@/components/ui/button';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { PaymentRecords } from '@/components/payment-records';
 import { getAuthedApiClient } from '@/lib/api';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator } from '@/i18n/core';
+import { createTranslator, type Translator } from '@/i18n/core';
 import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -53,24 +55,6 @@ export default async function AdminPaymentsPage({
   const page = Math.max(1, Number(sp.page) || 1);
   const userId = typeof sp.userId === 'string' && sp.userId.trim() ? sp.userId.trim() : null;
 
-  let data: AdminPaymentListResponse | null = null;
-  let failed = false;
-  try {
-    const api = await getAuthedApiClient();
-    data = await api.listAdminPayments({
-      page,
-      pageSize: PAGE_SIZE,
-      ...(status ? { status } : {}),
-      ...(userId ? { userId } : {}),
-    });
-  } catch (error) {
-    console.error('[admin/payments] load failed:', error);
-    failed = true;
-  }
-
-  const total = data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
   return (
     <main className="flex w-full flex-col gap-4">
       <PageHeader title={t('adminPayments.title')} />
@@ -117,15 +101,54 @@ export default async function AdminPaymentsPage({
         </div>
       ) : null}
 
-      {failed ? (
-        <InlineError className="rounded-xl px-4 py-10 text-center">
-          {t('adminPayments.loadFailed')}
-        </InlineError>
-      ) : (
-        <PaymentRecords payments={data?.payments ?? []} />
-      )}
+      <Suspense fallback={<DataSkeleton variant="list" rows={8} />}>
+        <PaymentsResult page={page} status={status} userId={userId} t={t} />
+      </Suspense>
+    </main>
+  );
+}
 
-      {!failed && total > 0 ? (
+async function PaymentsResult({
+  page,
+  status,
+  userId,
+  t,
+}: {
+  page: number;
+  status: string | null;
+  userId: string | null;
+  t: Translator;
+}) {
+  let data: AdminPaymentListResponse | null = null;
+  let failed = false;
+  try {
+    const api = await getAuthedApiClient();
+    data = await api.listAdminPayments({
+      page,
+      pageSize: PAGE_SIZE,
+      ...(status ? { status } : {}),
+      ...(userId ? { userId } : {}),
+    });
+  } catch (error) {
+    console.error('[admin/payments] load failed:', error);
+    failed = true;
+  }
+
+  const total = data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  if (failed) {
+    return (
+      <InlineError className="rounded-xl px-4 py-10 text-center">
+        {t('adminPayments.loadFailed')}
+      </InlineError>
+    );
+  }
+
+  return (
+    <>
+      <PaymentRecords payments={data?.payments ?? []} />
+      {total > 0 ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-xs text-muted-foreground">
             {t('adminPayments.pageInfo', { page, pages, total })}
@@ -150,6 +173,6 @@ export default async function AdminPaymentsPage({
           </div>
         </div>
       ) : null}
-    </main>
+    </>
   );
 }

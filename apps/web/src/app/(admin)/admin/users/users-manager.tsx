@@ -27,7 +27,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { List, ListEmpty, ListItem, PageHeader } from '@stackpanel/ui';
+import { List, ListEmpty, ListItem } from '@stackpanel/ui';
 import {
   Select,
   SelectContent,
@@ -36,7 +36,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CreateUserForm } from '@/components/create-user-form';
 import { impersonateUserAction, updateUserStatusAction } from '@/lib/user-actions';
 import { kernelAssetUrl } from '@/lib/kernel-asset-url';
 import { isNextRedirectError } from '@/lib/next-navigation';
@@ -190,8 +189,6 @@ export function UsersManager({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={t('admin.users.title')} actions={<CreateUserForm groups={groups} />} />
-
       {error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : (

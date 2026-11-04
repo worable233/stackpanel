@@ -1,9 +1,11 @@
+import { Suspense } from 'react';
 import { InlineError, PageHeader } from '@stackpanel/ui';
 import { AdminNavManager } from '@/components/admin-nav-manager';
+import { DataSkeleton } from '@/components/data-skeletons';
 import { getAuthedApiClient } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-errors';
 import { getLocale } from '@/i18n/locale';
-import { createTranslator } from '@/i18n/core';
+import { createTranslator, type Translator } from '@/i18n/core';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +17,21 @@ export const dynamic = 'force-dynamic';
  */
 export default async function AdminNavPage() {
   const t = createTranslator(await getLocale());
+  return (
+    <main className="w-full">
+      <PageHeader title={t('adminNav.title')} />
+      <p className="mb-4 text-sm text-muted-foreground">{t('adminNav.description')}</p>
+      <Suspense fallback={<DataSkeleton variant="settings" />}>
+        <AdminNavData t={t} />
+      </Suspense>
+    </main>
+  );
+}
 
-  let items: Awaited<ReturnType<Awaited<ReturnType<typeof getAuthedApiClient>>['getAdminNav']>>['items'] =
-    [];
+async function AdminNavData({ t }: { t: Translator }) {
+  let items: Awaited<
+    ReturnType<Awaited<ReturnType<typeof getAuthedApiClient>>['getAdminNav']>
+  >['items'] = [];
   let error: string | null = null;
   try {
     const api = await getAuthedApiClient();
@@ -27,15 +41,6 @@ export default async function AdminNavPage() {
     error = await apiErrorMessage(err);
   }
 
-  return (
-    <main className="w-full">
-      <PageHeader title={t('adminNav.title')} />
-      <p className="mb-4 text-sm text-muted-foreground">{t('adminNav.description')}</p>
-      {error ? (
-        <InlineError>{error}</InlineError>
-      ) : (
-        <AdminNavManager surface="admin" items={items} />
-      )}
-    </main>
-  );
+  if (error) return <InlineError>{error}</InlineError>;
+  return <AdminNavManager surface="admin" items={items} />;
 }

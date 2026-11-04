@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import type { AuditLogResponse } from '@stackpanel/sdk';
 import { List, ListEmpty, ListItem, PageHeader } from '@stackpanel/ui';
 import { getAuthedApiClient } from '@/lib/api';
@@ -8,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getLocale } from '@/i18n/locale';
 import { createTranslator, formatDate, type Translator } from '@/i18n/core';
+import { DataSkeleton } from '@/components/data-skeletons';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,32 +100,7 @@ export default async function AdminAuditPage({
   const resource = typeof params.resource === 'string' ? params.resource : '';
   const actorId = typeof params.actorId === 'string' ? params.actorId : '';
 
-  let result: AuditLogResponse | null = null;
-  let error: string | null = null;
-  try {
-    result = await (
-      await getAuthedApiClient()
-    ).getAuditLog(page, pageSize, {
-      action: action || undefined,
-      resource: resource || undefined,
-      actorId: actorId || undefined,
-    });
-  } catch (err) {
-    error = await apiErrorMessage(err);
-  }
-
-  const totalPages = result ? Math.max(1, Math.ceil(result.total / pageSize)) : 1;
   const hasFilter = Boolean(action || resource || actorId);
-
-  const filterHref = (nextPage: number) => {
-    const search = new URLSearchParams();
-    if (action) search.set('action', action);
-    if (resource) search.set('resource', resource);
-    if (actorId) search.set('actorId', actorId);
-    if (nextPage > 1) search.set('page', String(nextPage));
-    const qs = search.toString();
-    return qs ? `/admin/audit?${qs}` : '/admin/audit';
-  };
 
   return (
     <main className="flex w-full flex-col gap-6">
@@ -170,6 +147,66 @@ export default async function AdminAuditPage({
         ) : null}
       </form>
 
+      <Suspense fallback={<DataSkeleton variant="list" rows={8} />}>
+        <AuditResult
+          action={action}
+          resource={resource}
+          actorId={actorId}
+          page={page}
+          pageSize={pageSize}
+          locale={locale}
+          t={t}
+        />
+      </Suspense>
+    </main>
+  );
+}
+
+function filterHref(action: string, resource: string, actorId: string, nextPage: number): string {
+  const search = new URLSearchParams();
+  if (action) search.set('action', action);
+  if (resource) search.set('resource', resource);
+  if (actorId) search.set('actorId', actorId);
+  if (nextPage > 1) search.set('page', String(nextPage));
+  const qs = search.toString();
+  return qs ? `/admin/audit?${qs}` : '/admin/audit';
+}
+
+async function AuditResult({
+  action,
+  resource,
+  actorId,
+  page,
+  pageSize,
+  locale,
+  t,
+}: {
+  action: string;
+  resource: string;
+  actorId: string;
+  page: number;
+  pageSize: number;
+  locale: Parameters<typeof formatDate>[1];
+  t: Translator;
+}) {
+  let result: AuditLogResponse | null = null;
+  let error: string | null = null;
+  try {
+    result = await (
+      await getAuthedApiClient()
+    ).getAuditLog(page, pageSize, {
+      action: action || undefined,
+      resource: resource || undefined,
+      actorId: actorId || undefined,
+    });
+  } catch (err) {
+    error = await apiErrorMessage(err);
+  }
+
+  const totalPages = result ? Math.max(1, Math.ceil(result.total / pageSize)) : 1;
+
+  return (
+    <>
       {error ? (
         <p className="text-sm text-destructive">{t('admin.audit.serviceUnavailable')}</p>
       ) : null}
@@ -218,7 +255,11 @@ export default async function AdminAuditPage({
           </span>
           <div className="flex items-center gap-2">
             {page > 1 ? (
-              <Button render={<Link href={filterHref(page - 1)} />} variant="outline" size="sm">
+              <Button
+                render={<Link href={filterHref(action, resource, actorId, page - 1)} />}
+                variant="outline"
+                size="sm"
+              >
                 {t('admin.audit.prev')}
               </Button>
             ) : (
@@ -227,7 +268,11 @@ export default async function AdminAuditPage({
               </span>
             )}
             {page < totalPages ? (
-              <Button render={<Link href={filterHref(page + 1)} />} variant="outline" size="sm">
+              <Button
+                render={<Link href={filterHref(action, resource, actorId, page + 1)} />}
+                variant="outline"
+                size="sm"
+              >
                 {t('admin.audit.next')}
               </Button>
             ) : (
@@ -238,6 +283,6 @@ export default async function AdminAuditPage({
           </div>
         </div>
       ) : null}
-    </main>
+    </>
   );
 }

@@ -639,8 +639,6 @@ export function PermissionGroupManager({
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={t('admin.rbac.title')} actions={<CreateGroupForm />} />
-
       {error ? (
         <p className="text-sm text-destructive">{t('admin.rbac.serviceUnavailable')}</p>
       ) : (
