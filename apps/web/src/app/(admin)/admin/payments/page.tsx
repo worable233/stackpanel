@@ -101,7 +101,7 @@ export default async function AdminPaymentsPage({
         </div>
       ) : null}
 
-      <Suspense fallback={<DataSkeleton variant="list" rows={8} />}>
+      <Suspense fallback={<DataSkeleton variant="list" rows={8} rowHeight="payments" />}>
         <PaymentsResult page={page} status={status} userId={userId} t={t} />
       </Suspense>
     </main>

@@ -17,7 +17,7 @@ export default async function AdminRbacPage() {
       <div className="mb-4">
         <PageHeader title={t('admin.rbac.title')} actions={<CreateGroupForm />} />
       </div>
-      <Suspense fallback={<DataSkeleton variant="list" rows={4} />}>
+      <Suspense fallback={<DataSkeleton variant="list" rows={4} rowHeight="rbac" />}>
         <RbacData t={t} />
       </Suspense>
     </main>

@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactElement } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 /**
  * Data-only skeletons.
@@ -41,31 +42,63 @@ function CardRows({ rows = 4 }: { rows?: number }): ReactElement {
   );
 }
 
+/**
+ * Phone rows wrap into a title line plus meta lines, so their height depends on
+ * how much metadata the real record carries and cannot be derived from the
+ * desktop layout. Each variant therefore pins the height its rows actually
+ * occupy at 390px (measured against the live pages) — otherwise the list jumps
+ * and the scroll position snaps when the data lands.
+ */
+const ROW_HEIGHT: Record<string, string> = {
+  audit: 'min-h-[120px] sm:min-h-0',
+  inbox: 'min-h-[146px] sm:min-h-0',
+  list: 'min-h-[118px] sm:min-h-0',
+  payments: 'min-h-[114px] sm:min-h-0',
+  plugins: 'min-h-[128px] sm:min-h-0',
+  rbac: 'min-h-[132px] sm:min-h-0',
+  seo: 'min-h-[118px] sm:min-h-0',
+  table: 'min-h-[148px] sm:min-h-0',
+  themes: 'min-h-[132px] sm:min-h-0',
+};
+
 function ListRows({
   rows = 6,
-  compact = false,
+  rowHeight = 'list',
+  meta = 1,
 }: {
   rows?: number;
-  compact?: boolean;
+  rowHeight?: keyof typeof ROW_HEIGHT;
+  meta?: number;
 }): ReactElement {
   return (
     <div className="flex flex-col gap-2.5">
       {Array.from({ length: rows }, (_, index) => (
         <div
           key={index}
-          className={
-            compact
-              ? 'flex items-center gap-3 rounded-2xl bg-muted/40 px-4 py-3'
-              : 'flex flex-wrap items-center gap-3 rounded-2xl bg-muted/40 px-4 py-3.5'
-          }
+          className={cn(
+            'flex flex-col gap-3 rounded-2xl bg-muted/40 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sm:py-3.5',
+            ROW_HEIGHT[rowHeight],
+          )}
         >
-          <Block className="size-9 shrink-0 rounded-xl" />
-          <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <Block className="h-4 w-2/5" />
-            <Block className="h-3 w-1/3 bg-muted/70" />
+          <div className="flex items-center gap-3">
+            <Block className="size-9 shrink-0 rounded-xl" />
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <Block className="h-4 w-2/5" />
+              <Block className="h-3 w-1/3 bg-muted/70" />
+            </div>
+            <Block className="h-6 w-16 shrink-0 rounded-full" />
+            <Block className="hidden size-8 shrink-0 rounded-lg sm:block" />
           </div>
-          <Block className="h-6 w-16 rounded-full" />
-          <Block className="h-8 w-8 rounded-lg" />
+          {/* Records carry a metadata line at every width; phones wrap it more. */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {Array.from({ length: meta }, (_, line) => (
+              <Block
+                key={line}
+                className={line === 0 ? 'h-5 w-16 rounded-full' : 'h-3 bg-muted/70'}
+                style={{ width: [104, 72, 84][line % 3] }}
+              />
+            ))}
+          </div>
         </div>
       ))}
     </div>
@@ -114,7 +147,9 @@ function ChartPanel(): ReactElement {
 function SettingsPanel(): ReactElement {
   return (
     <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
-      <div className="flex flex-col gap-2 rounded-2xl bg-muted/30 p-2">
+      {/* Phones get the section picker, not the vertical rail (see SettingsSections). */}
+      <Block className="h-12 rounded-xl bg-muted/40 lg:hidden" />
+      <div className="hidden flex-col gap-2 rounded-2xl bg-muted/30 p-2 lg:flex">
         {Array.from({ length: 7 }, (_, index) => (
           <Block key={index} className="h-9 rounded-xl bg-muted/60" />
         ))}
@@ -165,10 +200,18 @@ function UpdatesPanel(): ReactElement {
 export function DataSkeleton({
   variant = 'list',
   rows,
+  rowHeight = 'list',
   className,
 }: {
   variant?: DataSkeletonVariant;
   rows?: number;
+  /**
+   * Row shape for the `list` variant. Record height on phones depends on how
+   * many metadata lines a row carries, which the component cannot infer from
+   * the variant name — audit rows, payment rows and rbAC rows all render
+   * through `variant="list"` but stack differently at 390px.
+   */
+  rowHeight?: keyof typeof ROW_HEIGHT;
   className?: string;
 }): ReactElement {
   switch (variant) {
@@ -203,28 +246,29 @@ export function DataSkeleton({
         </div>
       );
     case 'inbox':
-      return <ListRows rows={rows ?? 6} compact />;
+      return <ListRows rows={rows ?? 6} rowHeight="inbox" meta={6} />;
     case 'plugins':
+      return <ListRows rows={rows ?? 6} rowHeight="plugins" meta={4} />;
     case 'themes':
-      return <ListRows rows={rows ?? 6} compact />;
+      return <ListRows rows={rows ?? 6} rowHeight="themes" meta={5} />;
     case 'settings':
       return <SettingsPanel />;
     case 'table':
       return (
         <div className={className ?? 'flex flex-col gap-2.5'}>
-          <div className="flex items-center gap-3 px-4 py-2">
+          <div className="hidden items-center gap-3 px-4 py-2 sm:flex">
             <Block className="h-3.5 w-28 bg-muted/70" />
             <Block className="h-3.5 w-20 bg-muted/70" />
             <Block className="h-3.5 w-20 bg-muted/70" />
             <Block className="ml-auto h-3.5 w-14 bg-muted/70" />
           </div>
-          <ListRows rows={rows ?? 8} compact />
+          <ListRows rows={rows ?? 8} rowHeight="table" meta={5} />
         </div>
       );
     case 'updates':
       return <UpdatesPanel />;
     case 'list':
     default:
-      return <ListRows rows={rows ?? 6} />;
+      return <ListRows rows={rows ?? 6} rowHeight={rowHeight} />;
   }
 }

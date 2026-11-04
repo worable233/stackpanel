@@ -147,7 +147,7 @@ export default async function AdminAuditPage({
         ) : null}
       </form>
 
-      <Suspense fallback={<DataSkeleton variant="list" rows={8} />}>
+      <Suspense fallback={<DataSkeleton variant="list" rows={8} rowHeight="audit" />}>
         <AuditResult
           action={action}
           resource={resource}

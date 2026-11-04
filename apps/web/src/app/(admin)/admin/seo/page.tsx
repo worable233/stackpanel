@@ -31,7 +31,7 @@ export default async function AdminSeoPage({
     <main className="w-full">
       <PageHeader title={t('adminSeo.title')} />
       <p className="mb-4 text-sm text-muted-foreground">{t('adminSeo.description')}</p>
-      <Suspense fallback={<DataSkeleton variant="list" rows={6} />}>
+      <Suspense fallback={<DataSkeleton variant="list" rows={6} rowHeight="seo" />}>
         <SeoData query={query} page={page} t={t} />
       </Suspense>
     </main>
