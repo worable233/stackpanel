@@ -255,3 +255,48 @@ describe('capability.scope may only narrow, never widen', () => {
     expect(block).toContain('route.permission && !scopeReplacesPermission');
   });
 });
+
+describe('capability.scope 规范（防止再写成权限键）', () => {
+  /**
+   * `capability.scope` 的契约是 refined `资源:read|write`（见
+   * `PluginCapability.scope`）。历史上 13 个插件把它写成了权限键
+   * （`epay.admin`、`ticket.admin`、`store.admin` …），内核又**完全不校验**
+   * 这个字段，于是错写法长期存在。
+   *
+   * 错写法之所以「看起来能跑」纯属巧合：`scopeSatisfied` 对非 refined scope
+   * 走精确匹配，而它们恰好等于自己的 `route.permission`。真正的危害有两个：
+   *
+   * 1. `runtime.ts` 曾无条件用 `capability.scope` 替换 `route.permission`，
+   *    写错就是一个放宽口子（已在上一组用例锁住）。
+   * 2. 写错时超级管理员仍然被挡在外面（`platform.admin` 只匹配 refined）。
+   *
+   * 这组用例把「规范长什么样」写成可执行的断言，插件仓的 CI 可以直接复用。
+   */
+  it('refined scope 只允许 read / write 两种动作', () => {
+    expect(scopeResource('epay:read')).toBe('epay');
+    expect(scopeResource('epay:write')).toBe('epay');
+    // 权限键没有冒号 -> 不是 refined scope
+    expect(scopeResource('epay.admin')).toBeNull();
+    expect(scopeResource('ticket.admin')).toBeNull();
+  });
+
+  it('写错成权限键时超级管理员仍被挡住（这就是为什么要规范）', () => {
+    expect(scopeSatisfied('epay.admin', new Set(['platform.admin']))).toBe(false);
+    // 同样的资源，写成 refined 就正常
+    expect(scopeSatisfied('epay:read', new Set(['platform.admin']), { epay: ['epay.admin'] })).toBe(
+      true,
+    );
+  });
+
+  it('权限声明带 scope 后，持有者才拿得到 refined scope', () => {
+    const withoutScope = aggregateScopeGovernance([[{ key: 'epay.admin' }]] as never);
+    expect(grantableScopesFor(new Set(['epay.admin']), withoutScope)).not.toContain('epay:read');
+
+    const withScope = aggregateScopeGovernance([
+      [{ key: 'epay.admin', scope: 'epay' }],
+    ] as never);
+    const grantable = grantableScopesFor(new Set(['epay.admin']), withScope);
+    expect(grantable).toContain('epay:read');
+    expect(grantable).toContain('epay:write');
+  });
+});
