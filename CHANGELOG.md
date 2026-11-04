@@ -160,6 +160,25 @@
 - **`cart-checkout` 测试跟上 Checkbox 组件化**（`onCheckedChange(boolean)` 而非
   DOM 事件）。
 
+### 修复（发布前全流程体检）
+
+- **单端口部署下 `/api/public/*` 被错误转给内核**：`apps/web/src/app/api/public/`
+  （模型服务的同源统计代理）不在 `WEB_BFF_PREFIXES` 里，单端口模式会把请求转发
+  给 API 然后 404。`single-port-routing.test.ts` 正是防这类漂移的守卫。
+- **CI 的 Lint 门禁会直接失败**：`pnpm lint` 有 29 个错误。其中 24 个是重构后的
+  未使用导入/参数；3 类是真问题 —— effect 里同步 `setState`（三个组件初值本就
+  是 loading，首屏那次纯多余且触发级联渲染）、`admin-nav-manager` 在 effect 里
+  重置 state（改成官方推荐的 key 重置）、`users/page.tsx` 把 JSX 写在
+  try/catch 里（改成只包取数）。
+- **6 个测试失败其实是版本号升级引入的**：fixtures 硬编码
+  `kernel: '>=0.1.0 <0.2.0'`，升到 0.2.0 后这些 catalog entry 变得不兼容，
+  plan 里没有该 package。改成不设上界；`market-catalog` 里那条**故意不兼容**
+  的用例改成 `>=9.0.0`，不会再被下一次版本号撞上。
+- **测试隔离**：`storage-plugin` 的鉴权用例依赖执行顺序（插件配置跨用例留存）；
+  `outbox-event-bus` 的 4 处 `configure` 不指定 `instanceId`，同进程多实例共用
+  主机名游标，并行时互相推进；`outbox-replica-identity` 从不启动消费循环，靠
+  `publish` 内部偶然的 catchUp 侥幸通过 —— 改为由测试显式驱动两侧 `catchUp`。
+
 ### 内部
 
 - 新增 `stackpanel_upstream_request_duration_seconds{plugin,upstream,outcome}` 指标。
