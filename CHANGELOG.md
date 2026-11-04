@@ -52,6 +52,34 @@
   终于影响执行；审批审计补上参数快照。
 - **后台**：OS 风格更新中心、统一插件市场、内容画布样式。
 
+### 修复（权限系统）
+
+- **超级管理员被插件的开放 API 一律 403**：内核自己的资源在治理表里逐条写了
+  `platform.admin`，看起来「超权自动生效」，其实只是**手工枚举**的结果。插件
+  资源是运行期聚合的，只填插件自己声明的权限键（`gateway ->
+  ['llm-gateway.use', 'llm-gateway.admin']`），没有 `platform.admin`。于是
+  `scopeSatisfied('user:read', ['platform.admin'])` 为 true，而
+  `scopeSatisfied('gateway:read', ['platform.admin'])` 为 false —— 管理员访问
+  插件开放 API 被 403，访问自己的内核 API 正常。修法：`platform.admin` 满足
+  所有 refined scope（它只收窄内部的 `route.permission` 门，超权持有者本来就
+  过得了那道门）。非 refined scope 保持精确匹配，否则就是真提权。
+- **`capability.scope` 可以放宽访问**：`runtime.ts` 原本无条件用
+  `capability.scope` 替换 `route.permission`。语义上 refined scope 只能收窄，
+  实现上却能放宽 —— 抄错成 `user.basic` 就让普通用户能访问管理端点，而内部
+  门禁已被丢弃。现在只有 `资源:read|write` 形式才替换，其他形式保留
+  `route.permission`。
+
+### 已知问题（插件侧，未在本版修复）
+
+- 13 个插件把 `capability.scope` 写成了权限键（`epay.admin`、`ticket.admin`
+  等）而不是规范的 `资源:read|write`：alipay、altcha、captcha、catalog、epay、
+  invoice、notice、referral、smtp、ticket、wechatpay、wecom-mail、zjmf-compat。
+  它们恰好与自己 `route.permission` 相同，所以行为正确 —— 但属于「靠巧合
+  安全」，且由于上面第二个缺陷的历史语义，这些端点的内部门禁曾被丢弃。内核侧
+  已收敛为无条件更安全（保留 permission），插件侧改写待办。
+- 内核**没有**校验 `manifest.capabilities` 的 `scope` 格式（`permissions` 有
+  校验）。缺这道校验是上面那个写法错误能长期存在的原因。
+
 ### 修复（升级即崩，只在已部署的库上暴露）
 
 这一批的共同点：**本地新建库完全看不出来**，只有从 0.1.x 升级上来的库才会中招。
