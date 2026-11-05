@@ -331,6 +331,7 @@ export type {
 } from './wallet.js';
 export { WalletError, isWalletError } from './wallet.js';
 export { EXTENSION_POINTS } from './plugin.js';
+export { isUniqueViolation } from './prisma-race.js';
 export { REDIS_KEY_PREFIX, redisKey } from './key-prefixes.js';
 export type { RedisKeyNamespace } from './key-prefixes.js';
 export {
