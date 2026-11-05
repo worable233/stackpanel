@@ -6,6 +6,41 @@
 
 ## [Unreleased]
 
+## [0.1.4]
+
+### 修复（图表组件导致整页 500）
+
+- **插件自带的 `'use client'` 模块在 RSC 下不生效**（P0-A）：store 的
+  `index.tsx`（服务端入口）顶层 `import { MetricsExplorer } from './charts.js'`，
+  而 `charts.js` 自己是 `'use client'`。运行期装载的包是普通 Node ESM，这个指令
+  在 RSC 下不生效 → 图表真实执行 → 命中宿主桩 → **实例详情页整页 500**（线上
+  `digest 1508909678`）。现在宿主收编表里的 charts 是**真实客户端组件**（`next/dynamic`
+  + `ssr: false`，独立 chunk）。
+
+  之前不炸是因为上游同步全失败、`/metrics` 没数据、`hasMetricData=false`
+  从不进入图表分支。0.1.3 修好同步链路后 metrics 有了数据，潜伏 bug 被激活。
+- **桩「调用即抛」把局部问题放大成整页 500**（P0-B）：图表组件在服务端被
+  渲染时现在返回 `null`（渲染为空块）+ 记一条**可定位**的 warn（插件 id /
+  路由 / 组件名）。之前错误里连 `pluginId` 都没有，线上定位只能手工 grep
+  编译产物反查，现在日志直接给出 `plugins/store route=account/service-detail
+  component=MetricsExplorer`。
+- **拆图表入口把生态打死**（P0-C）：0.1.3 把图表移到 `@stackpanel/ui/charts`，
+  但已发布的插件仍从主入口取 `UsageTrendChart`。ESM 链接是静态的，
+  少一个具名导出就是**整个前端包装载失败**（llm-gateway 后台完全打不开）。
+  主入口现在继续可链接这些名字：服务端给桩，客户端适配器显式回落到
+  charts 槽取真组件。**没有**在主入口加 `export ... from './charts.js'` 废弃别名 ——
+  实测那条路把 recharts 重新塞回首屏（703 → 814 KB），三轮瘦身全部作废。
+
+### 新增（可观测性）
+
+- **插件前端装载失败在管理页可见**（P1-A）：之前只写 web 容器日志，
+  而插件列表由 api 进程生成（两者不共享内存），于是前端坏掉了、界面
+  仍显示「已激活」。现在 web 把失败写共享数据目录，api 读出来在插件卡片上
+  标红（含真实原因）。
+- **前端运行期错误带上诊断上下文**（P1-B）：`pluginId` / `route` / `component`
+  通过 `AsyncLocalStorage`（`enterWith`，RSC 渲染发生在组件返回**之后**，`run()`
+  的域此时已结束）传到日志。
+
 ## [0.1.3] - 2026-11-04
 
 **首屏瘦身 + 可靠性修复版**：这一版的主线是「页面为什么慢」——实测服务端 HTML

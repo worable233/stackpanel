@@ -84,7 +84,7 @@ export function runtimeFrontendFailure(
  * 完全不能让它影响渲染：写盘失败只能是「展示少一条」，
  * 不能反过来把本来已经出错的页面弄挂。
  */
-function recordFrontendLoadFailure(
+export function recordFrontendLoadFailure(
   kind: 'themes' | 'plugins',
   id: string,
   message: string,

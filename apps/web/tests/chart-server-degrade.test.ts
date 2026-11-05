@@ -7,7 +7,14 @@ import { describe, expect, it, vi } from 'vitest';
  * 修复把它们拆成三个可独立验证的断言，任何一条回退都会让对应用例变红。
  */
 
-describe('图表组件的服务端降级（P0-B）', () => {
+/**
+ * 这些用例首次 import 时会加载 `@stackpanel/ui` 整桶（客户端与服务端两份）。
+ * 单跑约 1.4s，但 `pnpm -r test` 全量并行时会被 CPU 争用拖到 5s+（实测打穿默认 5s超时）。
+ * 这里测的是语义，不是速度，给出显式预算。
+ */
+const HEAVY_IMPORT_TIMEOUT = 30_000;
+
+describe('图表组件的服务端降级（P0-B）', { timeout: HEAVY_IMPORT_TIMEOUT }, () => {
   it('主入口取图表组件时返回可调用的桩，而不是 undefined', async () => {
     vi.resetModules();
     const abi = await import('@/lib/frontend-host-abi');
@@ -110,7 +117,7 @@ describe('图表组件的服务端降级（P0-B）', () => {
   });
 });
 
-describe('客户端适配器的图表回落（P0-C）', () => {
+describe('客户端适配器的图表回落（P0-C）', { timeout: HEAVY_IMPORT_TIMEOUT }, () => {
   it('从主入口取图表名时生成回落到 charts 槽的代码', async () => {
     const { GET } = await import('@/app/api/frontend-abi/[...slot]/route');
     const response = await GET(
