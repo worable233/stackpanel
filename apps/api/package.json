@@ -1,6 +1,6 @@
 {
   "name": "@stackpanel/api",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "StackPanel API (Fastify 5). All business logic lives here.",
   "type": "module",

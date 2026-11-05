@@ -6,6 +6,34 @@
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### 修复（updater 接入与首次自动升级）
+
+- **镜像引用不落盘**（P0-A）：`switchTo` 只用进程环境覆盖镜像变量，
+  容器换了但 `.env` 仍是旧 tag。任何一次 `docker compose up -d` 都会把
+  服务**静默回退**到旧版本，而数据库已被新版本迁移 —— 版本倒挂。
+  现在先原子回写 `.env`（临时文件 + rename，保留原权限）再 `up`，
+  并在 `verify` 里校验声明值是否已是目标 digest。
+- **updater 空闲不进心跳**（P0-C）：`status.json` 只在认领任务时写，于是
+  正常运行的 updater 被判为「未检测到升级执行器」。现在启动即写、每轮刷新
+  `updatedAt`，UI 改看心跳时效而非文件存在（后者还有「updater 卡死但文件
+  还在」的反向漏洞）。
+- **body 流读取无超时**（P1-D）：`downloadAsset` 的 `reader.read()` 可永久 pending，
+  使 `POST /admin/updates/check` 挂死且无日志。现在有单次 read 空闲超时（30s）
+  与整个 body 总超时（120s），超时先 `cancel()` 再报稳定 code `timeout`。
+- **外部托管数据库无法快照**（P0-B）：`pg_dump` 走 `compose exec`，假设 DB 在
+  本 project 内。现在设 `UPDATER_DB_HOST` 即可直连（updater 镜像自带
+  `postgresql-client`），**不需要跳板容器**。
+- **env 文件不可读时静默失败**（P1-C）：compose 会把 `${POSTGRES_PASSWORD}`
+  插值成空串，一次「成功」的升级用空密码重建实例。现在**启动期**就
+  检查并拒绝启动，同时给出修复指引。
+- **web 与 api 用不同镜像变量**（P1-B）：updater 只覆盖 `STACKPANEL_IMAGE`，
+  web 会被漏掉形成混合部署。现在 `UPDATER_IMAGE_ENVS` 支持多变量
+  同时覆盖与回写。
+- **投递后无完成提示**（P1-A）：轮询到终态后只是静默停止，页面停在
+  「已投递」徽标。现在给 toast（成功 / 失败含 phase）。
+
 ## [0.1.4]
 
 ### 修复（图表组件导致整页 500）
