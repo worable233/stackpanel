@@ -36,6 +36,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import semver from 'semver';
 import type { PrismaClient } from '@stackpanel/db';
 import { pluginSecrets } from '../lib/crypto.ts';
+import { upsertIgnoringRace } from '../lib/prisma-race.ts';
 import type { KernelAuth } from '../auth/auth-service.ts';
 import { createKernelJobContext } from '../jobs/kernel-jobs.ts';
 import type { JobRuntime } from '../jobs/types.ts';
@@ -1190,13 +1191,18 @@ export class PluginRuntime {
           ...(description ? { description } : {}),
         },
       });
-      await db.groupPermission.upsert({
-        where: {
-          groupId_permissionId: { groupId: this.adminGroupId, permissionId: permission.id },
-        },
-        create: { groupId: this.adminGroupId, permissionId: permission.id },
-        update: {},
-      });
+      // api 与 worker 两个容器并发注册同一插件时，`upsert` 的
+      // select-then-insert 会招 P2002（见 lib/prisma-race.ts）。授予已存在的
+      // 授权本就是幂等的，所以并发冲突视为成功。
+      await upsertIgnoringRace(() =>
+        db.groupPermission.upsert({
+          where: {
+            groupId_permissionId: { groupId: this.adminGroupId, permissionId: permission.id },
+          },
+          create: { groupId: this.adminGroupId, permissionId: permission.id },
+          update: {},
+        }),
+      );
     }
 
     // 2) Apply role templates: grant the template permissions to the matching
@@ -1205,16 +1211,28 @@ export class PluginRuntime {
     for (const template of definition.manifest.roleTemplates ?? []) {
       const groupId = template.role === 'ADMIN' ? 'group_admin' : 'group_user';
       for (const key of template.permissions ?? []) {
-        const permission = await db.permission.upsert({
-          where: { key },
-          create: { key, name: `${definition.manifest.id}.${key}` },
-          update: {},
-        });
-        await db.groupPermission.upsert({
-          where: { groupId_permissionId: { groupId, permissionId: permission.id } },
-          create: { groupId, permissionId: permission.id },
-          update: {},
-        });
+        const permission = await upsertIgnoringRace(
+          () =>
+            db.permission.upsert({
+              where: { key },
+              create: { key, name: `${definition.manifest.id}.${key}` },
+              update: {},
+            }),
+          async () => {
+            const existing = await db.permission.findUnique({ where: { key } });
+            return existing ?? undefined;
+          },
+        );
+        // 取不到（理论不可能：冲突就意味着行存在）就跳过授予，
+        // 不要用 undefined 去查 group_permission。
+        if (!permission) continue;
+        await upsertIgnoringRace(() =>
+          db.groupPermission.upsert({
+            where: { groupId_permissionId: { groupId, permissionId: permission.id } },
+            create: { groupId, permissionId: permission.id },
+            update: {},
+          }),
+        );
       }
     }
   }

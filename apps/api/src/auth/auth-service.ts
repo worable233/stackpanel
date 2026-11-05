@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@stackpanel/db';
+import { isUniqueViolation } from '../lib/prisma-race.ts';
 import {
   PluginError,
   type AuthService,
@@ -558,21 +559,45 @@ export class KernelAuthService implements AuthService {
       },
     ];
     for (const { key, name, description } of platformPermissions) {
-      const permission = await this.options.db.permission.upsert({
-        where: { key },
-        create: { key, name, description: description ?? null },
-        update: { name, description: description ?? null },
-      });
-      await this.options.db.groupPermission.upsert({
-        where: {
-          groupId_permissionId: { groupId: 'group_admin', permissionId: permission.id },
-        },
-        create: { groupId: 'group_admin', permissionId: permission.id },
-        update: {},
-      });
+      // 同上：api 与 worker 并发时 `upsert` 也会招唯一冲突。
+      // 对手已建好时直接取回现有行。
+      const permission = await this.options.db.permission
+        .upsert({
+          where: { key },
+          create: { key, name, description: description ?? null },
+          update: { name, description: description ?? null },
+        })
+        .catch(async (error: unknown) => {
+          if (!isUniqueViolation(error)) throw error;
+          const existing = await this.options.db.permission.findUnique({ where: { key } });
+          if (!existing) throw error;
+          return existing;
+        });
+      // 并发安全：api 与 worker 是**两个容器**，同时启动时都会跑这里。
+      //
+      // Prisma 的 `upsert` 在唯一约束上**不是原子的**（实现为 select-then-insert）：
+      // 两个进程同时发现记录不存在、同时 insert，后到的一个就招 P2002
+      // `duplicate key value violates unique constraint "group_permissions_pkey"`。
+      // 实测：全新部署 `docker compose up` 首次启动就崩（v0.1.4 冒烟失败）。
+      //
+      // 这里的写入是**幂等的**（授予一个已存在的授权 = 什么都不做），
+      // 所以吞掉并发冲突是正确语义，不是掩盖错误。
+      try {
+        await this.options.db.groupPermission.upsert({
+          where: {
+            groupId_permissionId: { groupId: 'group_admin', permissionId: permission.id },
+          },
+          create: { groupId: 'group_admin', permissionId: permission.id },
+          update: {},
+        });
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        // 并发对手已经建好了这条授权——目标已达成。
+      }
     }
   }
 }
+
 
 export { toPublicUser };
 
