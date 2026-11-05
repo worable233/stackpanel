@@ -186,6 +186,10 @@ async function startStack() {
       `STACKPANEL_WEB_PORT=${webPort}`,
       `STACKPANEL_PUBLIC_URL=${WEB}`,
       `STACKPANEL_API_PUBLIC_URL=${API}`,
+      // GitHub API 匿名配额是**按 IP** 的，CI runner 是共享 IP。
+      // 没 token 时从市场装插件会 503 `market.sourceRateLimited`，
+      // 把「限流」误报成「升级回归」。有 token 就走已认证配额。
+      ...(process.env.GITHUB_TOKEN ? [`DISTRIBUTION_CATALOG_TOKEN=${process.env.GITHUB_TOKEN}`] : []),
       '',
     ].join('\n'),
   );

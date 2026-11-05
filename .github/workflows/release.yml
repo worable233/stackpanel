@@ -372,6 +372,12 @@ jobs:
       # 端口避开默认值：runner 上虽然通常空闲，但显式指定能避免与镜像自带的端口
       # 默认值耦合，也让失败日志里的地址可读。
       - name: 冒烟
+        # 从市场装插件/主题要打 GitHub API。匿名配额是**按 IP** 的，而
+        # runner 是共享 IP 池 —— v0.1.4 就是被限流打红的
+        # (`market.sourceRateLimited` · 503)，而那不是集成缺陷。
+        # 带上 token 走已认证配额，限流就不再把真正的回归淹没在噪声里。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node scripts/release/smoke-image.mjs \
             --image "${{ steps.image.outputs.ref }}" \
