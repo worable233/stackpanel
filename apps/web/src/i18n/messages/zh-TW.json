@@ -748,7 +748,8 @@
         "author": "作者 {author}",
         "kindPlugin": "外掛",
         "kindTheme": "主題"
-      }
+      },
+      "frontendLoadFailed": "前端載入失敗"
     },
     "users": {
       "title": "使用者管理",

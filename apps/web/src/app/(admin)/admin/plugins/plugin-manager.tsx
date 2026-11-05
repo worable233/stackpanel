@@ -176,6 +176,20 @@ export function PluginManager({
                           })}
                         </span>
                       ) : null}
+                      {/*
+                        前端装载失败必须在这里可见（P1-A）。
+                        之前只写在 web 容器日志里，而插件列表仍显示
+                        「已激活」—— 线上 llm-gateway 后台整个打不开，
+                        管理员却完全无从得知。
+                      */}
+                      {plugin.frontend.runtimeLoadFailure ? (
+                        <span
+                          className="text-destructive"
+                          title={plugin.frontend.runtimeLoadFailure.message}
+                        >
+                          {t('admin.plugins.frontendLoadFailed')}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <div className="absolute top-3 right-3 flex shrink-0 items-center sm:static">

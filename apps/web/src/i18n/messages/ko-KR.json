@@ -757,7 +757,8 @@
         "author": "제작자 {author}",
         "kindPlugin": "플러그인",
         "kindTheme": "테마"
-      }
+      },
+      "frontendLoadFailed": "프론트엔드 로드 실패"
     },
     "users": {
       "title": "Users",

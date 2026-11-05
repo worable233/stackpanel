@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@stackpanel/db';
@@ -79,6 +80,45 @@ async function persistDependencyEnabledState(
   }
 }
 
+/**
+ * 把「前端运行期装载失败」挂到插件列表上（P1-A）。
+ *
+ * 装载失败发生在 **web** 进程；这个列表由 **api** 生成。两者不共享内存，
+ * 所以 web 把失败写成共享目录下的 `runtime-frontend-status/<kind>-<id>.json`，
+ * 这里读出来。
+ *
+ * 为什么不在这里直接去装载：api 进程没有前端 loader（它在
+ * `apps/web/src/lib/frontend-loader.ts`，依赖 web 的 RSC ABI）。跨进程读状态文件
+ * 是零新增依赖的做法。
+ *
+ * 读失败（文件不存在 / JSON 坏）一律当「无失败」：展示歧形状态
+ * 比少显示一个字段更糟。
+ */
+function withRuntimeLoadStatus<T extends object>(pluginId: string, frontend: T): T {
+  try {
+    const file = path.join(
+      resolveStackPanelDataDir(),
+      'runtime-frontend-status',
+      `plugins-${pluginId}.json`,
+    );
+    if (!existsSync(file)) return frontend;
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as {
+      message?: unknown;
+      at?: unknown;
+    };
+    if (typeof parsed.message !== 'string') return frontend;
+    return {
+      ...frontend,
+      runtimeLoadFailure: {
+        message: parsed.message,
+        at: typeof parsed.at === 'number' ? new Date(parsed.at).toISOString() : null,
+      },
+    };
+  } catch {
+    return frontend;
+  }
+}
+
 async function assertFrontendRoutesAvailable(
   runtime: PluginRuntime,
   targetId: string,
@@ -120,7 +160,10 @@ export async function adminPluginRoutes(app: FastifyInstance): Promise<void> {
           source: p.builtin ? 'builtin' : 'dynamic',
           removable: p.removable,
           hotReload: true,
-          frontend: frontendSummary(await readFrontendManifest(pluginPackageDir(p.id))),
+          frontend: withRuntimeLoadStatus(
+            p.id,
+            frontendSummary(await readFrontendManifest(pluginPackageDir(p.id))),
+          ),
           requires: p.requires,
           dependencies: p.requires.map((dependency) => {
             const installed = byId.get(dependency.id);

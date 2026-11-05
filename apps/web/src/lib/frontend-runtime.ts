@@ -2,7 +2,7 @@
 import 'server-only';
 
 import path from 'node:path';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { resolveStackPanelDataDir } from '@stackpanel/sdk/paths';
 import { apiAssetUrl } from './api';
@@ -76,6 +76,31 @@ export function runtimeFrontendFailure(
     return null;
   }
   return failure.message;
+}
+
+/**
+ * 把装载失败写成共享目录下的状态文件（P1-A），供 api 进程展示。
+ *
+ * 完全不能让它影响渲染：写盘失败只能是「展示少一条」，
+ * 不能反过来把本来已经出错的页面弄挂。
+ */
+function recordFrontendLoadFailure(
+  kind: 'themes' | 'plugins',
+  id: string,
+  message: string,
+): void {
+  try {
+    const dir = path.join(resolveStackPanelDataDir(), 'runtime-frontend-status');
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${kind}-${id}.json`);
+    writeFileSync(
+      file,
+      JSON.stringify({ kind, id, message, at: Date.now() }, null, 2),
+      'utf8',
+    );
+  } catch {
+    // 最好努力。
+  }
 }
 
 /** 测试用：清空失败记录。 */
@@ -178,6 +203,11 @@ export async function loadRuntimeFrontend(
     const message = error instanceof Error ? error.message : String(error);
     failureCache().set(entry, { message, at: Date.now() });
     console.error(`[frontend-runtime] failed to load ${kind}/${id}:`, error);
+    // 跨进程可见性（P1-A）：运行期装载失败发生在 **web** 进程的内存里，
+    // 而后台「插件管理」页的数据来自 **api** 进程 —— 两者不共享内存，
+    // 于是插件前端已经坏掉、管理页却仍旧显示「已激活」。
+    // 两个容器共享 `stackpanel-data` 卷，写一份状态快照即可跨进程。
+    recordFrontendLoadFailure(kind, id, message);
     return null;
   }
 }

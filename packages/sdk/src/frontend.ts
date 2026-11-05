@@ -818,6 +818,16 @@ export interface FrontendSummary {
   settingsSchema: FrontendSettingsSchema | null;
   /** Interface locales this package ships messages for (ADR-0016 §5). */
   locales: string[];
+  /**
+   * 前端运行期装载失败的最近记录（P1-A）。
+   *
+   * 装载失败发生在 web 进程、这个汇总由 api 生成，两者不共享内存；
+   * web 将失败写共享目录，api 读出来。
+   *
+   * 为什么要有这个字段：插件「已激活」但前端已坏掉时，管理页上
+   * 完全看不出来，运维只能去翻容器日志。
+   */
+  runtimeLoadFailure?: { message: string; at: string | null } | null;
 }
 /**
  * Build a zod validator for a frontend settings schema. Missing groups/fields

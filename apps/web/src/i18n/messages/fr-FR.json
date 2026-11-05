@@ -757,7 +757,8 @@
         "author": "par {author}",
         "kindPlugin": "Plugin",
         "kindTheme": "Thème"
-      }
+      },
+      "frontendLoadFailed": "Échec du chargement du frontend"
     },
     "users": {
       "title": "Users",
