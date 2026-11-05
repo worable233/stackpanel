@@ -12,6 +12,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { readEnvValue, rewriteEnvFile } from './env-file.js';
 import { digestHex } from '@stackpanel/spec';
 import type { CommandRunner } from './command.ts';
 import type { ComposeProjectConfig } from './compose-config.ts';
@@ -223,27 +224,81 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
     const ref = path.join(backupDir, stamp);
     await mkdir(ref, { recursive: true });
     const dumpFile = path.join(ref, 'database.dump');
-    // 在 db 容器内 pg_dump；stdoutFile 二进制安全落到 updater 卷（db 容器与该卷共享
-    // 备份目录——见 Compose 部署接线）。
-    await this.composeRun(
-      [
-        'exec',
-        '-T',
-        this.config.database.service,
-        'pg_dump',
-        '-Fc',
-        '-U',
-        this.config.database.user,
-        this.config.database.name,
-      ],
-      { timeoutMs: 60 * 60_000, stdoutFile: dumpFile },
-    );
+    if (this.config.database.connection) {
+      // 直连模式（P0-B）：数据库不在本 compose project 里，无法 `compose exec`。
+      // updater 镜像自带 postgresql-client，直接在本进程跑。
+      await this.pgDumpDirect(dumpFile);
+    } else {
+      // 在 db 容器内 pg_dump；stdoutFile 二进制安全落到 updater 卷（db 容器与该卷共享
+      // 备份目录——见 Compose 部署接线）。
+      await this.composeRun(
+        [
+          'exec',
+          '-T',
+          this.config.database.service,
+          'pg_dump',
+          '-Fc',
+          '-U',
+          this.config.database.user,
+          this.config.database.name,
+        ],
+        { timeoutMs: 60 * 60_000, stdoutFile: dumpFile },
+      );
+    }
     await this.snapshots.write({
       ref,
       digest: (await this.pointer.read())?.digest ?? '',
       createdAt: this.now().toISOString(),
     });
     return { credential: dumpFile, backupRef: ref };
+  }
+
+  /** 直连模式下的 pg_dump：在 updater 进程内执行，不经 compose。 */
+  private async pgDumpDirect(dumpFile: string): Promise<void> {
+    const conn = this.config.database.connection;
+    if (!conn) throw new DeploymentAdapterError('未配置数据库直连参数', 'snapshot');
+    await this.runner.run({
+      file: 'pg_dump',
+      args: [
+        '-Fc',
+        '-h',
+        conn.host,
+        '-p',
+        String(conn.port),
+        '-U',
+        conn.user,
+        conn.name,
+      ],
+      // 密码走环境变量而不进命令行参数：命令行会进进程列表/audit，
+      // 而密码是敏感值。
+      ...(conn.password ? { env: { PGPASSWORD: conn.password } } : {}),
+      timeoutMs: 60 * 60_000,
+      stdoutFile: dumpFile,
+    });
+  }
+
+  /** 直连模式下的 pg_restore：从快照回滚。 */
+  private async pgRestoreDirect(dumpFile: string): Promise<void> {
+    const conn = this.config.database.connection;
+    if (!conn) throw new DeploymentAdapterError('未配置数据库直连参数', 'restore');
+    await this.runner.run({
+      file: 'pg_restore',
+      args: [
+        '--clean',
+        '--if-exists',
+        '-h',
+        conn.host,
+        '-p',
+        String(conn.port),
+        '-U',
+        conn.user,
+        '-d',
+        conn.name,
+      ],
+      ...(conn.password ? { env: { PGPASSWORD: conn.password } } : {}),
+      timeoutMs: 60 * 60_000,
+      stdinFile: dumpFile,
+    });
   }
 
   // —— §5.4-5 一次性迁移 ——
@@ -264,11 +319,48 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
   // —— §5.4-6 切换到同一 release 集合 ——
   async switchTo(ctx: StepContext): Promise<{ credential: string }> {
     const image = this.targetImage(ctx);
+    /**
+     * 先把镜像引用**落盘**写进 env 文件，再 `up -d`。
+     *
+     * 只用进程环境覆盖时，容器换成了新 digest，`.env` 仍是旧 tag：
+     * 之后任何人跑 `docker compose up -d`（没有 env 覆盖）都会把
+     * api/worker/web 静默回退到旧版本，而数据库已经被新版本
+     * 迁移过 —— 版本倒挂。生产实测就是这样（.env 仍指 0.1.3，
+     * 容器已是 0.1.4）。
+     */
+    await this.writeImageRefs(image);
     await this.composeRun(['up', '-d', ...this.config.allowedServices], {
-      env: { [this.config.imageEnv]: image },
+      env: this.imageEnvOverrides(image),
       timeoutMs: 15 * 60_000,
     });
     return { credential: `switched:${image}` };
+  }
+
+  /**
+   * 覆盖所有承载镜像引用的变量（主变量 + `imageEnvs`）。
+   *
+   * web 与 api 曾经用不同变量：只覆盖 `STACKPANEL_IMAGE` 会留下
+   * 「api/worker 新版 + web 旧版」的混合部署。
+   */
+  private imageEnvOverrides(image: string): Record<string, string> {
+    const names = new Set([this.config.imageEnv, ...(this.config.imageEnvs ?? [])]);
+    const out: Record<string, string> = {};
+    for (const name of names) out[name] = image;
+    return out;
+  }
+
+  /**
+   * 把目标镜像写进 env 文件。没配 envFile 时什么都不做
+   * （那种部署形态下镜像本就不由 env 文件决定）。
+   */
+  private async writeImageRefs(image: string): Promise<void> {
+    if (!this.config.envFile) return;
+    const file = path.resolve(this.config.projectDir, this.config.envFile);
+    const values: Record<string, string> = {};
+    for (const name of new Set([this.config.imageEnv, ...(this.config.imageEnvs ?? [])])) {
+      values[name] = image;
+    }
+    await rewriteEnvFile(file, values);
   }
 
   // —— §5.4-7 维护态探针 ——
@@ -296,7 +388,36 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
     if (mismatch) {
       throw new DeploymentAdapterError(`升级后探针未通过：${mismatch}`, 'verify');
     }
+    // 声明值也必须对上目标 digest。
+    //
+    // 容器跑最新不代表部署描述是最新：env 文件没回写时，容器正确而
+    // 声明值旧，下一次 `docker compose up -d` 就会静默回退。这里把它
+    // 当成验证失败，而不是留到下一次运维手操才爆。
+    const declared = await this.declaredImageMismatch(ctx);
+    if (declared) {
+      throw new DeploymentAdapterError(`部署描述未同步：${declared}`, 'verify');
+    }
     return { credential: 'verify:probes-ok' };
+  }
+
+  /**
+   * env 文件里声明的镜像引用是否已经是目标 digest。
+   *
+   * 只对比 `repo@sha256:...` 形式：旧部署写的是 tag（`repo:0.1.3），无法从
+   * 字面看出它对应哪个 digest。那种情况下 `switchTo` 已经把它改成
+   * digest，所以此处只会在「回写没生效」时报错 —— 正是需要知道的事。
+   */
+  private async declaredImageMismatch(ctx: StepContext): Promise<string | undefined> {
+    if (!this.config.envFile) return undefined;
+    const file = path.resolve(this.config.projectDir, this.config.envFile);
+    const expected = this.targetImage(ctx);
+    for (const name of new Set([this.config.imageEnv, ...(this.config.imageEnvs ?? [])])) {
+      const value = await readEnvValue(file, name).catch(() => undefined);
+      // 没声明这个变量就不管它：部署形态可能用其他方式固定镜像。
+      if (value === undefined) continue;
+      if (value !== expected) return `${name}=${value}（应为 ${expected}）`;
+    }
+    return undefined;
   }
 
   /**
@@ -465,6 +586,10 @@ export class ComposeDeploymentAdapter implements DeploymentAdapter {
   /** 用 pg_restore 从快照恢复数据库（仅 §6 允许的迁移后场景调用）。 */
   async restoreSnapshot(ref: string): Promise<void> {
     const dumpFile = path.join(ref, 'database.dump');
+    if (this.config.database.connection) {
+      await this.pgRestoreDirect(dumpFile);
+      return;
+    }
     await this.composeRun(
       [
         'exec',

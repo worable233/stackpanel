@@ -1177,7 +1177,9 @@
       "managePlugins": "前往外掛管理",
       "updateNow": "立即更新",
       "updating": "正在更新…",
-      "checkingUpdates": "正在檢查更新…"
+      "checkingUpdates": "正在檢查更新…",
+      "submittedDone": "升級已完成，網站已是最新版本",
+      "submittedFailed": "升級未完成（階段：{phase}），請檢查記錄"
     }
   },
   "locale": {

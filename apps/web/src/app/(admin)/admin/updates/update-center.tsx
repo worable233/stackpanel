@@ -89,7 +89,28 @@ export function UpdateCenter({
    *
    * 判定口径：`status` 投影为 null 即视为执行器不在（该文件由 updater 自己写）。
    */
-  const executorOffline = status.status === null;
+  /**
+   * 判定执行器是否可用（P0-C）。
+   *
+   * 只看「status.json 存不存在」有两个漏洞：
+   * - updater 空闲时以前不写这个文件，于是正常运行也显示「未检测到」；
+   * - updater 卡死后文件还在，于是死掉的执行器显示在线。
+   *
+   * 所以看 `updatedAt` 距今多久。宽限取 3 个轮询周期，并给一个
+   * 下限 30 秒：周期很短时不能因为一次抖动就判离线。
+   */
+  const heartbeat = status.status?.updatedAt;
+  // updater 默认轮询 5s；宽限取 3 个周期，并不低于 30s（不能因一次抖动就判离线）。
+  const staleAfterMs = 30_000;
+  // 时钟进 state：渲染期调 `Date.now()` 是 impure（React Compiler 会拒），
+  // 而且渲染期读时钟本来就不该是渲染的一部分 —— 心跳是否过期是「时刻」的函数。
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(timer);
+  }, []);
+  const heartbeatStale = heartbeat ? now - Date.parse(heartbeat) > staleAfterMs : false;
+  const executorOffline = status.status === null || heartbeatStale;
 
   const refresh = useCallback(async () => {
     const next = await refreshUpdateSnapshotAction();
@@ -101,8 +122,25 @@ export function UpdateCenter({
     if (next.results) {
       setResults(next.results);
       // 结果回写出现即停止轮询：任务进入终态后没有新信息可等。
-      if (watchingKey && next.results.some((row) => row.idempotencyKey === watchingKey)) {
-        setWatchingKey(null);
+      if (watchingKey) {
+        const done = next.results.find((row) => row.idempotencyKey === watchingKey);
+        if (done) {
+          setWatchingKey(null);
+          /**
+           * 轮询到终态后必须**主动告知**（P1-A）。
+           *
+           * 之前只是静默停止轮询：页面停留在「已投递」徽标，不刷新就永远看不到
+           * 结果 —— 而升级其实已经成功（生产实测 32 秒完成，用户端毫无提示）。
+           */
+          if (done.result.phase === 'COMMITTED') {
+            setFeedback({ kind: 'ok', text: t('admin.updates.submittedDone') });
+          } else {
+            setFeedback({
+              kind: 'error',
+              text: t('admin.updates.submittedFailed', { phase: done.result.phase }),
+            });
+          }
+        }
       }
     }
     if (next.selfUpdate !== undefined) setSelfUpdate(next.selfUpdate);

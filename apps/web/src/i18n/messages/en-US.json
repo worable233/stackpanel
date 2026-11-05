@@ -1177,7 +1177,9 @@
       "managePlugins": "Manage plugins",
       "updateNow": "Update now",
       "updating": "Updating…",
-      "checkingUpdates": "Checking for updates…"
+      "checkingUpdates": "Checking for updates…",
+      "submittedDone": "Upgrade complete; the site is now on the latest version",
+      "submittedFailed": "Upgrade did not complete (phase: {phase}); see the records"
     }
   },
   "locale": {

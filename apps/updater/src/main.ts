@@ -309,8 +309,24 @@ export class Updater {
   /** 轮询循环直至 `stop()`。 */
   async run(): Promise<void> {
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    /**
+     * 启动即写一次状态投影（P0-C）。
+     *
+     * 之前 `publishStatus` 只在**认领到任务**时调用。于是一个正常运行、
+     * 只是没有任务的 updater，`status.json` **根本不存在**；而更新中心用
+     * 「文件不存在 = 离线」判定，于是页面永远显示「未检测到升级执行器」、
+     * 投递按钮置灰 —— 生产实测就是这么卡住的。
+     */
+    await this.publishStatus(null).catch((error: unknown) => {
+      this.deps.log?.(`写状态投影失败（不影响主循环）：${error instanceof Error ? error.message : String(error)}`);
+    });
     while (!this.stopping) {
       const handled = await this.tick();
+      // 心跳：每轮刷新 `updatedAt`，使「执行器假死」可被识别。
+      // 只靠「文件存不存在」判在线，updater 卡死后页面依然显示在线。
+      if (!handled) {
+        await this.publishStatus(null).catch(() => undefined);
+      }
       // 自升级守卫/请求消费**不得让进程崩溃**。真机抓到：一次自升级失败（读不到镜像
       // 引用）抛出的错误没人接，进程非零退出、容器按 restart 策略反复重启，而每轮
       // 重启又撞同一个错误——一个本应「下次再试/回退」的失败被放大成全实例不可用。

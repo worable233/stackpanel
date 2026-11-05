@@ -1186,7 +1186,9 @@
       "managePlugins": "플러그인 관리",
       "updateNow": "지금 업데이트",
       "updating": "업데이트 중…",
-      "checkingUpdates": "업데이트 확인 중…"
+      "checkingUpdates": "업데이트 확인 중…",
+      "submittedDone": "업그레이드가 완료되었습니다. 사이트가 최신 버전입니다",
+      "submittedFailed": "업그레이드가 완료되지 않았습니다(단계: {phase}). 기록을 확인하세요"
     }
   },
   "action": {

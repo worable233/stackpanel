@@ -1,3 +1,6 @@
+import { accessSync, constants } from 'node:fs';
+import path from 'node:path';
+
 /**
  * 绑定部署配置（PLAN-github-distribution-and-updates §5.1、§5.4）。
  *
@@ -23,12 +26,32 @@ export interface ComposeServiceNames {
 }
 
 export interface DatabaseConfig {
-  /** compose 服务名（在其容器内执行 pg_dump/pg_restore/psql）。 */
+  /** compose 服务名（在其容器内执行 pg_dump/pg_restore/psql）。直连模式下不用。 */
   service: string;
   user: string;
   name: string;
   /** 可选：数据库所属卷/挂载，用于磁盘空间估算。 */
   volume?: string;
+  /**
+   * 直连模式的连接信息（P0-B）。
+   *
+   * 默认模式是「在 compose 里的 db 容器内执行 pg_dump」，假设数据库
+   * 属于本 project。但自托管部署很常见（如 1Panel 托管 PostgreSQL，容器
+   * 在另一个 network）：直接指向它会报 `no such service`，快照必然失败。
+   * 那种情况下只能加一个 pg 客户端跳板容器జ 而 updater 镜像**本就自带**
+   * `postgresql-client`，完全可以直接在自己进程里跑 pg_dump。
+   */
+  connection?: DatabaseConnection;
+}
+
+/** 直连数据库的连接参数（`UPDATER_DB_HOST` 启用）。 */
+export interface DatabaseConnection {
+  host: string;
+  port: number;
+  user: string;
+  /** 密码可缺省（信任认证 / .pgpass）。 */
+  password?: string;
+  name: string;
 }
 
 export interface ProbeConfig {
@@ -76,6 +99,14 @@ export interface ComposeProjectConfig {
    * digest 并重新 `up -d`，从而让 api/worker/web 落到**同一 release 集合**。
    */
   imageEnv: string;
+  /**
+   * 除 `imageEnv` 外还需要同步的镜像变量名（如 `STACKPANEL_WEB_IMAGE`）。
+   *
+   * web 与 api 曾经用**不同**变量指向镜像。updater 只覆盖
+   * `STACKPANEL_IMAGE`，于是升级后能出现「api/worker 新版 + web 旧版」的
+   * 混合部署，破坏「同一 release 集合」。
+   */
+  imageEnvs?: string[];
   /** 目标镜像仓库（如 `ghcr.io/worable233/stackpanel`）；与计划 digest 拼成 `repo@sha256:...`。 */
   imageRepository: string;
   /** 允许自动更新的服务白名单（§5.1，默认只含 api/worker/web）。 */
@@ -152,10 +183,41 @@ export function validateComposeConfig(config: ComposeProjectConfig): ComposeProj
   if (config.envFile !== undefined && config.envFile.trim().length === 0) {
     problems.push('envFile 为空字符串（要么不设，要么给路径）');
   }
+  /**
+   * 启动时就检查 env 文件可读性（P1-C）。
+   *
+   * 不可读时 compose 会把 `${POSTGRES_PASSWORD}` 之类的变量插值成**空串**，
+   * 于是一次「成功」的升级会用空密码重建 api、把实例锁死。真机演练就重现过
+   * （当时 `.env` 是 600 root:root，updater 读不到）。
+   *
+   * **fail-closed**：读不到就拒绝启动并给出修复指引，而不是等到升级中途才炸
+   * —— 那时已经停服了。
+   */
+  if (config.envFile && !envFileReadable(config)) {
+    problems.push(
+      `env 文件不可读：${config.envFile}\n` +
+        '   修复：确认 updater 容器内该路径可读，并把文件权限改为 640 root:docker，' +
+        '同时给 updater 容器 group_add docker 组 ID。不要放到 world-readable' +
+        '（里面是生成于安装时的密钥）。',
+    );
+  }
   if (problems.length > 0) {
     throw new Error(`部署配置无效：\n - ${problems.join('\n - ')}`);
   }
   return config;
+}
+
+/** env 文件是否存在且当前进程可读。 */
+function envFileReadable(config: ComposeProjectConfig): boolean {
+  const declared = config.envFile;
+  if (!declared) return true;
+  const resolved = path.isAbsolute(declared) ? declared : path.resolve(config.projectDir, declared);
+  try {
+    accessSync(resolved, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** 从环境变量装配绑定配置（`UPDATER_*`，见 README）。 */
@@ -188,6 +250,15 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
     services,
     ...(env['UPDATER_ENV_FILE'] ? { envFile: env['UPDATER_ENV_FILE'] } : {}),
     imageEnv: env['UPDATER_IMAGE_ENV'] ?? 'STACKPANEL_IMAGE',
+    // 可选的额外镜像变量（逗号分隔）。
+    ...(env['UPDATER_IMAGE_ENVS']
+      ? {
+          imageEnvs: env['UPDATER_IMAGE_ENVS']
+            .split(',')
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0),
+        }
+      : {}),
     imageRepository: required('UPDATER_IMAGE_REPOSITORY'),
     ...(env['UPDATER_HOST_PROJECT_DIR'] ? { hostProjectDir: env['UPDATER_HOST_PROJECT_DIR'] } : {}),
     updaterService: env['UPDATER_SELF_SERVICE'] ?? 'updater',
@@ -200,6 +271,20 @@ export function composeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Comp
       service: env['UPDATER_DB_SERVICE'] ?? 'postgres',
       user: env['UPDATER_DB_USER'] ?? 'stackpanel',
       name: env['UPDATER_DB_NAME'] ?? 'stackpanel',
+      // 设了 HOST 就走直连：数据库不在本 compose project 里时，
+      // 「在 db 容器内跑 pg_dump」是不可能的。updater 镜像自带
+      // postgresql-client，直接在自己进程里跑即可。
+      ...(env['UPDATER_DB_HOST']
+        ? {
+            connection: {
+              host: env['UPDATER_DB_HOST'],
+              port: Number(env['UPDATER_DB_PORT'] ?? '5432'),
+              user: env['UPDATER_DB_USER'] ?? 'stackpanel',
+              name: env['UPDATER_DB_NAME'] ?? 'stackpanel',
+              ...(env['UPDATER_DB_PASSWORD'] ? { password: env['UPDATER_DB_PASSWORD'] } : {}),
+            },
+          }
+        : {}),
     },
     probes: {
       readinessUrl: env['UPDATER_READINESS_URL'] ?? 'http://api:3001/health',

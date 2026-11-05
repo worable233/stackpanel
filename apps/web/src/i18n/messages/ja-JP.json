@@ -1186,7 +1186,9 @@
       "managePlugins": "プラグイン管理へ",
       "updateNow": "今すぐ更新",
       "updating": "更新中…",
-      "checkingUpdates": "更新を確認中…"
+      "checkingUpdates": "更新を確認中…",
+      "submittedDone": "アップグレードが完了しました。サイトは最新バージョンです",
+      "submittedFailed": "アップグレードが完了しませんでした（フェーズ：{phase}）。履歴を確認してください"
     }
   },
   "action": {

@@ -1186,7 +1186,9 @@
       "managePlugins": "Gérer les extensions",
       "updateNow": "Mettre à jour",
       "updating": "Mise à jour…",
-      "checkingUpdates": "Recherche de mises à jour…"
+      "checkingUpdates": "Recherche de mises à jour…",
+      "submittedDone": "Mise à niveau terminée ; le site est sur la dernière version",
+      "submittedFailed": "La mise à niveau ne s'est pas terminée (phase : {phase}) ; consultez les enregistrements"
     }
   },
   "action": {

@@ -1177,7 +1177,9 @@
       "managePlugins": "前往插件管理",
       "updateNow": "立即更新",
       "updating": "正在更新…",
-      "checkingUpdates": "正在检查更新…"
+      "checkingUpdates": "正在检查更新…",
+      "submittedDone": "升级已完成，站点已是最新版本",
+      "submittedFailed": "升级未完成（阶段：{phase}），请查看记录"
     }
   },
   "locale": {

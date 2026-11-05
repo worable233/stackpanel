@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { UpdateTask } from '@stackpanel/spec';
@@ -33,10 +34,17 @@ function fakeRunner(handler: (req: CommandRequest) => CommandResult | undefined 
 
 const DIGEST = 'sha256:' + 'a'.repeat(64);
 
+// 真实临时 project 目录：env 文件可读性校验（P1-C）要求它真的存在。
+// 用假路径会让所有用例被 fail-closed 拒绝 —— 那正是这个校验的意义。
+const PROJECT_DIR = mkdtempSync(path.join(tmpdir(), 'sp-updater-'));
+writeFileSync(path.join(PROJECT_DIR, 'docker-compose.yml'), 'services: {}');
+mkdirSync(path.join(PROJECT_DIR, 'docker'), { recursive: true });
+writeFileSync(path.join(PROJECT_DIR, 'docker/.env'), 'STACKPANEL_IMAGE=ghcr.io/acme/stackpanel:0.1.0\n');
+
 function config(overrides: Partial<ComposeProjectConfig> = {}): ComposeProjectConfig {
   return {
     projectName: 'sp',
-    projectDir: '/srv/stackpanel',
+    projectDir: PROJECT_DIR,
     composeFiles: ['docker-compose.yml'],
     services: { api: 'api', worker: 'worker', web: 'web', migrate: 'migrate' },
     imageEnv: 'STACKPANEL_IMAGE',
@@ -499,7 +507,7 @@ describe('ComposeDeploymentAdapter', () => {
     // 助手同样必须带 `--env-file`，否则用默认值插值（`stackpanel-updater:latest`）。
     expect(helper?.args).toEqual(expect.arrayContaining(['--env-file', 'docker/.env']));
     // 助手按**宿主绝对路径**挂载仓库（相对路径在容器内解析错误）。
-    expect(helper?.args).toEqual(expect.arrayContaining(['-v', '/srv/stackpanel:/srv/stackpanel']));
+    expect(helper?.args).toEqual(expect.arrayContaining(['-v', `${PROJECT_DIR}:${PROJECT_DIR}`]));
   });
 
   it('uses an explicitly configured updater image repository', async () => {

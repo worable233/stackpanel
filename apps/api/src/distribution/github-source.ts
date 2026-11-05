@@ -79,6 +79,10 @@ export interface GitHubSourceOptions {
   timeoutMs?: number;
   /** 单文件最大字节数。 */
   maxBytes?: number;
+  /** 单次 `reader.read()` 的空闲超时（毫秒）。缺省 30s。 */
+  bodyIdleTimeoutMs?: number;
+  /** 整个 body 读取的总超时（毫秒）。缺省 120s。 */
+  bodyTotalTimeoutMs?: number;
   /** 允许的重定向目标主机；缺省 {@link DEFAULT_ALLOWED_REDIRECT_HOSTS}。 */
   allowedRedirectHosts?: readonly string[];
   /** 测试注入的 DNS 解析器（真实运输时用于防 rebinding）。 */
@@ -91,7 +95,16 @@ export class GitHubSourceError extends Error {
   constructor(
     message: string,
     readonly kind:
-      'network' | 'http' | 'rate_limited' | 'too_large' | 'redirect' | 'not_modified' | 'invalid',
+      | 'network'
+      | 'http'
+      | 'rate_limited'
+      | 'too_large'
+      | 'redirect'
+      | 'not_modified'
+      | 'invalid'
+      /** 读取超时（响应头已拿到，body 停摆）。与 network 分开：两者的
+       * 排查方向完全不同（前者是连不上，后者是连上了但不给数据）。 */
+      | 'timeout',
     /** 建议的重试等待（毫秒），来自 `Retry-After` 或退避。 */
     readonly retryAfterMs?: number,
   ) {
@@ -342,6 +355,37 @@ export async function fetchTextConditional(
 }
 
 /** 读取响应文本，超过上限抛错。 */
+/**
+ * 给一个 Promise 加空闲超时：超时后先调 `onTimeout`（取消读取）再报错。
+ *
+ * 不能用 `Promise.race` 了事：那样超时后 reader 仍在背后 pending，
+ * 连接不会释放。必须显式 `cancel()`。
+ */
+async function withIdleTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => Promise<void>,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      void onTimeout().finally(() => {
+        reject(
+          new GitHubSourceError(
+            `资产下载停摆：${timeoutMs}ms 内无新数据`,
+            'timeout',
+          ),
+        );
+      });
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function readTextBounded(response: Response, maxBytes: number): Promise<string> {
   const text = await response.text();
   if (Buffer.byteLength(text, 'utf8') > maxBytes) {
@@ -393,8 +437,32 @@ export async function downloadAsset(
     hash.update(buffer);
     return { sha256: hash.digest('hex'), size: buffer.byteLength, bytes: buffer };
   }
+  /**
+   * body 读取必须自带超时。
+   *
+   * `boundedRequest` 的 30s 超时只覆盖 `fetch()` 拿到**响应头**那一步。
+   * GitHub 资产会 302 到 `objects.githubusercontent.com`，若那条连接 body 半路
+   * 停摆，`reader.read()` 会**永久 pending** —— handler 挂死、无任何日志，
+   * 前端只能显示「网络异常」。生产实测：两次 `/admin/updates/check` 审计
+   * 成功但响应从未返回。
+   *
+   * 两层保护：单次 `read()` 的**空闲**超时（连接活着但不给数据），
+   * 以及整个 body 的**总**超时（慢但持续有数据也不能无限拖）。
+   */
+  const idleTimeoutMs = options.bodyIdleTimeoutMs ?? 30_000;
+  const totalTimeoutMs = options.bodyTotalTimeoutMs ?? 120_000;
+  const startedAt = Date.now();
   while (true) {
-    const { done, value } = await reader.read();
+    if (Date.now() - startedAt > totalTimeoutMs) {
+      await reader.cancel().catch(() => undefined);
+      throw new GitHubSourceError(
+        `资产下载超时（已读 ${size} 字节，总超时 ${totalTimeoutMs}ms）`,
+        'timeout',
+      );
+    }
+    const { done, value } = await withIdleTimeout(reader.read(), idleTimeoutMs, async () => {
+      await reader.cancel().catch(() => undefined);
+    });
     if (done) break;
     if (!value) continue;
     size += value.byteLength;

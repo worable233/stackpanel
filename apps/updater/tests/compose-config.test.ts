@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { composeConfigFromEnv, validateComposeConfig } from '../src/compose-config.ts';
+
+/**
+ * 真实临时 project 目录。
+ *
+ * env 文件可读性校验（P1-C）要求它真的存在 —— 用假路径会让所有用例被
+ * fail-closed 拒绝，而那正是这个校验的意义。
+ */
+const PROJECT_DIR = mkdtempSync(path.join(tmpdir(), 'sp-cfg-'));
+mkdirSync(path.join(PROJECT_DIR, 'docker'), { recursive: true });
+writeFileSync(path.join(PROJECT_DIR, 'docker/.env'), 'POSTGRES_PASSWORD=secret\n');
 
 /**
  * 绑定配置装配（§5.1）。重点钉住 `UPDATER_ENV_FILE`：
@@ -12,7 +25,7 @@ import { composeConfigFromEnv, validateComposeConfig } from '../src/compose-conf
 function baseEnv(): NodeJS.ProcessEnv {
   return {
     UPDATER_INSTANCE_ID: 'stackpanel',
-    UPDATER_COMPOSE_PROJECT: '/workspace',
+    UPDATER_COMPOSE_PROJECT: PROJECT_DIR,
     UPDATER_IMAGE_REPOSITORY: 'ghcr.io/acme/stackpanel',
   };
 }
