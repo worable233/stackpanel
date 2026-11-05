@@ -1770,7 +1770,8 @@
     "config": {
       "unknown_key": "未知的配置項",
       "invalid_value": "配置值無效"
-    }
+    },
+    "incompatible_kernel": "核心升級包暫時無法取得或驗證，請聯絡站點管理員查看更新日誌"
   },
   "auditAction": {
     "auth": {

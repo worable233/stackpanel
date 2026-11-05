@@ -42,7 +42,12 @@ afterAll(async () => {
 });
 
 /** Wait until `predicate` returns true, or fail after `timeoutMs`. */
-async function waitFor(predicate: () => boolean, timeoutMs = 4000): Promise<void> {
+/**
+ * 默认 4s 在 `pnpm -r test` 全量并行时会偶发打穿（实测 1/1795）：这里是同步的
+ * 内存广播 + 一次数据库写，本身是毫秒级，超时纯粹是共享 DB 的连接池噪声。
+ * 这些用例测的是「投递到了」而不是「多快投递」。
+ */
+async function waitFor(predicate: () => boolean, timeoutMs = 20_000): Promise<void> {
   const start = Date.now();
   while (!predicate()) {
     if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out');

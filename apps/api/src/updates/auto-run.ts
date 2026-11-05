@@ -17,6 +17,7 @@ import { readUpdatePolicy } from './policy.ts';
 import { submitUpdateTask } from './plan.ts';
 import { readUpdaterStatus } from './status.ts';
 import {
+  describeKernelCandidateFailures,
   loadKernelCandidates,
   updateCatalogContext,
   updateChannelRoot,
@@ -36,6 +37,8 @@ export interface AutoUpdateResult {
 export async function runAutoUpdate(input: {
   prisma: PrismaClient;
   now?: Date;
+  /** 诊断输出（缺省静默）。自动升级跑在后台，没有 request 上下文。 */
+  logger?: { warn: (message: string) => void };
 }): Promise<AutoUpdateResult> {
   const now = input.now ?? new Date();
   const context = await updateCatalogContext();
@@ -54,22 +57,30 @@ export async function runAutoUpdate(input: {
   const policy = await readUpdatePolicy(input.prisma);
   const status = await readUpdaterStatus();
   const kernelCandidates = await loadKernelCandidates(context);
+  // 自动升级路径没有 request 上下文，用 logger 注入（缺省静默）。诊断同时进
+  // block detail，让界面上的「没有可升级的内核版本」能说清到底哪一步坏了。
+  const kernelFailure = describeKernelCandidateFailures(kernelCandidates);
+  if (kernelFailure) {
+    input.logger?.warn(`内核候选清单不可用：${kernelFailure}`);
+  }
   const outcome = await buildUpdatePlan({
     prisma: input.prisma,
     catalog: context.catalog,
     policy,
     instanceId: updateInstanceId(),
     baselineGeneration: status?.generation ?? 0,
-    kernelCandidates,
+    kernelCandidates: kernelCandidates.manifests,
     carrier: env.DISTRIBUTION_UPDATE_CARRIER,
+    ...(kernelFailure ? { kernelCandidateFailure: kernelFailure } : {}),
     now,
   });
   if (!outcome.ok) {
-    return {
-      submitted: false,
-      reason: 'plan-blocked',
-      detail: `计划被阻止（${outcome.blocks.length} 项）`,
-    };
+    // 把诊断带进 detail：`plan-blocked` 只有「N 项」时，界面看不出是内核候选
+    // 全部验签失败还是真的没有更高版本。
+    const detail = kernelFailure
+      ? `计划被阻止（${outcome.blocks.length} 项）：${kernelFailure}`
+      : `计划被阻止（${outcome.blocks.length} 项）`;
+    return { submitted: false, reason: 'plan-blocked', detail };
   }
   const decision = decideAutoUpdate({
     policy,

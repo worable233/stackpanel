@@ -127,16 +127,45 @@ export function readCatalogSnapshot(): CatalogRuntimeSnapshot {
   };
 }
 
+/** 一条内核引用取回/验签失败的原因（用于诊断，不改变求解结果）。 */
+export interface KernelCandidateFailure {
+  /** 目录里声明的内核版本。 */
+  version: string;
+  /** 期望的签名 keyId。 */
+  keyId: string;
+  /** 人类可读的失败原因（形如「内核清单签名校验失败：…」）。 */
+  reason: string;
+}
+
+export interface KernelCandidatesResult {
+  /** 已验签通过的内核清单。 */
+  manifests: KernelManifest[];
+  /** 目录里有引用、但全部取回/验签失败。 */
+  failures: KernelCandidateFailure[];
+  /** 目录里根本没有内核引用（`kernels[]` 缺失或全被撤回）。 */
+  noRefs: boolean;
+}
+
 /**
- * 取回并验签目录引用的**内核候选清单**（§13-4）。目录源关闭、目录无内核引用，或某个
- * 引用下载/验签失败时，跳过该引用（不阻断扩展更新）；返回已验签通过的内核清单集合。
+ * 取回并验签目录引用的**内核候选清单**（§13-4）。
+ *
+ * 目录源关闭、目录无内核引用，或某个引用下载/验签失败时，跳过该引用（不阻断扩展
+ * 更新）。但**失败不能静默**：早期版本这里是裸 `catch {}`，于是「信任根缺 key」、
+ * 「清单资产 404」、「验签失败」全部收敛成上游一句
+ * `incompatible_kernel: 没有可升级的内核版本` —— 一个已经在用 0.1.2、目录里明明
+ * 写着 0.1.3 的实例，界面只会说「没有可升级的内核版本」，运维完全无从下手
+ * （实测：本地 `data/trust/keyring.json` 缺失时就是这个表现）。
+ *
+ * 现在返回 {@link KernelCandidatesResult}：调用方可以把它转成可读的 block detail
+ * 与日志。求解语义不变 —— 没有可用清单时依然不做内核升级。
  */
 export async function loadKernelCandidates(
   context: CatalogInstallContext,
-): Promise<KernelManifest[]> {
+): Promise<KernelCandidatesResult> {
   const refs = catalogKernelRefs(context.catalog);
-  if (refs.length === 0) return [];
+  if (refs.length === 0) return { manifests: [], failures: [], noRefs: true };
   const manifests: KernelManifest[] = [];
+  const failures: KernelCandidateFailure[] = [];
   for (const ref of refs) {
     try {
       const result = await fetchAndVerifyKernelManifest({
@@ -148,9 +177,33 @@ export async function loadKernelCandidates(
         ...(context.fetchImpl ? { fetchImpl: context.fetchImpl } : {}),
       });
       manifests.push(result.manifest);
-    } catch {
-      // 单个内核引用不可用不影响扩展求解；内核自动升级仅在有可用签名清单时进行。
+    } catch (error) {
+      failures.push({
+        version: ref.version,
+        keyId: ref.keyId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
     }
   }
-  return manifests;
+  return { manifests, failures, noRefs: false };
+}
+
+/**
+ * 把内核候选的诊断信息压成一句人能读懂的话，用于 plan 的 block detail。
+ *
+ * 返回 `undefined` 表示「没有需要解释的失败」（要么取到了清单，要么目录根本没
+ * 声明内核引用 —— 后者是配置结果，不是错误）。
+ */
+export function describeKernelCandidateFailures(
+  result: KernelCandidatesResult,
+): string | undefined {
+  if (result.failures.length === 0) return undefined;
+  const parts = result.failures.map(
+    (failure) => `${failure.version}（keyId ${failure.keyId}）：${failure.reason}`,
+  );
+  const prefix =
+    result.manifests.length > 0
+      ? `部分内核清单不可用（已取到 ${result.manifests.length} 个）`
+      : '目录声明了内核版本，但全部取回/验签失败';
+  return `${prefix} —— ${parts.join('；')}`;
 }

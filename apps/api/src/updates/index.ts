@@ -30,6 +30,7 @@ export {
   updateChannelRoot,
   updateInstanceId,
   setUpdateChannelForTest,
+  describeKernelCandidateFailures,
   loadKernelCandidates,
 } from './runtime.ts';
 export type { CatalogRuntimeSnapshot, CatalogRuntimeState } from './runtime.ts';

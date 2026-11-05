@@ -153,6 +153,49 @@ describe('update policy', () => {
 });
 
 describe('buildUpdatePlan', () => {
+  /**
+   * 内核候选**全部取回/验签失败**时，block detail 必须是真正的原因。
+   *
+   * 没有这个覆盖时，上游只能拿到通用的 `没有可升级的内核版本` —— 与「已经是最
+   * 新」无法区分。真实踩到的场景：数据目录缺 `trust/keyring.json`，界面一直说
+   * 「没有可升级的内核版本」，而目录里明明写着 0.1.3。
+   */
+  it('内核候选全部失败时，把真正原因写进 block detail', async () => {
+    const prisma = fakePrisma({});
+    const failure =
+      '目录声明了内核版本，但全部取回/验签失败 —— 0.1.3（keyId kernel-2026-11）：签名者未被信任';
+    const outcome = await buildUpdatePlan({
+      prisma,
+      catalog: catalog([entry({ version: '1.1.0' })]),
+      policy: normalizeUpdatePolicy({}),
+      instanceId: 'sp',
+      baselineGeneration: 0,
+      kernelCandidates: [],
+      kernelCandidateFailure: failure,
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    const block = outcome.blocks.find((b) => b.code === 'incompatible_kernel');
+    expect(block, '应当仍报 incompatible_kernel').toBeDefined();
+    expect(block?.detail).toBe(failure);
+    // 断言不是那句会误导人的通用文案。
+    expect(block?.detail).not.toBe('没有可升级的内核版本');
+  });
+
+  it('没有提供 kernelCandidateFailure 时保持原样（不改变既有语义）', async () => {
+    const prisma = fakePrisma({});
+    const outcome = await buildUpdatePlan({
+      prisma,
+      catalog: catalog([entry({ version: '1.1.0' })]),
+      policy: normalizeUpdatePolicy({}),
+      instanceId: 'sp',
+      baselineGeneration: 0,
+      kernelCandidates: [],
+    });
+    // 扩展更新照常可解 —— 诊断字段缺省不影响求解。
+    expect(outcome.ok).toBe(true);
+  });
+
   it('resolves a plan when the catalog has a compatible newer version', async () => {
     const prisma = fakePrisma({});
     const outcome = await buildUpdatePlan({

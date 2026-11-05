@@ -1770,7 +1770,8 @@
     "config": {
       "unknown_key": "未知的配置项",
       "invalid_value": "配置值无效"
-    }
+    },
+    "incompatible_kernel": "内核升级包暂时无法获取或校验，请联系站点管理员查看更新日志"
   },
   "auditAction": {
     "auth": {

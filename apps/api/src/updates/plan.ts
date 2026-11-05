@@ -80,6 +80,16 @@ export interface PlanInput {
    * 任务。`targetKernel` 显式提供时优先（调用方已求解）。
    */
   kernelCandidates?: KernelManifest[];
+  /**
+   * 内核候选清单**取回/验签失败**的可读原因（诊断用）。
+   *
+   * 解耦点：`kernelCandidates` 只装已验签通过的清单，所以「目录里写了 0.1.3
+   * 但一个都验不过」和「目录里根本没有更高版本」在求解器看来是同一件事 ——
+   * 都得到 `incompatible_kernel: 没有可升级的内核版本`。这个字段让上游把
+   * 真正的原因覆盖到那条 block 的 detail 上，否则运维只能看到一个误导性的
+   * 「没有可升级的内核版本」。
+   */
+  kernelCandidateFailure?: string;
   /** 期望的升级载体（ADR-0025）；缺省 `oci`。 */
   carrier?: 'oci' | 'artifact';
   /** 显式目标内核版本（缺省自动选最高可升级版本）。 */
@@ -120,6 +130,26 @@ export async function buildUpdatePlan(input: PlanInput): Promise<PlanOutcome> {
   let targetKernel = input.targetKernel
     ? { ...input.targetKernel, digest: normalizeTargetDigest(input.targetKernel.digest) }
     : undefined;
+  /**
+   * 目录声明了内核版本、但一个都没取回/验签成功。
+   *
+   * 这种情况 `kernelCandidates` 是空数组，走不到下面的求解分支，最终落到
+   * 扩展求解器那句通用的「没有可升级的内核版本」—— 看起来像「已经是最新」，
+   * 实际是「有更新但取不到」。直接把真正原因作为 block 返回，让界面能说清楚。
+   */
+  if (!targetKernel && input.kernelCandidateFailure) {
+    if (!input.kernelCandidates || input.kernelCandidates.length === 0) {
+      return {
+        ok: false,
+        blocks: [
+          {
+            code: 'incompatible_kernel',
+            detail: input.kernelCandidateFailure,
+          },
+        ],
+      };
+    }
+  }
   if (!targetKernel && input.kernelCandidates && input.kernelCandidates.length > 0) {
     const resolvedKernel = resolveKernelUpgrade({
       currentVersion: kernel.version,

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   buildUpdatePlan,
   listTaskResults,
+  describeKernelCandidateFailures,
   loadKernelCandidates,
   readCatalogSnapshot,
   readTaskResult,
@@ -199,7 +200,7 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       // 拿到可用快照就顺手求解一次：管理员点「检查更新」想看到的正是「有没有得升」。
       let solved: Record<string, unknown> | null = null;
       if (result.resolved) {
-        const entry = await solvePlan();
+        const entry = await solvePlan(request.log);
         if (entry) solved = planResponse(entry.outcome, entry.expired);
       }
       return {
@@ -216,8 +217,8 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/admin/updates/plan',
     { preHandler: adminOnly, schema: { security: [{ bearerAuth: [] }] } },
-    async (_request, reply) => {
-      const entry = await solvePlan();
+    async (request, reply) => {
+      const entry = await solvePlan(request.log);
       if (!entry) return catalogUnavailable(reply);
       return planResponse(entry.outcome, entry.expired);
     },
@@ -231,7 +232,7 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
       const parsed = installSchema.safeParse(request.body ?? {});
       if (!parsed.success)
         return reply.code(400).send({ error: '请求无效', issues: parsed.error.issues });
-      const entry = await solvePlan(parsed.data.idempotencyKey);
+      const entry = await solvePlan(request.log, parsed.data.idempotencyKey);
       if (!entry) return catalogUnavailable(reply);
       if (!entry.outcome.ok) return planResponse(entry.outcome, entry.expired);
       // 过期目录可以看、可以算，但**默认不得**据此投递新任务（PLAN §3.3）。
@@ -376,20 +377,32 @@ export async function adminUpdateRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  async function solvePlan(idempotencyKey?: string): Promise<PlanEntry | null> {
+  /**
+   * `log` 由调用点传入：`solvePlan` 是闭包，作用域里没有 `request`，而每次调用
+   * 的 request 都不同 —— 在闭包里抓一个会拿到别的请求的 logger。
+   */
+  async function solvePlan(
+    log: { warn: (obj: unknown, msg?: string) => void },
+    idempotencyKey?: string,
+  ): Promise<PlanEntry | null> {
     const context = await updateCatalogContext();
     if (!context) return null;
     const policy = await readUpdatePolicy(prisma());
     const status = await readUpdaterStatus();
     const kernelCandidates = await loadKernelCandidates(context);
+    // 内核清单取回/验签失败时**要说出来**。否则「信任根缺 key」「资产 404」
+    // 「验签失败」全部收敛成上游一句「没有可升级的内核版本」，运维无从下手。
+    const kernelFailure = describeKernelCandidateFailures(kernelCandidates);
+    if (kernelFailure) log.warn({ kernelFailure }, '内核候选清单不可用');
     const outcome = await buildUpdatePlan({
       prisma: prisma(),
       catalog: context.catalog,
       policy,
       instanceId: updateInstanceId(),
       baselineGeneration: status?.generation ?? 0,
-      kernelCandidates,
+      kernelCandidates: kernelCandidates.manifests,
       carrier: env.DISTRIBUTION_UPDATE_CARRIER,
+      ...(kernelFailure ? { kernelCandidateFailure: kernelFailure } : {}),
       ...(idempotencyKey ? { idempotencyKey } : {}),
     });
     return { outcome, expired: context.expired };

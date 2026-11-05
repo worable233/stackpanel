@@ -1770,7 +1770,8 @@
     "config": {
       "unknown_key": "알 수 없는 설정 키입니다",
       "invalid_value": "설정 값이 올바르지 않습니다"
-    }
+    },
+    "incompatible_kernel": "커널 업그레이드 패키지를 가져오거나 검증할 수 없습니다. 관리자에게 업데이트 로그 확인을 요청하세요."
   },
   "auditAction": {
     "auth": {

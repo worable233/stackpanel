@@ -1770,7 +1770,8 @@
     "config": {
       "unknown_key": "不明な設定キーです",
       "invalid_value": "設定値が不正です"
-    }
+    },
+    "incompatible_kernel": "カーネル更新パッケージを取得または検証できませんでした。管理者に更新ログの確認を依頼してください。"
   },
   "auditAction": {
     "auth": {

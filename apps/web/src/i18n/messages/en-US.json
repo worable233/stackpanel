@@ -1770,7 +1770,8 @@
     "config": {
       "unknown_key": "Unknown configuration key",
       "invalid_value": "Invalid configuration value"
-    }
+    },
+    "incompatible_kernel": "The kernel upgrade package could not be fetched or verified. Ask your administrator to check the update log."
   },
   "auditAction": {
     "auth": {

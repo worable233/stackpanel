@@ -1770,7 +1770,8 @@
     "config": {
       "unknown_key": "Clé de configuration inconnue",
       "invalid_value": "Valeur de configuration invalide"
-    }
+    },
+    "incompatible_kernel": "Le paquet de mise à jour du noyau n'a pas pu être récupéré ou vérifié. Demandez à votre administrateur de consulter le journal des mises à jour."
   },
   "auditAction": {
     "auth": {

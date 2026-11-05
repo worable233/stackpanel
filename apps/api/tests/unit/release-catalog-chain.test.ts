@@ -98,7 +98,20 @@ describe('内核发布的目录链路（防止更新中心看不到内核升级�
       const fn = runtime.slice(idx, idx + 700);
       expect(fn).toContain('catalogKernelRefs');
       // 这一行就是「目录没内核引用 → 直接返回空」的断点。
-      expect(fn).toMatch(/refs\.length === 0\)\s*return \[\]/);
+      expect(fn).toMatch(/refs\.length === 0\)\s*return \{[^}]*manifests: \[\]/);
+    });
+
+    it('loadKernelCandidates 把失败原因留下来，不再裸 catch 吞掉', () => {
+      const runtime = read('apps/api/src/updates/runtime.ts');
+      const idx = runtime.indexOf('export async function loadKernelCandidates');
+      const fn = runtime.slice(idx, idx + 2200);
+      // 早期是 `catch {}`：信任根缺 key / 资产 404 / 验签失败全部静默，上游只能
+      // 报一句「没有可升级的内核版本」，与「已是最新」无法区分。
+      expect(fn).toContain('failures.push');
+      expect(fn).toContain('reason:');
+      expect(fn).toMatch(/catch \(error\)/);
+      // 诊断必须能进 UI/日志。
+      expect(runtime).toContain('describeKernelCandidateFailures');
     });
 
     it('buildUpdatePlan 只在有候选时才求 targetKernel', () => {
