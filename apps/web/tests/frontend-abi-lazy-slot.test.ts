@@ -44,7 +44,14 @@ afterEach(() => {
   delete g.__STACKPANEL_CLIENT_ABI__;
 });
 
-describe('frontend ABI adapter — lazy slots', () => {
+const HEAVY_IMPORT_TIMEOUT = 30_000;
+
+  /**
+   * 这些用例首次 import 时会加载 route 模块（连带 `@stackpanel/ui` 整桶）。
+   * 单跑约 1s，但全量并行时会被 CPU 争用拖到 5s+（实测打穿默认 5s 超时）。
+   * 这里测的是语义，不是速度。
+   */
+describe('frontend ABI adapter — lazy slots', { timeout: HEAVY_IMPORT_TIMEOUT }, () => {
   it('generates an await branch so a function-valued slot is resolved', async () => {
     const response = await adapterBody('@stackpanel/ui/charts', 'MetricsExplorer');
     expect(response.status).toBe(200);

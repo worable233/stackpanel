@@ -13,6 +13,11 @@ import { buildApp } from '../../src/app.ts';
 describe('problem details (ADR-0012)', () => {
   let app: FastifyInstance;
 
+  /**
+   * `buildApp()` 在并行跑全量时会明显变慢（实测单跑 7.2s，已贴近默认 10s
+   * hook 超时；`pnpm -r test` 下必然打穿）。这里测的是 problem details 的
+   * 契约，不是启动速度。
+   */
   beforeAll(async () => {
     app = buildApp();
     // Probe routes for kernel-domain errors: the boundary must render the
@@ -30,7 +35,7 @@ describe('problem details (ADR-0012)', () => {
       throw new CommerceError('product_not_found', '商品不存在');
     });
     await app.ready();
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await app.close();
