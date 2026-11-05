@@ -351,6 +351,43 @@ describe('跨路径定价一致性（展示价 = 实付价）', () => {
     ).rejects.toMatchObject({ status: 409 });
   });
 
+  it('上游导入的实例即使有商品也不允许续费（origin 必须真的被读）', async () => {
+    /**
+     * `operations.ts` 打上 `runtime.origin` 并写明「origin != purchase 的实例
+     * 必须在续费/退款/发票流程里被显式排除」。但之前没有任何一处真的读过它 ——
+     * 注释是一句没人执行的承诺。
+     *
+     * 这条用**有商品的**实例：上一条用的是幽灵实例（商品不存在），它被「商品
+     * 不存在」挡住了，没验证到 origin。
+     */
+    const seed: Seed = { price: 9900, discount: null, groupDiscount: null };
+    const stores = createStores(seed);
+    bindContext(makeCtx(stores, seed));
+    const imported = await stores.client.create({ kind: 'store/service-instance' } as never, {
+      userId: USER_ID,
+      orderId: null,
+      // 商品**存在**：页面能正常渲染，续费也不会因为找不到商品被挡。
+      productId: PRODUCT_ID,
+      productName: '上游导入实例',
+      state: 'ACTIVE',
+      providerId: 'zjmf',
+      providerServiceId: '33363',
+      fulfillmentType: 'upstream_service',
+      expiresAt: new Date('2026-06-01T00:00:00Z'),
+      runtime: { origin: 'upstream-import' },
+    });
+
+    await expect(
+      renewService(makeCtx(stores, seed), {
+        params: { id: imported.name },
+        query: {},
+        body: { paymentMode: 'wallet', cycle: 'monthly' },
+        headers: {},
+        user: { id: USER_ID, role: 'USER' },
+      } as never),
+    ).rejects.toMatchObject({ status: 409, code: 'store.service.not_purchased' });
+  });
+
   it('购物车合计与单件试算一致', async () => {
     const seed: Seed = { price: 9900, discount: 10, groupDiscount: null };
     const stores = createStores(seed);

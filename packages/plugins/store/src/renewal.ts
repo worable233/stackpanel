@@ -78,6 +78,26 @@ export async function renewService(ctx: PluginContext, req: HttpRequest): Promis
   if (!RENEWABLE_STATES.has(service.status)) throw new StoreError(409, '该服务当前状态不可续费');
 
   /**
+   * 非购买来源的实例必须显式拒绝续费。
+   *
+   * `operations.ts` 在建立上游绑定时会给实例打 `runtime.origin`（默认
+   * `upstream-import`），并写明「origin != purchase 的实例必须在续费/退款/发票
+   * 流程里被显式排除」。但此前**没有任何一处真的读过它** —— 注释是一句
+   * 没人执行的承诺。上游导入的实例只要恰好映射到本地商品，就能被
+   * 当成普通购买实例续费：钱走本站订单、服务却记在上游账上，对账直接错位。
+   *
+   * 用稳定 code 表达原因（ADR-0012），文案由界面词表决定。
+   */
+  const origin = (service.runtime as { origin?: unknown } | null)?.origin;
+  if (typeof origin === 'string' && origin !== 'purchase') {
+    throw new StoreError(
+      409,
+      '该服务来自上游导入，费用不在本站结算，无法在这里续费。请联系管理员处理',
+      'store.service.not_purchased',
+    );
+  }
+
+  /**
    * 幽灵实例（0.1.3 之前的后台直连绑定产生）没有对应的本地商品。
    *
    * 直接报「商品不存在」会让用户以为是商品被下架了，而实际上是这条实例

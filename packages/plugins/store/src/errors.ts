@@ -42,6 +42,8 @@ const STORE_ERROR_CODES: Record<string, string> = {
   '缺少服务 ID': 'store.request.service_id_required',
   '服务不存在': 'store.service.not_found',
   '该服务当前状态不可续费': 'store.service.not_renewable',
+  '该服务来自上游导入，费用不在本站结算，无法在这里续费。请联系管理员处理':
+    'store.service.not_purchased',
   '订单金额无效': 'store.order.amount_invalid',
   '订单金额过大': 'store.order.amount_too_large',
   '订单不可支付': 'store.order.not_payable',
