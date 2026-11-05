@@ -20,6 +20,7 @@ import 'server-only';
  * Importing this module has a side effect (publishing the ABI), so the runtime
  * loader imports it before the first runtime `import()`.
  */
+import { reportChartComponentOnServer } from './frontend-runtime-diagnostics';
 import * as ui from '@stackpanel/ui';
 import * as link from 'next/link';
 import * as form from 'next/form';
@@ -76,15 +77,66 @@ const CLIENT_ONLY_REACT_NAMES = [
  *
  * 所以：每个导出名给一个**被调用才抛**的桩。顶层 import 不抛，链接能过。
  */
+/** 图表组件的导出名。**单一来源**：服务端桩、主入口兼容补名、客户端回落都用它。 */
+export const CHART_COMPONENT_NAMES = ['MetricsExplorer', 'UsageTrendChart'] as const;
+
+/**
+ * 图表组件在 RSC 图里的桩：**返回 null 并 warn**，不抛。
+ *
+ * 原先这里是「调用即抛」，后果是只要任何插件在服务端渲染路径误用图表组件，
+ * **整页 500**，而错误里没有 pluginId / route / component —— 线上 v0.1.3 的
+ * 实例详情页就是这么挂的（digest 1508909678），定位只能靠手工 grep 编译产物
+ * 反查是哪个插件的哪个路由。
+ *
+ * 局部渲染缺陷不该放大成整页不可用：图表区域留空，页面其余部分照常渲染，同时
+ * 日志里留一条**可定位**的 warn（插件 id / 路由 / 组件名）。
+ *
+ * 仍然不发布真实实现：recharts 在模块作用域调 React.createContext，RSC 图里
+ * 一旦 link 真实模块就整页崩（见上方 NOTE）。
+ */
 function chartsServerAbi(): Record<string, unknown> {
-  const notInRsc = (): never => {
-    throw new Error(
-      '[frontend-runtime] @stackpanel/ui/charts 只能在浏览器里渲染。' +
-        '图表组件依赖 recharts，它在模块作用域调用 React.createContext，' +
-        '服务端 RSC 图里不可用。请把使用它的组件放进客户端入口。',
-    );
+  const abi: Record<string, unknown> = {};
+  for (const name of CHART_COMPONENT_NAMES) abi[name] = chartServerStub(name);
+  return abi;
+}
+
+/** 单个图表组件的服务端桩：静默渲染为空，日志留可定位 warn。 */
+function chartServerStub(componentName: string): (props?: unknown) => null {
+  return function ChartRenderedOnServer(): null {
+    reportChartComponentOnServer(componentName);
+    return null;
   };
-  return { MetricsExplorer: notInRsc, UsageTrendChart: notInRsc };
+}
+
+/**
+ * 主入口 `@stackpanel/ui` 在 RSC 图里的命名空间：真实组件 + 图表补名。
+ *
+ * ## 为什么需要补名（P0-C）
+ *
+ * v0.1.3 把图表组件移到独立入口 `@stackpanel/ui/charts` 以甩掉 recharts。
+ * 但已发布的插件仍然写着 `import { UsageTrendChart } from '@stackpanel/ui'`
+ * —— ESM 链接是静态的，主入口少一个具名导出就抛
+ * `does not provide an export named`，**整个前端包装载失败**（线上
+ * llm-gateway 后台完全打不开）。
+ *
+ * 拆入口是正确方向，但拆入口不能顺手把生态打死。所以主入口继续可链接这些
+ * 名字：服务端是桩（调用即 warn + 返回 null），客户端由适配器回落到 charts
+ * 惰性槽（真组件）。
+ *
+ * ## 为什么不直接 re-export
+ *
+ * `export { MetricsExplorer } from './charts.js'` 会让
+ * `import * as ui from '@stackpanel/ui'` 把图表依赖静态拉进来 —— 而本文件正是
+ * 这么 import 的。实测那条路把 recharts 重新塞回 45 个页面的共享 chunk、
+ * `/login` 首屏从 703 KB 涨回 815 KB，三轮瘦身全部作废。补**桩**没有这个代价。
+ */
+function uiServerAbi(): Record<string, unknown> {
+  const abi: Record<string, unknown> = { ...ui };
+  for (const name of CHART_COMPONENT_NAMES) {
+    if (name in abi) continue;
+    abi[name] = chartServerStub(name);
+  }
+  return abi;
 }
 
 /**
@@ -139,6 +191,13 @@ import {
   CopyLinkButton,
   RouteProgress,
 } from '@/components/frontend-absorbed-clients';
+// 图表分开导入：它用 `next/dynamic`（`ssr: false）把 recharts 放进独立 chunk。
+// 往 `frontend-absorbed-clients` 里加静态 re-export 会让 recharts 回到首屏
+// 共享 chunk（实测 703 → 814 KB）。
+import {
+  MetricsExplorer as AbsorbedMetricsExplorer,
+  UsageTrendChart as AbsorbedUsageTrendChart,
+} from '@/components/frontend-absorbed-charts';
 import { CartCheckout } from '@/components/cart-checkout';
 import { navigationServerAbi } from './frontend-loader';
 
@@ -171,7 +230,10 @@ const ABSORBED_CLIENT_CAPABILITIES: Record<string, unknown> = {
   //
   // 真正的渲染走客户端 ABI（`frontend-abi-bridge.tsx` 的 charts 惰性槽），
   // 那里在浏览器里才解析真实组件。
-  charts: chartsServerAbi(),
+  charts: {
+    MetricsExplorer: AbsorbedMetricsExplorer,
+    UsageTrendChart: AbsorbedUsageTrendChart,
+  },
 };
 
 export type HostServerAbi = Record<string, unknown>;
@@ -201,13 +263,19 @@ export function publishHostServerAbi(): HostServerAbi {
     'next/link': link,
     'next/form': form,
     'next/navigation': navigationServerAbi(navigation as unknown as Record<string, unknown>),
-    '@stackpanel/ui': ui,
+    '@stackpanel/ui': uiServerAbi(),
     // 图表组件的独立槽。服务端**不发布真实实现**：recharts 在模块作用域调
     // `React.createContext`，在 RSC 图里会直接抛（见上方 NOTE）。
     //
     // 给一组链接期桩，与 `reactServerAbi` 同一个理由：插件 `dist/index.js`
     // 顶层只 import 名字、不调用，所以能链接就不该让整包死掉；真被调用时才
     // 抛，把「客户端组件在服务端执行」这个真实 bug 暴露在正确位置。
+    // 裸说明符场景（`import { X } from '@stackpanel/ui/charts'` 直接写在插件里）走这里，给桩。
+    // 插件自带 `./charts.js` 相对导入的情形走 absorbed 能力（见上方的真实客户端组件）。
+    //
+    // 两条路径意图不同，不能合并：
+    // - absorbed 是插件「自带的 `'use client'` 模块」，必须真实水合；
+    // - 这个槽是插件「直接请完整 charts 命名空间」，在 RSC 里只能给桩。
     '@stackpanel/ui/charts': chartsServerAbi(),
     '@stackpanel/sdk': sdk,
     'lucide-react': lucide,

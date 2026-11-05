@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { reactServerAbi } from '@/lib/frontend-host-abi';
 
 /**
@@ -100,14 +100,26 @@ describe('charts server slot', () => {
     expect(typeof charts.UsageTrendChart).toBe('function');
   });
 
-  it('never throws at link time — only when a charts stub is invoked', async () => {
+  it('链接期不抛；真被渲染时降级为空块（P0-B）', async () => {
     const { publishHostServerAbi } = await import('@/lib/frontend-host-abi');
+    const { resetChartComponentWarnings } = await import('@/lib/frontend-runtime-diagnostics');
+    resetChartComponentWarnings();
     const charts = publishHostServerAbi()['@stackpanel/ui/charts'] as Record<string, unknown>;
 
     // 取名字不抛（顶层 import 只做这件事）。
     expect(() => charts.MetricsExplorer).not.toThrow();
 
-    // 真被当成组件调用才抛 —— 把「客户端组件在服务端执行」暴露在正确位置。
-    expect(() => (charts.MetricsExplorer as () => never)()).toThrow(/charts/);
+    // 行为已改：不再抛错，而是返回 null（渲染为空块）+ 记一条可定位的 warn。
+    //
+    // 原先「调用即抛」把插件的局部渲染缺陷放大成整页 500（线上
+    // v0.1.3 实例详情页 digest 1508909678），而错误里连 pluginId 都没有。
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((charts.MetricsExplorer as () => unknown)()).toBeNull();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0] ?? '')).toContain('MetricsExplorer');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

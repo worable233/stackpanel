@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { CHART_COMPONENT_NAMES } from '@/lib/frontend-host-abi';
+
 
 /**
  * Contract 02 §5 / 主计划 §5 阶段 4 — 受控适配器（M2 浏览器）。
@@ -50,9 +52,27 @@ function adapterSource(slot: string, names: string[]): string {
     // 取用**时才加载，不会因为 ABI 发布本身进入每个页面的模块图。
     `const ns = typeof raw === 'function' ? await raw() : raw;`,
   ];
+  // 图表组件已移到独立入口 `@stackpanel/ui/charts`（甩掉 recharts），
+  // 但已发布的插件仍在从主入口取这些名字。主入口已不导出它们，
+  // 于是 `export const UsageTrendChart = ns['UsageTrendChart']` 会得到 undefined，
+  // 渲染时才报 `Element type is invalid`。这里显式回落到 charts 槽：
+  // 主入口取不到的图表名，改从惰性的 charts 实现取。
+  //
+  // 为不什么不直接改 `@stackpanel/ui` 的 index：它是客户端主桶，
+  // 一旦 re-export charts，recharts（559 KB）会回到每个页面的共享 chunk。
+  const needsCharts = slot === '@stackpanel/ui' && CHART_COMPONENT_NAMES.some((name) => names.includes(name));
+  if (needsCharts) {
+    // charts 槽是惰性的（发布的是返回 Promise 的函数），这里显式等它。
+    lines.push(`const __chartsRaw = A['@stackpanel/ui/charts'];`);
+    lines.push(`const __charts = __chartsRaw ? (typeof __chartsRaw === 'function' ? await __chartsRaw() : __chartsRaw) : {};`);
+  }
   for (const name of names) {
     if (name === 'default') continue;
     if (!IDENTIFIER.test(name)) continue;
+    if (needsCharts && (CHART_COMPONENT_NAMES as readonly string[]).includes(name)) {
+      lines.push(`export const ${name} = ns[${JSON.stringify(name)}] ?? __charts[${JSON.stringify(name)}];`);
+      continue;
+    }
     lines.push(`export const ${name} = ns[${JSON.stringify(name)}];`);
   }
   lines.push('export default ns.default ?? ns;');
